@@ -1,7 +1,7 @@
 # MCP bridge
 
 emisar exposes the fleet's action catalog to MCP-aware clients (Claude
-Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI, …) so an LLM can
+Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI, Grok, …) so an LLM can
 run real infrastructure actions — gated by the same policy, approval,
 and audit machinery as a human operator.
 
@@ -28,11 +28,15 @@ install). The bridge is configured per client via env vars in the
 launcher's JSON/TOML config — the portal's **/app/agents** page
 generates the exact snippet per client:
 
+Run `emisar-mcp --help` for compact registration instructions for Claude Code,
+Cursor, Codex, and Grok, including the current CLI command forms and Cursor's
+global config path.
+
 | Env var | Required | Purpose |
 | --- | --- | --- |
 | `EMISAR_URL` | yes | Absolute HTTP(S) portal origin, with no path, credentials, query, or fragment (for example `https://emisar.dev`) |
 | `EMISAR_API_KEY` | yes | Operator API key (`Bearer` on every request) |
-| `EMISAR_CLIENT` | no | Client label for audit attribution (`claude-code`, `cursor`, …) |
+| `EMISAR_CLIENT` | no | Client label for audit attribution (`claude-code`, `cursor`, `codex`, `grok`, …) |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported client metadata as a JSON object of string keys to string/number values (e.g. `{"asset_tag":"LT-4417","device_id":"…"}`), snapshotted onto each MCP action run so activity can be correlated with your own MDM/EDR/inventory in the audit log + SIEM export. Limits: ≤10 keys, keys ≤128 / values ≤512 chars. Untrusted, self-reported enrichment — never used for authorization, posture, or approval. Invalid metadata is a startup error. |
 | `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint. Loopback HTTP works without it; production should use HTTPS. |
 | `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private key (64-hex seed) used to sign each dispatch so signature-enforcing runners will run it. Keep it secret — never on the portal. See [`docs/signed-dispatch.md`](../docs/signed-dispatch.md). |

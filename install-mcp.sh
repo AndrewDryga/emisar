@@ -3,7 +3,7 @@
 #
 # The bridge is a single self-contained Go binary that an MCP-aware
 # client (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI,
-# …) launches as a child process and talks to over stdin/stdout. It
+# Grok, …) launches as a child process and talks to over stdin/stdout. It
 # proxies JSON-RPC frames to the emisar control plane's
 # `/api/mcp/rpc` endpoint and forwards responses back.
 #

@@ -1,5 +1,5 @@
 // Command emisar-mcp is a thin stdio↔HTTP shim for MCP-aware clients
-// (Claude Desktop, Cursor, Claude Code, Gemini CLI, Codex CLI, …) that
+// (Claude Desktop, Cursor, Claude Code, Gemini CLI, Codex CLI, Grok, …) that
 // only speak stdio JSON-RPC.
 //
 // The bridge owns transport correctness: bounded newline framing, request-id
@@ -108,65 +108,97 @@ func newHTTPClient() *http.Client {
 // from the release pipeline; "dev" when built locally.
 var Version = "dev"
 
-const helpText = `emisar-mcp — MCP stdio↔HTTP shim for emisar
+const helpText = `emisar-mcp - MCP stdio-to-HTTP bridge for emisar
 
-  Proxies MCP JSON-RPC requests from a local LLM client (Claude Desktop,
-  Claude Code, Cursor, Gemini CLI, Codex CLI, …) into the emisar control
-  plane's HTTP endpoint at POST /api/mcp/rpc. Every method (initialize,
-  tools/list, tools/call, ping, notifications/…) is forwarded to the portal.
-  The only protocol-aware exception is optional client-attested dispatch:
-  tools/call arguments are signed locally because the private key must stay on
-  the operator's machine.
+DESCRIPTION
+  Proxies MCP JSON-RPC between a local LLM client and the emisar control plane
+  at POST /api/mcp/rpc. The portal owns tools, policy, approvals, and audit.
+  Optional signed dispatch keeps the operator's Ed25519 key on this machine.
 
-Environment:
-  EMISAR_URL        HTTP(S) origin of the control plane (required; no path,
-                    credentials, query, or fragment)
-                    e.g. https://emisar.dev
-  EMISAR_API_KEY    Operator API key (required), e.g. emk-...
-  EMISAR_CLIENT     Optional label that shows up in the audit log
-                    (claude-desktop, cursor, codex, …). Defaults to
-                    "unknown".
-  EMISAR_CLIENT_METADATA
-                    Optional self-reported client metadata as a JSON object of
-                    string keys to string or number values, e.g.
-                    {"asset_tag":"LT-4417","device_id":"…"}. Snapshotted onto
-                    each MCP action run so you can correlate Emisar activity with
-                    your own MDM/EDR/inventory in the audit log and SIEM export.
-                    Limits: at most 10 keys, keys ≤128 and values ≤512
-                    characters. It is UNTRUSTED, self-reported enrichment —
-                    never used for authorization, posture, or approval. Invalid
-                    metadata is a startup error.
-  EMISAR_ALLOW_INSECURE
-                    Set to 1 only to allow cleartext HTTP to a non-loopback
-                    development endpoint. Loopback HTTP works without it;
-                    production should use HTTPS.
-  EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
-                         (with EMISAR_SIGNING_CERT), the bridge signs each
-                         tools/call so runners that enforce signatures will run
-                         it. Get the key+cert pair from 'emisar signing new-cert' (or
-                         'emisar signing init') on the operator host. Keep this
-                         secret — never put it on the control plane.
-  EMISAR_SIGNING_CERT    The CA-signed certificate JSON that vouches for the
-                         signing key (and its scope/validity). The bridge carries
-                         it verbatim alongside the signature; the runner verifies
-                         it against the trusted CA.
+ENVIRONMENT
+  EMISAR_URL (required)
+    Control-plane HTTP(S) origin. Do not include a path, credentials, query,
+    or fragment. Example: https://emisar.dev
 
-Key rotation:
-  Before asking the portal to rotate an expiring API key, the bridge generates
-  and durably stores a pending successor. The initialize request carries only
-  its lookup prefix and SHA-256 digest. The bridge activates the successor only
-  after the portal acknowledges that exact digest, and only after the promoted
-  state is durable. State lives in one owner-only file per bootstrap prefix
-  under <user-config-dir>/emisar/credentials/. Keep that directory persistent;
-  without durable storage the bridge continues with the configured key but
-  does not offer automatic rotation.
+  EMISAR_API_KEY (required)
+    Operator API key. Example: emk-...
 
-Flags:
-  -h, --help        Print this help and exit
-  -v, --version     Print version and exit
+  EMISAR_CLIENT (optional)
+    Audit-log label for this client, such as claude-code, cursor, codex, or
+    grok. Defaults to "unknown".
 
-The bridge speaks JSON-RPC 2.0, line-delimited, on stdin/stdout.
-Run it under an MCP-aware client, not directly in a terminal.
+  EMISAR_CLIENT_METADATA (optional)
+    Self-reported client metadata as a JSON object whose values are strings or
+    numbers. Example: {"asset_tag":"LT-4417","device_id":"laptop-7"}
+    Emisar snapshots it onto MCP action runs for audit and SIEM correlation.
+    Maximum 10 keys; keys are limited to 128 characters and values to 512.
+    This data is untrusted and is never used for authorization, posture, or
+    approval. Invalid metadata is a startup error.
+
+  EMISAR_ALLOW_INSECURE (optional)
+    Set to 1 only for cleartext HTTP to a non-loopback development endpoint.
+    Loopback HTTP works without it. Production should use HTTPS.
+
+  EMISAR_SIGNING_KEY (optional)
+    Ed25519 private key as a 64-hex seed. Set it with EMISAR_SIGNING_CERT to
+    sign tools/call requests for signature-enforcing runners. Create a pair
+    with 'emisar signing new-cert' or 'emisar signing init'. Keep it secret
+    and never put it on the control plane.
+
+  EMISAR_SIGNING_CERT (optional)
+    CA-signed certificate JSON for EMISAR_SIGNING_KEY. The bridge carries it
+    with each signature; the runner verifies its trust, scope, and validity.
+
+CLIENT SETUP
+  Install the bridge:
+    curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
+
+  Replace emk-... below with a key from https://emisar.dev/app/agents.
+  These examples assume the bridge is installed in /usr/local/bin.
+
+  Claude Code
+    claude mcp add emisar --scope user \
+      -e EMISAR_URL=https://emisar.dev \
+      -e EMISAR_API_KEY=emk-... \
+      -e EMISAR_CLIENT=claude-code \
+      -- /usr/local/bin/emisar-mcp
+
+  Cursor
+    Add an "emisar" stdio server to ~/.cursor/mcp.json. Set command to
+    /usr/local/bin/emisar-mcp and add EMISAR_URL, EMISAR_API_KEY, and
+    EMISAR_CLIENT=cursor under env. The Agents page provides the exact JSON.
+
+  Codex
+    codex mcp add emisar \
+      --env EMISAR_URL=https://emisar.dev \
+      --env EMISAR_API_KEY=emk-... \
+      --env EMISAR_CLIENT=codex \
+      -- /usr/local/bin/emisar-mcp
+
+  Grok
+    grok mcp add emisar \
+      -e EMISAR_URL=https://emisar.dev \
+      -e EMISAR_API_KEY=emk-... \
+      -e EMISAR_CLIENT=grok \
+      -- /usr/local/bin/emisar-mcp
+
+KEY ROTATION
+  The bridge prepares and durably stores a successor before asking the portal
+  to rotate an expiring key. It activates that successor only after the portal
+  acknowledges the exact digest and the promoted state is durable. State lives
+  in owner-only files under <user-config-dir>/emisar/credentials/. Keep that
+  directory persistent. Without durable storage, automatic rotation is off.
+
+FLAGS
+  -h, --help
+    Print this help and exit.
+
+  -v, --version
+    Print the version and exit.
+
+PROTOCOL
+  The bridge speaks line-delimited JSON-RPC 2.0 on stdin/stdout. Run it under
+  an MCP-aware client, not directly in a terminal.
 `
 
 func main() {

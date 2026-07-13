@@ -129,6 +129,65 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 	}
 }
 
+func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
+	sections := []string{
+		"\nDESCRIPTION\n",
+		"\nENVIRONMENT\n",
+		"\nCLIENT SETUP\n",
+		"\nKEY ROTATION\n",
+		"\nFLAGS\n",
+		"\nPROTOCOL\n",
+	}
+	previous := -1
+	for _, section := range sections {
+		at := strings.Index(helpText, section)
+		if at < 0 {
+			t.Errorf("help is missing section %q", strings.TrimSpace(section))
+			continue
+		}
+		if at <= previous {
+			t.Errorf("help section %q is out of order", strings.TrimSpace(section))
+		}
+		previous = at
+	}
+
+	for _, name := range []string{
+		"EMISAR_URL",
+		"EMISAR_API_KEY",
+		"EMISAR_CLIENT",
+		"EMISAR_CLIENT_METADATA",
+		"EMISAR_ALLOW_INSECURE",
+		"EMISAR_SIGNING_KEY",
+		"EMISAR_SIGNING_CERT",
+	} {
+		entry := "\n  " + name + " ("
+		if count := strings.Count(helpText, entry); count != 1 {
+			t.Errorf("help contains %d uniformly-indented entries for %s, want 1", count, name)
+		}
+	}
+
+	for lineNumber, line := range strings.Split(helpText, "\n") {
+		if len(line) > 80 {
+			t.Errorf("help line %d is %d columns, want at most 80: %q", lineNumber+1, len(line), line)
+		}
+	}
+
+	for _, setup := range []string{
+		"claude mcp add emisar --scope user",
+		"~/.cursor/mcp.json",
+		"codex mcp add emisar",
+		"grok mcp add emisar",
+		"EMISAR_CLIENT=claude-code",
+		"EMISAR_CLIENT=cursor",
+		"EMISAR_CLIENT=codex",
+		"EMISAR_CLIENT=grok",
+	} {
+		if !strings.Contains(helpText, setup) {
+			t.Errorf("help is missing client setup contract %q", setup)
+		}
+	}
+}
+
 // an unknown flag is rejected: stderr names the argument and the
 // process exits 2 (distinct from the env-fatal exit 1). The bridge takes no
 // positional args or unknown flags.
