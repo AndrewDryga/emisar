@@ -31,9 +31,9 @@ import (
 func TestIdempotencyKey_StableForSameID(t *testing.T) {
 	b := &bridge{sessionID: "deadbeef"}
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
-	want := "deadbeef:1"
-	if got := b.idempotencyKey(frame); got != want {
-		t.Fatalf("key = %q, want %q", got, want)
+	got := b.idempotencyKey(frame)
+	if !strings.HasPrefix(got, "mcp-") || len(got) != len("mcp-")+64 {
+		t.Fatalf("key = %q, want a bounded SHA-256 token", got)
 	}
 	if a, c := b.idempotencyKey(frame), b.idempotencyKey(frame); a != c {
 		t.Errorf("same frame should yield same key: %q vs %q", a, c)
@@ -61,10 +61,12 @@ func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
 	}
 }
 
-func TestIdempotencyKey_NormalizesStringID(t *testing.T) {
+func TestIdempotencyKey_DistinguishesStringAndNumericIDs(t *testing.T) {
 	b := &bridge{sessionID: "s"}
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7"}`)); got != "s:7" {
-		t.Errorf("string id should strip quotes: got %q, want %q", got, "s:7")
+	stringID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7"}`))
+	numericID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":7}`))
+	if stringID == numericID {
+		t.Fatalf("string and numeric ids must not collide: both %q", stringID)
 	}
 }
 
@@ -75,8 +77,9 @@ func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
 	// envelope id. A naive first-"id" byte-scan would latch onto the nested
 	// occurrence; the envelope id is the only correct key.
 	frame := []byte(`{"method":"tools/call","params":{"arguments":{"id":"nested"}},"id":42}`)
-	if got := b.idempotencyKey(frame); got != "s:42" {
-		t.Errorf("must key off the envelope id: got %q, want %q", got, "s:42")
+	want := b.idempotencyKey([]byte(`{"id":42}`))
+	if got := b.idempotencyKey(frame); got != want {
+		t.Errorf("must key off the envelope id: got %q, want %q", got, want)
 	}
 
 	// A param value that is literally the string "id" must not be mistaken
@@ -89,6 +92,44 @@ func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
 	// Malformed JSON yields no key (forwarded verbatim, just not deduped).
 	if got := b.idempotencyKey([]byte(`{not json`)); got != "" {
 		t.Errorf("malformed frame should yield no key, got %q", got)
+	}
+}
+
+func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
+	tests := []struct {
+		name         string
+		frame        string
+		valid        bool
+		notification bool
+	}{
+		{"integer id", `{"jsonrpc":"2.0","id":9007199254740993,"method":"ping"}`, true, false},
+		{"integer-valued exponent id", `{"jsonrpc":"2.0","id":1e3,"method":"ping"}`, true, false},
+		{"string id", `{"jsonrpc":"2.0","id":"7","method":"ping"}`, true, false},
+		{"notification", `{"jsonrpc":"2.0","method":"notifications/initialized"}`, true, true},
+		{"null id", `{"jsonrpc":"2.0","id":null,"method":"ping"}`, false, false},
+		{"fractional id", `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`, false, false},
+		{"object id", `{"jsonrpc":"2.0","id":{},"method":"ping"}`, false, false},
+		{"malformed frame", `{not json`, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := parseRequestMeta([]byte(tc.frame))
+			if meta.valid != tc.valid || meta.notification() != tc.notification {
+				t.Errorf("meta = %+v, want valid=%v notification=%v", meta, tc.valid, tc.notification)
+			}
+		})
+	}
+}
+
+func TestMatchingJSONRPCID_PreservesTypeAndNumericValue(t *testing.T) {
+	if !matchingJSONRPCID(json.RawMessage(`1e3`), json.RawMessage(`1000`)) {
+		t.Error("mathematically equal integer ids should match across JSON encodings")
+	}
+	if !matchingJSONRPCID(json.RawMessage(`"\u0037"`), json.RawMessage(`"7"`)) {
+		t.Error("equivalent string ids should match across JSON escaping")
+	}
+	if matchingJSONRPCID(json.RawMessage(`7`), json.RawMessage(`"7"`)) {
+		t.Error("numeric and string ids are distinct")
 	}
 }
 
@@ -174,8 +215,8 @@ func TestForward_SetsAuthAndUserAgentAndIdempotencyHeaders(t *testing.T) {
 	if gotUA != "ua" {
 		t.Errorf("User-Agent = %q, want %q", gotUA, "ua")
 	}
-	if gotIdem != "sess:1" {
-		t.Errorf("Idempotency-Key = %q, want %q", gotIdem, "sess:1")
+	if gotIdem != b.idempotencyKey(frame) {
+		t.Errorf("Idempotency-Key = %q, want %q", gotIdem, b.idempotencyKey(frame))
 	}
 	if !hadIdem {
 		t.Error("frame with id should set the Idempotency-Key header")
@@ -230,9 +271,10 @@ func TestForward_OmitsIdempotencyHeaderForNotifications(t *testing.T) {
 }
 
 func TestForward_5xxBecomesError(t *testing.T) {
+	const secret = "upstream down with secret=do-not-log"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte("upstream down"))
+		_, _ = w.Write([]byte(secret))
 	}))
 	defer srv.Close()
 
@@ -241,8 +283,11 @@ func TestForward_5xxBecomesError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 5xx")
 	}
-	if !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "upstream down") {
-		t.Errorf("error should name status + body, got %v", err)
+	if !strings.Contains(err.Error(), "502") {
+		t.Errorf("error should name the status, got %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("untrusted response body leaked through the error: %v", err)
 	}
 }
 
@@ -251,6 +296,7 @@ func TestForward_4xxIsReturnedVerbatim(t *testing.T) {
 	// forward them as-is so the client sees the structured error.
 	body := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"unauthorized"}}`)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write(body)
 	}))
@@ -263,6 +309,114 @@ func TestForward_4xxIsReturnedVerbatim(t *testing.T) {
 	}
 	if !bytes.Equal(got, body) {
 		t.Errorf("body = %q, want %q", got, body)
+	}
+}
+
+func TestForward_RejectsUnsafePortalResponses(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      int
+		contentType string
+		body        []byte
+	}{
+		{"HTML content type", 200, "text/html", []byte(`{"jsonrpc":"2.0","id":1,"result":{}}`)},
+		{"malformed JSON", 200, "application/json", []byte(`{"jsonrpc":`)},
+		{"plain JSON error object", 400, "application/json", []byte(`{"error":"not JSON-RPC"}`)},
+		{"multiple JSON values", 200, "application/json", []byte(`{"jsonrpc":"2.0","id":1,"result":{}} {}`)},
+		{"mismatched id", 200, "application/json", []byte(`{"jsonrpc":"2.0","id":2,"result":{}}`)},
+		{"wrong id type", 200, "application/json", []byte(`{"jsonrpc":"2.0","id":"1","result":{}}`)},
+		{"wrong protocol version", 200, "application/json", []byte(`{"jsonrpc":"1.0","id":1,"result":{}}`)},
+		{"result and error", 200, "application/json", []byte(`{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-1,"message":"x"}}`)},
+		{"neither result nor error", 200, "application/json", []byte(`{"jsonrpc":"2.0","id":1}`)},
+		{"fractional error code", 400, "application/json", []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-1.5,"message":"x"}}`)},
+		{"missing error message", 400, "application/json", []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-1}}`)},
+		{"result on error status", 400, "application/json", []byte(`{"jsonrpc":"2.0","id":1,"result":{}}`)},
+		{"invalid UTF-8", 200, "application/json", []byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write(tc.body)
+			}))
+			defer srv.Close()
+
+			if _, err := newTestBridge(srv).forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err == nil {
+				t.Fatal("unsafe portal response must be rejected")
+			}
+		})
+	}
+}
+
+func TestForward_AcceptsJSONContentTypeParameters(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	}))
+	defer srv.Close()
+	if _, err := newTestBridge(srv).forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil {
+		t.Fatalf("valid JSON media type parameters must be accepted: %v", err)
+	}
+}
+
+func TestServe_UnsafeResponseProducesOriginalTypedID(t *testing.T) {
+	for _, id := range []string{`7`, `"7"`} {
+		t.Run(id, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				_, _ = w.Write([]byte("<html>not MCP</html>"))
+			}))
+			defer srv.Close()
+
+			var out bytes.Buffer
+			frame := `{"jsonrpc":"2.0","id":` + id + `,"method":"ping"}`
+			if err := newTestBridge(srv).serve(strings.NewReader(frame+"\n"), &out); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
+			var response struct {
+				ID    json.RawMessage `json:"id"`
+				Error struct {
+					Code int `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+				t.Fatalf("synthetic response is invalid JSON: %v (%q)", err, out.String())
+			}
+			if string(response.ID) != id || response.Error.Code != -32603 {
+				t.Errorf("synthetic response = %s, want exact id %s and -32603", out.String(), id)
+			}
+		})
+	}
+}
+
+func TestServe_NotificationFailureProducesNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		status      int
+		contentType string
+		body        string
+	}{
+		{502, "text/plain", "secret upstream failure"},
+		{400, "application/json", `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"bad notification"}}`},
+		{200, "application/json", `{"jsonrpc":"2.0","id":null,"result":{}}`},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", tc.contentType)
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+
+		var out bytes.Buffer
+		frame := `{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"
+		if err := newTestBridge(srv).serve(strings.NewReader(frame), &out); err != nil {
+			srv.Close()
+			t.Fatalf("serve: %v", err)
+		}
+		srv.Close()
+		if out.Len() != 0 {
+			t.Errorf("notification failure must stay silent, got %q", out.String())
+		}
 	}
 }
 
@@ -314,15 +468,12 @@ func TestForward_RefusesRedirect(t *testing.T) {
 	defer redirector.Close()
 
 	b := newTestBridge(redirector)
-	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
-	if err != nil {
-		t.Fatalf("forward: %v", err)
+	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
+	if err == nil {
+		t.Fatal("a redirect response must become a correlated transport error")
 	}
 	if targetHit {
 		t.Fatal("redirect was followed — the Bearer API key would leak to the redirect target")
-	}
-	if strings.Contains(string(got), "leaked") {
-		t.Errorf("got the redirect target's body, want the 3xx response: %q", got)
 	}
 }
 
@@ -391,6 +542,9 @@ func TestServe_NetworkErrorEmitsJSONRPCError(t *testing.T) {
 	body := out.String()
 	if !strings.Contains(body, `"error"`) || !strings.Contains(body, `-32603`) {
 		t.Errorf("expected synthetic JSON-RPC -32603 error, got %q", body)
+	}
+	if !strings.Contains(body, `"id":1`) {
+		t.Errorf("synthetic error must retain the request id, got %q", body)
 	}
 }
 
@@ -494,31 +648,35 @@ func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
 	if a == b {
 		t.Fatalf("different sessions must not alias the same id: both %q", a)
 	}
-	if a != "aaaa:1" || b != "bbbb:1" {
-		t.Fatalf("keys = %q, %q; want aaaa:1, bbbb:1", a, b)
+	if len(a) != 68 || len(b) != 68 {
+		t.Fatalf("keys must remain fixed-length: %q, %q", a, b)
 	}
 }
 
-// large / odd-shaped ids decode safely. The envelope id is read as
-// a RawMessage and only surrounding quotes are trimmed: a spaced id, a big int
-// past 2^53, and a hyphen/underscore string id all produce a deterministic key
-// with no panic and no precision loss (a float-parse of the big int would mangle
-// it; RawMessage keeps the literal).
+// Large and odd-shaped ids decode without float conversion. Every legal id,
+// including a long string and an integer past 2^53, produces the same bounded
+// key length; fractional ids are invalid in MCP and produce no key.
 func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 	b := &bridge{sessionID: "s"}
-	cases := []struct {
-		frame string
-		want  string
-	}{
-		{`{"id": 1,"method":"tools/call"}`, "s:1"},                        // leading space before the value
-		{`{"jsonrpc":"2.0","id":9007199254740993}`, "s:9007199254740993"}, // > 2^53, kept exact
-		{`{"jsonrpc":"2.0","id":"a-b_c"}`, "s:a-b_c"},                     // string id, quotes stripped
-		{`{"jsonrpc":"2.0","id":12.5}`, "s:12.5"},                         // float-ish literal, kept verbatim
+	cases := []string{
+		`{"id": 1,"method":"tools/call"}`,
+		`{"jsonrpc":"2.0","id":9007199254740993}`,
+		`{"jsonrpc":"2.0","id":"a-b_c"}`,
+		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", 10_000) + `"}`,
 	}
-	for _, c := range cases {
-		if got := b.idempotencyKey([]byte(c.frame)); got != c.want {
-			t.Errorf("idempotencyKey(%s) = %q, want %q", c.frame, got, c.want)
+	seen := make(map[string]bool, len(cases))
+	for _, frame := range cases {
+		got := b.idempotencyKey([]byte(frame))
+		if len(got) != 68 {
+			t.Errorf("idempotencyKey(%s) has length %d, want 68", frame, len(got))
 		}
+		if seen[got] {
+			t.Errorf("distinct raw typed ids collided at %q", got)
+		}
+		seen[got] = true
+	}
+	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":12.5}`)); got != "" {
+		t.Errorf("fractional MCP id must not produce an idempotency key, got %q", got)
 	}
 }
 
@@ -561,10 +719,68 @@ func TestForward_UsesPostAndJSONContentType(t *testing.T) {
 	}
 }
 
-// a 202 with a non-empty body still yields a nil body: the body is
-// read (and capped) then dropped, because 202 means "notification accepted, no
-// response" regardless of what the portal wrote.
-func TestForward_202WithBodyStillDiscarded(t *testing.T) {
+func TestForward_NegotiatesAndSendsProtocolHeaders(t *testing.T) {
+	type observed struct {
+		accept   string
+		protocol string
+	}
+	var requests []observed
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, observed{
+			accept:   r.Header.Get("Accept"),
+			protocol: r.Header.Get("MCP-Protocol-Version"),
+		})
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		result := `{}`
+		if request.Method == "initialize" {
+			result = `{"protocolVersion":"2025-06-18"}`
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`)); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	for i, request := range requests {
+		if request.accept != "application/json, text/event-stream" {
+			t.Errorf("request %d Accept = %q", i, request.accept)
+		}
+	}
+	if requests[0].protocol != "" {
+		t.Errorf("initialize must omit MCP-Protocol-Version, got %q", requests[0].protocol)
+	}
+	if requests[1].protocol != "2025-06-18" {
+		t.Errorf("subsequent request protocol = %q, want negotiated version", requests[1].protocol)
+	}
+}
+
+func TestForward_RejectsInitializeResultWithoutValidProtocolVersion(t *testing.T) {
+	for _, result := range []string{`{}`, `{"protocolVersion":"not-a-version"}`, `{"protocolVersion":"2025-6-18"}`} {
+		t.Run(result, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + result + `}`))
+			}))
+			defer srv.Close()
+			if _, err := newTestBridge(srv).forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err == nil {
+				t.Fatal("initialize result without a valid protocol version must be rejected")
+			}
+		})
+	}
+}
+
+func TestForward_202ForRequestIsRejected(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"should be dropped"}`))
@@ -572,12 +788,8 @@ func TestForward_202WithBodyStillDiscarded(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	body, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
-	if err != nil {
-		t.Fatalf("forward: %v", err)
-	}
-	if body != nil {
-		t.Errorf("202 must yield a nil body even with content, got %q", body)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
+		t.Fatal("202 is only valid for a notification")
 	}
 }
 
@@ -587,6 +799,7 @@ func TestForward_202WithBodyStillDiscarded(t *testing.T) {
 func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
 	errFrame := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"api key expired"}}`)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write(errFrame)
 	}))
@@ -621,11 +834,8 @@ func TestForward_RequestBuildErrorSurfaced(t *testing.T) {
 	}
 }
 
-// / — on a 5xx, the client-facing JSON-RPC frame written
-// to stdout is the GENERIC `upstream transport error` and never carries the
-// secret-ish 5xx body or the API key. The detailed portal body goes to stderr
-// only (not the LLM transcript). We assert the security-critical half: the
-// stdout frame leaks neither the body nor the key.
+// On a 5xx, stdout receives a generic correlated transport error and never the
+// untrusted body or API key. The process-level test also proves stderr is clean.
 func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	const secretBody = "stacktrace: postgres://user:hunter2@db/internal panic at 0xdead"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -674,9 +884,7 @@ func TestForward_OAuthBearerCarriedVerbatim(t *testing.T) {
 	}
 }
 
-// a non-JSON 200 body is relayed without validation: the bridge
-// never asserts the response is well-formed JSON (all semantics are portal-side).
-func TestForward_NonJSONResponseRelayedVerbatim(t *testing.T) {
+func TestForward_NonJSONResponseIsRejected(t *testing.T) {
 	raw := []byte("this is not json at all <<>>")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(raw)
@@ -684,30 +892,20 @@ func TestForward_NonJSONResponseRelayedVerbatim(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
-	if err != nil {
-		t.Fatalf("forward should not validate the body: %v", err)
-	}
-	if !bytes.Equal(got, raw) {
-		t.Errorf("non-JSON body not relayed verbatim:\n got %q\nwant %q", got, raw)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
+		t.Fatal("non-JSON portal content must not reach MCP stdout")
 	}
 }
 
-// an empty 200 body is returned as an empty (non-nil-distinct)
-// body; serve then writes nothing spurious for it.
-func TestForward_Empty200BodyReturnedEmpty(t *testing.T) {
+func TestForward_Empty200BodyIsRejectedAndCorrelated(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK) // zero-length body
 	}))
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
-	if err != nil {
-		t.Fatalf("forward: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("empty 200 should yield an empty body, got %q", got)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
+		t.Fatal("an empty 200 cannot be a JSON-RPC response")
 	}
 
 	// And serve writes nothing for an empty 200 (len(resp)==0 branch).
@@ -718,8 +916,8 @@ func TestForward_Empty200BodyReturnedEmpty(t *testing.T) {
 	b2 := newTestBridge(srv2)
 	var out bytes.Buffer
 	_ = b2.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
-	if out.Len() != 0 {
-		t.Errorf("an empty 200 body should produce no stdout, got %q", out.String())
+	if !strings.Contains(out.String(), `"id":1`) || !strings.Contains(out.String(), "-32603") {
+		t.Errorf("an empty 200 must produce a correlated transport error, got %q", out.String())
 	}
 }
 
@@ -830,6 +1028,20 @@ func TestServe_WriteErrorIsFatal(t *testing.T) {
 	}
 }
 
+func TestWriteFrame_RejectsShortWriteAndNormalizesDelimiter(t *testing.T) {
+	if err := writeFrame(shortWriter{}, []byte(`{"jsonrpc":"2.0"}`)); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short write error = %v, want io.ErrShortWrite", err)
+	}
+
+	var out bytes.Buffer
+	if err := writeFrame(&out, []byte("{}\r\n\n")); err != nil {
+		t.Fatalf("writeFrame: %v", err)
+	}
+	if got := out.String(); got != "{}\n" {
+		t.Errorf("writeFrame output = %q, want exactly one newline", got)
+	}
+}
+
 // EOF on stdin is a clean exit: serve returns nil (io.EOF mapped to
 // a graceful return) when input ends without a terminating newline.
 func TestServe_EOFWithoutNewlineExitsClean(t *testing.T) {
@@ -873,38 +1085,48 @@ func TestServe_BlankAndWhitespaceLinesAreNoOps(t *testing.T) {
 	}
 }
 
-// / — a malformed (non-JSON) frame, and a frame naming an
-// unknown/synthetic tool, are both POSTed VERBATIM. The bridge does no JSON-RPC
-// validation and synthesizes no tool descriptors/content — every semantic is
-// portal-side; it relays exactly the bytes it received (within the size cap).
+// An unknown tool is still portal-owned semantics: the bridge forwards the
+// valid envelope verbatim and relays the portal's response.
 func TestServe_RelaysFramesVerbatimWithoutProtocolLogic(t *testing.T) {
-	for _, frame := range []string{
-		`{not json but under the cap`,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"totally_made_up_tool","arguments":{}}}`,
-	} {
-		var gotBody string
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, _ := io.ReadAll(r.Body)
-			gotBody = string(b)
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"portal-decides"}`))
-		}))
+	frame := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"totally_made_up_tool","arguments":{}}}`
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"portal-decides"}`))
+	}))
+	defer srv.Close()
 
-		b := newTestBridge(srv)
+	var out bytes.Buffer
+	if err := newTestBridge(srv).serve(strings.NewReader(frame+"\n"), &out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("serve: %v", err)
+	}
+	if gotBody != frame {
+		t.Errorf("frame not forwarded verbatim:\n sent %q\n  got %q", frame, gotBody)
+	}
+	if !strings.Contains(out.String(), "portal-decides") {
+		t.Errorf("bridge should relay the portal response untouched, got %q", out.String())
+	}
+}
+
+func TestServe_MalformedEnvelopeIsRejectedLocally(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits++
+	}))
+	defer srv.Close()
+
+	for _, frame := range []string{`{not json`, `{"jsonrpc":"2.0","id":null,"method":"ping"}`, `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`} {
 		var out bytes.Buffer
-		if err := b.serve(strings.NewReader(frame+"\n"), &out); err != nil && !errors.Is(err, io.EOF) {
-			srv.Close()
+		if err := newTestBridge(srv).serve(strings.NewReader(frame+"\n"), &out); err != nil {
 			t.Fatalf("serve: %v", err)
 		}
-		srv.Close()
-
-		if gotBody != frame {
-			t.Errorf("frame not forwarded verbatim:\n sent %q\n  got %q", frame, gotBody)
+		if !strings.Contains(out.String(), `"id":null`) || !strings.Contains(out.String(), `"code":-32600`) {
+			t.Errorf("invalid envelope response = %q", out.String())
 		}
-		// The bridge synthesized nothing of its own — the response is purely what
-		// the portal returned.
-		if !strings.Contains(out.String(), "portal-decides") {
-			t.Errorf("bridge should relay the portal response untouched, got %q", out.String())
-		}
+	}
+	if hits != 0 {
+		t.Errorf("invalid envelopes must not reach the portal, got %d POSTs", hits)
 	}
 }
 
@@ -1037,14 +1259,35 @@ type errWriter struct{}
 
 func (errWriter) Write([]byte) (int, error) { return 0, errWrite }
 
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
 func newTestBridge(srv *httptest.Server) *bridge {
+	client := newHTTPClient()
+	client.Transport = jsonPortalTransport{base: http.DefaultTransport}
 	return &bridge{
 		endpoint:  srv.URL,
 		apiKey:    "k",
 		userAgent: "ua",
-		client:    newHTTPClient(),
+		client:    client,
 		sessionID: "sess",
 	}
+}
+
+// net/http test servers infer text/plain for raw JSON writes, while the portal
+// contract always declares application/json. Normalize that fixture default;
+// dedicated content-type tests set an explicit non-default media type.
+type jsonPortalTransport struct {
+	base http.RoundTripper
+}
+
+func (t jsonPortalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err == nil && (resp.Header.Get("Content-Type") == "" || resp.Header.Get("Content-Type") == "text/plain; charset=utf-8") {
+		resp.Header.Set("Content-Type", "application/json")
+	}
+	return resp, err
 }
 
 // -- parseClientMetadata: validated, canonical, fail-closed ---------

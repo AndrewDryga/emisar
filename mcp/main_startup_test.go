@@ -391,9 +391,9 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 
 // / (transport-error half) — on a transport failure
 // (connection refused), the client-facing JSON-RPC frame on STDOUT is the
-// generic `-32603 upstream transport error`, while the detailed error (including
-// the resolved host:port) lands on STDERR only. The API key never appears on
-// either stream, and the loop survives (clean exit on the subsequent EOF). This
+// generic `-32603 upstream transport error`. Untrusted transport details are
+// omitted from both streams, and the API key never appears on either stream. The
+// loop survives (clean exit on the subsequent EOF). This
 // is the transport-path twin of the in-process 5xx test
 // (TestServe_5xxBodyAndKeyNeverReachClientFrame), exercised end-to-end through
 // main()'s real os.Stdout / os.Stderr split.
@@ -419,17 +419,41 @@ func TestMain_TransportErrorDetailOnStderrNotClientFrame(t *testing.T) {
 	if !strings.Contains(stdout, "-32603") || !strings.Contains(stdout, "upstream transport error") {
 		t.Errorf("client frame should be the generic -32603, got %q", stdout)
 	}
-	// The detail (host:port of the refused dial) is on STDERR, not the client frame.
+	// The resolved endpoint is not exposed to the protocol transcript or stderr.
 	host := strings.TrimPrefix(closedURL, "http://")
-	if !strings.Contains(stderr, "forward error") {
-		t.Errorf("stderr should carry the forward-error detail, got %q", stderr)
-	}
-	if strings.Contains(stdout, host) {
-		t.Errorf("the resolved host leaked into the client frame: %q", stdout)
+	if strings.Contains(stdout, host) || strings.Contains(stderr, host) {
+		t.Errorf("the resolved host leaked (stdout=%q stderr=%q)", stdout, stderr)
 	}
 	// The API key must not appear on EITHER stream.
 	if strings.Contains(stdout, secretKey) || strings.Contains(stderr, secretKey) {
 		t.Errorf("the API key leaked (stdout=%q stderr=%q)", stdout, stderr)
+	}
+}
+
+func TestMain_5xxBodyAndCredentialNeverReachEitherStream(t *testing.T) {
+	const secretBody = "stacktrace secret postgres://operator:password@internal/db"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(secretBody))
+	}))
+	defer srv.Close()
+
+	const secretKey = "emk-super-secret-DO-NOT-LEAK"
+	frame := `{"jsonrpc":"2.0","id":"request-7","method":"tools/call"}` + "\n"
+	stdout, stderr, code := runMain(t, frame, nil, map[string]string{
+		"EMISAR_URL":     srv.URL,
+		"EMISAR_API_KEY": secretKey,
+	})
+	if code != 0 {
+		t.Fatalf("a portal 5xx must not kill the process; exit=%d", code)
+	}
+	if !strings.Contains(stdout, `"id":"request-7"`) || !strings.Contains(stdout, "-32603") {
+		t.Errorf("stdout should contain only a correlated generic error, got %q", stdout)
+	}
+	for _, secret := range []string{secretBody, "postgres://", "password", secretKey} {
+		if strings.Contains(stdout, secret) || strings.Contains(stderr, secret) {
+			t.Errorf("secret %q leaked (stdout=%q stderr=%q)", secret, stdout, stderr)
+		}
 	}
 }
 

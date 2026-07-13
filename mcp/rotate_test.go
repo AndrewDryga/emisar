@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -120,11 +121,21 @@ func TestForward_AdoptsSuccessorFromHeaderAndPersists(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = append(sawAuth, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
 		if len(sawAuth) == 1 {
 			w.Header().Set(successorKeyHeader, successor)
 		}
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+		result := `{}`
+		if request.Method == "initialize" {
+			result = `{"protocolVersion":"2025-06-18"}`
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
 	}))
 	defer srv.Close()
 
@@ -166,9 +177,10 @@ func TestForward_IgnoresInvalidSuccessorHeader(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set(successorKeyHeader, "definitely-not-a-key")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`))
 	}))
 	defer srv.Close()
 

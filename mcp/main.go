@@ -2,11 +2,10 @@
 // (Claude Desktop, Cursor, Claude Code, Gemini CLI, Codex CLI, …) that
 // only speak stdio JSON-RPC.
 //
-// On the forwarding path the bridge does NOTHING that the portal
-// couldn't do — it just forwards every JSON-RPC frame to POST
-// /api/mcp/rpc on the portal and writes the response to stdout. All
-// tool descriptors, content blocks, and the synthetic `wait_for_run`
-// tool are produced by the portal. The one exception is client-attested
+// The bridge owns transport correctness: bounded newline framing, request-id
+// correlation, Streamable HTTP headers, and validation that stdout contains
+// only valid MCP messages. All tool descriptors, content blocks, and synthetic
+// tools are produced by the portal. The one semantic exception is client-attested
 // dispatch (sign.go): the bridge reads `tools/call` frames to attach an
 // Ed25519 signature, because the signing key must stay client-side and
 // never reach the control plane.
@@ -35,11 +34,14 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -253,6 +255,10 @@ type bridge struct {
 	// the portal re-validates and snapshots onto MCP action runs — never an authz
 	// input.
 	clientMetadata string
+	// protocolVersion is the version negotiated by initialize. Streamable HTTP
+	// requires clients to echo it on subsequent requests, but not on initialize
+	// itself. serve is single-goroutine until request scheduling is introduced.
+	protocolVersion string
 	// bootstrapPrefix identifies the ORIGINAL key from the client's config
 	// ("emk-" + the portal's 12-char prefix — non-secret); it stays the
 	// credentials-file lookup key across chained rotations. apiKey holds the
@@ -264,9 +270,9 @@ type bridge struct {
 	credsPath string
 }
 
-// serve reads JSON-RPC frames one per line from r, forwards them
-// verbatim to the portal, and writes the response to w. Notifications
-// (POST returns 202 with empty body) are silently dropped, per spec.
+// serve reads JSON-RPC frames one per line from r, forwards valid envelopes to
+// the portal, and writes validated correlated responses to w. Notifications are
+// always silent, including when the HTTP request fails.
 func (b *bridge) serve(r io.Reader, w io.Writer) error {
 	br := bufio.NewReaderSize(r, 64*1024)
 
@@ -282,31 +288,39 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			// that). readFrameLine drains the over-long line without retaining it,
 			// so a newline-free flood can't OOM the bridge before we reach here.
 			fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
-			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"request frame too large"}}`+"\n")
+			if err := writeFrame(w, rpcErrorFrame(requestMeta{}, -32600, "request frame too large")); err != nil {
+				return err
+			}
 
 		case len(line) == 0:
 			// blank line (or a bare EOF) — nothing to forward
 
 		default:
-			resp, err := b.forward(line)
+			meta := parseRequestMeta(line)
+			if !meta.valid {
+				if err := writeFrame(w, rpcErrorFrame(meta, -32600, "invalid request")); err != nil {
+					return err
+				}
+				break
+			}
+			resp, err := b.forwardRequest(line, meta)
 			switch {
 			case err != nil:
-				// Network-level error: a synthetic JSON-RPC error so the client
-				// sees something actionable. Keep the detail on stderr — don't
-				// leak the resolved host/IP into the LLM transcript.
-				fmt.Fprintf(os.Stderr, "emisar-mcp: forward error: %v\n", err)
-				_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"upstream transport error"}}`+"\n")
+				// A notification never receives a response. Request failures are
+				// correlated locally without exposing response bodies, network
+				// details, or credentials to either protocol output or stderr.
+				if !meta.notification() {
+					if err := writeFrame(w, rpcErrorFrame(meta, -32603, "upstream transport error")); err != nil {
+						return err
+					}
+				}
 
 			case len(resp) == 0:
 				// 202-no-body — notification; nothing to write.
 
 			default:
-				// Ensure newline-delimited so the client's line reader frames.
-				if _, werr := w.Write(resp); werr != nil {
-					return werr
-				}
-				if !bytes.HasSuffix(resp, []byte("\n")) {
-					_, _ = w.Write([]byte("\n"))
+				if err := writeFrame(w, resp); err != nil {
+					return err
 				}
 			}
 		}
@@ -318,6 +332,111 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			return readErr
 		}
 	}
+}
+
+type requestMeta struct {
+	id     json.RawMessage
+	idKind byte
+	hasID  bool
+	valid  bool
+	method string
+}
+
+// parseRequestMeta reads only the transport metadata the bridge must own. The
+// portal remains responsible for method and parameter validation.
+func parseRequestMeta(frame []byte) requestMeta {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(frame, &envelope); err != nil || envelope == nil {
+		return requestMeta{}
+	}
+
+	meta := requestMeta{valid: true}
+	if rawMethod, ok := envelope["method"]; ok {
+		_ = json.Unmarshal(rawMethod, &meta.method)
+	}
+
+	rawID, ok := envelope["id"]
+	if !ok {
+		return meta
+	}
+	meta.hasID = true
+	meta.id = bytes.TrimSpace(rawID)
+	meta.idKind = jsonRPCIDKind(meta.id)
+	if meta.idKind == 0 || meta.idKind == '0' {
+		meta.valid = false
+	}
+	return meta
+}
+
+func jsonRPCIDKind(id []byte) byte {
+	if bytes.Equal(id, []byte("null")) {
+		return '0'
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(id))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return 0
+	}
+	switch value := value.(type) {
+	case string:
+		return 's'
+	case json.Number:
+		number, ok := new(big.Rat).SetString(value.String())
+		if ok && number.IsInt() {
+			return 'n'
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+func (m requestMeta) notification() bool {
+	return m.valid && !m.hasID
+}
+
+func (m requestMeta) responseID() json.RawMessage {
+	if m.valid && m.hasID {
+		return m.id
+	}
+	return json.RawMessage("null")
+}
+
+func rpcErrorFrame(meta requestMeta, code int, message string) []byte {
+	frame, err := json.Marshal(struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Error   struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}{
+		JSONRPC: "2.0",
+		ID:      meta.responseID(),
+		Error: struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}{Code: code, Message: message},
+	})
+	if err != nil {
+		panic("marshal fixed JSON-RPC error: " + err.Error())
+	}
+	return frame
+}
+
+func writeFrame(w io.Writer, frame []byte) error {
+	line := make([]byte, 0, len(frame)+1)
+	line = append(line, bytes.TrimRight(frame, "\r\n")...)
+	line = append(line, '\n')
+	n, err := w.Write(line)
+	if err != nil {
+		return err
+	}
+	if n != len(line) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 // readFrameLine reads one newline-delimited frame from br, bounding the bytes it
@@ -346,10 +465,17 @@ func readFrameLine(br *bufio.Reader) (line []byte, oversize bool, err error) {
 	}
 }
 
-// forward POSTs the JSON-RPC frame to the portal and returns the
-// response body. A 202 status is treated as "notification accepted,
-// no response" — we return an empty body in that case.
+// forward POSTs one JSON-RPC frame to the portal. It exists as a small test and
+// call-site convenience; serve parses metadata once and calls forwardRequest.
 func (b *bridge) forward(frame []byte) ([]byte, error) {
+	return b.forwardRequest(frame, parseRequestMeta(frame))
+}
+
+func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) {
+	if !meta.valid {
+		return nil, errors.New("invalid JSON-RPC request envelope")
+	}
+
 	// Sign a dispatch before it leaves the process (a no-op for non-tools/call
 	// frames, and when no key is configured).
 	if b.signer != nil {
@@ -361,8 +487,14 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+b.apiKey)
+	// Streamable HTTP clients advertise both response transports. The Emisar
+	// endpoint deliberately returns one buffered JSON response, never SSE.
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
+	if meta.method != "initialize" && b.protocolVersion != "" {
+		req.Header.Set("MCP-Protocol-Version", b.protocolVersion)
+	}
 
 	// MCP session id. One bridge process = one client session, so the
 	// per-process id is the session boundary. The portal reuses it at
@@ -382,7 +514,7 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 	// of the same JSON-RPC frame collapse to a single run on the
 	// portal. The portal honors `Idempotency-Key` against the
 	// `(api_key_id, idempotency_key)` unique index.
-	if k := b.idempotencyKey(frame); k != "" {
+	if k := b.idempotencyKeyFor(meta); k != "" {
 		req.Header.Set("Idempotency-Key", k)
 	}
 
@@ -392,30 +524,148 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	if meta.notification() {
+		if resp.StatusCode != http.StatusAccepted {
+			return nil, fmt.Errorf("portal returned status %d for a notification", resp.StatusCode)
+		}
+		body, err := readCappedBody(resp.Body, maxResponseBytes)
+		if err != nil {
+			return nil, err
+		}
+		if len(bytes.TrimSpace(body)) != 0 {
+			return nil, errors.New("portal returned a body for a notification")
+		}
+		return nil, nil
+	}
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, errors.New("portal returned notification status for a request")
+	}
+
+	if resp.StatusCode != http.StatusOK && (resp.StatusCode < 400 || resp.StatusCode >= 500) {
+		return nil, fmt.Errorf("unsupported portal response status %d", resp.StatusCode)
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || !strings.EqualFold(mediaType, "application/json") {
+		return nil, errors.New("portal response is not application/json")
+	}
 	body, err := readCappedBody(resp.Body, maxResponseBytes)
 	if err != nil {
 		return nil, err
 	}
+	if !utf8.Valid(body) {
+		return nil, errors.New("portal response is not valid UTF-8")
+	}
+	if err := validateRPCResponse(meta, resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
-	// Response-carried rotation: the portal offers a successor key in a
-	// header (only ever on a successful initialize; checking every response
-	// keeps the bridge free of MCP semantics).
+	if meta.method == "initialize" {
+		version, hasResult, valid := responseProtocolVersion(body)
+		if hasResult && !valid {
+			return nil, errors.New("initialize response has an invalid protocol version")
+		}
+		if hasResult {
+			b.protocolVersion = version
+		}
+	}
+
+	// Rotation is adopted only after the response passed every transport and
+	// protocol check. Durability and concurrent persistence are handled by the
+	// dedicated rotation task.
 	if s := resp.Header.Get(successorKeyHeader); s != "" && resp.StatusCode < 300 {
 		b.adoptSuccessor(s)
 	}
 
-	if resp.StatusCode == http.StatusAccepted {
-		// Notification — no response body expected.
-		return nil, nil
-	}
-
-	if resp.StatusCode >= 500 {
-		return nil, fmt.Errorf("portal %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	// 200 (normal result) or 4xx (auth / shape errors are already
-	// shaped as JSON-RPC error frames by the portal) — forward as-is.
 	return body, nil
+}
+
+func validateRPCResponse(meta requestMeta, status int, body []byte) error {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return errors.New("portal response is not a JSON-RPC object")
+	}
+
+	var version string
+	if err := json.Unmarshal(envelope["jsonrpc"], &version); err != nil || version != "2.0" {
+		return errors.New("portal response has an invalid jsonrpc version")
+	}
+	responseID, ok := envelope["id"]
+	if !ok || !matchingJSONRPCID(meta.responseID(), responseID) {
+		return errors.New("portal response id does not match request")
+	}
+	_, hasResult := envelope["result"]
+	rawError, hasError := envelope["error"]
+	if hasResult == hasError {
+		return errors.New("portal response must contain exactly one of result or error")
+	}
+	if status >= 400 && !hasError {
+		return errors.New("portal error status did not contain a JSON-RPC error")
+	}
+	if hasError && !validRPCError(rawError) {
+		return errors.New("portal response has an invalid JSON-RPC error")
+	}
+	return nil
+}
+
+func matchingJSONRPCID(want, got json.RawMessage) bool {
+	want = bytes.TrimSpace(want)
+	got = bytes.TrimSpace(got)
+	wantKind := jsonRPCIDKind(want)
+	if wantKind == 0 || wantKind != jsonRPCIDKind(got) {
+		return false
+	}
+	if wantKind == 's' {
+		var wantString, gotString string
+		return json.Unmarshal(want, &wantString) == nil &&
+			json.Unmarshal(got, &gotString) == nil &&
+			wantString == gotString
+	}
+	if wantKind == 'n' {
+		wantNumber, wantOK := new(big.Rat).SetString(string(want))
+		gotNumber, gotOK := new(big.Rat).SetString(string(got))
+		return wantOK && gotOK && wantNumber.Cmp(gotNumber) == 0
+	}
+	return bytes.Equal(want, got)
+}
+
+func validRPCError(raw json.RawMessage) bool {
+	var rpcError struct {
+		Code    json.RawMessage `json:"code"`
+		Message *string         `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &rpcError); err != nil || rpcError.Message == nil {
+		return false
+	}
+	var code json.Number
+	decoder := json.NewDecoder(bytes.NewReader(rpcError.Code))
+	decoder.UseNumber()
+	if err := decoder.Decode(&code); err != nil {
+		return false
+	}
+	_, err := code.Int64()
+	return err == nil
+}
+
+func responseProtocolVersion(body []byte) (version string, hasResult, valid bool) {
+	var response struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(body, &response) != nil {
+		return "", false, false
+	}
+	if len(response.Result) == 0 {
+		return "", false, true
+	}
+	var result struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if json.Unmarshal(response.Result, &result) != nil || result.ProtocolVersion == "" {
+		return "", true, false
+	}
+	if parsed, err := time.Parse("2006-01-02", result.ProtocolVersion); err != nil || parsed.Format("2006-01-02") != result.ProtocolVersion {
+		return "", true, false
+	}
+	return result.ProtocolVersion, true, true
 }
 
 // readCappedBody reads at most limit bytes from r, returning an error if the
@@ -433,31 +683,26 @@ func readCappedBody(r io.Reader, limit int) ([]byte, error) {
 	return body, nil
 }
 
-// idempotencyKey derives a stable per-frame token from the JSON-RPC
-// envelope `id`. Re-sends of the same id (e.g. a client retry within the
-// same process) collapse to one run at the portal. Notifications (no id)
-// and explicit null ids get no key.
+// idempotencyKey derives a bounded, stable token from the session plus the raw,
+// type-tagged JSON-RPC id. Re-sends collapse to one run, while numeric 7 and
+// string "7" remain distinct requests. Notifications and null ids get no key.
 //
-// We decode ONLY the top-level `id` (as a raw token) — not the rest of
-// the payload, which the bridge still relays verbatim. An earlier
-// byte-scan for the first `"id"` could latch onto a nested
-// `params.…id` that serialized before the envelope id and mint an empty
-// or wrong key; a real decode keys off the right field regardless of key
-// order or nesting.
+// Hashing also keeps arbitrarily long legal string ids below the portal's
+// Idempotency-Key limit. We decode only the top-level id; tool payloads remain
+// opaque to this transport layer.
 func (b *bridge) idempotencyKey(frame []byte) string {
-	var envelope struct {
-		ID json.RawMessage `json:"id"`
-	}
-	if err := json.Unmarshal(frame, &envelope); err != nil {
+	return b.idempotencyKeyFor(parseRequestMeta(frame))
+}
+
+func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
+	if !meta.valid || !meta.hasID || meta.idKind == '0' {
 		return ""
 	}
-	id := bytes.TrimSpace(envelope.ID)
-	if len(id) == 0 || bytes.Equal(id, []byte("null")) {
-		return ""
-	}
-	// A JSON-RPC id is a string or a number. Strip the quotes from a
-	// string id so `"7"` and `7` map to the same key.
-	return b.sessionID + ":" + strings.Trim(string(id), `"`)
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(b.sessionID))
+	_, _ = hash.Write([]byte{0, meta.idKind, 0})
+	_, _ = hash.Write(meta.id)
+	return "mcp-" + hex.EncodeToString(hash.Sum(nil))
 }
 
 // -- Response-carried key rotation ------------------------------------

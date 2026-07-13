@@ -8,10 +8,10 @@ and audit machinery as a human operator.
 Two transports, one surface:
 
 - **stdio bridge** — `emisar-mcp`, a single self-contained Go binary
-  the client launches as a child process. It proxies JSON-RPC frames
-  verbatim to `POST /api/mcp/rpc` and writes responses back to stdout.
-  No MCP logic lives in the bridge; the portal generates all tool
-  descriptors and content blocks.
+  the client launches as a child process. It proxies JSON-RPC frames to
+  `POST /api/mcp/rpc`, validates correlated protocol responses, and writes
+  only valid MCP frames to stdout. Tool descriptors, content blocks, and
+  action semantics remain in the portal.
 - **REST** — `GET /api/mcp/runners`, `GET /api/mcp/tools`,
   `POST /api/mcp/tools/:action_id`, `GET /api/mcp/runs/:id` for
   integrations that prefer plain HTTP over JSON-RPC.
@@ -111,8 +111,8 @@ key expiring within 7 days, the portal mints a scope-preserving
 successor **exactly once** (the source row is marked `rotated_to_id`;
 concurrent sessions can't double-mint) and returns it in the
 `X-Emisar-Successor-Key` / `X-Emisar-Successor-Expires-At` response
-headers — never the JSON-RPC body, which the bridge forwards verbatim
-into the LLM transcript. The old key keeps working until its own expiry
+headers — never the JSON-RPC body forwarded into the LLM transcript. The
+old key keeps working until its own expiry
 (the overlap window), and the rotation lands in the audit log as
 `api_key.auto_rotated`.
 
@@ -139,9 +139,10 @@ EMISAR_API_KEY=emk-... \
   ./bin/emisar-mcp
 ```
 
-The process reads one JSON-RPC frame per stdin line and writes only JSON-RPC to
-stdout. Diagnostics go to stderr. A network failure becomes a synthetic JSON-RPC
-error so the MCP client process stays alive.
+The process reads one JSON-RPC frame per stdin line and writes only validated,
+request-correlated JSON-RPC to stdout. Diagnostics go to stderr. A network
+failure becomes a generic synthetic error carrying the original request id;
+notification failures remain silent.
 
 The module gate is:
 
