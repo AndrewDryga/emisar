@@ -49,10 +49,11 @@ func sigCert(t *testing.T, caPriv ed25519.PrivateKey, caID, leafPubHex string) a
 
 // enforcingClient builds a runner client that requires a valid signed cert from a
 // single fixed test CA, and returns the matching leaf private key for signing.
-func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey) {
+func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey, *signing.NonceStore) {
 	t.Helper()
 	_, caPubHex := keyFromSeed(t, sigTestCASeed)
-	v, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: sigTestCAID, PublicKeyHex: caPubHex}}, time.Hour, sigTestRunnerID, "", nil, "")
+	nonces := signing.NewMemoryNonceStore()
+	v, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: sigTestCAID, PublicKeyHex: caPubHex}}, time.Hour, sigTestRunnerID, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -61,7 +62,7 @@ func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey) 
 		o.StateBuilder.GetVerifier = func() *signing.Verifier { return v }
 	})
 	leafPriv, _ := keyFromSeed(t, sigTestLeafSeed)
-	return cli, leafPriv
+	return cli, leafPriv, nonces
 }
 
 // attestationFor signs a dispatch with the fixed test leaf key and attaches a
@@ -107,7 +108,7 @@ func runEnforcingClient(t *testing.T) (*fakeConn, ed25519.PrivateKey) {
 	t.Helper()
 	conn := newFakeConn()
 	d := &queuedDialer{conns: []*fakeConn{conn}}
-	cli, priv := enforcingClient(t, d)
+	cli, priv, _ := enforcingClient(t, d)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -186,7 +187,7 @@ func TestClient_SignatureGate_PreservesExactLargeInteger(t *testing.T) {
 func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 	conn := newFakeConn()
 	d := &queuedDialer{conns: []*fakeConn{conn}}
-	cli, priv := enforcingClient(t, d) // trusts ca1
+	cli, priv, nonces := enforcingClient(t, d) // trusts ca1
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -204,7 +205,7 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 	// no longer trusts ca1.
 	seed2, _ := hex.DecodeString("3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
 	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, sigTestRunnerID, "", nil, "")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, sigTestRunnerID, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 	conn := newFakeConn()
 	d := &queuedDialer{conns: []*fakeConn{conn}}
-	cli, priv := enforcingClient(t, d) // initially trusts ca1
+	cli, priv, nonces := enforcingClient(t, d) // initially trusts ca1
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -235,7 +236,7 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 
 	// Build the rotated-in verifier: trusts ONLY ca2 (a different CA keypair).
 	ca2Priv, ca2PubHex := keyFromSeed(t, "3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: ca2PubHex}}, time.Hour, sigTestRunnerID, "", nil, "")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: ca2PubHex}}, time.Hour, sigTestRunnerID, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}

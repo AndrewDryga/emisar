@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
@@ -55,24 +54,21 @@ var allow = Decision{Allowed: true}
 
 func refuse(code, detail string) Decision { return Decision{Code: code, Detail: detail} }
 
-// Verifier holds the trusted keyring and replay state. Safe for concurrent use:
-// the keyring is read-only after construction and the nonce cache is mutex-guarded.
-// When storePath is set the cache is mirrored to disk under the lock, so a restart
-// or SIGHUP rebuild reloads the seen nonces instead of clearing them (which would
-// let a captured, in-window attestation replay once).
+// Verifier holds immutable trust policy and a reference to separately owned
+// replay state. It is safe for concurrent use: the keyring is read-only after
+// construction and NonceStore serializes nonce consumption. SIGHUP replaces a
+// verifier but shares its store, so policy reloads cannot snapshot stale replay
+// state or reopen an already consumed nonce.
 type Verifier struct {
-	enforce   bool
-	maxAge    time.Duration
-	now       func() time.Time
-	storePath string // "" = in-memory only (no persistence)
+	enforce bool
+	maxAge  time.Duration
+	now     func() time.Time
+	nonces  *NonceStore
 
 	cas      map[string]ed25519.PublicKey // ca_id -> CA public key
 	runnerID string                       // durable local external id, for per-call target binding
 	group    string                       // this runner's group, for cert scope matching
 	labels   map[string]string            // this runner's labels, for cert scope matching
-
-	mu   sync.Mutex
-	seen map[string]time.Time // nonce -> issued_at, pruned by maxAge, mirrored to storePath
 }
 
 // NewVerifier parses the trusted CA keys and builds a verifier. enforce mirrors
@@ -83,14 +79,14 @@ type Verifier struct {
 // empty case, but a CA key that fails to parse must not silently leave a runner
 // enforcing with nothing to verify against).
 //
-// storePath, when non-empty, is the on-disk replay-cache file: NewVerifier loads
-// the persisted in-window nonces from it (so a restart/SIGHUP can't clear the
-// cache), and every consumed nonce is mirrored back. A present-but-unreadable or
-// corrupt store is a construction error — fail closed rather than enforce with a
-// replay cache we can't trust. Pass "" for in-memory only.
-func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, group string, labels map[string]string, storePath string) (*Verifier, error) {
+// nonces is owned by the process-level caller and must be shared across every
+// verifier replacement. OpenNonceStore handles startup durability failures.
+func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, group string, labels map[string]string, nonces *NonceStore) (*Verifier, error) {
 	if maxAge <= 0 {
 		return nil, fmt.Errorf("signing: max attestation age must be positive")
+	}
+	if nonces == nil {
+		return nil, fmt.Errorf("signing: nonce store is required")
 	}
 	ring := make(map[string]ed25519.PublicKey, len(cas))
 	for _, ca := range cas {
@@ -112,25 +108,15 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, g
 		return nil, fmt.Errorf("signing: enforcement is on with no runner id")
 	}
 
-	seen := make(map[string]time.Time)
-	if storePath != "" {
-		loaded, err := loadNonces(storePath, time.Now().Add(-maxAge))
-		if err != nil {
-			return nil, err
-		}
-		seen = loaded
-	}
-
 	return &Verifier{
-		enforce:   enforce,
-		maxAge:    maxAge,
-		now:       time.Now,
-		storePath: storePath,
-		cas:       ring,
-		runnerID:  runnerID,
-		group:     group,
-		labels:    labels,
-		seen:      seen,
+		enforce:  enforce,
+		maxAge:   maxAge,
+		now:      time.Now,
+		nonces:   nonces,
+		cas:      ring,
+		runnerID: runnerID,
+		group:    group,
+		labels:   labels,
 	}, nil
 }
 
@@ -252,7 +238,7 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 			"signature does not match the dispatched action, args, targets, nonce, or time")
 	}
 	// 10. The nonce must not have been seen — consuming it on success.
-	ok, err = v.consumeNonce(att.Nonce, issued)
+	ok, err = v.nonces.consume(att.Nonce, issued, v.now().Add(-v.maxAge))
 	if err != nil {
 		return refuse("nonce_store_unavailable",
 			"could not durably record the attestation nonce; refusing rather than risk a replay")
@@ -287,33 +273,4 @@ func scopeSatisfied(s attest.Scope, group string, labels map[string]string) bool
 		}
 	}
 	return true
-}
-
-// consumeNonce records the nonce, returning (false, nil) if it was already used.
-// It prunes entries whose issued_at predates the window first, so the cache stays
-// bounded by the dispatch rate over maxAge. When the cache is persisted, the
-// pruned set is mirrored to disk under the lock; a write failure rolls back the
-// in-memory record and returns the error so Check fails CLOSED (a nonce we can't
-// durably record must not be treated as consumed — that would let it replay after
-// a restart, the very gap this closes).
-func (v *Verifier) consumeNonce(nonce string, issued time.Time) (bool, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	cutoff := v.now().Add(-v.maxAge)
-	for n, t := range v.seen {
-		if t.Before(cutoff) {
-			delete(v.seen, n)
-		}
-	}
-	if _, used := v.seen[nonce]; used {
-		return false, nil
-	}
-	v.seen[nonce] = issued
-	if v.storePath != "" {
-		if err := saveNonces(v.storePath, v.seen); err != nil {
-			delete(v.seen, nonce)
-			return false, err
-		}
-	}
-	return true, nil
 }

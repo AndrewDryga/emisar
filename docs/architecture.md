@@ -65,10 +65,11 @@ workspace.
 ## Runner lifecycle
 
 At boot, the runner loads config, packs, admission rules, the local journal,
-and any signed-dispatch verifier. It then exchanges a bootstrap key for a
-per-runner token when needed, connects, and advertises state. `SIGHUP` rebuilds
-packs and signing configuration and atomically swaps them for new requests;
-in-flight actions continue with the snapshot they started under.
+and the signed-dispatch nonce store and verifier. It then exchanges a bootstrap
+key for a per-runner token when needed, connects, and advertises state. `SIGHUP`
+rebuilds packs and immutable signing policy and atomically swaps them for new
+requests; all verifier generations share the boot-owned nonce store, while
+in-flight actions continue with the policy snapshot they started under.
 
 The connection, action, result, and acknowledgement loops are independent so
 an in-flight action can finish across a websocket reconnect. Results remain

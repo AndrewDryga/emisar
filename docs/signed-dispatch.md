@@ -179,11 +179,14 @@ Be clear-eyed about what this does and doesn't guarantee:
   presenting an id/name mapping before the call is signed. Use narrow certificate
   scopes, and verify stable ids out of band for the highest-trust workflows.
 - **Replay cache durability.** The seen-nonce cache is persisted under the
-  runner's data dir, so a restart or `SIGHUP` rebuild keeps refusing a replayed
-  nonce rather than forgetting it. The runner **fails closed**: if that store
-  can't be read at startup it refuses to start, and if a nonce can't be durably
-  recorded at dispatch time the dispatch is refused (`nonce_store_unavailable`)
-  rather than risk a post-restart replay.
+  runner's data dir. The runner opens it once at boot and every verifier shares
+  that live store; `SIGHUP` swaps only immutable CA/scope/freshness policy. A
+  nonce accepted by the old verifier during the reload window is therefore
+  already consumed when the replacement becomes active. A restart reloads the
+  same state from disk. The runner **fails closed**: if that store can't be read
+  at startup it refuses to start, and if a nonce can't be durably recorded at
+  dispatch time the dispatch is refused (`nonce_store_unavailable`) rather than
+  risk a post-restart replay.
 - **Queued-while-offline.** A dispatch that sits queued (runner offline) longer
   than `max_attestation_age` — or past the certificate's `valid_until` — is
   refused and must be re-issued.

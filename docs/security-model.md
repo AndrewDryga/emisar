@@ -71,9 +71,11 @@
     operator's MCP client and the CA private key stays offline; the control
     plane holds neither, so it can relay a user-signed action but never forge,
     alter, widen its signed targets, replay it on a selected runner, or originate
-    one. The runner advertises enforcement
-    and the cloud then disables its own (operator/runbook/API) dispatch to that
-    host. See [`docs/signed-dispatch.md`](signed-dispatch.md).
+    one. Replay state is process-owned and durable: every hot-reloaded verifier
+    shares the same nonce store, so a policy swap cannot forget a nonce consumed
+    during reload. The runner advertises enforcement and the cloud then disables
+    its own (operator/runbook/API) dispatch to that host. See
+    [`docs/signed-dispatch.md`](signed-dispatch.md).
 
 ## What emisar is not
 

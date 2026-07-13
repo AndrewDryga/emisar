@@ -229,7 +229,7 @@ func TestClient_RegistrySwap_NewDispatchSeesReloadedPacks(t *testing.T) {
 // use, with the engine's local denylist set to block the action.
 func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	conn := newFakeConn()
-	cli, priv := enforcingClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+	cli, priv, _ := enforcingClient(t, &queuedDialer{conns: []*fakeConn{conn}})
 
 	// Host operator denies t.echo locally. Setting the engine's public Admission
 	// field before Run starts is test wiring only — no production change; it is

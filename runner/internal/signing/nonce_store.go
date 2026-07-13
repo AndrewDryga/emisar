@@ -5,17 +5,76 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
 
-// The replay cache lives in memory, but an empty cache after a restart or SIGHUP
-// rebuild would let a captured, still-in-window attestation replay once. These
-// two helpers mirror the cache to a small, bounded on-disk file so the seen-nonce
-// set survives a process lifecycle. The file is `{nonce: issued_at}` JSON, kept
-// pruned to entries inside the freshness window — so it stays bounded by the
-// dispatch rate over maxAge, not by uptime.
+// NonceStore owns replay state independently of any replaceable verifier policy.
+// It is safe for concurrent use. A runner opens one store at boot and shares it
+// with the initial verifier and every SIGHUP replacement, so a nonce consumed by
+// either an old or new verifier is immediately visible to both.
+//
+// When path is non-empty, every mutation is mirrored to a bounded JSON file via
+// atomic write + rename. The store holds no open file descriptor and needs no
+// Close; its caller owns the pointer for the runner process lifetime.
+type NonceStore struct {
+	mu   sync.Mutex
+	path string
+	seen map[string]time.Time
+}
+
+// OpenNonceStore loads the durable replay state, dropping entries already
+// outside maxAge. A missing file is a clean first boot. A present-but-unreadable
+// or corrupt file fails construction closed rather than forgetting replay state.
+func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
+	if maxAge <= 0 {
+		return nil, fmt.Errorf("signing: max attestation age must be positive")
+	}
+	seen := make(map[string]time.Time)
+	if path != "" {
+		loaded, err := loadNonces(path, time.Now().Add(-maxAge))
+		if err != nil {
+			return nil, err
+		}
+		seen = loaded
+	}
+	return &NonceStore{path: path, seen: seen}, nil
+}
+
+// NewMemoryNonceStore returns a process-local store for tests and callers that
+// intentionally do not configure durable runner state.
+func NewMemoryNonceStore() *NonceStore {
+	return &NonceStore{seen: make(map[string]time.Time)}
+}
+
+// consume records nonce, or reports that it was already present inside cutoff.
+// Persistence happens before the live map changes, so a write failure leaves the
+// old in-memory state intact and the dispatch fails closed.
+func (s *NonceStore) consume(nonce string, issued, cutoff time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := make(map[string]time.Time, len(s.seen)+1)
+	for existing, seenAt := range s.seen {
+		if !seenAt.Before(cutoff) {
+			next[existing] = seenAt
+		}
+	}
+	if _, used := next[nonce]; used {
+		return false, nil
+	}
+	next[nonce] = issued
+
+	if s.path != "" {
+		if err := saveNonces(s.path, next); err != nil {
+			return false, err
+		}
+	}
+	s.seen = next
+	return true, nil
+}
 
 // loadNonces reads the persisted replay cache from path, dropping any entry whose
 // issued_at predates cutoff (already outside the window, so never replayable). A

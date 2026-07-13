@@ -73,7 +73,14 @@ env var can be unset after the first successful connect.`,
 			// enforcing, the runner advertises it (cloud disables its own
 			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
 			// it so a rotated/revoked key takes effect without a restart.
-			verifier, err := buildVerifier(rt.cfg, externalID)
+			nonceStore, err := openNonceStore(rt.cfg)
+			if err != nil {
+				return fmt.Errorf("signing: %w", err)
+			}
+			// connect owns this store for the process lifetime and shares it with
+			// every verifier. It needs no Close: persistence opens, atomically
+			// replaces, and closes the state file within each nonce consumption.
+			verifier, err := buildVerifier(rt.cfg, externalID, nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
@@ -130,8 +137,9 @@ env var can be unset after the first successful connect.`,
 			// (possibly edited) config, then re-send runner_state on the active
 			// connection. Safe mid-action: the engine holds the registry and the
 			// client holds the verifier behind atomic pointers, so in-flight runs
-			// keep the pointers they captured at start. A verifier rebuild resets
-			// the in-memory nonce cache, same as a restart.
+			// keep the pointers they captured at start. Every verifier shares the
+			// process-lifetime nonce store, so replay state is continuous across
+			// the construction-to-swap window.
 			hup := make(chan os.Signal, 1)
 			signal.Notify(hup, syscall.SIGHUP)
 			defer signal.Stop(hup)
@@ -148,7 +156,7 @@ env var can be unset after the first successful connect.`,
 						// Pack reload succeeded; refresh signing keys independently
 						// so a key-only edit (rotation/revocation) takes effect, and
 						// still re-advertise the packs even if the signing reload fails.
-						if verifier, err := reloadVerifier(externalID); err != nil {
+						if verifier, err := reloadVerifier(externalID, nonceStore); err != nil {
 							logger.Error("signing_reload_failed", "error", err)
 						} else {
 							client.SetVerifier(verifier)
@@ -176,28 +184,29 @@ env var can be unset after the first successful connect.`,
 
 // buildVerifier constructs the dispatch signature verifier from config: the
 // trusted CAs, whether enforcement is on, the attestation freshness window, and
-// the runner's local group/labels (the cert-scope identity). Used at connect
-// start and on every SIGHUP rebuild.
-func buildVerifier(cfg *config.Config, externalID string) (*signing.Verifier, error) {
+// the runner's local group/labels (the cert-scope identity). Every build receives
+// the same process-owned nonce store; only immutable policy is replaced.
+func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
 	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
 	for i, ca := range cfg.Signing.TrustedCAs {
 		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
 	}
-	// Persist the replay cache under the data dir so a restart or SIGHUP rebuild
-	// reloads the seen nonces instead of clearing them (an emptied cache would let
-	// a captured, still-in-window attestation replay once).
+	return signing.NewVerifier(
+		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
+		externalID, cfg.Runner.Group, cfg.Runner.Labels, nonceStore)
+}
+
+func openNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
 	storePath := ""
 	if cfg.Paths.DataDir != "" {
 		storePath = filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
 	}
-	return signing.NewVerifier(
-		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
-		externalID, cfg.Runner.Group, cfg.Runner.Labels, storePath)
+	return signing.OpenNonceStore(storePath, cfg.Signing.MaxAttestationAge.Std())
 }
 
 // reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP
 // picks up a rotated or revoked trusted key without a runner restart.
-func reloadVerifier(externalID string) (*signing.Verifier, error) {
+func reloadVerifier(externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
 	cfgPath, err := resolveConfigPath()
 	if err != nil {
 		return nil, fmt.Errorf("config path: %w", err)
@@ -206,7 +215,7 @@ func reloadVerifier(externalID string) (*signing.Verifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return buildVerifier(cfg, externalID)
+	return buildVerifier(cfg, externalID, nonceStore)
 }
 
 // resolveExternalID returns the runner's durable identity. Precedence:

@@ -6,7 +6,7 @@
 # platforms.
 #
 # Usage (run from repo root):
-#   docker build -f runner/docker/Dockerfile.test -t emisar-test runner/
+#   docker build -f runner/docker/Dockerfile.test -t emisar-test .
 #   docker run --rm emisar-test
 
 # Base image is digest-pinned for supply-chain integrity: the tag documents
@@ -22,17 +22,18 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends bash ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace
+WORKDIR /workspace/runner
 
 # Pre-fetch modules so each `docker run` doesn't re-download them.
 # Cache layers: copy go.mod/go.sum first, then sources.
-COPY go.mod go.sum ./
+COPY runner/go.mod runner/go.sum ./
 RUN go mod download
 
-# Copy the rest of the runner module's source on top. Build context
-# is the runner/ directory, so this picks up cmd files, internal/,
-# pkg/, examples/, etc., but not the portal/ or mcp/ trees.
-COPY . .
+# Copy the runner module plus the real pack definitions its cross-project
+# security contract tests load. The repo-root .dockerignore keeps build state,
+# dependencies, and operator-local files out of the context.
+COPY runner/ .
+COPY packs/ /workspace/packs/
 
 # Default command: race-enabled tests across the runner module.
 # Override with `docker run ... go test ./internal/executor/...` for

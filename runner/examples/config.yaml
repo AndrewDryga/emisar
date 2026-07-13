@@ -80,7 +80,8 @@ execution: {}
 #
 # Changing anything under `signing` (enabling enforcement, rotating or revoking
 # a CA) takes effect on the next SIGHUP — the runner rebuilds the verifier and
-# re-advertises — or on a full restart. The durable nonce cache is reloaded, so a
+# re-advertises — or on a full restart. SIGHUP shares the live, boot-owned nonce
+# store with the replacement verifier; restart reloads it from disk. A
 # still-fresh captured dispatch cannot replay across either transition.
 #
 # signing:

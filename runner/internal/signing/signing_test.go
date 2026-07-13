@@ -84,7 +84,7 @@ func validCert(t *testing.T) attest.Cert {
 func newTestVerifier(t *testing.T) (*Verifier, ed25519.PrivateKey) {
 	t.Helper()
 	cas, _ := testCA(t)
-	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), "")
+	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -111,21 +111,25 @@ func signForTargets(t *testing.T, priv ed25519.PrivateKey, actionID string, args
 }
 
 func TestNewVerifierRejectsBadKeys(t *testing.T) {
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "zz"}}, time.Hour, testRunnerID, "", nil, ""); err == nil {
+	nonces := NewMemoryNonceStore()
+	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "zz"}}, time.Hour, testRunnerID, "", nil, nonces); err == nil {
 		t.Fatal("expected error for non-hex public key")
 	}
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "00"}}, time.Hour, testRunnerID, "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "00"}}, time.Hour, testRunnerID, "", nil, nonces); err == nil {
 		t.Fatal("expected error for wrong-length public key")
 	}
-	if _, err := NewVerifier(true, nil, time.Hour, testRunnerID, "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, nil, time.Hour, testRunnerID, "", nil, nonces); err == nil {
 		t.Fatal("expected error for enforcement with no CAs")
 	}
-	if _, err := NewVerifier(false, nil, time.Hour, "", "", nil, ""); err != nil {
+	if _, err := NewVerifier(false, nil, time.Hour, "", "", nil, nonces); err != nil {
 		t.Fatalf("non-enforcing verifier with no CAs should be fine: %v", err)
 	}
 	cas, _ := testCA(t)
-	if _, err := NewVerifier(true, cas, time.Hour, "", "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, cas, time.Hour, "", "", nil, nonces); err == nil {
 		t.Fatal("expected error for enforcement with no durable runner id")
+	}
+	if _, err := NewVerifier(false, nil, time.Hour, "", "", nil, nil); err == nil {
+		t.Fatal("expected error for a missing nonce store")
 	}
 }
 
@@ -139,7 +143,7 @@ func TestVerifierCAIDsSortedAndMaxAge(t *testing.T) {
 	v, err := NewVerifier(true, []CAConfig{
 		{CAID: "c2", PublicKeyHex: hex.EncodeToString(pub2)},
 		{CAID: "c1", PublicKeyHex: hex.EncodeToString(pub1)},
-	}, 2*time.Hour, testRunnerID, "", nil, "")
+	}, 2*time.Hour, testRunnerID, "", nil, NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -153,7 +157,7 @@ func TestVerifierCAIDsSortedAndMaxAge(t *testing.T) {
 }
 
 func TestCheckEnforcementOffAlwaysAllows(t *testing.T) {
-	v, err := NewVerifier(false, nil, time.Hour, "", "", nil, "")
+	v, err := NewVerifier(false, nil, time.Hour, "", "", nil, NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -413,10 +417,10 @@ func TestNoncePruning(t *testing.T) {
 		t.Fatalf("fresh nonce at the new time must pass: %+v", d)
 	}
 
-	v.mu.Lock()
-	_, oldStillThere := v.seen["old"]
-	size := len(v.seen)
-	v.mu.Unlock()
+	v.nonces.mu.Lock()
+	_, oldStillThere := v.nonces.seen["old"]
+	size := len(v.nonces.seen)
+	v.nonces.mu.Unlock()
 	if oldStillThere {
 		t.Fatal("expired nonce was not pruned")
 	}
@@ -433,7 +437,7 @@ func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
 
 	for _, maxAge := range []time.Duration{0, -time.Second, -time.Hour} {
 		t.Run(maxAge.String(), func(t *testing.T) {
-			if _, err := NewVerifier(true, cas, maxAge, testRunnerID, "", nil, ""); err == nil {
+			if _, err := NewVerifier(true, cas, maxAge, testRunnerID, "", nil, NewMemoryNonceStore()); err == nil {
 				t.Fatalf("maxAge %v must be rejected", maxAge)
 			}
 		})
@@ -625,9 +629,9 @@ func TestNonceCacheBoundedByWindow(t *testing.T) {
 		if d := v.Check("a.b", args, att); !d.Allowed {
 			t.Fatalf("dispatch %d must pass: %+v", i, d)
 		}
-		v.mu.Lock()
-		size := len(v.seen)
-		v.mu.Unlock()
+		v.nonces.mu.Lock()
+		size := len(v.nonces.seen)
+		v.nonces.mu.Unlock()
 		// 1h / 1min = 60 entries within the window, plus the one just inserted.
 		if size > 62 {
 			t.Fatalf("after %d dispatches the cache holds %d entries; pruning is not bounding it", i+1, size)
@@ -673,7 +677,7 @@ func BenchmarkCheck(b *testing.B) {
 	priv := ed25519.NewKeyFromSeed(leafSeed)
 	leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey))
 
-	v, err := NewVerifier(true, []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, time.Hour, testRunnerID, testGroup, testLabels(), "")
+	v, err := NewVerifier(true, []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, time.Hour, testRunnerID, testGroup, testLabels(), NewMemoryNonceStore())
 	if err != nil {
 		b.Fatalf("NewVerifier: %v", err)
 	}
@@ -723,20 +727,50 @@ func persistCAs(t *testing.T) ([]CAConfig, ed25519.PrivateKey) {
 	return cas, leafPriv
 }
 
-// TestNonceCachePersistsAcrossRestart is the gap this feature closes: an in-memory
-// replay cache is empty after a restart / SIGHUP rebuild, so a captured, still-in-
-// window attestation could replay once. With the on-disk store, a fresh verifier
-// over the SAME state file reloads the seen nonce and refuses the replay.
+// TestSharedNonceStoreClosesVerifierReloadWindow constructs the replacement
+// verifier, pauses before the caller's atomic pointer swap, and admits a nonce
+// through the old verifier. Because both policies reference the same store, the
+// replacement refuses the replay without needing another disk snapshot.
+func TestSharedNonceStoreClosesVerifierReloadWindow(t *testing.T) {
+	cas, priv := persistCAs(t)
+	store := NewMemoryNonceStore()
+	oldVerifier, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
+	if err != nil {
+		t.Fatalf("NewVerifier old: %v", err)
+	}
+	newVerifier, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
+	if err != nil {
+		t.Fatalf("NewVerifier replacement: %v", err)
+	}
+
+	args := map[string]any{"x": 1}
+	att := sign(t, priv, "a.b", args, "nonce-during-reload", time.Now().UTC().Format(time.RFC3339))
+	if d := oldVerifier.Check("a.b", args, att); !d.Allowed {
+		t.Fatalf("old verifier refused the dispatch in the reload window: %+v", d)
+	}
+	if d := newVerifier.Check("a.b", args, att); d.Allowed {
+		t.Fatal("replacement verifier replayed a nonce consumed before the swap")
+	} else if d.Code != "replayed" {
+		t.Fatalf("replacement refused with %q, want replayed", d.Code)
+	}
+}
+
+// TestNonceCachePersistsAcrossRestart proves a new process store reloads a
+// still-fresh nonce from disk and refuses its replay.
 func TestNonceCachePersistsAcrossRestart(t *testing.T) {
 	cas, priv := persistCAs(t)
-	store := filepath.Join(t.TempDir(), "signing", "nonce-cache.json")
+	storePath := filepath.Join(t.TempDir(), "signing", "nonce-cache.json")
 	args := map[string]any{"x": 1}
 	// Real-clock issued_at so the nonce stays inside the window across the reload;
 	// both verifiers use the real clock, so the load cutoff and freshness agree.
 	issuedAt := time.Now().UTC().Format(time.RFC3339)
 	att := sign(t, priv, "a.b", args, "nonce-restart", issuedAt)
 
-	v1, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
+	store1, err := OpenNonceStore(storePath, time.Hour)
+	if err != nil {
+		t.Fatalf("OpenNonceStore v1: %v", err)
+	}
+	v1, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store1)
 	if err != nil {
 		t.Fatalf("NewVerifier v1: %v", err)
 	}
@@ -744,8 +778,12 @@ func TestNonceCachePersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("first dispatch refused: %+v", d)
 	}
 
-	// A brand-new verifier over the same store = a restart / SIGHUP rebuild.
-	v2, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
+	// A new process opens a distinct store object over the same durable file.
+	store2, err := OpenNonceStore(storePath, time.Hour)
+	if err != nil {
+		t.Fatalf("OpenNonceStore v2: %v", err)
+	}
+	v2, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store2)
 	if err != nil {
 		t.Fatalf("NewVerifier v2 (restart): %v", err)
 	}
@@ -759,13 +797,12 @@ func TestNonceCachePersistsAcrossRestart(t *testing.T) {
 // TestNonceCacheCorruptStoreFailsClosed: a present-but-corrupt cache must fail
 // construction, not silently start enforcing with a replay cache we can't trust.
 func TestNonceCacheCorruptStoreFailsClosed(t *testing.T) {
-	cas, _ := persistCAs(t)
 	store := filepath.Join(t.TempDir(), "nonce-cache.json")
 	if err := os.WriteFile(store, []byte("{ not valid json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store); err == nil {
-		t.Fatal("a corrupt nonce cache must fail construction (fail closed), got nil error")
+	if _, err := OpenNonceStore(store, time.Hour); err == nil {
+		t.Fatal("a corrupt nonce cache must fail opening (fail closed), got nil error")
 	}
 }
 
@@ -786,7 +823,11 @@ func TestNonceCacheUnwritableFailsClosed(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(roDir, 0o700) }) // let TempDir cleanup remove it
 	store := filepath.Join(roDir, "nonce-cache.json")
 
-	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
+	nonces, err := OpenNonceStore(store, time.Hour)
+	if err != nil {
+		t.Fatalf("OpenNonceStore: %v", err)
+	}
+	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
