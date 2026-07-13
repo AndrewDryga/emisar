@@ -10,7 +10,9 @@ const BASE = process.env.BASE_URL ?? "http://localhost:4010";
 const STAMP = Date.now().toString(36);
 const EMAIL = `empty-${STAMP}@emisar.dev`;
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const OUT = resolve(process.env.OUT_DIR ?? resolve(import.meta.dirname, "../design/screenshots-empty"));
+const OUT = resolve(
+  process.env.OUT_DIR ?? resolve(import.meta.dirname, "../../../test-results/empty-account"),
+);
 mkdirSync(OUT, { recursive: true });
 const settle = (ms = 1400) => new Promise(r => setTimeout(r, ms));
 async function mailbox() { const r = await fetch(`${BASE}/dev/mailbox/json`); const b = await r.json(); return b.data ?? b; }

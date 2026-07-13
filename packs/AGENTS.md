@@ -1,6 +1,6 @@
 # packs — how we build (the action-pack catalog)
 
-`packs/` is the catalog of **infrastructure actions** the runner executes and the portal exposes to operators and LLMs (via MCP). Each `packs/<name>/` is a `pack.yaml` manifest plus `actions/*.yaml` — 80 packs / 1,269 actions today. **This is attack surface**: every action declares exactly what may run on a host, so the runner and policy can enforce a hard boundary. Read the root `../AGENTS.md` (the creed) first. The authoritative schema is the Go types in `runner/pkg/actionspec` + `runner/pkg/packspec`; this file is the conventions.
+`packs/` is the catalog of **infrastructure actions** the runner executes and the portal exposes to operators and LLMs (via MCP). Each `packs/<name>/` is a `pack.yaml` manifest plus `actions/*.yaml` — 80 packs / 1,270 actions today. **This is attack surface**: every action declares exactly what may run on a host, so the runner and policy can enforce a hard boundary. Read the root `../AGENTS.md` (the creed) first. The authoritative schema is the Go types in `runner/pkg/actionspec` + `runner/pkg/packspec`; this file is the conventions.
 
 ## The gate (verify before claiming done)
 

@@ -513,6 +513,11 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
+      - name: Check repository documentation
+        if: matrix.module == 'tools'
+        working-directory: tools
+        run: go run ./cmd/doccheck
+
       - name: Summarize coverage
         if: always()
         working-directory: ${{ matrix.module }}

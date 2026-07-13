@@ -5,14 +5,17 @@
 1. **No inbound surface.** The runner dials out to the control plane over a
    TLS websocket. There is no emisar listener on the host and no inbound
    port-scan target.
-2. **No raw shell.** Actions declare `binary` + `argv` arrays. `os/exec`
-   is invoked with `Command(binary, argv...)`, never `sh -c`. There is no
-   `kind: shell` and no path in the codebase that joins user input into a
-   shell string.
-3. **No request-time scripts.** Script-kind actions reference a file
-   inside the owning pack. The script's SHA-256 is computed at load time
-   and journaled with every invocation. Callers cannot upload or supply
-   script content at run time.
+2. **No cloud-supplied command line.** Actions declare a literal `binary` and
+   argv array, which the runner executes with `os/exec`. Most actions call a
+   binary directly. A pack may declare a fixed `/bin/sh -c` program for pipes
+   or other shell features, but that program is pack-authored and every
+   substituted argument must be schema-bounded against shell metacharacters.
+   The staging-only `shell` pack is the explicit critical-risk break-glass
+   exception: it accepts an operator-supplied script and is default-denied.
+3. **No request-time script files.** Script-kind actions reference a file
+   inside the owning pack. The script's SHA-256 is computed at load time,
+   rechecked immediately before execution, and journaled with every
+   invocation. Callers cannot upload or replace script content at run time.
 4. **Schema-validated args.** Every action declares its arguments with
    types, defaults, enums, patterns, and path allow/deny. Unknown args
    are rejected; missing required args are rejected; types are coerced.
@@ -104,10 +107,10 @@ its actions from itself:
   actions can do whatever the OS lets that user do.
 - Operators who want to grant elevated privileges to specific
   actions configure sudo / polkit / capabilities for the runner
-  user. See `docs/install.md` → "Granting elevated privileges".
+  user. See [`runner/README.md`](../runner/README.md#granting-elevated-privileges-to-specific-actions).
 - Operators who want defense-in-depth sandboxing on top can drop in
-  an opt-in systemd hardening override. See `docs/install.md` →
-  "Hardening (optional)".
+  an opt-in systemd hardening override. See
+  [`runner/README.md`](../runner/README.md#hardening-optional).
 - The runner's **host is the trust anchor**, cloud-side too. Attributes a
   runner declares about itself on connect — notably its `group`, which
   selects the policy override governing dispatches *to that runner* — are
@@ -117,16 +120,11 @@ its actions from itself:
   locally. Pin `group` to the auth key (cloud-side) if you want it
   operator-authoritative rather than runner-declared.
 
-This is the same trust model Tailscale uses for its node runner and
-that Ansible uses for its remote handlers: the OS user is the
-boundary; the tool enforces what was authorised, not what is
-*possible*.
-
 ## Threats considered
 
 | Threat                                   | Mitigation                                                    |
 | ---------------------------------------- | ------------------------------------------------------------- |
-| LLM constructs a malicious shell string  | No shell kind. argv arrays only.                              |
+| LLM constructs a malicious shell string  | It cannot choose the binary or command program; substituted values are schema-validated. The arbitrary-shell pack is staging-only, critical-risk, and default-denied. |
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
 | LLM tries to read /etc/shadow            | Path arg `denied_paths`; OS perms still apply.                |
@@ -154,10 +152,9 @@ boundary; the tool enforces what was authorised, not what is
   attacker can replace the entire file. Cloud audit is the durable fleet
   record; use WORM-capable storage when stronger on-host guarantees matter.
 
-## Control-plane side (summary)
+## Control-plane and runner boundary
 
-The runner-side guarantees above pair with the control plane's own
-model, documented in `docs/cloud-boundary.md`:
+The runner-side guarantees above pair with the control plane's own model:
 
 - Every bearer credential is hashed at rest — sessions, email tokens,
   invitations, API keys, runner auth keys, per-runner tokens, OAuth
@@ -171,11 +168,27 @@ model, documented in `docs/cloud-boundary.md`:
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
 
+| Question | Answer |
+| --- | --- |
+| Who decides what should happen? | Control-plane policy and an authorized caller. |
+| Who creates and decides approvals? | Control plane and authorized human operators. |
+| Who enforces the action schema? | Runner, immediately before execution. |
+| Who enforces pack contents? | Control plane pins trust; runner recomputes the pinned hash. |
+| Who installs packs and grants OS privileges? | Host operator through the image/configuration pipeline and OS controls. |
+| Who stores searchable fleet history? | Control plane. |
+| Who keeps the local forensic record? | Runner, as hash-chained JSONL. |
+| Who composes runbooks? | Control plane; the runner receives one action at a time. |
+
+The hosted control plane is the supported product boundary. The repository
+contains deployable control-plane source for evaluation, but supported
+self-hosted and air-gapped control-plane deployments are not generally
+available.
+
 ## Operational checklist
 
 - Run as a dedicated unprivileged user.
-- Keep the cloud auth key in the kernel keyring or a secrets manager.
-  Don't commit it.
+- Keep the bootstrap key and per-runner token in the root-readable installer
+  environment file or a secrets manager. Do not commit them.
 - Treat each pack as code. Packs are baked into VM images by your image
   pipeline; reviewing them is reviewing what the LLM can do on that host.
 - Audit the JSONL log for `validation_failed` and `execution_failed`

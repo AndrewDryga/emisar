@@ -305,8 +305,7 @@ if config_env() == :prod do
 
   # -- Mixpanel (product analytics) ----------------------------------
   # Optional and quiet: no `MIXPANEL_TOKEN` means analytics stays off
-  # (the `Emisar.Analytics` no-op path) — no third-party script ships
-  # either way. See .agent/specs/mixpanel-analytics.md.
+  # (the `Emisar.Analytics` no-op path) — no third-party script ships.
   if token = System.get_env("MIXPANEL_TOKEN") do
     config :emisar,
       mixpanel_client: Emisar.Analytics.MixpanelClient.Live,

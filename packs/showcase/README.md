@@ -1,8 +1,8 @@
 # showcase
 
 Synthetic reference pack. Not for production — every action here is a
-documentation artefact for pack authors. Read alongside
-[`docs/action-packs.md`](../../../docs/action-packs.md).
+documentation artefact for pack authors. Read alongside the
+[action pack guide](https://emisar.dev/docs/action-packs).
 
 | Action                          | Demonstrates                                               |
 | ------------------------------- | ---------------------------------------------------------- |

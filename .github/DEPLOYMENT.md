@@ -78,3 +78,68 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 | `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, pack assets, and provenance. |
 | `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and provenance. |
 | `Portal - Publish MCP Registry Listing` | `vX.Y.Z` | The hosted server's signed `server.json` listing; no binary artifact. |
+
+## Apply and verify a production plan
+
+1. Open the saved plan linked from the successful `deployment-plan` job.
+2. Verify its run message names the intended `main <commit>` and inspect every
+   resource action, output, and immutable portal image digest.
+3. Select **Confirm & Apply** in HCP Terraform. GitHub never applies the plan.
+4. Wait for the managed instance group to replace instances with zero
+   unavailable capacity. A replacement must pass `/readyz` before an old
+   instance drains.
+5. Verify liveness, readiness, sign-in, runner reconnections, registry output,
+   and external monitors before calling the rollout complete.
+
+```sh
+curl -fsS https://emisar.dev/healthz
+curl -fsS https://emisar.dev/readyz
+curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
+```
+
+## Runtime contract
+
+Terraform renders production values into Secret Manager and the instance's
+root-readable environment file. `portal/config/runtime.exs` is the source of
+truth for required combinations. Do not duplicate secret values in GitHub
+Actions, Terraform defaults, or local `.tfvars` files.
+
+The Docker build context is the repository root because the portal embeds the
+installer and pack catalog:
+
+```sh
+docker build -f portal/Dockerfile -t emisar/portal:local .
+```
+
+The release contains `bin/migrate`, `bin/server`, the remote console, compiled
+assets, and runtime diagnostics. Cloud-init pulls the reviewed digest, runs
+`/app/bin/migrate`, and starts the container under `emisar.service`. Ecto's
+advisory migration lock serializes concurrent instance boots.
+
+## Schema changes and rollback
+
+Committed migrations are immutable. Rolling deployments overlap old and new
+application versions, so schema work uses expand/contract sequencing: add a
+compatible shape, deploy code that tolerates both versions and backfill, then
+remove the old shape in a later release after the earlier version has drained.
+
+Rollback is another reviewed saved plan setting `container_image` to a
+previously published `ghcr.io/andrewdryga/emisar@sha256:...` digest. An
+application rollback does not reverse database changes; expand/contract
+compatibility keeps the prior image runnable. Data recovery restores Cloud SQL
+to a new instance or point in time and promotes it only after isolated
+verification.
+
+## Health and observability
+
+- `/healthz` is database-independent liveness and drives auto-healing.
+- `/readyz` checks database readiness and controls load-balancer eligibility.
+- `/metrics` on `METRICS_PORT` (default 9091) is private.
+- `/admin/live` is the admin-gated Phoenix LiveDashboard.
+- Production logs use structured Google Cloud JSON with secret-shaped metadata
+  keys redacted.
+- Sentry activates only when `SENTRY_DSN` is configured.
+
+The GCP load balancer terminates TLS, preserves `X-Forwarded-Proto`, and appends
+the client and forwarding-rule addresses to `X-Forwarded-For`. Backend ingress
+is restricted to Google proxy and health-check ranges.

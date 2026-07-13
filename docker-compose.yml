@@ -11,7 +11,7 @@
 # ║   stack end-to-end with zero ceremony. Do NOT copy these       ║
 # ║   values to a real deployment.                                 ║
 # ║                                                                ║
-# ║   For production deploy: see docs/deploy.md.                   ║
+# ║   For production deploy: see .github/DEPLOYMENT.md.           ║
 # ║                                                                ║
 # ╚════════════════════════════════════════════════════════════════╝
 #

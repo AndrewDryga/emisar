@@ -90,7 +90,7 @@ the CA **private** key to store offline, and the two MCP env vars.
    a runner and never the control plane. You re-sign certificates with it as they
    expire.
 
-3. **Give the MCP client the two env vars** (see [`docs/mcp.md`](mcp.md)) — never
+3. **Give the MCP client the two env vars** (see [`mcp/README.md`](../mcp/README.md)) — never
    on the portal, never in version control:
 
    ```sh

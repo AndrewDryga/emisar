@@ -14,9 +14,6 @@ import (
 // caught by human review, not the loader. Each asserts the "bad" shape
 // PASSES validation — if a future change starts rejecting one of these,
 // this test fails and the author learns the gap closed (or regressed).
-//
-// They mirror the documented gap rows in
-// .agent/features/tests/packs.md (PCK-002, PCK-003, PCK-004, PCK-005).
 
 // goodAction is a minimal action that Validate() accepts, so each gap test
 // mutates exactly the one field under scrutiny.

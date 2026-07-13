@@ -4,6 +4,9 @@ This directory is the production Terraform configuration for the emisar control
 plane. HCP Terraform workspace `Dryga/emisar` owns state and applies. GitHub CD
 uploads reviewed configurations and creates saved plans; it never applies them.
 
+See [`.github/DEPLOYMENT.md`](../.github/DEPLOYMENT.md) for the public delivery,
+rollout, and rollback contract.
+
 ```text
 Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
                          |-> regional MIG of private COS instances
@@ -125,10 +128,9 @@ gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catal
 Pack publication has a separate GitHub environment approval and is serialized
 so an active publication cannot be canceled halfway through.
 
-## Operations
+## Outputs
 
-Use [the operations runbook](../docs/operations.md) for incident commands,
-backups, restore drills, and production access. Useful outputs:
+Useful non-secret outputs:
 
 ```sh
 terraform output url

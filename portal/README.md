@@ -1,46 +1,48 @@
-# emisar — control plane
+# Portal
 
-The cloud-side of [emisar](../README.md). Elixir/Phoenix umbrella that:
-
-- Authenticates and tracks runners over WebSocket (the wire protocol lives in `../docs/wire-protocol.md`).
-- Serves the operator UI (LiveView) for runners / runs / approvals / audit.
-- Exposes the MCP-shaped HTTP API for LLMs.
-- Handles billing (Paddle), policy evaluation, runbook expansion.
+The Elixir/Phoenix control plane for [emisar](../README.md). It owns accounts,
+runner identity and state, pack trust, policy and approvals, runs and runbooks,
+audit, billing, the LiveView operator console, the public website, and the
+remote MCP/OAuth surface. The on-host runner remains the execution authority.
 
 ## Layout
 
-```
-apps/
-  emisar/          domain — contexts, schemas, recurrent jobs, Paddle glue
-  emisar_web/      Phoenix endpoint — UI, controllers, runner socket
-config/            shared config + per-env overrides + runtime.exs
-priv/repo/         migrations + seeds
-rel/               release overlays (bin/server, bin/migrate)
-docs/              deploy + operator guides
-Dockerfile         multi-stage release build
-docker-compose.yml local-dev postgres
+```text
+apps/emisar/      domain contexts, Ecto schemas, recurrent jobs, and pack baseline
+apps/emisar_web/  HTTP, LiveView, runner websocket, MCP/OAuth, and marketing pages
+config/           compile-time and runtime configuration
+rel/              release commands and overlays
+Dockerfile        production release image, built from the repository root
+docker-compose.yml local PostgreSQL for native development
 ```
 
-## Getting started
+## Local development
+
+Run from `portal/`:
 
 ```sh
-docker-compose up -d db        # postgres on :5432
+docker compose up -d db
 mix deps.get
-mix ecto.setup                  # create, migrate, seed
-mix phx.server                  # http://localhost:4000
+mix ecto.setup
+mix phx.server
 ```
 
-Seed login: `demo@emisar.dev` / `Sleep-tight-1234`. The seed prints a reusable auth key — paste it into the runner installer to wire a local runner into your dev control plane.
+Open <http://localhost:4000>. The seeded owner is `demo@emisar.dev`; request a
+magic sign-in link and read it at <http://localhost:4000/dev/mailbox>. Seeds
+also print a reusable runner bootstrap key for connecting a local runner.
 
-## Deploying
+The repository-root `docker-compose.yml` starts the complete local stack,
+including sample runners. Production delivery is documented in
+[`.github/DEPLOYMENT.md`](../.github/DEPLOYMENT.md).
 
-See [../docs/deploy.md](../docs/deploy.md). Production publishes the exact
-CI-tested image and deploys it through a reviewed HCP Terraform plan.
-
-## Testing
+## Gate
 
 ```sh
-mix test
+mix compile --warnings-as-errors
+mix format --check-formatted
+mix credo
+../.agent/scripts/check-portal-test-output.sh
 ```
 
-CI runs the same. The `runner_socket` integration test brings up a Postgres test DB, opens a WebSocket against the local endpoint, presents a token, and exercises the full handshake → run dispatch → result envelope flow.
+The final command runs both umbrella test suites and rejects warning/error log
+pollution. Project architecture and security rules are in [`AGENTS.md`](AGENTS.md).

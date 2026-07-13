@@ -12,10 +12,10 @@ and planned rollout; it never confirms or applies an HCP Terraform run.
 
 ## Read the source of truth first
 
-Read `../docs/deploy.md`, `portal/Dockerfile`, `portal/rel/`,
-`portal/config/runtime.exs`, `infra/README.md`, and the main-only delivery job in
-`.github/workflows/cd.yml`. Verify commands and required variables from those
-files instead of relying on memory.
+Read `.github/DEPLOYMENT.md`, `portal/Dockerfile`, `portal/rel/`,
+`portal/config/runtime.exs`, `infra/README.md`, and the main-only delivery job
+in `.github/workflows/cd.yml`. Verify commands and required variables from
+those files instead of relying on memory.
 
 ## Checklist
 

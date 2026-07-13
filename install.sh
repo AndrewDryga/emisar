@@ -294,7 +294,7 @@ systemd_unit() {
 #   * Operators who want defense-in-depth (ProtectSystem, ProtectHome,
 #     RestrictNamespaces, MemoryDenyWriteExecute, etc.) drop in an
 #     /etc/systemd/system/emisar.service.d/harden.conf override.
-#     See docs/install.md → "Hardening (optional)" for a template.
+#     See runner/README.md → "Hardening (optional)" for a template.
 #
 # Aggressive sandboxing is NOT applied by default because every
 # directive that protects the runner also propagates to its children:

@@ -32,7 +32,7 @@ and the upgrade path from older versions is non-trivial.
 
 ## Threat model
 
-See [`docs/security-model.md`](docs/security-model.md) for the
+See [`docs/security-model.md`](../docs/security-model.md) for the
 deliberate scope: what emisar protects against, what it does NOT
 protect against, and what operators are expected to provide.
 
@@ -53,7 +53,7 @@ The following are intentionally not vulnerabilities:
 - Operator misconfiguration (e.g., wide `allowed_prefixes` exposing
   `/etc/shadow`) that the runner honours.
 - Denial-of-service via the cloud control plane sending the runner too
-  many actions — that's a cloud-side rate-limit concern, not an runner
+  many actions — that's a cloud-side rate-limit concern, not a runner
   bug.
 
 ## In scope
@@ -64,20 +64,20 @@ The following are real vulnerabilities:
   validation** (schema bypass).
 - The runner **executing an unknown action ID** or one without a valid
   pack.yaml reference.
-- The runner **honouring shell metacharacters** as if they were
-  interpreted (we never run a shell — if we accidentally do, that's a
-  bug).
+- A cloud-supplied argument escaping its declared schema and becoming shell
+  syntax in a pack-authored `/bin/sh -c` program, or otherwise changing the
+  command beyond the reviewed pack definition. Fixed pack-authored shell
+  programs are supported; arbitrary shell exists only in the explicit,
+  staging-only, critical-risk `shell` pack.
 - A **path traversal** escape of the runner's declared allow/deny
   rules — including symlink-based redirects (since we now resolve
   symlinks during validation).
 - **Output leaking secrets** that the redactor was supposed to catch
   (where "supposed to" means the redactor has a rule for that
   pattern).
-- The runner **executing a script** whose on-disk SHA-256 doesn't match
-  the cached value from load time (this would be a tampered binary;
-  we should refuse to run, but currently re-checking script SHA at
-  execution time is a known TODO — surface it if you find a way to
-  trigger).
+- The runner **executing a script** whose on-disk SHA-256 does not match the
+  value recorded at pack load. The runner rechecks immediately before exec;
+  bypassing that refusal is in scope.
 - **Privilege escalation** through the runner's process attributes
   (failure of Pdeathsig + Setpgid hardening, leaking caps to children).
 - **Outbox / dedup ring** corruption that causes a result to be sent
@@ -89,16 +89,16 @@ These are not vulnerabilities to report — they're how the runner is
 designed:
 
 - No inbound listener; the runner dials out to cloud.
-- No shell-kind action exists in the schema.
-- argv arrays only; never `sh -c "..."`.
+- No command program can be supplied by cloud. Packs declare the binary and
+  argv; fixed shell programs must constrain every substituted argument.
 - Per-action declared limits with min/max bounds; cloud opts are
   clamped at the runner.
 - Bearer-token / AWS-key / private-key default redactions on every
   action's output before it leaves the runner.
 - JSONL security log written on every attempt (success, failure,
   validation_failed, error) — append-only locally.
-- systemd unit hardening (no new privileges, protect system, protect
-  kernel, restrict namespaces, system-call filter).
+- A dedicated unprivileged service user by default, with an optional systemd
+  hardening override for fleets whose action set tolerates those restrictions.
 
 If you spot a gap in this list, please report it via the channels
 above.
@@ -127,5 +127,5 @@ This safe harbor does not authorize:
 
 Security reports and related submissions are Contributions and are
 subject to [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`CLA.md`](./CLA.md)
-if applicable, and the repository [`LICENSE.md`](./LICENSE.md) unless
+if applicable, and the repository [`LICENSE.md`](../LICENSE.md) unless
 separately agreed in writing.

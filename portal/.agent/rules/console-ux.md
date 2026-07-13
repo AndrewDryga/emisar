@@ -4,9 +4,6 @@
 > layer (tokens, type, color semantics, motion) is `design-system.md` ("The Gate") — read
 > both before touching a console page. Marketing keeps its own register; it gets an
 > enforcement pass against §2 later.
->
-> Source inventory + extraction plan: `.agent/design/console-inventory.md` (local working
-> doc). This file is the durable doctrine that survives it.
 
 ---
 
@@ -252,11 +249,8 @@ The danger reads from the icon + the button + the consequence copy — the surfa
 ## 8. The kit is the contract
 
 - The shared kit lives in `core_components.ex` (+ `EmisarWeb.LiveTable`,
-  `EmisarWeb.RunnerScope`); the census + extraction backlog live in
-  `.agent/design/console-inventory.md` §3–4. Phase 0 extractions (callout, panel-header
-  unification, `code_panel`, `status_dot`, `disclosure`, `choice_cards`, `avatar`,
-  `steps`, `meta_line`, recovery-codes, `mfa_enrollment`, …) land as focused
-  commits, each migrating all call sites.
+  `EmisarWeb.RunnerScope`). New extractions land as focused commits, each
+  migrating all call sites.
 - **The design gate:** a console-touching task is done only after a desktop + mobile
   screenshot of the changed surface is reviewed against this doctrine and the design
   system (rebuild the :4010 stack first — a release image needs `docker compose build

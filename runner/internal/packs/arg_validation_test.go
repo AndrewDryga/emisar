@@ -23,9 +23,8 @@ import (
 // rests on is wired end-to-end, not just exercised on hand-built Arg structs
 // (the latter is internal/validation/args_test.go).
 //
-// Each test loads the real action and cites the pack/action + the exact
-// constraint it exercises. Mirrors the runtime-validation gap rows in
-// .agent/features/tests/packs.md (PCK-003 family + the PCK-1xx -T05 rows).
+// Each test loads the real action and cites the pack/action plus the exact
+// constraint it exercises.
 
 // dispatchValidate mirrors the engine's dispatch seam: resolve the action from
 // the registry (the only cloud-trusted input is its ID) and re-validate the

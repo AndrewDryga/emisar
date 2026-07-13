@@ -33,9 +33,9 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   # Every trusted pack's id already satisfies this (verified against the
   # bundled catalog), so it's defense-in-depth, not a live break. Anchored
   # with \A…\z, not ^…$, so a trailing-newline id can't slip past. The
-  # connector 64-char/no-dot tool-name limit is a per-platform MAPPING concern
-  # (docs/distribution/mcp-catalog-submission.md §9), not enforced here — a
-  # shared bound would reject the legitimate dotted ids we accept.
+  # connector 64-char/no-dot tool-name limits are per-platform mapping concerns,
+  # not enforced here — a shared bound would reject the legitimate dotted ids
+  # we accept.
   @max_action_id_length 128
   @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
 

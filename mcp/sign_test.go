@@ -192,11 +192,10 @@ func TestNonceIsRandomHex(t *testing.T) {
 	}
 }
 
-// jsonrpc / method / params.name are preserved byte-for-byte
-// through signing; withArguments replaces ONLY params.arguments. (T03 already
-// pins the id; this pins the rest of the envelope so the portal still routes the
-// frame as the same tools/call.)
-func TestSignFramePreservesEnvelopeFieldsVerbatim(t *testing.T) {
+// jsonrpc / method / params.name values are preserved through signing;
+// withArguments replaces only params.arguments. (T03 already pins the id; this
+// pins the rest of the envelope so the portal still routes the same tools/call.)
+func TestSignFramePreservesEnvelopeFieldValues(t *testing.T) {
 	s, _ := testSigner(t)
 	frame := []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{` +
 		`"name":"docker.restart","arguments":{"container":"web"}}}`)

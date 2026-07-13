@@ -24,7 +24,7 @@ const CHROME =
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const OUT = process.env.OUT_DIR
   ? resolve(process.env.OUT_DIR)
-  : resolve(import.meta.dirname, "../design/screenshots");
+  : resolve(import.meta.dirname, "../../../test-results/console-audit");
 mkdirSync(OUT, { recursive: true });
 
 // DESKTOP_WIDTH overrides the desktop viewport — useful for checking whether a

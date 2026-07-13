@@ -24,10 +24,11 @@
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
           <strong>Pre-approved actions only.</strong>
-          The runner loads action YAMLs
-          at boot and refuses anything not in the catalog. A model that asks for
-          <code>rm -rf /</code>
-          can't issue it — the request never reaches a shell.
+          The runner loads action YAMLs at boot and refuses anything not in the catalog. A model
+          cannot choose a binary or command program. Some reviewed actions use a fixed shell
+          pipeline, but the model controls only schema-bounded values; arbitrary shell is isolated
+          in the staging-only, critical-risk, default-denied <code>shell</code>
+          pack.
         </li>
         <li>
           <strong>Outbound-only network.</strong> Runners dial the control plane
@@ -191,6 +192,13 @@
         >
           Security overview <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
+        <.external_link
+          href="https://github.com/andrewdryga/emisar/blob/main/docs/security-model.md"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Versioned security specification
+          <.icon name="hero-arrow-up-right" class="h-3.5 w-3.5" />
+        </.external_link>
       </div>
     </div>
   </section>

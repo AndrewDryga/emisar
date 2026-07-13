@@ -17,7 +17,9 @@ security product the bar is: **do we truly need it, and is it trustworthy** — 
 ```sh
 cd portal
 mix hex.audit       # retired/deprecated packages in the lock
-mix hex.outdated    # how far behind we are (stale = unpatched)
+mix hex.outdated    # available updates; age alone is not a reason to bump
+mix deps.audit      # version-matched advisory database
+mix sobelow --root apps/emisar_web --config
 ```
 
 ## Review the lockfile
@@ -35,19 +37,18 @@ A dependency release published hours ago is a supply-chain risk — a compromise
 maintainer account, a typosquat, a rushed malicious minor — not harmless churn.
 So a bumped version must clear a release-age window before it can merge.
 
-- **Enforcement** is CI, not the package managers. Native minimum-age support
-  (verified 2026-07): **Hex/Mix** — none at the resolver (`mix deps.get` takes
-  whatever the lock pins); **Go modules** — none (the proxy serves any version
-  regardless of age); **npm** — `.npmrc` `minimum-release-age` exists (npm ≥ 11)
-  but emisar ships no npm manifests, so nothing to configure. **Dependabot
-  `cooldown`** (`.github/dependabot.yml`) only throttles the PRs *Dependabot*
-  opens — it is PR-noise control, not a boundary.
-- **The gate:** `.agent/scripts/dep-age-gate.py` runs in CI
-  (`.github/workflows/dep-age.yml`) on every PR touching a lockfile. It diffs
-  dependency versions against the base and rejects any added/upgraded version
-  younger than its window: **patch 7d · minor 14d · major 30d** (mirrors the
-  Dependabot cooldown; keep both in sync). Run it locally with
-  `python3 .agent/scripts/dep-age-gate.py check`.
+- **Enforcement** is CI plus the resolver. Hex's `HEX_COOLDOWN=7d` prevents new
+  resolution from selecting very fresh releases, but lock-pinned versions
+  bypass it by design. Go has no equivalent. Dependabot `cooldown` controls
+  only PRs Dependabot opens; it is not a general boundary.
+- **The gate:** `tools/cmd/depgate` runs from the reusable CI workflow on every
+  supported manifest/lockfile change. It diffs against the base and rejects an
+  added/upgraded version younger than its policy window: **patch 7d · minor 14d
+  · major 30d**. Run it locally from `tools/`:
+
+  ```sh
+  go run ./cmd/depgate check --base origin/main
+  ```
 - **Adding/bumping a dep:** prefer a version already past its window, or expect
   the gate to hold the PR until it ages. For an urgent security fix that can't
   wait, add an audited entry to `.dep-age-allow` (ecosystem · package · version ·
@@ -59,13 +60,8 @@ For a flagged or suspect package, look up its advisories (GitHub Advisory DB /
 `hexdocs`/`hex.pm` — version-matched via `mix.lock`), then check whether the
 vulnerable code path is actually reached here. Pin or upgrade; don't bump blindly.
 
-## Heavier scanning (not currently installed)
-
-There's no `mix_audit` or `sobelow` in the dep stack. If the user wants continuous
-scanning, offer to add them as `:dev`/`:test` deps:
-- `:mix_audit` — checks deps against an advisory DB (`mix deps.audit`).
-- `:sobelow` — Phoenix-focused static security scan (`mix sobelow`).
-Don't claim to have run them unless they're added.
+`mix_audit` and `sobelow` are already dev/test dependencies and both run in CI.
+Do not add a parallel scanner without a concrete coverage gap.
 
 ## Vet-before-add (the real lever)
 

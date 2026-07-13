@@ -2,7 +2,7 @@ import puppeteer from "puppeteer-core";
 import { resolve } from "node:path";
 const BASE = process.env.E2E_BASE || "http://localhost:4000", SLUG = "demo";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const OUT = resolve("/Users/andrewdryga/Projects/os/emisar/portal/.agent/screenshots");
+const OUT = resolve(import.meta.dirname, "../../../test-results/paddle-e2e");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function login(page) {

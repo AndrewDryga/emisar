@@ -135,10 +135,10 @@ func (s *signer) signFrame(frame []byte) []byte {
 	return signed
 }
 
-// withArguments rebuilds the frame with `params.arguments` replaced, preserving
-// every other field (jsonrpc, id, method, params.name) byte-for-byte via
-// json.RawMessage — so the envelope id the idempotency key derives from is
-// untouched.
+// withArguments rebuilds the frame with `params.arguments` replaced. The raw
+// values of every other field (jsonrpc, id, method, params.name) are preserved;
+// object key order may change when the enclosing maps are re-encoded. The
+// envelope id the idempotency key derives from is untouched.
 func withArguments(frame []byte, arguments map[string]any) ([]byte, error) {
 	var full map[string]json.RawMessage
 	if err := json.Unmarshal(frame, &full); err != nil {

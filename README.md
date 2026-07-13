@@ -25,7 +25,10 @@ self-hosted and air-gapped deployments are not generally available.
   1. Re-validates arguments against the action's declared schema.
   2. Recomputes and verifies the trusted pack hash.
   3. Clamps cloud-supplied opts to the action's `*_min`/`*_max` bounds.
-  4. Executes via `os/exec` with **argv arrays, never shell strings**.
+  4. Executes the pack-authored binary and argv via `os/exec`. Fixed,
+     pack-authored `/bin/sh -c` programs are supported; cloud input is limited
+     to schema-bounded argument substitutions. The staging-only `shell` pack is
+     the explicit, critical-risk break-glass exception.
   5. Streams line-buffered, redacted output back over the websocket.
   6. Writes one hash-chained JSONL event per attempt to the local security log.
 - Mirrors run state into a searchable audit log with a read-only SIEM export.
@@ -61,9 +64,8 @@ caps.
 
 After install, edit `/etc/emisar/config.yaml` and `/etc/emisar/runner.env`
 if the portal-generated command did not populate them, then start the
-service. See
-[`docs/install.md`](docs/install.md) for upgrade, uninstall, air-gapped
-install, and full operational commands.
+service. See [`runner/README.md`](runner/README.md) for upgrade, uninstall,
+air-gapped install, hardening, and operational commands.
 
 ## Quick start (dev / local)
 
@@ -106,20 +108,22 @@ EMISAR_AUTH_KEY=emkey-auth-... \
 
 | Doc                                                 | Topic                                                |
 | --------------------------------------------------- | ---------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md)        | Package layout, runtime pipeline, boot sequence.     |
-| [docs/install.md](docs/install.md)                  | Production install, supervised operation, upgrade.   |
-| [docs/security-model.md](docs/security-model.md)    | Threats considered and explicitly not considered.    |
-| [docs/signed-dispatch.md](docs/signed-dispatch.md)  | Run only human-signed actions (client-attested dispatch). |
-| [docs/action-packs.md](docs/action-packs.md)        | How to write a pack.                                 |
-| [docs/cloud-boundary.md](docs/cloud-boundary.md)    | What the control plane and runner each enforce.        |
-| [docs/wire-protocol.md](docs/wire-protocol.md)      | JSON message types, connection lifecycle, opts.      |
+| [docs/architecture.md](docs/architecture.md)        | System components, trust boundaries, and request flow. |
+| [runner/README.md](runner/README.md)                | Runner installation, operation, and internals.       |
+| [mcp/README.md](mcp/README.md)                      | MCP bridge installation and transport behavior.      |
+| [docs/security-model.md](docs/security-model.md)    | Security guarantees, limitations, and threat model.  |
+| [docs/signed-dispatch.md](docs/signed-dispatch.md)  | Versioned client-attested dispatch protocol.         |
+| [docs/wire-protocol.md](docs/wire-protocol.md)      | Runner websocket messages and lifecycle.             |
+| [Action pack guide](https://emisar.dev/docs/action-packs) | Customer-facing pack authoring reference.       |
+| [Pack registry guide](https://emisar.dev/docs/pack-registry) | Customer-facing private registry guide.      |
+| [docs/release.md](docs/release.md)                  | Maintainer product-release runbook.                  |
 
 ## Repository layout
 
 Monorepo with one folder per deployable component, in a language-rooted
-layout. Each Go folder is its own module; the Elixir
-control plane is an umbrella project. `go.work` ties the two Go modules
-together for editor + CLI convenience.
+layout. Each Go folder is its own module; the Elixir control plane is an
+umbrella project. `go.work` ties the runner, MCP, and maintainer-tools modules
+together for editor and CLI convenience.
 
 ```
 portal/                          Elixir/Phoenix control plane (umbrella)
@@ -140,8 +144,9 @@ runner/                          Go module — on-host runner binary
   pkg/packspec                     pack manifest types
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
-packs/                           action pack catalog (YAML) — linux-core, cassandra, docker, + 70 more; consumed by the runner + portal
-docs/                            architecture, security, signed-dispatch, action-packs, cloud-boundary, wire-protocol
+packs/                           versioned action-pack catalog consumed by the runner + portal
+tools/                           Go module — repository-only generators and CI checks
+docs/                            versioned architecture, security, protocol, release, and distribution docs
 docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball
 ```

@@ -1,9 +1,8 @@
 defmodule Emisar.Analytics do
   @moduledoc """
   The single egress point for product & usage analytics (Mixpanel).
-  Server-side by design — emisar ships no third-party tracking script
-  (see `.agent/specs/mixpanel-analytics.md`). Everything funnels through
-  here so the event names, the property shapes, and the one network
+  Server-side by design — emisar ships no third-party tracking script.
+  Everything funnels through here so the event names, the property shapes, and the one network
   destination live in one auditable place — the analytics counterpart to
   `Emisar.Audit.Events` and `Emisar.Telemetry`.
 

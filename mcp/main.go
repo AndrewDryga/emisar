@@ -103,8 +103,10 @@ const helpText = `emisar-mcp — MCP stdio↔HTTP shim for emisar
   Proxies MCP JSON-RPC requests from a local LLM client (Claude Desktop,
   Claude Code, Cursor, Gemini CLI, Codex CLI, …) into the emisar control
   plane's HTTP endpoint at POST /api/mcp/rpc. Every method (initialize,
-  tools/list, tools/call, ping, notifications/…) is forwarded verbatim;
-  no MCP semantics live in this binary.
+  tools/list, tools/call, ping, notifications/…) is forwarded to the portal.
+  The only protocol-aware exception is optional client-attested dispatch:
+  tools/call arguments are signed locally because the private key must stay on
+  the operator's machine.
 
 Environment:
   EMISAR_URL        Base URL of the control plane (required)
@@ -123,6 +125,10 @@ Environment:
                     characters. It is UNTRUSTED, self-reported enrichment —
                     never used for authorization, posture, or approval. Invalid
                     metadata is a startup error.
+  EMISAR_ALLOW_INSECURE
+                    Set to 1 only to allow cleartext HTTP to a non-loopback
+                    development endpoint. Loopback HTTP works without it;
+                    production should use HTTPS.
   EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
                          (with EMISAR_SIGNING_CERT), the bridge signs each
                          tools/call so runners that enforce signatures will run

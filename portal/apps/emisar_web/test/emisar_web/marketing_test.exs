@@ -465,7 +465,8 @@ defmodule EmisarWeb.MarketingTest do
     # must open in a new tab AND carry rel="noopener noreferrer", or a
     # `target="_blank"` is a reverse-tabnabbing hole.
     #
-    for route <- ~w(/changelog /about /docs/publishing-packs /use-cases/csi-data-loss) do
+    for route <-
+          ~w(/changelog /about /docs/publishing-packs /docs/security-model /docs/signed-dispatch /use-cases/csi-data-loss) do
       test "GET #{route} external links carry the safe-rel pair", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)
         links = external_links(html)
