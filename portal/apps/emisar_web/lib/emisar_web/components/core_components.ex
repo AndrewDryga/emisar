@@ -5767,6 +5767,14 @@ defmodule EmisarWeb.CoreComponents do
                     Custom MCP vs emisar
                   </.link>
                 </li>
+                <li>
+                  <.link
+                    href={~p"/compare/copy-paste-ai-ops"}
+                    class="text-zinc-400 hover:text-zinc-100"
+                  >
+                    Copy-paste workflow vs emisar
+                  </.link>
+                </li>
               </ul>
             </div>
 

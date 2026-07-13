@@ -142,6 +142,7 @@ defmodule EmisarWeb.Router do
     get "/use-cases/ingress-502", MarketingController, :usecase_ingress_502
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
+    get "/compare/copy-paste-ai-ops", MarketingController, :compare_copy_paste
     get "/zero-trust", MarketingController, :zero_trust
     get "/trust", MarketingController, :trust
     get "/how-it-works", MarketingController, :how_it_works

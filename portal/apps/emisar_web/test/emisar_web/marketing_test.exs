@@ -33,6 +33,7 @@ defmodule EmisarWeb.MarketingTest do
     /use-cases/ingress-502
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
+    /compare/copy-paste-ai-ops
     /zero-trust
     /how-it-works
     /trust
@@ -90,6 +91,7 @@ defmodule EmisarWeb.MarketingTest do
           /use-cases/ingress-502
           /compare/raw-ssh-for-ai
           /compare/custom-mcp-server
+          /compare/copy-paste-ai-ops
           /docs/connect-an-llm
           /security
         ) do
@@ -941,6 +943,26 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Argument validation"
       assert html =~ "Failure modes"
     end
+
+    test "the copy-paste comparison renders the manual workflow, honest tradeoffs, and both table layouts",
+         %{conn: conn} do
+      html = conn |> get(~p"/compare/copy-paste-ai-ops") |> html_response(200)
+
+      assert html =~ "The copy-paste loop"
+      assert html =~ "Nothing runs unless you run it. That matters."
+      assert html =~ "Review can turn into a reflex"
+      assert html =~ "That is the worst of both worlds"
+      assert html =~ "Nothing on its own. You run every command."
+      assert html =~ "Copy-paste may be enough"
+      assert html =~ "When the command comes back, make it an action"
+      assert html =~ "/images/screenshots/audit-successes.webp"
+      assert html =~ "<table"
+    end
+
+    test "the sitemap lists the copy-paste workflow comparison", %{conn: conn} do
+      body = conn |> get(~p"/sitemap.xml") |> response(200)
+      assert body =~ "https://emisar.dev/compare/copy-paste-ai-ops</loc>"
+    end
   end
 
   describe "plan notes on plan-gated docs (the upsell markers)" do
@@ -999,7 +1021,9 @@ defmodule EmisarWeb.MarketingTest do
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
       "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),
       "/compare/custom-mcp-server" =>
-        ~w(/docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
+        ~w(/docs/security-model /docs/action-packs /compare/raw-ssh-for-ai),
+      "/compare/copy-paste-ai-ops" =>
+        ~w(/docs/connect-an-llm /docs/audit-and-siem /docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
     }
 
     for {page, links} <- @cross_links do

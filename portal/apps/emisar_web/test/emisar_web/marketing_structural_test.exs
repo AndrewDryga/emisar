@@ -49,6 +49,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /use-cases/ingress-502
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
+    /compare/copy-paste-ai-ops
     /zero-trust
     /how-it-works
     /trust

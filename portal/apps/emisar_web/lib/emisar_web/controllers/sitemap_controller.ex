@@ -39,6 +39,7 @@ defmodule EmisarWeb.SitemapController do
     "/use-cases/ingress-502",
     "/compare/raw-ssh-for-ai",
     "/compare/custom-mcp-server",
+    "/compare/copy-paste-ai-ops",
     "/zero-trust",
     "/trust",
     "/how-it-works",
