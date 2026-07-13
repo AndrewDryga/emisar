@@ -33,6 +33,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_change(:key_hash, hash)
     |> validate_required([:account_id, :name])
     |> validate_length(:name, min: 1, max: 80)
+    |> unique_constraint(:key_prefix)
     |> maybe_put_default_mcp_expiry(opts)
     |> maybe_put_replaces(opts)
   end

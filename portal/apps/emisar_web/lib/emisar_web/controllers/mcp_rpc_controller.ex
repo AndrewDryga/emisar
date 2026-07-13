@@ -69,7 +69,7 @@ defmodule EmisarWeb.MCPRpcController do
 
     case params_map(Map.get(req, "params")) do
       {:ok, params} ->
-        conn = conn |> maybe_emit_session_id(method) |> maybe_offer_successor(method)
+        conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation(method)
 
         case Cancellation.track(conn, method, id, &dispatch(&1, method, params)) do
           :cancelled ->
@@ -816,28 +816,44 @@ defmodule EmisarWeb.MCPRpcController do
     RequestContext.mcp_session_id(conn)
   end
 
-  # Response-carried key rotation for the stdio bridge: when the caller's key
-  # is expiring soon, `initialize`'s response carries a freshly-minted
-  # successor in HEADERS only — never the JSON-RPC body, which the bridge
-  # forwards verbatim into the LLM transcript. Gated on the bridge's
-  # User-Agent so the at-most-once successor isn't burned on a remote
-  # connector that ignores response headers (same-trust gate: the bearer
-  # holder is the recipient either way).
-  defp maybe_offer_successor(conn, "initialize") do
+  # The bridge persists a client-generated successor before initialize and
+  # sends only its lookup prefix + SHA-256 digest. The portal installs those
+  # exact non-secret values idempotently and acknowledges the digest; the raw
+  # bearer never crosses this boundary outside Authorization.
+  defp maybe_acknowledge_rotation(conn, "initialize") do
     with true <- bridge_client?(conn),
-         {:ok, raw, successor} <- ApiKeys.auto_rotate_expiring(conn.assigns.current_subject) do
-      conn
-      |> put_resp_header("x-emisar-successor-key", raw)
-      |> put_resp_header(
-        "x-emisar-successor-expires-at",
-        DateTime.to_iso8601(successor.expires_at)
-      )
+         {:ok, prefix, hash} <- rotation_proposal(conn),
+         {:ok, _successor} <-
+           ApiKeys.install_auto_rotation_successor(
+             prefix,
+             hash,
+             conn.assigns.current_subject
+           ) do
+      put_resp_header(conn, "x-emisar-rotation-ack", Base.encode16(hash, case: :lower))
     else
       _ -> conn
     end
   end
 
-  defp maybe_offer_successor(conn, _method), do: conn
+  defp maybe_acknowledge_rotation(conn, _method), do: conn
+
+  defp rotation_proposal(conn) do
+    case {
+      get_req_header(conn, "x-emisar-rotation-prefix"),
+      get_req_header(conn, "x-emisar-rotation-hash")
+    } do
+      {[prefix], [encoded_hash]} when byte_size(prefix) == 12 and byte_size(encoded_hash) == 64 ->
+        with {:ok, hash} <- Base.decode16(encoded_hash, case: :mixed),
+             true <- byte_size(hash) == 32 do
+          {:ok, prefix, hash}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
 
   defp bridge_client?(conn) do
     case get_req_header(conn, "user-agent") do

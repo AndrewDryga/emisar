@@ -27,6 +27,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_rotated(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.rotated_to_id))
 
+  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
+
   @doc """
   Hides auto-generated keys until an LLM has authenticated with one.
   Auto-unused entries stay invisible to operator-facing surfaces.

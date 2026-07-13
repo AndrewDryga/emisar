@@ -1,6 +1,6 @@
 defmodule Emisar.ApiKeysTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{ApiKeys, Audit, Repo}
+  alias Emisar.{ApiKeys, Audit, Crypto, Repo}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
@@ -411,8 +411,8 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "auto_rotate_expiring/1" do
-    test "an expiring mcp key self-mints a marked successor exactly once" do
+  describe "install_auto_rotation_successor/3" do
+    test "installs the exact client proposal once and acknowledges an idempotent retry" do
       {_user, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
 
@@ -420,38 +420,84 @@ defmodule Emisar.ApiKeysTest do
         ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
 
       key_subject = Subject.for_api_key(key, account)
+      {successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
-      assert {:ok, raw, successor} = ApiKeys.auto_rotate_expiring(key_subject)
+      assert {:ok, successor} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
 
-      assert String.starts_with?(raw, "emk-")
       assert successor.name == key.name
       assert successor.kind == :mcp
       assert successor.created_by_id == key.created_by_id
       assert successor.created_by_membership_id == key.created_by_membership_id
       assert successor.replaces_id == key.id
-      # Fresh default expiry — not the source's dying one.
+      assert successor.key_prefix == prefix
+      assert Crypto.secure_compare(successor.key_hash, hash)
       assert DateTime.compare(successor.expires_at, soon) == :gt
 
-      # The source is marked superseded (the at-most-once guard) but NOT
-      # revoked — it overlaps until its own expiry.
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
       assert reloaded.rotated_to_id == successor.id
       assert is_nil(reloaded.revoked_at)
 
-      # A concurrent session still holding the pre-rotation struct loses the
-      # mark-race, and its provisional successor rolls back with it.
-      assert {:error, :already_rotated} = ApiKeys.auto_rotate_expiring(key_subject)
+      assert {:ok, retried} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
+
+      assert retried.id == successor.id
       assert length(Repo.all(ApiKey)) == 2
 
-      rotation =
-        Enum.find(Repo.all(Audit.Event), &(&1.event_type == "api_key.auto_rotated"))
+      rotations = Enum.filter(Repo.all(Audit.Event), &(&1.event_type == "api_key.auto_rotated"))
+      assert [rotation] = rotations
 
       assert rotation.target_id == key.id
       assert rotation.payload["successor_prefix"] == successor.key_prefix
+
+      assert %ApiKey{id: successor_id} = ApiKeys.peek_api_key_by_secret(successor_raw)
+      assert successor_id == successor.id
     end
 
-    test "a quick key (no expiry) and a far-from-expiry key are not eligible" do
+    test "a different proposal cannot replace an already-installed successor" do
       {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
+      key_subject = Subject.for_api_key(key, account)
+      {_raw_one, prefix_one, hash_one} = Crypto.mint("emk-", 12)
+      {_raw_two, prefix_two, hash_two} = Crypto.mint("emk-", 12)
+
+      assert {:ok, _successor} =
+               ApiKeys.install_auto_rotation_successor(prefix_one, hash_one, key_subject)
+
+      assert {:error, :already_rotated} =
+               ApiKeys.install_auto_rotation_successor(prefix_two, hash_two, key_subject)
+    end
+
+    test "concurrent retries converge on one installed successor" do
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
+      key_subject = Subject.for_api_key(key, account)
+      {_successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      results =
+        1..8
+        |> Enum.map(fn _ ->
+          Task.async(fn ->
+            ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
+          end)
+        end)
+        |> Enum.map(&Task.await(&1, 5_000))
+
+      assert Enum.all?(results, &match?({:ok, %ApiKey{}}, &1))
+
+      assert results
+             |> Enum.map(fn {:ok, successor} -> successor.id end)
+             |> Enum.uniq()
+             |> length() == 1
+
+      assert length(Repo.all(ApiKey)) == 2
+    end
+
+    test "a quick key and a far-from-expiry key are not eligible" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
       {:ok, _raw, quick} = ApiKeys.mint_quick_key(subject)
 
@@ -461,35 +507,93 @@ defmodule Emisar.ApiKeysTest do
         ApiKeys.create_key(%{name: "far", expires_at: far}, subject)
 
       assert {:error, :not_eligible} =
-               ApiKeys.auto_rotate_expiring(Subject.for_api_key(quick, account))
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(quick, account)
+               )
 
       assert {:error, :not_eligible} =
-               ApiKeys.auto_rotate_expiring(Subject.for_api_key(far_key, account))
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(far_key, account)
+               )
     end
 
-    test "a revoked key and an audit-export token are not eligible" do
+    test "a revoked or expired key and an audit-export token are not eligible" do
       {_user, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
       {:ok, _raw, key} =
         ApiKeys.create_key(%{name: "r", expires_at: soon}, subject)
 
       {:ok, revoked} = ApiKeys.revoke_api_key(key, subject)
 
+      expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
+
+      {:ok, _raw, expired} =
+        ApiKeys.create_key(%{name: "expired", expires_at: expired_at}, subject)
+
       {:ok, _raw, export} =
         ApiKeys.create_key(%{name: "siem", kind: :audit_export, expires_at: soon}, subject)
 
       assert {:error, :not_eligible} =
-               ApiKeys.auto_rotate_expiring(Subject.for_api_key(revoked, account))
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(revoked, account)
+               )
 
       assert {:error, :not_eligible} =
-               ApiKeys.auto_rotate_expiring(Subject.for_api_key(export, account))
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(expired, account)
+               )
+
+      assert {:error, :not_eligible} =
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(export, account)
+               )
     end
 
-    test "possession is the authorization — a user subject is refused" do
-      {_user, _account, subject} = owner_subject_pair()
+    test "invalid material and a user subject are refused" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "expiring", expires_at: soon}, subject)
 
-      assert {:error, :not_eligible} = ApiKeys.auto_rotate_expiring(subject)
+      assert {:error, :not_eligible} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, subject)
+
+      assert {:error, :invalid_successor} =
+               ApiKeys.install_auto_rotation_successor(
+                 "emk-short",
+                 hash,
+                 Subject.for_api_key(key, account)
+               )
+
+      assert {:error, :invalid_successor} =
+               ApiKeys.install_auto_rotation_successor(
+                 <<"emk-", 0xFF, "abcdefg">>,
+                 hash,
+                 Subject.for_api_key(key, account)
+               )
+    end
+
+    test "an API key cannot install a successor in another account" do
+      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {:ok, _raw, key_a} = ApiKeys.create_key(%{name: "a"}, subject_a)
+      {_user_b, account_b, _subject_b} = owner_subject_pair()
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      forged_subject = Subject.for_api_key(key_a, account_b)
+
+      assert {:error, :not_found} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, forged_subject)
     end
   end
 

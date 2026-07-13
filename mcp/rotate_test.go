@@ -1,203 +1,592 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"testing/iotest"
 )
 
-func TestKeyPrefix(t *testing.T) {
-	cases := []struct {
-		name string
-		key  string
-		want string
-	}{
-		{"full key truncates to emk- plus 12", "emk-abcdefgh1234SECRETPART", "emk-abcdefgh1234"},
-		{"exactly prefix-length stays whole", "emk-abcdefgh1234", "emk-abcdefgh1234"},
-		{"short key stays whole", "emk-short", "emk-short"},
+func TestGenerateAPIKey_UsesPortalCompatibleShapeAndStrongRandomness(t *testing.T) {
+	random := bytes.NewReader(bytes.Repeat([]byte{0x5a}, apiKeyRandomBytes))
+	key, err := generateAPIKey(random)
+	if err != nil {
+		t.Fatalf("generateAPIKey: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := keyPrefix(tc.key); got != tc.want {
-				t.Fatalf("keyPrefix(%q) = %q, want %q", tc.key, got, tc.want)
-			}
-		})
+	if !validAPIKey(key) {
+		t.Fatalf("generated key has invalid shape: %q", key)
+	}
+	if got := keyPrefix(key); got != key[:apiKeyPrefixLength] || len(got) != 12 {
+		t.Fatalf("key prefix = %q, want portal's 12-byte lookup prefix", got)
+	}
+
+	if _, err := generateAPIKey(iotest.ErrReader(errors.New("entropy unavailable"))); err == nil {
+		t.Fatal("random-source failure must prevent generation")
 	}
 }
 
-func TestValidSuccessor(t *testing.T) {
-	cases := []struct {
-		name string
-		s    string
-		want bool
-	}{
-		{"real-shaped key", "emk-abcdefgh1234abcdefgh1234", true},
-		{"wrong prefix", "emo-abcdefgh1234abcdefgh1234", false},
-		{"too short", "emk-abc", false},
-		{"way too long", "emk-" + string(make([]byte, 300)), false},
-		{"empty", "", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := validSuccessor(tc.s); got != tc.want {
-				t.Fatalf("validSuccessor(%q) = %v, want %v", tc.s, got, tc.want)
-			}
-		})
-	}
-}
+func TestCredentialStore_PersistsAndLoadsOwnerOnlyState(t *testing.T) {
+	current := testAPIKey(1)
+	pending := testAPIKey(2)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	state := testCredentialState(current, pending)
 
-func TestPersistAndLoadSuccessor(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "emisar", "credentials.json")
-	bootstrap := "emk-abcdefgh1234"
-	secret := "emk-newsecretnewsecret9999"
-
-	if err := persistSuccessor(path, bootstrap, secret); err != nil {
-		t.Fatalf("persistSuccessor: %v", err)
+	if err := store.persist(state); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	loaded, err := store.load("unused fallback")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded != state {
+		t.Fatalf("loaded state = %#v, want %#v", loaded, state)
 	}
 
-	got, ok := loadStoredSuccessor(path, bootstrap)
-	if !ok || got != secret {
-		t.Fatalf("loadStoredSuccessor = (%q, %v), want (%q, true)", got, ok, secret)
-	}
-
-	// A second rotation under the SAME bootstrap prefix replaces the entry —
-	// the chain always resolves bootstrap → current.
-	next := "emk-evennewersecret0000"
-	if err := persistSuccessor(path, bootstrap, next); err != nil {
-		t.Fatalf("persistSuccessor (second): %v", err)
-	}
-	if got, _ := loadStoredSuccessor(path, bootstrap); got != next {
-		t.Fatalf("after re-rotation loadStoredSuccessor = %q, want %q", got, next)
-	}
-
-	// The file stores live secrets — owner-only on POSIX.
 	if runtime.GOOS != "windows" {
-		info, err := os.Stat(path)
+		fileInfo, err := os.Stat(store.path)
 		if err != nil {
-			t.Fatalf("stat: %v", err)
+			t.Fatalf("stat state: %v", err)
 		}
-		if perm := info.Mode().Perm(); perm&0o077 != 0 {
-			t.Fatalf("credentials file mode %v is group/world accessible", perm)
+		if fileInfo.Mode().Perm() != 0o600 {
+			t.Errorf("state mode = %o, want 600", fileInfo.Mode().Perm())
+		}
+		dirInfo, err := os.Stat(filepath.Dir(store.path))
+		if err != nil {
+			t.Fatalf("stat state dir: %v", err)
+		}
+		if dirInfo.Mode().Perm() != 0o700 {
+			t.Errorf("state dir mode = %o, want 700", dirInfo.Mode().Perm())
 		}
 	}
 }
 
-func TestLoadStoredSuccessor_IgnoresMissingCorruptAndInvalid(t *testing.T) {
-	dir := t.TempDir()
-
-	if _, ok := loadStoredSuccessor("", "emk-x"); ok {
-		t.Fatal("empty path must not resolve a successor")
-	}
-	if _, ok := loadStoredSuccessor(filepath.Join(dir, "absent.json"), "emk-x"); ok {
-		t.Fatal("missing file must not resolve a successor")
-	}
-
-	corrupt := filepath.Join(dir, "corrupt.json")
-	if err := os.WriteFile(corrupt, []byte("{not json"), 0o600); err != nil {
+func TestCredentialStore_RejectsCorruptStateWithoutOverwritingIt(t *testing.T) {
+	current := testAPIKey(3)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := loadStoredSuccessor(corrupt, "emk-x"); ok {
-		t.Fatal("corrupt file must not resolve a successor")
-	}
-
-	invalid := filepath.Join(dir, "invalid.json")
-	if err := os.WriteFile(invalid, []byte(`{"emk-x":"not-a-key"}`), 0o600); err != nil {
+	corrupt := []byte(`{"version":1,"current":"secret"}`)
+	if err := os.WriteFile(store.path, corrupt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := loadStoredSuccessor(invalid, "emk-x"); ok {
-		t.Fatal("an invalid stored value must not be adopted")
+
+	if _, err := store.load(current); err == nil {
+		t.Fatal("corrupt credential state must fail closed")
+	}
+	got, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, corrupt) {
+		t.Fatalf("corrupt state was overwritten: %q", got)
 	}
 }
 
-func TestForward_AdoptsSuccessorFromHeaderAndPersists(t *testing.T) {
-	t.Parallel()
-
-	successor := "emk-successorsuccessor11"
-	var sawAuth []string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawAuth = append(sawAuth, r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		if len(sawAuth) == 1 {
-			w.Header().Set(successorKeyHeader, successor)
-		}
-		var request struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&request)
-		w.WriteHeader(http.StatusOK)
-		result := `{}`
-		if request.Method == "initialize" {
-			result = `{"protocolVersion":"2025-06-18"}`
-		}
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
-	}))
-	defer srv.Close()
-
-	credsPath := filepath.Join(t.TempDir(), "emisar", "credentials.json")
-	bootstrap := "emk-bootstrap123"
-
-	b := &bridge{
-		endpoint:        srv.URL,
-		apiKey:          "emk-bootstrap123SECRET00",
-		userAgent:       "emisar-mcp/test",
-		client:          newHTTPClient(),
-		sessionID:       "s",
-		bootstrapPrefix: bootstrap,
-		credsPath:       credsPath,
+func TestCredentialStore_RejectsUnknownFieldsAndWrongBootstrap(t *testing.T) {
+	current := testAPIKey(4)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
-		t.Fatalf("forward: %v", err)
+	unknown := `{"version":1,"bootstrap_prefix":"` + keyPrefix(current) +
+		`","current":"` + current + `","extra":true}`
+	if err := os.WriteFile(store.path, []byte(unknown), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if b.apiKey != successor {
-		t.Fatalf("apiKey not swapped: %q", b.apiKey)
-	}
-
-	// The very next request rides the successor.
-	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`)); err != nil {
-		t.Fatalf("forward: %v", err)
-	}
-	if want := "Bearer " + successor; sawAuth[1] != want {
-		t.Fatalf("second request auth = %q, want %q", sawAuth[1], want)
+	if _, err := store.load(current); err == nil {
+		t.Fatal("unknown fields must fail closed")
 	}
 
-	// …and the swap survived to disk under the bootstrap prefix.
-	if got, ok := loadStoredSuccessor(credsPath, bootstrap); !ok || got != successor {
-		t.Fatalf("persisted successor = (%q, %v), want (%q, true)", got, ok, successor)
+	wrong := testCredentialState(current, "")
+	wrong.BootstrapPrefix = "emk-wrong123"
+	data, _ := json.Marshal(wrong)
+	if err := os.WriteFile(store.path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.load(current); err == nil {
+		t.Fatal("a state file for another bootstrap must fail closed")
 	}
 }
 
-func TestForward_IgnoresInvalidSuccessorHeader(t *testing.T) {
-	t.Parallel()
+func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode and symlink checks do not apply on Windows")
+	}
 
+	t.Run("broad file permissions", func(t *testing.T) {
+		current := testAPIKey(19)
+		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		if err := store.persist(testCredentialState(current, "")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(store.path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.load(current); err == nil {
+			t.Fatal("broadly readable credential state must fail closed")
+		}
+	})
+
+	t.Run("broad directory permissions", func(t *testing.T) {
+		current := testAPIKey(21)
+		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		if err := store.persist(testCredentialState(current, "")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Dir(store.path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.load(current); err == nil {
+			t.Fatal("credential state in a broadly accessible directory must fail closed")
+		}
+	})
+
+	t.Run("symlinked state file", func(t *testing.T) {
+		current := testAPIKey(20)
+		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(t.TempDir(), "state.json")
+		data, _ := json.Marshal(testCredentialState(current, ""))
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, store.path); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.load(current); err == nil {
+			t.Fatal("symlinked credential state must fail closed")
+		}
+	})
+
+	t.Run("oversized state file", func(t *testing.T) {
+		current := testAPIKey(22)
+		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(store.path, bytes.Repeat([]byte{'x'}, maxCredentialStateBytes+1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.load(current); err == nil {
+			t.Fatal("oversized credential state must fail closed")
+		}
+	})
+}
+
+func TestCredentialStore_FailureBoundariesLeaveACompleteOldOrNewState(t *testing.T) {
+	stages := []struct {
+		name   string
+		inject func(*credentialStore, error)
+		isNew  bool
+	}{
+		{"directory create", func(store *credentialStore, injected error) {
+			store.ops.mkdirAll = func(string, os.FileMode) error { return injected }
+		}, false},
+		{"directory chmod", func(store *credentialStore, injected error) {
+			store.ops.chmod = func(string, os.FileMode) error { return injected }
+		}, false},
+		{"temp create", func(store *credentialStore, injected error) {
+			store.ops.createTmp = func(string, string) (*os.File, error) { return nil, injected }
+		}, false},
+		{"write", func(store *credentialStore, injected error) {
+			store.ops.write = func(*os.File, []byte) (int, error) { return 0, injected }
+		}, false},
+		{"short write", func(store *credentialStore, _ error) {
+			store.ops.write = func(*os.File, []byte) (int, error) { return 1, nil }
+		}, false},
+		{"file sync", func(store *credentialStore, injected error) {
+			store.ops.syncFile = func(*os.File) error { return injected }
+		}, false},
+		{"file close", func(store *credentialStore, injected error) {
+			store.ops.closeFile = func(*os.File) error { return injected }
+		}, false},
+		{"rename", func(store *credentialStore, injected error) {
+			store.ops.rename = func(string, string) error { return injected }
+		}, false},
+		{"directory sync", func(store *credentialStore, injected error) {
+			store.ops.syncDir = func(string) error { return injected }
+		}, true},
+	}
+
+	for _, stage := range stages {
+		t.Run(stage.name, func(t *testing.T) {
+			current := testAPIKey(5)
+			pending := testAPIKey(6)
+			store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+			oldState := testCredentialState(current, "")
+			if err := store.persist(oldState); err != nil {
+				t.Fatalf("seed old state: %v", err)
+			}
+
+			injected := errors.New("injected " + stage.name + " failure")
+			stage.inject(store, injected)
+			newState := testCredentialState(current, pending)
+			if err := store.persist(newState); err == nil {
+				t.Fatal("persist unexpectedly succeeded")
+			}
+
+			store.ops = defaultCredentialFileOps()
+			loaded, err := store.load("unused")
+			if err != nil {
+				t.Fatalf("failure left corrupt state: %v", err)
+			}
+			want := oldState
+			if stage.isNew {
+				want = newState
+			}
+			if loaded != want {
+				t.Fatalf("state after failure = %#v, want complete %#v", loaded, want)
+			}
+		})
+	}
+}
+
+func TestForward_RotationPersistsPendingBeforeRequestAndCurrentBeforeActivation(t *testing.T) {
+	current := testAPIKey(7)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	var proposalHash string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proposalHash = r.Header.Get(rotationHashHeader)
+		loaded, err := store.load("unused")
+		if err != nil {
+			t.Errorf("pending was not readable when request arrived: %v", err)
+		}
+		if loaded.Current != current || loaded.Pending == "" {
+			t.Errorf("request arrived before durable pending state: %#v", loaded)
+		}
+		if r.Header.Get(rotationPrefixHeader) != keyPrefix(loaded.Pending) ||
+			proposalHash != rotationHash(loaded.Pending) {
+			t.Error("proposal headers do not match durable pending key")
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set(successorKeyHeader, "definitely-not-a-key")
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set(rotationAckHeader, proposalHash)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`))
 	}))
 	defer srv.Close()
 
-	original := "emk-bootstrap123SECRET00"
-
-	b := &bridge{
-		endpoint:  srv.URL,
-		apiKey:    original,
-		userAgent: "emisar-mcp/test",
-		client:    newHTTPClient(),
-		sessionID: "s",
+	b := newRotationTestBridge(store, current)
+	b.endpoint = srv.URL
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
 	}
+	if b.apiKey == current || b.pendingKey != "" {
+		t.Fatalf("rotation was not activated after durable acknowledgement: current=%q pending=%q", b.apiKey, b.pendingKey)
+	}
+	loaded, err := store.load("unused")
+	if err != nil {
+		t.Fatalf("load promoted state: %v", err)
+	}
+	if loaded.Current != b.apiKey || loaded.Pending != "" {
+		t.Fatalf("activated key is not the durable current key: %#v", loaded)
+	}
+}
+
+func TestForward_LostRequestKeepsOldKeyAndRecoverablePending(t *testing.T) {
+	current := testAPIKey(8)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	b.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("request lost")
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err == nil {
+		t.Fatal("lost request must surface an error")
+	}
+	assertOldWithPending(t, b, store, current)
+}
+
+func TestForward_LostResponseRetriesSamePendingAndRecoversAfterRestart(t *testing.T) {
+	current := testAPIKey(9)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type":    []string{"application/json"},
+				rotationAckHeader: []string{req.Header.Get(rotationHashHeader)},
+			},
+			Body: io.NopCloser(iotest.ErrReader(errors.New("response lost"))),
+		}, nil
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err == nil {
+		t.Fatal("lost response must surface an error")
+	}
+	assertOldWithPending(t, b, store, current)
+	pending := b.pendingKey
+
+	restartedState, err := store.load(current)
+	if err != nil {
+		t.Fatalf("restart load: %v", err)
+	}
+	restarted := newRotationTestBridge(store, restartedState.Current)
+	restarted.pendingKey = restartedState.Pending
+	restarted.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get(rotationHashHeader); got != rotationHash(pending) {
+			t.Errorf("retry proposal hash = %q, want original pending hash", got)
+		}
+		return jsonRPCResponse(req.Header.Get(rotationHashHeader)), nil
+	})}
+
+	if _, err := restarted.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("retry after restart: %v", err)
+	}
+	if restarted.apiKey != pending || restarted.pendingKey != "" {
+		t.Fatal("retry acknowledgement did not promote the recovered pending key")
+	}
+}
+
+func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
+	stages := []struct {
+		name   string
+		inject func(*credentialStore, error)
+	}{
+		{"rename", func(store *credentialStore, injected error) {
+			store.ops.rename = func(string, string) error { return injected }
+		}},
+		{"directory sync", func(store *credentialStore, injected error) {
+			store.ops.syncDir = func(string) error { return injected }
+		}},
+	}
+
+	for _, stage := range stages {
+		t.Run(stage.name, func(t *testing.T) {
+			current := testAPIKey(10)
+			store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+			b := newRotationTestBridge(store, current)
+			_, hash := b.rotationProposal("initialize")
+			pending := b.pendingKey
+			stage.inject(store, errors.New("injected "+stage.name+" failure"))
+
+			b.acknowledgeRotation(hash)
+			if b.apiKey != current || b.pendingKey != pending {
+				t.Fatal("failed acknowledgement persistence changed active rotation state")
+			}
+
+			store.ops = defaultCredentialFileOps()
+			prefix, proposalHash := b.rotationProposal("initialize")
+			if stage.name == "directory sync" {
+				if b.apiKey != pending || b.pendingKey != "" {
+					t.Fatal("complete promoted state was not re-synced before activation")
+				}
+				if prefix != "" || proposalHash != "" {
+					t.Fatal("reconciliation unexpectedly prepared another rotation")
+				}
+			} else {
+				if b.apiKey != current || b.pendingKey != pending {
+					t.Fatal("pre-rename failure did not retain the old and pending keys")
+				}
+				if prefix != keyPrefix(pending) || proposalHash != rotationHash(pending) {
+					t.Fatal("pre-rename failure did not retry the same pending proposal")
+				}
+			}
+		})
+	}
+}
+
+func TestRotationProposal_GenerationFailureAndNoConfigStayOnOldKey(t *testing.T) {
+	current := testAPIKey(11)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store.random = iotest.ErrReader(errors.New("entropy unavailable"))
+	b := newRotationTestBridge(store, current)
+	if prefix, hash := b.rotationProposal("initialize"); prefix != "" || hash != "" {
+		t.Fatalf("generation failure produced proposal %q/%q", prefix, hash)
+	}
+	if _, err := os.Stat(store.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("generation failure wrote state: %v", err)
+	}
+	if b.apiKey != current || b.pendingKey != "" {
+		t.Fatal("generation failure changed rotation state")
+	}
+
+	withoutConfig := newRotationTestBridge(nil, current)
+	if prefix, hash := withoutConfig.rotationProposal("initialize"); prefix != "" || hash != "" {
+		t.Fatal("bridge without durable config must not offer a successor")
+	}
+}
+
+func TestAcknowledgeRotation_WrongAckIsIgnored(t *testing.T) {
+	current := testAPIKey(12)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	_, _ = b.rotationProposal("initialize")
+	pending := b.pendingKey
+	b.acknowledgeRotation(strings.Repeat("0", 64))
+	if b.apiKey != current || b.pendingKey != pending {
+		t.Fatal("mismatched acknowledgement changed rotation state")
+	}
+}
+
+func TestCredentialStore_DifferentPrefixesPersistConcurrently(t *testing.T) {
+	configDir := t.TempDir()
+	currentA := testAPIKey(13)
+	currentB := testAPIKey(14)
+	storeA := newCredentialStoreAt(configDir, keyPrefix(currentA))
+	storeB := newCredentialStoreAt(configDir, keyPrefix(currentB))
+	if storeA.path == storeB.path {
+		t.Fatal("different bootstrap prefixes share a credential file")
+	}
+
+	var wait sync.WaitGroup
+	for _, pair := range []struct {
+		store *credentialStore
+		state credentialState
+	}{{storeA, testCredentialState(currentA, testAPIKey(15))}, {storeB, testCredentialState(currentB, testAPIKey(16))}} {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for range 50 {
+				if err := pair.store.persist(pair.state); err != nil {
+					t.Errorf("concurrent persist: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+
+	for store, want := range map[*credentialStore]credentialState{
+		storeA: testCredentialState(currentA, testAPIKey(15)),
+		storeB: testCredentialState(currentB, testAPIKey(16)),
+	} {
+		got, err := store.load("unused")
+		if err != nil || got != want {
+			t.Fatalf("stored state = %#v, %v; want %#v", got, err, want)
+		}
+	}
+}
+
+func TestRotationProposal_SamePrefixProcessesConvergeOnOnePendingKey(t *testing.T) {
+	configDir := t.TempDir()
+	current := testAPIKey(18)
+	storeA := newCredentialStoreAt(configDir, keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, keyPrefix(current))
+	storeA.random = bytes.NewReader(bytes.Repeat([]byte{0xa1}, apiKeyRandomBytes))
+	storeB.random = bytes.NewReader(bytes.Repeat([]byte{0xb2}, apiKeyRandomBytes))
+	bridgeA := newRotationTestBridge(storeA, current)
+	bridgeB := newRotationTestBridge(storeB, current)
+
+	type proposal struct{ prefix, hash string }
+	proposals := make(chan proposal, 2)
+	var wait sync.WaitGroup
+	for _, candidate := range []*bridge{bridgeA, bridgeB} {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			prefix, hash := candidate.rotationProposal("initialize")
+			proposals <- proposal{prefix, hash}
+		}()
+	}
+	wait.Wait()
+	close(proposals)
+
+	var first proposal
+	for candidate := range proposals {
+		if candidate.prefix == "" || candidate.hash == "" {
+			t.Fatalf("empty proposal: %#v", candidate)
+		}
+		if first == (proposal{}) {
+			first = candidate
+		} else if candidate != first {
+			t.Fatalf("same-prefix processes proposed different keys: %#v vs %#v", first, candidate)
+		}
+	}
+	if bridgeA.pendingKey != bridgeB.pendingKey || bridgeA.pendingKey == "" {
+		t.Fatal("same-prefix processes did not load the same durable pending secret")
+	}
+}
+
+func TestForward_ProposalDoesNotTransmitPendingSecret(t *testing.T) {
+	current := testAPIKey(17)
+	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		loaded, err := store.load("unused")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(req.Body)
+		for name, values := range req.Header {
+			if name != "Authorization" && strings.Contains(strings.Join(values, ","), loaded.Pending) {
+				t.Errorf("pending secret leaked through header %s", name)
+			}
+		}
+		if bytes.Contains(body, []byte(loaded.Pending)) {
+			t.Error("pending secret leaked through JSON-RPC body")
+		}
+		return jsonRPCResponse(""), nil
+	})}
 
 	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if b.apiKey != original {
-		t.Fatalf("a malformed successor must not be adopted; apiKey = %q", b.apiKey)
+}
+
+func testAPIKey(fill byte) string {
+	return "emk-" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{fill}, apiKeyRandomBytes))
+}
+
+func testCredentialState(current, pending string) credentialState {
+	return credentialState{
+		Version:         credentialStateVersion,
+		BootstrapPrefix: keyPrefix(current),
+		Current:         current,
+		Pending:         pending,
+	}
+}
+
+func newRotationTestBridge(store *credentialStore, current string) *bridge {
+	return &bridge{
+		endpoint:        "https://example.test/api/mcp/rpc",
+		apiKey:          current,
+		userAgent:       "emisar-mcp/test",
+		client:          newHTTPClient(),
+		sessionID:       "rotation-test",
+		credentialStore: store,
+	}
+}
+
+func assertOldWithPending(t *testing.T, b *bridge, store *credentialStore, current string) {
+	t.Helper()
+	if b.apiKey != current || b.pendingKey == "" {
+		t.Fatalf("active/pending state = %q/%q, want old plus pending", b.apiKey, b.pendingKey)
+	}
+	loaded, err := store.load("unused")
+	if err != nil {
+		t.Fatalf("load pending state: %v", err)
+	}
+	if loaded.Current != current || loaded.Pending != b.pendingKey {
+		t.Fatalf("durable state = %#v, want old plus pending", loaded)
+	}
+}
+
+func jsonRPCResponse(ack string) *http.Response {
+	header := http.Header{"Content-Type": []string{"application/json"}}
+	if ack != "" {
+		header.Set(rotationAckHeader, ack)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     header,
+		Body: io.NopCloser(strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`,
+		)),
+		Request: (&http.Request{}).WithContext(context.Background()),
 	}
 }

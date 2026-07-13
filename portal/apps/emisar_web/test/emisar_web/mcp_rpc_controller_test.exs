@@ -8,8 +8,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   use EmisarWeb.ConnCase, async: true
   import Ecto.Query
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners, Runs, Users}
+  alias Emisar.{Accounts, ApiKeys, Crypto, Policies, Repo, Runners, Runs, Users}
   alias Emisar.Accounts.Account
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
   alias EmisarWeb.MCP.{Cancellation, Service}
@@ -621,11 +622,13 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
-  describe "initialize — response-carried rotation" do
-    test "a bridge client with an expiring key gets a one-shot successor in headers",
+  describe "initialize — client-prepared rotation" do
+    test "installs and acknowledges the exact durable client proposal idempotently",
          %{conn: conn, account: account, user: user} do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      encoded_hash = Base.encode16(hash, case: :lower)
 
       {:ok, raw, _key} =
         ApiKeys.create_key(%{name: "bridge-#{unique()}", expires_at: soon}, subject)
@@ -634,16 +637,28 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
         |> rpc("initialize")
 
-      assert %{"result" => _} = json_response(first, 200)
-      assert [successor_raw] = get_resp_header(first, "x-emisar-successor-key")
-      assert String.starts_with?(successor_raw, "emk-")
-      assert [expires] = get_resp_header(first, "x-emisar-successor-expires-at")
-      assert {:ok, _expiry, _offset} = DateTime.from_iso8601(expires)
+      body = json_response(first, 200)
+      assert %{"result" => _} = body
+      assert get_resp_header(first, "x-emisar-rotation-ack") == [encoded_hash]
+      refute Jason.encode!(body) =~ successor_raw
+      refute inspect(first.resp_headers) =~ successor_raw
 
-      # The successor authenticates immediately (the header is live) — and its
-      # first use PROVES the swap, so the superseded key is retired on the spot.
+      retry =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(retry, 200)
+      assert get_resp_header(retry, "x-emisar-rotation-ack") == [encoded_hash]
+      assert Enum.count(Repo.all(ApiKey), &(&1.account_id == account.id)) == 2
+
       pong =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> successor_raw)
@@ -651,9 +666,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert %{"result" => %{}} = json_response(pong, 200)
 
-      # The retired key is dead — a bridge must persist the successor BEFORE
-      # first using it (the protocol contract); falling back to the old key
-      # after the successor has authenticated gets a 401.
       second =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -663,11 +675,13 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert json_response(second, 401)
     end
 
-    test "no successor for a non-bridge client or a far-from-expiry key",
+    test "missing proposals, non-bridge clients, and far-from-expiry keys get no acknowledgement",
          %{conn: conn, account: account, user: user} do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       far = DateTime.add(DateTime.utc_now(), 30, :day)
+      {_successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      encoded_hash = Base.encode16(hash, case: :lower)
 
       {:ok, expiring_raw, _key} =
         ApiKeys.create_key(%{name: "close-#{unique()}", expires_at: soon}, subject)
@@ -679,21 +693,51 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         conn
         |> put_req_header("authorization", "Bearer " <> far_raw)
         |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
         |> rpc("initialize")
 
       assert %{"result" => _} = json_response(far_conn, 200)
-      assert get_resp_header(far_conn, "x-emisar-successor-key") == []
+      assert get_resp_header(far_conn, "x-emisar-rotation-ack") == []
 
-      # A remote connector ignores response headers — don't burn the one-shot
-      # successor on it.
       remote =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> expiring_raw)
         |> put_req_header("user-agent", "Mozilla/5.0 (claude.ai connector)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
         |> rpc("initialize")
 
       assert %{"result" => _} = json_response(remote, 200)
-      assert get_resp_header(remote, "x-emisar-successor-key") == []
+      assert get_resp_header(remote, "x-emisar-rotation-ack") == []
+
+      missing =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> expiring_raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(missing, 200)
+      assert get_resp_header(missing, "x-emisar-rotation-ack") == []
+    end
+
+    test "malformed proposal headers are ignored without creating a successor",
+         %{conn: conn, account: account, user: user} do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, raw, _key} = ApiKeys.create_key(%{name: "bridge", expires_at: soon}, subject)
+
+      response =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> put_req_header("x-emisar-rotation-prefix", "emk-invalid")
+        |> put_req_header("x-emisar-rotation-hash", "not-hex")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(response, 200)
+      assert get_resp_header(response, "x-emisar-rotation-ack") == []
+      assert Enum.count(Repo.all(ApiKey), &(&1.account_id == account.id)) == 1
     end
   end
 

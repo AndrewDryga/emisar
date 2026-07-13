@@ -16,6 +16,8 @@
 #     | docker run --rm -i \
 #         -e EMISAR_URL=http://portal:4000 \
 #         -e EMISAR_API_KEY=emk-... \
+#         -e EMISAR_ALLOW_INSECURE=1 \
+#         -v emisar-mcp-config:/config \
 #         --network emisar_default \
 #         emisar/mcp
 
@@ -47,9 +49,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
 RUN apk add --no-cache ca-certificates \
-    && adduser -S -D -H emisar
+    && adduser -S -D -H emisar \
+    && mkdir -p /config \
+    && chown emisar /config
 
 COPY --from=builder /out/emisar-mcp /usr/local/bin/emisar-mcp
+
+ENV XDG_CONFIG_HOME=/config
+VOLUME ["/config"]
 
 USER emisar
 

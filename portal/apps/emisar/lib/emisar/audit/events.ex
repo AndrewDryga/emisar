@@ -386,9 +386,9 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  # Response-carried self-rotation at the MCP boundary — the expiring key is
-  # both the actor (the api_key subject) and the superseded subject; the
-  # payload names the successor so the credential chain is auditable.
+  # Client-prepared self-rotation at the MCP boundary — the expiring key is
+  # both the actor and the superseded subject; the payload names the installed
+  # successor so the credential chain is auditable without storing plaintext.
   def api_key_auto_rotated(
         %Subject{} = subject,
         %ApiKeys.ApiKey{} = key,

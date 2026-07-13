@@ -202,30 +202,56 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Possession-based self-succession for the MCP bridge (response-carried
-  rotation): when the subject's OWN `:mcp` key expires within
-  #{@rotation_window_days} days, mints a successor exactly
-  once and returns `{:ok, raw_secret, successor}`. The
-  `%Subject{actor: %ApiKey{}}` match IS the authorization — the credential
-  rotates itself; no `manage_api_keys` involved — so any other subject, or an
-  ineligible key, gets `{:error, :not_eligible}`, and losing the mark-race to
-  a concurrent session gets `{:error, :already_rotated}`. The source key
-  keeps working through the overlap window, then the successor's first use
-  retires it (`replaces_id` + the first-use sweep in `peek_api_key_by_secret`).
+  Installs the calling MCP key's client-generated rotation successor.
+  Possession is the authorization; returns `{:ok, successor}` for both the
+  first install and an idempotent retry of the same prefix/hash.
   """
-  def auto_rotate_expiring(%Subject{actor: %ApiKey{} = key} = subject) do
-    if auto_rotation_eligible?(key) do
-      mint_successor(key, subject)
+  def install_auto_rotation_successor(
+        prefix,
+        hash,
+        %Subject{actor: %ApiKey{} = key, account: account} = subject
+      ) do
+    if valid_rotation_material?(prefix, hash) do
+      source_queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(key.id)
+        |> ApiKey.Query.by_account_id(account.id)
+        |> ApiKey.Query.lock_for_update()
+
+      Multi.new()
+      |> Multi.run(:source, fn repo, _changes ->
+        with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+             true <- auto_rotation_eligible?(source) do
+          {:ok, source}
+        else
+          false -> {:error, :not_eligible}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.run(:successor, fn repo, %{source: source} ->
+        install_or_fetch_successor(repo, source, prefix, hash)
+      end)
+      |> Multi.run(:mark_rotated, fn repo, %{source: source, successor: result} ->
+        mark_auto_rotation(repo, source, result)
+      end)
+      |> Multi.run(:audit, fn repo, %{source: source, successor: result} ->
+        insert_auto_rotation_audit(repo, subject, source, result)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_installed_successor/1)
+      |> case do
+        {:ok, %{successor: %{key: successor}}} -> {:ok, successor}
+        {:error, reason} -> {:error, reason}
+      end
     else
-      {:error, :not_eligible}
+      {:error, :invalid_successor}
     end
   end
 
-  def auto_rotate_expiring(%Subject{}), do: {:error, :not_eligible}
+  def install_auto_rotation_successor(_prefix, _hash, %Subject{}),
+    do: {:error, :not_eligible}
 
   defp auto_rotation_eligible?(%ApiKey{} = key) do
-    key.kind == :mcp and is_nil(key.revoked_at) and is_nil(key.deleted_at) and
-      is_nil(key.rotated_to_id) and expiring_soon?(key.expires_at)
+    key.kind == :mcp and ApiKey.usable?(key) and expiring_soon?(key.expires_at)
   end
 
   # A non-expiring MCP key (currently an OAuth backing key) never rotates;
@@ -237,9 +263,7 @@ defmodule Emisar.ApiKeys do
     DateTime.compare(expires_at, window_end) == :lt
   end
 
-  defp mint_successor(%ApiKey{} = source, subject) do
-    {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
-
+  defp install_or_fetch_successor(repo, %ApiKey{rotated_to_id: nil} = source, prefix, hash) do
     changeset =
       ApiKey.Changeset.create(
         source.account_id,
@@ -251,28 +275,60 @@ defmodule Emisar.ApiKeys do
         replaces_id: source.id
       )
 
-    Multi.new()
-    |> Multi.insert(:successor, changeset)
-    |> Multi.run(:mark_rotated, fn repo, %{successor: successor} ->
-      # The conditional update is the at-most-once guard: a concurrent
-      # initialize that already marked the source loses here, rolling the
-      # freshly-inserted successor back out.
-      queryable =
-        ApiKey.Query.all() |> ApiKey.Query.by_id(source.id) |> ApiKey.Query.not_rotated()
-
-      case repo.update_all(queryable, set: [rotated_to_id: successor.id]) do
-        {1, _} -> {:ok, successor.id}
-        {0, _} -> {:error, :already_rotated}
-      end
-    end)
-    |> Multi.insert(:audit, fn %{successor: successor} ->
-      Audit.Events.api_key_auto_rotated(subject, source, successor)
-    end)
-    |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.successor))
-    |> case do
-      {:ok, %{successor: successor}} -> {:ok, raw, successor}
-      {:error, reason} -> {:error, reason}
+    case repo.insert(changeset) do
+      {:ok, successor} -> {:ok, %{key: successor, created?: true}}
+      {:error, changeset} -> {:error, changeset}
     end
+  end
+
+  defp install_or_fetch_successor(repo, %ApiKey{} = source, prefix, hash) do
+    queryable =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(source.rotated_to_id)
+      |> ApiKey.Query.by_account_id(source.account_id)
+
+    with {:ok, successor} <- repo.fetch(queryable, ApiKey.Query),
+         true <- successor.replaces_id == source.id,
+         true <- successor.key_prefix == prefix,
+         true <- Crypto.secure_compare(successor.key_hash, hash) do
+      {:ok, %{key: successor, created?: false}}
+    else
+      _ -> {:error, :already_rotated}
+    end
+  end
+
+  defp mark_auto_rotation(_repo, _source, %{created?: false}), do: {:ok, :already_marked}
+
+  defp mark_auto_rotation(repo, source, %{key: successor, created?: true}) do
+    queryable =
+      ApiKey.Query.all()
+      |> ApiKey.Query.by_id(source.id)
+      |> ApiKey.Query.not_rotated()
+
+    case repo.update_all(queryable, set: [rotated_to_id: successor.id]) do
+      {1, _} -> {:ok, successor.id}
+      {0, _} -> {:error, :already_rotated}
+    end
+  end
+
+  defp insert_auto_rotation_audit(_repo, _subject, _source, %{created?: false}),
+    do: {:ok, :already_audited}
+
+  defp insert_auto_rotation_audit(repo, subject, source, %{key: successor, created?: true}) do
+    subject
+    |> Audit.Events.api_key_auto_rotated(source, successor)
+    |> repo.insert()
+  end
+
+  defp broadcast_installed_successor(%{successor: %{key: successor, created?: true}}),
+    do: broadcast_api_key_created(successor)
+
+  defp broadcast_installed_successor(_changes), do: :ok
+
+  defp valid_rotation_material?(prefix, hash) do
+    is_binary(prefix) and byte_size(prefix) == @prefix_size and
+      String.valid?(prefix) and String.match?(prefix, ~r/^emk-[A-Za-z0-9_-]{8}$/) and
+      is_binary(hash) and byte_size(hash) == 32
   end
 
   # The attribute set a successor inherits — shared by operator rotation and

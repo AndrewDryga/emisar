@@ -47,7 +47,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -151,11 +150,14 @@ Environment:
                          it against the trusted CA.
 
 Key rotation:
-  Near the API key's expiry the portal hands the bridge a successor key in
-  the initialize response. The bridge adopts it immediately and persists it
-  to <user-config-dir>/emisar/credentials.json (0600), keyed by the original
-  key's prefix — so the EMISAR_API_KEY in your client config keeps working
-  across rotations without ever being edited.
+  Before asking the portal to rotate an expiring API key, the bridge generates
+  and durably stores a pending successor. The initialize request carries only
+  its lookup prefix and SHA-256 digest. The bridge activates the successor only
+  after the portal acknowledges that exact digest, and only after the promoted
+  state is durable. State lives in one owner-only file per bootstrap prefix
+  under <user-config-dir>/emisar/credentials/. Keep that directory persistent;
+  without durable storage the bridge continues with the configured key but
+  does not offer automatic rotation.
 
 Flags:
   -h, --help        Print this help and exit
@@ -203,16 +205,21 @@ func main() {
 		fatalln(err)
 	}
 
-	// Response-carried rotation: a successor persisted by an earlier session
-	// takes precedence over the bootstrap key from the client's config, which
-	// may have expired since.
-	credsPath, credsErr := credentialsPath()
-	if credsErr != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: no user config dir (%v); key rotation won't persist\n", credsErr)
-	}
+	// A durably promoted successor takes precedence over the bootstrap key in
+	// the client's config, which may have expired since. A pending successor is
+	// retried unchanged after a lost request, response, or process restart.
 	bootstrap := keyPrefix(apiKey)
-	if stored, ok := loadStoredSuccessor(credsPath, bootstrap); ok {
-		apiKey = stored
+	var pendingKey string
+	credentialStore, credsErr := newCredentialStore(bootstrap)
+	if credsErr != nil {
+		fmt.Fprintf(os.Stderr, "emisar-mcp: no user config dir (%v); automatic key rotation disabled\n", credsErr)
+	} else {
+		state, err := credentialStore.load(apiKey)
+		if err != nil {
+			fatalln("credential state:", err)
+		}
+		apiKey = state.Current
+		pendingKey = state.Pending
 	}
 
 	// Self-reported client metadata: validated once at startup so a bad map is a
@@ -235,8 +242,8 @@ func main() {
 		sessionID:       sessionID,
 		signer:          sign,
 		clientMetadata:  clientMetadata,
-		bootstrapPrefix: bootstrap,
-		credsPath:       credsPath,
+		credentialStore: credentialStore,
+		pendingKey:      pendingKey,
 	}
 
 	if err := b.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
@@ -267,14 +274,8 @@ type bridge struct {
 	// protocolVersion is the version negotiated by initialize. Streamable HTTP
 	// requires clients to echo it on subsequent requests, but not on initialize.
 	protocolVersion string
-	// bootstrapPrefix identifies the ORIGINAL key from the client's config
-	// ("emk-" + the portal's 12-char prefix — non-secret); it stays the
-	// credentials-file lookup key across chained rotations. apiKey holds the
-	// CURRENT secret and is swapped under stateMu by adoptSuccessor.
-	bootstrapPrefix string
-	// credsPath is the bridge-owned credentials file; "" when no user config
-	// dir exists (rotation then lasts only for the process).
-	credsPath string
+	credentialStore *credentialStore
+	pendingKey      string
 }
 
 // serve has one scheduling goroutine and one stdout owner. HTTP work may finish
@@ -703,13 +704,14 @@ func (b *bridge) forwardRequestContext(
 	if b.signer != nil {
 		frame = b.signer.signFrame(frame)
 	}
+	rotationPrefix, rotationHash := b.rotationProposal(meta.method)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.endpoint, bytes.NewReader(frame))
 	if err != nil {
 		return nil, err
 	}
 	apiKey, protocolVersion := headers.apiKey, headers.protocolVersion
-	if apiKey == "" {
+	if apiKey == "" || meta.method == "initialize" {
 		apiKey, protocolVersion = b.transportState()
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -726,6 +728,10 @@ func (b *bridge) forwardRequestContext(
 	}
 	if headers.cancelToken != "" {
 		req.Header.Set(cancelTokenHeader, headers.cancelToken)
+	}
+	if rotationPrefix != "" {
+		req.Header.Set(rotationPrefixHeader, rotationPrefix)
+		req.Header.Set(rotationHashHeader, rotationHash)
 	}
 
 	// MCP session id. One bridge process = one client session, so the
@@ -802,11 +808,8 @@ func (b *bridge) forwardRequestContext(
 		}
 	}
 
-	// Rotation is adopted only after the response passed every transport and
-	// protocol check. Durability and concurrent persistence are handled by the
-	// dedicated rotation task.
-	if s := resp.Header.Get(successorKeyHeader); s != "" && resp.StatusCode < 300 {
-		b.adoptSuccessor(s)
+	if meta.method == "initialize" && resp.StatusCode == http.StatusOK {
+		b.acknowledgeRotation(resp.Header.Get(rotationAckHeader))
 	}
 
 	return body, nil
@@ -948,129 +951,6 @@ func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
 	_, _ = hash.Write([]byte{0, meta.idKind, 0})
 	_, _ = hash.Write(meta.id)
 	return "mcp-" + hex.EncodeToString(hash.Sum(nil))
-}
-
-// -- Response-carried key rotation ------------------------------------
-//
-// Near a key's expiry the portal answers `initialize` with a freshly minted
-// successor in the X-Emisar-Successor-Key response HEADER — never the
-// JSON-RPC body, which the bridge forwards verbatim into the LLM transcript.
-// The bridge swaps the successor in for the rest of the process and persists
-// it to a bridge-owned credentials file keyed by the BOOTSTRAP key's prefix:
-// the client's config keeps its original key forever, and every launch
-// resolves prefix → current secret, so chained rotations keep working.
-
-const successorKeyHeader = "X-Emisar-Successor-Key"
-
-// keyPrefix is the non-secret identifier for a key ("emk-" + the portal's
-// 12-char random prefix) — the same prefix the portal's UI shows.
-func keyPrefix(key string) string {
-	if len(key) < 16 {
-		return key
-	}
-	return key[:16]
-}
-
-// validSuccessor sanity-checks a successor before adopting it: portal keys
-// are "emk-"-prefixed and bounded; anything else is a corrupt or hostile
-// header and is ignored.
-func validSuccessor(s string) bool {
-	return strings.HasPrefix(s, "emk-") && len(s) >= 20 && len(s) <= 256
-}
-
-func credentialsPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "emisar", "credentials.json"), nil
-}
-
-// loadStoredSuccessor returns the persisted current secret for a bootstrap
-// prefix, when the credentials file holds a valid one.
-func loadStoredSuccessor(path, bootstrapPrefix string) (string, bool) {
-	if path == "" {
-		return "", false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
-	}
-	var creds map[string]string
-	if err := json.Unmarshal(data, &creds); err != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: ignoring corrupt credentials file %s: %v\n", path, err)
-		return "", false
-	}
-	stored, ok := creds[bootstrapPrefix]
-	if !ok || !validSuccessor(stored) {
-		return "", false
-	}
-	return stored, true
-}
-
-// adoptSuccessor swaps the rotated key in for the rest of this process and
-// persists it so the next launch resolves it from the bootstrap prefix. A
-// failed persist degrades to a process-lifetime swap, never a dead session.
-func (b *bridge) adoptSuccessor(s string) {
-	if !validSuccessor(s) {
-		return
-	}
-	b.stateMu.Lock()
-	defer b.stateMu.Unlock()
-	if s == b.apiKey {
-		return
-	}
-	b.apiKey = s
-	if b.credsPath == "" {
-		fmt.Fprintln(os.Stderr, "emisar-mcp: adopted a rotated API key for this session (no config dir; not persisted)")
-		return
-	}
-	if err := persistSuccessor(b.credsPath, b.bootstrapPrefix, s); err != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: adopted a rotated API key for this session; persisting failed: %v\n", err)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "emisar-mcp: rotated API key persisted to %s\n", b.credsPath)
-}
-
-// persistSuccessor merges prefix → secret into the credentials file via an
-// atomic same-directory rename; dir 0700, file 0600 — it stores live secrets.
-func persistSuccessor(path, bootstrapPrefix, secret string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
-	}
-
-	creds := map[string]string{}
-	if data, err := os.ReadFile(path); err == nil {
-		// Corrupt existing content is replaced, not fatal — the file caches
-		// successors; the bootstrap key in the client config is the fallback.
-		_ = json.Unmarshal(data, &creds)
-	}
-	creds[bootstrapPrefix] = secret
-
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp, err := os.CreateTemp(dir, "credentials-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }
 
 // parseClientMetadata validates the operator's EMISAR_CLIENT_METADATA (a JSON

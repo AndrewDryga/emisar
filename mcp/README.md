@@ -114,26 +114,33 @@ audit rows answer "which tool, which client, which key, why" — the
 ## Key auto-rotation
 
 MCP keys default to a 30-day expiry. When the bridge initializes with a
-key expiring within 7 days, the portal mints a scope-preserving
-successor **exactly once** (the source row is marked `rotated_to_id`;
-concurrent sessions can't double-mint) and returns it in the
-`X-Emisar-Successor-Key` / `X-Emisar-Successor-Expires-At` response
-headers — never the JSON-RPC body forwarded into the LLM transcript. The
-old key keeps working until its own expiry
-(the overlap window), and the rotation lands in the audit log as
-`api_key.auto_rotated`.
+key expiring within 7 days, rotation uses a crash-safe two-phase exchange:
 
-The bridge adopts the successor immediately and persists it to
-`<user-config-dir>/emisar/credentials.json` (dir 0700, file 0600),
-keyed by the *bootstrap* key's prefix — the `EMISAR_API_KEY` in the
-client's config is never edited; every launch resolves that bootstrap
-key to the current secret, so chained rotations keep working. If the
-credentials file can't be written the swap still holds for the running
-session. Remote connectors that hit `/api/mcp/rpc` directly ignore
-response headers, so the portal only offers a successor to the bridge's
-`emisar-mcp/` User-Agent; quick-connect keys (no expiry) and
-audit-export tokens never rotate. Rotate manually anytime from the
-Agents page — the auto path just removes the deadline.
+1. The bridge generates a successor with the operating system CSPRNG and
+   durably records it as pending before making the request.
+2. `initialize` sends only the successor's lookup prefix and SHA-256 digest.
+   The portal atomically installs those exact values and acknowledges the
+   digest. A retry of the same proposal returns the same acknowledgement.
+3. The bridge durably promotes the pending key before using it. The old key
+   remains usable until the successor's first authenticated request proves the
+   swap, at which point the portal retires the replaced key chain.
+
+The raw successor never crosses the portal boundary. Lost requests, lost
+responses, process restarts, and persistence failures therefore leave at least
+one recoverable credential. The rotation is recorded as
+`api_key.auto_rotated`; retirement is recorded separately as
+`api_key.retired_by_rotation`.
+
+Credential state lives in one 0600 file per bootstrap prefix under
+`<user-config-dir>/emisar/credentials/`, protected by a 0700 directory,
+cross-process locking, atomic rename, and filesystem sync. The
+`EMISAR_API_KEY` in the client config is never edited; every launch resolves
+that bootstrap prefix to the current secret. A corrupt state file is a startup
+error. If no durable config directory is available, the bridge continues with
+the configured key but does not offer automatic rotation. Container users must
+mount `/config` persistently. Remote connectors, non-expiring quick-connect
+keys, and audit-export tokens do not auto-rotate. Operators can rotate a key
+manually from the Agents page at any time.
 
 ## Development
 

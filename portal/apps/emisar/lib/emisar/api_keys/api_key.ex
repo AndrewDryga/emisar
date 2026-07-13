@@ -45,8 +45,8 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
-    # Successor minted by auto-rotation — non-nil marks this key superseded
-    # and is the at-most-once guard for response-carried rotation.
+    # Successor installed by auto-rotation — non-nil marks this key superseded
+    # and makes retries of the same client-prepared proposal idempotent.
     belongs_to :rotated_to, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
     # The rotation back-link: the key this one was minted to replace. Set at
     # rotation (operator or auto) — never from user input. First use of this
