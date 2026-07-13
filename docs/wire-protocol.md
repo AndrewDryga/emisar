@@ -108,9 +108,9 @@ trusted CAs and warn before a stale-by-approval dispatch. See
   "reason": "Pre-repair health check requested by alice@example.com",
   "expected_pack_hash": "sha256:5c7e...",
   "attestation": {
-    "version": "emisar-attestation-v2",
+    "version": "emisar-attestation-v3",
     "sig": "b47006e2...",
-    "nonce": "a1b2c3...",
+    "nonce": "0123456789abcdef0123456789abcdef",
     "issued_at": "2026-06-17T12:00:00Z",
     "targets": ["019f5a2e-..."],
     "cert": {
@@ -127,10 +127,11 @@ trusted CAs and warn before a stale-by-approval dispatch. See
 }
 ```
 
-`attestation` (optional) is the bounded v2 client envelope relayed from the
+`attestation` (optional) is the bounded v3 client envelope relayed from the
 originating MCP call. Its signature binds the action id, exact JSON arguments,
-sorted durable runner-id set, nonce, and timestamp. The cloud can neither forge
-nor alter those facts; it is absent on portal-originated dispatch
+sorted durable runner-id set, 32-character lowercase-hex nonce, and timestamp.
+The fixed JSON signing body has unambiguous field boundaries. The cloud can
+neither forge nor alter those facts; it is absent on portal-originated dispatch
 (operator/runbook/API), which a signature-enforcing runner refuses. See
 [`docs/signed-dispatch.md`](signed-dispatch.md).
 

@@ -180,7 +180,8 @@ go test -race -count=1 ./...
 The forwarding path lives in `main.go`; `sign.go` is the only code that inspects
 `tools/call`, solely to attach client-attested dispatch data. The canonical
 attestation encoding under `internal/attest` is duplicated deliberately in the
-runner module. Attestation v2 signs the action id, exact JSON arguments (without
-`float64` loss), the sorted set of selected durable runner ids, a nonce, and a
-timestamp. The root gate compares the two implementations and fixed vectors so
-the bridge and runner cannot silently disagree on those bytes.
+runner module. Attestation v3 signs an unambiguous JSON body containing the
+action id, exact JSON arguments (without `float64` loss), the sorted set of
+selected durable runner ids, a nonce, and a timestamp. The root gate compares
+the two implementations and fixed vectors so the bridge and runner cannot
+silently disagree on those bytes.

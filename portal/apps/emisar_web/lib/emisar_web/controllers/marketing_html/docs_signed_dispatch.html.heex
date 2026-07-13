@@ -29,10 +29,11 @@
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
           <strong>The MCP client signs and presents its cert.</strong>
-          When you call an action, the client builds a canonical v2 message — the action id, exact
-          JSON arguments, sorted durable runner-id set, one-time nonce, and timestamp — signs it with
-          an Ed25519 leaf key that never leaves your machine, and attaches the CA-signed certificate
-          that vouches for that key. Large integers are preserved exactly, without a float conversion.
+          When you call an action, the client builds a canonical v3 JSON message — the action id,
+          exact JSON arguments, sorted durable runner-id set, one-time nonce, and timestamp — signs
+          it with an Ed25519 leaf key that never leaves your machine, and attaches the CA-signed
+          certificate that vouches for that key. Large integers are preserved exactly, without a
+          float conversion, and string values cannot create ambiguous field boundaries.
         </li>
         <li>
           <strong>The control plane relays.</strong>
@@ -55,7 +56,7 @@
         signature and zero runner-config edits. The offline CA signs short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
         (a group or labels). The
-        exact runner set is bound into every v2 signature by durable id. Certificate scope is an
+        exact runner set is bound into every v3 signature by durable id. Certificate scope is an
         independent, coarser group/label ceiling asserted by the CA and matched against the runner's
         local identity. The CA private key stays offline and never touches a runner or the portal.
       </div>

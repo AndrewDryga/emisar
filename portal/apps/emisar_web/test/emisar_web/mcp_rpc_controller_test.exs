@@ -90,9 +90,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   defp attestation_for(runner) do
     %{
-      "version" => "emisar-attestation-v2",
+      "version" => "emisar-attestation-v3",
       "sig" => "cryptographically-bogus-but-bounded",
-      "nonce" => "nonce-#{unique()}",
+      "nonce" => "0123456789abcdef0123456789abcdef",
       "issued_at" => "2026-06-17T12:00:00Z",
       "targets" => [runner.external_id],
       "cert" => %{
@@ -1231,10 +1231,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
             "reason" => "smoke",
             "wait" => "0",
             "attestation" => %{
-              "version" => "emisar-attestation-v2",
+              "version" => "emisar-attestation-v3",
               "targets" => [runner.external_id],
               "sig" => "deadbeef",
-              "nonce" => "n1",
+              "nonce" => "0123456789abcdef0123456789abcdef",
               "issued_at" => "2026-06-17T12:00:00Z",
               "cert" => %{
                 "ca_id" => "ca-acme",

@@ -108,9 +108,9 @@ defmodule EmisarWeb.MCPControllerTest do
 
   defp attestation_for(runner) do
     %{
-      "version" => "emisar-attestation-v2",
+      "version" => "emisar-attestation-v3",
       "sig" => "deadbeef",
-      "nonce" => "n1",
+      "nonce" => "0123456789abcdef0123456789abcdef",
       "issued_at" => "2026-06-17T12:00:00Z",
       "targets" => [runner.external_id],
       "cert" => %{

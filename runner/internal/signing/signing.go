@@ -170,9 +170,11 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("target_mismatch",
 			"this runner's durable id is not in the signed target set")
 	}
-	// 3. Nonce present.
-	if att.Nonce == "" {
-		return refuse("bad_nonce", "the attestation carried no nonce")
+	// 3. The signer emits 16 random bytes as lowercase hex. Keeping that exact
+	//    shape bounds replay keys and rejects delimiter/control-character input
+	//    even though the v3 signed body is independently unambiguous.
+	if !validNonce(att.Nonce) {
+		return refuse("bad_nonce", "the attestation nonce is not 32 lowercase hex characters")
 	}
 	// 4. The cert's CA must be one this runner trusts.
 	caPub, ok := v.cas[cert.CAID]
@@ -247,6 +249,18 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("replayed", "this attestation nonce was already used")
 	}
 	return allow
+}
+
+func validNonce(nonce string) bool {
+	if len(nonce) != 32 {
+		return false
+	}
+	for _, char := range nonce {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func containsTarget(targets []string, runnerID string) bool {

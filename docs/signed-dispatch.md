@@ -39,11 +39,12 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 ## How it works
 
-1. The MCP client signs a canonical v2 message — the action id, exact JSON
+1. The MCP client signs a canonical v3 JSON message — the action id, exact JSON
    arguments, the sorted set of durable runner ids selected from the tool schema,
    a one-time nonce, and a timestamp — with an Ed25519 **leaf** private key that
    never leaves the operator's machine. Integers are canonicalized without a
-   `float64` conversion, including values above `2^53`.
+   `float64` conversion, including values above `2^53`. Fixed JSON fields make
+   the signed preimage unambiguous even when a string contains control characters.
 2. The portal bounds and stores the known envelope fields, resolves the selected
    ids, requires that exact set to match the signed targets, and relays the facts.
    It can't change the action, args, or target set without invalidating the
@@ -56,7 +57,7 @@ short-lived certificates that vouch for each operator's signing key. So:
    certificate vouches for** → the nonce hasn't been seen. Only then does it run.
    Anything else is refused.
 
-The v2 signature binds the **exact runner set** by each runner's durable external
+The v3 signature binds the **exact runner set** by each runner's durable external
 id. A compromised relay cannot add a runner after the operator signs. The
 certificate's scope is an independent, coarser ceiling asserted by the offline CA
 and matched against each runner's local `group`/`labels`. A scoped certificate
@@ -209,7 +210,7 @@ cause. The runner's refusal codes:
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP client isn't configured to sign). | Run it from an MCP client with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
-| `attestation_version` | The envelope is not the supported `emisar-attestation-v2` format. | Upgrade the MCP bridge and submit a fresh call. |
+| `attestation_version` | The envelope is not the supported `emisar-attestation-v3` format. | Upgrade the MCP bridge and submit a fresh call. |
 | `target_mismatch` | This runner's durable local id is not in the signed target set. | Refresh the tool list and submit a fresh call for the intended runner id. |
 | `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
 | `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |

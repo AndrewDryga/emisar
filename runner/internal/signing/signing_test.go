@@ -2,6 +2,7 @@ package signing
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -102,12 +103,21 @@ func sign(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[strin
 
 func signForTargets(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[string]any, targets []string, nonce, issuedAt string) *Attestation {
 	t.Helper()
+	nonce = testNonce(nonce)
 	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Targets: targets, Nonce: nonce, IssuedAt: issuedAt})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
 	cert := validCert(t)
 	return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert}
+}
+
+func testNonce(label string) string {
+	if label == "" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(label))
+	return hex.EncodeToString(digest[:16])
 }
 
 func TestNewVerifierRejectsBadKeys(t *testing.T) {
@@ -222,6 +232,16 @@ func TestCheckRefusals(t *testing.T) {
 		{"empty nonce", func(t *testing.T, priv ed25519.PrivateKey) *Attestation {
 			return sign(t, priv, "docker.restart", args, "", fixedNow)
 		}, "bad_nonce"},
+		{"uppercase nonce", func(t *testing.T, priv ed25519.PrivateKey) *Attestation {
+			a := sign(t, priv, "docker.restart", args, "valid", fixedNow)
+			a.Nonce = "0123456789ABCDEF0123456789ABCDEF"
+			return a
+		}, "bad_nonce"},
+		{"non-hex nonce", func(t *testing.T, priv ed25519.PrivateKey) *Attestation {
+			a := sign(t, priv, "docker.restart", args, "valid", fixedNow)
+			a.Nonce = "gggggggggggggggggggggggggggggggg"
+			return a
+		}, "bad_nonce"},
 		{"bad issued_at", func(t *testing.T, priv ed25519.PrivateKey) *Attestation {
 			a := sign(t, priv, "docker.restart", args, "n1", "not-a-time")
 			a.IssuedAt = "not-a-time"
@@ -273,11 +293,12 @@ func TestCheckCertRefusals(t *testing.T) {
 	// from the cert gates (which run before the leaf check).
 	signedAtt := func(cert attest.Cert) *Attestation {
 		targets := []string{testRunnerID}
-		sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: action, Args: args, Targets: targets, Nonce: "n", IssuedAt: fixedNow})
+		nonce := testNonce("cert-refusal")
+		sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: action, Args: args, Targets: targets, Nonce: nonce, IssuedAt: fixedNow})
 		if err != nil {
 			t.Fatalf("Sign: %v", err)
 		}
-		return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "n", IssuedAt: fixedNow, Cert: &cert}
+		return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: fixedNow, Cert: &cert}
 	}
 	mkCert := func(caP ed25519.PrivateKey, caID string, scope attest.Scope, from, until string) attest.Cert {
 		cert := attest.Cert{CAID: caID, KeyID: "op", PublicKey: leafPub, ValidFrom: from, ValidUntil: until, Scope: scope, Serial: "01CERTREFUSE000000000000000"}
@@ -327,11 +348,12 @@ func TestCheckCertScopeMatchAllowed(t *testing.T) {
 	args := map[string]any{"x": float64(1)}
 	cert := certWith(t, caPriv, attest.Scope{Group: testGroup, Labels: map[string]string{"env": "test"}}, "2026-01-01T00:00:00Z", "2030-01-01T00:00:00Z")
 	targets := []string{testRunnerID}
-	sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: "scoped", IssuedAt: fixedNow})
+	nonce := testNonce("scoped")
+	sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: nonce, IssuedAt: fixedNow})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "scoped", IssuedAt: fixedNow, Cert: &cert}
+	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: fixedNow, Cert: &cert}
 	if d := v.Check("a.b", args, att); !d.Allowed {
 		t.Fatalf("a cert scoped to this runner's group+labels must be allowed: %+v", d)
 	}
@@ -357,11 +379,12 @@ func TestCheckLeafKeyMustMatchCert(t *testing.T) {
 
 	testLeafPriv, _ := testLeaf(t)
 	targets := []string{testRunnerID}
-	sig, err := attest.Sign(testLeafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: "mm", IssuedAt: fixedNow})
+	nonce := testNonce("mismatch")
+	sig, err := attest.Sign(testLeafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: nonce, IssuedAt: fixedNow})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "mm", IssuedAt: fixedNow, Cert: &cert}
+	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: fixedNow, Cert: &cert}
 	if d := v.Check("a.b", args, att); d.Allowed || d.Code != "bad_signature" {
 		t.Fatalf("a leaf signature not matching cert.public_key must be bad_signature, got %+v", d)
 	}

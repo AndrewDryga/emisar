@@ -28,7 +28,7 @@ import (
 
 // Version is the canonical-encoding revision, bound into every signature so a
 // future format change can never be confused with this one.
-const Version = "emisar-attestation-v2"
+const Version = "emisar-attestation-v3"
 
 // Claim is the set of dispatch facts an attestation binds. A signature over
 // these proves a real user authorized THIS action with THESE args for THESE
@@ -42,12 +42,13 @@ type Claim struct {
 	IssuedAt string // RFC3339 UTC, e.g. "2026-06-17T12:00:00Z"
 }
 
-// SigningBytes is the exact byte string that is signed and verified. It is
-// newline-delimited; the args are reduced to a SHA-256 hex digest of their
-// canonical JSON so no field value can smuggle in the delimiter. Numbers are
-// normalized by mathematical value before hashing: 1000, 1e3, and 1.000e+3
-// produce the same bytes, while integers beyond float64's exact range are never
-// rounded. Targets are sorted before hashing so fan-out order is not semantic.
+// SigningBytes is the exact byte string that is signed and verified. A fixed
+// JSON struct makes field boundaries unambiguous even when a string contains
+// control characters. Args and targets are reduced to SHA-256 hex digests of
+// their canonical JSON. Numbers are normalized by mathematical value before
+// hashing: 1000, 1e3, and 1.000e+3 produce the same bytes, while integers beyond
+// float64's exact range are never rounded. Targets are sorted before hashing so
+// fan-out order is not semantic.
 func SigningBytes(c Claim) ([]byte, error) {
 	// A signed dispatch with no args carries nil Args (the wire frame omits
 	// `args`), which json.Marshal renders as `null` — a different digest than
@@ -76,13 +77,26 @@ func SigningBytes(c Claim) ([]byte, error) {
 	}
 	targetsDigest := sha256.Sum256(targetsJSON)
 
-	s := Version + "\n" +
-		c.ActionID + "\n" +
-		hex.EncodeToString(argsDigest[:]) + "\n" +
-		hex.EncodeToString(targetsDigest[:]) + "\n" +
-		c.Nonce + "\n" +
-		c.IssuedAt
-	return []byte(s), nil
+	body := struct {
+		Version       string `json:"version"`
+		ActionID      string `json:"action_id"`
+		ArgsSHA256    string `json:"args_sha256"`
+		TargetsSHA256 string `json:"targets_sha256"`
+		Nonce         string `json:"nonce"`
+		IssuedAt      string `json:"issued_at"`
+	}{
+		Version:       Version,
+		ActionID:      c.ActionID,
+		ArgsSHA256:    hex.EncodeToString(argsDigest[:]),
+		TargetsSHA256: hex.EncodeToString(targetsDigest[:]),
+		Nonce:         c.Nonce,
+		IssuedAt:      c.IssuedAt,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("attest: marshal claim body: %w", err)
+	}
+	return encoded, nil
 }
 
 func canonicalTargets(targets []string) ([]string, error) {
@@ -252,10 +266,10 @@ func Verify(pub ed25519.PublicKey, c Claim, sigHex string) (bool, error) {
 }
 
 // CertVersion is the canonical-encoding revision of the certificate body — a
-// SECOND canonical struct that composes with the v2 attestation above without
+// SECOND canonical struct that composes with the v3 attestation above without
 // changing it. The offline CA signs this; the runner verifies it to learn which
 // leaf public key the attestation must verify under (and over which scope).
-const CertVersion = "emisar-cert-v1"
+const CertVersion = "emisar-cert-v2"
 
 // Scope is the optional targeting a CA binds into a cert. It is matched ONLY
 // against the runner's own locally-configured identity (runner.group /
@@ -287,25 +301,40 @@ type Cert struct {
 }
 
 // CertSigningBytes is the exact byte string the CA signs and the runner
-// verifies. Like SigningBytes it is newline-delimited and reduces the one
-// variable-shaped field (Scope) to a SHA-256 hex digest of its canonical JSON,
-// so no scope value can smuggle in the delimiter. Sig is NOT part of the body it
-// signs over. Determinism rests on the same Go json key-sorting as the claim.
+// verifies. Like SigningBytes it uses a fixed JSON struct and reduces the one
+// variable-shaped field (Scope) to a SHA-256 hex digest of its canonical JSON.
+// Sig is NOT part of the body it signs over. Determinism rests on Go's stable
+// struct-field order and JSON map-key sorting for the scope digest.
 func CertSigningBytes(c Cert) ([]byte, error) {
 	scopeJSON, err := json.Marshal(c.Scope)
 	if err != nil {
 		return nil, fmt.Errorf("attest: marshal scope: %w", err)
 	}
 	digest := sha256.Sum256(scopeJSON)
-	s := CertVersion + "\n" +
-		c.CAID + "\n" +
-		c.KeyID + "\n" +
-		c.PublicKey + "\n" +
-		c.ValidFrom + "\n" +
-		c.ValidUntil + "\n" +
-		hex.EncodeToString(digest[:]) + "\n" +
-		c.Serial
-	return []byte(s), nil
+	body := struct {
+		Version     string `json:"version"`
+		CAID        string `json:"ca_id"`
+		KeyID       string `json:"key_id"`
+		PublicKey   string `json:"public_key"`
+		ValidFrom   string `json:"valid_from"`
+		ValidUntil  string `json:"valid_until"`
+		ScopeSHA256 string `json:"scope_sha256"`
+		Serial      string `json:"serial"`
+	}{
+		Version:     CertVersion,
+		CAID:        c.CAID,
+		KeyID:       c.KeyID,
+		PublicKey:   c.PublicKey,
+		ValidFrom:   c.ValidFrom,
+		ValidUntil:  c.ValidUntil,
+		ScopeSHA256: hex.EncodeToString(digest[:]),
+		Serial:      c.Serial,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("attest: marshal certificate body: %w", err)
+	}
+	return encoded, nil
 }
 
 // SignCert returns the hex-encoded Ed25519 signature of the CA over the cert

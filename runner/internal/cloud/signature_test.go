@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"testing"
@@ -79,6 +80,8 @@ func attestationFor(t *testing.T, priv ed25519.PrivateKey, actionID string, args
 // by a specific CA (e.g. one the runner was just rotated to trust).
 func attestationCertifiedBy(t *testing.T, priv, caPriv ed25519.PrivateKey, caID, leafPubHex, nonce, actionID string, args map[string]any) *Attestation {
 	t.Helper()
+	nonceDigest := sha256.Sum256([]byte(nonce))
+	nonce = hex.EncodeToString(nonceDigest[:16])
 	issuedAt := time.Now().UTC().Format(time.RFC3339)
 	targets := []string{sigTestRunnerID}
 	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Targets: targets, Nonce: nonce, IssuedAt: issuedAt})

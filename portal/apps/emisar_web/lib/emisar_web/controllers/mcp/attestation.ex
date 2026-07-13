@@ -9,7 +9,8 @@ defmodule EmisarWeb.MCP.Attestation do
   @max_field_bytes 512
   @max_scope_labels 32
   @max_targets 16
-  @version "emisar-attestation-v2"
+  @version "emisar-attestation-v3"
+  @nonce_regex ~r/\A[0-9a-f]{32}\z/
 
   @doc "Returns a bounded attestation envelope, or nil when the input is malformed."
   @spec normalize(term()) :: map() | nil
@@ -21,7 +22,7 @@ defmodule EmisarWeb.MCP.Attestation do
     targets = attestation["targets"]
     cert = normalize_cert(attestation["cert"])
 
-    if version == @version and bounded_string?(sig) and bounded_string?(nonce) and
+    if version == @version and bounded_string?(sig) and valid_nonce?(nonce) and
          bounded_string?(issued_at) and valid_targets?(targets) and cert do
       %{
         "version" => version,
@@ -96,6 +97,8 @@ defmodule EmisarWeb.MCP.Attestation do
   end
 
   defp valid_targets?(_), do: false
+
+  defp valid_nonce?(nonce), do: is_binary(nonce) and Regex.match?(@nonce_regex, nonce)
 
   defp bounded_string?(value), do: is_binary(value) and byte_size(value) <= @max_field_bytes
 end

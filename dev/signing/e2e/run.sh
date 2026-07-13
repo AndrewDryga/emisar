@@ -16,14 +16,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.." # repo root, so `docker compose` finds the stack
 
-# The runner + bridge images must carry the CA signing CLI / EMISAR_SIGNING_CERT
-# support; rebuild them from current source (cached + fast when unchanged) so a
-# stack whose images predate the CA cutover still runs the e2e.
-echo "[signed-dispatch-e2e] building current runner + mcp images (cached if unchanged)..."
-docker compose --profile test build runner-signed mcp
+# The portal, runner, and bridge share the signed-envelope contract. Rebuild all
+# three so a running development stack cannot make this cross-component check
+# pass or fail against stale code.
+echo "[signed-dispatch-e2e] building current portal + runner + mcp images (cached if unchanged)..."
+docker compose --profile test build portal runner-signed mcp
 
-echo "[signed-dispatch-e2e] bringing up signing-init + runner-signed (profile: test)..."
-docker compose --profile test up -d signing-init runner-signed
+echo "[signed-dispatch-e2e] bringing up portal + signing-init + runner-signed (profile: test)..."
+docker compose --profile test up -d portal
+docker compose --profile test up -d --force-recreate signing-init runner-signed
 
 PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
   MCP_KEY="${MCP_KEY:-emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD}" \

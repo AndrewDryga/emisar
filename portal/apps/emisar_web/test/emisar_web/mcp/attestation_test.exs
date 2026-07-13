@@ -4,9 +4,9 @@ defmodule EmisarWeb.MCP.AttestationTest do
 
   defp valid_attestation(scope \\ %{}) do
     %{
-      "version" => "emisar-attestation-v2",
+      "version" => "emisar-attestation-v3",
       "sig" => "dispatch-signature",
-      "nonce" => "nonce-1",
+      "nonce" => "0123456789abcdef0123456789abcdef",
       "issued_at" => "2026-07-09T12:00:00Z",
       "targets" => ["runner-1"],
       "cert" => %{
@@ -43,6 +43,13 @@ defmodule EmisarWeb.MCP.AttestationTest do
 
     assert Attestation.normalize(
              put_in(valid_attestation(), ["cert", "scope"], %{"labels" => "bad"})
+           ) == nil
+
+    assert Attestation.normalize(Map.put(valid_attestation(), "nonce", "not-generated-hex")) ==
+             nil
+
+    assert Attestation.normalize(
+             Map.put(valid_attestation(), "nonce", "0123456789ABCDEF0123456789ABCDEF")
            ) == nil
   end
 
