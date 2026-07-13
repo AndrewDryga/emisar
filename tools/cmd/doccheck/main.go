@@ -123,6 +123,46 @@ func isPathNameByte(value byte) bool {
 		value >= '0' && value <= '9' || value == '_' || value == '-'
 }
 
+func retiredDocPaths() []string {
+	return []string{
+		"docs/" + "action-packs.md",
+		"docs/" + "cloud-boundary.md",
+		"docs/" + "deploy.md",
+		"docs/" + "install.md",
+		"docs/" + "mcp.md",
+		"docs/" + "operations.md",
+		"docs/" + "pack-registry.md",
+		"docs/" + "qa-coverage.md",
+		"docs/" + "qa-findings.md",
+		"docs/distribution/" + "mcp-catalog-submission.md",
+		"docs/distribution/" + "reviewer-tenant.md",
+		"docs/" + "sales",
+		"infra/" + "OPERATIONS.md",
+	}
+}
+
+func forbiddenVersionedPath(file string) bool {
+	parts := strings.Split(file, "/")
+	for index, part := range parts {
+		if part != ".agent" {
+			continue
+		}
+		subpath := strings.Join(parts[index+1:], "/")
+		if subpath == "project.yaml" || strings.HasPrefix(subpath, "rules/") ||
+			strings.HasPrefix(subpath, "scripts/") {
+			return false
+		}
+		return true
+	}
+
+	for _, retired := range retiredDocPaths() {
+		if file == retired || strings.HasPrefix(file, strings.TrimSuffix(retired, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func retiredReferences(data []byte) []string {
 	var hits []string
 	for _, dir := range []string{"features", "review", "reviews", "design", "specs", "screenshots"} {
@@ -131,21 +171,7 @@ func retiredReferences(data []byte) []string {
 			hits = append(hits, needle)
 		}
 	}
-	for _, name := range []string{
-		"action-packs", "cloud-boundary", "deploy", "install", "mcp",
-		"operations", "pack-registry", "qa-coverage", "qa-findings",
-	} {
-		needle := "docs/" + name + ".md"
-		if containsReference(data, needle) {
-			hits = append(hits, needle)
-		}
-	}
-	for _, retired := range []string{
-		"docs/distribution/" + "mcp-catalog-submission.md",
-		"docs/distribution/" + "reviewer-tenant.md",
-		"docs/" + "sales",
-		"infra/" + "OPERATIONS.md",
-	} {
+	for _, retired := range retiredDocPaths() {
 		if containsReference(data, retired) {
 			hits = append(hits, retired)
 		}
@@ -169,6 +195,10 @@ func checkRepository(root string) ([]finding, int, error) {
 	var findings []finding
 	markdownFiles := 0
 	for _, file := range files {
+		if forbiddenVersionedPath(file) {
+			findings = append(findings, finding{file, "private or local artifact path must not be version-controlled"})
+			continue
+		}
 		fullPath := filepath.Join(root, filepath.FromSlash(file))
 		info, err := os.Stat(fullPath)
 		if os.IsNotExist(err) {

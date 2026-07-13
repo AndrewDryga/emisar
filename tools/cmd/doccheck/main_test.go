@@ -58,3 +58,31 @@ func TestRetiredReferences(t *testing.T) {
 		t.Fatalf("retiredReferences = %#v, want %#v", got, want)
 	}
 }
+
+func TestForbiddenVersionedPath(t *testing.T) {
+	t.Parallel()
+	agentReview := ".agent/" + "reviews/round-1.md"
+	reviewerDoc := "docs/distribution/" + "reviewer-tenant.md"
+	salesDoc := "docs/" + "sales/battlecard.md"
+	cases := map[string]bool{
+		".agent/project.yaml":                 false,
+		agentReview:                           true,
+		reviewerDoc:                           true,
+		salesDoc:                              true,
+		"docs/security-model.md":              false,
+		"portal/.agent/rules/doc-contract.md": false,
+		"portal/.agent/scripts/capture-console-audit.mjs":     false,
+		"portal/.agent/secrets/reviewer.env":                  true,
+		"portal/.agent/tasks/00_todo/example/task.md":         true,
+		"portal/apps/emisar_web/priv/observability/README.md": false,
+	}
+	for file, want := range cases {
+		file, want := file, want
+		t.Run(file, func(t *testing.T) {
+			t.Parallel()
+			if got := forbiddenVersionedPath(file); got != want {
+				t.Fatalf("forbiddenVersionedPath(%q) = %t, want %t", file, got, want)
+			}
+		})
+	}
+}
