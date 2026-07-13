@@ -106,7 +106,7 @@ FROM ${RUNNER_IMAGE}
 # digests together; the required CI vulnerability scan reviews that exact image.
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libtinfo6 locales ca-certificates \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libtinfo6 locales ca-certificates netcat-openbsd \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 

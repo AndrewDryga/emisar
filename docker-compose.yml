@@ -179,10 +179,11 @@ services:
     ports:
       - "4010:4000"
       - "8443:8443"
-    # `curl` is the only http client in the debian-slim runtime image —
-    # wget isn't installed and adding it would bloat the image.
+    # Keep the probe at the HTTP boundary without pulling curl's large protocol
+    # and TLS dependency tree into the production image. OpenBSD nc sends one
+    # fixed local request; grep is part of the debian-slim base.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:4000/healthz || exit 1"]
+      test: ["CMD-SHELL", "printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' | nc -w 2 127.0.0.1 4000 | grep -Eq '^HTTP/1\\.[01] 200'"]
       interval: 5s
       timeout: 3s
       retries: 12
