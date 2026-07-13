@@ -2,6 +2,11 @@
 
 `mcp` is a thin bridge: it forwards JSON-RPC frames from an MCP client's stdin to `POST /api/mcp/rpc` on the portal and writes correlated responses back to stdout. The bridge owns only transport invariants: bounded line framing, request-id correlation, Streamable HTTP headers, response validation, and notification silence. The portal owns every tool descriptor, content block, and synthetic tool. The one semantic exception is client-attested dispatch (`sign.go`): it inspects `tools/call` frames to attach an Ed25519 signature over the action args, because the signing key must stay client-side. Keep that boundary: new tool behavior belongs in the portal, not here.
 
+**Dynamic action catalogs are server-owned.** Never require operators to mirror
+current action ids into client `enabled_tools` / `includeTools` configuration:
+runner scope, connectivity, and advertised packs change underneath such lists.
+Large-catalog discovery is a portal contract; the bridge remains transport-only.
+
 Read the root `../AGENTS.md` (the creed) first; the Go house style is in `runner/AGENTS.md` and applies here too.
 
 ## The gate

@@ -52,51 +52,21 @@ that later client releases have identical catalog behavior.
 | --- | --- | --- | --- |
 | Claude Code | 2.1.206 | Unrestricted | Connected, discovered the catalog, and completed the call. |
 | Grok CLI | 0.2.93 | Unrestricted | Connected, discovered 552 tools, and completed the call. |
-| Gemini CLI | 0.49.0 | Unrestricted | Completed the call, but reported about 691,000 input tokens. Use `includeTools` for a bounded catalog. |
-| Codex CLI | 0.144.1 | Client allowlist required | The unrestricted catalog omitted `recent_runs`; the same production call completed with Codex's `enabled_tools` allowlist. |
+| Gemini CLI | 0.49.0 | Unrestricted | Completed the call, but reported about 691,000 input tokens. |
+| Codex CLI | 0.144.1 | Unrestricted | Did not expose `recent_runs`; a one-tool diagnostic override proved transport and authentication only. |
 
 Emisar intentionally returns one strongly typed tool per action reachable by the
-key's minting operator, plus the six synthetic tools below. Large fleets and pack
-sets can therefore exceed a client's practical tool limit even though the MCP
-connection itself is healthy. Narrow the operator's runner scope to the hosts the
-agent needs, and use the client's tool allowlist for a task-specific action set.
-Do not treat a tool absent from a client as proof that Emisar denied access; check
-the unfiltered catalog when diagnosing authorization.
+key's minting operator, plus the six synthetic tools below. The server owns this
+dynamic catalog: runner scope, connectivity, and advertised pack actions change
+over time, so operators must not mirror action ids into a client-maintained
+allowlist. Large fleets and pack sets can exceed a client's practical tool limit
+even though the MCP connection itself is healthy. A durable fix must keep
+discovery current on the server while preserving dispatch-time policy, approval,
+audit, pack-trust, and runner-validation gates.
 
-For Codex, add `enabled_tools` to the existing server table. Keep the synthetic
-tools the workflow needs and list every action the client must dispatch:
-
-```toml
-[mcp_servers.emisar]
-command = "/usr/local/bin/emisar-mcp"
-enabled_tools = [
-  "recent_runs",
-  "wait_for_run",
-  "list_runbooks",
-  "get_runbook",
-  "linux.uptime",
-]
-```
-
-For Gemini CLI, add `includeTools` to the existing `emisar` server object (or
-pass the same comma-separated names to `gemini mcp add --include-tools`):
-
-```json
-{
-  "mcpServers": {
-    "emisar": {
-      "command": "/usr/local/bin/emisar-mcp",
-      "includeTools": [
-        "recent_runs",
-        "wait_for_run",
-        "list_runbooks",
-        "get_runbook",
-        "linux.uptime"
-      ]
-    }
-  }
-}
-```
+Do not treat a tool absent from a client as proof that Emisar denied access. The
+Codex override above was a bounded certification diagnostic, not a supported
+large-catalog configuration.
 
 ## Auth
 
