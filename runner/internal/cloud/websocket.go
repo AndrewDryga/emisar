@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
@@ -176,14 +175,11 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 		return agentToken{}, errors.New("no token path")
 	}
 
-	// The token is a bearer secret, so treat its path as hostile. O_NOFOLLOW
-	// refuses to follow a symlink swapped in at TokenPath (which could point
-	// the read somewhere it shouldn't, or be a marker for where a later write
-	// leaks); a non-0600 file means the token was exposed (bad umask, manual
-	// edit, tampering), so we reject it and let the caller re-register, which
-	// rewrites a fresh 0600 file. We always WRITE 0600, so a clean install
-	// never trips this.
-	f, err := os.OpenFile(d.TokenPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// The token is a bearer secret, so treat its path as hostile. The platform
+	// helper must refuse symlink traversal; a non-0600 file means the token was
+	// exposed (bad umask, manual edit, tampering), so reject it and let the
+	// caller re-register. We always write 0600, so a clean install never trips.
+	f, err := openTokenFile(d.TokenPath)
 	if err != nil {
 		return agentToken{}, err
 	}

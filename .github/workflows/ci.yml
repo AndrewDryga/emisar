@@ -541,17 +541,18 @@ jobs:
           retention-days: 7
           overwrite: true
 
-      - name: Cross-build release platforms
-        # One loop instead of a 4-leg matrix: proves every release target
-        # still compiles without burning four runners per module. tools/ is
-        # never shipped, so it has no release platforms to prove.
+      - name: Cross-build release and development platforms
+        # One loop instead of a matrix: proves every release target still
+        # compiles without burning a runner per target. Windows is compile-only
+        # (not published) so non-Linux fallbacks cannot silently rot. tools/ is
+        # never shipped, so it has no platform set to prove.
         if: matrix.module != 'tools'
         working-directory: ${{ matrix.module }}
         env:
           CGO_ENABLED: "0"
         run: |
           set -euo pipefail
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -ldflags "-s -w" -o /dev/null .
             echo "ok: $target"
           done

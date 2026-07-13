@@ -135,8 +135,8 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 			return nil
 		}
 		// killGroup signals the entire process group on Linux (catches
-		// grandchildren spawned by wrapper scripts). On non-Linux it
-		// signals only the direct child.
+		// grandchildren spawned by wrapper scripts). Other platforms
+		// terminate only the direct child with their available primitive.
 		return killGroup(cmd.Process.Pid, syscall.SIGTERM)
 	}
 	cmd.WaitDelay = grace
