@@ -111,6 +111,37 @@
     </div>
   </section>
 
+  <%!-- Guides --%>
+  <section class="border-t border-zinc-900 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight text-zinc-50 text-balance sm:text-4xl">
+          Guides
+        </h2>
+        <p class="mt-4 text-lg leading-8 text-zinc-400 text-pretty">
+          Practical guidance for giving AI agents production access without handing them a shell.
+        </p>
+      </div>
+      <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-5 lg:grid-cols-2">
+        <%= for guide <- @guides do %>
+          <.link
+            navigate={~p"/guides/#{guide.slug}"}
+            class="group block rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition-colors hover:border-brand-500/40"
+          >
+            <p class="text-xs text-zinc-500">{guide.date} &middot; {guide.read_time}</p>
+            <h3 class="mt-3 text-2xl font-bold tracking-tight text-white text-balance group-hover:text-brand-100">
+              {guide.title}
+            </h3>
+            <p class="mt-3 text-base leading-relaxed text-zinc-400 text-pretty">{guide.dek}</p>
+            <span class="mt-5 inline-flex items-center gap-1 text-sm font-medium text-brand-400 group-hover:text-brand-300">
+              Read the guide <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+            </span>
+          </.link>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
   <%!-- Use cases --%>
   <section class="border-t border-zinc-900 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">

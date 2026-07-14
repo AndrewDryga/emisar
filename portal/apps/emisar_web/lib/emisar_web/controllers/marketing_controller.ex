@@ -383,6 +383,9 @@ defmodule EmisarWeb.MarketingController do
      "June 2026", "7 min read",
      "The risks of giving an AI agent SSH access to production — full blast radius, prompt injection into arbitrary commands, no gate before the action and no durable record after — and the declared-action-catalog alternative that keeps the real commands but adds a policy gate, human approval, and a hash-chained audit journal on the host."}
   ]
+  @guide_summaries Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->
+                     %{slug: slug, title: title, dek: dek, date: date, read_time: read_time}
+                   end)
 
   def guides(conn, _params) do
     list_ld =
@@ -414,11 +417,6 @@ defmodule EmisarWeb.MarketingController do
         escape: :html_safe
       )
 
-    guides =
-      Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->
-        %{slug: slug, title: title, dek: dek, date: date, read_time: read_time}
-      end)
-
     render(conn, :guides_index,
       page_title: "Guides — AI agents and production infrastructure",
       meta_description:
@@ -426,7 +424,7 @@ defmodule EmisarWeb.MarketingController do
       canonical_url: @base <> "/guides",
       og_image: @base <> "/images/og/og-guides.png",
       json_ld: list_ld,
-      guides: guides
+      guides: @guide_summaries
     )
   end
 
@@ -533,6 +531,8 @@ defmodule EmisarWeb.MarketingController do
       end
 
     attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, default_ld))
+
+    attrs = if action == :docs, do: Keyword.put(attrs, :guides, @guide_summaries), else: attrs
 
     attrs =
       case Map.get(@og_images, action) do

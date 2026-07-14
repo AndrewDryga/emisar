@@ -489,8 +489,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # The hub is the crawl entry point for the whole docs tree — every
       # card it links must resolve, or a reader (and a crawler) hits a
-      # dead end. Pull the on-page hrefs and GET each: the index links all
-      # eleven doc sub-pages plus /pricing.
+      # dead end. Pull the on-page hrefs and GET each documentation target.
       for path <- ~w(
             /docs/quickstart
             /docs/connect-an-llm
@@ -509,6 +508,23 @@ defmodule EmisarWeb.MarketingTest do
           ) do
         assert index =~ ~s(href="#{path}"), "docs index doesn't link #{path}"
         assert conn |> get(path) |> html_response(200), "docs card target #{path} is not 200"
+      end
+    end
+
+    test "every guide on the guides index also appears on the docs index", %{conn: conn} do
+      guides_index = conn |> get(~p"/guides") |> html_response(200)
+      docs_index = conn |> get(~p"/docs") |> html_response(200)
+
+      guide_paths =
+        ~r/href="(\/guides\/[^"#?]+)"/
+        |> Regex.scan(guides_index, capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.uniq()
+
+      assert guide_paths != []
+
+      for path <- guide_paths do
+        assert docs_index =~ ~s(href="#{path}"), "docs index doesn't link #{path}"
       end
     end
 
