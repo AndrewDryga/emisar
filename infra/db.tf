@@ -140,3 +140,19 @@ resource "google_sql_user" "emisar_vm" {
     prevent_destroy = true
   }
 }
+
+# Personal IAM keeps interactive production access attributable without a
+# password. emisar_owner owns only application objects and is intentionally not
+# a login, superuser, role administrator, or database administrator.
+resource "google_sql_user" "database_operator" {
+  count          = nonsensitive(var.database_operator_iam_user != null) ? 1 : 0
+  name           = var.database_operator_iam_user
+  instance       = google_sql_database_instance.emisar.name
+  type           = "CLOUD_IAM_USER"
+  database_roles = ["emisar_owner"]
+
+  depends_on = [
+    google_project_iam_member.database_operator_cloudsql,
+    google_project_iam_member.database_operator_studio,
+  ]
+}

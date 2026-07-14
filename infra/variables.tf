@@ -235,6 +235,22 @@ variable "database_owner_role_ready" {
   default     = false
 }
 
+variable "database_operator_iam_user" {
+  type        = string
+  description = "Lowercase Google user email for the production database operator. Set as a sensitive HCP Terraform workspace variable; null omits personal database access."
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition = var.database_operator_iam_user == null || try(
+      var.database_operator_iam_user == lower(var.database_operator_iam_user) &&
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.database_operator_iam_user)),
+      false,
+    )
+    error_message = "database_operator_iam_user must be null or a lowercase email address."
+  }
+}
+
 variable "db_disk_size_gb" {
   type        = number
   description = "Cloud SQL initial disk size in GB (autoresize is on)."

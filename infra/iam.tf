@@ -56,6 +56,37 @@ resource "google_project_iam_member" "vm_cloudsql" {
   }
 }
 
+# Keep human database access attributable to a personal IAM identity. These
+# roles authorize connector login only for this instance; PostgreSQL privileges
+# remain separately bounded by db.tf.
+resource "google_project_iam_member" "database_operator_cloudsql" {
+  for_each = nonsensitive(var.database_operator_iam_user != null) ? toset([
+    "roles/cloudsql.client",
+    "roles/cloudsql.instanceUser",
+  ]) : toset([])
+
+  project = var.project_id
+  role    = each.value
+  member  = "user:${var.database_operator_iam_user}"
+
+  condition {
+    title       = "emisar_database_operator_only"
+    description = "This binding permits database operator login only on the emisar instance."
+    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+  }
+}
+
+# Cloud SQL Studio needs project-scoped console discovery permissions that an
+# instance condition would deny. Database authentication remains confined to
+# emisar because that is the only instance where db.tf creates this IAM user.
+resource "google_project_iam_member" "database_operator_studio" {
+  count = nonsensitive(var.database_operator_iam_user != null) ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/cloudsql.studioUser"
+  member  = "user:${var.database_operator_iam_user}"
+}
+
 # ── Cloud Audit Logs ────────────────────────────────────────────────────────────────
 resource "google_project_iam_audit_config" "data_access" {
   project = var.project_id

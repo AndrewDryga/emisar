@@ -157,6 +157,32 @@ migrations and application queries. `scripts/verify-database-iam.sql` proves the
 login is not elevated, verifies application and pgAudit ownership, and performs
 a reversible DDL probe.
 
+Personal operator access is optional and attributable. Set the sensitive HCP
+Terraform workspace variable `database_operator_iam_user` to one lowercase
+Google user email. Terraform provisions that identity as a Cloud SQL IAM user,
+grants connector login only on the `emisar` instance, grants the project-level
+console discovery permissions Cloud SQL Studio requires, and assigns the
+non-superuser `emisar_owner` database role. The database principal itself exists
+only on `emisar`. Cloud SQL Studio is the normal interactive path because the
+database has no public IP. Select the `emisar` database and IAM authentication in
+the instance's Studio view; there is no database password.
+
+For a CLI session, the proxy host must already have a route to `emisar-vpc`:
+
+```bash
+gcloud auth application-default login
+cloud-sql-proxy --private-ip --auto-iam-authn --port 15432 \
+  emisar:us-central1:emisar
+
+database_user=$(gcloud config get-value account)
+psql --host=127.0.0.1 --port=15432 --dbname=emisar \
+  --username="$database_user"
+```
+
+The proxy does not create a route into the VPC. A workstation without VPN or
+equivalent private routing must use Cloud SQL Studio rather than weakening the
+instance with a public address.
+
 The built-in `emisar` principal remains because it owns pgAudit's protected
 event triggers. Terraform gives it a generated apply-only password that is
 never exposed as plaintext in Terraform state or Secret Manager; Cloud SQL keeps
