@@ -193,7 +193,11 @@ resource "google_compute_instance_template" "emisar" {
 # Presence span nodes and runs don't strand in :sent. DB migrations run on boot
 # guarded by Ecto's advisory lock in the release entrypoint, so concurrent instances are safe.
 resource "google_compute_region_instance_group_manager" "emisar" {
-  name                             = "emisar"
+  # The provider replaces a regional MIG when its zone set changes. A stable
+  # name forces destroy-before-create because both groups cannot coexist under
+  # one name, taking every backend out at once. Deriving the name from the zone
+  # set lets Terraform bring the successor up before retiring the old group.
+  name                             = "emisar-${substr(sha256(join(",", sort(var.zones))), 0, 8)}"
   base_instance_name               = "emisar"
   region                           = var.region
   target_size                      = var.instance_count
@@ -243,6 +247,8 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   # credential is missing, so the MIG would never go healthy. Whether the vars are
   # set is not itself secret — unwrap just the boolean.
   lifecycle {
+    create_before_destroy = true
+
     precondition {
       condition = var.disable_billing || nonsensitive(
         var.paddle_api_key != "" && var.paddle_webhook_secret != "" && var.paddle_client_token != ""

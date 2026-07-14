@@ -31,7 +31,7 @@ Configure these environments with deployment branches restricted to `main`:
 |---|---|---|---|
 | `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
-| `pack-registry-production` | Required reviewer + protected `main` | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. A second approval is intentional: a rerun of an old publication job cannot mint fresh credentials from an approval granted to the original run. |
+| `pack-registry-production` | Required reviewer + protected `main`; the sole maintainer may approve their own deployment | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. A second approval is intentional: a rerun of an old publication job cannot mint fresh credentials from an approval granted to the original run. |
 | `public-releases` | Required reviewer + `runner-v*` and `mcp-v*` policies | None | Signed runner and MCP bridge builds. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
 | `mcp-registry-publication` | Required reviewer + `v*` and `main` recovery policies | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. `main` is allowed only so the current hardened publisher can recover an existing product release. |
 
