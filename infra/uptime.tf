@@ -123,6 +123,16 @@ resource "betteruptime_policy" "incident" {
   repeat_delay = 5 * 60
 }
 
+# Cloud Monitoring sends every native GCP alert into the same Better Stack
+# escalation policy as external uptime incidents. Email remains a second,
+# independent notification path in monitoring.tf.
+resource "betteruptime_google_monitoring_integration" "gcp" {
+  name            = "Emisar GCP production"
+  policy_id       = betteruptime_policy.incident.id
+  recovery_period = 180
+  paused          = false
+}
+
 # ── Monitors ──────────────────────────────────────────────────────────────────
 resource "betteruptime_monitor_group" "production" {
   name       = "Emisar Production"
@@ -155,7 +165,7 @@ resource "betteruptime_monitor" "portal" {
 # The unauthenticated `emisar pack install` path.
 resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
-  monitor_type = "status"
+  monitor_type = "keyword"
 
   pronounceable_name = "Emisar Action Pack Registry"
 
@@ -165,9 +175,27 @@ resource "betteruptime_monitor" "pack_registry" {
   follow_redirects = false
   remember_cookies = false
   verify_ssl       = true
+  ip_version       = "ipv4"
+  required_keyword = "\"schema_version\": 1"
 
   ssl_expiration    = 7
   domain_expiration = 14
+}
+
+resource "betteruptime_monitor" "pack_registry_ipv6" {
+  url          = "https://registry.${var.domain}/v1/catalog.json"
+  monitor_type = "keyword"
+
+  pronounceable_name = "Emisar Action Pack Registry IPv6"
+
+  monitor_group_id = betteruptime_monitor_group.production.id
+  policy_id        = betteruptime_policy.incident.id
+
+  follow_redirects = false
+  remember_cookies = false
+  verify_ssl       = true
+  ip_version       = "ipv6"
+  required_keyword = "\"schema_version\": 1"
 }
 
 # ── Public status page ────────────────────────────────────────────────────────

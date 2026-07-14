@@ -1,148 +1,86 @@
 #cloud-config
-# Container-Optimized OS. Boots the emisar portal behind the Google HTTPS load
-# balancer: fetches every runtime secret from Secret Manager into a root-only env
-# file, then starts the release. Its server entrypoint runs DB migrations under
-# Ecto's advisory lock before starting the endpoint. epmd + the Erlang distribution
-# ports let sibling instances form one BEAM cluster; peer discovery is
-# Emisar.Cluster.GCE (Compute API by label).
-#
-# Dollar-brace placeholders are Terraform interpolation; $NAME (no braces) is shell.
+# Container-Optimized OS. Systemd supervises separately pinned portal and Cloud
+# SQL Auth Proxy containers; neither service pulls an image on routine restart.
 
 write_files:
-  # Cloud SQL's per-instance server CA. The app verifies the DB's TLS cert
-  # against exactly this CA (DATABASE_SSL_CACERTFILE below) — no public CA can
-  # vouch for a Cloud SQL cert, and pinning the instance-specific CA is
-  # stronger than a public-store check anyway.
+%{ if database_auth_mode == "password" ~}
   - path: /etc/emisar/db-server-ca.pem
     permissions: "0444"
     content: |
       ${indent(6, db_server_ca)}
+%{ endif ~}
+
+  - path: /var/lib/emisar/ensure-image.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, ensure_image_script)}
 
   - path: /var/lib/emisar/start.sh
     permissions: "0755"
     content: |
-      #!/bin/bash
-      set -euo pipefail
+      ${indent(6, start_script)}
 
-      ENV_FILE=/run/emisar/env
-      mkdir -p /run/emisar
-      : > "$ENV_FILE"
-      chmod 600 "$ENV_FILE"
+  - path: /etc/systemd/system/emisar-image.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Ensure the pinned emisar image is present
+      Requires=docker.service
+      Wants=gcr-online.target network-online.target
+      After=docker.service gcr-online.target network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      Restart=on-failure
+      RestartSec=15
+      ExecStart=/bin/bash /var/lib/emisar/ensure-image.sh
 
-      # Metadata access token: auth for both Secret Manager and the Artifact
-      # Registry pull. A successful-but-empty grep/cut won't fail under pipefail,
-      # so guard each step explicitly.
-      token_response=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
-        --retry-connrefused --connect-timeout 5 --max-time 30 \
-        -H "Metadata-Flavor: Google" \
-        http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token)
-      TOKEN=$(printf '%s' "$token_response" | grep -oE '"access_token": ?"[^"]+"' | cut -d'"' -f4 || true)
-      [ -n "$TOKEN" ] || { echo "no metadata access token" >&2; exit 1; }
-
-      # $1 = secret id, $2 = env var. Terraform omits intentionally unpopulated
-      # optional secrets from this script, so every secret rendered here must be
-      # readable and non-empty before the instance may start.
-      fetch_secret() {
-        local body status data value
-        body=$(mktemp /run/emisar/secret.XXXXXX)
-        # Header via stdin (curl -H @-) so the cloud-platform token never lands on
-        # curl's argv, readable by any host process via /proc/<pid>/cmdline.
-        if ! status=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | \
-          curl --silent --show-error --retry 5 --retry-delay 2 \
-            --retry-connrefused --connect-timeout 5 --max-time 30 \
-            -H @- -o "$body" -w '%%{http_code}' \
-            "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access"); then
-          echo "Secret Manager request failed for $1" >&2
-          rm -f "$body"
-          return 1
-        fi
-        if [ "$status" != 200 ]; then
-          echo "Secret Manager returned HTTP $status for required secret $1" >&2
-          rm -f "$body"
-          return 1
-        fi
-        data=$(grep -oE '"data": ?"[^"]+"' "$body" | cut -d'"' -f4 || true)
-        rm -f "$body"
-        [ -n "$data" ] || { echo "Secret Manager returned no payload for $1" >&2; return 1; }
-        value=$(printf '%s' "$data" | base64 -d) || {
-          echo "Secret Manager returned invalid base64 for $1" >&2
-          return 1
-        }
-        [ -n "$value" ] || { echo "Secret Manager returned an empty value for $1" >&2; return 1; }
-        printf '%s=%s\n' "$2" "$value" >> "$ENV_FILE"
-      }
-
-%{ for secret_id, env_name in runtime_secrets ~}
-      fetch_secret "${secret_id}" "${env_name}"
-%{ endfor ~}
-
-      # A prod boot cannot start without these.
-      grep -q '^SECRET_KEY_BASE=' "$ENV_FILE" || { echo "SECRET_KEY_BASE missing from Secret Manager" >&2; exit 1; }
-      grep -q '^DATABASE_URL=' "$ENV_FILE" || { echo "DATABASE_URL missing from Secret Manager" >&2; exit 1; }
-
-      # Stable cluster cookie across image builds, derived from the app secret so
-      # old + new images share it during a rolling update.
-      SKB=$(grep '^SECRET_KEY_BASE=' "$ENV_FILE" | cut -d= -f2-)
-      printf 'RELEASE_COOKIE=%s\n' "$(printf 'emisar-release-cookie:%s' "$SKB" | sha256sum | cut -d' ' -f1)" >> "$ENV_FILE"
-
-      # This instance's internal IP becomes the BEAM node name (emisar@<ip>).
-      NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
-        --retry-connrefused --connect-timeout 5 --max-time 30 \
-        -H "Metadata-Flavor: Google" \
-        http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
-      [ -n "$NODE_IP" ] || { echo "no instance internal IP" >&2; exit 1; }
-
-      # Non-secret runtime env. FORCE_SSL=true: the LB terminates TLS and forwards
-      # X-Forwarded-Proto, so force_ssl serves (no redirect loop); /healthz and
-      # /readyz are excluded so plain-HTTP infrastructure probes get 200.
-      {
-        printf 'PHX_HOST=%s\n' "${domain}"
-        printf 'MAILER_FROM_EMAIL=%s\n' "${mailer_from_email}"
-        printf 'PORT=%s\n' "${app_port}"
-        printf 'FORCE_SSL=true\n'
-        printf 'DATABASE_SSL=1\n'
-        printf 'DATABASE_SSL_CACERTFILE=/etc/emisar/db-server-ca.pem\n'
-        printf 'NODE_IP=%s\n' "$NODE_IP"
-        printf 'EMISAR_CLUSTER_PROJECT=%s\n' "${project_id}"
-        printf 'EMISAR_CLUSTER_VALUE=%s\n' "${cluster_value}"
-      } >> "$ENV_FILE"
-%{ if disable_billing ~}
-      printf 'EMISAR_DISABLE_BILLING=1\n' >> "$ENV_FILE"
+%{ if database_auth_mode == "iam" ~}
+  # The proxy is independently pinned infrastructure. Keeping it in its own
+  # container leaves the portal image application-only and rollbacks uncoupled.
+  - path: /etc/systemd/system/emisar-cloud-sql-proxy.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Cloud SQL Auth Proxy for emisar
+      Wants=emisar-image.service
+      After=emisar-image.service
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/docker rm -f emisar-cloud-sql-proxy
+      ExecStart=/usr/bin/docker run --rm --name emisar-cloud-sql-proxy --network host --read-only --cap-drop=ALL --security-opt=no-new-privileges ${cloud_sql_proxy_image} --private-ip --auto-iam-authn --address 127.0.0.1 --port 5432 --health-check --http-address 127.0.0.1 --http-port 9090 ${database_connection_name}
+      ExecStop=/usr/bin/docker stop -t 10 emisar-cloud-sql-proxy
+      [Install]
+      WantedBy=multi-user.target
 %{ endif ~}
-
-      # Public GHCR pull, no credentials — prod runs the exact artifact
-      # self-hosters pull. CI passes the tested digest into the exact Terraform
-      # run a reviewer approves, so state records what actually boots.
-      docker pull ${container_image}
-
-      docker rm -f emisar 2>/dev/null || true
-      # /app/bin/server runs the advisory-locked migration before the endpoint.
-      exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
-        -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
-        ${container_image}
 
   - path: /etc/systemd/system/emisar.service
     permissions: "0644"
     content: |
       [Unit]
       Description=emisar portal
-      Wants=gcr-online.target network-online.target
-      After=gcr-online.target network-online.target
+      Wants=emisar-image.service
+%{ if database_auth_mode == "iam" ~}
+      # A proxy restart is a readiness failure, not a reason to restart the BEAM.
+      Wants=emisar-cloud-sql-proxy.service
+%{ endif ~}
+      After=emisar-image.service%{ if database_auth_mode == "iam" } emisar-cloud-sql-proxy.service%{ endif }
       [Service]
       Restart=always
       RestartSec=5
-      TimeoutStopSec=45
+      TimeoutStopSec=130
       ExecStart=/bin/bash /var/lib/emisar/start.sh
-      ExecStop=/usr/bin/docker stop -t 30 emisar
+      ExecStop=/usr/bin/docker stop -t 120 emisar
       [Install]
       WantedBy=multi-user.target
 
 runcmd:
-  # COS drops inbound by default (only lo/icmp/ESTABLISHED/SSH), so the VPC firewall
-  # is not sufficient alone. Open the app port (LB health check + traffic) and the
-  # BEAM cluster ports; the VPC firewall already restricts the sources.
   - /sbin/iptables -A INPUT -p tcp --dport ${app_port} -j ACCEPT
   - /sbin/iptables -A INPUT -p tcp --dport 4369 -j ACCEPT
   - /sbin/iptables -A INPUT -p tcp --dport 9100:9105 -j ACCEPT
   - systemctl daemon-reload
+%{ if database_auth_mode == "iam" ~}
+  - systemctl enable --now emisar-cloud-sql-proxy.service
+%{ endif ~}
   - systemctl enable --now emisar.service

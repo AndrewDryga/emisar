@@ -7,24 +7,40 @@ variable "region" {
   type        = string
   description = "GCP region for the regional MIG + Cloud SQL."
   default     = "us-central1"
+
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+[0-9]+$", var.region))
+    error_message = "region must be a GCP region name such as us-central1."
+  }
 }
 
-variable "zone" {
-  type        = string
-  description = "Zone the MIG places instances in and the capacity reservation lives in (must be inside var.region). Single-zone by design at the current size — the reservation covers the steady-state fleet while rollout surge capacity is on-demand; at 2+ instances, zone redundancy means adding zones with a per-zone reservation each (a deliberate change, not a default)."
-  default     = "us-central1-a"
+variable "zones" {
+  type        = list(string)
+  description = "Distinct zones used by the regional MIG and its per-zone steady-state reservations. Every zone must belong to var.region and instance_count must cover every zone."
+  default     = ["us-central1-a", "us-central1-b"]
+
+  validation {
+    condition = (
+      length(var.zones) >= 2 &&
+      length(distinct(var.zones)) == length(var.zones) &&
+      alltrue([for zone in var.zones : startswith(zone, "${var.region}-")])
+    )
+    error_message = "zones must contain at least two distinct zones inside region."
+  }
 }
 
 variable "domain" {
   type        = string
   description = "Public hostname, no trailing dot (served by the HTTPS LB)."
   default     = "emisar.dev"
-}
 
-variable "dns_name" {
-  type        = string
-  description = "Cloud DNS managed-zone DNS name — the apex WITH a trailing dot."
-  default     = "emisar.dev."
+  validation {
+    condition = (
+      !endswith(var.domain, ".") &&
+      can(regex("^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", var.domain))
+    )
+    error_message = "domain must be a lowercase DNS hostname without a trailing dot."
+  }
 }
 
 variable "subnet_cidr" {
@@ -33,8 +49,12 @@ variable "subnet_cidr" {
   default     = "10.82.0.0/24"
 
   validation {
-    condition     = can(cidrhost(var.subnet_cidr, 1))
-    error_message = "subnet_cidr must be a valid IPv4 CIDR block."
+    condition = (
+      can(cidrhost(var.subnet_cidr, 1)) &&
+      !strcontains(var.subnet_cidr, ":") &&
+      try(cidrhost(var.subnet_cidr, 0) == split("/", var.subnet_cidr)[0], false)
+    )
+    error_message = "subnet_cidr must be a canonical IPv4 network CIDR such as 10.82.0.0/24."
   }
 }
 
@@ -47,8 +67,30 @@ variable "pack_registry_bucket" {
 
 variable "pack_registry_location" {
   type        = string
-  description = "Location for the pack-registry bucket. A multi-region (US/EU/ASIA) gives world-wide read locality for unauthenticated `emisar pack install`; a single region is cheaper if installs are regional."
+  description = "Location of the public pack-registry bucket."
   default     = "US"
+}
+
+variable "release_cookie_ready" {
+  description = "Use the separate RELEASE_COOKIE secret. Keep false until release_cookie_value is the currently derived production cookie."
+  type        = bool
+  default     = false
+}
+
+variable "release_cookie_value" {
+  description = "Exact RELEASE_COOKIE payload. For the first cutover, derive the current production value so old and new nodes remain one cluster."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+  default     = null
+
+  validation {
+    condition = (
+      !var.release_cookie_ready ||
+      (var.release_cookie_value != null && length(var.release_cookie_value) >= 32)
+    )
+    error_message = "release_cookie_value must be at least 32 characters when release_cookie_ready is true."
+  }
 }
 
 # ── Compute ───────────────────────────────────────────────────────────────────
@@ -66,6 +108,11 @@ variable "instance_count" {
   validation {
     condition     = var.instance_count >= 1 && floor(var.instance_count) == var.instance_count
     error_message = "instance_count must be an integer >= 1."
+  }
+
+  validation {
+    condition     = var.instance_count >= length(var.zones)
+    error_message = "instance_count must be at least the number of zones so every configured zone has a serving instance and reservation."
   }
 }
 
@@ -120,8 +167,14 @@ variable "disable_billing" {
 
 variable "github_repository" {
   type        = string
-  description = "owner/repo whose GitHub Actions runs may assume the deploy identity (WIF attribute condition + SA binding in deploy.tf)."
+  description = "Repository whose main CD workflow may assume the pack-publisher identity."
   default     = "AndrewDryga/emisar"
+}
+
+variable "enforce_org_policies" {
+  description = "Promote dry-run organization policies after Policy Simulator and a reviewed plan are clean."
+  type        = bool
+  default     = false
 }
 
 variable "mailer_from_email" {
@@ -196,11 +249,45 @@ variable "db_tier" {
 variable "db_availability_type" {
   type        = string
   description = "Cloud SQL availability type, set per-workspace. REGIONAL runs a synchronous standby with automatic failover and requires a db-custom-* db_tier; ZONAL is single-zone (backups + PITR still apply)."
-  default     = "REGIONAL"
+  default     = "ZONAL"
 
   validation {
     condition     = contains(["ZONAL", "REGIONAL"], var.db_availability_type)
     error_message = "db_availability_type must be ZONAL or REGIONAL."
+  }
+}
+
+variable "database_auth_mode" {
+  type        = string
+  description = "Database connection path for new instance templates. Keep password through owner-role bootstrap; select iam only after database_owner_role_ready is true."
+  default     = "password"
+
+  validation {
+    condition     = contains(["password", "iam"], var.database_auth_mode)
+    error_message = "database_auth_mode must be password or iam."
+  }
+}
+
+variable "database_owner_role_ready" {
+  type        = bool
+  description = "Confirms the idempotent PostgreSQL bootstrap created emisar_owner, installed pgAudit, and reassigned existing objects before IAM login is enabled."
+  default     = false
+}
+
+variable "database_password_rollback_enabled" {
+  type        = bool
+  description = "Retain the built-in database user and DATABASE_URL secret as a tested rollback path during the IAM-auth soak. Set false only after the ownership and rollback checks in README.md."
+  default     = true
+}
+
+variable "pgaudit_log" {
+  type        = string
+  description = "Cloud SQL pgAudit classes. Start at none, install the extension, then select role,ddl; normal application reads and writes must never be enabled."
+  default     = "none"
+
+  validation {
+    condition     = contains(["none", "role,ddl"], var.pgaudit_log)
+    error_message = "pgaudit_log must be none or role,ddl. READ/WRITE workload auditing is intentionally prohibited."
   }
 }
 

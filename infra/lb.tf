@@ -128,9 +128,33 @@ resource "google_compute_url_map" "https" {
     path_matcher = "pack-registry"
   }
 
+  host_rule {
+    hosts        = ["www.${var.domain}"]
+    path_matcher = "www-to-apex"
+  }
+
+  host_rule {
+    hosts        = ["mta-sts.${var.domain}"]
+    path_matcher = "mta-sts"
+  }
+
   path_matcher {
     name            = "pack-registry"
     default_service = google_compute_backend_bucket.pack_registry.id
+  }
+
+  path_matcher {
+    name = "www-to-apex"
+    default_url_redirect {
+      host_redirect          = var.domain
+      redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+      strip_query            = false
+    }
+  }
+
+  path_matcher {
+    name            = "mta-sts"
+    default_service = google_compute_backend_bucket.mta_sts.id
   }
 }
 
@@ -165,6 +189,60 @@ resource "google_compute_url_map" "redirect" {
     redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
     strip_query            = false
   }
+
+
+  host_rule {
+    hosts        = ["www.${var.domain}"]
+    path_matcher = "www-to-apex"
+  }
+
+  path_matcher {
+    name = "www-to-apex"
+    default_url_redirect {
+      host_redirect          = var.domain
+      https_redirect         = true
+      redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+      strip_query            = false
+    }
+  }
+}
+
+# MTA-STS is intentionally isolated from the portal in its own public-read
+# bucket. Only the standardized policy object is published there.
+resource "google_storage_bucket" "mta_sts" {
+  project  = var.project_id
+  name     = "${var.project_id}-mta-sts"
+  location = var.region
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
+  force_destroy               = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_storage_bucket_iam_member" "mta_sts_public_read" {
+  bucket = google_storage_bucket.mta_sts.name
+  role   = google_project_iam_custom_role.pack_registry_public_reader.name
+  member = "allUsers"
+}
+
+resource "google_storage_bucket_object" "mta_sts" {
+  name          = ".well-known/mta-sts.txt"
+  bucket        = google_storage_bucket.mta_sts.name
+  content       = file("${path.module}/templates/mta-sts.txt")
+  content_type  = "text/plain"
+  cache_control = "no-store"
+}
+
+resource "google_compute_backend_bucket" "mta_sts" {
+  name        = "emisar-mta-sts-backend"
+  bucket_name = google_storage_bucket.mta_sts.name
+  enable_cdn  = false
+
+  depends_on = [google_storage_bucket_object.mta_sts]
 }
 
 resource "google_compute_target_http_proxy" "redirect" {

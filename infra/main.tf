@@ -20,6 +20,10 @@ provider "google" {
   region  = var.region
 }
 
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 # ── APIs ─────────────────────────────────────────────────────────────────────
 # Enabling a service needs serviceusage + cloudresourcemanager already on — the
 # README bootstrap step turns those on once. disable_on_destroy=false so a
@@ -36,6 +40,7 @@ resource "google_project_service" "apis" {
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "iap.googleapis.com",
+    "orgpolicy.googleapis.com",
     # Workload Identity Federation for the GitHub Actions deploy identity
     # (deploy.tf): pool/provider live in iam, the token exchange is sts, and
     # the impersonation call is iamcredentials.

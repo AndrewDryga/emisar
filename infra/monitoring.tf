@@ -10,6 +10,22 @@ resource "google_monitoring_notification_channel" "email" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_monitoring_notification_channel" "better_stack" {
+  display_name = "Emisar: Better Stack Escalation"
+  type         = "webhook_tokenauth"
+  labels = {
+    url = betteruptime_google_monitoring_integration.gcp.webhook_url
+  }
+  depends_on = [google_project_service.apis]
+}
+
+locals {
+  alert_notification_channels = [
+    google_monitoring_notification_channel.email.id,
+    google_monitoring_notification_channel.better_stack.id,
+  ]
+}
+
 # External readiness check proves the site and its database are serving.
 resource "google_monitoring_uptime_check_config" "https" {
   display_name = "Emisar: Control Plane Readiness"
@@ -28,6 +44,39 @@ resource "google_monitoring_uptime_check_config" "https" {
     labels = {
       project_id = var.project_id
       host       = var.domain
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_uptime_check_config" "pack_registry_semantic" {
+  display_name = "Emisar: Pack Registry Catalog Semantics"
+  timeout      = "10s"
+  period       = "300s"
+
+  http_check {
+    path         = "/v1/catalog.json"
+    port         = 443
+    use_ssl      = true
+    validate_ssl = true
+  }
+
+  content_matchers {
+    content = "1"
+    matcher = "MATCHES_JSON_PATH"
+
+    json_path_matcher {
+      json_path    = "$.schema_version"
+      json_matcher = "EXACT_MATCH"
+    }
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = var.project_id
+      host       = "registry.${var.domain}"
     }
   }
 
@@ -58,7 +107,39 @@ resource "google_monitoring_alert_policy" "uptime" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "pack_registry_checks" {
+  display_name = "Emisar: Pack Registry Integrity Check Failed"
+  combiner     = "OR"
+
+  dynamic "conditions" {
+    for_each = {
+      semantic = google_monitoring_uptime_check_config.pack_registry_semantic.uptime_check_id
+    }
+    content {
+      display_name = "${title(conditions.key)} check failed"
+      condition_threshold {
+        filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id = \"${conditions.value}\""
+        comparison      = "COMPARISON_GT"
+        threshold_value = 1
+        duration        = "600s"
+
+        aggregations {
+          alignment_period     = "1200s"
+          per_series_aligner   = "ALIGN_NEXT_OLDER"
+          cross_series_reducer = "REDUCE_COUNT_FALSE"
+          group_by_fields      = ["resource.label.host"]
+        }
+        trigger {
+          count = 1
+        }
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "db_cpu" {
@@ -79,7 +160,7 @@ resource "google_monitoring_alert_policy" "db_cpu" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "db_disk" {
@@ -100,7 +181,7 @@ resource "google_monitoring_alert_policy" "db_disk" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "db_memory" {
@@ -121,7 +202,7 @@ resource "google_monitoring_alert_policy" "db_memory" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 # Transaction-ID wraparound is the one Postgres failure mode that gives no
@@ -147,7 +228,7 @@ resource "google_monitoring_alert_policy" "db_txid" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 # Users seeing errors while the readiness check still passes — a sustained 5xx
@@ -179,7 +260,7 @@ resource "google_monitoring_alert_policy" "lb_5xx" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 # The managed certs auto-renew, so a shrinking expiry window means renewal is
@@ -207,7 +288,7 @@ resource "google_monitoring_alert_policy" "cert_expiry" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 # The zero-unavailable rollout should never put the MIG below target. Remaining
@@ -230,7 +311,7 @@ resource "google_monitoring_alert_policy" "mig_below_target" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
 }
 
 # NAT port exhaustion silently breaks all egress (GHCR pulls on boot, Postmark,
@@ -254,5 +335,106 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.id]
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_logging_metric" "recurrent_job_failures" {
+  name        = "emisar/recurrent_job_failures"
+  description = "Crashes at the shared supervised recurrent-job executor boundary."
+  filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"recurrent_job.failed\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "billing_sync_failures" {
+  name        = "emisar/billing_sync_failures"
+  description = "Paddle subscription retrieval or persistence failures."
+  filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\")"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "cluster_failures" {
+  name        = "emisar/cluster_failures"
+  description = "Final GCE discovery errors or repeated BEAM distribution connection failures."
+  filter      = "resource.type=\"gce_instance\" AND ((severity>=ERROR AND jsonPayload.message:\"cluster discovery failed\") OR jsonPayload.message:\"cluster: can't connect\")"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "recurrent_job_failures" {
+  display_name = "Emisar: Recurrent Job Failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Any recurrent job crash in 5 minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.recurrent_job_failures.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "billing_sync_failures" {
+  display_name = "Emisar: Paddle Reconciliation Failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Any Paddle reconciliation failure in 5 minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.billing_sync_failures.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "cluster_failures" {
+  display_name = "Emisar: Application Cluster Formation Failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Persistent peer discovery or distribution failures in 5 minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.cluster_failures.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
 }

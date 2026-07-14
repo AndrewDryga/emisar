@@ -2,6 +2,7 @@
 # uploaded for a remote run. Patterns are relative to this module dir (infra/).
 .git
 .terraform/
+**/.terraform/
 *.tfstate
 *.tfstate.*
 crash.log
@@ -16,3 +17,6 @@ terraform.tfvars
 .expert/
 dev/
 docs/
+# Local validation and drill fixtures never enter the workspace package.
+tests/
+drills/

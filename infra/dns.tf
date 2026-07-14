@@ -10,7 +10,7 @@
 
 resource "google_dns_managed_zone" "emisar" {
   name        = "emisar"
-  dns_name    = var.dns_name
+  dns_name    = "${var.domain}."
   description = "emisar public zone — authoritative DNS for ${var.domain}"
 
   # Explicit — this zone is intentionally internet-facing (public authoritative DNS).
@@ -65,7 +65,7 @@ resource "google_dns_record_set" "aaaa" {
   rrdatas      = [google_compute_global_address.ipv6.address]
 }
 
-# www → apex (the LB redirects the canonical bare domain).
+# www resolves to the shared LB; host rules in lb.tf redirect it to the apex.
 resource "google_dns_record_set" "www" {
   name         = "www.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -235,14 +235,13 @@ resource "google_dns_record_set" "tlsrpt" {
 }
 
 # ── MTA-STS — enforce TLS on inbound mail to our Google MX ────────────────────
-# The policy is served at https://mta-sts.emisar.dev/.well-known/mta-sts.txt by
-# the portal (priv/static/.well-known/mta-sts.txt); `mta-sts` CNAMEs to the apex,
-# so it rides the same GCP LB and its TLS comes from the Certificate Manager cert
+# The policy is served at https://mta-sts.emisar.dev/.well-known/mta-sts.txt from
+# a dedicated one-object GCS backend; `mta-sts` CNAMEs to the apex, so it rides
+# the same GCP LB and its TLS comes from the Certificate Manager cert
 # (lb.tf), which carries the mta-sts SAN + cert-map entry — without them the policy
 # is unfetchable and this control silently no-ops. Ships in `mode: testing` —
-# failures are reported via TLS-RPT above but NO mail is blocked; flip the policy
-# file to `mode: enforce` AND bump the `id` below once the reports are clean (the
-# DMARC ramp discipline, for mail-in-transit).
+# failures are reported via TLS-RPT above but NO mail is blocked. The TXT id is
+# derived from the policy bytes, so any reviewed policy edit forces a refetch.
 resource "google_dns_record_set" "mta_sts_host" {
   name         = "mta-sts.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -256,8 +255,7 @@ resource "google_dns_record_set" "mta_sts_txt" {
   managed_zone = google_dns_managed_zone.emisar.name
   type         = "TXT"
   ttl          = 3600
-  # Bump this id whenever mta-sts.txt changes, so senders re-fetch the policy.
-  rrdatas = ["\"v=STSv1; id=20260705000000\""]
+  rrdatas      = ["\"v=STSv1; id=${substr(filesha256("${path.module}/templates/mta-sts.txt"), 0, 32)}\""]
 }
 
 # ── CAA — restrict certificate issuance ───────────────────────────────────────

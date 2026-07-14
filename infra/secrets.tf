@@ -15,8 +15,9 @@
 # cloud-init skips its env var and the release treats the feature as off
 # (runtime.exs); Paddle completeness is enforced at plan time in compute.tf.
 locals {
-  app_secrets = {
+  secret_definitions = {
     "emisar-secret-key-base"         = "SECRET_KEY_BASE"
+    "emisar-release-cookie"          = "RELEASE_COOKIE"
     "emisar-database-url"            = "DATABASE_URL"
     "emisar-paddle-api-key"          = "PADDLE_API_KEY"
     "emisar-paddle-webhook-secret"   = "PADDLE_WEBHOOK_SECRET"
@@ -25,6 +26,28 @@ locals {
     "emisar-postmark-webhook-secret" = "POSTMARK_WEBHOOK_SECRET"
     "emisar-sentry-dsn"              = "SENTRY_DSN"
     "emisar-mixpanel-token"          = "MIXPANEL_TOKEN"
+  }
+
+  app_secrets = {
+    for id, env_name in local.secret_definitions : id => env_name
+    if id != "emisar-release-cookie" || var.release_cookie_ready
+  }
+
+  # One deliberately edited generation per secret. Changing a generation writes
+  # a new version for only that secret; its computed version is rendered into
+  # cloud-init, so the instance template rolls and replacement VMs fetch exactly
+  # the reviewed version rather than a mutable `latest` alias.
+  secret_generations = {
+    "emisar-secret-key-base"         = 1
+    "emisar-release-cookie"          = 1
+    "emisar-database-url"            = 1
+    "emisar-paddle-api-key"          = 1
+    "emisar-paddle-webhook-secret"   = 1
+    "emisar-paddle-client-token"     = 1
+    "emisar-postmark-api-token"      = 1
+    "emisar-postmark-webhook-secret" = 1
+    "emisar-sentry-dsn"              = 1
+    "emisar-mixpanel-token"          = 1
   }
 
   # Externally-issued credentials, one TFC workspace variable each.
@@ -51,32 +74,57 @@ locals {
   # rendered secret is therefore required: IAM, network, HTTP, and payload
   # failures stop the VM before it can become ready with degraded production
   # behavior hidden behind a fallback.
-  runtime_secrets = {
-    for id, env_name in local.app_secrets : id => env_name
-    if contains([
-      "emisar-secret-key-base",
-      "emisar-database-url",
-    ], id) || contains(local.populated_optional_secrets, id)
+  mandatory_runtime_secrets = merge(
+    {
+      "emisar-secret-key-base" = {
+        env_name = "SECRET_KEY_BASE"
+        version  = google_secret_manager_secret_version.secret_key_base.version
+      }
+    },
+    var.release_cookie_ready ? {
+      "emisar-release-cookie" = {
+        env_name = "RELEASE_COOKIE"
+        version  = google_secret_manager_secret_version.release_cookie[0].version
+      }
+    } : {},
+    var.database_auth_mode == "password" ? {
+      "emisar-database-url" = {
+        env_name = "DATABASE_URL"
+        version  = google_secret_manager_secret_version.database_url[0].version
+      }
+    } : {},
+  )
+
+  optional_runtime_secrets = {
+    for id in local.populated_optional_secrets : id => {
+      env_name = local.app_secrets[id]
+      version  = google_secret_manager_secret_version.optional[id].version
+    }
   }
+
+  runtime_secrets = merge(local.mandatory_runtime_secrets, local.optional_runtime_secrets)
 }
 
 resource "google_secret_manager_secret" "app" {
-  for_each  = local.app_secrets
-  secret_id = each.key
+  for_each            = local.secret_definitions
+  project             = var.project_id
+  secret_id           = each.key
+  deletion_protection = true
 
   replication {
     auto {}
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [google_project_service.apis]
 }
 
-# Least privilege: the VM SA gets accessor on exactly these secrets, not a
-# project-wide secret role. Iterates the STATIC key map (not the resource map),
-# so instance keys resolve in every context — a for_each over the resource map
-# is "known only after apply" during a local import and hard-errors.
 resource "google_secret_manager_secret_iam_member" "vm_access" {
-  for_each  = local.app_secrets
+  for_each  = local.secret_definitions
+  project   = var.project_id
   secret_id = google_secret_manager_secret.app[each.key].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.vm.email}"
@@ -92,12 +140,22 @@ ephemeral "random_password" "secret_key_base" {
 resource "google_secret_manager_secret_version" "secret_key_base" {
   secret                 = google_secret_manager_secret.app["emisar-secret-key-base"].id
   secret_data_wo         = ephemeral.random_password.secret_key_base.result
-  secret_data_wo_version = 1
+  secret_data_wo_version = local.secret_generations["emisar-secret-key-base"]
+  deletion_policy        = "ABANDON"
+}
+
+resource "google_secret_manager_secret_version" "release_cookie" {
+  count                  = var.release_cookie_ready ? 1 : 0
+  secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id
+  secret_data_wo         = var.release_cookie_value
+  secret_data_wo_version = local.secret_generations["emisar-release-cookie"]
+  deletion_policy        = "ABANDON"
 }
 
 resource "google_secret_manager_secret_version" "optional" {
   for_each               = toset(local.populated_optional_secrets)
   secret                 = google_secret_manager_secret.app[each.key].id
   secret_data_wo         = local.optional_secret_values[each.key]
-  secret_data_wo_version = 1
+  secret_data_wo_version = local.secret_generations[each.key]
+  deletion_policy        = "ABANDON"
 }

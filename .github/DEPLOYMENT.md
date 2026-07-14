@@ -36,8 +36,7 @@ Configure these environments with deployment branches restricted to `main`:
 | `mcp-registry-publication` | Required reviewer + `v*` and `main` recovery policies | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. `main` is allowed only so the current hardened publisher can recover an existing product release. |
 
 Run `infra/scripts/verify-pack-environment.sh` and retain the green output before
-setting foundation variable `publisher_environment_protected=true`; the
-replacement WIF grant remains absent while that variable is false.
+enabling pack publication or treating an old job rerun as safe.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -48,15 +47,14 @@ saved plan in HCP Terraform. Do not change CD back to standard plan-and-apply
 runs: an unconfirmed standard plan holds the workspace lock indefinitely.
 
 HCP dynamic GCP credentials use separate identities. Plans impersonate
-`terraform-plan@emisar.iam.gserviceaccount.com`, which has Viewer, IAM Security
-Reviewer, Secret Manager Viewer, and bucket-level metadata read only; it cannot
-access secret payloads or mutate the project. Applies impersonate `terraform@emisar.iam.gserviceaccount.com`
-through an apply-phase-only WIF binding and service-specific administrative
-roles. The provider condition is pinned to workspace `Dryga/emisar/emisar` and
-the `plan`/`apply` phases. Never restore the pool-wide impersonation binding or
-`roles/editor`. The handoff is incomplete until
-`infra/scripts/cleanup-workload-authority.sh --apply` proves the apply identity's
-project roles exactly match the routine allowlist and act-as is VM-scoped.
+`terraform-plan@emisar.iam.gserviceaccount.com`, which has read-only review
+roles and cannot access secret payloads or mutate the project. Applies
+impersonate `terraform@emisar.iam.gserviceaccount.com` through an
+apply-phase-only WIF binding and service-specific administrative roles. The
+provider condition is pinned to workspace `Dryga/emisar/emisar` and the
+`plan`/`apply` phases. Never restore the pool-wide impersonation binding or
+`roles/editor`. The single workspace owns the complete production stack, so
+its HCP token and apply identity are production-admin credentials.
 
 ## Repository rules
 

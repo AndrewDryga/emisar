@@ -67,6 +67,10 @@ the separate, creds-gated deploy step.
    Enforce create-only immutable prefixes and pointer-only create/delete needed
    for replacement through conditional IAM; do not add a history bucket, mirror
    publisher, or route cutover.
+11. **Infrastructure sidecars stay out of the portal image.** Run the Cloud SQL
+   Auth Proxy and future host-level helpers as separately pinned, cloud-init-managed
+   containers. The portal Dockerfile contains the application release only; never
+   bake a VM sidecar binary into it or couple application rollback to that binary.
 
 ## House style
 

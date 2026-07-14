@@ -25,7 +25,7 @@ output "container_image" {
 }
 
 output "db_private_ip" {
-  description = "Cloud SQL private IP (the DATABASE_URL secret is built from this)."
+  description = "Cloud SQL private IP used by the local IAM-auth proxy."
   value       = google_sql_database_instance.emisar.private_ip_address
 }
 
@@ -35,17 +35,17 @@ output "nameservers" {
 }
 
 output "dnssec_ds_record" {
-  description = "Key-signing DS published at the registrar; keep it aligned during future DNSSEC rotations."
-  value       = try(data.google_dns_keys.emisar.key_signing_keys[0].ds_record, "(pending — re-run after the zone's keys generate)")
+  description = "All key-signing DS records that must remain published at the registrar during DNSSEC key overlap."
+  value       = [for key in data.google_dns_keys.emisar.key_signing_keys : key.ds_record]
 }
 
 output "packs_workload_identity_provider" {
   description = "Full WIF provider resource name the main-only CD workflow authenticates against for pack publishing (google-github-actions/auth `workload_identity_provider`)."
-  value       = google_iam_workload_identity_pool_provider.github.name
+  value       = "projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/github-actions/providers/github"
 }
 
 output "pack_registry_bucket" {
-  description = "GCS bucket holding the published pack-registry artifacts (the publisher and portal write/read here)."
+  description = "Single GCS bucket holding mutable registry pointers and immutable pack, catalog, and schema objects."
   value       = google_storage_bucket.pack_registry.name
 }
 

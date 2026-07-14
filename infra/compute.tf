@@ -1,19 +1,43 @@
 locals {
-  cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
-    container_image   = var.container_image
-    project_id        = var.project_id
-    domain            = var.domain
-    app_port          = var.app_port
-    mailer_from_email = var.mailer_from_email
-    cluster_value     = "emisar"
-    disable_billing   = var.disable_billing
-    runtime_secrets   = local.runtime_secrets
-    # Cloud SQL's per-instance server CA — the app pins DB TLS verification to
-    # it (no public CA can vouch for a Cloud SQL cert). Google rotating the CA
-    # changes this value, which replaces the template and rolls the fleet —
-    # exactly the redeploy the new CA requires.
-    db_server_ca = google_sql_database_instance.emisar.server_ca_cert[0].cert
+  cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
+  ensure_image_script = templatefile("${path.module}/templates/ensure-image.sh", {
+    container_image       = var.container_image
+    cloud_sql_proxy_image = local.cloud_sql_proxy_image
+    database_auth_mode    = var.database_auth_mode
   })
+  start_script = templatefile("${path.module}/templates/start.sh", {
+    container_image          = var.container_image
+    project_id               = var.project_id
+    domain                   = var.domain
+    app_port                 = var.app_port
+    mailer_from_email        = var.mailer_from_email
+    cluster_value            = "emisar"
+    disable_billing          = var.disable_billing
+    runtime_secrets          = local.runtime_secrets
+    database_auth_mode       = var.database_auth_mode
+    database_connection_name = google_sql_database_instance.emisar.connection_name
+    database_user            = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
+    database_name            = google_sql_database.emisar.name
+    database_role            = var.database_owner_role_ready ? "emisar_owner" : ""
+    release_cookie_ready     = var.release_cookie_ready
+  })
+  cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
+    container_image          = var.container_image
+    cloud_sql_proxy_image    = local.cloud_sql_proxy_image
+    app_port                 = var.app_port
+    database_auth_mode       = var.database_auth_mode
+    database_connection_name = google_sql_database_instance.emisar.connection_name
+    db_server_ca             = google_sql_database_instance.emisar.server_ca_cert[0].cert
+    ensure_image_script      = local.ensure_image_script
+    start_script             = local.start_script
+  })
+
+  zone_reservation_counts = {
+    for index, zone in var.zones : zone => (
+      floor(var.instance_count / length(var.zones)) +
+      (index < var.instance_count % length(var.zones) ? 1 : 0)
+    )
+  }
 }
 
 # ── Health checks: repair liveness is not traffic readiness ──────────────────
@@ -61,15 +85,19 @@ resource "google_compute_health_check" "readiness" {
 # on-demand capacity, so a zonal stockout can delay a rollout without reducing
 # the already-running serving capacity.
 resource "google_compute_reservation" "emisar" {
-  name = "emisar-base"
-  zone = var.zone
+  for_each = local.zone_reservation_counts
+
+  # Zone + machine shape make every ForceNew successor name unique, so
+  # create_before_destroy can actually create it before releasing the old slot.
+  name = "emisar-${each.key}-${replace(var.machine_type, "_", "-")}"
+  zone = each.key
 
   specific_reservation_required = false
 
   # The provider calls the reserved machine shape "specific_reservation" even
   # when consumption is automatic. Matching VMs may consume these slots.
   specific_reservation {
-    count = var.instance_count
+    count = each.value
     instance_properties {
       machine_type = var.machine_type
     }
@@ -83,6 +111,11 @@ resource "google_compute_reservation" "emisar" {
   }
 
   depends_on = [google_project_service.apis]
+}
+
+moved {
+  from = google_compute_reservation.emisar
+  to   = google_compute_reservation.emisar["us-central1-a"]
 }
 
 # ── Instance template: Container-Optimized OS running the portal container ────
@@ -164,11 +197,8 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   base_instance_name               = "emisar"
   region                           = var.region
   target_size                      = var.instance_count
-  distribution_policy_target_shape = "BALANCED"
-  # Pinned to the base reservation's zone so every steady-state instance can
-  # consume it. Zone redundancy at 2+ instances = more zones with a per-zone
-  # reservation each — a deliberate change (see var.zone).
-  distribution_policy_zones = [var.zone]
+  distribution_policy_target_shape = "EVEN"
+  distribution_policy_zones        = var.zones
 
   # Block `terraform apply` until the rollout is healthy, so a broken deploy FAILS
   # the apply instead of returning while the fleet is down.
@@ -195,14 +225,11 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   # readiness and connection draining, this keeps target capacity serving for
   # the whole rollout, including when target_size == 1.
   update_policy {
-    type                  = "PROACTIVE"
-    minimal_action        = "REPLACE"
-    max_surge_fixed       = 1
-    max_unavailable_fixed = 0
-    # Required explicitly: the BALANCED target shape does not support
-    # proactive cross-zone redistribution, and the API rejects the default
-    # (UNSPECIFIED) instead of inferring NONE.
-    instance_redistribution_type = "NONE"
+    type                         = "PROACTIVE"
+    minimal_action               = "REPLACE"
+    max_surge_fixed              = 1
+    max_unavailable_fixed        = 0
+    instance_redistribution_type = "PROACTIVE"
   }
 
   timeouts {
@@ -222,6 +249,21 @@ resource "google_compute_region_instance_group_manager" "emisar" {
       )
       error_message = "Billing is enabled (disable_billing = false) but paddle_api_key / paddle_webhook_secret / paddle_client_token are not all set in the TFC workspace. Set all three, or set disable_billing = true to ship the Paddle stub."
     }
+
+    precondition {
+      condition     = var.database_auth_mode != "iam" || var.database_owner_role_ready
+      error_message = "database_auth_mode=iam requires database_owner_role_ready=true after the PostgreSQL ownership bootstrap has succeeded."
+    }
+
+    precondition {
+      condition     = var.database_auth_mode != "password" || var.database_password_rollback_enabled
+      error_message = "database_auth_mode=password requires database_password_rollback_enabled=true."
+    }
+
+    precondition {
+      condition     = var.pgaudit_log != "role,ddl" || var.database_owner_role_ready
+      error_message = "pgaudit_log=role,ddl requires the bootstrap that installs the pgaudit extension first."
+    }
   }
 
   # Runtime boot prerequisites: without explicit edges the MIG can come up before
@@ -232,10 +274,11 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_compute_router_nat.emisar,
     google_compute_firewall.lb_to_app,
     google_compute_firewall.cluster_dist,
-    google_secret_manager_secret_iam_member.vm_access,
     google_secret_manager_secret_version.secret_key_base,
-    google_project_iam_member.vm_compute_viewer,
     google_sql_database.emisar,
     google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_version.release_cookie,
+    google_secret_manager_secret_version.optional,
+    google_sql_user.emisar_vm,
   ]
 }

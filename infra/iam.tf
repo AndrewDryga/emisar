@@ -1,12 +1,10 @@
-# ── Least-privilege service account for the portal instances ─────────────────
-# No Owner/Editor. Each role below is the minimum the instance needs; secret
-# access is granted per-secret in secrets.tf, not project-wide.
+# ── Least-privilege service account for the portal instances ────────────────
 resource "google_service_account" "vm" {
+  project      = var.project_id
   account_id   = "emisar-vm"
   display_name = "Emisar Control Plane Instances"
 }
 
-# Ship logs + metrics (observability / SOC 2 monitoring evidence).
 resource "google_project_iam_member" "vm_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"
@@ -19,30 +17,48 @@ resource "google_project_iam_member" "vm_monitoring" {
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 
-# Read-only Compute access so the libcluster GCE strategy can list the MIG's
-# instances (compute.instances.list) to discover its BEAM cluster peers.
-resource "google_project_iam_member" "vm_compute_viewer" {
+resource "google_project_iam_custom_role" "cluster_discovery" {
+  project     = var.project_id
+  role_id     = "emisarClusterDiscovery"
+  title       = "Emisar Cluster Discovery"
+  description = "List Compute Engine instances for regional MIG peer discovery."
+  permissions = ["compute.instances.list"]
+  stage       = "GA"
+}
+
+moved {
+  from = google_project_iam_member.vm_compute_viewer
+  to   = google_project_iam_member.vm_cluster_discovery
+}
+
+resource "google_project_iam_member" "vm_cluster_discovery" {
   project = var.project_id
-  role    = "roles/compute.viewer"
+  role    = google_project_iam_custom_role.cluster_discovery.name
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 
-# No image-registry role: the portal image is pulled anonymously from PUBLIC
-# GHCR — self-hosters run the exact same artifact (see var.container_image).
-
-# Connect to Cloud SQL (the connection is over the private VPC path; this grant
-# is what an IAM-auth or Auth-Proxy hardening would build on).
-resource "google_project_iam_member" "vm_cloudsql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.vm.email}"
+moved {
+  from = google_project_iam_member.vm_cloudsql_client
+  to   = google_project_iam_member.vm_cloudsql["roles/cloudsql.client"]
 }
 
-# ── Cloud Audit Logs — Data Access logging (SOC 2: CC7 audit trail) ───────────
-# Admin Activity logs are always-on + retained 400 days by default. Data Access
-# logs (who READ what — Secret Manager access, SQL admin reads) are off by
-# default; turn them on for the security-relevant services. DATA_WRITE/DATA_READ
-# across these services is the record an auditor asks for.
+resource "google_project_iam_member" "vm_cloudsql" {
+  for_each = toset([
+    "roles/cloudsql.client",
+    "roles/cloudsql.instanceUser",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.vm.email}"
+
+  condition {
+    title       = "emisar_database_only"
+    description = "The portal VM may connect and use IAM login only on the emisar instance."
+    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+  }
+}
+
+# ── Cloud Audit Logs ────────────────────────────────────────────────────────────────
 resource "google_project_iam_audit_config" "data_access" {
   project = var.project_id
   service = "allServices"

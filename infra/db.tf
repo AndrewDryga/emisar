@@ -67,6 +67,29 @@ resource "google_sql_database_instance" "emisar" {
       name  = "log_min_duration_statement"
       value = "1000" # log statements slower than 1s (perf + audit signal)
     }
+
+    database_flags {
+      name  = "cloudsql.iam_authentication"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "cloudsql.enable_pgaudit"
+      value = "on"
+    }
+
+    # Start with none until CREATE EXTENSION pgaudit has run. The only permitted
+    # production classes are role + DDL; ordinary SELECT/INSERT/UPDATE/DELETE
+    # traffic is deliberately excluded.
+    database_flags {
+      name  = "pgaudit.log"
+      value = var.pgaudit_log
+    }
+
+    database_flags {
+      name  = "pgaudit.log_parameter"
+      value = "off"
+    }
   }
 
   # Private IP requires the service-networking peering to exist first.
@@ -89,6 +112,10 @@ resource "google_sql_database_instance" "emisar" {
 resource "google_sql_database" "emisar" {
   name     = "emisar"
   instance = google_sql_database_instance.emisar.name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # App DB credential. Generated ephemerally during initial provisioning, then
@@ -96,28 +123,57 @@ resource "google_sql_database" "emisar" {
 # never enters new state snapshots. Rotation is a deliberate maintenance change,
 # not a shared generation knob on ordinary infrastructure applies.
 ephemeral "random_password" "db" {
+  count   = var.database_password_rollback_enabled ? 1 : 0
   length  = 32
   special = false
 }
 
-resource "google_sql_user" "emisar" {
+resource "google_sql_user" "password_rollback" {
+  count               = var.database_password_rollback_enabled ? 1 : 0
   name                = "emisar"
   instance            = google_sql_database_instance.emisar.name
-  password_wo         = ephemeral.random_password.db.result
+  password_wo         = ephemeral.random_password.db[0].result
   password_wo_version = 1
+}
+
+moved {
+  from = google_sql_user.emisar
+  to   = google_sql_user.password_rollback[0]
+}
+
+# Terraform can create the Cloud SQL IAM principal, but PostgreSQL ownership is
+# bootstrapped explicitly first (README.md). Deferring creation until that role
+# exists avoids temporarily granting the application cloudsqlsuperuser.
+resource "google_sql_user" "emisar_vm" {
+  count          = var.database_owner_role_ready ? 1 : 0
+  name           = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
+  instance       = google_sql_database_instance.emisar.name
+  type           = "CLOUD_IAM_SERVICE_ACCOUNT"
+  database_roles = ["emisar_owner"]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # DATABASE_URL the release reads (the secret CONTAINER is declared in secrets.tf;
 # this fills its value from the private IP + generated password). SSL is required
 # by the instance and switched on in the release via DATABASE_SSL=1 (compute.tf).
 resource "google_secret_manager_secret_version" "database_url" {
+  count  = var.database_password_rollback_enabled ? 1 : 0
   secret = google_secret_manager_secret.app["emisar-database-url"].id
   secret_data_wo = format(
     "ecto://%s:%s@%s/%s",
-    google_sql_user.emisar.name,
-    ephemeral.random_password.db.result,
+    google_sql_user.password_rollback[0].name,
+    ephemeral.random_password.db[0].result,
     google_sql_database_instance.emisar.private_ip_address,
     google_sql_database.emisar.name,
   )
-  secret_data_wo_version = 1
+  secret_data_wo_version = local.secret_generations["emisar-database-url"]
+  deletion_policy        = "DELETE"
+}
+
+moved {
+  from = google_secret_manager_secret_version.database_url
+  to   = google_secret_manager_secret_version.database_url[0]
 }
