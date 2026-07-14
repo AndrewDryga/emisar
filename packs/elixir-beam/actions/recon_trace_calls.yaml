@@ -9,7 +9,9 @@ side_effects:
   - Installs recon_trace call tracing in the running release, then clears it after duration_ms.
   - Can add runtime overhead while active.
   - Clears recon_trace state at the end of the capture window.
-  - "include_args or include_return prints raw call arguments and return values into the captured output, which is stored in the audit trail and returned to the caller. Those values routinely carry secrets and PII (a Plug.Conn holds secret_key_base and session data; connection state holds DB and API credentials; function arguments hold whatever the caller passed). The runner's always-on redaction only catches secrets in a few text shapes and does NOT reliably mask BEAM term output, so leave both flags false unless the specific traced function is known not to touch sensitive data."
+  - "include_args or include_return prints raw call arguments and return values into the captured output, which is stored in the audit trail and returned to the caller."
+  - "Raw BEAM terms routinely carry secrets and PII: a Plug.Conn holds secret_key_base and session data, connection state holds DB and API credentials, and function arguments hold whatever the caller passed."
+  - "The runner's always-on redaction only catches secrets in a few text shapes and does not reliably mask BEAM term output. Leave both flags false unless the traced function is known not to touch sensitive data."
 args:
   - name: module
     type: string

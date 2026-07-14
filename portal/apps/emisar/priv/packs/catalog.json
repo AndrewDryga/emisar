@@ -14753,13 +14753,13 @@
     {
       "id": "elixir-beam",
       "name": "Elixir / BEAM runtime",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Diagnostics for Elixir and Erlang/BEAM applications on the runner host or inside Docker containers: toolchain versions, EPMD registrations, BEAM OS process state, Linux /proc memory and process-tree detail, release RPC snapshots, supervisor/process/ETS/allocator/scheduler/port introspection, binary-leak checks, and bounded recon_trace call tracing. Releases are discovered from running BEAM processes; target one by release name, or by container for a release inside Docker.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/elixir-beam",
-      "content_hash": "sha256:7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/elixir-beam/0.1.0/7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e/pack.tar.gz",
+      "content_hash": "sha256:d4a1e560fd2cfceec21de81c872a2c6d71caf6aa975b2c5b3ddce0a0d147e621",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/elixir-beam/0.1.1/d4a1e560fd2cfceec21de81c872a2c6d71caf6aa975b2c5b3ddce0a0d147e621/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -15050,7 +15050,9 @@
             "Installs recon_trace call tracing in the running release, then clears it after duration_ms.",
             "Can add runtime overhead while active.",
             "Clears recon_trace state at the end of the capture window.",
-            "include_args or include_return prints raw call arguments and return values into the captured output, which is stored in the audit trail and returned to the caller. Those values routinely carry secrets and PII (a Plug.Conn holds secret_key_base and session data; connection state holds DB and API credentials; function arguments hold whatever the caller passed). The runner's always-on redaction only catches secrets in a few text shapes and does NOT reliably mask BEAM term output, so leave both flags false unless the specific traced function is known not to touch sensitive data."
+            "include_args or include_return prints raw call arguments and return values into the captured output, which is stored in the audit trail and returned to the caller.",
+            "Raw BEAM terms routinely carry secrets and PII: a Plug.Conn holds secret_key_base and session data, connection state holds DB and API credentials, and function arguments hold whatever the caller passed.",
+            "The runner's always-on redaction only catches secrets in a few text shapes and does not reliably mask BEAM term output. Leave both flags false unless the traced function is known not to touch sensitive data."
           ],
           "args": [
             {
@@ -16032,6 +16034,355 @@
             }
           ],
           "search_terms": []
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.0",
+          "content_hash": "sha256:7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/elixir-beam/0.1.0/7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e/pack.tar.gz",
+          "actions": [
+            {
+              "id": "beam.elixir_version",
+              "title": "elixir --version",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "elixir",
+                "argv": [
+                  "--version"
+                ]
+              }
+            },
+            {
+              "id": "beam.epmd_names",
+              "title": "epmd -names",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "epmd",
+                "argv": [
+                  "-names"
+                ]
+              }
+            },
+            {
+              "id": "beam.erl_system_version",
+              "title": "Erlang/OTP system version",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "erl",
+                "argv": [
+                  "-noshell",
+                  "-eval",
+                  "io:format(\"~s~n\", [erlang:system_info(system_version)]), halt()."
+                ]
+              }
+            },
+            {
+              "id": "beam.process_limits",
+              "title": "BEAM process limits",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "cat",
+                "argv": [
+                  "/proc/{{ args.pid }}/limits"
+                ]
+              }
+            },
+            {
+              "id": "beam.process_memory",
+              "title": "BEAM process memory summary",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.process_status",
+              "title": "BEAM /proc status summary",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "awk '/^(Name|State|Pid|PPid|Uid|Gid|VmPeak|VmSize|VmRSS|Threads|FDSize|voluntary_ctxt_switches|nonvoluntary_ctxt_switches):/ { print }' /proc/{{ args.pid }}/status"
+                ]
+              }
+            },
+            {
+              "id": "beam.process_tree",
+              "title": "BEAM process tree",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.processes",
+              "title": "BEAM process list",
+              "summary": "",
+              "description": "",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null,
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "ps -eo pid,user,etime,pcpu,pmem,comm | awk 'NR == 1 || $6 ~ /(^|\\/)(beam\\.smp|beam|elixir)$/ { print }' | head -100"
+                ]
+              }
+            },
+            {
+              "id": "beam.recon_trace_calls",
+              "title": "Bounded recon_trace call capture",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "high",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.recon_trace_clear",
+              "title": "Clear recon_trace tracing",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "medium",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_allocators",
+              "title": "Elixir release memory allocators",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_applications",
+              "title": "Elixir release applications",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_binary_leak",
+              "title": "Elixir release binary leak check",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "medium",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_debug_tools",
+              "title": "Elixir release debug tools",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_ets_tables",
+              "title": "Elixir release ETS tables",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_memory",
+              "title": "Elixir release memory snapshot",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_pid",
+              "title": "Elixir release OS PID",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_ports",
+              "title": "Elixir release BEAM ports",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_process_info",
+              "title": "Elixir release process info",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_registered",
+              "title": "Elixir release registered processes",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_runtime",
+              "title": "Elixir release runtime snapshot",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_scheduler_usage",
+              "title": "Elixir release scheduler usage",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_supervisor_tree",
+              "title": "Elixir release supervisor tree",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_targets",
+              "title": "Debuggable Elixir releases",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            },
+            {
+              "id": "beam.release_top_processes",
+              "title": "Elixir release top BEAM processes",
+              "summary": "",
+              "description": "",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": null,
+              "args": null,
+              "examples": null,
+              "search_terms": null
+            }
+          ]
         }
       ]
     },
