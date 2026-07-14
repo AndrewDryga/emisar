@@ -100,6 +100,10 @@ personal email. When you change what the stack enforces, keep `.agent/COMPLIANCE
 (the internal control mapping — git-ignored BY DECISION: candid gap notes are
 for us, not the public repo) honest and current in the same change.
 
+Keep repeatable validation, verification, and recovery tooling. Delete one-time
+bootstrap, migration, and live-cleanup executables once their operation is
+complete; git history retains the evidence without leaving a stale mutation path.
+
 Operator-visible names are product copy. Private alerting objects use Title Case
 and an `Emisar:` prefix so they group clearly in vendor consoles. Monitor names
 must also read naturally when spoken by an automated call, so omit punctuation

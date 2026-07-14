@@ -163,34 +163,10 @@ never exposed as plaintext in Terraform state or Secret Manager; Cloud SQL keeps
 only what it needs to verify logins. No DATABASE_URL version or VM secret access
 remains.
 
-A genuinely blank database uses a two-phase bootstrap:
-
-1. Apply with `database_owner_role_ready=false`. Terraform creates the database
-   and keeps the application MIG at zero.
-2. Create one disposable private VM and service account. Grant that identity
-   conditional `roles/cloudsql.client` and `roles/cloudsql.instanceUser` access
-   to only the `emisar` Cloud SQL instance.
-3. Set a short-lived random password on the built-in `emisar` principal. Run the
-   pinned proxy without auto-IAM authentication and execute
-   `scripts/prepare-database-iam.sql` through an IAP tunnel.
-4. Create a temporary `CLOUD_IAM_SERVICE_ACCOUNT` database user for the
-   disposable VM identity with `database_roles=["emisar_owner"]`. Restart the
-   pinned proxy with `--private-ip --auto-iam-authn`, then run `/app/bin/migrate`
-   from the exact `container_image` digest with `DATABASE_ROLE=emisar_owner`,
-   `POOL_SIZE=1`, a disposable `SECRET_KEY_BASE`, and billing disabled. This
-   creates the application extensions and schema before any serving VM exists.
-5. Through the IAM proxy, run `scripts/verify-database-iam.sql` with the temporary
-   database username as `expected_session_user`.
-6. Increment `google_sql_user.pgaudit_owner.password_wo_version`, set
-   `database_owner_role_ready=true`, and apply both changes together. This
-   replaces the temporary password with a new inaccessible value before creating
-   the production IAM database user and starting the application fleet.
-7. Verify production IAM login, migrations, readiness, and clustering. Delete the
-   temporary database user, VM, IAM bindings, service account, and local password
-   file, then prove the retired password fails.
-
-A PITR restore already contains the roles, extensions, and migrations, so it uses
-the verifier and skips the blank-database bootstrap.
+Disaster recovery uses PITR, which preserves the roles, extensions, and
+migrations. Run the verifier against the restored database before serving
+traffic. The repository does not retain completed one-time database-bootstrap
+or project-cleanup mutation scripts.
 
 pgAudit records only `ROLE` and `DDL`. In Cloud Audit Logs these are Data Access
 entries with `protoPayload.methodName=cloudsql.instances.query`; parameters are
