@@ -105,17 +105,27 @@ defmodule Emisar.CompatTest do
     end
   end
 
-  describe "runner_minimum/0 and mcp_minimum/0" do
+  describe "configured requirement accessors" do
     test "expose the raw requirement string for operator-facing messages" do
-      put_policy(runner_minimum: ">= 0.4.0", mcp_minimum: "~> 0.5")
+      put_policy(
+        runner_minimum: ">= 0.4.0",
+        runner_recommended: ">= 0.5.0",
+        mcp_minimum: "~> 0.5",
+        mcp_recommended: ">= 0.6.0"
+      )
+
       assert Compat.runner_minimum() == ">= 0.4.0"
+      assert Compat.runner_recommended() == ">= 0.5.0"
       assert Compat.mcp_minimum() == "~> 0.5"
+      assert Compat.mcp_recommended() == ">= 0.6.0"
     end
 
     test "are nil when unset" do
       put_policy([])
       assert Compat.runner_minimum() == nil
+      assert Compat.runner_recommended() == nil
       assert Compat.mcp_minimum() == nil
+      assert Compat.mcp_recommended() == nil
     end
   end
 end

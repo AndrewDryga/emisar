@@ -823,16 +823,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
         — {@approved_count} so far.
       </p>
 
-      <.status_note
+      <.event_block
         :if={@runner_state == :offline}
         icon="hero-bolt-slash"
         tone={:amber}
         title="Runner offline"
         class="mt-4"
       >
-        You can still approve — the action queues and runs once the runner reconnects, or
-        expires if it doesn't.
-      </.status_note>
+        <:body>
+          You can still approve — the action queues and runs once the runner reconnects, or
+          expires if it doesn't.
+        </:body>
+      </.event_block>
 
       <%= cond do %>
         <% not @can_decide? -> %>

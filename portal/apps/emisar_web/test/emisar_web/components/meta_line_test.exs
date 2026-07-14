@@ -56,12 +56,33 @@ defmodule EmisarWeb.Components.MetaLineTest do
         """)
 
       assert html =~ ~s(id="sign-in-link")
-      assert html =~ ~s(data-copy="#sign-in-link")
+      assert html =~ ~s(data-copy-text="https://emisar.dev/a/acme")
       assert html =~ "https://emisar.dev/a/acme"
       assert html =~ "bg-zinc-950/80"
       # A URL is one line that scrolls, not a break-all block that wraps.
       assert html =~ "whitespace-nowrap"
       refute html =~ "break-all"
+    end
+
+    test "wraps a short command and names its copy action when requested" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.code_line
+          id="upgrade-command"
+          value="curl https://emisar.dev/install.sh | sudo bash"
+          copy_label="Copy command"
+          wrap
+          stack_on_mobile
+        />
+        """)
+
+      assert html =~ "whitespace-pre-wrap break-words"
+      assert html =~ "flex-col items-stretch sm:flex-row sm:items-center"
+      assert html =~ "Copy command"
+      assert html =~ ">curl https://emisar.dev/install.sh | sudo bash</code>"
+      assert html =~ ~s(data-copy-text="curl https://emisar.dev/install.sh | sudo bash")
     end
   end
 end

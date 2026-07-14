@@ -74,8 +74,15 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _} =
         ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "0.0.0"})
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
       assert html =~ "unsupported"
+      assert html =~ "MCP bridge update required"
+      assert html =~ "/install-mcp.sh | sudo bash"
+      assert html =~ "then restart its LLM client"
+      assert has_element?(lv, "#mcp-upgrade.mb-10")
+
+      assert text_position(html, "MCP bridge update required") <
+               text_position(html, "0 active now")
     end
 
     test "a client on a current emisar-mcp bridge shows no staleness chip", %{conn: conn} do
@@ -89,6 +96,26 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
       refute html =~ "unsupported"
       refute html =~ "outdated"
+      refute html =~ "/install-mcp.sh | sudo bash"
+    end
+
+    test "a revoked client does not prompt the operator to upgrade its old bridge", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Old bot"}, subject)
+
+      {:ok, key} =
+        ApiKeys.record_client_info(key, %{
+          "name" => "Claude Code",
+          "bridge_version" => "0.0.0"
+        })
+
+      {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
+      assert html =~ "unsupported"
+      refute html =~ "MCP bridge update required"
+      refute html =~ "/install-mcp.sh | sudo bash"
     end
 
     test "the list has status/name filters + the custom tab opens the key-builder form",
@@ -704,5 +731,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert render(lv) =~ "LLM agents"
     end
+  end
+
+  defp text_position(html, text) do
+    {position, _length} = :binary.match(html, text)
+    position
   end
 end

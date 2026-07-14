@@ -91,7 +91,7 @@ defmodule EmisarWeb.MagicLinkLive do
     ~H"""
     <.auth_layout title="Sign in via email">
       <%= if @sent? do %>
-        <.callout tone={:brand} icon={false} title="Check your inbox.">
+        <.callout tone={:brand} icon="hero-envelope" title="Check your inbox.">
           <p :if={@email} class="mt-1.5">
             We emailed a sign-in link and a 6-character code to <code class="font-mono text-brand-100">{@email}</code>. Enter
             the code here, or open the link from <em>this same browser</em>. Both expire in

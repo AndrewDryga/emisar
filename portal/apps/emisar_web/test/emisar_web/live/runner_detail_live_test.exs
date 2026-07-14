@@ -33,6 +33,11 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     assert html =~ "unsupported"
+    assert html =~ "Runner update required"
+    assert html =~ "/install.sh | sudo bash"
+    assert html =~ "bg-amber-300/40"
+    refute html =~ "bg-amber-500/10"
+    assert html =~ "preserves its configuration and restarts the service"
   end
 
   test "a current runner shows no version chip", %{conn: conn, account: account} do
@@ -41,6 +46,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     refute html =~ "unsupported"
     refute html =~ "outdated"
+    refute html =~ "/install.sh | sudo bash"
   end
 
   # a runner that has reported no catalog renders the

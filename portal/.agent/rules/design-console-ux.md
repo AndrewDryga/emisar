@@ -68,8 +68,8 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 | Archetype | Width | Skeleton (top → bottom) | Reference |
 |---|---|---|---|
-| **List** | `:full` for a DENSE columnar table (many `<:col>`s — Runs, Audit); `:table` for a CARD/grouped list or panel list (`<:item>` rows, sibling panels — Runners, Approvals, Packs, Agents) so single-value rows don't stretch thin | shell title + `:actions` primary CTA · `page_intro` + `doc_link` · optional `summary_band` · ONE LiveTable (filters from `Query.filters/0` — a deep-link pivot is a REAL filter reading active in the bar, never a chip; `pivot_chip` is DELETED) · 4-state empty slot (§4) | RunsLive |
-| **Detail** | `:table` — the SAME width as the list it's reached from, so the header never jumps (run/runner/approval/audit details all converted) | `detail_header` (back · entity title · `:actions`) · NAKED meta row on the canvas, Status first (one flex row at sm+, 2-col grid on phones — no `meta_strip` island); **a qualifier inside a meta VALUE (source kind, client version, group) is dim inline type — bright value then `· qualifier` in zinc-500 (run detail's "Dispatched by" is the template), NEVER a filled chip riding the value; chips mark a row/card's STATE ("no 2FA", "current"), not a value's metadata. A status field renders the NORMALIZED state the page leads with, never a raw DB status that contradicts the verdict (lapsed-but-unswept approval = expired, not pending)** · conditional callout stack (tight `space-y-3` group inside the page's `space-y-12` wrapper) · canvas sections (`section_header`) · artifacts as `code_panel`-framed boxes · danger zones last | RunDetail, RunnerDetail |
+| **List** | `:full` for a DENSE columnar table (many `<:col>`s — Runs, Audit); `:table` for a CARD/grouped list or panel list (`<:item>` rows, sibling panels — Runners, Approvals, Packs, Agents) so single-value rows don't stretch thin | shell title + `:actions` primary CTA · `page_intro` + `doc_link` · one contiguous attention-spine slot · optional `summary_band` · ONE LiveTable (filters from `Query.filters/0` — a deep-link pivot is a REAL filter reading active in the bar, never a chip; `pivot_chip` is DELETED) · 4-state empty slot (§4) | RunsLive |
+| **Detail** | `:table` — the SAME width as the list it's reached from, so the header never jumps (run/runner/approval/audit details all converted) | `detail_header` (back · entity title · `:actions`) · NAKED meta row on the canvas, Status first (one flex row at sm+, 2-col grid on phones — no `meta_strip` island); **a qualifier inside a meta VALUE (source kind, client version, group) is dim inline type — bright value then `· qualifier` in zinc-500 (run detail's "Dispatched by" is the template), NEVER a filled chip riding the value; chips mark a row/card's STATE ("no 2FA", "current"), not a value's metadata. A status field renders the NORMALIZED state the page leads with, never a raw DB status that contradicts the verdict (lapsed-but-unswept approval = expired, not pending)** · conditional attention stack (tight `space-y-3` group inside the page's `space-y-12` wrapper) · canvas sections (`section_header`) · artifacts as `code_panel`-framed boxes · danger zones last | RunDetail, RunnerDetail |
 | **Editor** | `:table` — same rule as Detail: the list's width | `detail_header` + Cancel in header · the editing surface (repeating units = naked forms under `STEP N` keys with hairlines, never card washes) · Save/primary action in ONE place (the surface's footer row) · inline errors · no silent data loss on navigate | RunbookEditor |
 | **Create flow** | `:form` | own `/new` route · single `panel` form · privilege choices as `choice_cards` · **in-page success step** (do-again / back-to-list) — never flash-and-redirect | Team invite |
 | **Settings** | `:settings` | `page_intro` + `doc_link` · NAKED sibling `<section>`s, one per concern, each headed by `section_header` (title/subtitle/actions) — panels are DEAD (§8.1); never a label-left/content-right divider table | Profile, SSO :new/:edit |
@@ -78,6 +78,17 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 Structural rules that ride along:
 
+- **The attention spine owns remedies.** Page-level actionable notices sit together between
+  the intro and the summary/list, never on opposite sides of counters or filters. If a
+  notice tells the operator to run a command, copy a secret, or take another concrete
+  next step, that payload renders inside the same spine. A sibling alert + code
+  panel reads as two unrelated events. Multiple notices keep 24px between them, then the
+  stack leaves a larger 40px exit gutter after whichever notice renders last so it does
+  not run into the counter, filter, or content region below. Do not put identical bottom
+  margin on every notice: inter-alert rhythm and post-alert rhythm carry different
+  hierarchy. The same remedy keeps one tone across list and detail pages; stronger color
+  is earned by a different consequence, not by the same upgrade action carrying a
+  stricter version label.
 - **A canvas `:cards` list carries `divide-y` only — no top `border-t`.** The between-row
   hairline is row-lattice grammar; a `border-t` at the top of a headerless list is an
   orphaned rule that reads as a separator under a column header that isn't there (esp.
@@ -199,15 +210,15 @@ The danger reads from the icon + the button + the consequence copy — the surfa
 
 ## 7. Graduated house rules (formerly memory-only — now doctrine)
 
-1. **No green confirmation box.** A callout earns its space only when actionable
+1. **No green confirmation box.** An attention block earns its space only when actionable
    (warning/error/next-step). Healthy state renders as *absence* — collapse
    `if ok → green else → amber` to `:if={problem?}`. **The same test applies to
-   every tone:** a box holds a *functional* payload (a secret + its copy/ack, a
-   form, a verdict, an event alert). A note ABOUT an adjacent artifact —
-   credential hygiene under a command, caveats beside a control — is naked
-   status-line grammar (tone dot + lead + zinc body), never a ringed island
-   that outshouts the artifact it describes (the install wizard's amber
-   credential box was this violation).
+   every tone:** a contained box holds a *functional* payload (a secret + its copy/ack
+   or a form), while operational alerts use the naked icon-capped spine. A
+   passive caveat ABOUT an adjacent control may use the naked status-note grammar;
+   a one-time credential, blocked action, or state requiring a next move is an
+   alert and gets the spine. Neither becomes a ringed island that outshouts the
+   artifact it describes.
 2. **Choice→consequence editors.** A control whose settings produce a real consequence
    renders that consequence as the color-coded verdict (warning-only); option cards argue
    toward it; **selection state stays neutral** — a risky option must never wear the safe
@@ -287,6 +298,26 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     tab-resume reconnect window so the operator can see that recovery occurred. Verify
     brief and sustained disconnects in the browser; a notice whose debounce outlasts
     the common case is functionally absent.
+20. **Operational alerts use the icon-capped brand spine everywhere.** The toned icon
+    starts a quiet vertical line that binds title, explanation, remedy, and actions into
+    one unit. Do not replace it with a tinted wash, ringed box, dashed placeholder, or a
+    bare icon-and-copy row. `<.callout>` defaults to this spine and `<.event_block>` adds
+    an explicit body/payload contract; `variant={:strip}` is reserved for a shell-wide
+    interruption that must span the whole viewport. Sweep: amber/rose `bg-*-500/10`
+    alert boxes, dashed pending boxes, and status-result rows that duplicate the spine.
+21. **A spine without a visible, semantically exact icon is broken.** Every attention
+    block starts with a real `hero-*` glyph; `<.event_block>` rejects empty/invalid names
+    and `<.callout>` provides a tone default. Match the metaphor to the prescribed
+    action: installing a newer version uses download semantics; `arrow-path` means
+    refresh, retry, or work in progress. When introducing a new Heroicon class, verify
+    the built asset or its browser-computed mask — a present `<span>` with
+    `mask-image: none` is not an icon. Sweep: spine roots without a Heroicon child,
+    action/icon mismatches, and computed empty masks.
+22. **Spacing utilities only work between element siblings.** When prose and a command,
+    secret, or action need a deliberate gap, wrap the prose in `<p>` (or another semantic
+    element) before applying `space-y-*`. Raw HEEx text nodes do not match Tailwind's
+    sibling selector, so a spacing class can exist while producing no visual space.
+    Sweep: `space-y-*` containers with unwrapped text or slot output beside an artifact.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

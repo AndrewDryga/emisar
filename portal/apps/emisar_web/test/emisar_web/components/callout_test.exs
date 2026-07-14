@@ -1,9 +1,9 @@
 defmodule EmisarWeb.Components.CalloutTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.callout/1` — the ONE tinted callout every
-  console banner/heads-up composes (design-console-ux §1), and the two thin domain
-  wrappers over it (`offline_notice`, `subscription_banner`). Asserts the tone
-  ramps, both variants, the navigate link form, and that the message is
+  Renders `EmisarWeb.CoreComponents.callout/1` — the ONE icon-capped attention
+  spine every console alert composes (design-console-ux §1), and the two thin
+  domain wrappers over it (`offline_notice`, `subscription_banner`). Asserts the
+  tone ramps, the shell-strip exception, the navigate link form, and that the message is
   escaped (IL-16: callouts carry interpolated, attacker-influenceable text).
   """
   use ExUnit.Case, async: true
@@ -12,15 +12,15 @@ defmodule EmisarWeb.Components.CalloutTest do
   alias EmisarWeb.CoreComponents
 
   describe "callout/1" do
-    test "neutral is the quiet default with an info icon" do
+    test "neutral is the quiet default with an info icon and spine" do
       assigns = %{}
 
       html = rendered_to_string(~H"<CoreComponents.callout>Heads up.</CoreComponents.callout>")
 
       assert html =~ "Heads up."
-      assert html =~ "bg-zinc-900/40"
+      assert html =~ "bg-zinc-700"
       assert html =~ "hero-information-circle-mini"
-      assert html =~ "rounded-lg border"
+      refute html =~ "rounded-lg border"
     end
 
     test "amber cautions with a triangle" do
@@ -31,7 +31,8 @@ defmodule EmisarWeb.Components.CalloutTest do
           ~H"<CoreComponents.callout tone={:amber}>Copy it now.</CoreComponents.callout>"
         )
 
-      assert html =~ "bg-amber-500/10"
+      assert html =~ "bg-amber-300/40"
+      assert html =~ "text-amber-300"
       assert html =~ "hero-exclamation-triangle-mini"
     end
 
@@ -43,7 +44,7 @@ defmodule EmisarWeb.Components.CalloutTest do
           ~H"<CoreComponents.callout tone={:brand}>Signed only.</CoreComponents.callout>"
         )
 
-      assert html =~ "bg-brand-500/10"
+      assert html =~ "bg-brand-400/40"
       assert html =~ "hero-information-circle-mini"
     end
 
@@ -55,11 +56,11 @@ defmodule EmisarWeb.Components.CalloutTest do
           ~H"<CoreComponents.callout tone={:rose}>Run failed.</CoreComponents.callout>"
         )
 
-      assert html =~ "bg-rose-500/10"
-      assert html =~ "text-rose-200"
+      assert html =~ "bg-rose-400/40"
+      assert html =~ "text-rose-400"
     end
 
-    test "renders a bold title above the message" do
+    test "renders a medium title above the message" do
       assigns = %{}
 
       html =
@@ -67,12 +68,12 @@ defmodule EmisarWeb.Components.CalloutTest do
           ~H|<CoreComponents.callout tone={:rose} title="Cancelled">the why</CoreComponents.callout>|
         )
 
-      assert html =~ "font-semibold"
+      assert html =~ "font-medium"
       assert html =~ "Cancelled"
       assert html =~ "the why"
     end
 
-    test "icon overrides the tone default; icon={false} renders none" do
+    test "icon overrides the tone default" do
       assigns = %{}
 
       overridden =
@@ -82,16 +83,17 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       assert overridden =~ "hero-hand-raised"
       refute overridden =~ "hero-exclamation-triangle-mini"
-
-      bare =
-        rendered_to_string(
-          ~H"<CoreComponents.callout icon={false}>quiet</CoreComponents.callout>"
-        )
-
-      refute bare =~ "hero-"
     end
 
-    test "renders the right-aligned action slot" do
+    test "rejects an empty icon instead of rendering an invisible glyph" do
+      assigns = %{}
+
+      assert_raise FunctionClauseError, fn ->
+        rendered_to_string(~H|<CoreComponents.callout icon="">missing</CoreComponents.callout>|)
+      end
+    end
+
+    test "renders the action inside the same spine" do
       assigns = %{}
 
       html =
@@ -103,7 +105,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         """)
 
       assert html =~ "Review"
-      assert html =~ "shrink-0 self-center"
+      assert html =~ "mt-3"
     end
 
     test "navigate makes the whole callout a hoverable link" do
@@ -118,7 +120,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         """)
 
       assert html =~ ~s(<a href="/app/x/packs")
-      assert html =~ "hover:bg-amber-500/[0.16]"
+      assert html =~ "hover:bg-white/[0.04]"
       assert html =~ "Review pack trust →"
     end
 
@@ -178,7 +180,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         </CoreComponents.offline_notice>
         """)
 
-      assert critical =~ "bg-rose-500/10"
+      assert critical =~ "bg-rose-400/40"
       assert critical =~ "All runners offline"
     end
   end
@@ -191,13 +193,13 @@ defmodule EmisarWeb.Components.CalloutTest do
         rendered_to_string(~H|<CoreComponents.subscription_banner status="past_due" />|)
 
       assert past_due =~ "Payment past due"
-      assert past_due =~ "bg-rose-500/10"
+      assert past_due =~ "bg-rose-400/40"
 
       healthy =
         rendered_to_string(~H|<CoreComponents.subscription_banner status="active" />|)
 
-      refute healthy =~ "bg-rose-500/10"
-      refute healthy =~ "bg-amber-500/10"
+      refute healthy =~ "bg-rose-400/40"
+      refute healthy =~ "bg-amber-300/40"
     end
   end
 end

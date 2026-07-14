@@ -365,10 +365,19 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "a below-minimum runner shows an 'unsupported' chip", %{conn: conn, account: account} do
-      Fixtures.Runners.create_runner(account_id: account.id, name: "old", runner_version: "0.0.0")
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "old",
+        runner_version: "0.0.0"
+      )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "unsupported"
+      assert html =~ "Runner update required"
+      assert html =~ "/install.sh | sudo bash"
+      assert html =~ "Copy command"
+      assert has_element?(lv, "#fleet-attention.mb-10.space-y-6")
+      assert text_position(html, "Runner update required") < text_position(html, "1 connected")
     end
 
     test "a below-recommended runner shows an 'outdated' chip", %{conn: conn, account: account} do
@@ -380,6 +389,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "outdated"
+      assert html =~ "Runner update available"
+      assert html =~ "/install.sh | sudo bash"
     end
 
     test "a current runner shows no staleness chip", %{conn: conn, account: account} do
@@ -389,9 +400,16 @@ defmodule EmisarWeb.RunnersLiveTest do
         runner_version: "1.0.0"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       refute html =~ "unsupported"
       refute html =~ "outdated"
+      refute html =~ "/install.sh | sudo bash"
+      refute has_element?(lv, "#fleet-attention")
     end
+  end
+
+  defp text_position(html, text) do
+    {position, _length} = :binary.match(html, text)
+    position
   end
 end

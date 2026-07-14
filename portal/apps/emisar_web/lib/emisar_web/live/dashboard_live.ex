@@ -737,7 +737,7 @@ defmodule EmisarWeb.DashboardLive do
       icon="hero-shield-exclamation"
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} trust review"}
       navigate={~p"/app/#{@current_account}/packs"}
-      class="mb-4"
+      class="mb-10"
     >
       Dispatch is blocked against these until an admin trusts or rejects the new hash.
       <:action>Review pack trust →</:action>
@@ -947,7 +947,7 @@ defmodule EmisarWeb.DashboardLive do
         tone={:rose}
         icon="hero-exclamation-triangle"
         title={"You're at your runner limit (#{@billing.runner_count} of #{@billing.runner_limit})."}
-        class="mb-4"
+        class="mb-10"
       >
         The next runner that tries to register will get a 402 response and fail to come
         online. Upgrade the plan to add more, or remove an unused runner first.
@@ -966,7 +966,7 @@ defmodule EmisarWeb.DashboardLive do
         tone={:amber}
         icon="hero-exclamation-triangle"
         title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
-        class="mb-4"
+        class="mb-10"
       >
         Heads up — your next install will use the last slot. Upgrade now if you expect to
         add more.

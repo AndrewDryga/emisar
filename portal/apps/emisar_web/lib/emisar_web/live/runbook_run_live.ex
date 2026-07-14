@@ -756,30 +756,32 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <%!-- A group step that resolves to zero active runners makes dispatch
                refuse the whole runbook — surface that here, before Start. --%>
-          <.status_note
+          <.event_block
             :if={!@execution && @blast_radius.no_runners_step}
             icon="hero-signal-slash"
             tone={:amber}
             title={"Step #{@blast_radius.no_runners_step}'s target has no active runners"}
             class="mb-6"
           >
-            Dispatch will refuse the runbook until one connects.
-          </.status_note>
+            <:body>Dispatch will refuse the runbook until one connects.</:body>
+          </.event_block>
 
           <%!-- Offline preflight: a planned target that's offline queues (doesn't
                fail) until it reconnects — surface it before Start so a half-dark
                fleet isn't a surprise mid-run. --%>
           <% offline_targets =
             offline_planned_runners(@blast_radius.plan, @runners, @current_account.id) %>
-          <.status_note
+          <.event_block
             :if={!@execution && offline_targets != []}
             icon="hero-signal-slash"
             tone={:amber}
             title={offline_preflight_title(offline_targets)}
             class="mb-6"
           >
-            Dispatch queues their steps until they reconnect — a heads-up, not a blocker.
-          </.status_note>
+            <:body>
+              Dispatch queues their steps until they reconnect — a heads-up, not a blocker.
+            </:body>
+          </.event_block>
 
           <%!-- Plan steps, shown until the first dispatch. --%>
           <.steps :if={!@execution && @steps != []} variant={:plan}>

@@ -39,12 +39,15 @@ config :emisar,
   email_link_secret: "emisar-dev-email-link-secret-value"
 
 # Control-plane version-compatibility policy for runners and the
-# emisar-mcp bridge (Emisar.Compat). Thresholds are unset by default —
-# a fresh deployment warns about nothing until an operator configures a
-# `runner_minimum`/`runner_recommended` (and MCP equivalents) as `Version`
-# requirement strings. Enforcement is warn-only until flipped on.
+# emisar-mcp bridge (Emisar.Compat). Keep the recommended requirements on the
+# latest published releases; minimum requirements are the oldest releases we
+# still support. Enforcement remains warn-only until deliberately flipped on.
 config :emisar, Emisar.Compat,
+  runner_minimum: ">= 0.9.0",
+  runner_recommended: ">= 0.9.1",
   runner_enforce: false,
+  mcp_minimum: ">= 0.2.0",
+  mcp_recommended: ">= 0.2.1",
   mcp_enforce: false
 
 # Configures the mailer

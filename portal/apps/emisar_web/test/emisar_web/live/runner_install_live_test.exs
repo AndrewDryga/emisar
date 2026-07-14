@@ -40,6 +40,8 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       {waiting_pos, _} = :binary.match(html, "Waiting for a runner to connect")
 
       assert script_pos < waiting_pos
+      assert html =~ "bg-amber-300/40"
+      refute html =~ "border-dashed border-amber"
     end
 
     # an operator (not just an admin) can open the wizard

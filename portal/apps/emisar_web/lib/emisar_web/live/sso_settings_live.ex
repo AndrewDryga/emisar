@@ -1413,26 +1413,23 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :summary, summary)
 
     ~H"""
-    <div class="rounded-lg border border-brand-500/30 bg-brand-500/10 p-3.5 text-sm text-brand-100">
-      <div class="flex items-center gap-2 font-medium">
-        <.icon name="hero-check-circle" class="h-4 w-4 text-brand-400" />
-        Discovery succeeded — this issuer serves a valid OIDC configuration.
-      </div>
-      <dl class="mt-2 space-y-1 text-xs text-brand-200/80">
+    <.event_block icon="hero-check-circle" tone={:brand} title="Discovery succeeded">
+      <:body>This issuer serves a valid OIDC configuration.</:body>
+      <dl class="mt-3 space-y-1 text-xs text-zinc-400">
         <div :if={@summary.authorization_endpoint} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-brand-200/60">Authorization</dt>
-          <dd class="truncate font-mono">{@summary.authorization_endpoint}</dd>
+          <dt class="w-32 shrink-0 text-zinc-500">Authorization</dt>
+          <dd class="truncate font-mono text-zinc-300">{@summary.authorization_endpoint}</dd>
         </div>
         <div :if={@summary.token_endpoint} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-brand-200/60">Token</dt>
-          <dd class="truncate font-mono">{@summary.token_endpoint}</dd>
+          <dt class="w-32 shrink-0 text-zinc-500">Token</dt>
+          <dd class="truncate font-mono text-zinc-300">{@summary.token_endpoint}</dd>
         </div>
         <div :if={@summary.jwks_uri} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-brand-200/60">JWKS</dt>
-          <dd class="truncate font-mono">{@summary.jwks_uri}</dd>
+          <dt class="w-32 shrink-0 text-zinc-500">JWKS</dt>
+          <dd class="truncate font-mono text-zinc-300">{@summary.jwks_uri}</dd>
         </div>
       </dl>
-    </div>
+    </.event_block>
     """
   end
 
@@ -1440,10 +1437,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :message, test_error_message(reason))
 
     ~H"""
-    <div class="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3.5 text-sm text-rose-200">
-      <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-      <span>{@message}</span>
-    </div>
+    <.event_block
+      icon="hero-exclamation-triangle"
+      tone={:rose}
+      title="Connection test failed"
+    >
+      <:body>{@message}</:body>
+    </.event_block>
     """
   end
 

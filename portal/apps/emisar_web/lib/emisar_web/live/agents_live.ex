@@ -445,6 +445,12 @@ defmodule EmisarWeb.AgentsLive do
 
   defp mcp_bridge_version(_), do: nil
 
+  defp usable_mcp_bridge_versions(keys) do
+    keys
+    |> Enum.filter(&ApiKeys.ApiKey.usable?/1)
+    |> Enum.map(&mcp_bridge_version/1)
+  end
+
   defp status_label(:active), do: "active"
   defp status_label(:idle), do: "idle"
   defp status_label(:dormant), do: "dormant"
@@ -720,52 +726,6 @@ defmodule EmisarWeb.AgentsLive do
         form={@form}
       />
 
-      <%!-- NAKED posture line (the runners grammar): activity now leads, the
-           quiet states render only when they exist, and the key total lives in
-           the list's own pager — not repeated here. Thresholds ride the title
-           tooltips. --%>
-      <%!-- Activity posture — only once agents exist. In onboarding (no keys)
-           "0 active now" is a fact about nothing; the connect flow below is the
-           whole story until the first agent lands. --%>
-      <%!-- No hand-rolled pb here: the shell's space-y owns the gap on BOTH
-           sides, so the bar sits evenly between the intro and the list. --%>
-      <div
-        :if={@live_action == :index and @issued_count > 0}
-        class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs"
-      >
-        <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
-          <%!-- The dot signals only when something IS active — a green dot
-               beside a zero count signaled nothing. Idle is a fact, not a
-               caution — neutral, like dormant. --%>
-          <.status_dot
-            tone={if @active_count > 0, do: :brand, else: :neutral}
-            size={:sm}
-            ping={@active_count > 0}
-          />
-          <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
-        </span>
-        <span
-          :if={@idle_count > 0}
-          class="flex items-center gap-1.5"
-          title="last call within 24 hours"
-        >
-          <.status_dot tone={:neutral} size={:sm} />
-          <span class="tabular-nums text-zinc-500">{@idle_count} idle</span>
-        </span>
-        <span
-          :if={@dormant_count > 0}
-          class="flex items-center gap-1.5"
-          title="no call for over 24 hours"
-        >
-          <.status_dot tone={:neutral} size={:sm} />
-          <span class="tabular-nums text-zinc-500">{@dormant_count} dormant</span>
-        </span>
-        <span :if={@never_used_count > 0} class="flex items-center gap-1.5">
-          <.status_dot tone={:neutral} size={:sm} />
-          <span class="tabular-nums text-zinc-500">{@never_used_count} never used</span>
-        </span>
-      </div>
-
       <%!-- Rotation success — the SAME "here's your key" grammar as the connect
            flow (naked amber status line + the secret in a recessed code
            artifact), right above the list where the old key still shows for
@@ -850,6 +810,51 @@ defmodule EmisarWeb.AgentsLive do
              track that only splits off at xl (its prose never squeezes); below
              xl it stacks full-width. --%>
         <div class="min-w-0">
+          <.version_upgrade_notice
+            id="mcp-upgrade"
+            kind={:mcp}
+            versions={usable_mcp_bridge_versions(@api_keys)}
+            base_url={@base_url}
+            class="mb-10"
+          />
+          <%!-- NAKED posture line (the runners grammar): page-level notices
+               come first, then activity, then filters/data on every list page. --%>
+          <div
+            :if={@issued_count > 0}
+            class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
+          >
+            <span
+              class="flex items-center gap-1.5"
+              title="called an action in the last 5 minutes"
+            >
+              <.status_dot
+                tone={if @active_count > 0, do: :brand, else: :neutral}
+                size={:sm}
+                ping={@active_count > 0}
+              />
+              <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
+            </span>
+            <span
+              :if={@idle_count > 0}
+              class="flex items-center gap-1.5"
+              title="last call within 24 hours"
+            >
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="tabular-nums text-zinc-500">{@idle_count} idle</span>
+            </span>
+            <span
+              :if={@dormant_count > 0}
+              class="flex items-center gap-1.5"
+              title="no call for over 24 hours"
+            >
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="tabular-nums text-zinc-500">{@dormant_count} dormant</span>
+            </span>
+            <span :if={@never_used_count > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="tabular-nums text-zinc-500">{@never_used_count} never used</span>
+            </span>
+          </div>
           <LiveTable.live_table
             layout={:cards}
             id="agents"
@@ -1260,38 +1265,38 @@ defmodule EmisarWeb.AgentsLive do
           <% is_nil(@quick_key_id) -> %>
             <span></span>
           <% @quick_connected? -> %>
-            <section class="mt-8 flex items-start gap-3 rounded-xl border border-brand-500/30 bg-brand-500/[0.04] p-4">
-              <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 shrink-0 text-brand-400" />
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-zinc-100">Connected — your agent is live</div>
-                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-                  Its first call just landed. Every request now shows under its name in
-                  <.link
-                    navigate={~p"/app/#{@current_account}/agents"}
-                    class="text-brand-400 hover:text-brand-300"
-                  >
-                    agents
-                  </.link>
-                  and <.link
-                    navigate={~p"/app/#{@current_account}/runs"}
-                    class="text-brand-400 hover:text-brand-300"
-                  >Runs</.link>.
-                </p>
-              </div>
-            </section>
+            <.event_block
+              icon="hero-check-circle"
+              tone={:brand}
+              title="Connected — your agent is live"
+              class="mt-8"
+            >
+              <:body>
+                Its first call just landed. Every request now shows under its name in
+                <.link
+                  navigate={~p"/app/#{@current_account}/agents"}
+                  class="text-brand-400 hover:text-brand-300"
+                >
+                  agents
+                </.link>
+                and <.link
+                  navigate={~p"/app/#{@current_account}/runs"}
+                  class="text-brand-400 hover:text-brand-300"
+                >Runs</.link>.
+              </:body>
+            </.event_block>
           <% true -> %>
-            <section class="mt-8 flex items-start gap-3 rounded-xl border border-dashed border-amber-500/30 p-4">
-              <.status_dot tone={:amber} size={:lg} ping class="mt-[5px]" />
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-zinc-100">
-                  Waiting for your agent's first call
-                </div>
-                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-                  This updates on its own the moment your agent connects — you can leave; it'll
-                  show in the agents list either way.
-                </p>
-              </div>
-            </section>
+            <.event_block
+              icon="hero-signal"
+              tone={:amber}
+              title="Waiting for your agent's first call"
+              class="mt-8"
+            >
+              <:body>
+                This updates on its own the moment your agent connects — you can leave; it'll
+                show in the agents list either way.
+              </:body>
+            </.event_block>
         <% end %>
       </div>
 
@@ -1341,7 +1346,7 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # Thin wrapper over the shared <.status_note> so the "New key minted"
+  # Thin wrapper over the shared alert spine so the "New key minted"
   # phrase + its key/amber identity live in ONE place for the three quick-mint
   # branches.
   attr :class, :string, default: nil
@@ -1349,14 +1354,14 @@ defmodule EmisarWeb.AgentsLive do
 
   defp minted_note(assigns) do
     ~H"""
-    <.status_note
+    <.event_block
       icon="hero-key"
       tone={:amber}
       title="New key minted — it's live now"
       class={@class}
     >
-      {render_slot(@inner_block)}
-    </.status_note>
+      <:body>{render_slot(@inner_block)}</:body>
+    </.event_block>
     """
   end
 

@@ -19,11 +19,9 @@ defmodule Emisar.Compat do
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
   (`>= 0.4.0`, `~> 0.5`); a malformed one raises rather than silently
-  accepting every version. Both default to nil — no threshold means
-  every parseable version is `:supported`, so a fresh deployment warns
-  about nothing until an operator sets thresholds. Enforcement defaults
-  off (warn-only), and even when on it never blocks a `:unknown`
-  (missing / unparseable) version — only `:unsupported`.
+  accepting every version. An omitted threshold is treated as satisfied.
+  Enforcement defaults off (warn-only), and even when on it never blocks a
+  `:unknown` (missing / unparseable) version — only `:unsupported`.
   """
 
   @type status :: :supported | :outdated | :unsupported | :unknown
@@ -40,6 +38,9 @@ defmodule Emisar.Compat do
   @doc "The configured minimum runner-version requirement string, for operator-facing messages."
   def runner_minimum, do: raw(:runner_minimum)
 
+  @doc "The configured recommended runner-version requirement string, for operator-facing messages."
+  def runner_recommended, do: raw(:runner_recommended)
+
   # -- MCP bridge -----------------------------------------------------
 
   @doc "Classify an observed emisar-mcp bridge version against the configured MCP policy."
@@ -52,12 +53,14 @@ defmodule Emisar.Compat do
   @doc "The configured minimum MCP-bridge-version requirement string, for operator-facing messages."
   def mcp_minimum, do: raw(:mcp_minimum)
 
+  @doc "The configured recommended MCP-bridge requirement string, for operator-facing messages."
+  def mcp_recommended, do: raw(:mcp_recommended)
+
   # -- Evaluation -----------------------------------------------------
 
-  # A missing or unparseable observed version is :unknown — surfaced as a
-  # soft warning but NEVER blocked (enforcement acts on :unsupported only),
-  # so a runner/client reporting a nonstandard version string can't be
-  # locked out.
+  # A missing or unparseable observed version is :unknown and NEVER blocked
+  # (enforcement acts on :unsupported only), so a runner/client reporting a
+  # nonstandard version string can't be locked out.
   defp status(version, minimum_key, recommended_key) do
     case parse(version) do
       :error ->

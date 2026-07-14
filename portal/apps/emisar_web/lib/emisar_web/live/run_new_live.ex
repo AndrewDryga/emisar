@@ -349,20 +349,21 @@ defmodule EmisarWeb.RunNewLive do
           and executes when the runner reconnects.
         </.offline_notice>
 
-        <%!-- Signed-only runner — the portal is locked out. A posture FACT of
-             this runner (naked note), taking precedence over the offline note
-             above (whose "you can still dispatch" copy would contradict it);
-             it also replaces the Dispatch button below. --%>
-        <.status_note
+        <%!-- Signed-only runner — the portal is locked out. This actionable
+             interruption takes precedence over the offline posture note and
+             replaces the Dispatch button below. --%>
+        <.event_block
           :if={signed_only?(@runner)}
           icon="hero-shield-check"
           tone={:brand}
           title="Signed dispatch only"
         >
-          {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
-          the portal can't dispatch to it. Run this action from an MCP client configured with the
-          runner's signing key.
-        </.status_note>
+          <:body>
+            {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
+            the portal can't dispatch to it. Run this action from an MCP client configured with the
+            runner's signing key.
+          </:body>
+        </.event_block>
 
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the

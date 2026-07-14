@@ -269,45 +269,45 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         <div class="space-y-8">
           <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
-          <%!-- Created: the secret is shown ONCE — the reveal IS the success
-               step, in the naked credential grammar the agents page uses
-               (status_note + code_panel artifacts on canvas), NOT a boxed
-               banner. The secret + install command are the earned code
-               artifacts; the note is the posture line above them. --%>
-          <div :if={@new_secret} class="space-y-6">
-            <.status_note
+          <%!-- Created: the secret is shown once. The alert spine owns its
+               explanation, both copy artifacts, and the next actions. --%>
+          <div :if={@new_secret}>
+            <.event_block
               icon="hero-key"
               tone={:amber}
               title="Copy this enrollment key now — it won't be shown again."
-              primary
             >
-              Treat it like a password. Anyone with this key can register a runner under <span class="font-medium text-zinc-200">{@current_account.name}</span>.
-            </.status_note>
+              <:body>
+                Treat it like a password. Anyone with this key can register a runner under <span class="font-medium text-zinc-200">{@current_account.name}</span>.
+              </:body>
 
-            <.code_panel
-              id="new-enrollment-key"
-              label="Enrollment key"
-              copy
-              copy_label="Copy key"
-              code={@new_secret}
-            />
+              <.code_panel
+                id="new-enrollment-key"
+                label="Enrollment key"
+                copy
+                copy_label="Copy key"
+                code={@new_secret}
+                class="mt-6"
+              />
 
-            <.code_panel
-              id="install-command"
-              label="Install on a host"
-              annotation="contains your enrollment key"
-              prompt
-              copy
-              copy_label="Copy command"
-              code={"curl -sSL #{@base_url}/install.sh | sudo EMISAR_AUTH_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
-            />
+              <.code_panel
+                id="install-command"
+                label="Install on a host"
+                annotation="contains your enrollment key"
+                prompt
+                copy
+                copy_label="Copy command"
+                code={"curl -sSL #{@base_url}/install.sh | sudo EMISAR_AUTH_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
+                class="mt-6"
+              />
 
-            <div class="flex flex-wrap items-center gap-3">
-              <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
-              <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
-                Back to enrollment keys
-              </.button>
-            </div>
+              <div class="mt-6 flex flex-wrap items-center gap-3">
+                <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
+                <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
+                  Back to enrollment keys
+                </.button>
+              </div>
+            </.event_block>
           </div>
 
           <.simple_form

@@ -48,5 +48,30 @@ defmodule EmisarWeb.Components.EventBlockTest do
       assert html =~ "bg-rose-400/40"
       refute html =~ "text-amber-300"
     end
+
+    test "forwards a stable id to the alert root" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.event_block id="runner-alert" icon="hero-signal" title="Offline">
+          <:body>No runner is connected.</:body>
+        </CoreComponents.event_block>
+        """)
+
+      assert html =~ ~s(id="runner-alert")
+    end
+
+    test "rejects an empty icon instead of rendering a spine without a glyph" do
+      assigns = %{}
+
+      assert_raise FunctionClauseError, fn ->
+        rendered_to_string(~H"""
+        <CoreComponents.event_block icon="" title="Offline">
+          <:body>No runner is connected.</:body>
+        </CoreComponents.event_block>
+        """)
+      end
+    end
   end
 end

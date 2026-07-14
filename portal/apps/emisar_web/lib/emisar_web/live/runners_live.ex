@@ -1,5 +1,6 @@
 defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
+  alias Emisar.Compat
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
@@ -14,7 +15,7 @@ defmodule EmisarWeb.RunnersLive do
      socket
      |> assign(:page_title, "Runners")
      |> assign(:install_command, nil)
-     |> assign(:base_url, nil)
+     |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> assign(:show_troubleshooting?, false)}
   end
 
@@ -227,32 +228,42 @@ defmodule EmisarWeb.RunnersLive do
                never squeezes to 3 words a line); below xl it stacks full-width. --%>
           <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
             <div class="min-w-0">
-              <%!-- Fleet-dark escalation: runners exist but none are reachable, so
-                   nothing can be dispatched right now. Escalate the quiet band into a
-                   loud banner (the dashboard's all-offline notice, on the fleet page). --%>
-              <.offline_notice
-                :if={@fleet.online == 0 and @fleet.offline > 0}
-                severity={:critical}
-                title="All runners offline"
-                class="mb-4"
+              <%!-- Alerts keep a tight internal rhythm, then the stack leaves a
+                   larger exit gutter before ordinary fleet counters and rows. --%>
+              <div
+                :if={fleet_attention?(@fleet, @fleet_signed?, @runners)}
+                id="fleet-attention"
+                class="mb-10 space-y-6"
               >
-                Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
-                until one reconnects. Check the hosts, or the runner service on them.
-              </.offline_notice>
-              <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
-               portal is locked out account-wide. Surface it once here instead of leaving
-               the operator to infer it from N per-runner chips + failed dispatches. --%>
-              <.callout
-                :if={@fleet_signed?}
-                tone={:brand}
-                icon="hero-shield-check"
-                title="Fleet is signed-only"
-                class="mb-4"
-              >
-                Every runner in this account verifies a client signature and refuses unsigned runs, so
-                the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
-                configured with each runner's signing key.
-              </.callout>
+                <%!-- Fleet-dark escalation: runners exist but none are reachable, so
+                     nothing can be dispatched right now. --%>
+                <.offline_notice
+                  :if={@fleet.online == 0 and @fleet.offline > 0}
+                  severity={:critical}
+                  title="All runners offline"
+                >
+                  Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
+                  until one reconnects. Check the hosts, or the runner service on them.
+                </.offline_notice>
+                <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
+                     portal is locked out account-wide. --%>
+                <.callout
+                  :if={@fleet_signed?}
+                  tone={:brand}
+                  icon="hero-shield-check"
+                  title="Fleet is signed-only"
+                >
+                  Every runner in this account verifies a client signature and refuses unsigned runs, so
+                  the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
+                  configured with each runner's signing key.
+                </.callout>
+                <.version_upgrade_notice
+                  id="runner-upgrade"
+                  kind={:runner}
+                  versions={Enum.map(@runners, & &1.runner_version)}
+                  base_url={@base_url}
+                />
+              </div>
               <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group headers below),
              counted from presence. NAKED posture line, not a boxed band — the
@@ -401,6 +412,11 @@ defmodule EmisarWeb.RunnersLive do
   # Within a group the natural ordering from the context (recently active
   # first) is preserved.
   defp sort_by_group(runners), do: Enum.sort_by(runners, &(&1.group || ""))
+
+  defp fleet_attention?(fleet, fleet_signed?, runners) do
+    (fleet.online == 0 and fleet.offline > 0) or fleet_signed? or
+      Enum.any?(runners, &(Compat.runner_status(&1.runner_version) in [:outdated, :unsupported]))
+  end
 
   defp group_total(groups, group) do
     Enum.find_value(groups, 0, fn

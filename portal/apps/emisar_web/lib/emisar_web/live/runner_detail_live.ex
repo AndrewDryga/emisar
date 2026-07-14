@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runners, Runs}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -24,6 +24,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           {:ok,
            socket
            |> assign(:page_title, runner.name)
+           |> assign(:base_url, UrlHelpers.derive_base_url(socket))
            |> assign(:runner, runner)
            |> ConfirmDialog.init()}
         else
@@ -286,6 +287,14 @@ defmodule EmisarWeb.RunnerDetailLive do
             </span>
             <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
           </div>
+
+          <.version_upgrade_notice
+            id="runner-upgrade"
+            kind={:runner}
+            versions={[@runner.runner_version]}
+            base_url={@base_url}
+            class="mt-8"
+          />
         </div>
 
         <%!-- A signature-enforcing runner has locked the portal out: it verifies a

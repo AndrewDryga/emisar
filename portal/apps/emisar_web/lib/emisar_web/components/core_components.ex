@@ -918,20 +918,20 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  The ONE tinted callout — leading icon, optional bold `title`, the message
-  (default slot), and an optional right-aligned `:action`. Every console
-  banner, warning box, and heads-up renders through this, or through a thin
+  The ONE attention callout — a toned icon capping a quiet vertical spine,
+  optional `title`, the message (default slot), and an optional `:action`.
+  Every console alert and heads-up renders through this, or through a thin
   domain wrapper that only maps domain state → tone/copy (`<.offline_notice>`,
   `<.subscription_banner>`) — never a fresh class table (design-console-ux §1). The
   message renders escaped through HEEx (IL-16).
 
   Tones are the house hue atoms (design-console-ux §2), meaning assigned at the call
   site: `:brand` informational/affirmative, `:amber` caution/pending, `:rose`
-  danger/error, `:neutral` quiet note. Variants: `:boxed` (default) is the
-  rounded bordered box; `:strip` is the flush full-width row with a bottom
-  hairline (shell nudges, in-card warning strips). Pass `navigate` to make the
-  whole callout a link — the `:action` then renders as static text inside the
-  link (no nested interactive element).
+  danger/error, `:neutral` quiet note. The default `:spine` variant is naked on
+  the canvas; `:strip` is the deliberately different flush full-width row with
+  a bottom hairline for shell-wide nudges. Pass `navigate` to make the whole
+  callout a link — the `:action` then renders as static text inside the link
+  (no nested interactive element).
 
       <.callout tone={:amber}>Copy the token now — we won't show it again.</.callout>
 
@@ -946,15 +946,49 @@ defmodule EmisarWeb.CoreComponents do
       </.callout>
   """
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
-  attr :variant, :atom, default: :boxed, values: [:boxed, :strip]
+  attr :variant, :atom, default: :spine, values: [:spine, :strip]
   attr :title, :string, default: nil
-  attr :icon, :any, default: nil, doc: "heroicon override; `false` renders no icon"
+  attr :icon, :string, default: nil, doc: "heroicon override"
   attr :navigate, :any, default: nil, doc: "makes the whole callout a link"
   attr :class, :any, default: nil
   attr :rest, :global
 
   slot :inner_block, required: true
   slot :action, doc: "right-aligned action — a button/link, or static text under `navigate`"
+
+  def callout(%{variant: :spine, navigate: nil} = assigns) do
+    ~H"""
+    <.event_block
+      icon={callout_icon_name(@icon, @tone)}
+      tone={@tone}
+      title={@title}
+      class={@class}
+      {@rest}
+    >
+      <:body>{render_slot(@inner_block)}</:body>
+      <div :if={@action != []} class="mt-3">{render_slot(@action)}</div>
+    </.event_block>
+    """
+  end
+
+  def callout(%{variant: :spine} = assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class={["block rounded-md p-2 transition-colors hover:bg-white/[0.04]", @class]}
+      {@rest}
+    >
+      <.event_block
+        icon={callout_icon_name(@icon, @tone)}
+        tone={@tone}
+        title={@title}
+      >
+        <:body>{render_slot(@inner_block)}</:body>
+        <div :if={@action != []} class="mt-3">{render_slot(@action)}</div>
+      </.event_block>
+    </.link>
+    """
+  end
 
   def callout(%{navigate: nil} = assigns) do
     ~H"""
@@ -999,11 +1033,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp callout_content(assigns) do
     ~H"""
-    <.icon
-      :if={@icon != false}
-      name={@icon || callout_icon(@tone)}
-      class={callout_icon_class(@variant)}
-    />
+    <.icon name={callout_icon_name(@icon, @tone)} class={callout_icon_class(@variant)} />
     <div class="min-w-0 flex-1">
       <p :if={@title} class="font-semibold">{@title}</p>
       <div class={@title && "mt-0.5 opacity-90"}>{render_slot(@body)}</div>
@@ -1016,14 +1046,9 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp callout_frame(:boxed),
-    do: "flex flex-wrap items-start gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-nowrap"
-
   defp callout_frame(:strip),
     do: "flex flex-wrap items-center gap-3 border-b px-4 py-2.5 text-sm sm:px-6"
 
-  # The icon top-nudge only makes sense against the boxed variant's items-start.
-  defp callout_icon_class(:boxed), do: "mt-0.5 h-4 w-4 flex-none"
   defp callout_icon_class(:strip), do: "h-4 w-4 flex-none"
 
   defp callout_tone(:neutral), do: "border-zinc-700 bg-zinc-900/40 text-zinc-300"
@@ -1041,18 +1066,21 @@ defmodule EmisarWeb.CoreComponents do
   defp callout_icon(:amber), do: "hero-exclamation-triangle-mini"
   defp callout_icon(:rose), do: "hero-exclamation-triangle-mini"
 
+  defp callout_icon_name(nil, tone), do: callout_icon(tone)
+  defp callout_icon_name("hero-" <> _ = icon, _tone), do: icon
+
   @doc """
-  Naked status note — the canvas grammar for a note ABOUT the surface it sits
-  on (a credential warning, a posture fact, a reach statement): toned icon
-  lead + title + body, no box. The boxed `<.callout>` is for actionable
-  interruptions; a box around non-actionable prose outshouts the content it
-  annotates (design-system §8.1 draws the line). `tone` colors the ICON only —
+  Naked status note — the canvas grammar for a passive fact ABOUT the surface
+  it sits on (a posture fact, a reach statement): toned icon
+  lead + title + body, no spine. The icon-capped `<.callout>` is for actionable
+  interruptions; giving a quiet annotation the alert spine would overstate it
+  (design-system §8.1 draws the line). `tone` colors the ICON only —
   the words stay neutral. `primary` lifts the title to the page's strongest
   status voice (semibold/zinc-100); the default is the supporting-note tier
   (medium/zinc-200) that reads one level below it.
 
-      <.status_note icon="hero-key" tone={:amber} title="Live credential — won't be shown again">
-        Treat it like a password — paste it straight onto the host.
+      <.status_note icon="hero-shield-check" tone={:brand} title="Signed dispatch only">
+        This runner verifies a client signature on every run.
       </.status_note>
   """
   attr :icon, :string, required: true
@@ -1102,21 +1130,24 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :icon, :string, required: true
   attr :tone, :atom, default: :amber, values: [:amber, :rose, :brand, :neutral]
-  attr :title, :string, required: true
+  attr :title, :string, default: nil
   attr :class, :string, default: nil
+  attr :rest, :global
   slot :body, required: true
   slot :inner_block
 
-  def event_block(assigns) do
+  def event_block(%{icon: "hero-" <> _} = assigns) do
     ~H"""
-    <div class={["flex gap-4", @class]}>
+    <div class={["flex gap-4", @class]} {@rest}>
       <div class="flex w-4 flex-col items-center" aria-hidden="true">
         <.icon name={@icon} class={"mt-0.5 h-4 w-4 shrink-0 #{status_note_icon_class(@tone)}"} />
         <div class={["mt-3 w-0.5 flex-1 rounded-full", event_block_spine_class(@tone)]}></div>
       </div>
       <div class="min-w-0 flex-1">
-        <div class="text-sm font-medium text-zinc-200">{@title}</div>
-        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@body)}</p>
+        <div :if={@title} class="text-sm font-medium text-zinc-200">{@title}</div>
+        <div class={[@title && "mt-1", "text-sm leading-relaxed text-zinc-400"]}>
+          {render_slot(@body)}
+        </div>
         {render_slot(@inner_block)}
       </div>
     </div>
@@ -2760,31 +2791,44 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  One-line code value with its copy button — a sign-in link, a callback
-  URI, a SCIM base URL. The framed multi-line snippet is `code_panel`;
-  this is the single-value row.
+  One code value with its copy button — a sign-in link, a callback URI, a
+  SCIM base URL, or a short command inside a callout. It stays on one scrollable
+  line by default; pass `wrap` when a narrow layout should wrap the value. The
+  framed multi-line snippet is `code_panel`; this is the compact value row.
 
       <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
   """
   attr :id, :string, required: true
   attr :value, :string, required: true
+  attr :copy_label, :string, default: "Copy"
+  attr :wrap, :boolean, default: false
+  attr :stack_on_mobile, :boolean, default: false
   attr :class, :any, default: nil
 
   def code_line(assigns) do
     ~H"""
     <div class={[
-      "flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
+      "flex gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
+      if(@stack_on_mobile,
+        do: "flex-col items-stretch sm:flex-row sm:items-center",
+        else: "items-center"
+      ),
       @class
     ]}>
-      <%!-- A URL is a single line — it scrolls horizontally rather than wrapping
-           to a ragged block (this row is "one-line code value" by contract). --%>
       <code
         id={@id}
-        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-zinc-300"
+        phx-no-format
+        class={[
+          "min-w-0 flex-1 font-mono text-xs text-zinc-300",
+          if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-x-auto whitespace-nowrap")
+        ]}
+      >{@value}</code>
+      <.copy_button
+        text={@value}
+        class={["shrink-0", @stack_on_mobile && "ml-auto"]}
       >
-        {@value}
-      </code>
-      <.copy_button target={"##{@id}"}>Copy</.copy_button>
+        {@copy_label}
+      </.copy_button>
     </div>
     """
   end
@@ -3508,15 +3552,156 @@ defmodule EmisarWeb.CoreComponents do
     "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
   end
 
-  defp version_chip_title(:runner, :outdated),
-    do: "Older than the recommended runner version — upgrade when you can."
+  defp version_chip_title(:runner, :outdated) do
+    "Below the recommended runner version #{Emisar.Compat.runner_recommended()} — upgrade when you can."
+  end
 
   defp version_chip_title(:mcp, :unsupported) do
     "Below the minimum emisar-mcp version #{Emisar.Compat.mcp_minimum()} — upgrade the bridge."
   end
 
-  defp version_chip_title(:mcp, :outdated),
-    do: "Older than the recommended emisar-mcp version — upgrade when you can."
+  defp version_chip_title(:mcp, :outdated) do
+    "Below the recommended emisar-mcp version #{Emisar.Compat.mcp_recommended()} — upgrade when you can."
+  end
+
+  @doc """
+  Actionable upgrade instructions for stale runner or emisar-mcp versions.
+  Renders one notice for all stale versions passed by a list page, or for the
+  single version on a detail page. Current and unknown versions render nothing.
+
+      <.version_upgrade_notice
+        id="runner-upgrade"
+        kind={:runner}
+        versions={Enum.map(runners, & &1.runner_version)}
+        base_url={base_url}
+      />
+  """
+  attr :id, :string, required: true
+  attr :kind, :atom, required: true, values: [:runner, :mcp]
+  attr :versions, :list, required: true
+  attr :base_url, :string, required: true
+  attr :class, :string, default: nil
+
+  def version_upgrade_notice(assigns) do
+    statuses = Enum.map(assigns.versions, &version_status(assigns.kind, &1))
+    status = version_upgrade_status(statuses)
+    unsupported_count = Enum.count(statuses, &(&1 == :unsupported))
+    outdated_count = Enum.count(statuses, &(&1 == :outdated))
+    affected_count = unsupported_count + outdated_count
+
+    assigns =
+      assigns
+      |> assign(:status, status)
+      |> assign(:affected_count, affected_count)
+      |> assign(:unsupported_count, unsupported_count)
+      |> assign(:outdated_count, outdated_count)
+      |> assign(:command, version_upgrade_command(assigns.kind, assigns.base_url))
+
+    ~H"""
+    <.callout
+      :if={@status in [:outdated, :unsupported]}
+      id={@id}
+      tone={:amber}
+      icon="hero-cloud-arrow-down"
+      title={version_upgrade_title(@kind, @status, @affected_count)}
+      class={@class}
+    >
+      <div class="space-y-4">
+        <p>{version_upgrade_message(@kind, @unsupported_count, @outdated_count)}</p>
+        <.code_line
+          id={"#{@id}-command"}
+          value={@command}
+          copy_label="Copy command"
+          wrap
+          stack_on_mobile
+        />
+      </div>
+    </.callout>
+    """
+  end
+
+  defp version_upgrade_status(statuses) do
+    cond do
+      :unsupported in statuses -> :unsupported
+      :outdated in statuses -> :outdated
+      true -> :supported
+    end
+  end
+
+  defp version_upgrade_title(:runner, :unsupported, 1), do: "Runner update required"
+
+  defp version_upgrade_title(:runner, :unsupported, count),
+    do: "#{count} runners need an update"
+
+  defp version_upgrade_title(:runner, :outdated, 1), do: "Runner update available"
+
+  defp version_upgrade_title(:runner, :outdated, count),
+    do: "Updates available for #{count} runners"
+
+  defp version_upgrade_title(:mcp, :unsupported, _count), do: "MCP bridge update required"
+  defp version_upgrade_title(:mcp, :outdated, _count), do: "MCP bridge update available"
+
+  defp version_upgrade_message(:runner, 1, 0) do
+    "This runner is below the supported range (#{Emisar.Compat.runner_minimum()}). " <>
+      "Run the command on its host. The installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:runner, unsupported_count, 0) do
+    "#{unsupported_count} runners on this page are below the supported range " <>
+      "(#{Emisar.Compat.runner_minimum()}). Run the command on each affected host; " <>
+      "the installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:runner, 0, 1) do
+    "This runner is behind the recommended release (#{Emisar.Compat.runner_recommended()}). " <>
+      "Run the command on its host. The installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:runner, 0, outdated_count) do
+    "#{outdated_count} runners on this page are behind the recommended release " <>
+      "(#{Emisar.Compat.runner_recommended()}). Run the command on each affected host; " <>
+      "the installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:runner, unsupported_count, outdated_count) do
+    "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
+      "range (#{Emisar.Compat.runner_minimum()}) and " <>
+      "#{version_count_label(outdated_count, "runner")} behind the recommended release " <>
+      "(#{Emisar.Compat.runner_recommended()}). Run the command on each affected host; " <>
+      "the installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:mcp, unsupported_count, 0) do
+    "#{unsupported_count} #{agent_count_label(unsupported_count)} on this page last connected through a bridge below " <>
+      "the supported range (#{Emisar.Compat.mcp_minimum()}). Run the command once on each " <>
+      "affected machine, then restart its LLM client."
+  end
+
+  defp version_upgrade_message(:mcp, 0, outdated_count) do
+    "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
+      "the recommended release (#{Emisar.Compat.mcp_recommended()}). Run the command once on " <>
+      "each affected machine, then restart its LLM client."
+  end
+
+  defp version_upgrade_message(:mcp, unsupported_count, outdated_count) do
+    "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
+      "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
+      "#{version_count_label(outdated_count, "agent")} behind the recommended release " <>
+      "(#{Emisar.Compat.mcp_recommended()}). Run the command once on each affected machine, " <>
+      "then restart its LLM client."
+  end
+
+  defp version_count_label(1, noun), do: "1 #{noun} is"
+  defp version_count_label(count, noun), do: "#{count} #{noun}s are"
+
+  defp agent_count_label(1), do: "agent"
+  defp agent_count_label(_count), do: "agents"
+
+  defp version_upgrade_command(:runner, base_url),
+    do: "curl -sSL #{String.trim_trailing(base_url, "/")}/install.sh | sudo bash"
+
+  defp version_upgrade_command(:mcp, base_url),
+    do: "curl -sSL #{String.trim_trailing(base_url, "/")}/install-mcp.sh | sudo bash"
 
   @doc """
   Wraps a trigger element with a styled hover/focus tooltip — a dark bubble
@@ -4190,10 +4375,8 @@ defmodule EmisarWeb.CoreComponents do
          separate by AIR alone — hairlines are row-lattice grammar, never
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
-         eyebrow as a section title. The only contained surfaces are the ones
-         a box MEANS something for: the command artifact and the
-         live-credential warning (the calmed secret grammar — neutral
-         surface, amber ring). --%>
+         eyebrow as a section title. The command is the only contained artifact;
+         credential and connection alerts use the shared icon-capped spine. --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
@@ -4236,25 +4419,22 @@ defmodule EmisarWeb.CoreComponents do
                     The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
-                         only here — a root-capable credential; say so on the
-                         page the operator actually installs from, so it never
-                         lands in a chat/ticket. A static PROPERTY of the
-                         artifact above, so it reads one level below the live
-                         wait status: key icon (not a status dot — nothing is
-                         "live" here), medium lead, naked on canvas — a box
-                         around non-actionable prose would outshout the
-                         credential itself. --%>
-                  <.status_note
+                       only here. Keeping it out of chat/tickets is an operator
+                       action, so it uses the same alert spine as every other
+                       copy-now credential warning. --%>
+                  <.event_block
                     icon="hero-key"
                     tone={:amber}
                     title="Live credential — won't be shown again"
                     class="mt-5"
                   >
-                    The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                    and carries a <span class="font-medium text-zinc-200">one-time</span>
-                    key: it enrolls exactly one host, then expires. Treat it like a password —
-                    paste it straight onto the host, never into a chat or ticket.
-                  </.status_note>
+                    <:body>
+                      The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                      and carries a <span class="font-medium text-zinc-200">one-time</span>
+                      key: it enrolls exactly one host, then expires. Treat it like a password —
+                      paste it straight onto the host, never into a chat or ticket.
+                    </:body>
+                  </.event_block>
                   <%!-- The alternate path is routing, not warning — it lives
                          outside the credential note, right after the one-time
                          story it forks from. --%>
@@ -4322,64 +4502,58 @@ defmodule EmisarWeb.CoreComponents do
                   </div>
                 </section>
 
-                <%!-- The page's LIVE status — the strongest voice in the
-                     column: the only PING dot, a semibold lead, the body
-                     beneath. The credential note above is a static property
-                     and deliberately reads one level quieter (key icon, no
-                     ping). Troubleshooting nests INSIDE the status block so
-                     its spacing reads as a child of the wait, never an
-                     uneven sibling. Amber: pending — brand-green would read
-                     "connected" before anything has connected. The dashed amber
-                     frame marks this as the live placeholder we're waiting to
-                     fill — pending, not an alarm, so it stays a hairline border
-                     with no wash. --%>
-                <section class="flex items-start gap-3 rounded-xl border border-dashed border-amber-500/30 p-4">
-                  <.status_dot tone={:amber} size={:lg} ping class="mt-[5px]" />
-                  <div class="min-w-0">
-                    <div class="text-sm font-semibold text-zinc-100">
-                      Waiting for a runner to connect
-                    </div>
-                    <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-                      This page advances on its own — you can leave; the runner will appear
-                      in Runners either way.
-                    </p>
+                <%!-- The page's live status uses the shared alert spine. The
+                     credential note above remains quieter because it describes
+                     the command; this block describes what the system is waiting
+                     on. Troubleshooting stays inside the same spine. --%>
+                <.event_block
+                  icon="hero-signal"
+                  tone={:amber}
+                  title="Waiting for a runner to connect"
+                >
+                  <:body>
+                    This page advances on its own — you can leave; the runner will appear
+                    in Runners either way.
+                  </:body>
 
-                    <%!-- After the grace period with no join (the install
-                           page's watchdog flips show_troubleshooting) the
-                           likely funnel failure is a wrong/truncated key,
-                           :443 firewalled, or a non-systemd host — none of
-                           which the pulse alone reveals. Surface the same
-                           checks the quickstart doc carries. --%>
-                    <div :if={@show_troubleshooting} class="mt-5">
-                      <div class="text-sm font-medium text-zinc-300">
-                        Not seeing it yet? Check the host:
-                      </div>
-                      <.steps class="mt-3">
-                        <:step>
-                          It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                          over outbound HTTPS (nothing needs to listen on it).
-                        </:step>
-                        <:step>
-                          You ran the whole line with
-                          <code class="font-mono text-zinc-300">sudo</code>
-                          and the key wasn't truncated on paste.
-                        </:step>
-                        <:step>
-                          It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                        </:step>
-                      </.steps>
+                  <%!-- After the grace period with no join (the install
+                       page's watchdog flips show_troubleshooting) the likely
+                       funnel failure is a wrong/truncated key, :443 firewalled,
+                       or a non-systemd host. --%>
+                  <div :if={@show_troubleshooting} class="mt-5">
+                    <div class="text-sm font-medium text-zinc-300">
+                      Not seeing it yet? Check the host:
                     </div>
+                    <.steps class="mt-3">
+                      <:step>
+                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                        over outbound HTTPS (nothing needs to listen on it).
+                      </:step>
+                      <:step>
+                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                        and the key wasn't truncated on paste.
+                      </:step>
+                      <:step>
+                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                      </:step>
+                    </.steps>
                   </div>
-                </section>
+                </.event_block>
               </div>
             <% @install_command == :mint_failed -> %>
-              <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
-                We couldn't mint an enrollment key just now. Open
-                <.link navigate={@keys_path} class="font-semibold underline">
-                  Runners → Enrollment keys
-                </.link>
-                and create one manually, or refresh this page to try again.
-              </div>
+              <.event_block
+                icon="hero-exclamation-triangle"
+                tone={:rose}
+                title="Could not create the install command"
+              >
+                <:body>
+                  Open
+                  <.link navigate={@keys_path} class="font-medium text-brand-400 hover:text-brand-300">
+                    Runners → Enrollment keys
+                  </.link>
+                  and create one manually, or refresh this page to try again.
+                </:body>
+              </.event_block>
             <% true -> %>
               <div class="flex items-center gap-3 text-sm text-zinc-400">
                 <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
