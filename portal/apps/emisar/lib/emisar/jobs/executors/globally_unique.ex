@@ -106,6 +106,12 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
     rescue
       error ->
         duration = System.monotonic_time() - started_at
+
+        Logger.error("recurrent_job.failed",
+          job: metadata.job,
+          error: inspect(error.__struct__)
+        )
+
         Emisar.Telemetry.job_failed(metadata.job, :error, duration)
         reraise error, __STACKTRACE__
     end

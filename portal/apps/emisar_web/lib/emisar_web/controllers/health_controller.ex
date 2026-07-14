@@ -2,10 +2,14 @@ defmodule EmisarWeb.HealthController do
   @moduledoc """
   Process liveness and traffic readiness probes.
 
-  Liveness is intentionally independent of PostgreSQL so a database outage
-  does not make the instance manager restart every healthy BEAM. Readiness
-  includes PostgreSQL because the load balancer must not send application
-  traffic to a node that cannot serve it.
+  A new BEAM reports unhealthy until it reaches PostgreSQL once, preventing a
+  rollout from accepting an instance with broken database configuration. After
+  that first success, liveness remains independent of PostgreSQL so a later
+  database outage does not make the instance manager restart the whole fleet.
+
+  Readiness always checks PostgreSQL. The load balancer therefore stops sending
+  traffic to an instance that cannot currently serve it, without replacing an
+  otherwise healthy VM.
   """
   use EmisarWeb, :controller
 
@@ -17,9 +21,9 @@ defmodule EmisarWeb.HealthController do
     else
       case database_ready?() do
         true ->
-          # The MIG must not replace an old VM until its surge replacement has
-          # reached readiness once. After that, liveness stays DB-independent so
-          # a database outage cannot restart the whole fleet.
+          # Remember that this BEAM proved its database configuration. This value
+          # resets with the BEAM: it gates each new process through one successful
+          # connection, then keeps a shared database outage from causing restarts.
           :persistent_term.put(@live_after_ready, true)
           respond(conn, :ok)
 
@@ -35,7 +39,12 @@ defmodule EmisarWeb.HealthController do
   end
 
   defp database_ready? do
-    case Ecto.Adapters.SQL.query(Emisar.Repo, "SELECT 1", [], timeout: 2_000) do
+    check =
+      Application.get_env(:emisar_web, :database_health_check, fn ->
+        Ecto.Adapters.SQL.query(Emisar.Repo, "SELECT 1", [], timeout: 2_000)
+      end)
+
+    case check.() do
       {:ok, _result} -> true
       {:error, _reason} -> false
     end

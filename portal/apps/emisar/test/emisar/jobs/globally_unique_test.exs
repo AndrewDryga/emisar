@@ -1,5 +1,6 @@
 defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
   use ExUnit.Case, async: false
+  import ExUnit.CaptureLog
   alias Emisar.Jobs.Executors.GloballyUnique
 
   defmodule DeclaredJob do
@@ -21,6 +22,13 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
       send(Keyword.fetch!(config, :test_pid), :executed)
       :ok
     end
+  end
+
+  defmodule FailingJob do
+    @behaviour GloballyUnique
+
+    @impl GloballyUnique
+    def execute(_config), do: raise("secret-shaped detail must not be logged")
   end
 
   test "declared jobs preserve their configured interval and initial delay" do
@@ -52,5 +60,22 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
              GloballyUnique.start_link(
                {ExecutingJob, :timer.hours(1), enabled: false, test_pid: self()}
              )
+  end
+
+  test "a failed tick emits a stable redacted operator signal" do
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+
+    log =
+      capture_log(fn ->
+        {:ok, pid} = GloballyUnique.start_link({FailingJob, :timer.hours(1), initial_delay: 0})
+        assert_receive {:EXIT, ^pid, {%RuntimeError{}, _stacktrace}}, 500
+      end)
+
+    assert log =~ "recurrent_job.failed"
+    assert log =~ "job=Emisar.Jobs.Executors.GloballyUniqueTest.FailingJob"
+    assert log =~ "error=RuntimeError"
+    signal = Enum.find(String.split(log, "\n"), &String.contains?(&1, "recurrent_job.failed"))
+    refute signal =~ "secret-shaped detail"
   end
 end

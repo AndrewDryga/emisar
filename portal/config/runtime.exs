@@ -4,7 +4,7 @@ import Config
 # secrets here so the container can be rebuilt without leaking values.
 #
 # Required prod env vars (boot raises if missing):
-#   DATABASE_URL           — ecto://user:pass@host/db
+#   DATABASE_URL           — ecto://user:pass@host/db (direct/local database path)
 #   SECRET_KEY_BASE        — `mix phx.gen.secret`
 #   PADDLE_API_KEY         — OR set EMISAR_DISABLE_BILLING=1 to use stub
 #   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
@@ -26,6 +26,11 @@ import Config
 #   DATABASE_SSL           — "1" / "true" to require TLS to Postgres
 #   DATABASE_SSL_CACERTFILE — PEM file to verify the server cert against
 #                            (Cloud SQL / private-CA Postgres); implies TLS
+#   DATABASE_HOST          — host for passwordless proxy connections
+#   DATABASE_USER          — user for passwordless proxy connections
+#   DATABASE_NAME          — database for passwordless proxy connections
+#   DATABASE_PORT          — proxy port (default 5432)
+#   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
 #   POSTMARK_API_TOKEN     — mailer adapter (Postmark)
 #   MAILGUN_API_KEY        — mailer adapter (Mailgun); requires MAILGUN_DOMAIN
 #   SMTP_HOST              — mailer adapter (SMTP); use SMTP_USERNAME/PASSWORD/PORT
@@ -73,10 +78,6 @@ if config_env() == :prod do
         ]
       )
 
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise "DATABASE_URL is missing (example: ecto://USER:PASS@HOST/DATABASE)"
-
   # Cloud SQL (and any private-CA Postgres) signs its server cert with an
   # instance-specific CA that no public trust store carries, so `ssl: true`'s
   # public-CA verification can never pass (unknown_ca). With a CA file we pin
@@ -98,10 +99,35 @@ if config_env() == :prod do
         ]
     end
 
-  config :emisar, Emisar.Repo,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    ssl: database_ssl
+  database_connection =
+    case System.get_env("DATABASE_URL") do
+      url when is_binary(url) and url != "" ->
+        [url: url, ssl: database_ssl]
+
+      _ ->
+        [
+          hostname: System.fetch_env!("DATABASE_HOST"),
+          username: System.fetch_env!("DATABASE_USER"),
+          database: System.fetch_env!("DATABASE_NAME"),
+          port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+          ssl: false
+        ]
+    end
+
+  database_parameters =
+    case System.get_env("DATABASE_ROLE") do
+      role when is_binary(role) and role != "" -> [role: role]
+      _ -> []
+    end
+
+  repo_config =
+    database_connection ++
+      [
+        pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+        parameters: database_parameters
+      ]
+
+  config :emisar, Emisar.Repo, repo_config
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||

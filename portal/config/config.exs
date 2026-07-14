@@ -108,7 +108,8 @@ config :logger, :console,
     :paddle_subscription_id,
     :reason,
     :error,
-    :count
+    :count,
+    :job
   ]
 
 # Status-page URL surfaced as a "Status" link in the marketing footer
