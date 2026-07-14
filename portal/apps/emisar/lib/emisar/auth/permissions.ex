@@ -22,6 +22,7 @@ defmodule Emisar.Auth.Permissions do
     Emisar.Audit.Authorizer,
     Emisar.Billing.Authorizer,
     Emisar.Catalog.Authorizer,
+    Emisar.MCPOperations.Authorizer,
     Emisar.Policies.Authorizer,
     Emisar.Runbooks.Authorizer,
     Emisar.Runs.Authorizer,

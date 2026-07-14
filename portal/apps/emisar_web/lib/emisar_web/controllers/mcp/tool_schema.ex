@@ -61,6 +61,16 @@ defmodule EmisarWeb.MCP.ToolSchema do
     schema_object(control_properties, required, true)
   end
 
+  @doc "Builds the action-only JSON Schema exposed by `get_action`."
+  @spec action_args_schema(map()) :: map()
+  def action_args_schema(action) do
+    args = action_args(action)
+    properties = Map.new(args, &{&1["name"], arg_property(&1)})
+    required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
+
+    schema_object(properties, required, false)
+  end
+
   defp control_properties(runner_targets) do
     {runners_prop, runners_required} = runners_property(normalize_runner_targets(runner_targets))
 
@@ -169,6 +179,10 @@ defmodule EmisarWeb.MCP.ToolSchema do
   # -- Per-action arg properties ---------------------------------------
 
   defp action_args(%{args_schema: %{"args" => args}}) when is_list(args) do
+    Enum.filter(args, &valid_arg?/1)
+  end
+
+  defp action_args(%{"args_schema" => %{"args" => args}}) when is_list(args) do
     Enum.filter(args, &valid_arg?/1)
   end
 

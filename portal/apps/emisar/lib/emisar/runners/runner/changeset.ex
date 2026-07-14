@@ -103,6 +103,29 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
     |> validate_number(:max_attestation_age_seconds, greater_than: 0)
+    |> validate_signing_advertisement()
+  end
+
+  defp validate_signing_advertisement(changeset) do
+    case {get_field(changeset, :enforce_signatures),
+          get_field(changeset, :max_attestation_age_seconds)} do
+      {true, nil} ->
+        add_error(
+          changeset,
+          :max_attestation_age_seconds,
+          "is required when signature enforcement is enabled"
+        )
+
+      {false, max_age} when is_integer(max_age) ->
+        add_error(
+          changeset,
+          :max_attestation_age_seconds,
+          "must be empty when signature enforcement is disabled"
+        )
+
+      _ ->
+        changeset
+    end
   end
 
   # Connect/disconnect stamp the durable "last seen" history only.

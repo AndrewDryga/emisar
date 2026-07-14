@@ -1,9 +1,3 @@
-<%!-- ============================================================
-  Docs / MCP reference — the builder-facing API reference. Every method,
-  parameter, and error here is verified against the portal MCP code
-  (controllers/mcp/*): tool_schema (reason/runners/idempotency_key/wait),
-  service (the long-poll), and instructions (the error taxonomy).
-============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
@@ -14,181 +8,206 @@
         MCP reference
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        The methods, parameters, and errors of the emisar MCP server. For client setup — OAuth for
-        cloud clients, the stdio bridge for local tools — see <.link
+        The fixed tools, identifiers, and recovery semantics of the emisar MCP server. For client
+        setup, see <.link
           navigate={~p"/docs/connect-an-llm"}
           class="font-medium text-brand-300 hover:text-brand-200"
-        >Connect an LLM</.link>. This page is the contract once you're connected.
+        >Connect an LLM</.link>.
       </p>
 
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
-        <h2>Methods</h2>
+        <h2>Protocol methods</h2>
         <p>
-          emisar speaks JSON-RPC 2.0 over MCP. The current negotiated protocol is <code>2025-11-25</code>; clients that request
+          emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP. The current negotiated protocol is <code>2025-11-25</code>;
           <code>2025-06-18</code>
-          or <code>2024-11-05</code>
-          remain supported. Its primary request and notification methods are:
+          and <code>2024-11-05</code>
+          remain supported.
         </p>
         <ul>
+          <li><code>initialize</code> returns capabilities and operating instructions.</li>
+          <li><code>ping</code> remains responsive while another request waits.</li>
+          <li><code>tools/list</code> always returns the same twelve tool descriptors.</li>
+          <li><code>tools/call</code> invokes one fixed tool.</li>
           <li>
-            <code>initialize</code>
-            — the MCP handshake; returns server capabilities and instructions.
-          </li>
-          <li>
-            <code>ping</code>
-            — a prompt liveness check, including while another request is waiting for approval or a run result.
-          </li>
-          <li>
-            <code>tools/list</code>
-            — the live action catalog as MCP tools, scoped to your key. Each runnable action is one tool, plus the meta tools below.
-          </li>
-          <li>
-            <code>tools/call</code>
-            — dispatch one action (or call a meta tool) by name with arguments.
-          </li>
-          <li>
-            <code>notifications/cancelled</code>
-            — cancel the exact in-flight request generation. As an MCP notification, it receives no JSON-RPC response.
+            <code>notifications/cancelled</code> stops observation of one in-flight request and
+            receives no response.
           </li>
         </ul>
-
-        <h2>JSON-RPC envelopes</h2>
         <p>
-          A request has an explicit string or integer <code>id</code>; that exact value is returned
-          in its response. Null, fractional, boolean, array, and object ids are invalid. A frame
-          with no id is a notification and always receives HTTP 202 with an empty body, including
-          invalid-parameter and unknown-method outcomes. Conversely, adding an id to a
-          <code>notifications/*</code>
-          method makes it a request: emisar returns method-not-found
-          and does not execute notification side effects.
+          Request IDs are strings or integers and are returned with the same JSON type. A frame
+          without an ID is a notification. Mutation notifications never execute: a mutation needs
+          a request ID so its operation can be recovered safely.
         </p>
 
-        <h2>The catalog is live, not static</h2>
+        <h2>Twelve fixed tools</h2>
         <p>
-          <code>tools/list</code>
-          is a point-in-time snapshot. A tool being listed does
-          <strong class="font-semibold text-zinc-200">not</strong>
-          guarantee a runner is connected or its pack is trusted at call time — both are resolved
-          when you actually dispatch. When a call fails for a runner or catalog reason, re-call
-          <code>tools/list</code>
-          to refresh, then decide from the fresh list. Don't retry the same
-          failing call in a loop.
-        </p>
-
-        <h2>Calling an action</h2>
-        <p>
-          Each action tool takes its own declared, typed arguments, plus these emisar parameters:
+          Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
+          results, so clients never need a hand-maintained action allowlist and never load hundreds
+          of action schemas during setup.
         </p>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
-          <table class="w-full min-w-[640px] text-left text-sm">
+          <table class="w-full min-w-[680px] text-left text-sm">
             <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
               <tr>
-                <th class="px-4 py-3 font-medium">Parameter</th>
-                <th class="px-4 py-3 font-medium">Requirement</th>
-                <th class="px-4 py-3 font-medium">What it does</th>
+                <th class="px-4 py-3 font-medium">Tool</th>
+                <th class="px-4 py-3 font-medium">Purpose</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
-              <%= for {param, req, desc} <- [
-                {"reason", "Required", "An operator-facing audit string — one short sentence on why. It's recorded on the run for a human to audit later."},
-                {"<action args>", "Per the action", "The action's own typed arguments, re-validated against its declared schema on the runner."},
-                {"runners", "Required", "The target runner(s) to fan out to — an array of stable ids from tools/list. Always required: emisar never auto-targets, even when exactly one runner advertises the action. Each resolved runner must be unique; naming the same runner once by id and once by a legacy display-name alias is rejected."},
-                {"idempotency_key", "Optional", "Dedups a call you might retry, so the same intent runs once. (The bridge also mints a transport-level key automatically — see Idempotency.)"},
-                {"wait", "Optional", "Block until the run reaches a terminal state, up to 60 seconds, and return its result. Omit it to use that 60-second default, or set 0 for fire-and-forget and poll with wait_for_run. Malformed durations return an in-band tool error and do not dispatch."}
+              <%= for {tool, purpose} <- [
+                {"list_packs", "List in-scope packs with bounded action summaries and deployment issues."},
+                {"list_runners", "Inspect runner connectivity, compatibility, and exact runner refs."},
+                {"find_actions", "Find a bounded set of actions by task or exact identifiers."},
+                {"get_action", "Read one immutable action contract and its compatible runners."},
+                {"run_action", "Dispatch one exact action to one or more selected runners."},
+                {"get_operation", "Recover one exact mutation after an ambiguous response."},
+                {"wait_for_run", "Wait for one run to change or reach a terminal state."},
+                {"recent_runs", "Inspect scoped run history with exact identity filters."},
+                {"list_runbooks", "List visible immutable published runbooks."},
+                {"get_runbook", "Read one frozen runbook and its ordered steps."},
+                {"execute_runbook", "Execute one published runbook through policy and approval."},
+                {"create_runbook_draft", "Save an agent-proposed draft for human review."}
               ] do %>
                 <tr>
-                  <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{param}</td>
-                  <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{req}</td>
-                  <td class="px-4 py-3 align-top">{desc}</td>
+                  <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{tool}</td>
+                  <td class="px-4 py-3 align-top">{purpose}</td>
                 </tr>
               <% end %>
             </tbody>
           </table>
         </div>
 
-        <h2>Meta tools</h2>
+        <h2>Discovery</h2>
         <p>
-          Alongside the action tools, <code>tools/list</code> includes six helpers:
+          Start broad only when the task needs it. <code>list_packs</code>
+          gives a bounded overview; <code>find_actions</code>
+          ranks candidates; <code>get_action</code>
+          returns the exact
+          argument schema and current compatible runner refs. Use <code>list_runners</code>
+          for fleet
+          diagnosis or target selection. Pack and runner pages default to 15 items.
         </p>
-        <ul>
-          <li>
-            <code>wait_for_run</code>
-            — block until a specific run reaches a terminal state (up to five minutes), then return its result; re-poll if it's still running.
-          </li>
-          <li>
-            <code>recent_runs</code>
-            — the account's recent runs, for picking up where a previous session left off.
-          </li>
-          <li>
-            <code>list_runbooks</code>
-            — the account's published runbooks (saved, ordered playbooks).
-          </li>
-          <li>
-            <code>get_runbook</code>
-            — one published runbook's ordered steps, with targets resolved for inspection or step-by-step dispatch.
-          </li>
-          <li>
-            <code>execute_runbook</code>
-            — run a published runbook through the governed end-to-end path. Every step still passes its normal policy, approval, target, and audit checks.
-          </li>
-          <li>
-            <code>create_runbook_draft</code>
-            — validate and save a proposed plan as a draft, then return its editor URL for human review. It never publishes the draft.
-          </li>
-        </ul>
-
-        <h2>Waits, concurrency, and cancellation</h2>
         <p>
-          An action call's <code>wait</code>
-          is capped at 60 seconds. <code>wait_for_run</code>
-          is the longer status path: it defaults to and caps at five minutes. The local stdio bridge
-          keeps up to eight requests in flight, so pings and unrelated calls remain responsive, and
-          uses a 330-second HTTP deadline to leave bounded headroom over that five-minute portal wait.
-          Cancelling a request stops that exact generation locally and releases its matching portal
-          wait; a cancellation notification never produces a stdout response.
+          <code>availability: "executable"</code>
+          is the normal path and omits capabilities that
+          cannot run anywhere in scope. <code>availability: "all"</code>
+          is diagnostic: it preserves
+          unavailable packs and actions together with issue codes such as disconnected,
+          untrusted, retired, or descriptor mismatch.
+        </p>
+        <p>
+          A <code>pack_ref</code>
+          has the immutable form <code>pack@version/sha256:hash</code>. A <code>runner_ref</code>
+          has the generation-bound form <code>name~sha256-prefix</code>. Copy both exactly from discovery; a reconnect, reinstall,
+          rename, or pack change can make an earlier selection stale.
         </p>
 
-        <h2>Idempotency</h2>
+        <h2>Running an action</h2>
+        <p><code>run_action</code> accepts one explicit execution intent:</p>
+        <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
+          <table class="w-full min-w-[680px] text-left text-sm">
+            <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Field</th>
+                <th class="px-4 py-3 font-medium">Requirement</th>
+                <th class="px-4 py-3 font-medium">Meaning</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-900 text-zinc-400">
+              <%= for {field, requirement, meaning} <- [
+                {"action_id", "Required", "Exact action returned by get_action."},
+                {"pack_ref", "Required", "Immutable pack generation returned by discovery."},
+                {"runner_refs", "Required", "One to sixteen distinct, explicit targets."},
+                {"args", "Required", "One JSON object validated against the trusted action schema."},
+                {"reason", "Required", "Operator-facing audit reason for this execution."},
+                {"wait", "Optional", "0 or an integer ms/s duration; default and maximum 60s."}
+              ] do %>
+                <tr>
+                  <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{field}</td>
+                  <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">
+                    {requirement}
+                  </td>
+                  <td class="px-4 py-3 align-top">{meaning}</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
         <p>
-          Idempotency has two layers, so a retried dispatch never double-executes a mutating action:
+          Dispatch preflight re-resolves the complete target set, pack trust, descriptor, schema,
+          policy, certificate window, and signature requirement. It creates the complete fan-out or
+          nothing; it never silently drops a stale target. Policy can still produce a mix of allowed,
+          pending-approval, and denied runs inside the accepted operation.
         </p>
-        <ul>
-          <li>
-            <strong class="font-semibold text-zinc-200">Transport</strong>
-            — the MCP bridge auto-mints an <code>Idempotency-Key</code>
-            per call, covering transparent retries.
-          </li>
-          <li>
-            <strong class="font-semibold text-zinc-200">Model intent</strong>
-            — the <code>idempotency_key</code>
-            argument lets the model mark a call it might re-issue itself as the same intent.
-          </li>
-        </ul>
+
+        <h2>Operations and recovery</h2>
+        <p>
+          The stdio bridge derives a private <code>operation_id</code>
+          for <code>run_action</code>, <code>execute_runbook</code>, and <code>create_runbook_draft</code>. The portal reserves it in the same transaction as the
+          mutation. Repeating the same operation and facts returns the original resource; changed
+          facts conflict. Models do not create operation or idempotency keys.
+        </p>
+        <p>
+          A successful mutation returns its operation ID. If the bridge loses an HTTP response, its
+          correlated JSON-RPC error includes that same ID and a typed <code>get_operation</code>
+          continuation. Use it before deciding whether to issue a new mutation. Run history is for
+          investigation; it is not a substitute for exact operation recovery.
+        </p>
+
+        <h2>Waits and cancellation</h2>
+        <p>
+          <code>run_action</code>
+          waits up to 60 seconds. <code>wait_for_run</code>
+          waits up to five
+          minutes and returns the current state when its deadline expires. The stdio bridge keeps up
+          to eight requests in flight and uses a 330-second HTTP deadline, so pings and unrelated
+          calls remain responsive. Cancelling after send stops observation only; it does not roll
+          back committed infrastructure work.
+        </p>
+
+        <h2>Runbooks and signing</h2>
+        <p>
+          Published runbooks are immutable <code>slug@version</code> records. Inspect the frozen
+          steps with <code>get_runbook</code> before calling <code>execute_runbook</code>. Draft
+          creation only saves a reviewable draft; it never publishes or executes it.
+        </p>
+        <p>
+          The MCP projection is limited to 32 steps, 16 resolved runners per step, 256 runs total,
+          and a 56 KiB encoded definition. Larger operator-authored runbooks remain available in
+          the console but are not exposed or executable through MCP. Execution returns after its
+          first wave commits; follow the returned <code>wait_for_run</code>
+          continuation to observe
+          progress.
+        </p>
+        <p>
+          Customer-CA signing currently protects only <code>run_action</code>. A runbook that targets
+          a signature-enforcing runner fails closed with <code>signed_runbook_unsupported</code>;
+          execute its steps as individually signed actions instead.
+        </p>
 
         <h2>Errors</h2>
-        <p>
-          When a dispatch is refused, the reason is specific. The three you'll meet most:
-        </p>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
-          <table class="w-full min-w-[640px] text-left text-sm">
+          <table class="w-full min-w-[680px] text-left text-sm">
             <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
               <tr>
-                <th class="px-4 py-3 font-medium">Error</th>
-                <th class="px-4 py-3 font-medium">What it means</th>
-                <th class="px-4 py-3 font-medium">What to do</th>
+                <th class="px-4 py-3 font-medium">Code</th>
+                <th class="px-4 py-3 font-medium">Meaning</th>
+                <th class="px-4 py-3 font-medium">Next step</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
-              <%= for {err, means, todo} <- [
-                {"pack_untrusted", "The runner advertises a pack version no operator has trusted yet, so the cloud refuses to run it.", "A human trusts the pack on the Packs page. Retrying or reloading will not clear it."},
-                {"pack_retired", "The runner advertises a pack version a newer release retired (a critical fix superseded it), so the cloud refuses to run it.", "Update the pack on the runner (emisar pack install <pack>), or an admin re-trusts the version on the Packs page."},
-                {"No runner advertises <action> / Action not found", "No currently-connected runner advertises this action — it's offline, the pack isn't loaded, or the pack isn't installed.", "Re-call tools/list; if it's still missing, check the runner is online on the Runners page."},
-                {"No runner in scope", "The action exists, but no runner you're permitted to reach advertises it.", "An access-grant issue — an admin widens your per-user runner scope."}
+              <%= for {code, meaning, next} <- [
+                {"target_contract_changed", "The selected action, pack, or runner generation is stale.", "Call get_action again and make a fresh selection."},
+                {"pack_untrusted", "The exact pack hash has not been trusted.", "A human trusts it on the Packs page."},
+                {"pack_retired", "A critical update retired this exact pack.", "Update the pack or explicitly re-trust it."},
+                {"pending_approval", "Policy parked the run for a human decision.", "Call wait_for_run until it changes."},
+                {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error; do not retry."},
+                {"signed_runbook_unsupported", "A runbook includes signature-enforcing targets.", "Use individually signed run_action calls."}
               ] do %>
                 <tr>
-                  <td class="px-4 py-3 align-top font-mono text-xs text-amber-300">{err}</td>
-                  <td class="px-4 py-3 align-top">{means}</td>
-                  <td class="px-4 py-3 align-top">{todo}</td>
+                  <td class="px-4 py-3 align-top font-mono text-xs text-amber-300">{code}</td>
+                  <td class="px-4 py-3 align-top">{meaning}</td>
+                  <td class="px-4 py-3 align-top">{next}</td>
                 </tr>
               <% end %>
             </tbody>
@@ -196,11 +215,9 @@
         </div>
 
         <p>
-          Every dispatch — allowed, approved, or denied — is recorded. See
+          Every dispatch, approval, denial, and terminal result is recorded. See
           <.link navigate={~p"/docs/audit-and-siem"}>the audit trail</.link>
-          for what's captured and how to stream it, and
-          <.link navigate={~p"/docs/policies-and-approvals"}>policies &amp; approvals</.link>
-          for what makes a call wait or deny.
+          and <.link navigate={~p"/docs/policies-and-approvals"}>policies &amp; approvals</.link>.
         </p>
       </article>
     </div>

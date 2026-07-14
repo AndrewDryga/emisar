@@ -221,7 +221,8 @@ defmodule Emisar.ApiKeys do
           prefix,
           hash,
           successor_attrs(source),
-          replaces_id: source.id
+          replaces_id: source.id,
+          credential_lineage_id: source.credential_lineage_id
         )
       end)
       |> Multi.insert(:audit, fn %{key: successor} ->
@@ -306,7 +307,8 @@ defmodule Emisar.ApiKeys do
         prefix,
         hash,
         successor_attrs(source),
-        replaces_id: source.id
+        replaces_id: source.id,
+        credential_lineage_id: source.credential_lineage_id
       )
 
     case repo.insert(changeset) do

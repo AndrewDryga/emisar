@@ -21,14 +21,17 @@ const echoAction = `
 schema_version: 1
 id: t.echo
 title: Echo
+summary: Echo one validated message.
 kind: exec
 risk: low
 description: d
 side_effects: [none]
+search_terms: [repeat, print]
 args:
   - name: msg
     type: string
     required: true
+    description: Message to echo.
 execution:
   command:
     binary: /bin/echo
@@ -89,6 +92,18 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	if a.ID != "t.echo" {
 		t.Fatalf("action id=%q", a.ID)
 	}
+	if a.Summary != "Echo one validated message." || a.Description != "d" {
+		t.Fatalf("model prose not advertised: summary=%q description=%q", a.Summary, a.Description)
+	}
+	if len(a.SideEffects) != 0 {
+		t.Fatalf("canonical no-side-effects marker not advertised: %v", a.SideEffects)
+	}
+	if len(a.SearchTerms) != 2 || a.SearchTerms[0] != "repeat" {
+		t.Fatalf("search terms not advertised: %v", a.SearchTerms)
+	}
+	if len(a.Args) != 1 || a.Args[0].Description != "Message to echo." {
+		t.Fatalf("public args not advertised: %+v", a.Args)
+	}
 	if a.Limits.DefaultTimeout.String() != "5s" {
 		t.Fatalf("default timeout=%s", a.Limits.DefaultTimeout)
 	}
@@ -113,7 +128,7 @@ func enforcingVerifier(t *testing.T, caIDs ...string) *signing.Verifier {
 		}
 		cas[i] = signing.CAConfig{CAID: id, PublicKeyHex: hex.EncodeToString(pub)}
 	}
-	v, err := signing.NewVerifier(true, cas, 24*time.Hour, "runner-state-test", "", nil, signing.NewMemoryNonceStore())
+	v, err := signing.NewVerifier(true, cas, 24*time.Hour, "runner-state-test", "https://emisar.test", "", nil, signing.NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -135,7 +150,7 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 
 	// A present-but-non-enforcing verifier — the real "enforcement off" config
 	// state, since the client always holds a verifier — also advertises nothing.
-	nonEnforcing, err := signing.NewVerifier(false, nil, time.Hour, "", "", nil, signing.NewMemoryNonceStore())
+	nonEnforcing, err := signing.NewVerifier(false, nil, time.Hour, "", "", "", nil, signing.NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}

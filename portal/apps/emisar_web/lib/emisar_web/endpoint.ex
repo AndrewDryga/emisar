@@ -55,10 +55,10 @@ defmodule EmisarWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
-  # We use a custom body_reader so the Paddle webhook controller can
-  # verify HMAC-SHA256 signatures against the exact bytes Paddle signed.
-  # `Plug.Parsers` consumes the body before our controller runs, and
-  # `read_body/2` only returns the unparsed bytes once.
+  # We use a path-bounded body reader where a security boundary needs exact
+  # bytes: Paddle verifies its HMAC, while MCP rejects ambiguous JSON and checks
+  # signed argument slices. `Plug.Parsers` otherwise consumes those bytes before
+  # the controller can inspect them.
   # A thin wrapper over Plug.Parsers: a malformed body on /api/mcp/rpc returns the
   # JSON-RPC -32700 parse-error envelope instead of the generic 400 (every other
   # path is unchanged). Same options Plug.Parsers takes.

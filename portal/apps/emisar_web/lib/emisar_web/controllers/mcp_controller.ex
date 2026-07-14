@@ -38,7 +38,7 @@ defmodule EmisarWeb.MCPController do
   """
 
   use EmisarWeb, :controller
-  alias EmisarWeb.MCP.{Attestation, Auth, Idempotency, Service}
+  alias EmisarWeb.MCP.{Auth, Idempotency, Service}
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
@@ -101,7 +101,7 @@ defmodule EmisarWeb.MCPController do
           reason: params["reason"],
           wait_ms: wait_ms,
           idempotency_key: Idempotency.resolve(conn, params),
-          attestation: Attestation.extract(params)
+          attestation: rest_attestation(params)
         }
 
         case Service.dispatch_tool(conn, action_id, action_args, opts) do
@@ -281,6 +281,14 @@ defmodule EmisarWeb.MCPController do
   defp normalize_runner_input(%{"runners" => runners}), do: runners
   defp normalize_runner_input(%{"runner" => runner}), do: [runner]
   defp normalize_runner_input(_params), do: []
+
+  # The customer-CA contract is the exact v4 `run_action` JSON-RPC header.
+  # Inline v3 envelopes cannot bind the immutable pack, exact args, public
+  # runner generations, or operation identity, so this separate REST surface
+  # must reject them rather than silently discard or relay weaker authority.
+  defp rest_attestation(params) do
+    if Map.has_key?(params, "attestation"), do: :invalid, else: nil
+  end
 
   # -- Plugs ----------------------------------------------------------
 

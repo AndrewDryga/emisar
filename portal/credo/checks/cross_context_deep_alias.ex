@@ -15,7 +15,12 @@ defmodule Emisar.Checks.CrossContextDeepAlias do
       """
     ]
 
-  @special_contexts %{"oauth" => "OAuth", "api_keys" => "ApiKeys", "sso" => "SSO"}
+  @special_contexts %{
+    "oauth" => "OAuth",
+    "api_keys" => "ApiKeys",
+    "mcp_operations" => "MCPOperations",
+    "sso" => "SSO"
+  }
 
   @doc false
   @impl true

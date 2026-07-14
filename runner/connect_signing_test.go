@@ -57,3 +57,35 @@ func TestOpenNonceStoreUsesDataDir(t *testing.T) {
 		t.Fatalf("stat durable journal: %v", err)
 	}
 }
+
+func TestCanonicalPortalOrigin(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "websocket path", raw: "wss://Cloud.Example.COM:443/runner/v1", want: "https://cloud.example.com"},
+		{name: "websocket custom port", raw: "wss://cloud.example.com:8443/runner/v1", want: "https://cloud.example.com:8443"},
+		{name: "http development", raw: "http://localhost:4000", want: "http://localhost:4000"},
+		{name: "ws default port", raw: "ws://localhost:80/socket", want: "http://localhost"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := canonicalPortalOrigin(test.raw)
+			if err != nil {
+				t.Fatalf("canonicalPortalOrigin: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("canonicalPortalOrigin = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCanonicalPortalOriginRejectsInvalidInput(t *testing.T) {
+	for _, raw := range []string{"", "/relative", "ftp://example.com", "wss://user:pass@example.com/socket"} {
+		if _, err := canonicalPortalOrigin(raw); err == nil {
+			t.Fatalf("canonicalPortalOrigin(%q) unexpectedly succeeded", raw)
+		}
+	}
+}

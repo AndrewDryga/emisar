@@ -3,10 +3,13 @@ package catalog
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // --- fixtures ---------------------------------------------------------
@@ -148,6 +151,75 @@ func TestBuild_MissingBaseURL(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
 	if _, err := Build(reg, BuildOptions{}); err == nil {
 		t.Fatal("expected error when BaseURL is empty")
+	}
+}
+
+func TestCatalogActionCarriesCompleteReviewedContract(t *testing.T) {
+	minDuration := actionspec.Duration(5 * time.Second)
+	action, err := catalogAction(&actionspec.Action{
+		ID:          "test.inspect",
+		Title:       "Inspect  state",
+		Kind:        actionspec.KindExec,
+		Risk:        actionspec.RiskLow,
+		Description: "Reports current state.",
+		SideEffects: []string{"none"},
+		SearchTerms: []string{"inspect state"},
+		Args: []actionspec.Arg{{
+			Name:        "window",
+			Type:        actionspec.ArgDuration,
+			Required:    true,
+			Description: "Observation  window",
+			Validation:  &actionspec.Validation{MinDuration: &minDuration},
+		}},
+		Examples: []actionspec.Example{{
+			Title: "Short window",
+			Args:  map[string]any{"window": "30s"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("catalogAction: %v", err)
+	}
+
+	if action.Title != "Inspect state" || action.Summary != "Reports current state." {
+		t.Errorf("normalized title/derived summary = %q / %q", action.Title, action.Summary)
+	}
+	if len(action.SideEffects) != 0 {
+		t.Errorf("side_effects = %v, want semantic empty list", action.SideEffects)
+	}
+	if len(action.Args) != 1 || action.Args[0].Description != "Observation window" {
+		t.Fatalf("args not carried completely: %+v", action.Args)
+	}
+	if got := action.Args[0].Validation.MinDuration; got == nil || *got != "5s" {
+		t.Errorf("min_duration = %v, want 5s", got)
+	}
+	if !reflect.DeepEqual(action.Examples, []Example{{
+		Title: "Short window",
+		Args:  map[string]any{"window": "30s"},
+	}}) {
+		t.Errorf("examples = %#v", action.Examples)
+	}
+}
+
+func TestCatalogActionRequiresBoundedSummaryAndDescriptor(t *testing.T) {
+	base := &actionspec.Action{
+		ID:          "test.inspect",
+		Title:       "Inspect",
+		Kind:        actionspec.KindExec,
+		Risk:        actionspec.RiskLow,
+		Description: strings.Repeat("a", 513) + ". Later sentence.",
+		SideEffects: []string{"none"},
+	}
+	if _, err := catalogAction(base); err == nil || !strings.Contains(err.Error(), "explicit summary") {
+		t.Fatalf("expected explicit-summary error, got %v", err)
+	}
+
+	base.Summary = "Inspect state"
+	base.Examples = []actionspec.Example{{
+		Title: "Oversized",
+		Args:  map[string]any{"payload": strings.Repeat("x", MaxActionBytes)},
+	}}
+	if _, err := catalogAction(base); err == nil || !strings.Contains(err.Error(), "descriptor") {
+		t.Fatalf("expected descriptor-size error, got %v", err)
 	}
 }
 
@@ -294,6 +366,9 @@ func TestBuild_CarryForwardWindow(t *testing.T) {
 	if head.Version != prior.Version || head.ContentHash != prior.ContentHash || head.TarballURL != prior.TarballURL {
 		t.Errorf("carried head = %+v, want current of prior build (%s / %s / %s)",
 			head, prior.Version, prior.ContentHash, prior.TarballURL)
+	}
+	if !reflect.DeepEqual(head.Actions, prior.Actions) {
+		t.Errorf("carried head lost its trusted action snapshot")
 	}
 }
 

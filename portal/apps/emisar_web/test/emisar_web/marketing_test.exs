@@ -840,20 +840,25 @@ defmodule EmisarWeb.MarketingTest do
     test "the MCP reference pins the complete tool and transport contract", %{conn: conn} do
       html = conn |> get(~p"/docs/mcp-reference") |> html_response(200)
 
-      for tool <-
-            ~w(wait_for_run recent_runs list_runbooks get_runbook execute_runbook create_runbook_draft) do
+      for tool <- ~w(
+        list_packs list_runners find_actions get_action run_action get_operation
+        wait_for_run recent_runs list_runbooks get_runbook execute_runbook create_runbook_draft
+      ) do
         assert html =~ tool
       end
 
       assert html =~ "60 seconds"
-      assert html =~ "five minutes"
+      assert html =~ ~r/five\s+minutes/
       assert html =~ "eight requests"
       assert html =~ "330-second"
       assert html =~ "notifications/cancelled"
       assert html =~ "2025-11-25"
-      assert html =~ "string or integer"
-      assert html =~ "array of stable ids"
-      assert html =~ "legacy display-name alias"
+      assert html =~ "strings or integers"
+      assert html =~ "pack@version/sha256:hash"
+      assert html =~ "name~sha256-prefix"
+      assert html =~ "signed_runbook_unsupported"
+      assert html =~ "256 runs total"
+      assert html =~ "first wave commits"
     end
 
     test "the teams-and-access page renders all four roles", %{conn: conn} do

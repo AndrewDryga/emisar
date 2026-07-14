@@ -20,11 +20,11 @@ defmodule Emisar.Catalog.PackVersion do
       dispatch fails CLOSED. A later runner advertisement of a fresh hash
       flips it back to `:pending` for another review.
 
-  `trusted_manifest` snapshots the action set (`action_id => {risk, kind}`)
-  as it was when this hash was trusted, so a re-advertised hash that flips
-  the row back to `:pending` can be DIFFED against it — surfacing an added
-  `critical` action before the operator re-trusts. Null until the first
-  Trust (and for rows trusted before this feature); null means "no diff".
+  `trusted_manifest` is a versioned snapshot of the complete bounded action
+  descriptors for the exact trusted hash. A re-advertised hash can therefore
+  be diffed before re-trust. Historical sparse or null manifests remain
+  incomplete for static/MCP reads; they are never rebuilt from live runner
+  prose.
   """
   use Emisar, :schema
 

@@ -33,6 +33,9 @@ defmodule Emisar.Catalog.RunnerAction.Query do
     )
   end
 
+  def by_pack_hash(queryable, pack_hash),
+    do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
+
   # Distinct runner ids advertising the filtered actions — the blast radius
   # of trusting a pack (which hosts will run it).
   def distinct_runner_ids(queryable),

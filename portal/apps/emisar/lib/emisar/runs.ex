@@ -7,7 +7,7 @@ defmodule Emisar.Runs do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext, Users}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, MCPOperations, Repo, RequestContext, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -129,6 +129,58 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc "Lists fixed-contract MCP history with lineage scope and keyset pagination."
+  def list_recent_mcp_runs(filters, %Subject{} = subject, page_opts)
+      when is_map(filters) and is_list(page_opts) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      ActionRun.Query.all()
+      |> ActionRun.Query.fixed_mcp_contract()
+      |> scope_fixed_mcp_runs_to_membership(subject)
+      |> apply_mcp_history_scope(filters[:scope], subject)
+      |> maybe_by_operation_id(filters[:operation_id])
+      |> maybe_by_runbook_execution_id(filters[:runbook_execution_id])
+      |> maybe_by_runbook_step_id(filters[:step_id])
+      |> maybe_by_runner_ref(filters[:runner_ref])
+      |> maybe_by_action_id(filters[:action_id])
+      |> maybe_by_pack_ref(filters[:pack_ref])
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, page: page_opts, count: false)
+    end
+  end
+
+  defp apply_mcp_history_scope(
+         query,
+         :own,
+         %Subject{actor: %ApiKeys.ApiKey{credential_lineage_id: lineage_id}}
+       ),
+       do: ActionRun.Query.by_credential_lineage(query, lineage_id)
+
+  defp apply_mcp_history_scope(query, :account, _subject), do: query
+  defp apply_mcp_history_scope(query, _scope, _subject), do: ActionRun.Query.none(query)
+
+  defp maybe_by_operation_id(query, nil), do: query
+  defp maybe_by_operation_id(query, value), do: ActionRun.Query.by_operation_id(query, value)
+
+  defp maybe_by_runbook_execution_id(query, nil), do: query
+
+  defp maybe_by_runbook_execution_id(query, value),
+    do: ActionRun.Query.by_runbook_execution_id(query, value)
+
+  defp maybe_by_runbook_step_id(query, nil), do: query
+
+  defp maybe_by_runbook_step_id(query, value),
+    do: ActionRun.Query.by_runbook_step_id(query, value)
+
+  defp maybe_by_runner_ref(query, nil), do: query
+  defp maybe_by_runner_ref(query, value), do: ActionRun.Query.by_runner_ref(query, value)
+
+  defp maybe_by_pack_ref(query, nil), do: query
+  defp maybe_by_pack_ref(query, value), do: ActionRun.Query.by_pack_ref(query, value)
+
   defp maybe_by_runner_id(query, nil), do: query
   defp maybe_by_runner_id(query, runner_id), do: ActionRun.Query.by_runner_id(query, runner_id)
 
@@ -172,6 +224,7 @@ defmodule Emisar.Runs do
     :pending_approval,
     :refused
   ]
+  @max_mcp_fanout 16
 
   @doc """
   Rolled-up totals for the dashboard headline: total runs in window, plus the
@@ -272,6 +325,67 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc "Fetches one run carrying the complete fixed MCP history contract."
+  def fetch_mcp_run_by_id(id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ),
+         true <- Repo.valid_uuid?(id) do
+      ActionRun.Query.all()
+      |> ActionRun.Query.fixed_mcp_contract()
+      |> scope_fixed_mcp_runs_to_membership(subject)
+      |> ActionRun.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(ActionRun.Query)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  @doc "Lists one API credential's runs for an exact MCP operation identity."
+  def list_runs_by_operation(operation_id, api_key_id, %Subject{} = subject)
+      when is_binary(operation_id) and is_binary(api_key_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      runs =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_operation_id(operation_id)
+        |> ActionRun.Query.by_api_key_id(api_key_id)
+        |> ActionRun.Query.with_preloaded_runner()
+        |> Authorizer.for_subject(subject)
+        |> ActionRun.Query.ordered_by_oldest()
+        |> Repo.all()
+
+      {:ok, runs}
+    end
+  end
+
+  @doc "Lists every run in one runbook execution through the caller's account scope."
+  def list_runs_by_runbook_execution(execution_id, %Subject{} = subject)
+      when is_binary(execution_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      runs =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_runbook_execution_id(execution_id)
+        |> ActionRun.Query.with_preloaded_runner()
+        |> Authorizer.for_subject(subject)
+        |> ActionRun.Query.ordered_by_oldest()
+        |> Repo.all()
+
+      {:ok, runs}
+    end
+  end
+
   # `:own` narrows to the calling agent's own runs (its API key) — the MCP
   # `recent_runs` "recall what I ran" path; only an API-key subject has "own"
   # runs, so any other actor falls through to `:account` (the for_subject scope).
@@ -279,6 +393,25 @@ defmodule Emisar.Runs do
     do: ActionRun.Query.by_api_key_id(query, api_key_id)
 
   defp apply_run_scope(query, _scope, _subject), do: query
+
+  defp scope_fixed_mcp_runs_to_membership(
+         query,
+         %Subject{membership_id: membership_id}
+       )
+       when is_binary(membership_id) do
+    case Emisar.Runners.runner_scopes_for_membership(membership_id) do
+      [] ->
+        query
+
+      scopes ->
+        runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
+        groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
+        ActionRun.Query.by_runner_scope_values(query, runner_ids, groups)
+    end
+  end
+
+  defp scope_fixed_mcp_runs_to_membership(query, %Subject{}),
+    do: ActionRun.Query.none(query)
 
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).
@@ -394,6 +527,391 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  Atomically reserves one fixed MCP operation and persists every target outcome.
+
+  Catalog trust, runner scope, attestation presence, and policy are re-evaluated
+  for every target inside the transaction. No run is broadcast or delivered and
+  no approval notification is emitted until the operation row, every run, every
+  approval request, and every grant use have committed together.
+
+  An exact replay returns the original target rows without re-dispatching them.
+  """
+  def dispatch_mcp_fanout(operation_attrs, target_attrs, %Subject{} = subject)
+      when is_map(operation_attrs) and is_list(target_attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.dispatch_run_permission()
+           ),
+         :ok <- validate_mcp_targets(target_attrs) do
+      target_attrs =
+        Enum.map(target_attrs, fn attrs ->
+          attrs
+          |> put_dispatcher_context(subject)
+          |> put_dispatcher_identity(subject)
+        end)
+
+      commit_mcp_fanout(operation_attrs, target_attrs, subject, true)
+    end
+  end
+
+  def dispatch_mcp_fanout(_operation_attrs, _target_attrs, %Subject{}),
+    do: {:error, :invalid_targets}
+
+  defp validate_mcp_targets(target_attrs) do
+    runner_ids = Enum.map(target_attrs, &Map.get(&1, :runner_id))
+
+    if length(target_attrs) in 1..@max_mcp_fanout and
+         Enum.all?(target_attrs, &is_map/1) and
+         Enum.all?(runner_ids, &is_binary/1) and
+         MapSet.size(MapSet.new(runner_ids)) == length(runner_ids) do
+      :ok
+    else
+      {:error, :invalid_targets}
+    end
+  end
+
+  defp commit_mcp_fanout(operation_attrs, target_attrs, subject, use_grants?) do
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+      result =
+        multi
+        |> Multi.merge(fn
+          %{mcp_operation: %{fresh?: false}} ->
+            Multi.new()
+
+          %{mcp_operation: %{operation: operation, fresh?: true}} ->
+            compose_mcp_fanout(target_attrs, subject.account.id, operation.id, use_grants?)
+        end)
+        |> Repo.commit_multi(after_commit: &after_mcp_fanout_committed/1)
+
+      case result do
+        {:ok, %{mcp_operation: %{operation: operation}}} ->
+          list_runs_by_mcp_operation(operation.id, subject)
+
+        {:error, :grant_unusable} when use_grants? ->
+          # A grant can expire, be revoked, or exhaust its final use between
+          # policy planning and the locked consume. The first transaction has
+          # rolled back completely, including the operation reservation, so the
+          # retry can safely persist the same fan-out as pending approval.
+          commit_mcp_fanout(operation_attrs, target_attrs, subject, false)
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp compose_mcp_fanout(target_attrs, account_id, operation_record_id, use_grants?) do
+    target_attrs
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, Multi.new()}, fn {attrs, index}, {:ok, multi} ->
+      case plan_atomic_run(attrs, account_id, operation_record_id, use_grants?) do
+        {:ok, plan} ->
+          run_key = {:mcp_run, index}
+          {:cont, {:ok, append_atomic_run(multi, plan, run_key, index)}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, multi} -> multi
+      {:error, reason} -> Multi.error(Multi.new(), :mcp_fanout_preflight, reason)
+    end
+  end
+
+  @doc """
+  Composes a bounded dispatch batch into an existing transaction.
+
+  The caller owns the parent resource and passes a unique `namespace` for the
+  Multi keys. Planning runs inside the outer transaction; delivery, broadcasts,
+  and approval notifications must be invoked after the outer commit through
+  `after_composed_dispatches_committed/1`.
+  """
+  def compose_dispatch_batch_in_multi(multi, target_attrs, subject, namespace, opts \\ [])
+
+  def compose_dispatch_batch_in_multi(
+        %Multi{} = multi,
+        target_attrs,
+        %Subject{} = subject,
+        namespace,
+        opts
+      )
+      when is_list(target_attrs) do
+    use_grants? = Keyword.get(opts, :use_grants?, true)
+
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.dispatch_run_permission()
+           ),
+         :ok <- validate_dispatch_batch(target_attrs) do
+      target_attrs =
+        Enum.map(target_attrs, fn attrs ->
+          attrs
+          |> put_dispatcher_context(subject)
+          |> put_dispatcher_identity(subject)
+        end)
+
+      {:ok,
+       Multi.merge(multi, fn _changes ->
+         compose_dispatch_batch(
+           target_attrs,
+           subject.account.id,
+           namespace,
+           use_grants?
+         )
+       end)}
+    end
+  end
+
+  def compose_dispatch_batch_in_multi(%Multi{}, _target_attrs, %Subject{}, _namespace, _opts),
+    do: {:error, :invalid_targets}
+
+  defp validate_dispatch_batch(target_attrs) do
+    if length(target_attrs) in 1..@max_mcp_fanout and
+         Enum.all?(target_attrs, &(is_map(&1) and is_binary(Map.get(&1, :runner_id)))) do
+      :ok
+    else
+      {:error, :invalid_targets}
+    end
+  end
+
+  defp compose_dispatch_batch(target_attrs, account_id, namespace, use_grants?) do
+    target_attrs
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, Multi.new()}, fn {attrs, index}, {:ok, multi} ->
+      case plan_atomic_run(attrs, account_id, nil, use_grants?) do
+        {:ok, plan} ->
+          run_key = {:composed_run, namespace, index}
+          {:cont, {:ok, append_atomic_run(multi, plan, run_key, {namespace, index})}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, multi} -> multi
+      {:error, reason} -> Multi.error(Multi.new(), {:dispatch_batch, namespace}, reason)
+    end
+  end
+
+  defp plan_atomic_run(attrs, account_id, operation_record_id, use_grants?) do
+    attrs = Map.put(attrs, :account_id, account_id)
+    runner_id = attrs[:runner_id]
+    action_id = attrs[:action_id]
+    reason = attrs[:reason]
+    membership_id = Map.get(attrs, :requested_by_membership_id)
+
+    with :ok <- require_runner(runner_id),
+         :ok <- require_action(action_id),
+         :ok <- require_reason(reason),
+         :ok <- runner_in_account(runner_id, account_id),
+         :ok <- check_attestation(attrs, runner_id, account_id),
+         :ok <-
+           attestation_fresh(attrs[:attestation], Emisar.Runners.peek_runner_by_id(runner_id)),
+         :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+         {:ok, runner_ref} <- public_runner_ref(runner_id),
+         {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
+         :ok <- check_pack_ref(action, attrs[:pack_ref]),
+         {:ok, pack_hash} <- check_pack_trust(action, account_id) do
+      attrs =
+        attrs
+        |> Map.delete(:requested_by_membership_id)
+        |> Map.put(:args_sha256, args_sha256(attrs[:args], attrs[:args_raw]))
+        |> Map.put(:runner_ref, runner_ref)
+        |> Map.put(:expected_pack_hash, pack_hash)
+        |> Map.put(:requires_approval, false)
+        |> Map.put(:mcp_operation_record_id, operation_record_id)
+
+      {:ok, plan_mcp_policy(attrs, account_id, action, use_grants?)}
+    end
+  end
+
+  defp plan_mcp_policy(attrs, account_id, action, use_grants?) do
+    eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
+    group = runner_group(attrs[:runner_id])
+
+    case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs, group) do
+      {:deny, matched, reason, policy} ->
+        %{
+          attrs:
+            attrs
+            |> Map.merge(policy_attrs(policy, "deny", reason, matched))
+            |> Map.put(:status, :denied),
+          delivery: :none
+        }
+
+      {:allow, matched, reason, policy} ->
+        %{
+          attrs: Map.merge(attrs, policy_attrs(policy, "allow", reason, matched)),
+          delivery: :runner
+        }
+
+      {:require_approval, matched, reason, policy} ->
+        plan_mcp_approval(attrs, policy, reason, matched, use_grants?)
+    end
+  end
+
+  defp plan_mcp_approval(attrs, policy, policy_reason, matched, true) do
+    case lookup_grant(attrs) do
+      {:matched, grant} ->
+        %{
+          attrs:
+            Map.merge(
+              attrs,
+              policy_attrs(policy, "allow", "matched approval grant", matched)
+            ),
+          delivery: :runner,
+          grant: {grant, policy}
+        }
+
+      :none ->
+        plan_mcp_approval(attrs, policy, policy_reason, matched, false)
+    end
+  end
+
+  defp plan_mcp_approval(attrs, policy, policy_reason, matched, false) do
+    attrs =
+      attrs
+      |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
+      |> Map.merge(%{status: :pending_approval, requires_approval: true})
+
+    request_opts = [
+      min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
+      allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules),
+      expires_at: approval_attestation_deadline(attrs)
+    ]
+
+    %{
+      attrs: attrs,
+      delivery: :approval,
+      approval: {attrs[:requested_by_id], attrs[:reason], request_opts}
+    }
+  end
+
+  defp append_atomic_run(multi, plan, run_key, audit_suffix) do
+    request_id = Crypto.run_request_id()
+
+    attrs =
+      plan.attrs
+      |> Map.put(:request_id, request_id)
+      |> Map.put(:queued_at, DateTime.utc_now())
+
+    multi
+    |> Multi.insert(run_key, ActionRun.Changeset.create(attrs))
+    |> append_atomic_run_audit(run_key, attrs[:status], audit_suffix)
+    |> append_mcp_approval(run_key, plan[:approval])
+    |> append_atomic_grant(run_key, request_id, plan[:grant], audit_suffix)
+  end
+
+  defp append_atomic_run_audit(multi, run_key, status, audit_suffix)
+       when status in @audited_run_statuses do
+    Multi.insert(multi, {:atomic_run_audit, audit_suffix}, fn changes ->
+      changes |> Map.fetch!(run_key) |> Audit.run_event_changeset()
+    end)
+  end
+
+  defp append_atomic_run_audit(multi, _run_key, _status, _audit_suffix), do: multi
+
+  defp append_mcp_approval(multi, _run_key, nil), do: multi
+
+  defp append_mcp_approval(multi, run_key, {requested_by_id, reason, opts}) do
+    Emisar.Approvals.create_request_in_multi(
+      multi,
+      run_key,
+      requested_by_id,
+      reason,
+      opts
+    )
+  end
+
+  defp append_atomic_grant(multi, _run_key, _request_id, nil, _audit_suffix), do: multi
+
+  defp append_atomic_grant(multi, run_key, request_id, {grant, policy}, audit_suffix) do
+    multi
+    |> Emisar.Approvals.consume_grant_in_multi(run_key, grant, request_id)
+    |> Multi.insert({:atomic_grant_audit, audit_suffix}, fn changes ->
+      changes |> Map.fetch!(run_key) |> Audit.Events.grant_used(grant, policy)
+    end)
+  end
+
+  defp after_mcp_fanout_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
+
+  defp after_mcp_fanout_committed(%{mcp_operation: %{fresh?: true}} = changes) do
+    after_composed_dispatches_committed(changes)
+  end
+
+  @doc "Runs every side effect for dispatch rows after their outer transaction commits."
+  def after_composed_dispatches_committed(changes) when is_map(changes) do
+    changes
+    |> composed_runs_from_changes()
+    |> Enum.each(fn {run_key, run} ->
+      broadcast_run(run)
+      after_mcp_run_committed(changes, run_key, run)
+    end)
+
+    :ok
+  end
+
+  defp after_mcp_run_committed(_changes, _run_key, %ActionRun{status: :pending} = run) do
+    case dispatch_to_runner(run) do
+      :ok -> :ok
+      {:error, reason} -> Logger.error("MCP run delivery failed: #{inspect(reason)}")
+    end
+  end
+
+  defp after_mcp_run_committed(changes, run_key, %ActionRun{status: :pending_approval} = run) do
+    request_key = {:approval_request, run_key}
+
+    case Map.get(changes, request_key) do
+      %Emisar.Approvals.Request{} = request ->
+        Emisar.Approvals.notify_request_created(request, run)
+
+      _ ->
+        Logger.error("MCP approval request missing after committed run #{run.id}")
+    end
+  end
+
+  defp after_mcp_run_committed(_changes, _run_key, %ActionRun{}), do: :ok
+
+  defp composed_runs_from_changes(changes) do
+    changes
+    |> Enum.flat_map(fn
+      {{:mcp_run, index} = key, %ActionRun{} = run} ->
+        [{{0, index}, key, run}]
+
+      {{:composed_run, namespace, index} = key, %ActionRun{} = run} ->
+        [{{1, inspect(namespace), index}, key, run}]
+
+      _ ->
+        []
+    end)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map(fn {_sort_key, key, run} -> {key, run} end)
+  end
+
+  @doc "Lists the complete target set persisted under one MCP operation row."
+  def list_runs_by_mcp_operation(operation_record_id, %Subject{} = subject)
+      when is_binary(operation_record_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      runs =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_mcp_operation_record_id(operation_record_id)
+        |> ActionRun.Query.with_preloaded_runner()
+        |> Authorizer.for_subject(subject)
+        |> ActionRun.Query.ordered_by_oldest()
+        |> Repo.all()
+
+      {:ok, runs}
+    end
+  end
+
   # Snapshot the dispatcher's source ip/ua + self-reported MCP client metadata
   # from the request context onto the run attrs, so every run-lifecycle audit
   # event — including the terminal one logged from the runner socket — attributes
@@ -460,11 +978,14 @@ defmodule Emisar.Runs do
          :ok <- runner_in_account(runner_id, account_id),
          :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+         {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
+         :ok <- check_pack_ref(action, attrs[:pack_ref]),
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
       |> Map.delete(:requested_by_membership_id)
-      |> Map.put(:args_sha256, args_sha256(attrs[:args]))
+      |> Map.put(:args_sha256, args_sha256(attrs[:args], attrs[:args_raw]))
+      |> Map.put(:runner_ref, runner_ref)
       # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
       # so the run ships the exact bytes authorized here, not a send-time re-read.
       |> Map.put(:expected_pack_hash, pack_hash)
@@ -529,19 +1050,59 @@ defmodule Emisar.Runs do
          %Emisar.Runners.Runner{enforce_signatures: true, max_attestation_age_seconds: max_age}
        )
        when is_map(att) and is_integer(max_age) do
-    # Mirror the runner's verifier (runner/internal/signing): stale when the
-    # signature's issued_at falls outside +/- the freshness window. An
-    # unparseable issued_at falls through to :ok — let the runner reject it.
-    with issued when is_binary(issued) <- att["issued_at"],
-         {:ok, issued_at, _offset} <- DateTime.from_iso8601(issued),
-         true <- abs(DateTime.diff(DateTime.utc_now(), issued_at)) > max_age do
-      {:error, :attestation_stale}
+    # Mirror the runner's independent freshness and certificate windows. The
+    # runner remains authoritative over both signatures; this portal check only
+    # prevents creating or approving work whose advertised deadlines are
+    # already unusable.
+    now = DateTime.utc_now()
+
+    with {:ok, issued_at, deadline} <- attestation_window(att, max_age),
+         age when age <= max_age <- abs(DateTime.diff(now, issued_at)),
+         :gt <- DateTime.compare(deadline, now) do
+      :ok
     else
-      _ -> :ok
+      _ -> {:error, :attestation_stale}
     end
   end
 
+  defp attestation_fresh(_att, %Emisar.Runners.Runner{enforce_signatures: true}),
+    do: {:error, :attestation_stale}
+
   defp attestation_fresh(_att, _runner), do: :ok
+
+  defp approval_attestation_deadline(%{attestation: attestation, runner_id: runner_id})
+       when is_map(attestation) and is_binary(runner_id) do
+    case Emisar.Runners.peek_runner_by_id(runner_id) do
+      %Emisar.Runners.Runner{
+        enforce_signatures: true,
+        max_attestation_age_seconds: max_age
+      }
+      when is_integer(max_age) ->
+        case attestation_window(attestation, max_age) do
+          {:ok, _issued_at, deadline} -> deadline
+          {:error, :attestation_stale} -> DateTime.utc_now()
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp approval_attestation_deadline(_attrs), do: nil
+
+  defp attestation_window(attestation, max_age) do
+    with issued when is_binary(issued) <- attestation["issued_at"],
+         {:ok, issued_at, _offset} <- DateTime.from_iso8601(issued),
+         valid_until when is_binary(valid_until) <- get_in(attestation, ["cert", "valid_until"]),
+         {:ok, cert_deadline, _offset} <- DateTime.from_iso8601(valid_until) do
+      freshness_deadline = DateTime.add(issued_at, max_age, :second)
+
+      {:ok, issued_at,
+       Enum.min_by([freshness_deadline, cert_deadline], &DateTime.to_unix(&1, :microsecond))}
+    else
+      _ -> {:error, :attestation_stale}
+    end
+  end
 
   # If the caller supplied an Idempotency-Key on this api_key, an earlier
   # call that won the unique-index race owns the run. We re-shape the
@@ -638,6 +1199,15 @@ defmodule Emisar.Runs do
     end
   end
 
+  defp public_runner_ref(runner_id) do
+    with %Emisar.Runners.Runner{} = runner <- Emisar.Runners.peek_runner_by_id(runner_id),
+         {:ok, runner_ref} <- Emisar.Catalog.MCPProjection.runner_ref(runner) do
+      {:ok, runner_ref}
+    else
+      _ -> {:error, :runner_not_found}
+    end
+  end
+
   # Authoritative lookup. The runner has already advertised this action
   # via `Catalog.observe_state`; if the catalog row is missing the
   # action simply doesn't exist on that runner and we refuse to dispatch.
@@ -645,6 +1215,20 @@ defmodule Emisar.Runs do
     case Emisar.Catalog.fetch_action_for_account(action_id, runner_id, account_id) do
       {:error, :not_found} -> {:error, :action_not_found}
       {:ok, action} -> {:ok, action}
+    end
+  end
+
+  defp check_pack_ref(_action, nil), do: :ok
+
+  defp check_pack_ref(action, pack_ref) when is_binary(pack_ref) do
+    with {:ok, {pack_id, pack_version, pack_hash}} <-
+           Emisar.Catalog.MCPProjection.parse_pack_ref(pack_ref),
+         true <-
+           action.pack_id == pack_id and action.pack_version == pack_version and
+             action.pack_hash == pack_hash do
+      :ok
+    else
+      _ -> {:error, :pack_ref_mismatch}
     end
   end
 
@@ -887,7 +1471,8 @@ defmodule Emisar.Runs do
 
   defp lookup_grant(_attrs), do: :none
 
-  defp args_sha256(args), do: Crypto.hash_hex(Jason.encode!(args || %{}))
+  defp args_sha256(_args, raw) when is_binary(raw), do: Crypto.hash_hex(raw)
+  defp args_sha256(args, _raw), do: Crypto.hash_hex(Jason.encode!(args || %{}))
 
   @doc """
   Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find runs
@@ -1028,7 +1613,7 @@ defmodule Emisar.Runs do
       "type" => "run_action",
       "request_id" => run.request_id,
       "action_id" => run.action_id,
-      "args" => run.args,
+      "args" => runner_args(run),
       "opts" => run.opts || %{},
       # Use `run.reason` (the operator's freeform "why I'm running this")
       # — NOT `run.reason_text`, which holds cancel/error reasons that
@@ -1038,6 +1623,8 @@ defmodule Emisar.Runs do
       # "reason required" guard.
       "reason" => run.reason
     }
+
+    payload = maybe_put_signed_contract(payload, run)
 
     payload = maybe_put_attestation(payload, run)
 
@@ -1084,6 +1671,21 @@ defmodule Emisar.Runs do
     do: Map.put(payload, "attestation", att)
 
   defp maybe_put_attestation(payload, %ActionRun{}), do: payload
+
+  defp runner_args(%ActionRun{args_raw: raw}) when is_binary(raw), do: Jason.Fragment.new(raw)
+  defp runner_args(%ActionRun{args: args}), do: args
+
+  defp maybe_put_signed_contract(payload, %ActionRun{
+         pack_ref: pack_ref,
+         operation_id: operation_id
+       }) do
+    payload
+    |> maybe_put("pack_ref", pack_ref)
+    |> maybe_put("operation_id", operation_id)
+  end
+
+  defp maybe_put(payload, _key, nil), do: payload
+  defp maybe_put(payload, key, value), do: Map.put(payload, key, value)
 
   # Stamp the trusted pack hash into the wire envelope so the runner can re-hash
   # its on-disk pack and refuse a dispatch whose bytes don't match what cloud
@@ -1661,6 +2263,9 @@ defmodule Emisar.Runs do
   @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run}`)."
   def subscribe_account_runs(account_id),
     do: Emisar.PubSub.subscribe(account_runs_topic(account_id))
+
+  def unsubscribe_account_runs(account_id),
+    do: Emisar.PubSub.unsubscribe(account_runs_topic(account_id))
 
   @doc """
   Subscribe to one run's live updates — `{:run_updated, run}` transitions

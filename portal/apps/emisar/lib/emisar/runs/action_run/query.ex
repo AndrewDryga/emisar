@@ -6,6 +6,8 @@ defmodule Emisar.Runs.ActionRun.Query do
   def all,
     do: from(runs in Emisar.Runs.ActionRun, as: :runs)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_id(queryable, id),
     do: where(queryable, [runs: r], r.id == ^id)
 
@@ -14,6 +16,25 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def by_runner_id(queryable, runner_id),
     do: where(queryable, [runs: r], r.runner_id == ^runner_id)
+
+  @doc "Restricts runs to runner ids or groups granted by one membership scope set."
+  def by_runner_scope_values(queryable, runner_ids, groups) do
+    queryable
+    |> with_named_binding(:scope_runner, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [runs: r],
+        runner in ^Runners.Runner.Query.all(),
+        on: r.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> where(
+      [scope_runner: runner],
+      runner.id in ^runner_ids or runner.group in ^groups
+    )
+  end
 
   def by_request_id(queryable, request_id),
     do: where(queryable, [runs: r], r.request_id == ^request_id)
@@ -24,8 +45,46 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_idempotency_key(queryable, key),
     do: where(queryable, [runs: r], r.idempotency_key == ^key)
 
+  def by_operation_id(queryable, operation_id),
+    do: where(queryable, [runs: r], r.operation_id == ^operation_id)
+
+  def by_runner_ref(queryable, runner_ref),
+    do: where(queryable, [runs: r], r.runner_ref == ^runner_ref)
+
+  def by_pack_ref(queryable, pack_ref),
+    do: where(queryable, [runs: r], r.pack_ref == ^pack_ref)
+
+  def by_runbook_step_id(queryable, step_id),
+    do: where(queryable, [runs: r], r.runbook_step_id == ^step_id)
+
+  def by_mcp_operation_record_id(queryable, operation_record_id),
+    do: where(queryable, [runs: r], r.mcp_operation_record_id == ^operation_record_id)
+
   def by_runbook_execution_id(queryable, execution_id),
     do: where(queryable, [runs: r], r.runbook_execution_id == ^execution_id)
+
+  def by_credential_lineage(queryable, lineage_id) do
+    queryable
+    |> with_named_binding(:api_key, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [runs: r],
+        api_key in ^ApiKeys.ApiKey.Query.all(),
+        on: r.api_key_id == api_key.id,
+        as: ^binding
+      )
+    end)
+    |> where([api_key: key], key.credential_lineage_id == ^lineage_id)
+  end
+
+  def fixed_mcp_contract(queryable) do
+    where(
+      queryable,
+      [runs: r],
+      not is_nil(r.operation_id) and not is_nil(r.pack_ref) and not is_nil(r.runner_ref)
+    )
+  end
 
   def by_runbook_id(queryable, runbook_id),
     do: where(queryable, [runs: r], r.runbook_id == ^runbook_id)

@@ -197,6 +197,31 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Reads the approval attached to an already-authorized visible run.
+
+  API clients do not receive the account approvals permission, but they need
+  the bounded request URL and expiry for their own run status. The caller must
+  supply the run returned by the Runs context; this function independently
+  checks run-view permission and account membership before reading it.
+  """
+  def fetch_request_for_visible_run(
+        %Runs.ActionRun{account_id: account_id, id: run_id},
+        %Subject{} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Runs.Authorizer.view_runs_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id) do
+      Request.Query.all()
+      |> Request.Query.by_run_id(run_id)
+      |> Request.Query.by_account_id(account_id)
+      |> Repo.fetch(Request.Query)
+    end
+  end
+
+  @doc """
   The recorded votes on a request, oldest first, with each decider preloaded
   for the UI tally. Requires `view` on approvals; account-scoped (via the
   `:approval_decisions` Authorizer clause). Returns `{:ok, [decision]}`.
@@ -283,9 +308,11 @@ defmodule Emisar.Approvals do
   `notify_request_created/1` on the fresh-insert path only.
   """
   def create_request_in_multi(multi, run_key, requested_by_id, reason, opts) do
+    request_key = nested_multi_key(:approval_request, run_key)
+
     Multi.insert(
       multi,
-      :approval_request,
+      request_key,
       &request_changeset(Map.fetch!(&1, run_key), requested_by_id, reason, opts),
       on_conflict: :nothing,
       conflict_target: :run_id,
@@ -300,9 +327,14 @@ defmodule Emisar.Approvals do
       }),
       do: notify_approval_created(request, run)
 
+  @doc "Internal — post-commit notification for a request composed under dynamic Multi keys."
+  def notify_request_created(%Request{} = request, %Runs.ActionRun{} = run),
+    do: notify_approval_created(request, run)
+
   defp request_changeset(%Runs.ActionRun{} = run, requested_by_id, reason, opts) do
     now = DateTime.utc_now()
-    expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
+    default_expiry = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
+    expires_at = earliest_expiry(default_expiry, Keyword.get(opts, :expires_at))
 
     # Why: an MCP run's `requested_by_id` is nil (the run's requester is an
     # api_key), so "self" must record the HUMAN behind the trigger — the
@@ -324,6 +356,12 @@ defmodule Emisar.Approvals do
       }
     })
   end
+
+  defp earliest_expiry(default, %DateTime{} = requested) do
+    if DateTime.compare(requested, default) == :lt, do: requested, else: default
+  end
+
+  defp earliest_expiry(default, _requested), do: default
 
   # Post-commit side effects for a newly filed request: light up the approvals
   # feed + email every eligible decider. Email dispatch is detached in prod so a
@@ -892,10 +930,15 @@ defmodule Emisar.Approvals do
   the commit, so the caller can fall back to the normal approval flow.
   """
   def consume_grant_in_multi(multi, run_key, %Grant{} = grant, fresh_request_id) do
-    Multi.run(multi, :grant_use, fn repo, changes ->
+    grant_key = nested_multi_key(:grant_use, run_key)
+
+    Multi.run(multi, grant_key, fn repo, changes ->
       consume_grant_if_fresh(repo, Map.fetch!(changes, run_key), grant, fresh_request_id)
     end)
   end
+
+  defp nested_multi_key(key, :run), do: key
+  defp nested_multi_key(key, run_key), do: {key, run_key}
 
   # Fresh insert (the run carries the request_id we minted) → consume one use
   # atomically; 0 rows means the grant expired/exhausted/was revoked since the

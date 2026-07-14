@@ -310,6 +310,26 @@ func TestAction_Validate(t *testing.T) {
 		{"empty id", func(a *Action) { a.ID = "" }, "missing id"},
 		{"invalid id", func(a *Action) { a.ID = "noNamespace" }, "invalid id"},
 		{"missing title", func(a *Action) { a.Title = "" }, "missing title"},
+		{"long title", func(a *Action) { a.Title = strings.Repeat("a", 161) }, "160 bytes"},
+		{"long summary", func(a *Action) { a.Summary = strings.Repeat("a", 513) }, "512 bytes"},
+		{"bidi description", func(a *Action) { a.Description = "status \u202erof" }, "U+202E"},
+		{"control side effect", func(a *Action) { a.SideEffects = []string{"writes\x00disk"} }, "U+0000"},
+		{"long side effect", func(a *Action) { a.SideEffects = []string{strings.Repeat("a", 1025)} }, "1024 bytes"},
+		{"too many side effects", func(a *Action) {
+			a.SideEffects = make([]string, 17)
+			for i := range a.SideEffects {
+				a.SideEffects[i] = "effect"
+			}
+		}, "limit is 16"},
+		{"blank example title", func(a *Action) {
+			a.Examples = []Example{{Title: "  ", Args: map[string]any{}}}
+		}, "example title"},
+		{"too many examples", func(a *Action) {
+			a.Examples = make([]Example, 17)
+			for i := range a.Examples {
+				a.Examples[i] = Example{Title: "example", Args: map[string]any{}}
+			}
+		}, "limit is 16"},
 		{"invalid kind", func(a *Action) { a.Kind = "bogus" }, "invalid kind"},
 		{"invalid risk", func(a *Action) { a.Risk = "nope" }, "invalid risk"},
 		{"empty description", func(a *Action) { a.Description = "" }, "missing description"},

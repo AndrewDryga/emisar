@@ -27,7 +27,7 @@ type StateBuilder struct {
 	// a hidden id still gets a hard refusal; this filter just keeps
 	// the UI honest.
 	Admission *admission.Policy
-	// GetVerifier returns the dispatch verifier (nil = legacy trust). When it
+	// GetVerifier returns the dispatch verifier (nil = signature enforcement off). When it
 	// enforces, Build advertises that this runner verifies a client signature
 	// on every dispatch (so the cloud disables its own dispatch to it), plus
 	// the trusted key ids and freshness window — derived live so a SIGHUP key
@@ -93,14 +93,8 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 
 func descriptorFor(a *actionspec.Action) ActionDescriptor {
 	return ActionDescriptor{
-		ID:          a.ID,
-		PackID:      a.PackID,
-		Title:       a.Title,
-		Kind:        string(a.Kind),
-		Risk:        string(a.Risk),
-		Description: a.Description,
-		SideEffects: a.SideEffects,
-		Args:        a.Args,
+		ModelDescriptor: a.ModelDescriptor(),
+		PackID:          a.PackID,
 		Limits: DescriptorLimits{
 			DefaultTimeout: a.Execution.Timeout,
 			TimeoutMin:     a.Execution.TimeoutMin,
@@ -115,6 +109,5 @@ func descriptorFor(a *actionspec.Action) ActionDescriptor {
 			MaxStderrBytesMin: a.Output.MaxStderrBytesMin,
 			MaxStderrBytesMax: a.Output.MaxStderrBytesMax,
 		},
-		Examples: a.Examples,
 	}
 }

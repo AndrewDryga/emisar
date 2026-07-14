@@ -26,7 +26,7 @@ import (
 // gate_test.go / signature_test.go) reaches them with no production change.
 //
 // Harness reused here: newFakeConn, queuedDialer, buildClient, sendRunAction,
-// sendRunActionWithHash, waitForResult, waitUntil, runEnforcingClient,
+// sendRunActionWithPackRef, waitForResult, waitUntil, runEnforcingClient,
 // attestationFor, sendRunActionWithAttestation.
 
 // --- Pack-hash trust gate ---------------------------------------------------
@@ -35,7 +35,7 @@ import (
 //
 // The cloud may not have a trusted hash on file yet (a very early observation,
 // or a runner that pre-dates pack-hash pinning). When the run_action carries NO
-// expected_pack_hash, passesTrustGate returns early (client.go:553-557) and the
+// pack_ref, passesTrustGate returns early and the
 // run proceeds normally — the runner does not invent a pin the cloud never sent.
 // Distinct from a MATCHING hash (TestClient_TrustGate_PassWithMatchingHash): no
 // rehash happens at all, so even a runner whose on-disk pack differs from some
@@ -50,15 +50,15 @@ func TestClient_TrustGate_AbsentHashSkipsGateAndProceeds(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	// Empty expected_pack_hash — the cloud sent no pin.
-	sendRunActionWithHash(t, conn, "req_nopin", "t.echo", map[string]any{"msg": "ok"}, "")
+	// Empty pack_ref: the cloud sent no pin.
+	sendRunActionWithPackRef(t, conn, "req_nopin", "t.echo", map[string]any{"msg": "ok"}, "")
 	res := waitForResult(t, conn, "req_nopin", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v error=%v — an absent pin must skip the trust gate, not refuse",
 			res["status"], res["reason"], res["error"])
 	}
 	if res["reason"] == "pack_hash_mismatch" {
-		t.Fatalf("trust gate must not fire when no expected_pack_hash was sent")
+		t.Fatalf("trust gate must not fire when no pack_ref was sent")
 	}
 	// No re-advertise should have been kicked — that path is only for a real
 	// mismatch. Beyond the initial connect state, there must be no follow-up.
@@ -87,8 +87,8 @@ func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 
 	// A pinned hash, but for an action the registry doesn't know. The gate must
 	// defer to the engine's unknown_action rather than emit pack_hash_mismatch.
-	sendRunActionWithHash(t, conn, "req_unknown", "t.does_not_exist",
-		map[string]any{"msg": "x"}, "sha256:SOME_PINNED_HASH")
+	sendRunActionWithPackRef(t, conn, "req_unknown", "t.does_not_exist",
+		map[string]any{"msg": "x"}, "t@0.0.1/sha256:SOME_PINNED_HASH")
 	res := waitForResult(t, conn, "req_unknown", 3*time.Second)
 	if res["status"] != "unknown_action" {
 		t.Fatalf("status=%v reason=%v — an unknown action under a pinned hash must reach the engine's unknown_action, not the trust gate",
@@ -120,7 +120,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 	// First dispatch: mismatched pin → pack_hash_mismatch, refusal cached, and
 	// exactly one re-advertise kicked.
-	sendRunActionWithHash(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "sha256:NOT_THE_HASH")
+	sendRunActionWithPackRef(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:NOT_THE_HASH")
 	res := waitForResult(t, conn, "req_cached", 3*time.Second)
 	if res["status"] != "pack_hash_mismatch" {
 		t.Fatalf("first dispatch status=%v, want pack_hash_mismatch", res["status"])
@@ -137,7 +137,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 	// Second dispatch with the same request_id: the dedup path replays the
 	// cached refusal. The gate does NOT run again, so no additional re-advertise.
-	sendRunActionWithHash(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "sha256:NOT_THE_HASH")
+	sendRunActionWithPackRef(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:NOT_THE_HASH")
 
 	// Wait until cloud has received the result a second time (two result copies
 	// for the same request_id).
@@ -248,19 +248,12 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 
 	// Build a dispatch the cloud could not be faulted for: a real signature from
 	// the trusted key AND the runner's own matching pack hash. Both gates pass.
-	hash, ok := cli.opts.Engine.Registry().PackHash("t")
-	if !ok {
-		t.Fatal("registry has no hash for pack t")
-	}
 	args := map[string]any{"msg": "ok"}
-	att := attestationFor(t, priv, "t.echo", args)
+	att := attestationFor(t, cli, priv, "t.echo", args)
 	raw, err := json.Marshal(RunActionMsg{
-		Envelope:         Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_admit_deny"},
-		ActionID:         "t.echo",
-		Args:             args,
-		Reason:           "test",
-		ExpectedPackHash: hash,
-		Attestation:      att,
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_admit_deny"},
+		ActionID: "t.echo", PackRef: att.PackRef, Args: args,
+		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
 	})
 	if err != nil {
 		t.Fatal(err)

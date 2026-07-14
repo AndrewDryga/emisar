@@ -8,10 +8,8 @@ defmodule EmisarWeb.MCPRpcController do
 
     * `initialize`        — capabilities + protocolVersion + serverInfo
     * `ping`              — `{}`
-    * `tools/list`        — every action the API key can dispatch, plus
-                            the synthetic `wait_for_run`, `list_runbooks`,
-                            `get_runbook`, `execute_runbook`,
-                            `create_runbook_draft`, and `recent_runs` tools
+    * `tools/list`        — the fixed tool catalog compiled from the normative
+                            MCP schema registry
     * `tools/call`        — dispatch a run; result is `{content, isError}`
                             in MCP content-block shape
     * `notifications/*`   — silently dropped (per JSON-RPC notifications)
@@ -40,9 +38,10 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat}
-  alias EmisarWeb.MCP.{Attestation, Auth, BoundaryResponse, Cancellation, ClientMetadata}
-  alias EmisarWeb.MCP.ContentBlocks
-  alias EmisarWeb.MCP.{Idempotency, Instructions, Service, Transport}
+  alias EmisarWeb.MCP.{ActionTools, Auth, BoundaryResponse, Cancellation}
+  alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
+  alias EmisarWeb.MCP.ClientMetadata
+  alias EmisarWeb.MCP.{Instructions, RawJSON, ResponseBudget, SchemaRegistry, Transport}
   alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-11-25"
@@ -65,6 +64,7 @@ defmodule EmisarWeb.MCPRpcController do
   plug :validate_content_type when action == :handle
   plug :validate_accept when action == :handle
   plug :validate_protocol_version when action == :handle
+  plug :validate_exact_json when action == :handle
 
   plug :authenticate when action == :handle
   plug :put_client_metadata when action == :handle
@@ -107,15 +107,16 @@ defmodule EmisarWeb.MCPRpcController do
   defp respond(conn, :request, _id, :cancelled), do: send_resp(conn, 204, "")
   defp respond(conn, :request, _id, :no_reply), do: send_resp(conn, 204, "")
 
-  defp respond(conn, :request, id, {:ok, result}),
-    do: json(conn, %{jsonrpc: "2.0", id: id, result: result})
+  defp respond(conn, :request, id, {:ok, result}) do
+    send_bounded_frame(conn, %{jsonrpc: "2.0", id: id, result: result}, result)
+  end
 
   defp respond(conn, :request, id, {:error, code, message}) do
-    json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
+    send_bounded_frame(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
   end
 
   defp respond(conn, :request, id, {:error, code, message, data}) do
-    json(conn, %{
+    send_bounded_frame(conn, %{
       jsonrpc: "2.0",
       id: id,
       error: %{code: code, message: message, data: data}
@@ -131,8 +132,11 @@ defmodule EmisarWeb.MCPRpcController do
   defp envelope_kind(req) do
     if Map.has_key?(req, "id") do
       case req["id"] do
-        id when is_binary(id) or is_integer(id) -> {:request, id}
-        _invalid_id -> :invalid
+        id when is_binary(id) or is_integer(id) ->
+          if ResponseBudget.valid_request_id?(id), do: {:request, id}, else: :invalid
+
+        _invalid_id ->
+          :invalid
       end
     else
       :notification
@@ -157,6 +161,22 @@ defmodule EmisarWeb.MCPRpcController do
     })
   end
 
+  defp validate_exact_json(%{assigns: %{raw_body: raw_body}} = conn, _opts) do
+    case RawJSON.parse(raw_body) do
+      {:ok, tree} ->
+        assign(conn, :mcp_json_tree, tree)
+
+      {:error, _reason} ->
+        BoundaryResponse.send_error(conn, :bad_request, -32_700, "Parse error",
+          inspect_body: false
+        )
+    end
+  end
+
+  defp validate_exact_json(conn, _opts) do
+    BoundaryResponse.send_error(conn, :bad_request, -32_700, "Parse error", inspect_body: false)
+  end
+
   # -- Method dispatch ------------------------------------------------
 
   defp dispatch(conn, "initialize", params) do
@@ -177,18 +197,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp dispatch(conn, "tools/list", _params) do
     with :ok <- require_mcp_key(conn) do
-      tools =
-        Service.list_tools(conn) ++
-          [
-            ContentBlocks.wait_for_run_tool(),
-            ContentBlocks.list_runbooks_tool(),
-            ContentBlocks.get_runbook_tool(),
-            ContentBlocks.execute_runbook_tool(),
-            ContentBlocks.create_runbook_draft_tool(),
-            ContentBlocks.recent_runs_tool()
-          ]
-
-      {:ok, %{tools: tools}}
+      {:ok, %{tools: SchemaRegistry.tools()}}
     end
   end
 
@@ -206,40 +215,35 @@ defmodule EmisarWeb.MCPRpcController do
       not is_map(args) ->
         {:error, -32602, "tool arguments must be an object"}
 
-      name == "wait_for_run" ->
+      name == "run_action" ->
         with :ok <- require_mcp_key(conn) do
-          handle_wait_for_run(conn, args)
+          handle_run_action(conn, args)
         end
 
-      name == "list_runbooks" ->
+      name in ~w(list_packs list_runners find_actions get_action) ->
         with :ok <- require_mcp_key(conn) do
-          handle_list_runbooks(conn)
+          handle_catalog_tool(conn, name, args)
         end
 
-      name == "get_runbook" ->
+      name in ~w(list_runbooks get_runbook execute_runbook create_runbook_draft) ->
         with :ok <- require_mcp_key(conn) do
-          handle_get_runbook(conn, args)
+          handle_runbook_tool(conn, name, args)
         end
 
-      name == "execute_runbook" ->
+      name in ~w(get_operation wait_for_run recent_runs) ->
         with :ok <- require_mcp_key(conn) do
-          handle_execute_runbook(conn, args)
-        end
-
-      name == "create_runbook_draft" ->
-        with :ok <- require_mcp_key(conn) do
-          handle_create_runbook_draft(conn, args)
-        end
-
-      name == "recent_runs" ->
-        with :ok <- require_mcp_key(conn) do
-          handle_recent_runs(conn, args)
+          handle_recovery_tool(conn, name, args)
         end
 
       true ->
-        with :ok <- require_mcp_key(conn) do
-          handle_tool_call(conn, name, args)
-        end
+        fixed_tool_result(
+          %{
+            ok: false,
+            error: %{code: "unknown_tool", message: "Unknown fixed MCP tool.", retryable: false},
+            dispatch_started: false
+          },
+          true
+        )
     end
   end
 
@@ -259,456 +263,128 @@ defmodule EmisarWeb.MCPRpcController do
 
   # -- Tool call ------------------------------------------------------
 
-  defp handle_tool_call(conn, name, args) do
-    {runner_targets, reason, wait, attestation, action_args} = split_call_args(args)
-    idempotency_key = Idempotency.resolve(conn, args)
-
-    case action_wait_ms(wait) do
-      {:ok, wait_ms} ->
-        opts = %{
-          runner_targets: runner_targets,
-          reason: reason,
-          wait_ms: wait_ms,
-          idempotency_key: idempotency_key,
-          mcp_session_id: req_session_id(conn),
-          attestation: attestation
-        }
-
-        dispatch_action(conn, name, action_args, opts)
-
-      :error ->
-        tool_error(
-          "Bad wait",
-          "Expected a duration like `500ms`, `30s`, or `1m` (max 1m), or `0` for " <>
-            "fire-and-forget."
-        )
+  defp handle_catalog_tool(conn, name, args) do
+    case CatalogTools.call(conn, name, args) do
+      {:ok, payload} -> fixed_tool_result(payload, false)
+      {:error, payload} -> fixed_tool_result(payload, true)
     end
   end
 
-  # Omission uses the useful full wait. An explicit zero remains
-  # fire-and-forget; malformed input is an in-band tool error, never a silent
-  # coercion to either behavior.
-  defp action_wait_ms(blank) when blank in [nil, ""], do: {:ok, Service.max_wait_ms()}
-  defp action_wait_ms(wait), do: Service.parse_wait(wait, Service.max_wait_ms())
+  defp fixed_tool_result(payload, is_error) do
+    {:ok, ResponseBudget.fixed_result(payload, is_error)}
+  end
 
-  defp dispatch_action(conn, name, action_args, opts) do
-    case Service.dispatch_tool(conn, name, action_args, opts) do
-      {:error, :cancelled} ->
-        :cancelled
+  defp send_bounded_frame(conn, frame, result \\ nil) do
+    case ResponseBudget.encode_frame(frame) do
+      {:ok, body} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(200, body)
 
-      {:ok, runs} ->
-        {content, is_err} = ContentBlocks.from_runs(runs)
-        {:ok, %{content: content, isError: is_err}}
-
-      {:error, :reason_required} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Reason required",
-            "Every action call must include a non-empty `reason` — a short sentence on why. " <>
-              "It lands in the audit log so an operator can later answer 'why did this fire?'."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :runner_required, candidates} ->
-        msg =
-          "This action needs an explicit target — emisar never auto-picks a runner, even " <>
-            "when only one advertises it. Retry with a stable id from `candidates`, choosing from " <>
-            "the candidates: " <> Enum.join(candidates, ", ")
-
-        {content, _} = ContentBlocks.error_content("Runner required", msg)
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :invalid_runner_targets} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Invalid runner targets",
-            "`runners` must be an array of stable runner-id strings."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :duplicate_runners} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Duplicate runners",
-            "Each runner may be targeted at most once per action call."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :runner_not_found, runner} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Runner not found",
-            "No runner matching `#{runner}` in this account."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :runner_not_allowed, runner, why} ->
-        {content, _} = ContentBlocks.error_content("Runner not allowed", "`#{runner}`: #{why}")
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :attestation_targets_mismatch} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Signed targets do not match",
-            "The attestation was not signed for the exact runner ids selected by this call. " <>
-              "Re-call tools/list and submit a fresh signed request using its current runner ids."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :invalid_attestation} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Invalid attestation",
-            "The supplied attestation is malformed or exceeds its bounds. " <>
-              "Submit a fresh request from a current emisar MCP bridge."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :no_runner_available, :unknown_action} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Action not found",
-            "No currently-connected runner advertises `#{name}`. Re-call tools/list to refresh; " <>
-              "if it's still missing, the runner is likely offline or the pack isn't loaded — " <>
-              "tell the user to check the runner is online (Runners page). Don't retry in a loop."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :no_runner_available, :scope_blocked} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "No runner in scope",
-            "`#{name}` exists but no runner you're allowed to reach advertises it. This is an " <>
-              "access grant, not a transient state — ask an admin to grant runner access. " <>
-              "Retrying won't help."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :too_many_runners, max} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Too many runners",
-            "Cap is #{max} per call. Split the work into batches."
-          )
-
-        {:ok, %{content: content, isError: true}}
+      {:error, :response_too_large} ->
+        send_response_too_large(conn, frame.id, result)
     end
   end
 
-  # -- wait_for_run ---------------------------------------------------
+  defp send_response_too_large(conn, id, result) do
+    data = response_recovery_data(result)
 
-  defp handle_wait_for_run(conn, args) do
-    run_id = Map.get(args, "run_id")
-    timeout = Map.get(args, "timeout", "5m")
-
-    if not is_binary(run_id) or run_id == "" do
-      {content, _} =
-        ContentBlocks.error_content("Bad arguments", "wait_for_run requires `run_id` (string).")
-
-      {:ok, %{content: content, isError: true}}
-    else
-      case Service.parse_wait(timeout, Service.max_get_run_wait_ms()) do
-        :error ->
-          {content, _} =
-            ContentBlocks.error_content(
-              "Bad timeout",
-              "Expected a duration like \"60s\" or \"5m\" (max 5m)."
-            )
-
-          {:ok, %{content: content, isError: true}}
-
-        {:ok, wait_ms} ->
-          case Service.fetch_run(conn, run_id, wait_ms) do
-            {:error, :cancelled} ->
-              :cancelled
-
-            {:ok, payload, :terminal} ->
-              {content, is_err} = ContentBlocks.from_run(payload)
-              {:ok, %{content: content, isError: is_err}}
-
-            {:ok, payload, :waiting} ->
-              # Still in-flight — tell the LLM to call again.
-              {content, _} = ContentBlocks.from_run(Map.put(payload, "waiting", "timeout"))
-              {:ok, %{content: content, isError: false}}
-
-            {:error, :not_found} ->
-              {content, _} =
-                ContentBlocks.error_content("Run not found", "No run with id `#{run_id}`.")
-
-              {:ok, %{content: content, isError: true}}
-          end
-      end
-    end
-  end
-
-  # -- Runbooks (read-only) -------------------------------------------
-
-  defp handle_list_runbooks(conn) do
-    case Service.list_runbooks(conn) do
-      {:ok, summaries} ->
-        {content, is_err} = ContentBlocks.from_runbook_list(summaries)
-        {:ok, %{content: content, isError: is_err}}
-
-      {:error, :unauthorized} ->
-        {content, _} =
-          ContentBlocks.error_content("Not allowed", "This API key can't read runbooks.")
-
-        {:ok, %{content: content, isError: true}}
-    end
-  end
-
-  defp handle_get_runbook(conn, args) do
-    case Map.get(args, "runbook") do
-      slug when is_binary(slug) and slug != "" ->
-        case Service.get_runbook(conn, slug) do
-          {:ok, detail} ->
-            {content, is_err} = ContentBlocks.from_runbook_detail(detail)
-            {:ok, %{content: content, isError: is_err}}
-
-          {:error, :not_found} ->
-            {content, _} =
-              ContentBlocks.error_content(
-                "Runbook not found",
-                "No published runbook with slug or id `#{slug}`. Call list_runbooks to see them."
-              )
-
-            {:ok, %{content: content, isError: true}}
-
-          {:error, :unauthorized} ->
-            {content, _} =
-              ContentBlocks.error_content("Not allowed", "This API key can't read runbooks.")
-
-            {:ok, %{content: content, isError: true}}
-        end
-
-      _ ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Bad arguments",
-            "get_runbook requires `runbook` (a slug or id string)."
-          )
-
-        {:ok, %{content: content, isError: true}}
-    end
-  end
-
-  # -- Runbooks (execute + draft) -------------------------------------
-
-  defp handle_execute_runbook(conn, args) do
-    reason = Map.get(args, "reason")
-    idempotency_key = Idempotency.resolve(conn, args)
-
-    case Map.get(args, "runbook") do
-      slug when is_binary(slug) and slug != "" ->
-        run_execute_runbook(conn, slug, reason, idempotency_key)
-
-      _ ->
-        tool_error(
-          "Bad arguments",
-          "execute_runbook requires `runbook` (a published runbook's slug or id string)."
-        )
-    end
-  end
-
-  defp run_execute_runbook(conn, slug, reason, idempotency_key) do
-    case Service.execute_runbook(conn, slug, reason, idempotency_key) do
-      {:ok, payload} ->
-        {content, is_err} = ContentBlocks.from_runbook_execution(payload)
-        {:ok, %{content: content, isError: is_err}}
-
-      {:error, :reason_required} ->
-        tool_error(
-          "Reason required",
-          "execute_runbook needs a non-empty `reason` — a short sentence on why. It's logged " <>
-            "in the audit trail and carried onto every step's run."
-        )
-
-      {:error, :not_found} ->
-        tool_error(
-          "Runbook not found",
-          "No PUBLISHED runbook with slug or id `#{slug}`. Call list_runbooks to see what can " <>
-            "be executed; drafts can't be run until an operator publishes them."
-        )
-
-      {:error, :unauthorized} ->
-        tool_error("Not allowed", "This API key can't execute runbooks.")
-
-      {:error, :empty_runbook} ->
-        tool_error(
-          "Runbook has no steps",
-          "This runbook has no steps to run — nothing was dispatched."
-        )
-
-      {:error, {:step_no_runners, n}} ->
-        tool_error(
-          "Step has no runners",
-          "Step #{n}'s target group resolves to no currently-connected runners. Bring a matching " <>
-            "runner online (Runners page) or fix the step's target, then retry."
-        )
-
-      {:error, {:fan_out_too_large, max}} ->
-        tool_error(
-          "Runbook too large",
-          "This runbook resolves to more than #{max} step-runs. Split it into smaller runbooks."
-        )
-
-      {:error, :duplicate_step_ids} ->
-        tool_error(
-          "Duplicate step ids",
-          "Two steps share an id, which would collide on dispatch. An operator must fix the " <>
-            "runbook so every step has a unique id."
-        )
-
-      {:error, _other} ->
-        tool_error(
-          "Execution failed",
-          "The runbook could not be started. If this persists, surface it to the operator — it " <>
-            "usually maps to an admin-side fix (policy, runner scope, or pack trust)."
-        )
-    end
-  end
-
-  defp handle_create_runbook_draft(conn, args) do
-    with {:ok, title} <- require_string_arg("title", Map.get(args, "title")),
-         {:ok, steps} <- validate_steps(Map.get(args, "steps")) do
-      params = %{
-        "title" => title,
-        "slug" => Map.get(args, "slug"),
-        "description" => Map.get(args, "description"),
-        "steps" => steps
+    frame = %{
+      jsonrpc: "2.0",
+      id: id,
+      error: %{
+        code: -32_603,
+        message: "Response exceeds the MCP transport limit; retry reads with a lower limit.",
+        data: data
       }
+    }
 
-      case Service.create_runbook_draft(conn, params) do
-        {:ok, payload} ->
-          {content, is_err} = ContentBlocks.from_runbook_draft(payload)
-          {:ok, %{content: content, isError: is_err}}
+    {:ok, body} = ResponseBudget.encode_frame(frame)
 
-        {:error, %Ecto.Changeset{} = changeset} ->
-          tool_error(
-            "Invalid runbook",
-            "The draft failed validation:\n" <> changeset_error_lines(changeset)
-          )
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, body)
+  end
 
-        {:error, :unauthorized} ->
-          tool_error("Not allowed", "This API key can't create runbook drafts.")
+  defp response_recovery_data(%{structuredContent: %{operation_id: operation_id}})
+       when is_binary(operation_id) do
+    %{
+      operation_id: operation_id,
+      next: %{tool: "get_operation", arguments: %{operation_id: operation_id}}
+    }
+  end
+
+  defp response_recovery_data(_result), do: %{}
+
+  defp handle_run_action(conn, args) do
+    with {:ok, %{name: "run_action", action_args: args_raw}} <-
+           RawJSON.tool_call(conn.assigns.raw_body),
+         [operation_id] <- get_req_header(conn, "emisar-operation-id") do
+      case ActionTools.call(
+             conn,
+             args,
+             args_raw,
+             operation_id,
+             get_req_header(conn, "emisar-attestation")
+           ) do
+        {:ok, payload} -> fixed_tool_result(payload, false)
+        {:error, payload} -> fixed_tool_result(payload, true)
+        :cancelled -> :cancelled
       end
     else
-      {:error, message} -> tool_error("Bad arguments", message)
+      _ ->
+        fixed_tool_result(
+          %{
+            ok: false,
+            error: %{
+              code: "invalid_args",
+              message: "run_action requires exact args and one bridge operation id.",
+              retryable: false
+            },
+            dispatch_started: false
+          },
+          true
+        )
     end
   end
 
-  defp require_string_arg(_label, value) when is_binary(value) and value != "", do: {:ok, value}
-  defp require_string_arg(label, _value), do: {:error, "`#{label}` is required (a string)."}
+  defp handle_runbook_tool(conn, name, args)
+       when name in ~w(execute_runbook create_runbook_draft) do
+    case get_req_header(conn, "emisar-operation-id") do
+      [operation_id] ->
+        runbook_tool_result(conn, name, args, operation_id)
 
-  # Steps come from an LLM — accept an array (of step objects) or reject clearly.
-  # The changeset does the real bounds/shape validation on save.
-  defp validate_steps(steps) when is_list(steps), do: {:ok, steps}
-  defp validate_steps(nil), do: {:error, "`steps` is required (an array of step objects)."}
-  defp validate_steps(_), do: {:error, "`steps` must be an array of step objects."}
-
-  defp changeset_error_lines(changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {k, v}, acc -> String.replace(acc, "%{#{k}}", to_string(v)) end)
-    end)
-    |> Enum.map_join("\n", fn {field, msgs} -> "- #{field}: #{Enum.join(msgs, ", ")}" end)
-  end
-
-  defp tool_error(header, body) do
-    {content, _} = ContentBlocks.error_content(header, body)
-    {:ok, %{content: content, isError: true}}
-  end
-
-  # -- recent_runs ----------------------------------------------------
-
-  defp handle_recent_runs(conn, args) do
-    with {:ok, limit} <- parse_limit(Map.get(args, "limit")),
-         {:ok, scope} <- parse_scope(Map.get(args, "scope")),
-         {:ok, runner} <- parse_string_arg("runner", Map.get(args, "runner")),
-         {:ok, action} <- parse_string_arg("action", Map.get(args, "action")),
-         {:ok, runs} <- Service.recent_runs(conn, limit, scope, runner, action) do
-      {content, is_err} = ContentBlocks.from_recent_runs(runs)
-      {:ok, %{content: content, isError: is_err}}
-    else
-      {:error, :unauthorized} ->
-        {content, _} =
-          ContentBlocks.error_content("Not allowed", "This API key can't read runs.")
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, {:runner_not_found, name}} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "No such runner",
-            "No runner named `#{name}` in this account. Re-fetch /runners for current names."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, message} when is_binary(message) ->
-        {content, _} = ContentBlocks.error_content("Invalid argument", message)
-        {:ok, %{content: content, isError: true}}
+      _ ->
+        fixed_tool_result(
+          %{
+            ok: false,
+            error: %{
+              code: "invalid_operation",
+              message: "This mutation requires one bridge operation id.",
+              retryable: false
+            },
+            dispatch_started: false
+          },
+          true
+        )
     end
   end
 
-  # `runner` / `action` filters — a non-empty string narrows; nil or "" = no
-  # filter; any other type is a client bug.
-  defp parse_string_arg(_label, value) when value in [nil, ""], do: {:ok, nil}
-  defp parse_string_arg(_label, value) when is_binary(value), do: {:ok, value}
-  defp parse_string_arg(label, _value), do: {:error, "`#{label}` must be a string."}
+  defp handle_runbook_tool(conn, name, args), do: runbook_tool_result(conn, name, args, nil)
 
-  # Accept a JSON number OR a numeric string (some MCP clients stringify args);
-  # a non-numeric / non-positive value is rejected, not silently coerced to 20.
-  defp parse_limit(n) when is_integer(n) and n > 0, do: {:ok, min(n, 100)}
-  defp parse_limit(nil), do: {:ok, 20}
-
-  defp parse_limit(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {n, ""} when n > 0 -> {:ok, min(n, 100)}
-      _ -> {:error, ~s(`limit` must be a positive integer, 1 to 100.)}
+  defp runbook_tool_result(conn, name, args, operation_id) do
+    case RunbookTools.call(conn, name, args, operation_id) do
+      {:ok, payload} -> fixed_tool_result(payload, false)
+      {:error, payload} -> fixed_tool_result(payload, true)
     end
   end
 
-  defp parse_limit(_), do: {:error, ~s(`limit` must be a positive integer, 1 to 100.)}
-
-  # Absent → the documented default "own"; a present but unrecognized value is
-  # an error, never silently narrowed to "own".
-  defp parse_scope(nil), do: {:ok, :own}
-  defp parse_scope("own"), do: {:ok, :own}
-  defp parse_scope("account"), do: {:ok, :account}
-  defp parse_scope(_), do: {:error, ~s(`scope` must be "own" or "account".)}
-
-  # -- Arg parsing ----------------------------------------------------
-
-  # `arguments` is the flat MCP arg map: `runner` (single) or `runners`
-  # (array), `reason`, an optional `wait` duration override, and the
-  # action's own args. Split out the control keys from action args so
-  # we don't forward them to the runner as if they were arg values.
-  # Default `wait` (when omitted) is the full max_wait_ms (60s).
-  defp split_call_args(args) do
-    runner_targets =
-      cond do
-        Map.has_key?(args, "runners") -> args["runners"]
-        Map.has_key?(args, "runner") -> [args["runner"]]
-        true -> []
-      end
-
-    reason = args["reason"]
-    wait = args["wait"]
-    attestation = Attestation.extract(args)
-
-    action_args =
-      Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key", "attestation"])
-
-    {runner_targets, reason, wait, attestation, action_args}
+  defp handle_recovery_tool(conn, name, args) do
+    case RecoveryTools.call(conn, name, args) do
+      {:ok, payload} -> fixed_tool_result(payload, false)
+      {:error, payload} -> fixed_tool_result(payload, true)
+      :cancelled -> :cancelled
+    end
   end
 
   # -- Streamable HTTP transport --------------------------------------

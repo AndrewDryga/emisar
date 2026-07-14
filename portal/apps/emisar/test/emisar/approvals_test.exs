@@ -179,6 +179,31 @@ defmodule Emisar.ApprovalsTest do
     %{attrs: attrs, mcp_subject: mcp_subject, operator_subject: operator_subject}
   end
 
+  defp request_notification_fixture do
+    account = Fixtures.Accounts.create_account()
+    decider = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: decider.id,
+      role: "owner"
+    )
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{},
+        status: :pending_approval
+      })
+
+    %{account: account, run: run, decider: decider}
+  end
+
   # Account + an online (subscribed) runner + a parked request snapshotting
   # `opts` (min_approvals / allow_self_approval). The requester is a separate
   # user so self-approval is opt-in per test.
@@ -541,6 +566,40 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "fetch_request_for_visible_run/2" do
+    test "lets an API client read only the approval attached to its visible account run" do
+      {account, run} = run_fixture()
+      owner = operator_subject(account)
+
+      {:ok, request} =
+        Approvals.create_request(run, Fixtures.Users.create_user().id, "review required")
+
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "approval observer"}, owner)
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:ok, fetched} = Approvals.fetch_request_for_visible_run(run, subject)
+      assert fetched.id == request.id
+
+      {_other_account, foreign_run} = run_fixture()
+
+      assert {:error, :not_found} =
+               Approvals.fetch_request_for_visible_run(foreign_run, subject)
+    end
+
+    test "still requires run-view permission" do
+      {account, run} = run_fixture()
+
+      no_permissions = %Emisar.Auth.Subject{
+        account: account,
+        role: :viewer,
+        permissions: MapSet.new()
+      }
+
+      assert {:error, :unauthorized} =
+               Approvals.fetch_request_for_visible_run(run, no_permissions)
+    end
+  end
+
   describe "list_decisions_for_request/2" do
     setup do
       %{account: account, request: request} = gated_request(min_approvals: 3)
@@ -799,29 +858,7 @@ defmodule Emisar.ApprovalsTest do
 
   describe "notify_request_created/1" do
     setup do
-      account = Fixtures.Accounts.create_account()
-      decider = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: decider.id,
-          role: "owner"
-        )
-
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "operator",
-          args: %{},
-          status: :pending_approval
-        })
-
-      %{account: account, run: run, decider: decider}
+      request_notification_fixture()
     end
 
     test "broadcasts the request and emails the deciders (the create_run post-commit hook)", %{
@@ -854,6 +891,34 @@ defmodule Emisar.ApprovalsTest do
 
       # The queued email carries the canonical slugged approval deep link.
       assert Enum.any?(emails, &(&1.text_body =~ "/app/#{account.slug}/approvals/#{request.id}"))
+    end
+  end
+
+  describe "notify_request_created/2" do
+    setup do
+      request_notification_fixture()
+    end
+
+    test "the dynamic-Multi arity emits the same post-commit notification", %{
+      account: account,
+      run: run,
+      decider: decider
+    } do
+      {:ok, request} =
+        Request.Changeset.create(%{
+          account_id: account.id,
+          run_id: run.id,
+          requested_by_id: Fixtures.Users.create_user().id,
+          requested_at: DateTime.utc_now(),
+          expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
+        })
+        |> Repo.insert()
+
+      :ok = Approvals.subscribe_account_approvals(account.id)
+      assert :ok = Approvals.notify_request_created(request, run)
+      assert_receive {:approval_updated, %Request{id: id}}
+      assert id == request.id
+      assert decider.email in notified_recipients()
     end
   end
 
@@ -1366,6 +1431,7 @@ defmodule Emisar.ApprovalsTest do
       approver_subject: approver_subject
     } do
       fresh = DateTime.to_iso8601(DateTime.utc_now())
+      valid_until = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1375,7 +1441,12 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           args: %{},
           status: :pending_approval,
-          attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => fresh}
+          attestation: %{
+            "key_id" => "k",
+            "sig" => "x",
+            "issued_at" => fresh,
+            "cert" => %{"valid_until" => valid_until}
+          }
         })
 
       {:ok, request} = Approvals.create_request(run, requester.id, "please")

@@ -1,53 +1,58 @@
-# Wire protocol
+# Runner wire protocol
 
-The runner and the control plane talk over a single TLS websocket. The
-runner dials out; the control plane never connects to the runner. All
-messages are JSON envelopes. Every envelope carries `type`, `protocol_version`,
-and (for action-correlated messages) `request_id`.
+The runner and portal communicate over one TLS websocket initiated by the
+runner. The portal never opens a connection to a runner. Every message is a JSON
+object with `type` and `protocol_version`; action-correlated messages also carry
+`request_id`.
 
 Protocol version: **1**.
 
-Unknown message types are silently ignored so an old runner can tolerate
-a newer cloud that learned new messages. Unknown fields inside a known
-message type are also tolerated.
+Unknown message types and unknown fields inside known messages are tolerated so
+additive changes do not break an older peer. Security-sensitive known fields use
+their exact lowercase JSON names; case aliases are rejected.
+
+## Trust boundaries
+
+- TLS plus the persisted runner bearer token authenticate the websocket. There
+  is no HMAC or signed session layer on top of TLS.
+- The portal is authoritative for account scope, policy, approval, and audit.
+- When signed dispatch is enforced, the customer CA is authoritative for the
+  exact `run_action` execution intent. The portal relays that attestation but
+  cannot forge or alter one that an honest runner will accept.
+- Runner state, progress, and results are authenticated hop by hop by the TLS
+  connection. End-to-end runner result signing is deferred.
 
 ## Connection lifecycle
 
+```text
+runner --(TLS connect with bearer token)--> portal
+runner --(runner_state)-------------------> portal
+portal --(run_action)---------------------> runner
+runner --(action_progress...)------------> portal
+runner --(action_result)-----------------> portal
+portal --(ack_result)---------------------> runner
+runner --(heartbeat...)------------------> portal
 ```
-runner --(TLS connect, present auth key)--> cloud
-runner --(runner_state)--> cloud
-cloud --(run_action #1)--> runner
-runner --(action_progress, action_progress, ...)--> cloud
-runner --(action_result #1)--> cloud
-cloud --(ack_result #1)--> runner
-runner --(heartbeat every 30s)--> cloud
-...
-```
 
-On disconnect: the runner backs off (exponential, capped at
-`cloud.reconnect_max`), reconnects, and re-sends `runner_state`.
-Liveness is symmetric — the control plane closes a socket that goes
-~90s without a heartbeat, so a half-dead TCP session can't hold a
-runner "online" forever.
+The bootstrap auth key is exchanged through `POST /runner/register` for a
+per-runner token, which is persisted owner-only. Every websocket upgrade then
+uses that bearer token. Revoking the key or token makes the next registration or
+upgrade fail.
 
-## Auth
+The runner generates and durably stores its UUID `external_id` before its first
+registration. Reconnects present the same value. MCP runner references derive
+their generation suffix as the first 32 lowercase hex characters of
+`sha256(external_id)`; the full external ID is never exposed to MCP.
 
-The runner's bootstrap auth key (a long-lived bearer secret, dropped
-into the VM via image metadata or cloud-init) is exchanged for a
-per-runner token via `POST {url}/runner/register` the first time the
-runner connects (or whenever no token is persisted). The token is
-written to `cloud.token_path` with mode `0600`; every websocket upgrade
-to `/runner/socket/websocket` then presents that token as a bearer
-credential. Revoke = mark the auth key or token invalid cloud-side; the
-next `/runner/register` or upgrade gets a `401` and the runner exits.
+On disconnect the runner reconnects with bounded exponential backoff and sends a
+fresh `runner_state`. In-flight actions continue and queue progress/results for
+the next connection. Heartbeats let the portal expire half-open sockets.
 
-There is no HMAC layer on top of TLS — TLS is the trust boundary.
+## `runner_state`
 
-## Messages
-
-### `runner_state` (runner -> cloud)
-
-Sent on every connect and on `SIGHUP` (pack reload).
+Sent after every connection and pack reload. The bounded message contains the
+runner version, hostname, group, labels, complete pack/action advertisement,
+signature-enforcement state, trusted CA IDs, and maximum attestation age.
 
 ```json
 {
@@ -55,240 +60,162 @@ Sent on every connect and on `SIGHUP` (pack reload).
   "protocol_version": 1,
   "runner_id": "agt_01HZP3X9...",
   "version": "0.2.0",
-  "hostname": "ip-10-0-1-23",
-  "group": "cassandra-us-east1",
-  "labels": {"region": "us-east-1", "role": "cassandra"},
+  "hostname": "dbcas103",
+  "group": "cassandra",
+  "labels": {"datacenter": "dc1", "rack": "rack3"},
   "enforce_signatures": true,
-  "signing_ca_ids": ["ca-1a2b3c4d"],
+  "signing_ca_ids": ["ca-prod-2026"],
   "max_attestation_age_seconds": 86400,
   "packs": {
-    "linux-core": {"version": "0.2.0", "hash": "sha256:9b1d..."},
-    "cassandra":  {"version": "0.2.0", "hash": "sha256:5c7e..."}
+    "cassandra": {
+      "version": "1.4.0",
+      "hash": "sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe"
+    }
   },
   "actions": [
     {
-      "id": "linux.uptime",
-      "pack_id": "linux-core",
-      "title": "System uptime and load average",
+      "id": "cassandra.nodetool_status",
+      "pack_id": "cassandra",
+      "title": "Cassandra ring status",
+      "summary": "Reports node state and ownership for the Cassandra ring.",
       "kind": "exec",
       "risk": "low",
-      "description": "Reports system uptime and 1/5/15-minute load averages...",
-      "side_effects": ["Reads /proc/loadavg and /proc/uptime via the uptime utility."],
+      "description": "Runs nodetool status and returns the bounded result.",
+      "side_effects": [],
       "args": [],
-      "limits": {"default_timeout": "5s"},
-      "output": {"parser": "text", "max_stdout_bytes": 2048, "max_stderr_bytes": 2048}
+      "limits": {"default_timeout": "60s"},
+      "output": {"parser": "text", "max_stdout_bytes": 16384, "max_stderr_bytes": 16384}
     }
   ]
 }
 ```
 
-Cloud treats the runner as ground truth for that runner's schemas.
-Actions blocked by the runner's local `admission:` allow/deny list are
-excluded here — the cloud never even sees them advertised.
+Runner advertisements prove deployment only. MCP model-facing descriptors come
+from the operator-trusted manifest for the exact pack hash. A mismatch excludes
+that runner/action from execution.
 
-`enforce_signatures` (omitted when off) advertises that this runner verifies
-a client signature on every dispatch and refuses unsigned ones; the cloud
-responds by disabling its own (operator/runbook/API) dispatch to this runner.
-When enforcing, the runner also advertises `signing_ca_ids` (the certificate-
-authority ids it trusts — the public-key bytes never leave the host) and
-`max_attestation_age_seconds` (its freshness window), so the cloud can show the
-trusted CAs and warn before a stale-by-approval dispatch. See
-[`docs/signed-dispatch.md`](signed-dispatch.md).
-
-### `run_action` (cloud -> runner)
+## `run_action`
 
 ```json
 {
   "type": "run_action",
   "protocol_version": 1,
   "request_id": "req_01HZP4...",
+  "operation_id": "op_724NN9NMDZ1T76NARWCKM5A0D6",
   "action_id": "cassandra.nodetool_status",
-  "args": {"host": "127.0.0.1"},
+  "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
+  "args": {"host": 9007199254740993},
+  "reason": "Confirm ring health before rerolling the canary.",
   "opts": {"timeout": "60s"},
-  "reason": "Pre-repair health check requested by alice@example.com",
-  "expected_pack_hash": "sha256:5c7e...",
   "attestation": {
-    "version": "emisar-attestation-v3",
-    "sig": "b47006e2...",
+    "version": "emisar-attestation-v4",
+    "tool": "run_action",
+    "portal_origin": "https://emisar.dev",
+    "action_id": "cassandra.nodetool_status",
+    "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
+    "args_sha256": "...",
+    "runner_refs": ["cassandra-dbcas103~8e9a70d2d45a1f23c8b4ae63da1384f1"],
+    "reason": "Confirm ring health before rerolling the canary.",
+    "operation_id": "op_724NN9NMDZ1T76NARWCKM5A0D6",
     "nonce": "0123456789abcdef0123456789abcdef",
-    "issued_at": "2026-06-17T12:00:00Z",
-    "targets": ["019f5a2e-..."],
-    "cert": {
-      "ca_id": "ca-prod-2026",
-      "key_id": "op-alice",
-      "public_key": "79b5562e...",
-      "valid_from": "2026-06-17T00:00:00Z",
-      "valid_until": "2026-06-18T00:00:00Z",
-      "scope": {"group": "prod"},
-      "serial": "01J0CERT...",
-      "sig": "9e69c413..."
-    }
+    "issued_at": "2026-07-14T12:00:00Z",
+    "sig": "...",
+    "cert": {"ca_id": "ca-prod-2026", "key_id": "op-alice", "public_key": "...", "valid_from": "2026-07-14T00:00:00Z", "valid_until": "2026-07-15T00:00:00Z", "scope": {"group": "cassandra", "labels": {}}, "serial": "01J0CERT...", "sig": "..."}
   }
 }
 ```
 
-`attestation` (optional) is the bounded v3 client envelope relayed from the
-originating MCP call. Its signature binds the action id, exact JSON arguments,
-sorted durable runner-id set, 32-character lowercase-hex nonce, and timestamp.
-The fixed JSON signing body has unambiguous field boundaries. The cloud can
-neither forge nor alter those facts; it is absent on portal-originated dispatch
-(operator/runbook/API), which a signature-enforcing runner refuses. See
-[`docs/signed-dispatch.md`](signed-dispatch.md).
+### Exact arguments
 
-`opts` fields are clamped to the action's declared min/max envelope.
-Any field the action didn't declare a `*_min`/`*_max` for cannot be
-overridden — the default wins.
+The portal relays the exact UTF-8 JSON value bytes from the MCP
+`run_action.args` object. It does not reconstruct them from JSONB. The runner
+rejects missing/non-object arguments, duplicate keys at any depth, case aliases
+of known fields, invalid UTF-8, unpaired surrogates, more than 64 levels of JSON
+nesting, arguments over 32 KiB, and a complete message over 128 KiB. It decodes
+numbers with `UseNumber`; values above 2^53 are never converted through
+`float64`.
 
-`expected_pack_hash` is the trust pin: the cloud sends the pack hash an
-operator last trusted, and the runner re-hashes the on-disk pack before
-executing. On mismatch (pack swapped after trust) nothing executes —
-the runner replies with a `pack_hash_mismatch` result and re-sends a
-fresh `runner_state` so the cloud sees the new reality.
+### Signed action attestation v4
 
-### `action_progress` (runner -> cloud)
+The bridge sends `Emisar-Attestation` as unpadded base64url of the bounded JSON
+envelope. The portal accepts at most 8192 encoded header bytes, compares its
+fields with the authenticated request, and relays the decoded envelope unchanged.
+The Ed25519 signature covers fixed JSON binding:
 
-Sent zero or more times per `request_id`, while the process runs. One
-complete line of output per message; `seq` increases monotonically per
-`request_id`.
+- literal version and tool name;
+- canonical portal origin;
+- exact action ID and immutable `pack_ref`;
+- SHA-256 of the exact argument bytes;
+- canonical sorted complete `runner_refs`;
+- exact reason;
+- operation ID, nonce, and RFC3339 issuance time.
 
-```json
-{
-  "type": "action_progress",
-  "protocol_version": 1,
-  "request_id": "req_01HZP4...",
-  "seq": 7,
-  "stream": "stdout",
-  "chunk": "Datacenter: us-east-1\n"
-}
-```
+An enforcing runner verifies the leaf certificate against its configured
+customer CA, certificate validity and local group/label scope, origin,
+freshness, durable nonce replay, exact local pack bytes and action membership,
+argument digest, all delivery fields, and its own external-ID-derived target
+suffix immediately before execution. Pack verification and execution use the
+same immutable registry snapshot, so a concurrent reload cannot swap the action
+between the gate and process start.
 
-The chunk has already been redacted by the runner.
+Unsigned portal/operator/runbook dispatch is accepted only when signature
+enforcement is disabled. There is no compatibility mode for earlier attestation
+formats.
 
-### `action_result` (runner -> cloud)
+## Progress and result
 
-Sent exactly once per `request_id`, after the process exits or the call
-fails. Stdout/stderr content is **not** repeated — cloud already has the
-chunks via `action_progress`. SHA-256s + byte counts let cloud verify
-nothing was lost mid-stream.
+`action_progress` carries a monotonically increasing sequence, stream, and one
+already-redacted output chunk. `action_result` is emitted exactly once after the
+process exits or the runner refuses the call. It carries terminal status, exit
+code, duration, stream hashes/counts, truncation flags, redaction counts, masked
+executed command, reason, and local audit event ID. Output bytes are not repeated
+in the terminal message.
 
-```json
-{
-  "type": "action_result",
-  "protocol_version": 1,
-  "request_id": "req_01HZP4...",
-  "status": "success",
-  "exit_code": 0,
-  "duration_ms": 1337,
-  "timed_out": false,
-  "stdout_sha256": "...",
-  "stderr_sha256": "...",
-  "stdout_bytes": 412,
-  "stderr_bytes": 0,
-  "truncated_stdout": false,
-  "truncated_stderr": false,
-  "redactions": [{"name": "bearer-token", "type": "regex", "count": 0}],
-  "reason": "Pre-repair health check requested by alice@example.com",
-  "executed_command": "nodetool status",
-  "event_id": "evt_01HZP4..."
-}
-```
+Stable result statuses are `success`, `failed`, `error`, `validation_failed`,
+`unknown_action`, `pack_hash_mismatch`, and `signature_invalid`.
 
-`executed_command` is the shell-quoted argv with sensitive args already
-masked; `error` (omitted above) carries the failure detail when status
-isn't `success`.
+Results are authenticated by the runner websocket, not end-to-end signed. The
+portal must not describe them as CA-verified runner receipts.
 
-Possible `status` values: `success`, `failed`, `error`,
-`validation_failed`, `unknown_action`, `pack_hash_mismatch`,
-`signature_invalid` (an enforcing runner refused a missing/bad/stale/replayed
-signature — the terse cause is in `reason`, a human sentence in `error`).
+## Cancellation and acknowledgement
 
-### `cancel` (cloud -> runner)
+`cancel` names a `request_id`. If the action is running, the runner terminates it
+with the configured grace period and still emits one terminal result. A cancel
+that loses the race with completion is a no-op.
 
-Asks the runner to terminate a running action. The runner SIGTERMs,
-then SIGKILL after a grace window; an `action_result` with
-`status: "failed"` and a `cancelled` reason still goes out.
+`ack_result` confirms durable portal receipt of an `action_result`. The runner
+records the acknowledgement in its cursor sidecar so it need not resend that
+result after reconnect. A lost acknowledgement can cause a duplicate result;
+the portal reapplies neither output nor terminal state.
 
-```json
-{
-  "type": "cancel",
-  "protocol_version": 1,
-  "request_id": "req_01HZP4..."
-}
-```
+## Replay and failure behavior
 
-### `ack_result` (cloud -> runner)
+The portal uses one stable `request_id`, `operation_id`, and dispatch digest for
+delivery retries. The runner replay store binds that tuple before execution.
+An identical duplicate returns the recorded in-progress or terminal state; the
+same identifiers with different facts are refused. Replay records and signed
+nonces are durable and bounded. Only one runner process may own a replay/nonce
+store at a time.
 
-Confirms receipt of an `action_result`. The JSONL log itself is
-append-only, so the ack is recorded in the cursor sidecar file
-(`events.jsonl.cursor`), marking that event as delivered. No
-`action_result` data is re-shipped after an ack.
+If a host crashes after process start but before a terminal result is durable,
+the runner reports `outcome_unknown` after restart and never executes that tuple
+again automatically. This is the honest boundary for external side effects.
 
-```json
-{
-  "type": "ack_result",
-  "protocol_version": 1,
-  "request_id": "req_01HZP4..."
-}
-```
+Malformed or oversized messages, invalid signatures, pack mismatches, replay
+conflicts, and admission failures execute nothing and produce bounded errors
+without echoing arguments, output, credentials, certificates, or signatures to
+logs.
 
-### `heartbeat` (runner -> cloud)
+## Limits
 
-Sent every `cloud.heartbeat_every` (default 30s). `action_load` is the
-count of in-flight actions on this runner.
+| Item | Limit |
+| --- | ---: |
+| Complete `run_action` message | 128 KiB |
+| Exact `args` object | 32 KiB |
+| JSON nesting | 64 levels |
+| Runner refs in one signed action | 16 |
+| `Emisar-Attestation` HTTP header | 8192 encoded bytes |
+| Concurrent actions per runner | 8 by default |
 
-```json
-{
-  "type": "heartbeat",
-  "protocol_version": 1,
-  "time": "2026-05-19T22:30:00Z",
-  "action_load": 0
-}
-```
-
-### `error` (runner -> cloud)
-
-Non-fatal runner-side error. Does not abort the session.
-
-```json
-{
-  "type": "error",
-  "protocol_version": 1,
-  "request_id": "req_01HZP4...",
-  "code": "engine_error",
-  "message": "..."
-}
-```
-
-## Reconnect semantics
-
-- Backoff is exponential between `cloud.reconnect_min` and
-  `cloud.reconnect_max`.
-- On reconnect, the runner always sends `runner_state` first.
-- In-flight actions keep executing across the gap; their results go out
-  on the new connection. The cloud correlates a result to its run row by
-  `(runner_id, request_id)` in the database, so delivery survives the
-  socket process dying — the cloud does NOT re-issue `run_action`.
-- If the runner stays offline past the dispatch grace window (~2
-  minutes), a cloud-side sweep marks its non-terminal runs as errored
-  with an explanatory message; a result arriving later for a run that
-  no longer matches is acked and dropped.
-
-## Idempotency
-
-`request_id` is the correlation key, and idempotency is layered
-cloud-side rather than on the runner:
-
-- An MCP client retry carries the same `Idempotency-Key`, which maps to
-  the existing run row — only one `run_action` is ever dispatched per
-  logical request, so the runner never has to dedupe inbound work.
-- Duplicate `action_result` deliveries (e.g. an ack lost in a reconnect)
-  are detected by the cloud — a result for an already-finalized
-  `request_id` is re-acked without being re-applied, and a result for a
-  `request_id` that matches no run row is logged and dropped.
-
-## Cancellation race
-
-If `cancel` arrives after the action already completed, it's a no-op.
-If it arrives mid-execution, the executor cancels the `exec.Cmd`
-context. Cloud should treat "I sent cancel and then got a `success`
-result" as "the action finished before cancel landed" — not as a bug.
+The code and fixed vectors in `mcp/internal/attest` and
+`runner/internal/attest` are byte-identical and checked from repository CI.

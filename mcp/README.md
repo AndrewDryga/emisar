@@ -44,29 +44,15 @@ desktop clients and current CLI command forms.
 
 ### Client compatibility
 
-The table below records a real production `recent_runs` call through the stdio
-bridge on 2026-07-13. It is version-specific compatibility evidence, not a claim
-that later client releases have identical catalog behavior.
+The bridge is exercised against current Claude Code, Cursor, Codex, Gemini, and
+Grok client configuration shapes before release. Run `emisar-mcp --help` for
+the registration commands and JSON paths. Client certification is
+version-specific transport evidence; authorization remains server-side.
 
-| Client | Tested version | 552-tool catalog | Result |
-| --- | --- | --- | --- |
-| Claude Code | 2.1.206 | Unrestricted | Connected, discovered the catalog, and completed the call. |
-| Grok CLI | 0.2.93 | Unrestricted | Connected, discovered 552 tools, and completed the call. |
-| Gemini CLI | 0.49.0 | Unrestricted | Completed the call, but reported about 691,000 input tokens. |
-| Codex CLI | 0.144.1 | Unrestricted | Did not expose `recent_runs`; a one-tool diagnostic override proved transport and authentication only. |
-
-Emisar intentionally returns one strongly typed tool per action reachable by the
-key's minting operator, plus the six synthetic tools below. The server owns this
-dynamic catalog: runner scope, connectivity, and advertised pack actions change
-over time, so operators must not mirror action ids into a client-maintained
-allowlist. Large fleets and pack sets can exceed a client's practical tool limit
-even though the MCP connection itself is healthy. A durable fix must keep
-discovery current on the server while preserving dispatch-time policy, approval,
-audit, pack-trust, and runner-validation gates.
-
-Do not treat a tool absent from a client as proof that Emisar denied access. The
-Codex override above was a bounded certification diagnostic, not a supported
-large-catalog configuration.
+The fixed twelve-tool catalog keeps `tools/list` near 14 KiB so clients load the
+full surface. Against a local portal, Claude Code, Codex, Gemini CLI, and Grok
+CLI connect to the bridge and Grok's MCP doctor reports all twelve tools after
+handshake. Read and mutation authorization still happen only on the portal.
 
 ## Auth
 
@@ -87,34 +73,31 @@ ACLs additionally narrow which runners a key can even see.
 
 ## Tool surface
 
-`tools/list` returns one tool per catalog action (grouped across the
-runners that advertise it, with a `runners` enum arg for fan-out) plus
-six synthetic tools:
+`tools/list` is fixed at twelve tools regardless of fleet or pack size:
 
-- `wait_for_run` — long-poll a run to terminal status. Accepts
-  `run_id` + `timeout` (`"15s"`, `"1m"`, capped at 5m); resolves
-  early on the run's pub/sub broadcast, re-checks status, and returns
-  `waiting` (with current state) on timeout rather than erroring.
-- `recent_runs` — recent run summaries, optionally narrowed by scope,
-  runner, or action, so a new session can resume existing work.
-- `list_runbooks` — published runbooks with summaries.
-- `get_runbook` — one runbook's ordered steps, runner targets resolved
-  to current runner names for inspection or step-by-step dispatch.
-- `execute_runbook` — dispatch a published runbook through the governed
-  end-to-end execution path. Every step still passes its normal policy,
-  approval, target, and audit checks.
-- `create_runbook_draft` — validate and save an LLM-proposed plan as a draft,
-  then return its editor URL for human review. It never publishes the draft.
+- `list_packs`, `list_runners`, `find_actions`, and `get_action` discover the
+  current trusted catalog without embedding hundreds of schemas in tool setup.
+- `run_action` dispatches one exact action contract to explicit generation-bound
+  runner references.
+- `get_operation`, `wait_for_run`, and `recent_runs` recover ambiguous mutations,
+  wait for state changes, and inspect scoped history.
+- `list_runbooks`, `get_runbook`, `execute_runbook`, and
+  `create_runbook_draft` expose the governed runbook workflow.
+
+The discovery flow is `find_actions` -> `get_action` -> `run_action`.
+`get_action` returns the exact argument schema and compatible runners;
+`run_action` revalidates scope, connectivity, pack trust, schema, policy, and
+approval against current state. Defaults are 15 results, with authenticated
+cursors for additional pages. See [`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md)
+for the complete contract.
 
 Every action call must include a `reason` string — it's recorded on
 the run and shown to operators in the audit log.
 
-`tools/list` is a point-in-time snapshot: runner connectivity and pack
-trust are resolved at dispatch time, not list time. Catalog-shaped
-errors (`pack_untrusted`, "No runner advertises <action>", "No runner
-in scope") mean *refresh the list and tell the human*, not *retry in a
-loop* — `pack_untrusted` in particular clears only when an operator
-trusts the pack version on the Packs page.
+Catalog reads are point-in-time observations. `get_action` and `run_action`
+re-resolve current runner scope, connectivity, descriptor parity, and pack
+trust; a stale contract returns one generic refresh continuation without
+disclosing which hidden fact changed.
 
 ## Dispatch semantics
 
@@ -124,22 +107,24 @@ defaults + per-action overrides, default-deny) → grant fast-path
 either immediate dispatch, an approval request (`pending_approval`
 content tells the LLM to wait or escalate), or a refusal.
 
-Idempotency: the bridge stamps every request that has a JSON-RPC `id`
-with a bounded digest over the random bridge session plus the id's exact
-JSON-RPC type and value. A duplicated downstream delivery collapses onto the
-same run row; numeric `7` and string `"7"`, and different clients, never alias.
-Request IDs are one-use within a bridge session, as MCP requires; a duplicate
-stdio request is rejected locally before it can create an ambiguous
-cancellation target. The portal answers notifications with 202 and methods
-with a JSON-RPC result/error.
-The bridge permits up to eight in-flight requests within a 16,000,000-byte
-aggregate request budget, so pings and unrelated small calls remain responsive
-during a long wait without allowing concurrent large frames to exhaust client
-memory. Individual request and response objects are capped at the portal's
-8,000,000-byte boundary. Its 330-second HTTP timeout leaves bounded headroom
-over the portal's five-minute cap. A client cancellation stops the exact request
-generation locally and releases the matching portal wait; cancellation
-notifications bypass ordinary admission and never write a response to stdout.
+For each mutation, the bridge derives a bounded operation ID from its random
+session and the JSON-RPC request ID's exact type and value. The portal reserves
+that ID under the API-key rotation lineage in the same transaction as the
+mutation. An identical retry returns the original resource; changed facts or a
+different mutation tool conflict. Numeric `7` and string `"7"`, and different
+bridge sessions, never alias. `get_operation` is the recovery path after an
+ambiguous transport failure: the bridge's correlated JSON-RPC error includes
+the operation ID and a typed `get_operation` continuation. Reads carry no
+operation header.
+
+Request IDs are one-use within a bridge session. The bridge permits eight
+in-flight requests within a 1 MiB aggregate request budget, caps each request at
+128 KiB and each response at 512 KiB, and bounds decoded string IDs and integer
+decimal forms to 4,096 bytes so every accepted ID can be echoed inside that
+response ceiling. It keeps a 330-second HTTP deadline above the portal's
+five-minute wait cap. Pings and unrelated calls remain responsive during a
+wait. Cancellation after send stops observation only; it never claims to undo
+committed infrastructure work.
 
 ## Attribution + audit
 
@@ -213,10 +198,10 @@ go test -race -count=1 ./...
 ```
 
 The forwarding path lives in `main.go`; `sign.go` is the only code that inspects
-`tools/call`, solely to attach client-attested dispatch data. The canonical
+`tools/call`, solely to attach client-attested `run_action` data. The canonical
 attestation encoding under `internal/attest` is duplicated deliberately in the
-runner module. Attestation v3 signs an unambiguous JSON body containing the
-action id, exact JSON arguments (without `float64` loss), the sorted set of
-selected durable runner ids, a nonce, and a timestamp. The root gate compares
-the two implementations and fixed vectors so the bridge and runner cannot
-silently disagree on those bytes.
+runner module. Attestation v4 binds the action ID, immutable pack ref, digest of
+the exact JSON argument bytes, complete sorted runner refs, reason, operation
+ID, portal origin, nonce, and timestamp. The root gate compares both
+implementations and fixed vectors so the bridge and runner cannot silently
+disagree on those bytes.

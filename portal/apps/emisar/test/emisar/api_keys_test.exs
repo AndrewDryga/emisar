@@ -371,6 +371,7 @@ defmodule Emisar.ApiKeysTest do
       assert successor.name == original.name
       assert successor.kind == original.kind
       assert successor.replaces_id == original.id
+      assert successor.credential_lineage_id == original.credential_lineage_id
 
       # The old key isn't revoked — it overlaps until the successor's first
       # use (or a manual revoke).
@@ -438,6 +439,7 @@ defmodule Emisar.ApiKeysTest do
       assert successor.created_by_id == key.created_by_id
       assert successor.created_by_membership_id == key.created_by_membership_id
       assert successor.replaces_id == key.id
+      assert successor.credential_lineage_id == key.credential_lineage_id
       assert successor.key_prefix == prefix
       assert Crypto.secure_compare(successor.key_hash, hash)
       assert DateTime.compare(successor.expires_at, soon) == :gt

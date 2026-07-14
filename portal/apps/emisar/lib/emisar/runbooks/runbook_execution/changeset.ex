@@ -2,7 +2,10 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   use Emisar, :changeset
   alias Emisar.Runbooks.RunbookExecution
 
-  @fields ~w[id account_id runbook_id initiating_membership_id requested_by_id api_key_id idempotency_key reason work_list]a
+  @fields ~w[
+    id account_id runbook_id initiating_membership_id requested_by_id api_key_id
+    idempotency_key operation_id mcp_operation_record_id reason work_list
+  ]a
 
   def create(attrs) do
     %RunbookExecution{}
@@ -22,6 +25,9 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
     # execute collapses on this index rather than double-running the runbook.
     |> unique_constraint([:api_key_id, :idempotency_key],
       name: :runbook_executions_api_key_idempotency_key_index
+    )
+    |> unique_constraint(:mcp_operation_record_id,
+      name: :runbook_executions_mcp_operation_index
     )
   end
 end

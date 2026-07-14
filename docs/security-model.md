@@ -62,12 +62,13 @@
    a privileged attacker can still delete or rewrite the entire file.
 13. **Client-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid Ed25519 signature
-    — over the action, exact JSON args, durable runner-id set, nonce, and
-    timestamp — from a leaf key vouched for by a still-valid, in-scope
-    certificate signed by a trusted, offline certificate authority, inside a
-    freshness window, with a nonce it hasn't seen. The runner requires its local
-    durable id in the signed target set; the certificate's CA-asserted scope is
-    a second group/label ceiling. The leaf private key lives only in the
+    over the canonical portal origin, action, immutable pack, digest of the
+    exact JSON args, digest of the complete generation-bound runner-ref set,
+    reason, operation ID, nonce, and timestamp. The leaf key is vouched for by
+    a still-valid, in-scope certificate signed by a trusted, offline certificate
+    authority. The runner requires exactly one ref with its locally derived
+    generation suffix in the signed target set; the certificate's CA-asserted
+    scope is a second group/label ceiling. The leaf private key lives only in the
     operator's MCP client and the CA private key stays offline; the control
     plane holds neither, so it can relay a user-signed action but never forge,
     alter, widen its signed targets, replay it on a selected runner, or originate
@@ -140,7 +141,7 @@ its actions from itself:
 | Inbound surface attacked                 | There is none.                                                |
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A compiled-baseline pack's risk is inside the trusted hash; a TOFU pack (no baseline) has no such anchor. Pin risk at trust-time if you need it author-independent. |
-| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v3 Ed25519 client signature over an unambiguous JSON body containing the action, exact args digest, durable runner-id-set digest, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the human-readable id/name mapping during discovery, and a queued call can become stale. Verify ids out of band and use narrow cert scopes for the highest-trust workflows. See `docs/signed-dispatch.md`. |
+| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v4 Ed25519 client signature over an unambiguous claim containing canonical origin, action, immutable pack, exact-args digest, complete generation-bound runner-ref digest, reason, operation, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the display-name/suffix mapping during discovery, and a queued call can become stale. Verify suffixes out of band and use narrow cert scopes for the highest-trust workflows. See `docs/signed-dispatch.md`. |
 
 ## Threats *not* considered (yet)
 

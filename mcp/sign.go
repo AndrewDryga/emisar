@@ -1,48 +1,46 @@
 package main
 
-// Client-attested dispatch — the one piece of real logic this bridge owns, and
-// it earns its own file (mcp/AGENTS.md's "strong reason" for a second file):
-// the Ed25519 private key lives ONLY here, in the operator's local client, never
-// on the control plane. That's the whole point — the portal can relay a signed
-// dispatch but can't originate one. The bridge attaches a signature to each
-// tools/call so an enforcing runner will run it.
+// Client-attested dispatch is the bridge's one semantic exception. The
+// operator's Ed25519 key lives only here, so the portal can relay an authorized
+// run_action intent but cannot manufacture one. HTTPS and the API key already
+// authenticate every ordinary bridge request; reads and other mutations are
+// deliberately never signed.
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"sort"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/andrewdryga/emisar/mcp/internal/attest"
 )
 
-// signer holds the leaf key + the CA-signed cert the bridge signs dispatches
-// with. Nil = signing off. The cert is parsed once at construction and attached
-// verbatim to every dispatch; the bridge never validates it (the runner does) —
-// it only carries it.
+const (
+	attestationHeader         = "Emisar-Attestation"
+	maxAttestationHeaderBytes = 8 << 10
+	maxSigningCertBytes       = 2 << 10
+)
+
+var operationPattern = regexp.MustCompile(`^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
+
+// signer holds the leaf key and CA-signed certificate. The runner validates
+// certificate trust and scope; the bridge only checks that local key and cert
+// match before carrying the certificate in an action attestation.
 type signer struct {
-	priv ed25519.PrivateKey
-	cert *attest.Cert
+	priv     ed25519.PrivateKey
+	cert     *attest.Cert
+	newNonce func() (string, error)
 }
 
-// reservedArgKeys are the control keys the portal strips from a tools/call's
-// `arguments` to recover the action args (see the portal's split_call_args). The
-// signer MUST drop the SAME set so the bytes it signs match the args the runner
-// later verifies — this list is a shared contract with the portal.
-var reservedArgKeys = []string{"runner", "runners", "reason", "wait", "idempotency_key", "attestation"}
-
-const maxSignedTargets = 16
-
-// newSigner builds a signer from EMISAR_SIGNING_KEY (a 64-hex Ed25519 seed) and
-// EMISAR_SIGNING_CERT (the CA-signed cert JSON the operator was given by
-// `emisar signing new-cert`). Returns (nil, nil) when neither is set (signing disabled);
-// an error if only one is set, the seed is malformed, the cert is unparseable,
-// or the cert vouches for a different key than the seed (a copy-paste mismatch
-// that would make every dispatch fail at the runner).
+// newSigner builds a signer from EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT.
+// Both must be configured together. The certificate JSON is decoded strictly
+// so duplicate or unknown fields cannot disguise the credential being carried.
 func newSigner(keyHex, certJSON string) (*signer, error) {
 	if keyHex == "" && certJSON == "" {
 		return nil, nil
@@ -62,165 +60,173 @@ func newSigner(keyHex, certJSON string) (*signer, error) {
 	}
 	priv := ed25519.NewKeyFromSeed(seed)
 
-	var cert attest.Cert
-	if err := json.Unmarshal([]byte(certJSON), &cert); err != nil {
+	if err := validateStrictJSON([]byte(certJSON)); err != nil {
 		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
+	}
+	if err := validateCertFieldNames([]byte(certJSON)); err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
+	}
+	decoder := json.NewDecoder(strings.NewReader(certJSON))
+	decoder.DisallowUnknownFields()
+	var cert attest.Cert
+	if err := decoder.Decode(&cert); err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT must contain one JSON object: %w", err)
+	}
+	wireCert, err := json.Marshal(cert)
+	if err != nil {
+		return nil, fmt.Errorf("encode EMISAR_SIGNING_CERT: %w", err)
+	}
+	if len(wireCert) > maxSigningCertBytes {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is %d bytes, limit is %d", len(wireCert), maxSigningCertBytes)
 	}
 	if leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey)); cert.PublicKey != leafPub {
 		return nil, fmt.Errorf(
-			"EMISAR_SIGNING_CERT vouches for a different key than EMISAR_SIGNING_KEY — " +
+			"EMISAR_SIGNING_CERT vouches for a different key than EMISAR_SIGNING_KEY - " +
 				"use the matching key+cert pair printed by `emisar signing new-cert`")
 	}
-	return &signer{priv: priv, cert: &cert}, nil
+	return &signer{priv: priv, cert: &cert, newNonce: newNonce}, nil
 }
 
-// signFrame attaches an attestation to a tools/call frame so an enforcing runner
-// will run it. It signs ONLY the action args (the control keys are dropped,
-// matching the portal's split), the explicit runner-id set, a fresh nonce, and
-// a timestamp. It returns the frame UNCHANGED on anything it can't cleanly sign
-// (not a tools/call, no tool name, unparseable) — failing open is safe here: an
-// unsigned dispatch to an enforcing runner is simply refused at the runner, and
-// signing a non-dispatch frame would be pointless.
-func (s *signer) signFrame(frame []byte) []byte {
-	var req struct {
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
+func validateCertFieldNames(raw []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return errors.New("certificate must be a JSON object")
 	}
-	if err := json.Unmarshal(frame, &req); err != nil || req.Method != "tools/call" {
-		return frame
+	for key := range fields {
+		switch key {
+		case "ca_id", "key_id", "public_key", "valid_from", "valid_until", "serial", "sig":
+		case "scope":
+			var scope map[string]json.RawMessage
+			if err := json.Unmarshal(fields[key], &scope); err != nil || scope == nil {
+				return errors.New("certificate scope must be a JSON object")
+			}
+			for scopeKey := range scope {
+				if scopeKey != "group" && scopeKey != "labels" {
+					return fmt.Errorf("unknown certificate scope field %q", scopeKey)
+				}
+			}
+		default:
+			return fmt.Errorf("unknown certificate field %q", key)
+		}
+	}
+	return nil
+}
+
+// signFrame returns a private action-attestation header for one valid
+// tools/call name=run_action. It never changes frame. Invalid action input
+// returns no header so the portal can return its normal schema error. Once a
+// valid action reaches cryptographic signing, however, an internal failure is
+// returned and the request is not sent unsigned.
+func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (string, error) {
+	parsed, err := parseProtocolJSON(frame)
+	if err != nil || parsed.Method != "tools/call" || parsed.ToolName != attest.Tool {
+		return "", nil
+	}
+	canonicalOrigin, err := parseEndpoint(portalOrigin, true)
+	if !operationPattern.MatchString(operationID) {
+		return "", fmt.Errorf("invalid bridge operation ID")
+	}
+	if err != nil || canonicalOrigin != portalOrigin {
+		return "", fmt.Errorf("invalid canonical portal origin")
 	}
 
-	var params struct {
-		Name      string         `json:"name"`
-		Arguments map[string]any `json:"arguments"`
+	var arguments map[string]json.RawMessage
+	if err := json.Unmarshal(parsed.Arguments, &arguments); err != nil {
+		return "", nil
 	}
-	if err := decodeExactJSON(req.Params, &params); err != nil || params.Name == "" {
-		return frame
+	actionID, actionErr := exactJSONString(arguments, "action_id")
+	packRef, packErr := exactJSONString(arguments, "pack_ref")
+	reason, reasonErr := exactJSONString(arguments, "reason")
+	var requestedRunnerRefs []string
+	refsErr := json.Unmarshal(arguments["runner_refs"], &requestedRunnerRefs)
+	if actionErr != nil || packErr != nil || reasonErr != nil || refsErr != nil ||
+		!validSignedAction(actionID, packRef, reason) {
+		return "", nil
 	}
-	if params.Arguments == nil {
-		params.Arguments = map[string]any{}
-	}
-
-	actionArgs := map[string]any{}
-	for k, v := range params.Arguments {
-		actionArgs[k] = v
-	}
-	for _, k := range reservedArgKeys {
-		delete(actionArgs, k)
-	}
-	targets, ok := signedTargets(params.Arguments)
+	runnerRefs, ok := signedRunnerRefs(requestedRunnerRefs)
 	if !ok {
-		return frame
+		return "", nil
 	}
 
-	nonce, err := newNonce()
+	nonce, err := s.newNonce()
 	if err != nil {
-		return frame
+		return "", fmt.Errorf("generate attestation nonce: %w", err)
 	}
 	issuedAt := time.Now().UTC().Format(time.RFC3339)
+	claim := attest.Claim{
+		ActionID:     actionID,
+		PackRef:      packRef,
+		ArgsRaw:      parsed.ActionArgs,
+		RunnerRefs:   runnerRefs,
+		Reason:       reason,
+		OperationID:  operationID,
+		PortalOrigin: portalOrigin,
+		Nonce:        nonce,
+		IssuedAt:     issuedAt,
+	}
+	sig, err := attest.Sign(s.priv, claim)
+	if err != nil {
+		return "", fmt.Errorf("sign action attestation: %w", err)
+	}
 
-	sig, err := attest.Sign(s.priv, attest.Claim{
-		ActionID: params.Name,
-		Args:     actionArgs,
-		Targets:  targets,
-		Nonce:    nonce,
-		IssuedAt: issuedAt,
+	argsDigest, err := attest.ArgsSHA256(parsed.ActionArgs)
+	if err != nil {
+		return "", fmt.Errorf("digest action arguments: %w", err)
+	}
+	envelope, err := json.Marshal(attest.Envelope{
+		Version:      attest.Version,
+		Tool:         attest.Tool,
+		PortalOrigin: portalOrigin,
+		ActionID:     actionID,
+		PackRef:      packRef,
+		ArgsSHA256:   argsDigest,
+		RunnerRefs:   runnerRefs,
+		Reason:       reason,
+		OperationID:  operationID,
+		Nonce:        nonce,
+		IssuedAt:     issuedAt,
+		Signature:    sig,
+		Cert:         s.cert,
 	})
 	if err != nil {
-		return frame
+		return "", fmt.Errorf("encode action attestation: %w", err)
 	}
-
-	params.Arguments["attestation"] = map[string]any{
-		"version":   attest.Version,
-		"sig":       sig,
-		"nonce":     nonce,
-		"issued_at": issuedAt,
-		"targets":   targets,
-		"cert":      s.cert,
+	header := base64.RawURLEncoding.EncodeToString(envelope)
+	if len(header) > maxAttestationHeaderBytes {
+		return "", fmt.Errorf("action attestation is %d bytes, limit is %d", len(header), maxAttestationHeaderBytes)
 	}
-
-	signed, err := withArguments(frame, params.Arguments)
-	if err != nil {
-		return frame
-	}
-	return signed
+	return header, nil
 }
 
-// signedTargets extracts the operator's explicit runner selection. Values are
-// durable runner external ids supplied by the portal's tool schema. Sorting
-// makes fan-out order non-semantic; empty, non-string, or duplicate selectors
-// fail open to an unsigned frame, which an enforcing runner refuses.
-func signedTargets(arguments map[string]any) ([]string, bool) {
-	var targets []string
-	switch value := arguments["runners"].(type) {
-	case []any:
-		targets = make([]string, len(value))
-		for i, target := range value {
-			id, ok := target.(string)
-			if !ok || id == "" {
-				return nil, false
-			}
-			targets[i] = id
-		}
-	case []string:
-		targets = append([]string(nil), value...)
-	case nil:
-		id, ok := arguments["runner"].(string)
-		if !ok || id == "" {
-			return nil, false
-		}
-		targets = []string{id}
-	default:
+func validSignedAction(actionID, packRef, reason string) bool {
+	// The portal and runner own field syntax and schema validation. The bridge
+	// checks only the presence and wire budgets needed to form an unambiguous,
+	// bounded claim, avoiding a third copy of catalog validation rules.
+	return actionID != "" && len(actionID) <= 128 &&
+		packRef != "" && len(packRef) <= 256 &&
+		len(reason) <= 255 && strings.TrimSpace(reason) != ""
+}
+
+// signedRunnerRefs copies and sorts the exact public runner generation refs.
+// Fan-out order is not semantic, and duplicates would make the target set
+// ambiguous, so they are rejected rather than silently deduplicated.
+func signedRunnerRefs(input []string) ([]string, bool) {
+	refs, err := attest.CanonicalRunnerRefs(input)
+	if err != nil {
 		return nil, false
 	}
-
-	sort.Strings(targets)
-	for i, target := range targets {
-		if target == "" || (i > 0 && target == targets[i-1]) {
-			return nil, false
-		}
-	}
-	return targets, len(targets) > 0 && len(targets) <= maxSignedTargets
+	return refs, true
 }
 
-func decodeExactJSON(raw []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	return decoder.Decode(target)
-}
-
-// withArguments rebuilds the frame with `params.arguments` replaced. The raw
-// values of every other field (jsonrpc, id, method, params.name) are preserved;
-// object key order may change when the enclosing maps are re-encoded. The
-// envelope id the idempotency key derives from is untouched.
-func withArguments(frame []byte, arguments map[string]any) ([]byte, error) {
-	var full map[string]json.RawMessage
-	if err := json.Unmarshal(frame, &full); err != nil {
-		return nil, err
-	}
-	var params map[string]json.RawMessage
-	if err := json.Unmarshal(full["params"], &params); err != nil {
-		return nil, err
-	}
-	argsJSON, err := json.Marshal(arguments)
-	if err != nil {
-		return nil, err
-	}
-	params["arguments"] = argsJSON
-	paramsJSON, err := json.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
-	full["params"] = paramsJSON
-	return json.Marshal(full)
-}
-
-// newNonce returns a 16-byte random hex token bound into the signature so a
-// relayed dispatch can't be replayed (the runner refuses a re-used nonce).
+// newNonce returns a 16-byte random token bound into the signature. Runner-local
+// durable replay protection refuses reuse even if the portal replays a header.
 func newNonce() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(b[:]), nil
+	return hex.EncodeToString(value[:]), nil
 }

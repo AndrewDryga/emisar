@@ -66,6 +66,31 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
       refute changeset.valid?
       assert Keyword.has_key?(changeset.errors, :max_attestation_age_seconds)
     end
+
+    test "requires the freshness window exactly when signature enforcement is enabled", %{
+      runner: runner
+    } do
+      missing = Runner.Changeset.apply_state(runner, %{enforce_signatures: true})
+      refute missing.valid?
+      assert Keyword.has_key?(missing.errors, :max_attestation_age_seconds)
+
+      paired =
+        Runner.Changeset.apply_state(runner, %{
+          enforce_signatures: true,
+          max_attestation_age_seconds: 3_600
+        })
+
+      assert paired.valid?
+
+      stray =
+        Runner.Changeset.apply_state(runner, %{
+          enforce_signatures: false,
+          max_attestation_age_seconds: 3_600
+        })
+
+      refute stray.valid?
+      assert Keyword.has_key?(stray.errors, :max_attestation_age_seconds)
+    end
   end
 
   describe "register/1 size caps" do

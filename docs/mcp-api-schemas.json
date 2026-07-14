@@ -1,0 +1,1058 @@
+{
+  "schema_version": 1,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "action_id": {
+      "type": "string",
+      "maxLength": 128,
+      "x-maxUtf8Bytes": 128,
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$"
+    },
+    "step_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,79}$"
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "pack_ref": {
+      "type": "string",
+      "maxLength": 256,
+      "x-maxUtf8Bytes": 256,
+      "pattern": "^[a-z][a-z0-9_-]*@[0-9]+(?:\\.[0-9]+)*/sha256:[0-9a-f]{64}$"
+    },
+    "runner_ref": {
+      "type": "string",
+      "maxLength": 113,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}$"
+    },
+    "run_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "operation_id": {
+      "type": "string",
+      "pattern": "^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "runbook_execution_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "runbook_ref": {
+      "type": "string",
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9_-]{0,79}@[1-9][0-9]*$"
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "next_cursor": {
+      "oneOf": [
+        {"$ref": "#/$defs/cursor"},
+        {"type": "null"}
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "wait_short": {
+      "type": "string",
+      "pattern": "^(0|([1-9]|[1-5][0-9]|60)s|([1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)ms)$"
+    },
+    "wait_long": {
+      "type": "string",
+      "pattern": "^(0|[1-5]m|([1-9]|[1-9][0-9]|[12][0-9]{2}|300)s|([1-9][0-9]{0,4}|[12][0-9]{5}|300000)ms)$"
+    },
+    "runner_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/runner_ref"}
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "\\S",
+      "x-maxUtf8Bytes": 255
+    },
+    "list_packs_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pack_id": {"$ref": "#/$defs/pack_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "runner_refs": {"$ref": "#/$defs/runner_refs"},
+        "availability": {"type": "string", "enum": ["executable", "all"], "default": "executable"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
+        "cursor": {"$ref": "#/$defs/cursor"}
+      },
+      "allOf": [
+        {"not": {"required": ["pack_id", "pack_ref"]}}
+      ]
+    },
+    "list_runners_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": {"type": "string", "minLength": 1, "maxLength": 256},
+        "runner_refs": {"$ref": "#/$defs/runner_refs"},
+        "statuses": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"type": "string", "enum": ["connected", "disconnected", "pending", "disabled"]}},
+        "pack_id": {"$ref": "#/$defs/pack_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "issues_only": {"type": "boolean", "default": false},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
+        "cursor": {"$ref": "#/$defs/cursor"}
+      },
+      "allOf": [
+        {"not": {"required": ["query", "runner_refs"]}},
+        {"not": {"required": ["pack_id", "pack_ref"]}},
+        {"if": {"required": ["action_id"]}, "then": {"required": ["pack_ref"]}}
+      ]
+    },
+    "get_action_arguments": {
+      "type": "object",
+      "required": ["action_id", "pack_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "target": {"type": "string", "minLength": 1, "maxLength": 256},
+        "runner_refs": {"$ref": "#/$defs/runner_refs"},
+        "runner_limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15}
+      },
+      "allOf": [
+        {"not": {"required": ["target", "runner_refs"]}},
+        {"if": {"required": ["runner_refs"]}, "then": {"not": {"required": ["runner_limit"]}}}
+      ]
+    },
+    "get_operation_arguments": {
+      "type": "object",
+      "required": ["operation_id"],
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {"$ref": "#/$defs/operation_id"}
+      }
+    },
+    "wait_for_run_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {"$ref": "#/$defs/run_id"},
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "timeout": {"$ref": "#/$defs/wait_long", "default": "5m"}
+      },
+      "oneOf": [
+        {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
+        {"required": ["runbook_execution_id"], "not": {"required": ["run_id"]}}
+      ]
+    },
+    "recent_runs_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {"$ref": "#/$defs/operation_id"},
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "scope": {"type": "string", "enum": ["own", "account"], "default": "own"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 15},
+        "cursor": {"$ref": "#/$defs/cursor"}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["operation_id"]},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["runbook_execution_id"]},
+                {"required": ["runner_ref"]},
+                {"required": ["action_id"]},
+                {"required": ["pack_ref"]},
+                {"required": ["step_id"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"required": ["step_id"]},
+          "then": {"required": ["runbook_execution_id"]}
+        }
+      ]
+    },
+    "next_call": {
+      "type": "object",
+      "required": ["tool", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": ["get_action", "get_operation", "list_packs", "list_runners", "wait_for_run", "recent_runs"]
+        },
+        "arguments": {"type": "object"}
+      }
+    },
+    "next_get_action": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "get_action"}, "arguments": {"$ref": "#/$defs/get_action_arguments"}}}
+      ]
+    },
+    "next_get_operation": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "get_operation"}, "arguments": {"$ref": "#/$defs/get_operation_arguments"}}}
+      ]
+    },
+    "next_list_packs": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "list_packs"}, "arguments": {"$ref": "#/$defs/list_packs_arguments"}}}
+      ]
+    },
+    "next_list_runners": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "list_runners"}, "arguments": {"$ref": "#/$defs/list_runners_arguments"}}}
+      ]
+    },
+    "next_wait": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "wait_for_run"}, "arguments": {"$ref": "#/$defs/wait_for_run_arguments"}}}
+      ]
+    },
+    "next_recent_runs": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {"type": "object", "properties": {"tool": {"const": "recent_runs"}, "arguments": {"$ref": "#/$defs/recent_runs_arguments"}}}
+      ]
+    },
+    "read_next": {
+      "oneOf": [
+        {"$ref": "#/$defs/next_get_action"},
+        {"$ref": "#/$defs/next_get_operation"},
+        {"$ref": "#/$defs/next_list_packs"},
+        {"$ref": "#/$defs/next_list_runners"},
+        {"$ref": "#/$defs/next_wait"},
+        {"$ref": "#/$defs/next_recent_runs"}
+      ]
+    },
+    "nullable_next_list_runners": {
+      "oneOf": [
+        {"$ref": "#/$defs/next_list_runners"},
+        {"type": "null"}
+      ]
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"type": "string", "minLength": 1, "maxLength": 80},
+        "message": {"type": "string", "minLength": 1, "maxLength": 512},
+        "retryable": {"type": "boolean"},
+        "details": {"type": "object"},
+        "next": {"$ref": "#/$defs/read_next"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"code": {"const": "target_contract_changed"}}},
+          "then": {"required": ["next"], "properties": {"next": {"$ref": "#/$defs/next_get_action"}}}
+        },
+        {
+          "if": {"properties": {"code": {"const": "action_unavailable"}}},
+          "then": {
+            "required": ["next"],
+            "properties": {
+              "next": {
+                "oneOf": [
+                  {"$ref": "#/$defs/next_list_packs"},
+                  {"$ref": "#/$defs/next_list_runners"}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "error_result": {
+      "type": "object",
+      "required": ["ok", "error", "dispatch_started"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"const": false},
+        "error": {"$ref": "#/$defs/error"},
+        "dispatch_started": {"const": false}
+      }
+    },
+    "issue": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"type": "string", "minLength": 1, "maxLength": 80},
+        "message": {"type": "string", "minLength": 1, "maxLength": 512, "x-maxUtf8Bytes": 1024}
+      }
+    },
+    "action_summary": {
+      "type": "object",
+      "required": ["action_id", "title", "summary", "risk", "availability"],
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 160},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 512},
+        "risk": {"$ref": "#/$defs/risk"},
+        "availability": {"type": "string", "enum": ["executable", "unavailable"]}
+      }
+    },
+    "runner_brief": {
+      "type": "object",
+      "x-maxEncodedUtf8Bytes": 1536,
+      "required": ["runner_ref", "name", "hostname", "group", "status"],
+      "properties": {
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"},
+        "hostname": {"type": "string", "minLength": 1, "maxLength": 255},
+        "group": {"type": "string", "minLength": 1, "maxLength": 80},
+        "status": {"type": "string", "enum": ["connected", "disconnected", "pending", "disabled"]}
+      }
+    },
+    "approval": {
+      "type": "object",
+      "required": ["request_id", "url", "expires_at"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "url": {"type": "string", "format": "uri", "maxLength": 2048},
+        "expires_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "run_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "pending_approval",
+        "sent",
+        "running",
+        "success",
+        "failed",
+        "error",
+        "validation_failed",
+        "unknown_action",
+        "cancelled",
+        "timed_out",
+        "refused",
+        "denied"
+      ]
+    },
+    "run_summary": {
+      "type": "object",
+      "required": ["run_id", "operation_id", "action_id", "pack_ref", "runner_ref", "status", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {"$ref": "#/$defs/run_id"},
+        "operation_id": {"$ref": "#/$defs/operation_id"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "status": {"$ref": "#/$defs/run_status"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "finished_at": {"$ref": "#/$defs/timestamp"},
+        "exit_code": {"type": ["integer", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "stdout": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stdout."},
+        "stderr": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stderr."},
+        "stdout_bytes": {"type": "integer", "minimum": 0},
+        "stderr_bytes": {"type": "integer", "minimum": 0},
+        "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "truncated_stdout": {"type": "boolean"},
+        "truncated_stderr": {"type": "boolean"},
+        "approval": {"$ref": "#/$defs/approval"},
+        "wait_until": {"$ref": "#/$defs/timestamp"},
+        "next": {"$ref": "#/$defs/next_wait"},
+        "run_url": {"type": "string", "format": "uri", "maxLength": 2048}
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {"required": ["runbook_execution_id", "step_id"]},
+            {"not": {"anyOf": [{"required": ["runbook_execution_id"]}, {"required": ["step_id"]}]}}
+          ]
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running"]}}},
+          "then": {"required": ["next"]},
+          "else": {"not": {"required": ["next"]}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "pending_approval"}}},
+          "then": {"required": ["approval", "wait_until"]}
+        },
+        {
+          "if": {"properties": {"status": {"const": "sent"}}},
+          "then": {"required": ["wait_until"]}
+        }
+      ]
+    },
+    "action_run_summary": {
+      "type": "object",
+      "allOf": [
+        {"$ref": "#/$defs/run_summary"},
+        {
+          "type": "object",
+          "not": {
+            "anyOf": [
+              {"type": "object", "required": ["runbook_execution_id"]},
+              {"type": "object", "required": ["step_id"]}
+            ]
+          }
+        }
+      ]
+    },
+    "runner_selector": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["runner_refs"],
+          "additionalProperties": false,
+          "properties": {"runner_refs": {"$ref": "#/$defs/runner_refs"}}
+        },
+        {
+          "type": "object",
+          "required": ["groups"],
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "maxLength": 80}
+            }
+          }
+        }
+      ]
+    },
+    "runbook_step": {
+      "type": "object",
+      "required": ["step_id", "action_id", "pack_ref", "args", "runner_selector"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
+        "runner_selector": {"$ref": "#/$defs/runner_selector"}
+      }
+    },
+    "runbook_execution_status": {
+      "type": "string",
+      "enum": ["pending", "running", "pending_approval", "success", "failed"]
+    },
+    "runbook_step_status": {
+      "type": "string",
+      "enum": ["pending", "running", "pending_approval", "success", "failed"]
+    },
+    "runbook_execution_step": {
+      "type": "object",
+      "required": ["step_id", "action_id", "status", "run_count", "status_counts"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "status": {"$ref": "#/$defs/runbook_step_status"},
+        "run_count": {"type": "integer", "minimum": 1, "maximum": 256},
+        "status_counts": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "pending": {"type": "integer", "minimum": 1, "maximum": 256},
+            "pending_approval": {"type": "integer", "minimum": 1, "maximum": 256},
+            "sent": {"type": "integer", "minimum": 1, "maximum": 256},
+            "running": {"type": "integer", "minimum": 1, "maximum": 256},
+            "success": {"type": "integer", "minimum": 1, "maximum": 256},
+            "failed": {"type": "integer", "minimum": 1, "maximum": 256},
+            "error": {"type": "integer", "minimum": 1, "maximum": 256},
+            "validation_failed": {"type": "integer", "minimum": 1, "maximum": 256},
+            "unknown_action": {"type": "integer", "minimum": 1, "maximum": 256},
+            "cancelled": {"type": "integer", "minimum": 1, "maximum": 256},
+            "timed_out": {"type": "integer", "minimum": 1, "maximum": 256},
+            "refused": {"type": "integer", "minimum": 1, "maximum": 256},
+            "denied": {"type": "integer", "minimum": 1, "maximum": 256}
+          }
+        }
+      }
+    },
+    "runbook_execution": {
+      "type": "object",
+      "x-maxEncodedUtf8Bytes": 98304,
+      "required": ["runbook_execution_id", "runbook_ref", "status", "steps", "runs_next"],
+      "additionalProperties": false,
+      "properties": {
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+        "status": {"$ref": "#/$defs/runbook_execution_status"},
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/runbook_execution_step"}
+        },
+        "runs_next": {"$ref": "#/$defs/next_recent_runs"},
+        "next": {"$ref": "#/$defs/next_wait"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["pending", "running", "pending_approval"]}}},
+          "then": {"required": ["next"]},
+          "else": {"not": {"required": ["next"]}}
+        }
+      ]
+    }
+  },
+  "tools": {
+    "list_packs": {
+      "title": "List packs",
+      "description": "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; use availability all for deployment diagnosis.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/list_packs_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "observed_at", "packs", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "observed_at": {"$ref": "#/$defs/timestamp"},
+              "packs": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "x-maxEncodedUtf8Bytes": 57344,
+                  "required": ["pack_ref", "availability", "issues", "actions"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "pack_ref": {"$ref": "#/$defs/pack_ref"},
+                    "availability": {"type": "string", "enum": ["executable", "unavailable"]},
+                    "issues": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/issue"}},
+                    "actions": {"type": "array", "maxItems": 80, "items": {"$ref": "#/$defs/action_summary"}}
+                  }
+                }
+              },
+              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+            }
+          }
+        ]
+      }
+    },
+    "list_runners": {
+      "title": "List runners",
+      "description": "Inspect in-scope runners, connectivity, and pack or action compatibility issues. Use the exact returned runner_ref values for dispatch.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/list_runners_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "observed_at", "summary", "runners", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "observed_at": {"$ref": "#/$defs/timestamp"},
+              "summary": {
+                "type": "object",
+                "required": ["matched", "connected", "disconnected", "pending", "disabled"],
+                "additionalProperties": false,
+                "properties": {
+                  "matched": {"type": "integer", "minimum": 0},
+                  "connected": {"type": "integer", "minimum": 0},
+                  "disconnected": {"type": "integer", "minimum": 0},
+                  "pending": {"type": "integer", "minimum": 0},
+                  "disabled": {"type": "integer", "minimum": 0}
+                }
+              },
+              "runners": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "x-maxEncodedUtf8Bytes": 57344,
+                  "unevaluatedProperties": false,
+                  "allOf": [
+                    {"$ref": "#/$defs/runner_brief"},
+                    {
+                      "type": "object",
+                      "required": ["last_seen_at", "labels", "packs_next", "issues"],
+                      "properties": {
+                        "last_seen_at": {"oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+                        "labels": {
+                          "type": "object",
+                          "maxProperties": 32,
+                          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 80},
+                          "additionalProperties": {"type": "string", "maxLength": 256, "x-maxUtf8Bytes": 1024}
+                        },
+                        "packs_next": {"$ref": "#/$defs/next_list_packs"},
+                        "issues": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/issue"}}
+                      }
+                    }
+                  ]
+                }
+              },
+              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+            }
+          }
+        ]
+      }
+    },
+    "find_actions": {
+      "title": "Find actions",
+      "description": "Find bounded action candidates by operational task or exact filters. This does not execute or return argument schemas; call get_action for the chosen exact action and pack_ref.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {"type": "string", "minLength": 1, "maxLength": 256},
+          "action_id": {"$ref": "#/$defs/action_id"},
+          "pack_id": {"$ref": "#/$defs/pack_id"},
+          "pack_ref": {"$ref": "#/$defs/pack_ref"},
+          "target": {"type": "string", "minLength": 1, "maxLength": 256},
+          "runner_refs": {"$ref": "#/$defs/runner_refs"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15},
+          "cursor": {"$ref": "#/$defs/cursor"}
+        },
+        "allOf": [
+          {"not": {"required": ["query", "action_id"]}},
+          {"not": {"required": ["pack_id", "pack_ref"]}},
+          {"not": {"required": ["target", "runner_refs"]}}
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "observed_at", "candidates", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "observed_at": {"$ref": "#/$defs/timestamp"},
+              "candidates": {
+                "type": "array",
+                "maxItems": 15,
+                "items": {
+                  "type": "object",
+                  "required": ["action_id", "pack_ref", "title", "summary", "risk", "side_effects", "matched_fields", "next"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "action_id": {"$ref": "#/$defs/action_id"},
+                    "pack_ref": {"$ref": "#/$defs/pack_ref"},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "summary": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "risk": {"$ref": "#/$defs/risk"},
+                    "side_effects": {"type": "array", "maxItems": 16, "items": {"type": "string", "maxLength": 1024}},
+                    "matched_fields": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "maxLength": 80}},
+                    "next": {"$ref": "#/$defs/next_get_action"}
+                  }
+                }
+              },
+              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+            }
+          }
+        ]
+      }
+    },
+    "get_action": {
+      "title": "Get action",
+      "description": "Get the exact argument schema, risk, side effects, and compatible runners for one action in one immutable pack_ref. Call this before run_action.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/get_action_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "observed_at", "action", "compatible_runners", "more_compatible_runners", "next"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "observed_at": {"$ref": "#/$defs/timestamp"},
+              "action": {
+                "type": "object",
+                "x-maxEncodedUtf8Bytes": 32768,
+                "required": ["action_id", "pack_ref", "title", "description", "risk", "side_effects", "args_schema", "examples"],
+                "additionalProperties": false,
+                "properties": {
+                  "action_id": {"$ref": "#/$defs/action_id"},
+                  "pack_ref": {"$ref": "#/$defs/pack_ref"},
+                  "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                  "description": {"type": "string", "minLength": 1, "maxLength": 4096},
+                  "risk": {"$ref": "#/$defs/risk"},
+                  "side_effects": {"type": "array", "maxItems": 16, "items": {"type": "string", "maxLength": 1024}},
+                  "args_schema": {"type": "object"},
+                  "examples": {"type": "array", "maxItems": 16, "items": {"type": "object"}}
+                }
+              },
+              "compatible_runners": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "unevaluatedProperties": false,
+                  "allOf": [{"$ref": "#/$defs/runner_brief"}]
+                }
+              },
+              "more_compatible_runners": {"type": "boolean"},
+              "next": {"$ref": "#/$defs/nullable_next_list_runners"}
+            }
+          }
+        ]
+      }
+    },
+    "run_action": {
+      "title": "Run action",
+      "description": "Run one exact action on explicit runner_refs through Emisar scope, policy, approval, audit, and signed runner verification. Emisar owns approval; follow the returned wait continuation instead of adding a separate model confirmation.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "required": ["action_id", "pack_ref", "runner_refs", "args", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {"$ref": "#/$defs/action_id"},
+          "pack_ref": {"$ref": "#/$defs/pack_ref"},
+          "runner_refs": {"$ref": "#/$defs/runner_refs"},
+          "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
+          "reason": {"$ref": "#/$defs/reason"},
+          "wait": {"$ref": "#/$defs/wait_short", "default": "60s"}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation_id", "action_id", "pack_ref", "runs"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation_id": {"$ref": "#/$defs/operation_id"},
+              "action_id": {"$ref": "#/$defs/action_id"},
+              "pack_ref": {"$ref": "#/$defs/pack_ref"},
+              "runs": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/action_run_summary"}}
+            }
+          }
+        ]
+      }
+    },
+    "get_operation": {
+      "title": "Get operation",
+      "description": "Recover one exact bridge mutation by operation_id after cancellation, transport ambiguity, or process restart. Returns a typed action, runbook, or draft continuation without repeating the mutation.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/get_operation_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["operation_id", "kind", "action_id", "pack_ref", "next"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "operation_id": {"$ref": "#/$defs/operation_id"},
+                      "kind": {"const": "action"},
+                      "action_id": {"$ref": "#/$defs/action_id"},
+                      "pack_ref": {"$ref": "#/$defs/pack_ref"},
+                      "next": {"$ref": "#/$defs/next_recent_runs"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["operation_id", "kind", "runbook_execution_id", "runbook_ref", "next"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "operation_id": {"$ref": "#/$defs/operation_id"},
+                      "kind": {"const": "runbook"},
+                      "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                      "next": {"$ref": "#/$defs/next_wait"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["operation_id", "kind", "draft_id", "slug", "status", "review_url"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "operation_id": {"$ref": "#/$defs/operation_id"},
+                      "kind": {"const": "runbook_draft"},
+                      "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
+                      "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
+                      "status": {"const": "draft"},
+                      "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "wait_for_run": {
+      "title": "Wait for run",
+      "description": "Wait for one run or runbook execution to change state, finish, or reach the timeout. Observation never cancels or repeats infrastructure work.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/wait_for_run_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "run"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "run": {"$ref": "#/$defs/run_summary"}
+            }
+          },
+          {
+            "type": "object",
+            "required": ["ok", "execution"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "execution": {"$ref": "#/$defs/runbook_execution"}
+            }
+          }
+        ]
+      }
+    },
+    "recent_runs": {
+      "title": "Recent runs",
+      "description": "Inspect and paginate scoped run history by operation, runbook execution, step, runner, action, or pack. Use get_operation, not history absence, to reconcile an ambiguous mutation.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "allOf": [{"$ref": "#/$defs/recent_runs_arguments"}]
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "runs", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "runs": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/run_summary"}},
+              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+            }
+          }
+        ]
+      }
+    },
+    "list_runbooks": {
+      "title": "List runbooks",
+      "description": "List visible immutable published runbooks with bounded summaries. Use get_runbook to inspect the exact frozen steps before execution.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {"type": "string", "minLength": 1, "maxLength": 256},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
+          "cursor": {"$ref": "#/$defs/cursor"}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "observed_at", "runbooks", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "observed_at": {"$ref": "#/$defs/timestamp"},
+              "runbooks": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "required": ["runbook_ref", "title", "summary", "step_count"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "summary": {"type": "string", "maxLength": 512},
+                    "step_count": {"type": "integer", "minimum": 1, "maximum": 32}
+                  }
+                }
+              },
+              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+            }
+          }
+        ]
+      }
+    },
+    "get_runbook": {
+      "title": "Get runbook",
+      "description": "Get one exact immutable published runbook definition by runbook_ref, including ordered actions, arguments, selectors, and dependencies.",
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "required": ["runbook_ref"],
+        "additionalProperties": false,
+        "properties": {"runbook_ref": {"$ref": "#/$defs/runbook_ref"}}
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "runbook"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "runbook": {
+                "type": "object",
+                "x-maxEncodedUtf8Bytes": 57344,
+                "required": ["runbook_ref", "title", "description", "steps"],
+                "additionalProperties": false,
+                "properties": {
+                  "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                  "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                  "description": {"type": "string", "maxLength": 4096},
+                  "steps": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/runbook_step"}}
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "execute_runbook": {
+      "title": "Execute runbook",
+      "description": "Execute one exact published runbook_ref through Emisar scope, policy, approval, and audit. Emisar owns approval; follow returned continuations and never retry the complete execution after acceptance.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "required": ["runbook_ref", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "reason": {"$ref": "#/$defs/reason"}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation_id", "execution"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation_id": {"$ref": "#/$defs/operation_id"},
+              "execution": {"$ref": "#/$defs/runbook_execution"}
+            }
+          }
+        ]
+      }
+    },
+    "create_runbook_draft": {
+      "title": "Create runbook draft",
+      "description": "Save a proposed runbook draft for human review. This neither publishes the runbook nor executes any action.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "x-maxEncodedUtf8Bytes": 57344,
+        "required": ["title", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
+          "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
+          "description": {"type": "string", "maxLength": 4096},
+          "steps": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/runbook_step"}}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation_id", "draft_id", "slug", "status", "review_url"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation_id": {"$ref": "#/$defs/operation_id"},
+              "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
+              "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
+              "status": {"const": "draft"},
+              "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

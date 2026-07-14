@@ -156,9 +156,9 @@
         and emisar mints a scoped API key with a prefilled config snippet to paste in.
       </p>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Now your model sees the same catalog as typed tools, scoped to the runners you allow. Ask
-        it <em>"what's the load on web-01?"</em>
-        and it calls <code class="font-mono">linux.uptime</code>; ask it to restart a service and
+        Now your model gets twelve stable tools and discovers only the packs, actions, and runners
+        in scope. Ask it <em>"what's the load on web-01?"</em>
+        and it finds <code class="font-mono">linux.uptime</code>, reads its exact schema, then calls <code class="font-mono">run_action</code>; ask it to restart a service and
         that high-risk action stops for your approval. Reads run on policy, mutations are gated,
         every call is audited — and the model never gets a shell. Full walkthrough: <.link
           navigate={~p"/docs/connect-an-llm"}

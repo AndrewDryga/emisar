@@ -43,20 +43,70 @@ defmodule Emisar.Catalog.PackBaseline do
   from — a compromised published catalog cannot auto-trust new hashes.
   """
 
+  alias Emisar.Catalog.TrustedManifest
+
   @catalog_path Path.expand("../../../priv/packs/catalog.json", __DIR__)
   @external_resource @catalog_path
 
   @packs @catalog_path |> File.read!() |> Jason.decode!() |> Map.fetch!("packs")
 
-  @baseline @packs
-            |> Enum.flat_map(fn %{"id" => id, "version" => version, "content_hash" => hash} = pack ->
-              history =
-                for %{"version" => v, "content_hash" => h} <- pack["previous_versions"] || [],
-                    do: {{id, to_string(v)}, h}
+  @version_entries Enum.flat_map(@packs, fn %{
+                                              "id" => id,
+                                              "version" => version,
+                                              "content_hash" => hash,
+                                              "actions" => actions
+                                            } = pack ->
+                     history =
+                       Enum.map(pack["previous_versions"] || [], fn previous ->
+                         %{
+                           pack_id: id,
+                           version: to_string(Map.fetch!(previous, "version")),
+                           hash: Map.fetch!(previous, "content_hash"),
+                           actions: previous["actions"],
+                           current?: false
+                         }
+                       end)
 
-              [{{id, to_string(version)}, hash} | history]
+                     [
+                       %{
+                         pack_id: id,
+                         version: to_string(version),
+                         hash: hash,
+                         actions: actions,
+                         current?: true
+                       }
+                       | history
+                     ]
+                   end)
+
+  @baseline Map.new(@version_entries, fn entry ->
+              {{entry.pack_id, entry.version}, entry.hash}
             end)
-            |> Map.new()
+
+  @manifest_pairs Enum.flat_map(@version_entries, fn
+                    %{actions: nil} ->
+                      []
+
+                    %{
+                      pack_id: id,
+                      version: version,
+                      hash: hash,
+                      actions: actions,
+                      current?: current?
+                    } ->
+                      case TrustedManifest.from_catalog_actions(actions) do
+                        {:ok, manifest} ->
+                          [{{id, version, hash}, manifest}]
+
+                        {:error, :invalid_manifest} when current? ->
+                          raise "PackBaseline: #{id}@#{version}/#{hash} has an invalid action manifest"
+
+                        {:error, :invalid_manifest} ->
+                          []
+                      end
+                  end)
+
+  @manifests Map.new(@manifest_pairs)
 
   # The current shipped version of every pack — `id => version` — the fixed
   # version a runner on a retired version should update to. `@packs` is never
@@ -98,6 +148,20 @@ defmodule Emisar.Catalog.PackBaseline do
     do: Map.get(@baseline, {pack_id, version})
 
   def lookup(_, _), do: nil
+
+  @doc """
+  Complete trusted manifest for an exact release-frozen `(pack_id, version,
+  hash)`, or `nil` when that historical artifact predates descriptor retention.
+
+  The hash is part of the lookup deliberately: a descriptor from one set of
+  bytes must never authorize or describe another.
+  """
+  @spec manifest(String.t(), String.t(), String.t()) :: map() | nil
+  def manifest(pack_id, version, hash)
+      when is_binary(pack_id) and is_binary(version) and is_binary(hash),
+      do: Map.get(@manifests, {pack_id, version, hash})
+
+  def manifest(_, _, _), do: nil
 
   @doc """
   The current shipped version for a pack id — the fixed version an operator on
@@ -145,6 +209,10 @@ defmodule Emisar.Catalog.PackBaseline do
   @doc "Whole baseline, mostly for tests + debugging."
   @spec all() :: %{{String.t(), String.t()} => String.t()}
   def all, do: @baseline
+
+  @doc "All complete exact-hash manifests, mostly for tests + debugging."
+  @spec all_manifests() :: %{{String.t(), String.t(), String.t()} => map()}
+  def all_manifests, do: @manifests
 
   @doc "Whole retirement-watermark map (`pack_id => version`), mostly for tests."
   @spec retired_below() :: %{String.t() => String.t()}

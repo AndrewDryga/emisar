@@ -444,7 +444,15 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => "0.1.0",
           "labels" => %{},
           "actions" => [
-            %{"id" => "acme.status", "pack_id" => "acme-tools", "risk" => "low", "kind" => "exec"}
+            %{
+              "id" => "acme.status",
+              "pack_id" => "acme-tools",
+              "title" => "Status",
+              "description" => "Read current service status.",
+              "risk" => "low",
+              "kind" => "exec",
+              "args" => []
+            }
           ],
           "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v1"}}
         })
@@ -462,14 +470,20 @@ defmodule EmisarWeb.PacksLiveTest do
             %{
               "id" => "acme.status",
               "pack_id" => "acme-tools",
+              "title" => "Status",
+              "description" => "Read current service status.",
               "risk" => "low",
-              "kind" => "exec"
+              "kind" => "exec",
+              "args" => []
             },
             %{
               "id" => "acme.wipe",
               "pack_id" => "acme-tools",
+              "title" => "Wipe",
+              "description" => "Delete test state.",
               "risk" => "critical",
-              "kind" => "exec"
+              "kind" => "exec",
+              "args" => []
             }
           ],
           "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v2"}}

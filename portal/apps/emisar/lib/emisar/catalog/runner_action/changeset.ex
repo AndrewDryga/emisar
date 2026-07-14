@@ -3,8 +3,8 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   alias Emisar.Catalog.RunnerAction
 
   @fields ~w[
-    account_id runner_id action_id pack_id pack_version title kind risk
-    description side_effects args_schema examples
+    account_id runner_id action_id pack_id pack_version pack_hash title kind risk
+    summary description side_effects args_schema examples search_terms
     first_seen_at last_seen_at
   ]a
 
@@ -21,9 +21,10 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   # data a real pack keeps to a few KB, so 64 KB serialized each is well above
   # any honest descriptor while bounding the gross-abuse row.
   @max_title_length 255
+  @max_summary_length 512
   @max_description_length 4_096
   @max_json_bytes 65_536
-  @json_fields ~w[args_schema examples side_effects]a
+  @json_fields ~w[args_schema examples side_effects search_terms]a
 
   # action_id is unbounded by the socket frame alone, yet it becomes the MCP
   # tool NAME and renders on every UI/MCP surface — so a hostile runner could
@@ -38,6 +39,8 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   # we accept.
   @max_action_id_length 128
   @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
+  @max_search_terms 16
+  @max_search_term_length 80
 
   def upsert(attrs) do
     %RunnerAction{}
@@ -57,12 +60,28 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
     |> validate_length(:action_id, max: @max_action_id_length)
     |> validate_format(:action_id, @action_id_format)
     |> validate_length(:title, max: @max_title_length)
+    |> validate_length(:summary, max: @max_summary_length)
     |> validate_length(:description, max: @max_description_length)
+    |> validate_length(:search_terms, max: @max_search_terms)
+    |> validate_search_terms()
     |> validate_json_sizes()
     |> unique_constraint([:runner_id, :action_id])
   end
 
   defp validate_json_sizes(changeset) do
     Enum.reduce(@json_fields, changeset, &validate_json_size(&2, &1, @max_json_bytes))
+  end
+
+  defp validate_search_terms(changeset) do
+    validate_change(changeset, :search_terms, fn :search_terms, terms ->
+      if Enum.all?(terms, &(String.length(&1) in 1..@max_search_term_length)) do
+        []
+      else
+        [
+          search_terms:
+            "must contain non-empty strings of at most #{@max_search_term_length} characters"
+        ]
+      end
+    end)
   end
 end

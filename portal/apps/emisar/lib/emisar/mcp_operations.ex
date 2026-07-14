@@ -1,0 +1,135 @@
+defmodule Emisar.MCPOperations do
+  @moduledoc """
+  Authorization and persistence boundary for bridge mutation identities.
+
+  An operation belongs to one account and API-key rotation lineage. The fixed
+  recovery snapshot is deliberately independent of current runner scope: scope
+  can revoke future work without hiding whether an earlier mutation committed.
+  """
+  alias Ecto.Multi
+  alias Emisar.{ApiKeys, Auth, Repo}
+  alias Emisar.Auth.Subject
+  alias Emisar.MCPOperations.{Authorizer, Operation}
+
+  @doc """
+  Adds an atomic operation reservation to `multi`.
+
+  Requires the MCP operation reserve permission. The `:mcp_operation` result is
+  `%{operation: operation, fresh?: boolean}`. An identical replay returns the
+  winner; different facts under the same lineage-local ID abort with
+  `:operation_conflict`.
+  """
+  def reserve_in_multi(
+        %Multi{} = multi,
+        attrs,
+        %Subject{actor: %ApiKeys.ApiKey{} = key} = subject
+      )
+      when is_map(attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.reserve_operations_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+      id = Repo.generate_id()
+
+      operation_attrs =
+        attrs
+        |> Map.put(:id, id)
+        |> Map.put(:account_id, subject.account.id)
+        |> Map.put(:credential_lineage_id, key.credential_lineage_id)
+
+      operation_changeset = Operation.Changeset.reserve(operation_attrs)
+
+      multi =
+        Multi.run(multi, :mcp_operation, fn repo, _changes ->
+          reserve(repo, operation_changeset, operation_attrs, id)
+        end)
+
+      {:ok, multi}
+    end
+  end
+
+  def reserve_in_multi(%Multi{}, _attrs, %Subject{}), do: {:error, :unauthorized}
+
+  @doc """
+  Fetches one minimal recovery record for the authenticated key lineage.
+
+  Requires the MCP operation view permission. Missing, foreign-account, and
+  other-lineage records all return `:not_found`.
+  """
+  def fetch_recovery(operation_id, %Subject{actor: %ApiKeys.ApiKey{} = key} = subject)
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_operations_permission()
+           ) do
+      Operation.Query.all()
+      |> Operation.Query.by_operation_id(operation_id)
+      |> Operation.Query.by_lineage_id(key.credential_lineage_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Operation.Query)
+    end
+  end
+
+  def fetch_recovery(_operation_id, %Subject{}), do: {:error, :unauthorized}
+
+  @doc """
+  Derives the stable UUID owned by one lineage-local resource operation.
+
+  The operation registry and resource insert share this identity, so concurrent
+  first attempts cannot disagree about which draft or execution won. This is an
+  internal persistence identity, not a capability or authentication token.
+  """
+  def resource_id(operation_id, tool, %Subject{actor: %ApiKeys.ApiKey{} = key} = subject)
+      when is_binary(operation_id) and tool in [:execute_runbook, :create_runbook_draft] do
+    seed =
+      Enum.join(
+        [
+          "emisar-mcp-resource-v1",
+          subject.account.id,
+          key.credential_lineage_id,
+          Atom.to_string(tool),
+          operation_id
+        ],
+        "\0"
+      )
+
+    hex = Emisar.Crypto.hash_hex(seed)
+
+    String.slice(hex, 0, 8) <>
+      "-" <>
+      String.slice(hex, 8, 4) <>
+      "-5" <>
+      String.slice(hex, 13, 3) <>
+      "-8" <>
+      String.slice(hex, 17, 3) <>
+      "-" <> String.slice(hex, 20, 12)
+  end
+
+  defp reserve(repo, changeset, expected, id) do
+    case repo.insert(changeset,
+           on_conflict: [set: [updated_at: DateTime.utc_now()]],
+           conflict_target: [:account_id, :credential_lineage_id, :operation_id],
+           returning: true
+         ) do
+      {:ok, %Operation{id: ^id} = operation} ->
+        {:ok, %{operation: operation, fresh?: true}}
+
+      {:ok, %Operation{} = operation} ->
+        if same_facts?(operation, expected),
+          do: {:ok, %{operation: operation, fresh?: false}},
+          else: {:error, :operation_conflict}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp same_facts?(operation, expected) do
+    Enum.all?(~w[tool fingerprint action_id pack_ref resource_id resource_ref]a, fn field ->
+      Map.get(operation, field) == Map.get(expected, field)
+    end)
+  end
+end

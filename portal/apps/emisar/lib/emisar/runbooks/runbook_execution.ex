@@ -27,11 +27,13 @@ defmodule Emisar.Runbooks.RunbookExecution do
     # path — no api key, no key — so the partial unique index never engages.
     field :api_key_id, Ecto.UUID
     field :idempotency_key, :string
+    field :operation_id, :string
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
     belongs_to :initiating_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
 
     timestamps()
   end

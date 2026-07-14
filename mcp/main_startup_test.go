@@ -177,11 +177,13 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		"claude mcp add emisar --scope user",
 		"~/.cursor/mcp.json",
 		"codex mcp add emisar",
+		"gemini mcp add --scope user --trust",
 		"grok mcp add emisar",
 		`"EMISAR_CLIENT": "claude-desktop"`,
 		"EMISAR_CLIENT=claude-code",
 		`"EMISAR_CLIENT": "cursor"`,
 		"EMISAR_CLIENT=codex",
+		"EMISAR_CLIENT=gemini",
 		"EMISAR_CLIENT=grok",
 	} {
 		if !strings.Contains(helpText, setup) {

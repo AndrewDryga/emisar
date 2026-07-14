@@ -38,5 +38,17 @@ if run_check; then
   echo "attestation parity check accepted one-sided fixed-vector drift" >&2
   exit 1
 fi
+cp "$tmp/mcp/internal/attest/attest_test.go" "$tmp/runner/internal/attest/attest_test.go"
+
+awk '
+  !changed && /envelopeBase64URL/ { sub(/envelopeBase64URL/, "envelopeBase64URLDrifted"); changed = 1 }
+  { print }
+' "$tmp/runner/internal/attest/attest_test.go" > "$tmp/runner/internal/attest/attest_test.go.next"
+mv "$tmp/runner/internal/attest/attest_test.go.next" "$tmp/runner/internal/attest/attest_test.go"
+
+if run_check; then
+  echo "attestation parity check accepted one-sided envelope-vector drift" >&2
+  exit 1
+fi
 
 echo "ok: attestation parity guard rejects one-sided drift"

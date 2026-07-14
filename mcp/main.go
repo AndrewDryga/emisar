@@ -6,9 +6,9 @@
 // correlation, Streamable HTTP headers, and validation that stdout contains
 // only valid MCP messages. All tool descriptors, content blocks, and synthetic
 // tools are produced by the portal. The one semantic exception is client-attested
-// dispatch (sign.go): the bridge reads `tools/call` frames to attach an
-// Ed25519 signature, because the signing key must stay client-side and
-// never reach the control plane.
+// dispatch (sign.go): the bridge recognizes only `run_action` and carries its
+// Ed25519 intent signature in a private HTTP header, because the signing key
+// must stay client-side and never reach the control plane.
 //
 // Configure your client to launch:
 //
@@ -64,23 +64,22 @@ const httpTimeout = 330 * time.Second
 
 const (
 	maxConcurrentRequests      = 8
-	maxInflightRequestBytes    = 16_000_000
+	maxInflightRequestBytes    = maxConcurrentRequests * maxFrameBytes
 	maxSessionRequestIDs       = 65_536
+	maxRequestIDBytes          = 4_096
 	cancellationForwardTimeout = 5 * time.Second
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
 	cancelTokenHeader          = "X-Emisar-MCP-Cancel-Token"
+	operationIDHeader          = "Emisar-Operation-Id"
 )
 
-// maxResponseBytes caps the portal response we'll buffer. The network is
-// untrusted and http.Client.Timeout bounds time, not bytes — without a cap a
-// hostile/MITM'd endpoint could stream gigabytes and OOM the bridge. Keep this
-// aligned with Plug's 8,000,000-byte request boundary.
-const maxResponseBytes = 8_000_000
+// maxResponseBytes caps one portal response at the MCP API's complete semantic
+// response budget plus encoding headroom. Timeouts bound time, not bytes.
+const maxResponseBytes = 512 << 10
 
-// maxFrameBytes caps a single inbound JSON-RPC line. An over-long frame is
-// rejected (the session kept alive), never allowed to kill the bridge. The
-// portal cannot accept a larger request body, so the bridge must not either.
-const maxFrameBytes = 8_000_000
+// maxFrameBytes matches the portal's MCP request-body boundary. The largest
+// fixed tool input is 56 KiB encoded, leaving deliberate envelope headroom.
+const maxFrameBytes = 128 << 10
 
 // Self-reported MCP client metadata: an operator-configured key/value map
 // (EMISAR_CLIENT_METADATA, a JSON object) the bridge validates once at startup
@@ -143,7 +142,7 @@ ENVIRONMENT
 
   EMISAR_SIGNING_KEY (optional)
     Ed25519 private key as a 64-hex seed. Set it with EMISAR_SIGNING_CERT to
-    sign tools/call requests for signature-enforcing runners. Create a pair
+    sign run_action intent for signature-enforcing runners. Create a pair
     with 'emisar signing new-cert' or 'emisar signing init'. Keep it secret
     and never put it on the control plane.
 
@@ -205,6 +204,13 @@ CLIENT SETUP
       --env EMISAR_CLIENT=codex \
       -- /usr/local/bin/emisar-mcp
 
+  Gemini
+    gemini mcp add --scope user --trust \
+      -e EMISAR_URL=https://emisar.dev \
+      -e EMISAR_API_KEY=emk-... \
+      -e EMISAR_CLIENT=gemini \
+      emisar /usr/local/bin/emisar-mcp
+
   Grok
     grok mcp add emisar \
       -e EMISAR_URL=https://emisar.dev \
@@ -265,7 +271,7 @@ func main() {
 	}
 
 	// Optional client-attested dispatch: when a signing key is configured, the
-	// bridge signs each tools/call so an enforcing runner will run it. The
+	// bridge signs only run_action intent so an enforcing runner will run it. The
 	// private key never leaves this process.
 	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_CERT"))
 	if err != nil {
@@ -294,6 +300,7 @@ func main() {
 
 	b := &bridge{
 		endpoint:        base + "/api/mcp/rpc",
+		portalOrigin:    base,
 		apiKey:          apiKey,
 		userAgent:       buildUserAgent(),
 		client:          newHTTPClient(),
@@ -312,18 +319,19 @@ func main() {
 }
 
 type bridge struct {
-	endpoint  string
-	apiKey    string
-	userAgent string
-	client    *http.Client
-	stateMu   sync.RWMutex
+	endpoint     string
+	portalOrigin string
+	apiKey       string
+	userAgent    string
+	client       *http.Client
+	stateMu      sync.RWMutex
 	// sessionID identifies this bridge process. It doubles as the MCP
 	// session id (sent as Mcp-Session-Id) and the namespace for
 	// idempotency keys, so a session's runs correlate and any downstream
 	// transport replay collapses to one run.
 	sessionID string
-	// signer, when set, attaches a client attestation to each tools/call so an
-	// enforcing runner will run it. Nil = signing disabled.
+	// signer, when set, creates the private action-attestation header for
+	// run_action. Nil = signing disabled.
 	signer *signer
 	// clientMetadata is the operator's self-reported client metadata as canonical
 	// JSON, validated once at startup and forwarded verbatim in every request's
@@ -380,7 +388,13 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			if request.cancelled {
 				continue
 			}
-			if err := writeForwardResult(w, request.meta, result.response, result.err); err != nil {
+			if err := writeForwardResult(
+				w,
+				request.meta,
+				request.operationID,
+				result.response,
+				result.err,
+			); err != nil {
 				cancelInflight(state.inflight)
 				return err
 			}
@@ -402,6 +416,7 @@ type frameRead struct {
 type inflightRequest struct {
 	meta                  requestMeta
 	idKey                 string
+	operationID           string
 	frameBytes            int
 	protocolVersion       string
 	cancel                context.CancelFunc
@@ -420,6 +435,7 @@ type requestHeaders struct {
 	protocolVersion string
 	requestToken    string
 	cancelToken     string
+	operationID     string
 }
 
 type serveState struct {
@@ -447,8 +463,11 @@ func (s *serveState) completeRequest(token string) *inflightRequest {
 func readFrames(r io.Reader, frames chan<- frameRead, done <-chan struct{}) {
 	reader := bufio.NewReaderSize(r, 64*1024)
 	for {
-		raw, oversize, err := readFrameLine(reader)
-		frame := frameRead{line: bytes.TrimSpace(raw), oversize: oversize, err: err}
+		line, oversize, err := readFrameLine(reader)
+		if onlyJSONWhitespace(line) {
+			line = nil
+		}
+		frame := frameRead{line: line, oversize: oversize, err: err}
 		select {
 		case frames <- frame:
 		case <-done:
@@ -474,12 +493,12 @@ func (b *bridge) handleFrame(
 	if len(frame.line) == 0 {
 		return nil
 	}
+	if err := validateStrictJSON(frame.line); err != nil {
+		return writeFrame(w, rpcErrorFrame(requestMeta{}, -32700, "parse error"))
+	}
 
 	meta := parseRequestMeta(frame.line)
 	if !meta.valid {
-		if !json.Valid(frame.line) {
-			return writeFrame(w, rpcErrorFrame(meta, -32700, "parse error"))
-		}
 		return writeFrame(w, rpcErrorFrame(meta, -32600, "invalid request"))
 	}
 	if meta.notification() && meta.method == "notifications/cancelled" {
@@ -513,9 +532,11 @@ func (b *bridge) handleFrame(
 	token := fmt.Sprintf("%s-%x", b.sessionID, state.sequence)
 	ctx, cancel := context.WithCancel(context.Background())
 	apiKey, protocolVersion := b.transportState()
+	operationID := b.mutationOperationID(frame.line, meta)
 	state.inflight[token] = &inflightRequest{
 		meta:            meta,
 		idKey:           idKey,
+		operationID:     operationID,
 		frameBytes:      len(frame.line),
 		protocolVersion: protocolVersion,
 		cancel:          cancel,
@@ -526,7 +547,9 @@ func (b *bridge) handleFrame(
 		state.seenIDs[idKey] = struct{}{}
 	}
 
-	headers := requestHeaders{apiKey: apiKey, protocolVersion: protocolVersion}
+	headers := requestHeaders{
+		apiKey: apiKey, protocolVersion: protocolVersion, operationID: operationID,
+	}
 	if idKey != "" {
 		headers.requestToken = token
 	}
@@ -571,23 +594,29 @@ func (b *bridge) handleCancellation(
 }
 
 func requestIDKey(meta requestMeta) string {
-	if !meta.valid || !meta.hasID {
+	canonical, ok := canonicalRequestID(meta)
+	if !ok {
 		return ""
 	}
-	if meta.idKind == 's' {
+	return digestRequestID(canonical)
+}
+
+func canonicalRequestID(meta requestMeta) (string, bool) {
+	if !meta.valid || !meta.hasID {
+		return "", false
+	}
+	switch meta.idKind {
+	case 's':
 		var id string
 		if json.Unmarshal(meta.id, &id) == nil {
-			return digestRequestID("s:" + id)
+			return "s:" + id, true
 		}
-		return ""
-	}
-	if meta.idKind == 'n' {
-		id, ok := new(big.Rat).SetString(string(meta.id))
-		if ok {
-			return digestRequestID("n:" + id.RatString())
+	case 'n':
+		if id, ok := new(big.Rat).SetString(string(meta.id)); ok {
+			return "n:" + id.RatString(), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func digestRequestID(canonical string) string {
@@ -596,24 +625,33 @@ func digestRequestID(canonical string) string {
 }
 
 func cancellationTargetKey(frame []byte) string {
-	var notification struct {
-		Params struct {
-			RequestID json.RawMessage `json:"requestId"`
-		} `json:"params"`
+	if validateStrictJSON(frame) != nil {
+		return ""
 	}
+	var notification map[string]json.RawMessage
 	if json.Unmarshal(frame, &notification) != nil {
 		return ""
 	}
-	id := bytes.TrimSpace(notification.Params.RequestID)
+	var params map[string]json.RawMessage
+	if json.Unmarshal(notification["params"], &params) != nil {
+		return ""
+	}
+	id := bytes.TrimSpace(params["requestId"])
 	return requestIDKey(requestMeta{id: id, idKind: jsonRPCIDKind(id), hasID: true, valid: true})
 }
 
-func writeForwardResult(w io.Writer, meta requestMeta, response []byte, err error) error {
+func writeForwardResult(
+	w io.Writer,
+	meta requestMeta,
+	operationID string,
+	response []byte,
+	err error,
+) error {
 	if err != nil {
 		if meta.notification() {
 			return nil
 		}
-		return writeFrame(w, rpcErrorFrame(meta, -32603, "upstream transport error"))
+		return writeFrame(w, transportErrorFrame(meta, operationID))
 	}
 	if len(response) == 0 {
 		return nil
@@ -668,10 +706,10 @@ func parseRequestMeta(frame []byte) requestMeta {
 
 func jsonRPCIDKind(id []byte) byte {
 	var value string
-	if len(id) >= 2 && id[0] == '"' && json.Unmarshal(id, &value) == nil {
+	if len(id) >= 2 && id[0] == '"' && json.Unmarshal(id, &value) == nil && len(value) <= maxRequestIDBytes {
 		return 's'
 	}
-	if validJSONInteger(id) {
+	if len(id) <= maxRequestIDBytes && validJSONInteger(id) {
 		return 'n'
 	}
 	return 0
@@ -713,20 +751,52 @@ func (m requestMeta) responseID() json.RawMessage {
 }
 
 func rpcErrorFrame(meta requestMeta, code int, message string) []byte {
+	return rpcErrorFrameWithData(meta, code, message, nil)
+}
+
+type operationRecoveryData struct {
+	OperationID string `json:"operation_id"`
+	Next        struct {
+		Tool      string `json:"tool"`
+		Arguments struct {
+			OperationID string `json:"operation_id"`
+		} `json:"arguments"`
+	} `json:"next"`
+}
+
+func transportErrorFrame(meta requestMeta, operationID string) []byte {
+	if operationID == "" {
+		return rpcErrorFrame(meta, -32603, "upstream transport error")
+	}
+
+	data := &operationRecoveryData{OperationID: operationID}
+	data.Next.Tool = "get_operation"
+	data.Next.Arguments.OperationID = operationID
+	return rpcErrorFrameWithData(meta, -32603, "upstream transport error", data)
+}
+
+func rpcErrorFrameWithData(
+	meta requestMeta,
+	code int,
+	message string,
+	data *operationRecoveryData,
+) []byte {
 	frame, err := json.Marshal(struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
 		Error   struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
+			Code    int                    `json:"code"`
+			Message string                 `json:"message"`
+			Data    *operationRecoveryData `json:"data,omitempty"`
 		} `json:"error"`
 	}{
 		JSONRPC: "2.0",
 		ID:      meta.responseID(),
 		Error: struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		}{Code: code, Message: message},
+			Code    int                    `json:"code"`
+			Message string                 `json:"message"`
+			Data    *operationRecoveryData `json:"data,omitempty"`
+		}{Code: code, Message: message, Data: data},
 	})
 	if err != nil {
 		panic("marshal fixed JSON-RPC error: " + err.Error())
@@ -753,14 +823,15 @@ func writeFrame(w io.Writer, frame []byte) error {
 // newline-free stream into one slice before any length check — a hostile or
 // malfunctioning client could OOM the bridge that way (the symmetric hole the
 // response cap closes on the HTTP side). Instead we read in buffer-sized chunks;
-// once a line crosses the cap we drop what we've accumulated and keep draining
+// once a body crosses the cap we drop what we've accumulated and keep draining
 // the rest of the (over-long) line to its terminating newline so the next frame
-// still aligns, returning oversize=true. Peak retained bytes stay ≤ maxFrameBytes.
+// still aligns, returning oversize=true. The line delimiter is not part of the
+// JSON body budget. Peak retained bytes stay at maxFrameBytes plus CRLF.
 func readFrameLine(br *bufio.Reader) (line []byte, oversize bool, err error) {
 	for {
 		chunk, e := br.ReadSlice('\n')
 		if !oversize {
-			if len(line)+len(chunk) > maxFrameBytes {
+			if len(line)+len(chunk) > maxFrameBytes+2 {
 				oversize = true
 				line = nil // reject the frame; release what we'd buffered
 			} else {
@@ -770,8 +841,37 @@ func readFrameLine(br *bufio.Reader) (line []byte, oversize bool, err error) {
 		if e == bufio.ErrBufferFull {
 			continue // line longer than br's buffer — keep draining it
 		}
+		if !oversize {
+			line = trimFrameDelimiter(line)
+			if len(line) > maxFrameBytes {
+				line = nil
+				oversize = true
+			}
+		}
 		return line, oversize, e
 	}
+}
+
+func trimFrameDelimiter(line []byte) []byte {
+	if len(line) == 0 || line[len(line)-1] != '\n' {
+		return line
+	}
+	line = line[:len(line)-1]
+	if len(line) > 0 && line[len(line)-1] == '\r' {
+		line = line[:len(line)-1]
+	}
+	return line
+}
+
+func onlyJSONWhitespace(line []byte) bool {
+	for _, value := range line {
+		switch value {
+		case ' ', '\t', '\r', '\n':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // forward POSTs one JSON-RPC frame to the portal. It exists as a small test and
@@ -797,10 +897,17 @@ func (b *bridge) forwardRequestContext(
 		return nil, fmt.Errorf("refresh credential state: %w", err)
 	}
 
-	// Sign a dispatch before it leaves the process (a no-op for non-tools/call
-	// frames, and when no key is configured).
+	operationID := headers.operationID
+	if operationID == "" {
+		operationID = b.mutationOperationID(frame, meta)
+	}
+	attestationValue := ""
 	if b.signer != nil {
-		frame = b.signer.signFrame(frame)
+		var signErr error
+		attestationValue, signErr = b.signer.signFrame(frame, operationID, b.portalOrigin)
+		if signErr != nil {
+			return nil, fmt.Errorf("attest run_action: %w", signErr)
+		}
 	}
 	rotationPrefix, rotationHash := b.rotationProposal(meta.method)
 
@@ -830,6 +937,12 @@ func (b *bridge) forwardRequestContext(
 	if rotationPrefix != "" {
 		req.Header.Set(rotationPrefixHeader, rotationPrefix)
 		req.Header.Set(rotationHashHeader, rotationHash)
+	}
+	if operationID != "" {
+		req.Header.Set(operationIDHeader, operationID)
+	}
+	if attestationValue != "" {
+		req.Header.Set(attestationHeader, attestationValue)
 	}
 
 	// MCP session id. One bridge process = one client session, so the
@@ -926,6 +1039,9 @@ func (b *bridge) setProtocolVersion(version string) {
 }
 
 func validateRPCResponse(meta requestMeta, status int, body []byte) error {
+	if err := validateStrictJSON(body); err != nil {
+		return errors.New("portal response is not strict JSON")
+	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
 		return errors.New("portal response is not a JSON-RPC object")
@@ -975,15 +1091,16 @@ func matchingJSONRPCID(want, got json.RawMessage) bool {
 }
 
 func validRPCError(raw json.RawMessage) bool {
-	var rpcError struct {
-		Code    json.RawMessage `json:"code"`
-		Message *string         `json:"message"`
+	var rpcError map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rpcError); err != nil || rpcError == nil {
+		return false
 	}
-	if err := json.Unmarshal(raw, &rpcError); err != nil || rpcError.Message == nil {
+	var message string
+	if err := json.Unmarshal(rpcError["message"], &message); err != nil {
 		return false
 	}
 	var code json.Number
-	decoder := json.NewDecoder(bytes.NewReader(rpcError.Code))
+	decoder := json.NewDecoder(bytes.NewReader(rpcError["code"]))
 	decoder.UseNumber()
 	if err := decoder.Decode(&code); err != nil {
 		return false
@@ -993,25 +1110,25 @@ func validRPCError(raw json.RawMessage) bool {
 }
 
 func responseProtocolVersion(body []byte) (version string, hasResult, valid bool) {
-	var response struct {
-		Result json.RawMessage `json:"result"`
-	}
-	if json.Unmarshal(body, &response) != nil {
+	var response map[string]json.RawMessage
+	if json.Unmarshal(body, &response) != nil || response == nil {
 		return "", false, false
 	}
-	if len(response.Result) == 0 {
+	resultRaw, hasResult := response["result"]
+	if !hasResult {
 		return "", false, true
 	}
-	var result struct {
-		ProtocolVersion string `json:"protocolVersion"`
-	}
-	if json.Unmarshal(response.Result, &result) != nil || result.ProtocolVersion == "" {
+	var result map[string]json.RawMessage
+	if json.Unmarshal(resultRaw, &result) != nil || result == nil {
 		return "", true, false
 	}
-	if parsed, err := time.Parse("2006-01-02", result.ProtocolVersion); err != nil || parsed.Format("2006-01-02") != result.ProtocolVersion {
+	if err := json.Unmarshal(result["protocolVersion"], &version); err != nil || version == "" {
 		return "", true, false
 	}
-	return result.ProtocolVersion, true, true
+	if parsed, err := time.Parse("2006-01-02", version); err != nil || parsed.Format("2006-01-02") != version {
+		return "", true, false
+	}
+	return version, true, true
 }
 
 // readCappedBody reads at most limit bytes from r, returning an error if the
@@ -1041,7 +1158,7 @@ func (b *bridge) idempotencyKey(frame []byte) string {
 }
 
 func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
-	if !meta.valid || !meta.hasID || meta.idKind == '0' {
+	if !meta.valid || !meta.hasID || meta.idKind == 0 {
 		return ""
 	}
 	hash := sha256.New()
@@ -1049,6 +1166,55 @@ func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
 	_, _ = hash.Write([]byte{0, meta.idKind, 0})
 	_, _ = hash.Write(meta.id)
 	return "mcp-" + hex.EncodeToString(hash.Sum(nil))
+}
+
+// operationIDFor derives the private operation identity from this bridge
+// session and the typed JSON-RPC request id. It is distinct from JSON-RPC
+// correlation and from Idempotency-Key, but stable across transport retries of
+// one request. Notifications intentionally have no operation identity.
+func (b *bridge) operationIDFor(meta requestMeta) string {
+	requestIdentity, ok := canonicalRequestID(meta)
+	if !ok {
+		return ""
+	}
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("emisar-mcp-operation-v1"))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write([]byte(b.sessionID))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write([]byte(requestIdentity))
+	var operationBytes [16]byte
+	copy(operationBytes[:], digest.Sum(nil))
+	return "op_" + encodeCrockford128(operationBytes)
+}
+
+func (b *bridge) mutationOperationID(frame []byte, meta requestMeta) string {
+	if !meta.valid || meta.notification() || meta.method != "tools/call" {
+		return ""
+	}
+	parsed, err := parseProtocolJSON(frame)
+	if err != nil {
+		return ""
+	}
+	switch parsed.ToolName {
+	case "run_action", "execute_runbook", "create_runbook_draft":
+		return b.operationIDFor(meta)
+	default:
+		return ""
+	}
+}
+
+func encodeCrockford128(value [16]byte) string {
+	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	n := new(big.Int).SetBytes(value[:])
+	encoded := make([]byte, 26)
+	mask := big.NewInt(31)
+	digit := new(big.Int)
+	for i := len(encoded) - 1; i >= 0; i-- {
+		encoded[i] = alphabet[digit.And(n, mask).Int64()]
+		n.Rsh(n, 5)
+	}
+	return string(encoded)
 }
 
 // parseClientMetadata validates the operator's EMISAR_CLIENT_METADATA (a JSON
@@ -1141,7 +1307,7 @@ func buildUserAgent() string {
 	return fmt.Sprintf("%s/%s (client=%s; host=%s; os=%s)", bridgeName, Version, client, host, runtime.GOOS)
 }
 
-// newSessionID returns an 8-byte hex nonce identifying this bridge
+// newSessionID returns a 16-byte hex nonce identifying this bridge
 // process. It serves as the MCP session id (Mcp-Session-Id) and
 // namespaces idempotency keys: two unrelated bridge processes never
 // alias each other's request ids, and the same process's resend of a
@@ -1150,7 +1316,7 @@ func buildUserAgent() string {
 // that can't mint a unique session id can't namespace idempotency or
 // correlate audit, so main() aborts instead.
 func newSessionID(r io.Reader) (string, error) {
-	var b [8]byte
+	var b [16]byte
 	if _, err := io.ReadFull(r, b[:]); err != nil {
 		return "", fmt.Errorf("session id: %w", err)
 	}

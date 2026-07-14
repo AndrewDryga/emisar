@@ -2,8 +2,8 @@
 
 A runner can be told to **refuse the control plane's authority**: with signing
 enforced, it executes an action only if the dispatch carries a valid Ed25519
-signature a real person produced in their own MCP client — and that signature is
-vouched for by a **certificate** issued by a trusted, offline certificate
+signature produced by an authorized MCP client — and that signature is vouched
+for by a **certificate** issued by a trusted, offline certificate
 authority. The control plane **relays** the signature and the certificate; it
 holds no private key, so it cannot forge or alter one, widen its signed runner
 set, or replay it on a selected runner. It cannot originate a run at all. The
@@ -32,35 +32,43 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 ## When to use it
 
-- A high-trust host where "a real human asked for this, in their LLM client"
-  must be cryptographically true — not just policy-checked.
+- A high-trust host where "this came from a customer-authorized MCP client"
+  must be cryptographically true, not merely asserted by the control plane.
 - **Not** for runners you drive from the portal Run button or from runbooks:
   those stop working against an enforcing runner (by design).
 
 ## How it works
 
-1. The MCP client signs a canonical v3 JSON message — the action id, exact JSON
-   arguments, the sorted set of durable runner ids selected from the tool schema,
-   a one-time nonce, and a timestamp — with an Ed25519 **leaf** private key that
-   never leaves the operator's machine. Integers are canonicalized without a
-   `float64` conversion, including values above `2^53`. Fixed JSON fields make
-   the signed preimage unambiguous even when a string contains control characters.
+1. The MCP bridge signs a fixed v4 JSON claim for `run_action`: canonical portal
+   origin, exact action ID and immutable `pack_ref`, SHA-256 of the exact JSON
+   argument bytes, SHA-256 of the complete sorted generation-bound runner refs,
+   exact reason, bridge operation ID, one-time nonce, and timestamp. The
+   Ed25519 **leaf** private key never leaves the operator's machine. The bridge
+   never decodes and re-encodes the action arguments, so values above `2^53`,
+   exponent spellings, object order, and escapes remain exactly what was signed.
 2. The portal bounds and stores the known envelope fields, resolves the selected
-   ids, requires that exact set to match the signed targets, and relays the facts.
-   It can't change the action, args, or target set without invalidating the
-   signature, can't alter the CA-signed certificate, and has no key to mint either.
+   refs, requires that exact set and all preflight operation facts to match the
+   signed claim, and relays the claim with the exact argument bytes. It cannot
+   change the action, pack, args, reason, operation, origin, or target set without
+   invalidating the signature, cannot alter the CA-signed certificate, and has
+   no key to mint either.
 3. The runner verifies, in order: the certificate is signed by a CA it trusts →
    the certificate is inside its validity window → this runner's durable local id
-   is in the signed target set → the certificate's **scope** matches this runner's
-   own group/labels → the attestation is inside the
-   freshness window → the attestation signature verifies under the **leaf key the
-   certificate vouches for** → the nonce hasn't been seen. Only then does it run.
+   generation suffix occurs exactly once in the signed target set → the signed
+   portal origin, action, immutable pack bytes, exact arguments, reason, and
+   operation match the delivered dispatch → the certificate's **scope** matches
+   this runner's own group/labels → the attestation is inside the freshness
+   window → the attestation signature verifies under the **leaf key the
+   certificate vouches for** → the nonce has not been seen. Only then does it run.
    Anything else is refused.
 
-The v3 signature binds the **exact runner set** by each runner's durable external
-id. A compromised relay cannot add a runner after the operator signs. The
-certificate's scope is an independent, coarser ceiling asserted by the offline CA
-and matched against each runner's local `group`/`labels`. A scoped certificate
+The v4 signature binds the **exact runner set** with refs shaped as
+`name~first32hex(sha256(external_id))`. The runner independently verifies the
+generation suffix against its local external ID; the name remains portal-owned
+display context. A compromised relay cannot add another runner generation after
+the client signs. The certificate's scope is an independent, coarser ceiling
+asserted by the offline CA and matched against each runner's local
+`group`/`labels`. A scoped certificate
 (`group=prod`) still cannot run outside that scope; an empty-scope certificate
 means the signed target set may contain any runner that trusts the CA.
 
@@ -142,8 +150,9 @@ the CA **private** key to store offline, and the two MCP env vars.
 - empty (the default if `--scope` is omitted) — valid on any runner that trusts
   the CA.
 
-The runner first requires its durable id in the per-call signed target set, then
-matches certificate scope against its **own** configured group/labels. Scope is
+The runner first requires exactly one ref with its generation suffix in the
+per-call signed target set, then matches certificate scope against its **own**
+configured group/labels. Scope is
 defense in depth and a useful blast-radius ceiling; it no longer substitutes for
 binding the operator's exact selection.
 
@@ -175,10 +184,11 @@ Be clear-eyed about what this does and doesn't guarantee:
 - **Integrity, not availability.** A compromised control plane can still
   *withhold* or refuse to relay a signed dispatch. Signing stops it from
   *forging* one; it does not force it to deliver yours.
-- **Discovery labels come from the portal.** The signature binds durable ids, not
-  the human-readable names shown beside them. A compromised portal can lie while
-  presenting an id/name mapping before the call is signed. Use narrow certificate
-  scopes, and verify stable ids out of band for the highest-trust workflows.
+- **Discovery names come from the portal.** The signature binds generation
+  suffixes derived from durable runner IDs; it does not make the display-name
+  prefix truthful. A compromised portal can lie while presenting that mapping
+  before the call is signed. Use narrow certificate scopes and verify suffixes
+  out of band for the highest-trust workflows.
 - **Replay journal durability.** Enforcement requires `paths.data_dir`. The
   runner appends and fsyncs each accepted nonce under that directory before it
   admits the dispatch; every hot-reloaded verifier shares the same live store.
@@ -216,8 +226,11 @@ cause. The runner's refusal codes:
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP client isn't configured to sign). | Run it from an MCP client with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
-| `attestation_version` | The envelope is not the supported `emisar-attestation-v3` format. | Upgrade the MCP bridge and submit a fresh call. |
-| `target_mismatch` | This runner's durable local id is not in the signed target set. | Refresh the tool list and submit a fresh call for the intended runner id. |
+| `attestation_version` | The envelope is not the supported `emisar-attestation-v4` format. | Upgrade the MCP bridge and submit a fresh call. |
+| `attestation_tool` | The signed claim is not for the literal `run_action` tool. | Upgrade or repair the MCP bridge; do not retry the altered claim. |
+| `portal_mismatch` | The signed portal origin differs from the runner's configured control-plane origin. | Point the client and runner at the same canonical control-plane origin and submit a fresh call. |
+| `intent_mismatch` | The action, pack, exact args, reason, or operation differs from the signed intent. | Refresh the action and runner refs, then submit a fresh call; do not reuse the altered envelope. |
+| `target_mismatch` | This runner generation is absent or appears more than once in the signed runner-ref set. | Refresh discovery and submit a fresh call with the exact returned runner refs. |
 | `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
 | `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
 | `cert_scope` | The certificate's scope (group/labels) isn't satisfied by this runner's local `group`/`labels`. | Issue the certificate with a scope matching this runner (or an empty scope), or dispatch to a runner in scope. |

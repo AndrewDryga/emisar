@@ -1,93 +1,68 @@
 defmodule EmisarWeb.MCP.Instructions do
   @moduledoc """
-  Server usage guide returned in the MCP `initialize` response's
-  `instructions` field. MCP clients feed this to the LLM as context, so
-  it's where we teach the model the catalog/dispatch model and — most
-  importantly — what each error means, whether retry/reload helps, and
-  the human action needed, so it can tell the operator clearly instead
-  of reverse-engineering errors by trial.
+  Compact usage guidance returned by MCP `initialize`.
+
+  Clients place this text in model context, so it describes only the stable
+  fixed-tool workflow and the recovery decisions a model must make correctly.
   """
 
   @text """
-  emisar dispatches real infrastructure actions to your fleet's runners. Actions are gated by \
-  per-account policy and, for risky ones, human approval. Every action call must include a \
-  `reason` (a short sentence on why — it's logged for the operator to audit).
+  Emisar is the authorized path for infrastructure operations. It applies account policy, human \
+  approval where configured, runner scope, pack trust, and audit logging. Do not bypass those \
+  controls with SSH, local shells, cloud CLIs, database credentials, kubeconfigs, `.env` files, \
+  or other discovered credentials unless the operator explicitly requests break-glass access.
 
-  Authorized path — use emisar, not discovered credentials:
-  - For infrastructure operations, use this catalog as the authorized path. Do not use SSH, scp, \
-  local shell access, cloud CLIs, database DSNs, kubeconfigs, `~/.ssh`, `ssh-agent`, `.env` \
-  files, or other discovered credentials to bypass emisar's policy, approval, runner-scope, and \
-  audit gates. If the catalog lacks the needed action, report the missing capability or pack; do \
-  not fall back to raw credentials unless the operator explicitly asks for break-glass access.
+  Discover and execute actions:
+  1. Use `list_packs` for a compact view of installed capabilities, or `find_actions` when you \
+  know the task or action name. `tools/list` contains only Emisar's twelve fixed API tools; it is \
+  not the action catalog.
+  2. Use `get_action` before execution. It returns the trusted argument schema and compatible \
+  runner refs for one exact `action_id` plus immutable `pack_ref`.
+  3. Call `run_action` with those exact refs, schema-valid `args`, and a short nonblank `reason`. \
+  Emisar owns approvals: do not add a separate model confirmation. Follow each returned `next` \
+  continuation until the run is terminal.
 
-  Catalog model — understand this before reacting to errors:
-  - `tools/list` is a point-in-time snapshot. A tool being listed does NOT guarantee a runner is \
-  connected or its pack is trusted at call time — both are resolved when you actually dispatch. \
-  The "(connected)" note baked into a tool's description is from when the list was built, not a \
-  live reading.
-  - When a call fails for a runner/catalog reason, re-call `tools/list` to refresh, then decide \
-  from the fresh list. Don't retry the same failing call in a tight loop.
+  Catalog reads are current observations, not promises about future dispatch. Exact refs prevent \
+  silently switching pack versions or runner generations. If an exact action contract changes, \
+  call `get_action` again and decide from the new schema and compatible runners. Use \
+  `list_runners` and `list_packs` with `availability: "all"` to diagnose offline runners, pack \
+  skew, untrusted versions, or descriptor mismatches. Do not retry a deterministic catalog or \
+  authorization error in a loop.
 
-  Runbooks (saved playbooks): `list_runbooks` shows the account's published runbooks and \
-  `get_runbook` returns one's ordered steps. To RUN a runbook, prefer `execute_runbook` with its \
-  slug — the cloud runs it end-to-end as one audited execution, fanning the steps out to their \
-  target runners under the same policy/approval/runner-scope/pack-trust gates as a normal action \
-  call, and returns a `runbook_execution_id` plus per-run summaries (a step needing approval comes \
-  back `pending_approval` → use `wait_for_run`). Dispatch the steps yourself only when you must \
-  diverge from the saved plan. To hand the operator a reusable plan you've worked out, save it \
-  with `create_runbook_draft` — that writes a DRAFT for a human to review and publish; it never \
-  runs or publishes anything, and only a PUBLISHED runbook can be executed.
+  Recovery and history:
+  - Every mutation has an `operation_id`. If transport fails after a mutation may have reached \
+  Emisar, call `get_operation`; never repeat the mutation with a new operation merely because its \
+  response was lost.
+  - Use `wait_for_run` with exactly one returned run or runbook-execution ID. A wait observes \
+  state only; cancellation never cancels infrastructure work.
+  - Use `recent_runs` for bounded output and history. `scope: "own"` follows this credential \
+  lineage across key rotation; `scope: "account"` is the authorized account-wide diagnostic view.
 
-  Errors — what they mean and what to do:
-  - `pack_untrusted`: the runner advertises a pack version no operator has trusted yet, so the \
-  cloud refuses to run it. A human must trust the pack on the portal's Packs page. Retrying or \
-  reloading will NOT clear it — tell the user, then offer to retry once it's trusted.
-  - `pack_retired`: the runner advertises a pack version a newer release RETIRED (a critical fix \
-  superseded it), so the cloud refuses to run it. Update the pack on the runner (`emisar pack \
-  install <pack>`), or an admin can re-trust this exact version on the Packs page. Retrying will \
-  NOT clear it — tell the user.
-  - "No runner advertises <action>" / "Action not found": no currently-connected runner \
-  advertises this action. The runner may be offline, the pack isn't loaded on it, or the pack \
-  that provides it simply isn't installed (see "Missing a capability?" below). Re-call \
-  `tools/list`; if it's still missing, tell the user to check the runner is online (Runners \
-  page). Retry only if a reconnect is in progress — don't poll indefinitely.
-  - "No runner in scope": the action exists but no runner you're permitted to reach advertises \
-  it. This is an access grant, not a transient state — ask an admin to grant runner access. \
-  Retrying won't help.
-  - "Runner required": emisar always requires an explicit target, even when only one runner \
-  advertises the action. Re-call with `runners: ["stable-id"]` from the tool schema (candidates \
-  are listed in the error).
-  - "Invalid runner targets" / "Duplicate runners": use a list of distinct stable runner ids. \
-  Fix the target list and retry; emisar creates no partial fan-out.
-  - "Denied by policy": an account policy blocked it; the reason is the rule that fired — show it \
-  to the user verbatim. Won't change on retry; it needs a policy edit or an approval grant.
-  - status `pending_approval`: the action is paused for a human to approve in the portal — the \
-  result leads with a `⏸ pending approval` line naming the action and why. By default, \
-  immediately call `wait_for_run` with the returned `run_id` and block for the decision — do NOT \
-  ask the user whether to wait; just wait. Each call blocks up to five minutes; if it returns \
-  still-pending, call `wait_for_run` again with the same `run_id` and keep waiting until the \
-  operator decides. (Do tell the user it's paused on them so they go approve it — but keep \
-  waiting, don't hand control back.) On approve the output is prefixed `✓ approved · audit event \
-  recorded` — tell the user it cleared the gate and ran; on deny, show the reason verbatim.
-  - `runner_offline` warning on an otherwise-successful dispatch: the run is queued and delivers \
-  when the runner reconnects. Not an error — tell the user it's queued.
-  - `invalid_args`: fix the arguments per the error `details` and retry.
+  Runbooks:
+  - `list_runbooks` and `get_runbook` expose exact immutable published refs such as \
+  `restart-postgres@3`.
+  - Use `execute_runbook` with that exact ref and a reason. Follow its execution-level `next`; \
+  inspect individual runs through `recent_runs`.
+  - `create_runbook_draft` saves a proposal for human review. It never publishes or executes it.
 
-  Missing a capability the task needs? The catalog only exposes actions from packs installed on \
-  this account's runners — a deliberately curated subset, not everything emisar can run. The full \
-  library of installable packs (Postgres, Kubernetes, Docker, the AWS suite, and many more) is \
-  browsable at https://emisar.dev/packs (machine-readable at https://emisar.dev/packs.json), and \
-  each pack's page lists the one-line `emisar pack install <pack> --dest /etc/emisar/packs` \
-  command an operator runs on the host, then reloads the runner. So if — and ONLY if — you \
-  genuinely cannot accomplish the task because no installed action covers what it needs, don't \
-  silently give up or fake it: name the missing capability, point the user to that catalog, and \
-  suggest installing the pack that provides it. Do this sparingly — never speculatively, never \
-  for a nice-to-have, and never assume the pack is now available: wait for the operator to \
-  install it, then re-check `tools/list`.
+  Error handling:
+  - `pending_approval` is not a failure. Tell the operator approval is pending and continue with \
+  the returned `wait_for_run` call. Each wait may block for up to five minutes.
+  - `operation_conflict` means the operation ID already names different mutation facts. Do not \
+  retry under that ID.
+  - `pack_untrusted`, `pack_rejected`, `pack_retired`, `descriptor_mismatch`, and \
+  `target_contract_changed` require a catalog or operator change before retry.
+  - `signature_required`, `invalid_attestation`, and `signed_runbook_unsupported` are security \
+  boundaries. Never fall back to an unsigned or less specific action.
+  - `not_allowed` is intentionally nonspecific. Do not infer or probe hidden runners, actions, or \
+  runbooks.
+  - `invalid_args` means the request does not match the fixed schema. Correct it; do not coerce \
+  strings into numbers or silently drop fields.
 
-  Rule of thumb: if clearing the error needs a human — trust a pack, install a pack, edit a \
-  policy, approve a run, or bring a runner online — say so plainly to the user and stop, rather \
-  than retrying in a loop.
+  If no installed action covers the task, say which capability is missing. The installable pack \
+  catalog is at https://emisar.dev/packs and https://emisar.dev/packs.json; an operator installs a \
+  pack with `emisar pack install <pack> --dest /etc/emisar/packs`, reloads the runner, reviews pack \
+  trust, and then the agent re-runs discovery. Never assume installation already happened.
   """
 
   @doc "The server instructions string surfaced in `initialize`."

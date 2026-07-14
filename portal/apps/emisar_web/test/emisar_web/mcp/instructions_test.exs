@@ -1,112 +1,88 @@
 defmodule EmisarWeb.MCP.InstructionsTest do
-  @moduledoc """
-  Unit coverage for the `initialize` server-instructions string. MCP
-  clients feed this verbatim to the LLM, so it's the contract that teaches
-  the model the catalog/dispatch model and — critically — what each error
-  means and whether a human (not a retry) is required. These assertions
-  pin the load-bearing guidance the LLM kept reverse-engineering in the
-  wild; dropping any of it is a regression.
-  """
   use ExUnit.Case, async: true
   alias EmisarWeb.MCP.Instructions
 
   @text Instructions.text()
 
-  test "is a non-empty multi-paragraph guide" do
-    assert is_binary(@text)
-    assert String.length(@text) > 500
-    # More than one paragraph — the guide is structured, not a one-liner.
-    assert @text |> String.split("\n\n") |> length() > 3
-  end
-
-  test "states that every action call must include a reason" do
-    assert @text =~ "Every action call must include a"
-    assert @text =~ "`reason`"
-  end
-
-  test "states that infrastructure operations use emisar instead of raw credentials" do
+  test "teaches the fixed discovery and exact execution workflow" do
     for fragment <- [
-          "Authorized path",
-          "use this catalog as the authorized path",
-          "Do not use SSH",
-          "scp",
+          "twelve fixed API tools",
+          "`list_packs`",
+          "`find_actions`",
+          "`get_action`",
+          "`run_action`",
+          "immutable `pack_ref`",
+          "compatible runner refs",
+          "nonblank `reason`"
+        ] do
+      assert @text =~ fragment, "missing fixed workflow guidance: #{fragment}"
+    end
+  end
+
+  test "keeps Emisar authoritative instead of teaching credential bypasses" do
+    for fragment <- [
+          "authorized path",
+          "Do not bypass",
+          "SSH",
           "cloud CLIs",
-          "database DSNs",
+          "database credentials",
           "kubeconfigs",
-          "`~/.ssh`",
-          "`ssh-agent`",
-          "`.env`",
-          "do not fall back to raw credentials",
           "break-glass access"
         ] do
-      assert @text =~ fragment,
-             "instructions are missing the raw-credential bypass guidance: #{fragment}"
+      assert @text =~ fragment, "missing authorization guidance: #{fragment}"
     end
   end
 
-  test "states the tools/list point-in-time snapshot caveat + re-list on error" do
-    assert @text =~ "point-in-time snapshot"
-    # The recovery move when a runner/catalog error fires is to re-list.
-    assert @text =~ "re-call `tools/list`"
+  test "teaches typed recovery, lineage history, waits, and cancellation semantics" do
+    for fragment <- [
+          "`operation_id`",
+          "`get_operation`",
+          "never repeat the mutation",
+          "`wait_for_run`",
+          "cancellation never cancels infrastructure work",
+          "`recent_runs`",
+          "credential lineage",
+          "`scope: \"account\"`"
+        ] do
+      assert @text =~ fragment, "missing recovery guidance: #{fragment}"
+    end
   end
 
-  test "carries a per-error human-action guide over the whole error taxonomy" do
-    # Each named error the LLM can hit must have its what-it-means + what-to-do
-    # line, so the model tells the operator instead of guessing/looping.
+  test "teaches exact runbook refs and the draft boundary" do
     for fragment <- [
-          "pack_untrusted",
-          "No runner advertises",
-          "Action not found",
-          "No runner in scope",
-          "Runner required",
-          "Invalid runner targets",
-          "Duplicate runners",
-          "Denied by policy",
+          "`list_runbooks`",
+          "`get_runbook`",
+          "restart-postgres@3",
+          "`execute_runbook`",
+          "`create_runbook_draft`",
+          "never publishes or executes"
+        ] do
+      assert @text =~ fragment, "missing runbook guidance: #{fragment}"
+    end
+  end
+
+  test "pins the security and retry taxonomy" do
+    for fragment <- [
           "pending_approval",
-          "runner_offline",
+          "five minutes",
+          "operation_conflict",
+          "pack_untrusted",
+          "descriptor_mismatch",
+          "target_contract_changed",
+          "signature_required",
+          "invalid_attestation",
+          "signed_runbook_unsupported",
+          "not_allowed",
           "invalid_args"
         ] do
-      assert @text =~ fragment, "instructions are missing the `#{fragment}` error guidance"
+      assert @text =~ fragment, "missing error guidance: #{fragment}"
     end
   end
 
-  test "points at the public pack registry (browsable + .json) and the install command" do
+  test "points at the public pack registry and concrete install command" do
     assert @text =~ "https://emisar.dev/packs"
-    # The machine-readable registry hint the LLM can fetch.
     assert @text =~ "https://emisar.dev/packs.json"
     assert @text =~ "emisar pack install"
-  end
-
-  test "every error name in the instructions maps to a real renderer atom (no drift)" do
-    # An instruction naming an error the renderers don't actually emit would
-    # teach the LLM to recover from a code it never sees. Pin the machine-shaped
-    # error/warning identifiers (the `snake_case` ones an LLM matches on) to the
-    # Service/ContentBlocks renderers that produce them.
-    renderer_source =
-      File.read!("lib/emisar_web/controllers/mcp/service.ex") <>
-        File.read!("lib/emisar_web/controllers/mcp/content_blocks.ex")
-
-    for error_name <- ["pack_untrusted", "runner_offline", "invalid_args", "pending_approval"] do
-      assert @text =~ error_name
-
-      assert renderer_source =~ error_name,
-             "instructions name `#{error_name}` but no renderer emits it"
-    end
-  end
-
-  test "the pending-approval copy states the five-minute long-poll cap" do
-    assert @text =~ "five minutes"
-    assert @text =~ "wait_for_run` again"
-  end
-
-  test "states the rule of thumb: if a human is needed, say so and stop" do
-    assert @text =~ "Rule of thumb"
-    assert @text =~ "say so"
-    assert @text =~ "retrying in a loop"
-  end
-
-  test "requires an explicit target even when only one runner advertises the action" do
-    assert @text =~ "always requires an explicit target"
-    assert @text =~ "even when only one runner"
+    assert @text =~ "Never assume installation already happened"
   end
 end

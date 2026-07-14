@@ -47,6 +47,7 @@ defmodule EmisarWeb.MixProject do
       # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
       # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
+      {:json_xema, "~> 0.6.5", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.7"},
       {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.4.1", runtime: Mix.env() == :dev},

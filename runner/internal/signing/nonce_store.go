@@ -67,6 +67,7 @@ type NonceStore struct {
 	mu sync.Mutex
 
 	path      string
+	lock      *nonceJournalLock
 	retention time.Duration
 	seen      map[string]time.Time
 	expiry    expiryQueue
@@ -104,12 +105,24 @@ func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 	if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("signing: create nonce-journal dir: %w", err)
 	}
+	journalLock, err := acquireNonceJournalLock(path + ".lock")
+	if err != nil {
+		return nil, fmt.Errorf("signing: lock nonce journal %q: %w", path, err)
+	}
+	store.lock = journalLock
+	opened := false
+	defer func() {
+		if !opened {
+			_ = journalLock.Close()
+		}
+	}()
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		if err := store.rewriteLocked(); err != nil {
 			return nil, err
 		}
+		opened = true
 		return store, nil
 	}
 	if err != nil {
@@ -140,6 +153,7 @@ func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 			return nil, err
 		}
 	}
+	opened = true
 	return store, nil
 }
 
@@ -156,6 +170,23 @@ func NewMemoryNonceStore() *NonceStore {
 
 // Durable reports whether accepted nonces are crash-durably journaled.
 func (s *NonceStore) Durable() bool { return s != nil && s.path != "" }
+
+// Close releases the process-lifetime journal lock. The connect command owns
+// the store and closes it only after every verifier and dispatch goroutine has
+// stopped. Memory-only test stores have no lock and Close is a no-op.
+func (s *NonceStore) Close() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lock == nil {
+		return nil
+	}
+	err := s.lock.Close()
+	s.lock = nil
+	return err
+}
 
 // bindRetention binds a process-local store on its first enforcing verifier and
 // rejects any later widening. A durable store is already bound by its header.

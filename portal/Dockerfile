@@ -73,6 +73,11 @@ COPY install-mcp.sh /install-mcp.sh
 # pack edits don't bust deps.compile.
 COPY packs /packs
 
+# The fixed MCP descriptor registry is also a compile-time input. Its source
+# path resolves to /docs so release builds use the same normative file as local
+# portal and bridge builds.
+COPY docs/mcp-api-schemas.json /docs/mcp-api-schemas.json
+
 # Install deps first so docker layer-caches them.
 # VERSION is the product-version single source read by every mix.exs, so it must
 # be present before `mix deps.get` evaluates the project files.

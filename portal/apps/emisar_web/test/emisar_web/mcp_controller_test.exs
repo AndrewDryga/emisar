@@ -1237,7 +1237,7 @@ defmodule EmisarWeb.MCPControllerTest do
       refute Map.has_key?(run.args, "wait")
     end
 
-    test "relays a valid attestation as a control envelope, not an action arg", %{
+    test "rejects the obsolete inline attestation contract without creating a run", %{
       conn: conn,
       account: account,
       user: user,
@@ -1247,7 +1247,7 @@ defmodule EmisarWeb.MCPControllerTest do
 
       attestation = attestation_for(runner)
 
-      body =
+      response =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> post(~p"/api/mcp/tools/linux.touch", %{
@@ -1257,19 +1257,10 @@ defmodule EmisarWeb.MCPControllerTest do
           "path" => "/tmp/marker",
           "attestation" => attestation
         })
-        |> json_response(202)
 
-      [entry] = body["runs"]
-
-      {:ok, run} =
-        Emisar.Runs.fetch_run_by_id(
-          run_id_of(entry),
-          Fixtures.Subjects.subject_for(user, account, role: :owner)
-        )
-
-      assert run.attestation == attestation
-      refute Map.has_key?(run.args, "attestation")
-      assert run.args["path"] == "/tmp/marker"
+      assert json_response(response, 400)["error"] == "invalid_attestation"
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      assert {:ok, [], _metadata} = Emisar.Runs.list_runs(subject)
     end
 
     test "an exact stable id wins over another runner's colliding display name", %{
@@ -1291,8 +1282,7 @@ defmodule EmisarWeb.MCPControllerTest do
           "runners" => [target_id],
           "reason" => "verify stable target precedence",
           "wait" => "0",
-          "path" => "/tmp/marker",
-          "attestation" => attestation_for(target)
+          "path" => "/tmp/marker"
         })
         |> json_response(202)
 

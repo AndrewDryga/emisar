@@ -1,10 +1,9 @@
 // Package attest defines the canonical encoding of a dispatch attestation —
-// the exact bytes the MCP client signs and the runner verifies. The MCP holds
-// the Ed25519 private key; the runner holds the trusted public key in its local
-// config. The control plane only RELAYS the attestation: it can neither forge a
-// signature (no private key) nor alter the signed facts (action_id, args,
-// target runner ids, nonce, issued_at) without the runner's verification
-// failing.
+// the exact bytes the MCP client signs and the runner verifies. The MCP holds a
+// certified Ed25519 leaf key; the runner trusts the customer's CA public key in
+// local config. The control plane only RELAYS the attestation: it can neither
+// forge a signature nor alter its action, pack, exact args, public runner refs,
+// reason, operation, origin, nonce, or time without verification failing.
 //
 // This package is duplicated VERBATIM in the runner and mcp modules — they are
 // separate Go modules with no shared dependency, so coupling them through an
@@ -14,83 +13,111 @@
 package attest
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
-	"math/big"
 	"sort"
-	"strconv"
-	"strings"
 )
 
 // Version is the canonical-encoding revision, bound into every signature so a
 // future format change can never be confused with this one.
-const Version = "emisar-attestation-v3"
+const Version = "emisar-attestation-v4"
+
+// Tool is fixed into every claim so a signature authorizing infrastructure
+// execution cannot be replayed as authorization for another mutation type.
+const Tool = "run_action"
+
+// Wire bounds are shared so the bridge and runner accept the same target-set
+// representation without duplicating transport-facing limits.
+const (
+	MaxRunnerRefs     = 16
+	MaxRunnerRefBytes = 113
+)
 
 // Claim is the set of dispatch facts an attestation binds. A signature over
-// these proves a real user authorized THIS action with THESE args for THESE
-// runner identities at THIS time. Targets are durable runner external ids, not
-// portal-owned display names.
+// these proves a real user authorized THIS action from THIS portal with THESE
+// exact args for THESE runner references at THIS time.
 type Claim struct {
-	ActionID string
-	Args     map[string]any
-	Targets  []string
-	Nonce    string
-	IssuedAt string // RFC3339 UTC, e.g. "2026-06-17T12:00:00Z"
+	ActionID     string
+	PackRef      string
+	ArgsRaw      json.RawMessage
+	RunnerRefs   []string
+	Reason       string
+	OperationID  string
+	PortalOrigin string
+	Nonce        string
+	IssuedAt     string // RFC3339 UTC, e.g. "2026-06-17T12:00:00Z"
+}
+
+// Envelope is the relayed wire representation of a signed claim. The bridge
+// emits it and the runner consumes it without either component redefining the
+// field names or accidentally dropping a signed fact. ArgsSHA256 is redundant
+// with the signature by design: it lets the runner compare the delivered exact
+// argument bytes before doing public-key work.
+type Envelope struct {
+	Version      string   `json:"version"`
+	Tool         string   `json:"tool"`
+	PortalOrigin string   `json:"portal_origin"`
+	ActionID     string   `json:"action_id"`
+	PackRef      string   `json:"pack_ref"`
+	ArgsSHA256   string   `json:"args_sha256"`
+	RunnerRefs   []string `json:"runner_refs"`
+	Reason       string   `json:"reason"`
+	OperationID  string   `json:"operation_id"`
+	Signature    string   `json:"sig"`
+	Nonce        string   `json:"nonce"`
+	IssuedAt     string   `json:"issued_at"`
+	Cert         *Cert    `json:"cert,omitempty"`
 }
 
 // SigningBytes is the exact byte string that is signed and verified. A fixed
-// JSON struct makes field boundaries unambiguous even when a string contains
-// control characters. Args and targets are reduced to SHA-256 hex digests of
-// their canonical JSON. Numbers are normalized by mathematical value before
-// hashing: 1000, 1e3, and 1.000e+3 produce the same bytes, while integers beyond
-// float64's exact range are never rounded. Targets are sorted before hashing so
-// fan-out order is not semantic.
+// JSON struct makes field boundaries unambiguous. Args are reduced to a digest
+// of their exact JSON bytes: the bridge and runner therefore agree without
+// passing large integers or decimals through a lossy native-number type.
+// Runner refs are sorted before hashing so fan-out order is not semantic.
 func SigningBytes(c Claim) ([]byte, error) {
-	// A signed dispatch with no args carries nil Args (the wire frame omits
-	// `args`), which json.Marshal renders as `null` — a different digest than
-	// `{}`. Normalize nil to an empty map so a no-arg claim signs and verifies
-	// identically to one with explicit `{}` on both sides (the cross-impl
-	// contract); without this, every legitimately-signed no-arg dispatch is
-	// refused as bad_signature.
-	args := c.Args
-	if args == nil {
-		args = map[string]any{}
+	argsDigest, err := ArgsSHA256(c.ArgsRaw)
+	if err != nil {
+		return nil, err
 	}
 
-	argsJSON, err := canonicalJSON(args)
+	runnerRefs, err := CanonicalRunnerRefs(c.RunnerRefs)
 	if err != nil {
-		return nil, fmt.Errorf("attest: marshal args: %w", err)
+		return nil, err
 	}
-	argsDigest := sha256.Sum256(argsJSON)
-
-	targets, err := canonicalTargets(c.Targets)
+	runnerRefsJSON, err := json.Marshal(runnerRefs)
 	if err != nil {
-		return nil, fmt.Errorf("attest: targets: %w", err)
+		return nil, fmt.Errorf("attest: marshal runner refs: %w", err)
 	}
-	targetsJSON, err := json.Marshal(targets)
-	if err != nil {
-		return nil, fmt.Errorf("attest: marshal targets: %w", err)
-	}
-	targetsDigest := sha256.Sum256(targetsJSON)
+	runnerRefsDigest := sha256.Sum256(runnerRefsJSON)
 
 	body := struct {
-		Version       string `json:"version"`
-		ActionID      string `json:"action_id"`
-		ArgsSHA256    string `json:"args_sha256"`
-		TargetsSHA256 string `json:"targets_sha256"`
-		Nonce         string `json:"nonce"`
-		IssuedAt      string `json:"issued_at"`
+		Version          string `json:"version"`
+		Tool             string `json:"tool"`
+		PortalOrigin     string `json:"portal_origin"`
+		ActionID         string `json:"action_id"`
+		PackRef          string `json:"pack_ref"`
+		ArgsSHA256       string `json:"args_sha256"`
+		RunnerRefsSHA256 string `json:"runner_refs_sha256"`
+		Reason           string `json:"reason"`
+		OperationID      string `json:"operation_id"`
+		Nonce            string `json:"nonce"`
+		IssuedAt         string `json:"issued_at"`
 	}{
-		Version:       Version,
-		ActionID:      c.ActionID,
-		ArgsSHA256:    hex.EncodeToString(argsDigest[:]),
-		TargetsSHA256: hex.EncodeToString(targetsDigest[:]),
-		Nonce:         c.Nonce,
-		IssuedAt:      c.IssuedAt,
+		Version:          Version,
+		Tool:             Tool,
+		PortalOrigin:     c.PortalOrigin,
+		ActionID:         c.ActionID,
+		PackRef:          c.PackRef,
+		ArgsSHA256:       argsDigest,
+		RunnerRefsSHA256: hex.EncodeToString(runnerRefsDigest[:]),
+		Reason:           c.Reason,
+		OperationID:      c.OperationID,
+		Nonce:            c.Nonce,
+		IssuedAt:         c.IssuedAt,
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -99,144 +126,44 @@ func SigningBytes(c Claim) ([]byte, error) {
 	return encoded, nil
 }
 
-func canonicalTargets(targets []string) ([]string, error) {
-	canonical := append([]string(nil), targets...)
+// ArgsSHA256 returns the digest bound into a claim and carried in the private
+// attestation envelope. Empty input is the no-argument object {}. All other
+// input must be one valid JSON object; its exact bytes, including insignificant
+// whitespace and numeric spelling, are hashed.
+func ArgsSHA256(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	if !json.Valid(raw) || len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '{' {
+		return "", fmt.Errorf("attest: args must be one valid JSON object")
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+// CanonicalRunnerRefs returns a sorted copy of refs. Empty and duplicate refs
+// are rejected because either makes target-set intent ambiguous.
+func CanonicalRunnerRefs(refs []string) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("attest: runner ref set is empty")
+	}
+	if len(refs) > MaxRunnerRefs {
+		return nil, fmt.Errorf("attest: runner ref set exceeds %d entries", MaxRunnerRefs)
+	}
+	canonical := append([]string(nil), refs...)
 	sort.Strings(canonical)
-	for i, target := range canonical {
-		if target == "" {
-			return nil, fmt.Errorf("target id is empty")
+	for i, ref := range canonical {
+		if ref == "" {
+			return nil, fmt.Errorf("attest: runner ref is empty")
 		}
-		if i > 0 && target == canonical[i-1] {
-			return nil, fmt.Errorf("target id %q is duplicated", target)
+		if len(ref) > MaxRunnerRefBytes {
+			return nil, fmt.Errorf("attest: runner ref exceeds %d bytes", MaxRunnerRefBytes)
+		}
+		if i > 0 && ref == canonical[i-1] {
+			return nil, fmt.Errorf("attest: runner ref %q is duplicated", ref)
 		}
 	}
 	return canonical, nil
-}
-
-// canonicalJSON preserves JSON types and object/array structure while replacing
-// every numeric value with one stable base-10 spelling. encoding/json then owns
-// string escaping and recursive object-key ordering.
-func canonicalJSON(value any) ([]byte, error) {
-	canonical, err := canonicalValue(value)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(canonical)
-}
-
-type canonicalNumber string
-
-func (n canonicalNumber) MarshalJSON() ([]byte, error) { return []byte(n), nil }
-
-func canonicalValue(value any) (any, error) {
-	switch value := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(value))
-		for key, nested := range value {
-			canonical, err := canonicalValue(nested)
-			if err != nil {
-				return nil, err
-			}
-			out[key] = canonical
-		}
-		return out, nil
-	case []any:
-		out := make([]any, len(value))
-		for i, nested := range value {
-			canonical, err := canonicalValue(nested)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = canonical
-		}
-		return out, nil
-	case json.Number:
-		return canonicalJSONNumber(value.String())
-	case int:
-		return canonicalJSONNumber(strconv.FormatInt(int64(value), 10))
-	case int8:
-		return canonicalJSONNumber(strconv.FormatInt(int64(value), 10))
-	case int16:
-		return canonicalJSONNumber(strconv.FormatInt(int64(value), 10))
-	case int32:
-		return canonicalJSONNumber(strconv.FormatInt(int64(value), 10))
-	case int64:
-		return canonicalJSONNumber(strconv.FormatInt(value, 10))
-	case uint:
-		return canonicalJSONNumber(strconv.FormatUint(uint64(value), 10))
-	case uint8:
-		return canonicalJSONNumber(strconv.FormatUint(uint64(value), 10))
-	case uint16:
-		return canonicalJSONNumber(strconv.FormatUint(uint64(value), 10))
-	case uint32:
-		return canonicalJSONNumber(strconv.FormatUint(uint64(value), 10))
-	case uint64:
-		return canonicalJSONNumber(strconv.FormatUint(value, 10))
-	case float32:
-		return canonicalJSONNumber(strconv.FormatFloat(float64(value), 'g', -1, 32))
-	case float64:
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return nil, fmt.Errorf("unsupported JSON number %v", value)
-		}
-		return canonicalJSONNumber(strconv.FormatFloat(value, 'g', -1, 64))
-	default:
-		return value, nil
-	}
-}
-
-// canonicalJSONNumber converts a valid JSON number into coefficient/exponent
-// form without evaluating it through float64. The exponent is arbitrary
-// precision, so a hostile but frame-bounded value such as 1e999999 cannot
-// overflow or force a gigantic expanded allocation.
-func canonicalJSONNumber(raw string) (canonicalNumber, error) {
-	sign := ""
-	if strings.HasPrefix(raw, "-") {
-		sign = "-"
-		raw = raw[1:]
-	}
-
-	mantissa, exponentText, hasExponent := strings.Cut(raw, "e")
-	if !hasExponent {
-		mantissa, exponentText, hasExponent = strings.Cut(raw, "E")
-	}
-	exponent := new(big.Int)
-	if hasExponent {
-		exponentText = strings.TrimPrefix(exponentText, "+")
-		if _, ok := exponent.SetString(exponentText, 10); !ok {
-			return "", fmt.Errorf("invalid JSON number %q", sign+raw)
-		}
-	}
-
-	integer, fraction, hasFraction := strings.Cut(mantissa, ".")
-	if integer == "" || !decimalDigits(integer) ||
-		(len(integer) > 1 && integer[0] == '0') ||
-		(hasFraction && (fraction == "" || !decimalDigits(fraction))) {
-		return "", fmt.Errorf("invalid JSON number %q", sign+raw)
-	}
-	digits := strings.TrimLeft(integer+fraction, "0")
-	if digits == "" {
-		return canonicalNumber("0"), nil
-	}
-
-	adjustment := -len(fraction)
-	trimmed := strings.TrimRight(digits, "0")
-	adjustment += len(digits) - len(trimmed)
-	digits = trimmed
-	exponent.Add(exponent, big.NewInt(int64(adjustment)))
-
-	if exponent.Sign() == 0 {
-		return canonicalNumber(sign + digits), nil
-	}
-	return canonicalNumber(sign + digits + "e" + exponent.String()), nil
-}
-
-func decimalDigits(value string) bool {
-	for _, digit := range value {
-		if digit < '0' || digit > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // Sign returns the hex-encoded Ed25519 signature over the claim. Ed25519 is
@@ -266,7 +193,7 @@ func Verify(pub ed25519.PublicKey, c Claim, sigHex string) (bool, error) {
 }
 
 // CertVersion is the canonical-encoding revision of the certificate body — a
-// SECOND canonical struct that composes with the v3 attestation above without
+// SECOND canonical struct that composes with the v4 attestation above without
 // changing it. The offline CA signs this; the runner verifies it to learn which
 // leaf public key the attestation must verify under (and over which scope).
 const CertVersion = "emisar-cert-v2"

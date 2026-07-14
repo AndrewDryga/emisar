@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -215,22 +216,33 @@ actions:
 
 func sendRunAction(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any) {
 	t.Helper()
-	sendRunActionWithHash(t, c, requestID, actionID, args, "")
+	sendRunActionWithPackRef(t, c, requestID, actionID, args, "")
 }
 
-func sendRunActionWithHash(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash string) {
+func sendRunActionWithPackRef(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, packRef string) {
 	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
-		Envelope:         Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
-		ActionID:         actionID,
-		Args:             args,
-		Reason:           "test",
-		ExpectedPackHash: expectedPackHash,
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		ActionID: actionID, PackRef: packRef, Args: args, Reason: "test",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.in <- raw
+}
+
+func currentPackRef(t *testing.T, cli *Client, packID string) string {
+	t.Helper()
+	reg := cli.opts.Engine.Registry()
+	pack, ok := reg.Pack(packID)
+	if !ok {
+		t.Fatalf("registry has no pack %s", packID)
+	}
+	hash, ok := reg.PackHash(packID)
+	if !ok {
+		t.Fatalf("registry has no hash for pack %s", packID)
+	}
+	return fmt.Sprintf("%s@%s/%s", pack.ID, pack.Version, hash)
 }
 
 func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Duration) map[string]any {
@@ -252,8 +264,8 @@ func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Du
 	}
 }
 
-// TestClient_TrustGate_PassWithMatchingHash — when cloud supplies an
-// ExpectedPackHash that matches the runner's on-disk hash, the run
+// TestClient_TrustGate_PassWithMatchingHash — when cloud supplies a PackRef
+// whose hash matches the runner's on-disk pack, the run
 // proceeds normally and the result is delivered.
 func TestClient_TrustGate_PassWithMatchingHash(t *testing.T) {
 	conn := newFakeConn()
@@ -266,19 +278,14 @@ func TestClient_TrustGate_PassWithMatchingHash(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	hash, ok := cli.opts.Engine.Registry().PackHash("t")
-	if !ok {
-		t.Fatal("registry has no hash for pack t")
-	}
-
-	sendRunActionWithHash(t, conn, "req_pass", "t.echo", map[string]any{"msg": "ok"}, hash)
+	sendRunActionWithPackRef(t, conn, "req_pass", "t.echo", map[string]any{"msg": "ok"}, currentPackRef(t, cli, "t"))
 	res := waitForResult(t, conn, "req_pass", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
 	}
 }
 
-// TestClient_TrustGate_RefuseOnMismatch — when cloud's ExpectedPackHash
+// TestClient_TrustGate_RefuseOnMismatch — when cloud's PackRef
 // doesn't match the runner's on-disk hash, the runner refuses to
 // execute, returns a pack_hash_mismatch result, and re-advertises its
 // state so cloud sees the new bytes.
@@ -308,7 +315,7 @@ func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
 	}
 	initialStateCount := len(conn.sentByType(MsgRunnerState))
 
-	sendRunActionWithHash(t, conn, "req_refuse", "t.echo", map[string]any{"msg": "x"}, "sha256:DEFINITELY_NOT_THE_HASH")
+	sendRunActionWithPackRef(t, conn, "req_refuse", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:DEFINITELY_NOT_THE_HASH")
 	res := waitForResult(t, conn, "req_refuse", 3*time.Second)
 	if res["status"] != "pack_hash_mismatch" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])

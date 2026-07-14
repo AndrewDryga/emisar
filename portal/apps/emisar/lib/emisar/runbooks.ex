@@ -8,7 +8,7 @@ defmodule Emisar.Runbooks do
   steps, and inline assertions are on the roadmap.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, MCPOperations, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Runbook, RunbookExecution, StepSelector}
 
@@ -21,6 +21,20 @@ defmodule Emisar.Runbooks do
       |> Runbook.Query.ordered_by_title_version()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runbook.Query, opts)
+    end
+  end
+
+  @doc "Lists every runbook visible to the subject for bounded in-memory MCP projection."
+  def list_all_runbooks(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      runbooks =
+        Runbook.Query.not_deleted()
+        |> Runbook.Query.ordered_by_title_version()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, runbooks}
     end
   end
 
@@ -53,6 +67,104 @@ defmodule Emisar.Runbooks do
         {:error, :not_found} -> fetch_published_by_id(slug_or_id, subject)
         result -> result
       end
+    end
+  end
+
+  @doc "Fetches one exact immutable published runbook version by slug and version."
+  def fetch_published_runbook_version(slug, version, %Subject{} = subject)
+      when is_binary(slug) and is_integer(version) and version > 0 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.published()
+      |> Runbook.Query.by_slug(slug)
+      |> Runbook.Query.by_version(version)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    end
+  end
+
+  @doc "Fetches one MCP-created draft through the caller's credential lineage."
+  def fetch_mcp_draft_by_operation(operation_id, %Subject{} = subject)
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         {:ok, %{tool: :create_runbook_draft, resource_id: draft_id}} <-
+           MCPOperations.fetch_recovery(operation_id, subject) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(draft_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    else
+      {:ok, _other_operation} -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  @doc "Fetches one MCP runbook execution through the caller's credential lineage."
+  def fetch_execution_by_operation(operation_id, %Subject{} = subject)
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         {:ok, %{tool: :execute_runbook, resource_id: execution_id}} <-
+           MCPOperations.fetch_recovery(operation_id, subject) do
+      RunbookExecution.Query.by_account_id(subject.account.id)
+      |> RunbookExecution.Query.by_id(execution_id)
+      |> Repo.fetch(RunbookExecution.Query)
+    else
+      {:ok, _other_operation} -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  @doc "Fetches one runbook execution visible to the subject."
+  def fetch_execution_by_id(execution_id, %Subject{} = subject) when is_binary(execution_id) do
+    query =
+      RunbookExecution.Query.by_account_id(subject.account.id)
+      |> RunbookExecution.Query.by_id(execution_id)
+
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         true <- Repo.valid_uuid?(execution_id),
+         {:ok, execution} <- Repo.fetch(query, RunbookExecution.Query),
+         :ok <- ensure_execution_scope(execution, subject) do
+      {:ok, execution}
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  defp ensure_execution_scope(
+         %RunbookExecution{} = execution,
+         %Subject{membership_id: membership_id} = subject
+       )
+       when is_binary(membership_id) do
+    runner_ids = execution.work_list |> Enum.map(& &1["runner_id"]) |> MapSet.new()
+
+    with {:ok, runners} <- Emisar.Runners.list_all_runners_for_account(subject) do
+      scopes = Emisar.Runners.runner_scopes_for_membership(membership_id)
+
+      visible_ids =
+        runners
+        |> Enum.filter(&Emisar.Runners.runner_in_scope?(&1, scopes))
+        |> MapSet.new(& &1.id)
+
+      if MapSet.subset?(runner_ids, visible_ids), do: :ok, else: {:error, :not_found}
+    end
+  end
+
+  defp ensure_execution_scope(%RunbookExecution{}, %Subject{}), do: {:error, :not_found}
+
+  @doc "Fetches the immutable runbook row retained by an execution, including soft-deleted families."
+  def fetch_runbook_for_execution(%RunbookExecution{} = execution, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         :ok <- Subject.ensure_in_account(subject, execution.account_id) do
+      Runbook.Query.all()
+      |> Runbook.Query.by_id(execution.runbook_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
     end
   end
 
@@ -111,6 +223,60 @@ defmodule Emisar.Runbooks do
       end
     end
   end
+
+  @doc "Creates or replays one MCP draft under its bridge operation identity."
+  def create_mcp_draft(attrs, operation_id, fingerprint, %Subject{account: account} = subject)
+      when is_binary(operation_id) and is_binary(fingerprint) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             {:one_of,
+              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+           ) do
+      id = MCPOperations.resource_id(operation_id, :create_runbook_draft, subject)
+      attrs = Map.put(attrs, "id", id)
+
+      operation_attrs = %{
+        operation_id: operation_id,
+        tool: :create_runbook_draft,
+        fingerprint: fingerprint,
+        resource_id: id,
+        resource_ref: attrs["slug"]
+      }
+
+      with {:ok, multi} <-
+             MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+        multi =
+          Multi.merge(multi, fn
+            %{mcp_operation: %{fresh?: false}} ->
+              Multi.new()
+
+            %{mcp_operation: %{fresh?: true}} ->
+              Multi.new()
+              |> Multi.insert(
+                :runbook,
+                Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
+              )
+              |> Multi.insert(:audit, fn %{runbook: runbook} ->
+                Audit.Events.runbook_created(subject, runbook)
+              end)
+          end)
+
+        with {:ok, %{mcp_operation: reservation}} <-
+               Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
+             {:ok, runbook} <- fetch_runbook_by_id(id, subject) do
+          kind = if reservation.fresh?, do: :created, else: :replay
+          {:ok, kind, runbook}
+        end
+      end
+    end
+  end
+
+  defp after_mcp_draft_committed(%{mcp_operation: %{fresh?: true}, runbook: runbook}) do
+    broadcast_runbook_created(runbook)
+  end
+
+  defp after_mcp_draft_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
 
   # -- PubSub ----------------------------------------------------------
 
@@ -225,6 +391,7 @@ defmodule Emisar.Runbooks do
   # would flood runners, so the engine releases waves of this many runs
   # and waits for the wave to finish before the next.
   @batch_size 5
+  @max_fan_out 1_000
 
   @doc """
   Expand a runbook into the ordered list of step descriptors that the
@@ -242,6 +409,11 @@ defmodule Emisar.Runbooks do
   the first wave of `#{@batch_size}`; later waves fire from
   `dispatch_next_batch/1` as runs finish. Any failed/denied run or row-less
   dispatch failure halts the waves that follow it.
+
+  `opts[:max_runners_per_step]` and `opts[:max_fan_out]` let a stricter caller
+  tighten, but never relax, the domain ceilings. They are applied while the
+  work list used by the execution transaction is resolved, closing the race
+  between an earlier caller preflight and changing group membership.
 
   Requires `dispatch_run` permission; the runbook must be in the subject's
   account. `opts[:idempotency_key]` (the MCP execute path threads the caller's
@@ -263,6 +435,10 @@ defmodule Emisar.Runbooks do
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject, opts \\ [])
       when is_binary(reason) do
     idempotency_key = Keyword.get(opts, :idempotency_key)
+    operation_id = Keyword.get(opts, :operation_id)
+    operation_fingerprint = Keyword.get(opts, :operation_fingerprint)
+    operation_ref = Keyword.get(opts, :operation_ref)
+    expansion_limits = Keyword.take(opts, [:max_runners_per_step, :max_fan_out])
 
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -274,8 +450,21 @@ defmodule Emisar.Runbooks do
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
          :ok <- ensure_unique_step_ids(steps),
-         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
-      dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key)
+         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps, expansion_limits) do
+      if operation_id do
+        dispatch_mcp_first_wave(
+          runbook,
+          reason,
+          subject,
+          work_list,
+          operation_id,
+          operation_fingerprint,
+          operation_ref,
+          true
+        )
+      else
+        dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key)
+      end
     end
   end
 
@@ -313,6 +502,138 @@ defmodule Emisar.Runbooks do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp dispatch_mcp_first_wave(
+         runbook,
+         reason,
+         subject,
+         work_list,
+         operation_id,
+         fingerprint,
+         operation_ref,
+         use_grants?
+       ) do
+    execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
+
+    operation_attrs = %{
+      operation_id: operation_id,
+      tool: :execute_runbook,
+      fingerprint: fingerprint,
+      resource_id: execution_id,
+      resource_ref: operation_ref
+    }
+
+    descriptor = %{
+      id: execution_id,
+      reason: reason,
+      user_id: Subject.user_id(subject),
+      membership_id: subject.membership_id,
+      operation_id: operation_id
+    }
+
+    first_wave_attrs =
+      work_list
+      |> Enum.take(@batch_size)
+      |> Enum.map(&step_attrs(runbook, descriptor, &1))
+
+    with {:ok, multi} <-
+           MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+         {:ok, multi} <-
+           compose_mcp_execution(
+             multi,
+             runbook,
+             reason,
+             subject,
+             work_list,
+             first_wave_attrs,
+             execution_id,
+             use_grants?
+           ) do
+      result =
+        Repo.commit_multi(multi,
+          after_commit: &Emisar.Runs.after_composed_dispatches_committed/1
+        )
+
+      case result do
+        {:ok, %{mcp_operation: _reservation}} ->
+          with {:ok, execution} <- fetch_execution_by_id(execution_id, subject) do
+            runs = Emisar.Runs.list_runs_for_runbook_execution(runbook.account_id, execution.id)
+            stored_work_list = frozen_items(execution.work_list, expand(runbook))
+            {:ok, execution_result(execution.id, stored_work_list, runs, [])}
+          end
+
+        {:error, :grant_unusable} when use_grants? ->
+          dispatch_mcp_first_wave(
+            runbook,
+            reason,
+            subject,
+            work_list,
+            operation_id,
+            fingerprint,
+            operation_ref,
+            false
+          )
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp compose_mcp_execution(
+         multi,
+         runbook,
+         reason,
+         subject,
+         work_list,
+         first_wave_attrs,
+         execution_id,
+         use_grants?
+       ) do
+    {:ok,
+     Multi.merge(multi, fn
+       %{mcp_operation: %{fresh?: false}} ->
+         Multi.new()
+
+       %{mcp_operation: %{operation: operation, fresh?: true}} ->
+         attrs = %{
+           id: execution_id,
+           account_id: runbook.account_id,
+           runbook_id: runbook.id,
+           initiating_membership_id: subject.membership_id,
+           requested_by_id: Subject.user_id(subject),
+           api_key_id: Subject.api_key_id(subject),
+           operation_id: operation.operation_id,
+           mcp_operation_record_id: operation.id,
+           reason: reason,
+           work_list: freeze_work_list(work_list)
+         }
+
+         execution_multi =
+           Multi.new()
+           |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs))
+           |> Multi.insert(:execution_audit, fn %{execution: execution} ->
+             Audit.Events.runbook_dispatched(
+               subject,
+               runbook,
+               execution,
+               length(work_list),
+               ceil(length(work_list) / @batch_size)
+             )
+           end)
+
+         case Emisar.Runs.compose_dispatch_batch_in_multi(
+                execution_multi,
+                first_wave_attrs,
+                subject,
+                {:runbook_first_wave, execution_id},
+                use_grants?: use_grants?
+              ) do
+           {:ok, composed} -> composed
+           {:error, reason} -> Multi.error(Multi.new(), :mcp_dispatch_batch, reason)
+         end
+     end)}
   end
 
   defp execution_result(execution_id, work_list, runs, errors) do
@@ -404,7 +725,8 @@ defmodule Emisar.Runbooks do
         id: execution.id,
         reason: execution.reason,
         user_id: execution.requested_by_id,
-        membership_id: execution.initiating_membership_id
+        membership_id: execution.initiating_membership_id,
+        operation_id: execution.operation_id
       }
 
       dispatched = MapSet.new(existing, &{&1.runbook_step_id, &1.runner_id})
@@ -436,15 +758,15 @@ defmodule Emisar.Runbooks do
   # here, before the full work-list (and the plan + LV assigns built from it)
   # exists. A fleet large enough to blow the cap should target groups across
   # several runbooks rather than one giant execution.
-  @max_fan_out 1_000
-
   # Steps × each step's own runners, step-major: step 1 fans out across
   # its runners before step 2 starts claiming wave slots. Fail-fast — a
   # step whose group resolves to no active runners aborts the whole
   # dispatch (`{:step_no_runners, n}`) so the operator fixes it rather
   # than getting a silently-skipped step. Accumulates per-step lists and
   # concats once (not `acc ++ rows` per step — that's quadratic).
-  defp resolve_work_list(account_id, steps) do
+  defp resolve_work_list(account_id, steps, opts \\ []) do
+    max_runners_per_step = expansion_limit(opts, :max_runners_per_step, @max_fan_out)
+    max_fan_out = expansion_limit(opts, :max_fan_out, @max_fan_out)
     runners_by_group = active_runner_ids_by_group(account_id, steps)
 
     steps
@@ -454,11 +776,14 @@ defmodule Emisar.Runbooks do
         [] ->
           {:halt, {:error, {:step_no_runners, idx + 1}}}
 
+        runner_ids when length(runner_ids) > max_runners_per_step ->
+          {:halt, {:error, {:step_fan_out_too_large, max_runners_per_step}}}
+
         runner_ids ->
           count = count + length(runner_ids)
 
-          if count > @max_fan_out do
-            {:halt, {:error, {:fan_out_too_large, @max_fan_out}}}
+          if count > max_fan_out do
+            {:halt, {:error, {:fan_out_too_large, max_fan_out}}}
           else
             {:cont, {:ok, [Enum.map(runner_ids, &{step, idx, &1}) | acc], count}}
           end
@@ -467,6 +792,13 @@ defmodule Emisar.Runbooks do
     |> case do
       {:ok, acc, _count} -> {:ok, acc |> Enum.reverse() |> Enum.concat()}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp expansion_limit(opts, key, ceiling) do
+    case Keyword.get(opts, key, ceiling) do
+      value when is_integer(value) and value > 0 -> min(value, ceiling)
+      _invalid -> ceiling
     end
   end
 
@@ -633,7 +965,13 @@ defmodule Emisar.Runbooks do
   # membership) + the frozen authorized work-list — once, at the first wave.
   # Returns the in-memory dispatch descriptor the wave loop + every continuation
   # share. Already inside `dispatch_runbook`'s authorized + account-scoped flow.
-  defp create_execution(%Runbook{} = runbook, reason, %Subject{} = subject, work_list, key) do
+  defp create_execution(
+         %Runbook{} = runbook,
+         reason,
+         %Subject{} = subject,
+         work_list,
+         key
+       ) do
     id = Repo.generate_id()
 
     attrs = %{
@@ -697,7 +1035,8 @@ defmodule Emisar.Runbooks do
       id: execution.id,
       reason: execution.reason,
       user_id: execution.requested_by_id,
-      membership_id: execution.initiating_membership_id
+      membership_id: execution.initiating_membership_id,
+      operation_id: execution.operation_id
     }
   end
 
@@ -742,7 +1081,9 @@ defmodule Emisar.Runbooks do
       requested_by_membership_id: execution.membership_id,
       runbook_id: runbook.id,
       runbook_step_id: step_id_for(step, idx),
-      runbook_execution_id: execution.id
+      runbook_execution_id: execution.id,
+      operation_id: execution.operation_id,
+      pack_ref: step["pack_ref"]
     }
   end
 

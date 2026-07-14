@@ -4,9 +4,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   alias Emisar.Runs.ActionRun
 
   @create_fields ~w[
-    account_id runner_id request_id action_id args args_sha256 client_info mcp_client_metadata
+    account_id runner_id request_id action_id args args_raw args_sha256 client_info mcp_client_metadata
     mcp_session_id ip_address user_agent opts attestation reason source requested_by_id api_key_id idempotency_key
-    runbook_id runbook_step_id runbook_execution_id expected_pack_hash
+    operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at
   ]a
@@ -38,6 +38,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # string budget so malicious runner values fail as changeset errors first.
   @max_runner_text_length 16_384
   @max_db_string_length 255
+  @max_action_args_bytes 32_768
 
   def create(attrs) do
     %ActionRun{}
@@ -45,12 +46,19 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
     |> validate_length(:reason, max: @max_reason_length)
     |> validate_length(:mcp_session_id, max: @max_db_string_length)
+    |> validate_length(:operation_id, max: @max_db_string_length)
+    |> validate_length(:pack_ref, max: @max_db_string_length)
+    |> validate_length(:runner_ref, max: 113)
+    |> validate_length(:args_raw, max: @max_action_args_bytes)
     |> RepoChangeset.validate_json_size(:args, @max_args_bytes)
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
     |> unique_constraint([:account_id, :request_id])
     |> unique_constraint([:api_key_id, :idempotency_key],
       name: :action_runs_api_key_idempotency_key_index
+    )
+    |> unique_constraint([:mcp_operation_record_id, :runner_id],
+      name: :action_runs_mcp_operation_runner_index
     )
     |> unique_constraint([:runbook_execution_id, :runbook_step_id, :runner_id],
       name: :action_runs_execution_step_runner_index

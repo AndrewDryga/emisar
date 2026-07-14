@@ -15,6 +15,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -32,6 +33,10 @@ const SchemaVersion = 1
 // carries in previous_versions — "the last few" the portal trust window
 // auto-trusts alongside the current version. Not an operator knob.
 const DefaultPreviousKept = 3
+
+// MaxActionBytes is the largest compact trusted action descriptor the MCP API
+// will expose as one indivisible object.
+const MaxActionBytes = 32 * 1024
 
 // DefaultRepoURL is the public source repository the catalog links back to
 // for pack and action source. Overridable via BuildOptions.
@@ -86,9 +91,10 @@ type Pack struct {
 // resolve its immutable tarball and to seed the portal trust window. The
 // tarball it points at was published under a past build and is immutable.
 type PreviousVersion struct {
-	Version     string `json:"version"`
-	ContentHash string `json:"content_hash"`
-	TarballURL  string `json:"tarball_url"`
+	Version     string   `json:"version"`
+	ContentHash string   `json:"content_hash"`
+	TarballURL  string   `json:"tarball_url"`
+	Actions     []Action `json:"actions,omitempty"`
 }
 
 // Requires mirrors the pack's declared host requirements.
@@ -111,16 +117,19 @@ func (d Detect) empty() bool {
 	return len(d.Binaries) == 0 && len(d.Processes) == 0 && len(d.Ports) == 0
 }
 
-// Action is a catalog action summary — enough for the catalog action list,
-// risk display, and the approval-page command preview, without the full arg
-// schema (that stays in the pack YAML the runner loads).
+// Action is the complete reviewed model-facing contract for one action. The
+// executable command remains only for the approval UI; MCP trust and runner
+// descriptor matching deliberately ignore it.
 type Action struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Kind    string   `json:"kind"`
-	Risk    string   `json:"risk"`
+	actionspec.ModelDescriptor
 	Command *Command `json:"command,omitempty"`
 }
+
+// Keep the catalog package's descriptor type names as aliases for callers that
+// construct registry fixtures. The canonical definitions live in actionspec.
+type Arg = actionspec.ModelArg
+type Validation = actionspec.ModelValidation
+type Example = actionspec.ModelExample
 
 // Command is an exec action's binary + argv template (placeholders intact),
 // nil for a script-kind action (no single-line invocation to preview).
@@ -161,7 +170,11 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 
 	actionsByPack := map[string][]Action{}
 	for _, a := range reg.Actions() {
-		actionsByPack[a.PackID] = append(actionsByPack[a.PackID], catalogAction(a))
+		action, err := catalogAction(a)
+		if err != nil {
+			return nil, err
+		}
+		actionsByPack[a.PackID] = append(actionsByPack[a.PackID], action)
 	}
 
 	cat := &Catalog{SchemaVersion: SchemaVersion, Packs: []Pack{}}
@@ -280,7 +293,11 @@ func packHistory(current, prev *Pack, base string) ([]PreviousVersion, error) {
 
 	var cand []PreviousVersion
 	if prev.Version != current.Version {
-		cand = append(cand, PreviousVersion{Version: prev.Version, ContentHash: prev.ContentHash})
+		cand = append(cand, PreviousVersion{
+			Version:     prev.Version,
+			ContentHash: prev.ContentHash,
+			Actions:     prev.Actions,
+		})
 	}
 	cand = append(cand, prev.PreviousVersions...)
 
@@ -444,12 +461,12 @@ func packVersionHashes(p Pack) map[string]string {
 	return m
 }
 
-func catalogAction(a *actionspec.Action) Action {
+func catalogAction(a *actionspec.Action) (Action, error) {
+	if _, err := a.ModelSummary(); err != nil {
+		return Action{}, fmt.Errorf("catalog: %w", err)
+	}
 	out := Action{
-		ID:    a.ID,
-		Title: a.Title,
-		Kind:  string(a.Kind),
-		Risk:  string(a.Risk),
+		ModelDescriptor: a.ModelDescriptor(),
 	}
 	if a.Kind == actionspec.KindExec && a.Execution.Command != nil {
 		out.Command = &Command{
@@ -457,7 +474,16 @@ func catalogAction(a *actionspec.Action) Action {
 			Argv:   nonNil(a.Execution.Command.Argv),
 		}
 	}
-	return out
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return Action{}, fmt.Errorf("catalog: action %q cannot be encoded: %w", a.ID, err)
+	}
+	if len(encoded) > MaxActionBytes {
+		return Action{}, fmt.Errorf(
+			"catalog: action %q descriptor is %d bytes, limit is %d",
+			a.ID, len(encoded), MaxActionBytes)
+	}
+	return out, nil
 }
 
 // deriveDetect mirrors the portal's detect_signal: an explicit

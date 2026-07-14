@@ -6,20 +6,23 @@
 // defense: a compromised control plane can relay a real user's MCP-signed action
 // but can neither forge, redirect, nor replay one.
 //
-// The v2 claim binds the exact durable runner-id set the operator selected. A
-// cert's CA-authored scope is a second, coarser ceiling: even a correctly targeted
-// claim is refused outside the allowed group/labels. The leaf public key the
-// attestation verifies under comes from the CA-verified cert, never from config.
+// The v4 claim binds the exact public runner-reference set the operator selected.
+// A cert's CA-authored scope is a second, coarser ceiling: even a correctly
+// targeted claim is refused outside the allowed group/labels. The leaf public key
+// the attestation verifies under comes from the CA-verified cert, never from config.
 package signing
 
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
+	"github.com/andrewdryga/emisar/runner/internal/runnerref"
 )
 
 // CAConfig is one trusted certificate-authority public key as it comes from config.
@@ -28,17 +31,20 @@ type CAConfig struct {
 	PublicKeyHex string
 }
 
-// Attestation is the runner's view of the signed envelope a dispatch carries.
-// A nil *Attestation means the dispatch arrived unsigned; a nil Cert means it
-// arrived without the certificate the CA model requires. KeyID is gone — the leaf
-// key id now lives in the cert.
-type Attestation struct {
-	Version   string
-	Signature string
-	Nonce     string
-	IssuedAt  string
-	Targets   []string
-	Cert      *attest.Cert
+// Attestation is the shared signed wire envelope. A nil *Attestation means the
+// dispatch arrived unsigned; a nil Cert means it arrived without the certificate
+// the CA model requires.
+type Attestation = attest.Envelope
+
+// Dispatch is the runner-observed action intent. ArgsRaw is the exact JSON
+// object token from the WSS message, preserved separately from the decoded map
+// used by the execution engine.
+type Dispatch struct {
+	ActionID    string
+	PackRef     string
+	ArgsRaw     json.RawMessage
+	Reason      string
+	OperationID string
 }
 
 // Decision is the outcome of a check. When Allowed is false, Code is a short
@@ -66,7 +72,8 @@ type Verifier struct {
 	nonces  *NonceStore
 
 	cas      map[string]ed25519.PublicKey // ca_id -> CA public key
-	runnerID string                       // durable local external id, for per-call target binding
+	runnerID string                       // durable local external id, for public-ref suffix binding
+	origin   string                       // canonical local portal origin
 	group    string                       // this runner's group, for cert scope matching
 	labels   map[string]string            // this runner's labels, for cert scope matching
 }
@@ -81,7 +88,7 @@ type Verifier struct {
 //
 // nonces is owned by the process-level caller and must be shared across every
 // verifier replacement. OpenNonceStore handles startup durability failures.
-func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, group string, labels map[string]string, nonces *NonceStore) (*Verifier, error) {
+func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, portalOrigin, group string, labels map[string]string, nonces *NonceStore) (*Verifier, error) {
 	if maxAge <= 0 {
 		return nil, fmt.Errorf("signing: max attestation age must be positive")
 	}
@@ -107,6 +114,9 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, g
 	if enforce && runnerID == "" {
 		return nil, fmt.Errorf("signing: enforcement is on with no runner id")
 	}
+	if enforce && portalOrigin == "" {
+		return nil, fmt.Errorf("signing: enforcement is on with no portal origin")
+	}
 	if enforce {
 		if err := nonces.bindRetention(maxAge); err != nil {
 			return nil, err
@@ -120,6 +130,7 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, g
 		nonces:   nonces,
 		cas:      ring,
 		runnerID: runnerID,
+		origin:   portalOrigin,
 		group:    group,
 		labels:   labels,
 	}, nil
@@ -145,8 +156,8 @@ func (v *Verifier) CAIDs() []string {
 // before dispatching a run that would be refused as stale (e.g. a slow approval).
 func (v *Verifier) MaxAge() time.Duration { return v.maxAge }
 
-// Check decides whether a dispatch may run. Enforcement off → always allow
-// (legacy trust). Enforcement on → the single CA trust path, in this exact
+// Check decides whether a dispatch may run. Enforcement off allows every
+// dispatch. Enforcement on uses the single CA trust path, in this exact
 // order: a present cert, a trusted + valid CA signature over it, the cert inside
 // its own validity window, its scope satisfied by THIS runner's local identity,
 // the attestation inside the (independent) freshness window, the leaf signature
@@ -154,7 +165,7 @@ func (v *Verifier) MaxAge() time.Duration { return v.maxAge }
 // and attestation-freshness windows are SEPARATE gates — a long cert TTL must not
 // widen the replay window. A passing check CONSUMES the nonce so an identical
 // replay is refused; a failing check never burns one.
-func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation) Decision {
+func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 	if !v.enforce {
 		return allow
 	}
@@ -171,13 +182,38 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("attestation_version",
 			fmt.Sprintf("attestation version %q is not supported", att.Version))
 	}
-	if !containsTarget(att.Targets, v.runnerID) {
+	if att.Tool != attest.Tool {
+		return refuse("attestation_tool",
+			fmt.Sprintf("attestation tool %q is not supported", att.Tool))
+	}
+	if att.PortalOrigin != v.origin {
+		return refuse("portal_mismatch", "the signed portal origin does not match this runner's control plane")
+	}
+	if dispatch.ActionID == "" || dispatch.PackRef == "" || dispatch.Reason == "" || dispatch.OperationID == "" {
+		return refuse("intent_mismatch", "the delivered action intent is missing a required signed field")
+	}
+	if att.ActionID != dispatch.ActionID || att.PackRef != dispatch.PackRef ||
+		att.Reason != dispatch.Reason || att.OperationID != dispatch.OperationID {
+		return refuse("intent_mismatch", "the signed action intent does not match the delivered dispatch")
+	}
+	argsDigest, err := attest.ArgsSHA256(dispatch.ArgsRaw)
+	if err != nil {
+		return refuse("invalid_args", "the delivered action arguments are not one valid JSON object")
+	}
+	if att.ArgsSHA256 != argsDigest {
+		return refuse("intent_mismatch", "the signed argument digest does not match the delivered arguments")
+	}
+	canonicalRunnerRefs, err := attest.CanonicalRunnerRefs(att.RunnerRefs)
+	if err != nil || !slices.Equal(canonicalRunnerRefs, att.RunnerRefs) {
+		return refuse("target_mismatch", "the signed runner reference set is invalid")
+	}
+	if !runnerref.ContainsLocal(att.RunnerRefs, v.runnerID) {
 		return refuse("target_mismatch",
-			"this runner's durable id is not in the signed target set")
+			"this runner generation is not named exactly once in the signed target set")
 	}
 	// 3. The signer emits 16 random bytes as lowercase hex. Keeping that exact
 	//    shape bounds replay keys and rejects delimiter/control-character input
-	//    even though the v3 signed body is independently unambiguous.
+	//    even though the v4 signed body is independently unambiguous.
 	if !validNonce(att.Nonce) {
 		return refuse("bad_nonce", "the attestation nonce is not 32 lowercase hex characters")
 	}
@@ -230,11 +266,15 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("bad_signature", "certificate public_key is not a valid Ed25519 key")
 	}
 	claim := attest.Claim{
-		ActionID: actionID,
-		Args:     args,
-		Targets:  att.Targets,
-		Nonce:    att.Nonce,
-		IssuedAt: att.IssuedAt,
+		ActionID:     dispatch.ActionID,
+		PackRef:      dispatch.PackRef,
+		ArgsRaw:      dispatch.ArgsRaw,
+		RunnerRefs:   att.RunnerRefs,
+		Reason:       dispatch.Reason,
+		OperationID:  dispatch.OperationID,
+		PortalOrigin: v.origin,
+		Nonce:        att.Nonce,
+		IssuedAt:     att.IssuedAt,
 	}
 	valid, err := attest.Verify(ed25519.PublicKey(leaf), claim, att.Signature)
 	if err != nil {
@@ -242,7 +282,7 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 	}
 	if !valid {
 		return refuse("bad_signature",
-			"signature does not match the dispatched action, args, targets, nonce, or time")
+			"signature does not match the dispatched action intent")
 	}
 	// 10. The nonce must not have been seen — consuming it on success.
 	ok, err = v.nonces.consume(att.Nonce, issued, v.now())
@@ -266,15 +306,6 @@ func validNonce(nonce string) bool {
 		}
 	}
 	return true
-}
-
-func containsTarget(targets []string, runnerID string) bool {
-	for _, target := range targets {
-		if target == runnerID {
-			return true
-		}
-	}
-	return false
 }
 
 // scopeSatisfied reports whether this runner's local identity satisfies the

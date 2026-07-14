@@ -34,6 +34,10 @@ defmodule Emisar.ApiKeys.ApiKey do
     # onto each run dispatched afterward so the UI can name the client.
     field :last_client_info, :map, default: %{}
 
+    # Stable across secret rotation. MCP operation recovery is owned by this
+    # lineage rather than one short-lived bearer row.
+    field :credential_lineage_id, Ecto.UUID
+
     # Set when the Agents page auto-mints this key for the snippet.
     # Cleared the moment an LLM successfully authenticates with it on
     # the MCP HTTP endpoint (at which point the key becomes a

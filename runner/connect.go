@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -78,8 +79,9 @@ env var can be unset after the first successful connect.`,
 				return fmt.Errorf("signing: %w", err)
 			}
 			// connect owns this store for the process lifetime and shares it with
-			// every verifier. It needs no Close: each journal append opens, syncs,
-			// and closes its own descriptor.
+			// every verifier. Close releases the cross-process journal lock only
+			// after the client and its dispatch goroutines have stopped.
+			defer nonceStore.Close()
 			verifier, err := buildVerifier(rt.cfg, externalID, nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
@@ -190,13 +192,48 @@ func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.No
 	if cfg.Signing.EnforceSignatures && !nonceStore.Durable() {
 		return nil, fmt.Errorf("signing: enforcement requires durable replay state")
 	}
+	portalOrigin := ""
+	if cfg.Signing.EnforceSignatures {
+		var err error
+		portalOrigin, err = canonicalPortalOrigin(cfg.Cloud.URL)
+		if err != nil {
+			return nil, fmt.Errorf("signing: portal origin: %w", err)
+		}
+	}
 	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
 	for i, ca := range cfg.Signing.TrustedCAs {
 		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
 	}
 	return signing.NewVerifier(
 		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
-		externalID, cfg.Runner.Group, cfg.Runner.Labels, nonceStore)
+		externalID, portalOrigin, cfg.Runner.Group, cfg.Runner.Labels, nonceStore)
+}
+
+// canonicalPortalOrigin maps the runner's websocket/HTTP control-plane URL to
+// the HTTP origin the MCP bridge signs. Paths never participate in the origin;
+// default ports and DNS casing are normalized identically to the bridge.
+func canonicalPortalOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse %q: %w", raw, err)
+	}
+	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" || u.User != nil {
+		return "", fmt.Errorf("%q must be an absolute control-plane URL without credentials", raw)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	switch scheme {
+	case "https", "wss":
+		scheme = "https"
+	case "http", "ws":
+		scheme = "http"
+	default:
+		return "", fmt.Errorf("%q has unsupported scheme %q", raw, u.Scheme)
+	}
+	host := strings.ToLower(u.Host)
+	if (scheme == "https" && u.Port() == "443") || (scheme == "http" && u.Port() == "80") {
+		host = strings.TrimSuffix(host, ":"+u.Port())
+	}
+	return scheme + "://" + host, nil
 }
 
 func openNonceStore(cfg *config.Config) (*signing.NonceStore, error) {

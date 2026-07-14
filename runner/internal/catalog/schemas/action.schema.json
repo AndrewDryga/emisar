@@ -8,26 +8,34 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
-    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*", "description": "<namespace>.<name>."},
-    "title": {"type": "string", "minLength": 1},
+    "id": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*", "description": "<namespace>.<name>."},
+    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 512},
     "kind": {"type": "string", "enum": ["exec", "script"]},
     "risk": {
       "type": "string",
       "enum": ["low", "medium", "high", "critical"],
       "description": "low = read-only (no approval); medium/high = mutating/destructive (policy-gated); critical = default-deny."
     },
-    "description": {"type": "string", "minLength": 1},
-    "side_effects": {"type": "array", "items": {"type": "string"}},
+    "description": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "side_effects": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 1024}},
+    "search_terms": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 80}
+    },
     "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
     "execution": {"$ref": "#/$defs/execution"},
     "output": {"$ref": "#/$defs/output"},
     "examples": {
       "type": "array",
+      "maxItems": 16,
       "items": {
         "type": "object",
         "required": ["title", "args"],
         "additionalProperties": false,
-        "properties": {"title": {"type": "string"}, "args": {"type": "object"}}
+        "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 160}, "args": {"type": "object"}}
       }
     }
   },

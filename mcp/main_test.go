@@ -100,6 +100,112 @@ func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
 	}
 }
 
+func TestOperationIDIsStableBoundedAndTyped(t *testing.T) {
+	b := &bridge{sessionID: "deadbeef"}
+	operationID := func(frame string) string {
+		t.Helper()
+		return b.operationIDFor(parseRequestMeta([]byte(frame)))
+	}
+
+	first := operationID(`{"jsonrpc":"2.0","id":7,"method":"ping"}`)
+	if first != "op_724NN9NMDZ1T76NARWCKM5A0D6" {
+		t.Fatalf("operation ID vector drifted: %q", first)
+	}
+	if got, want := len(first), len("op_")+26; got != want {
+		t.Fatalf("operation ID length = %d, want %d: %q", got, want, first)
+	}
+	if !strings.HasPrefix(first, "op_") || !strings.Contains("01234567", first[3:4]) {
+		t.Fatalf("operation ID is not a 128-bit Crockford token: %q", first)
+	}
+	for _, value := range first[3:] {
+		if !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", value) {
+			t.Fatalf("operation ID contains non-Crockford character %q: %q", value, first)
+		}
+	}
+	if again := operationID(`{"method":"ping","id":7,"jsonrpc":"2.0"}`); again != first {
+		t.Errorf("same typed request id changed operation ID: %q vs %q", first, again)
+	}
+	if stringID := operationID(`{"jsonrpc":"2.0","id":"7","method":"ping"}`); stringID == first {
+		t.Fatalf("numeric and string ids share operation ID %q", first)
+	}
+	if otherSession := (&bridge{sessionID: "cafebabe"}).operationIDFor(parseRequestMeta([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))); otherSession == first {
+		t.Fatalf("different sessions share operation ID %q", first)
+	}
+}
+
+func TestOperationIDUsesSemanticStringAndIntegerIdentity(t *testing.T) {
+	b := &bridge{sessionID: "session"}
+	operationID := func(frame string) string {
+		t.Helper()
+		return b.operationIDFor(parseRequestMeta([]byte(frame)))
+	}
+
+	plain := operationID(`{"jsonrpc":"2.0","id":"alpha","method":"ping"}`)
+	escaped := operationID(`{"jsonrpc":"2.0","id":"\u0061lpha","method":"ping"}`)
+	if plain != escaped {
+		t.Errorf("equivalent JSON string ids changed operation identity: %q vs %q", plain, escaped)
+	}
+	zero := operationID(`{"jsonrpc":"2.0","id":0,"method":"ping"}`)
+	negativeZero := operationID(`{"jsonrpc":"2.0","id":-0,"method":"ping"}`)
+	if zero != negativeZero {
+		t.Errorf("equivalent integer ids changed operation identity: %q vs %q", zero, negativeZero)
+	}
+}
+
+func TestOperationIDEmptyForNotificationsAndInvalidRequests(t *testing.T) {
+	b := &bridge{sessionID: "session"}
+	for _, frame := range []string{
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":null,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":1.5,"method":"ping"}`,
+		`{"id":1,"method":"ping"}`,
+	} {
+		if got := b.operationIDFor(parseRequestMeta([]byte(frame))); got != "" {
+			t.Errorf("operation ID for %s = %q, want empty", frame, got)
+		}
+	}
+}
+
+func TestMutationOperationIDOnlyForFixedMutations(t *testing.T) {
+	b := &bridge{sessionID: "session"}
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"action", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"args":{}}}}`, true},
+		{"runbook", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`, true},
+		{"draft", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{}}}`, true},
+		{"read", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}`, false},
+		{"ping", `{"jsonrpc":"2.0","id":1,"method":"ping"}`, false},
+		{"unknown", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"future_mutation","arguments":{}}}`, false},
+		{"malformed call", `{"jsonrpc":"2.0","id":1,"method":"tools/call"}`, false},
+		{"notification", `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := []byte(tc.body)
+			got := b.mutationOperationID(frame, parseRequestMeta(frame))
+			if (got != "") != tc.want {
+				t.Fatalf("mutationOperationID() = %q, want present=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEncodeCrockford128Boundaries(t *testing.T) {
+	if got, want := encodeCrockford128([16]byte{}), strings.Repeat("0", 26); got != want {
+		t.Errorf("zero encoding = %q, want %q", got, want)
+	}
+	maximum := [16]byte{}
+	for i := range maximum {
+		maximum[i] = 0xff
+	}
+	if got, want := encodeCrockford128(maximum), "7"+strings.Repeat("Z", 25); got != want {
+		t.Errorf("maximum encoding = %q, want %q", got, want)
+	}
+}
+
 func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -119,6 +225,18 @@ func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
 		{"missing method", `{"jsonrpc":"2.0","id":1}`, false, false},
 		{"null method", `{"jsonrpc":"2.0","id":1,"method":null}`, false, false},
 		{"non-string method", `{"jsonrpc":"2.0","id":1,"method":7}`, false, false},
+		{
+			"oversized string id",
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"ping"}`, strings.Repeat("i", maxRequestIDBytes+1)),
+			false,
+			false,
+		},
+		{
+			"oversized integer id",
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"method":"ping"}`, strings.Repeat("9", maxRequestIDBytes+1)),
+			false,
+			false,
+		},
 		{"malformed frame", `{not json`, false, false},
 	}
 	for _, tc := range tests {
@@ -211,6 +329,9 @@ func TestNewSessionID_UniquePerProcess(t *testing.T) {
 	if first == second {
 		t.Error("two session ids collided — nonce isn't random")
 	}
+	if len(first) != 32 || len(second) != 32 {
+		t.Fatalf("session ids must carry 128 bits: %q / %q", first, second)
+	}
 }
 
 // A rand read failure must fail closed (error), never fall back to a
@@ -223,14 +344,16 @@ func TestNewSessionID_FailsClosedOnRandError(t *testing.T) {
 
 // -- forward: HTTP plumbing -----------------------------------------
 
-func TestForward_SetsAuthAndUserAgentAndIdempotencyHeaders(t *testing.T) {
-	var gotAuth, gotUA, gotIdem string
-	var hadIdem bool
+func TestForward_SetsAuthUserAgentIdempotencyAndOperationHeaders(t *testing.T) {
+	var gotAuth, gotUA, gotIdem, gotOperationID string
+	var hadIdem, hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotUA = r.Header.Get("User-Agent")
 		gotIdem = r.Header.Get("Idempotency-Key")
 		_, hadIdem = r.Header["Idempotency-Key"]
+		gotOperationID = r.Header.Get(operationIDHeader)
+		_, hadOperationID = r.Header[operationIDHeader]
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
 	}))
@@ -238,7 +361,7 @@ func TestForward_SetsAuthAndUserAgentAndIdempotencyHeaders(t *testing.T) {
 
 	b := newTestBridge(srv)
 
-	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`)
 	if _, err := b.forward(frame); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
@@ -254,6 +377,30 @@ func TestForward_SetsAuthAndUserAgentAndIdempotencyHeaders(t *testing.T) {
 	}
 	if !hadIdem {
 		t.Error("frame with id should set the Idempotency-Key header")
+	}
+	if gotOperationID != b.mutationOperationID(frame, parseRequestMeta(frame)) {
+		t.Errorf("%s = %q, want %q", operationIDHeader, gotOperationID, b.mutationOperationID(frame, parseRequestMeta(frame)))
+	}
+	if !hadOperationID {
+		t.Errorf("frame with id should set the %s header", operationIDHeader)
+	}
+}
+
+func TestForward_OmitsOperationHeaderForReads(t *testing.T) {
+	var hadOperationID bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hadOperationID = r.Header[operationIDHeader]
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}`)
+	if _, err := b.forward(frame); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if hadOperationID {
+		t.Errorf("read call must not set the %s header", operationIDHeader)
 	}
 }
 
@@ -279,10 +426,11 @@ func TestForward_SetsMcpSessionIDHeader(t *testing.T) {
 	}
 }
 
-func TestForward_OmitsIdempotencyHeaderForNotifications(t *testing.T) {
-	var hadIdem bool
+func TestForward_OmitsRequestIdentityHeadersForNotifications(t *testing.T) {
+	var hadIdem, hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, hadIdem = r.Header["Idempotency-Key"]
+		_, hadOperationID = r.Header[operationIDHeader]
 		// Notifications get 202 + empty body per JSON-RPC over HTTP.
 		w.WriteHeader(http.StatusAccepted)
 	}))
@@ -301,6 +449,9 @@ func TestForward_OmitsIdempotencyHeaderForNotifications(t *testing.T) {
 	}
 	if hadIdem {
 		t.Error("notifications must NOT set the Idempotency-Key header")
+	}
+	if hadOperationID {
+		t.Errorf("notifications must NOT set the %s header", operationIDHeader)
 	}
 }
 
@@ -644,6 +795,27 @@ func TestReadFrameLine_OversizedRetainsNothingAndRealigns(t *testing.T) {
 	}
 }
 
+func TestReadFrameLine_BudgetsJSONBodyWithoutLineDelimiter(t *testing.T) {
+	exact := strings.Repeat("x", maxFrameBytes)
+	for _, delimiter := range []string{"\n", "\r\n"} {
+		line, oversize, err := readFrameLine(bufio.NewReader(strings.NewReader(exact + delimiter)))
+		if err != nil {
+			t.Fatalf("delimiter %q: %v", delimiter, err)
+		}
+		if oversize || string(line) != exact {
+			t.Fatalf("delimiter %q: body len=%d oversize=%v, want exact accepted body", delimiter, len(line), oversize)
+		}
+	}
+
+	line, oversize, err := readFrameLine(bufio.NewReader(strings.NewReader(exact + "x\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !oversize || len(line) != 0 {
+		t.Fatalf("over-limit body len=%d oversize=%v, want drained rejection", len(line), oversize)
+	}
+}
+
 // -- buildUserAgent: stamps client + host ---------------------------
 
 func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
@@ -687,16 +859,16 @@ func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
 	}
 }
 
-// Large and odd-shaped ids decode without float conversion. Every legal id,
-// including a long string and an integer past 2^53, produces the same bounded
-// key length; fractional ids are invalid in MCP and produce no key.
+// Large and odd-shaped ids decode without float conversion. Every accepted id,
+// including a maximum-length string and an integer past 2^53, produces the same
+// bounded key length; fractional and over-limit ids produce no key.
 func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 	b := &bridge{sessionID: "s"}
 	cases := []string{
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`,
 		`{"jsonrpc":"2.0","id":9007199254740993,"method":"tools/call"}`,
 		`{"jsonrpc":"2.0","id":"a-b_c","method":"tools/call"}`,
-		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", 10_000) + `","method":"tools/call"}`,
+		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", maxRequestIDBytes) + `","method":"tools/call"}`,
 	}
 	seen := make(map[string]bool, len(cases))
 	for _, frame := range cases {
@@ -711,6 +883,10 @@ func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 	}
 	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":12.5,"method":"ping"}`)); got != "" {
 		t.Errorf("fractional MCP id must not produce an idempotency key, got %q", got)
+	}
+	overLimit := `{"jsonrpc":"2.0","id":"` + strings.Repeat("x", maxRequestIDBytes+1) + `","method":"ping"}`
+	if got := b.idempotencyKey([]byte(overLimit)); got != "" {
+		t.Errorf("over-limit MCP id must not produce an idempotency key, got %q", got)
 	}
 }
 
@@ -801,7 +977,7 @@ func TestForward_NegotiatesAndSendsProtocolHeaders(t *testing.T) {
 }
 
 func TestForward_RejectsInitializeResultWithoutValidProtocolVersion(t *testing.T) {
-	for _, result := range []string{`{}`, `{"protocolVersion":"not-a-version"}`, `{"protocolVersion":"2025-6-18"}`} {
+	for _, result := range []string{`{}`, `{"protocolVersion":"not-a-version"}`, `{"protocolVersion":"2025-6-18"}`, `{"PROTOCOLVERSION":"2025-06-18"}`} {
 		t.Run(result, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + result + `}`))
@@ -809,6 +985,35 @@ func TestForward_RejectsInitializeResultWithoutValidProtocolVersion(t *testing.T
 			defer srv.Close()
 			if _, err := newTestBridge(srv).forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err == nil {
 				t.Fatal("initialize result without a valid protocol version must be rejected")
+			}
+		})
+	}
+}
+
+func TestForwardRejectsAmbiguousPortalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		response string
+	}{
+		{name: "duplicate id", response: `{"jsonrpc":"2.0","id":2,"id":1,"result":{}}`},
+		{name: "duplicate result", response: `{"jsonrpc":"2.0","id":1,"result":{},"result":{}}`},
+		{name: "unpaired surrogate", response: `{"jsonrpc":"2.0","id":1,"result":"\uD800"}`},
+		{name: "case alias error message", status: http.StatusBadRequest, response: `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"MESSAGE":"bad"}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if test.status != 0 {
+					w.WriteHeader(test.status)
+				}
+				_, _ = io.WriteString(w, test.response)
+			}))
+			defer srv.Close()
+
+			if _, err := newTestBridge(srv).forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err == nil {
+				t.Fatalf("ambiguous portal response was accepted: %s", test.response)
 			}
 		})
 	}
@@ -894,6 +1099,35 @@ func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	}
 	if strings.Contains(got, b.apiKey) {
 		t.Errorf("the API key leaked into the client frame: %q", got)
+	}
+}
+
+func TestServe_MutationTransportErrorCarriesOperationRecovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	frame := []byte(`{"jsonrpc":"2.0","id":"mutate-1","method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`)
+	var out bytes.Buffer
+	if err := b.serve(bytes.NewReader(append(frame, '\n')), &out); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	var response struct {
+		Error struct {
+			Data operationRecoveryData `json:"data"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &response); err != nil {
+		t.Fatalf("decode synthetic response: %v (%s)", err, out.Bytes())
+	}
+	want := b.mutationOperationID(frame, parseRequestMeta(frame))
+	if response.Error.Data.OperationID != want ||
+		response.Error.Data.Next.Tool != "get_operation" ||
+		response.Error.Data.Next.Arguments.OperationID != want {
+		t.Fatalf("recovery data = %+v, want operation %q and get_operation next", response.Error.Data, want)
 	}
 }
 
@@ -1590,6 +1824,22 @@ func TestCancellationTargetKey_DistinguishesTypedIDs(t *testing.T) {
 	}
 }
 
+func TestCancellationTargetKeyUsesExactUnambiguousFields(t *testing.T) {
+	numeric := cancellationTargetKey([]byte(`{"params":{"requestId":7}}`))
+	if got := cancellationTargetKey([]byte(`{"params":{"requestId":7,"REQUESTID":"other"}}`)); got != numeric {
+		t.Errorf("case alias changed cancellation target: got %q want %q", got, numeric)
+	}
+	for _, frame := range []string{
+		`{"PARAMS":{"requestId":7}}`,
+		`{"params":{"REQUESTID":7}}`,
+		`{"params":{"requestId":7,"requestId":8}}`,
+	} {
+		if got := cancellationTargetKey([]byte(frame)); got != "" {
+			t.Errorf("ambiguous/alias-only cancellation %s produced key %q", frame, got)
+		}
+	}
+}
+
 // a write failure to stdout is fatal: serve returns the write
 // error (main then surfaces it and the process exits non-zero). A torn pipe to
 // the client must not be silently swallowed.
@@ -1737,7 +1987,7 @@ func TestServe_BlankAndWhitespaceLinesAreNoOps(t *testing.T) {
 // An unknown tool is still portal-owned semantics: the bridge forwards the
 // valid envelope verbatim and relays the portal's response.
 func TestServe_RelaysFramesVerbatimWithoutProtocolLogic(t *testing.T) {
-	frame := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"totally_made_up_tool","arguments":{}}}`
+	frame := " \t" + `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"totally_made_up_tool","arguments":{}}}` + "  "
 	var gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -1772,12 +2022,31 @@ func TestServe_MalformedEnvelopeIsRejectedLocally(t *testing.T) {
 		wantCode int
 	}{
 		{"malformed JSON", `{not json`, `"id":null`, -32700},
+		{"duplicate root key", `{"jsonrpc":"2.0","id":7,"id":8,"method":"ping"}`, `"id":null`, -32700},
+		{"duplicate nested key", `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"args":{"x":1,"x":2}}}}`, `"id":null`, -32700},
+		{"invalid UTF-8", "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"\xff\"}", `"id":null`, -32700},
+		{"leading vertical tab", "\v" + `{"jsonrpc":"2.0","id":7,"method":"ping"}`, `"id":null`, -32700},
+		{"trailing form feed", `{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\f", `"id":null`, -32700},
+		{"leading nonbreaking space", "\u00a0" + `{"jsonrpc":"2.0","id":7,"method":"ping"}`, `"id":null`, -32700},
+		{"trailing JSON value", `{"jsonrpc":"2.0","id":7,"method":"ping"} {}`, `"id":null`, -32700},
 		{"null id", `{"jsonrpc":"2.0","id":null,"method":"ping"}`, `"id":null`, -32600},
 		{"fractional id", `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`, `"id":null`, -32600},
 		{"missing method", `{"jsonrpc":"2.0","id":7}`, `"id":7`, -32600},
 		{"null method", `{"jsonrpc":"2.0","id":8,"method":null}`, `"id":8`, -32600},
 		{"non-string method", `{"jsonrpc":"2.0","id":"method","method":7}`, `"id":"method"`, -32600},
 		{"wrong version", `{"jsonrpc":"1.0","id":9,"method":"ping"}`, `"id":9`, -32600},
+		{
+			"oversized string id",
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"ping"}`, strings.Repeat("i", maxRequestIDBytes+1)),
+			`"id":null`,
+			-32600,
+		},
+		{
+			"oversized integer id",
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"method":"ping"}`, strings.Repeat("9", maxRequestIDBytes+1)),
+			`"id":null`,
+			-32600,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1788,6 +2057,9 @@ func TestServe_MalformedEnvelopeIsRejectedLocally(t *testing.T) {
 			if !strings.Contains(out.String(), tc.wantID) ||
 				!strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, tc.wantCode)) {
 				t.Errorf("invalid envelope response = %q", out.String())
+			}
+			if out.Len() > maxResponseBytes {
+				t.Errorf("invalid envelope response is %d bytes, limit is %d", out.Len(), maxResponseBytes)
 			}
 		})
 	}
@@ -1871,14 +2143,14 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	if httpTimeout != 330*time.Second {
 		t.Errorf("httpTimeout = %v, want 330s", httpTimeout)
 	}
-	if maxResponseBytes != 8_000_000 {
-		t.Errorf("maxResponseBytes = %d, want 8,000,000", maxResponseBytes)
+	if maxResponseBytes != 512<<10 {
+		t.Errorf("maxResponseBytes = %d, want 512 KiB", maxResponseBytes)
 	}
-	if maxFrameBytes != 8_000_000 {
-		t.Errorf("maxFrameBytes = %d, want 8,000,000", maxFrameBytes)
+	if maxFrameBytes != 128<<10 {
+		t.Errorf("maxFrameBytes = %d, want 128 KiB", maxFrameBytes)
 	}
-	if maxInflightRequestBytes != 16_000_000 {
-		t.Errorf("maxInflightRequestBytes = %d, want 16,000,000", maxInflightRequestBytes)
+	if maxInflightRequestBytes != maxConcurrentRequests*maxFrameBytes {
+		t.Errorf("maxInflightRequestBytes = %d, want %d", maxInflightRequestBytes, maxConcurrentRequests*maxFrameBytes)
 	}
 	if maxSessionRequestIDs != 65_536 {
 		t.Errorf("maxSessionRequestIDs = %d, want 65536", maxSessionRequestIDs)
@@ -1974,11 +2246,12 @@ func newTestBridge(srv *httptest.Server) *bridge {
 	client := newHTTPClient()
 	client.Transport = jsonPortalTransport{base: http.DefaultTransport}
 	return &bridge{
-		endpoint:  srv.URL,
-		apiKey:    "k",
-		userAgent: "ua",
-		client:    client,
-		sessionID: "sess",
+		endpoint:     srv.URL,
+		portalOrigin: srv.URL,
+		apiKey:       "k",
+		userAgent:    "ua",
+		client:       client,
+		sessionID:    "sess",
 	}
 }
 

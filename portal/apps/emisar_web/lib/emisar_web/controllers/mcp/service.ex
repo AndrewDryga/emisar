@@ -13,7 +13,7 @@ defmodule EmisarWeb.MCP.Service do
   modules — `Catalog`, `Runners`, `Runs`.
   """
 
-  alias Emisar.{Catalog, Runbooks, Runners, Runs}
+  alias Emisar.{Approvals, Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.MCP.{Cancellation, Idempotency, ToolMetadata, ToolSchema}
   require Logger
 
@@ -35,7 +35,6 @@ defmodule EmisarWeb.MCP.Service do
   @recheck_interval_ms 2_000
 
   @stdout_cap 65_536
-  @stderr_cap 65_536
   # A compromised runner can legally persist 256 KiB progress payloads. Limit
   # the number read for an MCP preview as well as each rendered stream so one
   # run cannot turn a status request into an unbounded database read.
@@ -440,6 +439,177 @@ defmodule EmisarWeb.MCP.Service do
         :ok -> {:ok, Enum.map(results, &runner_result_to_json(&1, subject))}
         :cancelled -> {:error, :cancelled}
       end
+    end
+  end
+
+  @doc "Dispatches a preflighted fixed-catalog action and returns current run summaries."
+  def dispatch_fixed_action(conn, targets, intent, wait_ms) do
+    api_key = conn.assigns.api_key
+    subject = conn.assigns.current_subject
+
+    operation_attrs = %{
+      operation_id: intent.operation_id,
+      tool: :run_action,
+      fingerprint: intent.fingerprint,
+      action_id: intent.action_id,
+      pack_ref: intent.pack_ref
+    }
+
+    target_attrs =
+      Enum.map(targets, fn target ->
+        %{
+          action_id: intent.action_id,
+          runner_id: target.id,
+          args: intent.args,
+          args_raw: intent.args_raw,
+          reason: intent.reason,
+          source: "mcp",
+          api_key_id: api_key.id,
+          client_info: api_key.last_client_info || %{},
+          mcp_session_id: request_session_id(conn),
+          attestation: intent.attestation,
+          idempotency_key: Idempotency.per_runner(intent.operation_id, target.id),
+          operation_id: intent.operation_id,
+          pack_ref: intent.pack_ref,
+          requested_by_membership_id: api_key.created_by_membership_id
+        }
+      end)
+
+    with {:ok, runs} <- Runs.dispatch_mcp_fanout(operation_attrs, target_attrs, subject),
+         true <- complete_target_set?(runs, targets),
+         :ok <-
+           maybe_poll_to_terminal(
+             subject,
+             fixed_dispatch_results(runs, targets),
+             wait_ms,
+             Cancellation.topic(conn)
+           ),
+         {:ok, runs} <-
+           Runs.list_runs_by_mcp_operation(hd(runs).mcp_operation_record_id, subject),
+         true <- complete_target_set?(runs, targets) do
+      {:ok, fixed_run_summaries(runs, subject)}
+    else
+      :cancelled -> {:error, :cancelled}
+      false -> {:error, :operation_incomplete}
+      other -> other
+    end
+  end
+
+  defp fixed_dispatch_results(runs, targets) do
+    targets_by_id = Map.new(targets, &{&1.id, &1})
+
+    Enum.map(runs, fn run ->
+      target = Map.fetch!(targets_by_id, run.runner_id)
+      {target.name, fixed_dispatch_result(run), target}
+    end)
+  end
+
+  defp fixed_dispatch_result(%{status: :denied, policy_reason: reason}),
+    do: {:error, :denied_by_policy, reason || "policy denied this call"}
+
+  defp fixed_dispatch_result(%{status: :pending_approval} = run),
+    do: {:ok, :pending_approval, run}
+
+  defp fixed_dispatch_result(run), do: {:ok, :running, run}
+
+  defp complete_target_set?(runs, targets) do
+    MapSet.new(runs, & &1.runner_id) == MapSet.new(targets, & &1.id)
+  end
+
+  @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
+  def fixed_run_summaries(runs, subject) when is_list(runs) do
+    stream_cap = min(16_384, div(65_536, max(2 * length(runs), 1)))
+    Enum.map(runs, &fixed_run_summary(&1, subject, stream_cap))
+  end
+
+  @doc "Renders one fixed-contract run summary."
+  def fixed_run_summary(run, subject, stream_cap \\ 16_384) do
+    details = full_run_payload(run, subject, stream_cap)
+    {approval, approval_wait_until} = fixed_approval(run, subject)
+
+    %{
+      run_id: run.id,
+      operation_id: run.operation_id,
+      action_id: run.action_id,
+      pack_ref: run.pack_ref,
+      runner_ref: run.runner_ref,
+      runbook_execution_id: run.runbook_execution_id,
+      step_id: run.runbook_step_id,
+      status: to_string(run.status),
+      created_at: run.inserted_at,
+      finished_at: run.finished_at,
+      exit_code: run.exit_code,
+      duration_ms: run.duration_ms,
+      stdout: details.stdout,
+      stderr: details.stderr,
+      stdout_bytes: run.stdout_bytes,
+      stderr_bytes: run.stderr_bytes,
+      stdout_sha256: run.stdout_sha256,
+      stderr_sha256: run.stderr_sha256,
+      truncated_stdout:
+        output_truncated?(
+          details.stdout,
+          run.stdout_bytes,
+          details.stdout_truncated,
+          details.output_events_truncated
+        ),
+      truncated_stderr:
+        output_truncated?(
+          details.stderr,
+          run.stderr_bytes,
+          details.stderr_truncated,
+          details.output_events_truncated
+        ),
+      approval: approval,
+      wait_until: approval_wait_until || fixed_wait_until(run),
+      next: fixed_run_next(run),
+      run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp output_truncated?(preview, total_bytes, locally_truncated?, events_truncated?) do
+    locally_truncated? or events_truncated? or
+      (is_integer(total_bytes) and total_bytes > byte_size(preview))
+  end
+
+  defp fixed_approval(%{status: :pending_approval} = run, subject) do
+    case Approvals.fetch_request_for_visible_run(run, subject) do
+      {:ok, request} ->
+        approval = %{
+          request_id: request.id,
+          url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/approvals/#{request.id}",
+          expires_at: request.expires_at
+        }
+
+        {approval, request.expires_at}
+
+      _ ->
+        {nil, nil}
+    end
+  end
+
+  defp fixed_approval(_run, _subject), do: {nil, nil}
+
+  # DispatchTimeout gives an acknowledged-or-terminal decision ten minutes
+  # after queueing. Expose that durable deadline rather than inventing a wait
+  # horizon from this particular HTTP request.
+  defp fixed_wait_until(%{status: :sent, queued_at: %DateTime{} = queued_at}),
+    do: DateTime.add(queued_at, 600, :second)
+
+  defp fixed_wait_until(_run), do: nil
+
+  defp fixed_run_next(%{status: status, id: run_id}) do
+    if Runs.ActionRun.terminal?(status),
+      do: nil,
+      else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "5m"}}
+  end
+
+  defp request_session_id(conn) do
+    case Plug.Conn.get_req_header(conn, "mcp-session-id") do
+      [session_id | _] when session_id != "" -> session_id
+      _ -> nil
     end
   end
 
@@ -1172,10 +1342,12 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Run payload (incl. output) -------------------------------------
 
-  defp full_run_payload(run, subject) do
+  defp full_run_payload(run, subject, stream_cap \\ @stdout_cap) do
     {:ok, events} = Runs.list_recent_events_for_run(run.id, @max_output_events + 1, subject)
     {events, output_events_truncated?} = output_tail(events)
-    {{stdout, stdout_truncated?}, {stderr, stderr_truncated?}} = collect_streams(events)
+
+    {{stdout, stdout_truncated?}, {stderr, stderr_truncated?}} =
+      collect_streams(events, stream_cap)
 
     %{
       id: run.id,
@@ -1212,14 +1384,14 @@ defmodule EmisarWeb.MCP.Service do
 
   defp output_tail(events), do: {events, false}
 
-  defp collect_streams(events) do
+  defp collect_streams(events, stream_cap) do
     Enum.reduce(events, {{"", false}, {"", false}}, fn event, {out, err} ->
       chunk = get_chunk(event)
       stream = event.stream || (event.payload && event.payload["stream"])
 
       case stream do
-        "stderr" -> {out, append_tail(err, chunk, @stderr_cap)}
-        _ -> {append_tail(out, chunk, @stdout_cap), err}
+        "stderr" -> {out, append_tail(err, chunk, stream_cap)}
+        _ -> {append_tail(out, chunk, stream_cap), err}
       end
     end)
   end
@@ -1233,7 +1405,22 @@ defmodule EmisarWeb.MCP.Service do
   defp get_chunk(_), do: ""
 
   defp truncate(s, n) when byte_size(s) <= n, do: s
-  defp truncate(s, n), do: binary_part(s, byte_size(s) - n, n)
+
+  defp truncate(s, n) do
+    s
+    |> binary_part(byte_size(s) - n, n)
+    |> drop_incomplete_utf8_prefix(0)
+  end
+
+  defp drop_incomplete_utf8_prefix(value, dropped) when dropped < 4 do
+    if String.valid?(value),
+      do: value,
+      else: drop_incomplete_utf8_prefix(tl_binary(value), dropped + 1)
+  end
+
+  defp drop_incomplete_utf8_prefix(_value, _dropped), do: ""
+  defp tl_binary(<<_byte, rest::binary>>), do: rest
+  defp tl_binary(<<>>), do: <<>>
 
   defp errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->

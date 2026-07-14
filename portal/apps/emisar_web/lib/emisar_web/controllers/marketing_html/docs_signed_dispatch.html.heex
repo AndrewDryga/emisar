@@ -10,16 +10,17 @@
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         By default a runner trusts the control plane to tell it what to run. Signed dispatch
         removes that trust: with enforcement on, a runner executes an action only when it carries a
-        valid Ed25519 signature a real person produced in their own MCP client. The control plane
+        valid Ed25519 signature produced by a customer-authorized MCP client. The control plane
         relays that signature — it holds no private key, so it can't forge or alter the signed
-        action, exact arguments, or durable runner-id set, replay it on a selected runner, or
+        action, immutable pack, exact arguments, reason, operation, or selected runner generations;
+        replay it on a selected runner; or
         originate a run. The signature, not the cloud, is the authority.
       </p>
       <p class="mt-4 text-sm leading-6 text-zinc-500">
         It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
         runbooks, scheduled runs, and API keys can't dispatch to that host — only a signed MCP call
-        runs. Turn it on where "a real human asked for this" must be cryptographically true, not
-        just policy-checked.
+        runs. Turn it on where "this came from a customer-authorized MCP client" must be
+        cryptographically true, not merely asserted by the control plane.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">How it works</h2>
@@ -29,23 +30,27 @@
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
           <strong>The MCP client signs and presents its cert.</strong>
-          When you call an action, the client builds a canonical v3 JSON message — the action id,
-          exact JSON arguments, sorted durable runner-id set, one-time nonce, and timestamp — signs
-          it with an Ed25519 leaf key that never leaves your machine, and attaches the CA-signed
-          certificate that vouches for that key. Large integers are preserved exactly, without a
-          float conversion, and string values cannot create ambiguous field boundaries.
+          For <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>,
+          the bridge builds a fixed v4 claim over the canonical portal origin, action id, immutable
+          pack ref, digest of the exact JSON argument bytes, digest of the complete sorted runner
+          refs, reason, bridge operation id, nonce, and timestamp. It signs with an Ed25519 leaf key
+          that never leaves your machine and attaches the CA-signed certificate that vouches for
+          that key. The bridge never decodes and re-encodes action arguments, so large integers,
+          exponent spellings, object order, and escapes remain exact.
         </li>
         <li>
           <strong>The control plane relays.</strong>
-          The portal bounds and stores the known envelope fields, checks the selected runner ids
-          equal the signed target set, and forwards them. It can't change the action, exact
-          arguments, or targets without invalidating the signature, and it holds neither private key.
+          The portal bounds the envelope, checks the selected runner refs and preflight operation
+          facts against the signed claim, and forwards it with the exact argument bytes. It cannot
+          change the origin, action, pack, arguments, reason, operation, or targets without
+          invalidating the signature, and it holds neither private key.
         </li>
         <li>
           <strong>The runner verifies, then runs.</strong>
-          It verifies the cert against a CA it trusts, requires its durable id in the signed target
-          set, checks the cert is still valid and its scope matches this host, verifies the exact
-          args and target signature, checks freshness, and consumes the nonce. Only then does it run.
+          It verifies the cert against a CA it trusts, requires exactly one ref with its locally
+          derived generation suffix in the signed target set, verifies the portal origin, action,
+          on-disk pack hash, exact args, reason, operation, freshness, and signature, then consumes
+          the nonce. Only then does it run.
         </li>
       </ol>
       <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
@@ -56,9 +61,10 @@
         signature and zero runner-config edits. The offline CA signs short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
         (a group or labels). The
-        exact runner set is bound into every v3 signature by durable id. Certificate scope is an
-        independent, coarser group/label ceiling asserted by the CA and matched against the runner's
-        local identity. The CA private key stays offline and never touches a runner or the portal.
+        exact runner set is bound into every v4 signature with generation-bound refs shaped as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>.
+        Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
+        matched against the runner's local identity. The CA private key stays offline and never
+        touches a runner or the portal.
       </div>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Turn it on</h2>
@@ -174,7 +180,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
             narrows it further; an empty scope is valid on any runner that trusts the CA (the simple,
             weaker mode). The runner matches scope only against its own local group/labels, so a
             scoped cert remains unusable outside the group/labels the CA authorized. Every call also
-            signs the exact durable runner-id set selected for that dispatch.
+            signs the exact generation-bound runner-ref set selected for that dispatch.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -311,9 +317,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <span class="flex-none text-zinc-600">—</span>
           <span>
             <strong class="text-zinc-200">Names are discovery metadata.</strong>
-            The signature binds durable ids, not the display names the portal shows beside them. A
-            compromised portal can lie about that mapping before signing. Use narrow cert scopes and
-            verify stable ids out of band for the highest-trust workflows.
+            The signature binds suffixes derived from durable runner ids; it does not make the
+            display-name prefix truthful. A compromised portal can lie about that mapping before
+            signing. Use narrow cert scopes and verify suffixes out of band for the highest-trust
+            workflows.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -361,8 +368,8 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <span class="flex-none text-zinc-600">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_mismatch</code>
-            — this runner's durable id is absent from the signed target set. Refresh tools and submit
-            a fresh call for the intended id.
+            — this runner generation is absent or appears more than once in the signed target set.
+            Refresh discovery and submit a fresh call with the exact returned runner refs.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

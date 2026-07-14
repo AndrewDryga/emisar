@@ -10,13 +10,16 @@ defmodule Emisar.Catalog.RunnerAction do
     field :action_id, :string
     field :pack_id, :string
     field :pack_version, :string
+    field :pack_hash, :string
     field :title, :string
+    field :summary, :string
     field :kind, Ecto.Enum, values: [:exec, :script]
     field :risk, Ecto.Enum, values: [:low, :medium, :high, :critical]
     field :description, :string
     field :side_effects, {:array, :string}, default: []
     field :args_schema, :map, default: %{}
     field :examples, {:array, :map}, default: []
+    field :search_terms, {:array, :string}, default: []
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec
 

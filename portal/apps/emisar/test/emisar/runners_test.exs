@@ -735,8 +735,14 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       refute runner.enforce_signatures
 
-      {:ok, updated} = Runners.apply_state(runner, %{"enforce_signatures" => true})
+      {:ok, updated} =
+        Runners.apply_state(runner, %{
+          "enforce_signatures" => true,
+          "max_attestation_age_seconds" => 86_400
+        })
+
       assert updated.enforce_signatures
+      assert updated.max_attestation_age_seconds == 86_400
     end
 
     test "clears enforce_signatures when a later advertisement omits it", %{account: account} do

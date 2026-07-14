@@ -3,7 +3,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   alias Emisar.Catalog.PackVersion
 
   @insert_fields ~w(account_id pack_id version hash pending_hash trust_state
-                    first_seen_at last_seen_at)a
+                    trusted_manifest first_seen_at last_seen_at)a
 
   @doc "Insert with explicit trust state (e.g. auto-pin on first sight)."
   def insert(attrs) do
@@ -27,10 +27,15 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     })
   end
 
+  @doc "Restore a release-frozen complete manifest on an already trusted hash."
+  def restore_baseline_manifest(%PackVersion{} = pack_version, %{} = trusted_manifest) do
+    change(pack_version, trusted_manifest: trusted_manifest)
+  end
+
   @doc """
-  Adopt pending_hash as the trusted hash and snapshot the action set
-  (`action_id => {risk, kind}`) trusted alongside it, so a later
-  re-advertised hash can be diffed against it. Audited via Audit.log.
+  Adopt pending_hash as the trusted hash and snapshot its complete, versioned
+  action manifest, so a later re-advertised hash can be diffed against every
+  execution/model-facing descriptor field. Audited via Audit.log.
   """
   def trust(%PackVersion{} = pack_version, %{} = trusted_manifest) do
     pack_version

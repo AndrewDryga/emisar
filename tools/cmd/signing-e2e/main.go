@@ -8,9 +8,8 @@
 //     at stack-up (generate-at-startup; no key material is committed).
 //  2. A dispatch SIGNED by the MCP bridge (using the matching leaf key +
 //     cert) to that runner RUNS.
-//  3. The SAME dispatch UNSIGNED is refused with
-//     `runner_requires_attestation` (the portal won't relay an unsigned call
-//     to an enforcing runner).
+//  3. The SAME dispatch UNSIGNED is refused with `signature_required` before
+//     the portal creates a run.
 //
 // Signing is exercised through the actual `emisar-mcp` bridge — the bridge is
 // what builds the canonical claim and signs it — so this tests the real
@@ -100,6 +99,8 @@ func findRunner(v any, group string) map[string]any {
 type runnerTarget struct {
 	name       string
 	externalID string
+	runnerRef  string
+	packRef    string
 }
 
 // waitForEnforcingRunner polls the MCP runners list until the enforcing
@@ -170,18 +171,14 @@ func readMaterial() (leaf, cert string) {
 	return leaf, cert
 }
 
-func dispatchFrame(runnerID, action, requestID string) string {
+func toolFrame(tool string, arguments map[string]any, requestID string) string {
 	frame := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      requestID,
 		"method":  "tools/call",
 		"params": map[string]any{
-			"name": action,
-			"arguments": map[string]any{
-				"runners": []string{runnerID},
-				"reason":  "signed-dispatch e2e " + requestID,
-				"wait":    "30s",
-			},
+			"name":      tool,
+			"arguments": arguments,
 		},
 	}
 	data, err := json.Marshal(frame)
@@ -189,6 +186,21 @@ func dispatchFrame(runnerID, action, requestID string) string {
 		fail("marshaling dispatch frame: %v", err)
 	}
 	return string(data) + "\n"
+}
+
+func dispatchFrame(runnerRef, action, packRef, requestID string) string {
+	return toolFrame(
+		"run_action",
+		map[string]any{
+			"action_id":   action,
+			"pack_ref":    packRef,
+			"runner_refs": []string{runnerRef},
+			"args":        map[string]any{},
+			"reason":      "signed-dispatch e2e " + requestID,
+			"wait":        "30s",
+		},
+		requestID,
+	)
 }
 
 // runBridge drives the real emisar-mcp bridge with the frame on stdin and
@@ -208,8 +220,9 @@ func runBridge(frame string, signingEnv map[string]string) string {
 }
 
 type bridgeResult struct {
-	isError bool
-	text    string
+	isError    bool
+	text       string
+	structured json.RawMessage
 }
 
 func decodeBridgeResult(output string) (bridgeResult, error) {
@@ -228,7 +241,8 @@ func decodeBridgeResult(output string) (bridgeResult, error) {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			IsError *bool `json:"isError"`
+			IsError    *bool           `json:"isError"`
+			Structured json.RawMessage `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &response); err != nil {
@@ -247,7 +261,108 @@ func decodeBridgeResult(output string) (bridgeResult, error) {
 			texts = append(texts, block.Text)
 		}
 	}
-	return bridgeResult{isError: *response.Result.IsError, text: strings.Join(texts, "\n")}, nil
+	return bridgeResult{
+		isError:    *response.Result.IsError,
+		text:       strings.Join(texts, "\n"),
+		structured: response.Result.Structured,
+	}, nil
+}
+
+func callBridgeTool(tool string, arguments map[string]any, requestID string, signingEnv map[string]string) bridgeResult {
+	output := runBridge(toolFrame(tool, arguments, requestID), signingEnv)
+	result, err := decodeBridgeResult(output)
+	if err != nil {
+		fail("%s returned an invalid response: %v\n%s", tool, err, head(output, 600))
+	}
+	return result
+}
+
+func discoverFixedContract(runner runnerTarget, action string) runnerTarget {
+	listed := callBridgeTool(
+		"list_runners",
+		map[string]any{"query": runner.name, "statuses": []string{"connected"}, "limit": 15},
+		"discover-runner",
+		nil,
+	)
+	if listed.isError {
+		fail("list_runners returned a tool error:\n%s", head(listed.text, 600))
+	}
+
+	var runnerList struct {
+		Runners []struct {
+			Name      string `json:"name"`
+			Group     string `json:"group"`
+			Status    string `json:"status"`
+			RunnerRef string `json:"runner_ref"`
+		} `json:"runners"`
+	}
+	if err := json.Unmarshal(listed.structured, &runnerList); err != nil {
+		fail("decode list_runners structuredContent: %v", err)
+	}
+	for _, candidate := range runnerList.Runners {
+		if candidate.Name == runner.name && candidate.Status == "connected" {
+			runner.runnerRef = candidate.RunnerRef
+			break
+		}
+	}
+	if runner.runnerRef == "" {
+		fail("list_runners did not return connected runner %s", runner.name)
+	}
+
+	found := callBridgeTool(
+		"find_actions",
+		map[string]any{"action_id": action, "runner_refs": []string{runner.runnerRef}, "limit": 15},
+		"discover-action",
+		nil,
+	)
+	if found.isError {
+		fail("find_actions returned a tool error:\n%s", head(found.text, 600))
+	}
+
+	var actionList struct {
+		Candidates []struct {
+			ActionID string `json:"action_id"`
+			PackRef  string `json:"pack_ref"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(found.structured, &actionList); err != nil {
+		fail("decode find_actions structuredContent: %v", err)
+	}
+	for _, candidate := range actionList.Candidates {
+		if candidate.ActionID == action {
+			runner.packRef = candidate.PackRef
+			break
+		}
+	}
+	if runner.packRef == "" {
+		fail("find_actions did not return %s for runner %s", action, runner.name)
+	}
+	return runner
+}
+
+func successfulDispatch(result bridgeResult) bool {
+	var body struct {
+		Runs []struct {
+			Status   string `json:"status"`
+			ExitCode *int   `json:"exit_code"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(result.structured, &body); err != nil || len(body.Runs) != 1 {
+		return false
+	}
+	return body.Runs[0].Status == "success" && body.Runs[0].ExitCode != nil && *body.Runs[0].ExitCode == 0
+}
+
+func structuredErrorCode(result bridgeResult) string {
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(result.structured, &body); err != nil {
+		return ""
+	}
+	return body.Error.Code
 }
 
 func main() {
@@ -266,12 +381,14 @@ func main() {
 	logf("waiting for an enforcing runner in group %s...", group)
 	runner := waitForEnforcingRunner(portalURL, mcpKey, group, deadline)
 	logf("enforcing runner connected: %s (%s)", runner.name, runner.externalID)
+	runner = discoverFixedContract(runner, action)
+	logf("fixed contract discovered: runner_ref=%s pack_ref=%s", runner.runnerRef, runner.packRef)
 
 	leaf, cert := readMaterial()
 	logf("read leaf key + cert from the shared volume")
 
 	requestBase := fmt.Sprintf("signing-e2e-%d", time.Now().UnixNano())
-	signedFrame := dispatchFrame(runner.externalID, action, requestBase+"-signed")
+	signedFrame := dispatchFrame(runner.runnerRef, action, runner.packRef, requestBase+"-signed")
 
 	// 1. SIGNED dispatch must RUN.
 	logf("dispatching SIGNED %s -> %s", action, runner.name)
@@ -283,23 +400,25 @@ func main() {
 	if signedResult.isError {
 		fail("signed dispatch returned a tool error:\n%s", head(signed, 600))
 	}
-	if !strings.Contains(signedResult.text, "status=success") ||
-		!strings.Contains(signedResult.text, "exit_code=0") {
+	if !successfulDispatch(signedResult) {
 		fail("signed dispatch did not reach terminal success:\n%s", head(signed, 600))
 	}
-	logf("signed dispatch reached status=success with exit_code=0 ✓")
+	logf("signed dispatch reached status=success with exit_code=0")
 
 	// 2. The SAME dispatch UNSIGNED must be refused.
 	logf("dispatching UNSIGNED %s -> %s (expect refusal)", action, runner.name)
-	unsigned := runBridge(dispatchFrame(runner.externalID, action, requestBase+"-unsigned"), nil)
+	unsigned := runBridge(
+		dispatchFrame(runner.runnerRef, action, runner.packRef, requestBase+"-unsigned"),
+		nil,
+	)
 	unsignedResult, err := decodeBridgeResult(unsigned)
 	if err != nil {
 		fail("unsigned dispatch returned an invalid response: %v\n%s", err, head(unsigned, 600))
 	}
-	if !unsignedResult.isError || !strings.Contains(unsignedResult.text, "runner_requires_attestation") {
-		fail("an UNSIGNED dispatch to an enforcing runner was NOT refused with runner_requires_attestation:\n%s", head(unsigned, 600))
+	if !unsignedResult.isError || structuredErrorCode(unsignedResult) != "signature_required" {
+		fail("an UNSIGNED dispatch to an enforcing runner was NOT refused with signature_required:\n%s", head(unsigned, 600))
 	}
-	logf("unsigned dispatch refused with runner_requires_attestation ✓")
+	logf("unsigned dispatch refused with signature_required")
 
 	logf("PASS — enforcing runner runs a signed dispatch and refuses an unsigned one")
 }

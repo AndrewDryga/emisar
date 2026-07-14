@@ -63,6 +63,10 @@ type Request struct {
 	Args                  map[string]any
 	Reason                string
 	Opts                  Opts
+	// RegistrySnapshot pins resolution and execution to the registry whose pack
+	// bytes the cloud dispatch gate just verified. Nil is for local callers that
+	// intentionally use the engine's current registry.
+	RegistrySnapshot *packs.Registry
 
 	// OnProgress, if non-nil, is invoked from the executor goroutines with
 	// each completed line of redacted output. The engine forwards lines to
@@ -235,7 +239,10 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		}, nil
 	}
 
-	reg := e.Registry()
+	reg := req.RegistrySnapshot
+	if reg == nil {
+		reg = e.Registry()
+	}
 	act, ok := reg.Action(req.ActionID)
 	if !ok {
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)

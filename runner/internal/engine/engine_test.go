@@ -308,6 +308,44 @@ func TestEngine_Reload_InFlightKeepsCapturedRegistry(t *testing.T) {
 	}
 }
 
+func TestEngine_RunUsesVerifiedRegistrySnapshot(t *testing.T) {
+	e, j, root := setupEngine(t)
+	defer j.Close()
+
+	verified := e.Registry()
+	newAction := strings.Replace(echoAction, "id: t.echo", "id: t.shout", 1)
+	if err := os.WriteFile(filepath.Join(root, "p", "actions", "shout.yaml"), []byte(newAction), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "p", "pack.yaml")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(manifest), "actions:\n  - actions/echo.yaml\n",
+		"actions:\n  - actions/echo.yaml\n  - actions/shout.yaml\n", 1)
+	if err := os.WriteFile(manifestPath, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.shout", Args: map[string]any{"msg": "hello"}, Reason: "test",
+		RegistrySnapshot: verified,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != StatusUnknownAction {
+		t.Fatalf("status = %s, want unknown_action from the verified pre-reload registry", res.Status)
+	}
+	if _, ok := e.Registry().Action("t.shout"); !ok {
+		t.Fatal("test did not install a different current registry")
+	}
+}
+
 // jsonOkAction emits valid JSON. parserRequiredAction emits non-JSON
 // and asks the engine to fail when parsing fails.
 const jsonOkAction = `

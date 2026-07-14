@@ -19,6 +19,9 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_slug(queryable, slug),
     do: where(queryable, [runbooks: r], r.slug == ^slug)
 
+  def by_version(queryable, version),
+    do: where(queryable, [runbooks: r], r.version == ^version)
+
   def published(queryable \\ all()),
     do: where(queryable, [runbooks: r], r.status == :published)
 

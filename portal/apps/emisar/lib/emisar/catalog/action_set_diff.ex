@@ -4,19 +4,17 @@ defmodule Emisar.Catalog.ActionSetDiff do
   `trusted_manifest` snapshotted when an operator last trusted that hash.
 
   `Catalog.trust_pack_version/2` stores the manifest — a
-  `%{action_id => %{"risk" => risk, "kind" => kind}}` map (JSONB, so string
-  keys/values) — at trust time. When the same `(pack_id, version)` later
-  re-advertises a NEW hash and flips to `:pending`, the operator must Trust
-  again, and `changes/2` shows WHAT moved: actions **added** (a re-advertised
-  hash that silently adds a `critical` action is exactly the dangerous change
-  to surface), **removed**, and **changed** (same action_id, escalated/altered
-  risk or kind).
+  versioned, complete descriptor manifest at trust time. When the same
+  `(pack_id, version)` later re-advertises a NEW hash and flips to `:pending`,
+  `changes/2` shows actions added, removed, or changed across every
+  execution/model-facing field. Risk escalation remains explicit because it
+  is the operator UI's headline danger.
 
   Both inputs are already account-authorized by the caller (the page loads the
   `%PackVersion{}` and its `%RunnerAction{}` rows through Subject-gated reads),
   so this stays a pure transform — no Repo, no Subject.
   """
-  alias Emisar.Catalog.RunnerAction
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
 
   @risk_rank %{"low" => 0, "medium" => 1, "high" => 2, "critical" => 3}
 
@@ -27,61 +25,62 @@ defmodule Emisar.Catalog.ActionSetDiff do
           new_risk: String.t(),
           old_kind: String.t(),
           new_kind: String.t(),
+          changed_fields: [String.t()],
           risk_escalated?: boolean()
         }
   @type t :: %{added: [entry], removed: [entry], changed: [changed]}
 
   @doc """
-  The `%{action_id => %{"risk" => risk, "kind" => kind}}` manifest for a pack
-  version, built from its already-fetched `%RunnerAction{}` rows. Multiple
-  runners can report the same action, so the manifest keeps the most severe
-  risk deterministically. String keys/values round-trip through the JSONB
-  `trusted_manifest` column. Stored at trust time so a later drift can be
-  diffed against it.
+  A complete versioned manifest built from already-fetched `%RunnerAction{}`
+  rows. Trust mutations use `TrustedManifest.from_runner_actions/1` directly
+  so malformed or conflicting duplicate descriptors abort the transaction;
+  this convenience function returns an empty complete manifest on invalid
+  input for the read-only operator diff fallback.
   """
   @spec manifest_from_actions([RunnerAction.t()]) :: %{optional(String.t()) => map()}
   def manifest_from_actions(actions) when is_list(actions) do
-    Enum.reduce(actions, %{}, fn %RunnerAction{action_id: action_id} = action, manifest ->
-      Map.update(
-        manifest,
-        action_id,
-        manifest_entry(action),
-        &most_conservative_entry(&1, action)
-      )
-    end)
+    case TrustedManifest.from_runner_actions(actions) do
+      {:ok, manifest} -> manifest
+      {:error, :invalid_manifest} -> %{"schema_version" => 1, "actions" => %{}}
+    end
   end
 
   @doc """
-  Diff the currently-advertised `%RunnerAction{}` rows against a stored
-  manifest. `nil` (or empty) manifest — a version trusted before this feature,
-  or never trusted — yields an empty diff: the UI falls back to listing the
-  advertised actions as it does today.
+  Diff the currently-advertised `%RunnerAction{}` rows against a stored complete
+  manifest. A nil, sparse, malformed, or conflicting manifest yields an empty
+  diff so the UI falls back to listing the advertised actions.
 
   Returns `%{added: [...], removed: [...], changed: [...]}`, each list sorted by
   `action_id`. `changed` carries old+new risk/kind and a `risk_escalated?` flag
   (e.g. low→critical) — the headline danger.
   """
   @spec changes([RunnerAction.t()], map() | nil) :: t()
-  def changes(_advertised, manifest) when manifest in [nil, %{}],
-    do: %{added: [], removed: [], changed: []}
-
   def changes(advertised, manifest) when is_list(advertised) and is_map(manifest) do
-    manifest = valid_entries(manifest)
-    advertised_manifest = manifest_from_actions(advertised)
+    with {:ok, trusted_actions} <- TrustedManifest.actions(manifest),
+         {:ok, advertised_manifest} <- TrustedManifest.from_runner_actions(advertised),
+         {:ok, advertised_actions} <- TrustedManifest.actions(advertised_manifest) do
+      diff(trusted_actions, advertised_actions)
+    else
+      _ -> empty_diff()
+    end
+  end
 
+  def changes(_advertised, _manifest), do: empty_diff()
+
+  defp diff(trusted_actions, advertised_actions) do
     added =
-      for {action_id, entry} <- advertised_manifest,
-          not Map.has_key?(manifest, action_id),
-          do: entry(action_id, entry)
+      for {action_id, descriptor} <- advertised_actions,
+          not Map.has_key?(trusted_actions, action_id),
+          do: entry(action_id, descriptor)
 
     removed =
-      for {action_id, entry} <- manifest,
-          not Map.has_key?(advertised_manifest, action_id),
-          do: entry(action_id, entry)
+      for {action_id, descriptor} <- trusted_actions,
+          not Map.has_key?(advertised_actions, action_id),
+          do: entry(action_id, descriptor)
 
     changed =
-      for {action_id, new} <- advertised_manifest,
-          old = Map.get(manifest, action_id),
+      for {action_id, new} <- advertised_actions,
+          old = Map.get(trusted_actions, action_id),
           not is_nil(old),
           old != new,
           do: changed(action_id, old, new)
@@ -93,47 +92,22 @@ defmodule Emisar.Catalog.ActionSetDiff do
     }
   end
 
-  defp manifest_entry(%RunnerAction{} = action),
-    do: %{"risk" => to_string(action.risk), "kind" => to_string(action.kind)}
-
-  defp most_conservative_entry(existing, %RunnerAction{} = candidate) do
-    candidate = manifest_entry(candidate)
-
-    cond do
-      risk_rank(candidate["risk"]) > risk_rank(existing["risk"]) -> candidate
-      risk_rank(candidate["risk"]) < risk_rank(existing["risk"]) -> existing
-      candidate["kind"] > existing["kind"] -> candidate
-      true -> existing
-    end
-  end
-
-  defp valid_entries(manifest) do
-    Enum.reduce(manifest, %{}, fn
-      {action_id, %{"risk" => risk, "kind" => kind}}, valid
-      when is_binary(action_id) and is_binary(risk) and is_binary(kind) ->
-        Map.put(valid, action_id, %{"risk" => risk, "kind" => kind})
-
-      _entry, valid ->
-        valid
-    end)
-  end
-
   defp entry(action_id, %{"risk" => risk, "kind" => kind}),
     do: %{action_id: action_id, risk: risk, kind: kind}
 
-  defp changed(action_id, %{"risk" => old_risk, "kind" => old_kind}, %{
-         "risk" => new_risk,
-         "kind" => new_kind
-       }) do
+  defp changed(action_id, old, new) do
     %{
       action_id: action_id,
-      old_risk: old_risk,
-      new_risk: new_risk,
-      old_kind: old_kind,
-      new_kind: new_kind,
-      risk_escalated?: risk_rank(new_risk) > risk_rank(old_risk)
+      old_risk: old["risk"],
+      new_risk: new["risk"],
+      old_kind: old["kind"],
+      new_kind: new["kind"],
+      changed_fields: Enum.filter(TrustedManifest.descriptor_fields(), &(old[&1] != new[&1])),
+      risk_escalated?: risk_rank(new["risk"]) > risk_rank(old["risk"])
     }
   end
+
+  defp empty_diff, do: %{added: [], removed: [], changed: []}
 
   defp risk_rank(risk), do: Map.get(@risk_rank, risk, 0)
 end

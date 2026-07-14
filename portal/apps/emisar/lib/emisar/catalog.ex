@@ -25,7 +25,8 @@ defmodule Emisar.Catalog do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline, PackVersion, RunnerAction}
+  alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline}
+  alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
   require Logger
 
   @doc """
@@ -155,16 +156,18 @@ defmodule Emisar.Catalog do
     advertised = info["hash"]
     baseline = PackBaseline.lookup(pack_id, version)
 
-    {trusted_hash, pending_hash, trust_state, audit_event} =
+    {trusted_hash, pending_hash, trust_state, trusted_manifest, audit_event} =
       cond do
         is_binary(baseline) and baseline == advertised ->
-          {advertised, nil, :trusted, :pack_trust_baseline_match}
+          {advertised, nil, :trusted, PackBaseline.manifest(pack_id, version, advertised),
+           :pack_trust_baseline_match}
 
         is_binary(baseline) ->
-          {baseline, advertised, :pending, :pack_trust_baseline_mismatch}
+          {baseline, advertised, :pending, PackBaseline.manifest(pack_id, version, baseline),
+           :pack_trust_baseline_mismatch}
 
         true ->
-          {nil, advertised, :pending, :pack_trust_review_required}
+          {nil, advertised, :pending, nil, :pack_trust_review_required}
       end
 
     changeset =
@@ -175,6 +178,7 @@ defmodule Emisar.Catalog do
         hash: trusted_hash,
         pending_hash: pending_hash,
         trust_state: trust_state,
+        trusted_manifest: trusted_manifest,
         first_seen_at: now,
         last_seen_at: now
       })
@@ -214,7 +218,7 @@ defmodule Emisar.Catalog do
   defp judge_drift(%PackVersion{} = pack_version, advertised, now) do
     cond do
       pack_version.hash == advertised ->
-        :ok
+        restore_baseline_manifest(pack_version)
 
       pack_version.pending_hash == advertised ->
         :ok
@@ -227,6 +231,34 @@ defmodule Emisar.Catalog do
 
         Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
         :pending_changed
+    end
+  end
+
+  # Rows trusted before complete manifests existed are upgraded only from the
+  # release-frozen catalog and only when the exact trusted hash still matches.
+  # Runner-advertised prose never becomes trusted through this repair path.
+  defp restore_baseline_manifest(%PackVersion{} = pack_version) do
+    case TrustedManifest.validate(pack_version.trusted_manifest) do
+      {:ok, _manifest} -> :ok
+      {:error, :incomplete_manifest} -> persist_baseline_manifest(pack_version)
+    end
+  end
+
+  defp persist_baseline_manifest(%PackVersion{} = pack_version) do
+    manifest =
+      PackBaseline.manifest(pack_version.pack_id, pack_version.version, pack_version.hash)
+
+    case manifest do
+      nil ->
+        :ok
+
+      %{} ->
+        changeset = PackVersion.Changeset.restore_baseline_manifest(pack_version, manifest)
+
+        case Repo.update(changeset) do
+          {:ok, _updated} -> :ok
+          {:error, _changeset} -> :ok
+        end
     end
   end
 
@@ -252,7 +284,7 @@ defmodule Emisar.Catalog do
         lock_pending_pack_version(repo, pack_version_id, subject)
       end)
       |> Multi.run(:manifest, fn repo, %{before: pending} ->
-        {:ok, snapshot_action_set(repo, pending)}
+        snapshot_action_set(repo, pending)
       end)
       # Trusting a RETIRED version IS the override — an explicit,
       # permission-gated action. Compute it inside the transaction (retirement
@@ -425,16 +457,21 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # The action set advertised RIGHT NOW for this pack version — read inside the
-  # trust transaction (so the snapshot is consistent with the hash being
-  # adopted) and reduced to `action_id => {risk, kind}`. `RunnerAction` rows are
-  # per-runner, so dedupe by action_id (same shape as `list_pack_actions/3`).
+  # The complete descriptors advertised for the exact pending hash — read
+  # inside the trust transaction so adopting the hash and its reviewed model
+  # contract is atomic. Rows for another runner's different hash are excluded.
   defp snapshot_action_set(repo, %PackVersion{} = pack_version) do
-    RunnerAction.Query.all()
-    |> RunnerAction.Query.by_account_id(pack_version.account_id)
-    |> RunnerAction.Query.by_pack(pack_version.pack_id, pack_version.version)
-    |> repo.all()
-    |> ActionSetDiff.manifest_from_actions()
+    actions =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_account_id(pack_version.account_id)
+      |> RunnerAction.Query.by_pack(pack_version.pack_id, pack_version.version)
+      |> RunnerAction.Query.by_pack_hash(pack_version.pending_hash)
+      |> repo.all()
+
+    case TrustedManifest.from_runner_actions(actions) do
+      {:ok, manifest} -> {:ok, manifest}
+      {:error, :invalid_manifest} -> {:error, :invalid_manifest}
+    end
   end
 
   # -- Dispatch gate ---------------------------------------------------
@@ -546,10 +583,11 @@ defmodule Emisar.Catalog do
     # pack_id that isn't in the packs map, or map to a non-map. Pull the
     # version defensively so one malformed descriptor doesn't abort the whole
     # batch's action upsert (vs. `packs[pack_id]["version"]` raising BadMapError).
-    pack_version =
+    {pack_version, pack_hash} =
       case packs[pack_id] do
-        %{"version" => v} -> v
-        _ -> nil
+        %{"version" => version, "hash" => hash} -> {version, hash}
+        %{"version" => version} -> {version, nil}
+        _ -> {nil, nil}
       end
 
     attrs = %{
@@ -558,7 +596,9 @@ defmodule Emisar.Catalog do
       action_id: descriptor["id"],
       pack_id: pack_id,
       pack_version: pack_version,
+      pack_hash: pack_hash,
       title: descriptor["title"] || descriptor["id"],
+      summary: descriptor["summary"],
       # `kind`/`risk` are RUNNER-ADVERTISED. The dispatch gate reads them
       # catalog-authoritative (runs.ex) so the MCP/operator CALLER can't spoof
       # "low", but the runner that ships the pack authors them: for a pack with a
@@ -571,6 +611,7 @@ defmodule Emisar.Catalog do
       side_effects: descriptor["side_effects"] || [],
       args_schema: %{"args" => descriptor["args"] || []},
       examples: descriptor["examples"] || [],
+      search_terms: descriptor["search_terms"] || [],
       first_seen_at: now,
       last_seen_at: now
     }
@@ -916,6 +957,22 @@ defmodule Emisar.Catalog do
     end
   end
 
+  @doc "Returns every pack-version row in the subject's account after the view-catalog gate."
+  @spec list_all_pack_versions_for_account(Subject.t()) ::
+          {:ok, [PackVersion.t()]} | {:error, :unauthorized}
+  def list_all_pack_versions_for_account(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      pack_versions =
+        PackVersion.Query.all()
+        |> PackVersion.Query.ordered_by_pack()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, pack_versions}
+    end
+  end
+
   # Rendering concern: the Packs page passes `preload:
   # [:retirement_overridden_by]` only where it renders the retirement-override
   # note; a counting caller omits it and pays for no join. Unknown atoms raise.
@@ -1010,8 +1067,27 @@ defmodule Emisar.Catalog do
   Returns `%{added: [...], removed: [...], changed: [...]}`.
   """
   def action_set_changes(%PackVersion{} = pack_version, advertised_actions)
-      when is_list(advertised_actions),
-      do: ActionSetDiff.changes(advertised_actions, pack_version.trusted_manifest)
+      when is_list(advertised_actions) do
+    pending_actions =
+      Enum.filter(advertised_actions, &(&1.pack_hash == pack_version.pending_hash))
+
+    ActionSetDiff.changes(pending_actions, pack_version.trusted_manifest)
+  end
+
+  @doc """
+  Return a complete trusted action manifest for static/MCP reads.
+
+  This is deliberately stricter than REST dispatch's hash gate: historical
+  trusted rows with null or sparse manifests keep their existing dispatch
+  semantics, but cannot supply model-facing prose or schemas until an operator
+  reviews a new hash. The caller must already hold an account-scoped row.
+  """
+  @spec trusted_manifest_for_static_reads(PackVersion.t()) ::
+          {:ok, map()} | {:error, :pack_untrusted | :incomplete_manifest}
+  def trusted_manifest_for_static_reads(%PackVersion{trust_state: :trusted} = pack_version),
+    do: TrustedManifest.validate(pack_version.trusted_manifest)
+
+  def trusted_manifest_for_static_reads(%PackVersion{}), do: {:error, :pack_untrusted}
 
   @doc """
   Cheap COUNT(*) of pack versions pending trust review — drives the

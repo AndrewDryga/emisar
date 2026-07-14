@@ -12,7 +12,13 @@
 package cloud
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"reflect"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -51,21 +57,18 @@ type Envelope struct {
 // evaluated its policy; the runner re-validates args against the action's
 // declared schema and refuses if anything is off.
 //
-// ExpectedPackHash is the trust-pinned pack hash the cloud last accepted
-// for this action's pack/version. The runner re-hashes its on-disk pack
-// and refuses the dispatch if the value doesn't match — that closes the
-// TOCTOU window between the last RunnerStateMsg broadcast and execution
-// (someone edited files on disk after the runner advertised its hash).
-// Empty when the cloud has no trusted hash on file (e.g. very early
-// observation, or the runner hasn't sent a state yet); runner skips the
-// check in that case.
+// PackRef is the immutable pack id/version/content hash the operator selected.
+// The runner re-hashes its on-disk pack immediately before execution and
+// refuses any different local artifact.
 type RunActionMsg struct {
 	Envelope
-	ActionID         string         `json:"action_id"`
-	Args             map[string]any `json:"args,omitempty"`
-	Opts             *RunOpts       `json:"opts,omitempty"`
-	Reason           string         `json:"reason,omitempty"`
-	ExpectedPackHash string         `json:"expected_pack_hash,omitempty"`
+	ActionID    string          `json:"action_id"`
+	PackRef     string          `json:"pack_ref,omitempty"`
+	Args        map[string]any  `json:"-"`
+	ArgsRaw     json.RawMessage `json:"-"`
+	Opts        *RunOpts        `json:"opts,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	OperationID string          `json:"operation_id,omitempty"`
 	// Attestation is the client signature an enforcing runner requires. The
 	// cloud RELAYS it from the originating MCP call; it cannot forge or alter
 	// it. Nil on portal-originated dispatch (operator/runbook), which an
@@ -73,19 +76,344 @@ type RunActionMsg struct {
 	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
-// Attestation is the signed envelope binding a dispatch to a real user's MCP
-// call. The runner reconstructs the signed claim from the run_action's
-// action_id + args plus these nonce/issued_at fields and verifies Signature
-// against the leaf key the CA-signed Cert vouches for. The control plane only
-// relays this — it holds no key and cannot forge or alter it. See internal/attest
-// for the canonical encoding shared with the mcp signer.
-type Attestation struct {
-	Version   string       `json:"version"`
-	Signature string       `json:"sig"`
-	Nonce     string       `json:"nonce"`
-	IssuedAt  string       `json:"issued_at"`
-	Targets   []string     `json:"targets"`
-	Cert      *attest.Cert `json:"cert,omitempty"`
+// Attestation is the shared signed envelope binding every execution-intent fact
+// to a real user's MCP call. The control plane only relays it; it holds no leaf
+// or CA private key and cannot forge or alter it. See internal/attest.
+type Attestation = attest.Envelope
+
+const (
+	maxActionArgsBytes       = 32 << 10
+	maxRunActionMessageBytes = 128 << 10
+)
+
+type runActionMsgWire struct {
+	Envelope
+	ActionID    string          `json:"action_id"`
+	PackRef     string          `json:"pack_ref,omitempty"`
+	Args        json.RawMessage `json:"args,omitempty"`
+	Opts        *RunOpts        `json:"opts,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	OperationID string          `json:"operation_id,omitempty"`
+	Attestation *Attestation    `json:"attestation,omitempty"`
+}
+
+// MarshalJSON lets test and internal callers provide either the decoded Args map
+// or ArgsRaw. Production dispatches use UnmarshalJSON below; only that inbound
+// path is required to preserve the exact token for signature verification.
+func (m RunActionMsg) MarshalJSON() ([]byte, error) {
+	raw := m.ArgsRaw
+	if len(raw) == 0 {
+		var err error
+		raw, err = json.Marshal(m.Args)
+		if err != nil {
+			return nil, fmt.Errorf("cloud: marshal run_action args: %w", err)
+		}
+		if string(raw) == "null" {
+			raw = json.RawMessage(`{}`)
+		}
+	}
+	if _, err := decodeActionArgs(raw); err != nil {
+		return nil, err
+	}
+	return json.Marshal(runActionMsgWire{
+		Envelope: m.Envelope, ActionID: m.ActionID, PackRef: m.PackRef,
+		Args: raw, Opts: m.Opts, Reason: m.Reason, OperationID: m.OperationID,
+		Attestation: m.Attestation,
+	})
+}
+
+// UnmarshalJSON captures the exact args token before decoding it with UseNumber
+// for the engine. The signature gate hashes ArgsRaw, never the decoded map.
+func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
+	if len(data) > maxRunActionMessageBytes {
+		return fmt.Errorf("cloud: run_action message exceeds %d bytes", maxRunActionMessageBytes)
+	}
+	if err := validateUniqueJSON(data); err != nil {
+		return fmt.Errorf("cloud: invalid run_action JSON: %w", err)
+	}
+	if err := validateRunActionFieldNames(data); err != nil {
+		return err
+	}
+	var wire runActionMsgWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if len(wire.Args) == 0 {
+		return fmt.Errorf("cloud: run_action args are required")
+	}
+	args, err := decodeActionArgs(wire.Args)
+	if err != nil {
+		return err
+	}
+	*m = RunActionMsg{
+		Envelope: wire.Envelope, ActionID: wire.ActionID, PackRef: wire.PackRef,
+		Args: args, ArgsRaw: append(json.RawMessage(nil), normalizedArgsRaw(wire.Args)...),
+		Opts: wire.Opts, Reason: wire.Reason, OperationID: wire.OperationID,
+		Attestation: wire.Attestation,
+	}
+	return nil
+}
+
+func validateRunActionFieldNames(data []byte) error {
+	root, err := rawJSONObject(data, "run_action")
+	if err != nil {
+		return err
+	}
+	if err := rejectKnownAliases(root, "run_action", runActionFieldNames); err != nil {
+		return err
+	}
+	if raw, ok := root["opts"]; ok && string(raw) != "null" {
+		object, err := rawJSONObject(raw, "run_action opts")
+		if err != nil {
+			return err
+		}
+		if err := rejectKnownAliases(object, "run_action opts", runOptsFieldNames); err != nil {
+			return err
+		}
+	}
+	if raw, ok := root["attestation"]; ok && string(raw) != "null" {
+		envelope, err := rawJSONObject(raw, "run_action attestation")
+		if err != nil {
+			return err
+		}
+		if err := rejectKnownAliases(envelope, "run_action attestation", attestationFieldNames); err != nil {
+			return err
+		}
+		if raw, ok := envelope["cert"]; ok && string(raw) != "null" {
+			cert, err := rawJSONObject(raw, "run_action certificate")
+			if err != nil {
+				return err
+			}
+			if err := rejectKnownAliases(cert, "run_action certificate", certFieldNames); err != nil {
+				return err
+			}
+			if raw, ok := cert["scope"]; ok && string(raw) != "null" {
+				scope, err := rawJSONObject(raw, "run_action certificate scope")
+				if err != nil {
+					return err
+				}
+				if err := rejectKnownAliases(scope, "run_action certificate scope", scopeFieldNames); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func rawJSONObject(raw []byte, label string) (map[string]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, fmt.Errorf("cloud: %s must be a JSON object: %w", label, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("cloud: %s must be a JSON object", label)
+	}
+	return object, nil
+}
+
+var (
+	runActionFieldNames   = canonicalJSONFieldNames(reflect.TypeOf(runActionMsgWire{}))
+	runOptsFieldNames     = canonicalJSONFieldNames(reflect.TypeOf(RunOpts{}))
+	attestationFieldNames = canonicalJSONFieldNames(reflect.TypeOf(attest.Envelope{}))
+	certFieldNames        = canonicalJSONFieldNames(reflect.TypeOf(attest.Cert{}))
+	scopeFieldNames       = canonicalJSONFieldNames(reflect.TypeOf(attest.Scope{}))
+)
+
+func canonicalJSONFieldNames(value reflect.Type) []string {
+	fields := make([]string, 0, value.NumField())
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Field(i)
+		tag := field.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "-" {
+			continue
+		}
+		if field.Anonymous && name == "" && field.Type.Kind() == reflect.Struct {
+			fields = append(fields, canonicalJSONFieldNames(field.Type)...)
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields = append(fields, name)
+	}
+	return fields
+}
+
+func rejectKnownAliases(object map[string]json.RawMessage, label string, canonical []string) error {
+	for field := range object {
+		for _, want := range canonical {
+			if field != want && strings.EqualFold(field, want) {
+				return fmt.Errorf("cloud: %s field %q must use canonical name %q", label, field, want)
+			}
+		}
+	}
+	return nil
+}
+
+func normalizedArgsRaw(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return raw
+}
+
+func decodeActionArgs(raw json.RawMessage) (map[string]any, error) {
+	raw = normalizedArgsRaw(raw)
+	if len(raw) > maxActionArgsBytes {
+		return nil, fmt.Errorf("cloud: run_action args exceed %d bytes", maxActionArgsBytes)
+	}
+	if err := validateUniqueJSON(raw); err != nil {
+		return nil, fmt.Errorf("cloud: invalid run_action args: %w", err)
+	}
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, fmt.Errorf("cloud: run_action args must be an object")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var args map[string]any
+	if err := decoder.Decode(&args); err != nil {
+		return nil, fmt.Errorf("cloud: decode run_action args: %w", err)
+	}
+	return args, nil
+}
+
+func validateUniqueJSON(raw []byte) error {
+	if !utf8.Valid(raw) {
+		return fmt.Errorf("JSON is not valid UTF-8")
+	}
+	if err := validateUnicodeSurrogates(raw); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := consumeUniqueJSONValue(decoder, 0); err != nil {
+		return err
+	}
+	if token, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("unexpected trailing token %v", token)
+	}
+	return nil
+}
+
+func validateUnicodeSurrogates(raw []byte) error {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		switch raw[i] {
+		case '"':
+			inString = !inString
+		case '\\':
+			if !inString || i+1 >= len(raw) {
+				continue
+			}
+			if raw[i+1] != 'u' {
+				i++
+				continue
+			}
+			code, ok := decodeHex4(raw, i+2)
+			if !ok {
+				continue // encoding/json reports malformed escape syntax.
+			}
+			i += 5
+			switch {
+			case code >= 0xd800 && code <= 0xdbff:
+				if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
+					return fmt.Errorf("JSON string contains an unpaired high surrogate")
+				}
+				low, ok := decodeHex4(raw, i+3)
+				if !ok || low < 0xdc00 || low > 0xdfff {
+					return fmt.Errorf("JSON string contains an unpaired high surrogate")
+				}
+				i += 6
+			case code >= 0xdc00 && code <= 0xdfff:
+				return fmt.Errorf("JSON string contains an unpaired low surrogate")
+			}
+		}
+	}
+	return nil
+}
+
+func decodeHex4(raw []byte, start int) (uint16, bool) {
+	if start+4 > len(raw) {
+		return 0, false
+	}
+	var value uint16
+	for _, char := range raw[start : start+4] {
+		value <<= 4
+		switch {
+		case char >= '0' && char <= '9':
+			value |= uint16(char - '0')
+		case char >= 'a' && char <= 'f':
+			value |= uint16(char-'a') + 10
+		case char >= 'A' && char <= 'F':
+			value |= uint16(char-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
+}
+
+func consumeUniqueJSONValue(decoder *json.Decoder, depth int) error {
+	if depth > 64 {
+		return fmt.Errorf("JSON nesting exceeds 64 levels")
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := map[string]struct{}{}
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("object key is not a string")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return fmt.Errorf("duplicate object key %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := consumeUniqueJSONValue(decoder, depth+1); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim('}') {
+			return fmt.Errorf("object has invalid closing delimiter")
+		}
+	case '[':
+		for decoder.More() {
+			if err := consumeUniqueJSONValue(decoder, depth+1); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim(']') {
+			return fmt.Errorf("array has invalid closing delimiter")
+		}
+	default:
+		return fmt.Errorf("unexpected delimiter %q", delim)
+	}
+	return nil
 }
 
 // RunOpts is the per-call override envelope. Each field is clamped to the
@@ -148,17 +476,10 @@ type PackInfo struct {
 // ActionDescriptor is the runner's self-described view of a single action.
 // Cloud uses this for runbook authoring + LLM tool advertising.
 type ActionDescriptor struct {
-	ID          string               `json:"id"`
-	PackID      string               `json:"pack_id,omitempty"`
-	Title       string               `json:"title"`
-	Kind        string               `json:"kind"`
-	Risk        string               `json:"risk"`
-	Description string               `json:"description"`
-	SideEffects []string             `json:"side_effects,omitempty"`
-	Args        []actionspec.Arg     `json:"args,omitempty"`
-	Limits      DescriptorLimits     `json:"limits"`
-	Output      DescriptorOutput     `json:"output"`
-	Examples    []actionspec.Example `json:"examples,omitempty"`
+	actionspec.ModelDescriptor
+	PackID string           `json:"pack_id,omitempty"`
+	Limits DescriptorLimits `json:"limits"`
+	Output DescriptorOutput `json:"output"`
 }
 
 // DescriptorLimits is the timeout envelope cloud sees.

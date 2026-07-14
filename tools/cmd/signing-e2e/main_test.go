@@ -68,11 +68,17 @@ func TestDecodeBridgeResult(t *testing.T) {
 func TestDispatchFrameUsesDurableTargetAndUniqueRequestID(t *testing.T) {
 	t.Parallel()
 
-	frame := dispatchFrame("runner-01HQEXTERNAL", "linux.uptime", "signing-e2e-123-signed")
+	frame := dispatchFrame(
+		"signed-iad-01~0123456789abcdef0123456789abcdef",
+		"linux.uptime",
+		"linux-core@1.0.0/sha256:"+strings.Repeat("a", 64),
+		"signing-e2e-123-signed",
+	)
 
 	var request struct {
 		ID     string `json:"id"`
 		Params struct {
+			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		} `json:"params"`
 	}
@@ -82,9 +88,18 @@ func TestDispatchFrameUsesDurableTargetAndUniqueRequestID(t *testing.T) {
 	if request.ID != "signing-e2e-123-signed" {
 		t.Errorf("id = %q, want unique request id", request.ID)
 	}
-	targets, ok := request.Params.Arguments["runners"].([]any)
-	if !ok || len(targets) != 1 || targets[0] != "runner-01HQEXTERNAL" {
-		t.Errorf("runners = %#v, want durable external id", request.Params.Arguments["runners"])
+	if request.Params.Name != "run_action" {
+		t.Errorf("name = %q, want run_action", request.Params.Name)
+	}
+	targets, ok := request.Params.Arguments["runner_refs"].([]any)
+	if !ok || len(targets) != 1 || targets[0] != "signed-iad-01~0123456789abcdef0123456789abcdef" {
+		t.Errorf("runner_refs = %#v, want generation-bound runner ref", request.Params.Arguments["runner_refs"])
+	}
+	if request.Params.Arguments["action_id"] != "linux.uptime" {
+		t.Errorf("action_id = %#v", request.Params.Arguments["action_id"])
+	}
+	if request.Params.Arguments["pack_ref"] != "linux-core@1.0.0/sha256:"+strings.Repeat("a", 64) {
+		t.Errorf("pack_ref = %#v", request.Params.Arguments["pack_ref"])
 	}
 	reason, _ := request.Params.Arguments["reason"].(string)
 	if !strings.Contains(reason, request.ID) {

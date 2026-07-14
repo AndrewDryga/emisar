@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // SchemaVersion is the currently supported action schema version.
@@ -23,10 +25,12 @@ type Action struct {
 	SchemaVersion int      `yaml:"schema_version"`
 	ID            string   `yaml:"id"`
 	Title         string   `yaml:"title"`
+	Summary       string   `yaml:"summary,omitempty"`
 	Kind          Kind     `yaml:"kind"`
 	Risk          Risk     `yaml:"risk"`
 	Description   string   `yaml:"description"`
 	SideEffects   []string `yaml:"side_effects"`
+	SearchTerms   []string `yaml:"search_terms,omitempty"`
 
 	Args      []Arg     `yaml:"args"`
 	Execution Execution `yaml:"execution"`
@@ -164,8 +168,22 @@ func (a *Action) Validate() error {
 	if !validActionID(a.ID) {
 		return fmt.Errorf("action: invalid id %q (must match [a-z][a-z0-9._-]*\\.[a-z][a-z0-9_-]*)", a.ID)
 	}
+	if len(a.ID) > 128 {
+		return fmt.Errorf("action %s: id exceeds 128 bytes", a.ID)
+	}
 	if a.Title == "" {
 		return fmt.Errorf("action %s: missing title", a.ID)
+	}
+	if err := validateModelText(a.ID, "title", a.Title, 160); err != nil {
+		return err
+	}
+	if a.Summary != "" {
+		if err := validateModelText(a.ID, "summary", a.Summary, 512); err != nil {
+			return err
+		}
+	}
+	if err := validateSearchTerms(a); err != nil {
+		return err
 	}
 	if err := validateEnums(a.Kind, a.Risk, a.Output.Parser); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
@@ -173,8 +191,30 @@ func (a *Action) Validate() error {
 	if a.Description == "" {
 		return fmt.Errorf("action %s: missing description", a.ID)
 	}
+	if err := validateModelText(a.ID, "description", a.Description, 4096); err != nil {
+		return err
+	}
+	if _, err := a.ModelSummary(); err != nil {
+		return err
+	}
 	if len(a.SideEffects) == 0 {
 		return fmt.Errorf("action %s: missing side_effects", a.ID)
+	}
+	if len(a.SideEffects) > 16 {
+		return fmt.Errorf("action %s: side_effects has %d entries, limit is 16", a.ID, len(a.SideEffects))
+	}
+	for _, effect := range a.SideEffects {
+		if err := validateModelText(a.ID, "side_effects", effect, 1024); err != nil {
+			return err
+		}
+	}
+	if len(a.Examples) > 16 {
+		return fmt.Errorf("action %s: examples has %d entries, limit is 16", a.ID, len(a.Examples))
+	}
+	for _, example := range a.Examples {
+		if err := validateModelText(a.ID, "example title", example.Title, 160); err != nil {
+			return err
+		}
 	}
 	if a.Execution.Timeout <= 0 {
 		return fmt.Errorf("action %s: execution.timeout must be > 0", a.ID)
@@ -238,6 +278,65 @@ func (a *Action) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func validateSearchTerms(a *Action) error {
+	if len(a.SearchTerms) > 16 {
+		return fmt.Errorf("action %s: search_terms has %d entries, limit is 16", a.ID, len(a.SearchTerms))
+	}
+	seen := make(map[string]struct{}, len(a.SearchTerms))
+	for _, term := range a.SearchTerms {
+		trimmed := strings.TrimSpace(term)
+		if trimmed == "" {
+			return fmt.Errorf("action %s: search_terms must not contain blank entries", a.ID)
+		}
+		if err := validateModelText(a.ID, "search term", trimmed, 80); err != nil {
+			return err
+		}
+		key := strings.ToLower(trimmed)
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("action %s: duplicate search term %q", a.ID, trimmed)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+// validateModelText bounds strings that are exposed to an LLM and rejects
+// invisible controls and bidirectional overrides. YAML folded scalars may add
+// ordinary whitespace; normalizeModelText removes that presentation detail
+// before this validation is applied.
+func validateModelText(actionID, field, value string, maxBytes int) error {
+	normalized := normalizeModelText(value)
+	if normalized == "" {
+		return fmt.Errorf("action %s: %s must not be blank", actionID, field)
+	}
+	if !utf8.ValidString(normalized) {
+		return fmt.Errorf("action %s: %s is not valid UTF-8", actionID, field)
+	}
+	if len(normalized) > maxBytes {
+		return fmt.Errorf("action %s: %s exceeds %d bytes", actionID, field, maxBytes)
+	}
+	for _, r := range normalized {
+		if unicode.IsControl(r) || isBidiControl(r) {
+			return fmt.Errorf("action %s: %s contains forbidden control character U+%04X", actionID, field, r)
+		}
+	}
+	return nil
+}
+
+func normalizeModelText(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+func modelSummaryError(actionID string) error {
+	return fmt.Errorf(
+		"action %s: needs an explicit summary because its first sentence exceeds 512 bytes",
+		actionID,
+	)
+}
+
+func isBidiControl(r rune) bool {
+	return r == '\u061c' || r == '\u200e' || r == '\u200f' ||
+		(r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069')
 }
 
 // validateExecutionEnv rejects environment variables a pack must not set:

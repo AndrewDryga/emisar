@@ -20,8 +20,8 @@ defmodule Emisar.ContextCoverageTest do
   use ExUnit.Case, async: true
 
   @contexts ~w[
-    accounts api_keys approvals audit auth billing catalog mail marketing oauth
-    policies runbooks runners runs sso users
+    accounts api_keys approvals audit auth billing catalog mail marketing mcp_operations
+    oauth policies runbooks runners runs sso users
   ]a
 
   @otp_lifecycle_callbacks MapSet.new([{"init", 1}, {"start_link", 1}])

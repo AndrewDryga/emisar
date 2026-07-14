@@ -2,7 +2,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
   alias Emisar.Runbooks.{Runbook, StepSelector}
 
-  @fields ~w[name slug title description status definition]a
+  @fields ~w[id name slug title description status definition]a
 
   # Each step's `id` is the dispatch identity: runs are matched to plan rows
   # by `{step_id, runner_id}` and that pair is the `action_runs` unique index.

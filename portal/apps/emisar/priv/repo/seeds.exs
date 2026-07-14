@@ -1264,7 +1264,7 @@ if existing_runs == [] do
         {"caddy.access_log_tail", edge.id, :any_args, :thirty_days},
         {"postgres.replication_lag", database.id, :any_args, :thirty_days}
       ] do
-    fake_run = %{
+    fake_run = %Runs.ActionRun{
       account_id: account.id,
       api_key_id: agent_key.id,
       runner_id: runner_id,

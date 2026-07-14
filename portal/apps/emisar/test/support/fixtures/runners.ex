@@ -39,7 +39,12 @@ defmodule Emisar.Fixtures.Runners do
     runner =
       if Map.get(attrs, :enforce_signatures) do
         {:ok, runner} =
-          runner |> Runner.Changeset.apply_state(%{enforce_signatures: true}) |> Repo.update()
+          runner
+          |> Runner.Changeset.apply_state(%{
+            enforce_signatures: true,
+            max_attestation_age_seconds: Map.get(attrs, :max_attestation_age_seconds, 86_400)
+          })
+          |> Repo.update()
 
         runner
       else

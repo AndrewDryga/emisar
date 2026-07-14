@@ -7,11 +7,14 @@ defmodule Emisar.RunbooksTest do
   denied run.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Repo, Runbooks, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, MCPOperations, Repo, Runbooks, Runners, Runs}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.Runbooks.RunbookExecution
+
+  @mcp_pack_hash "sha256:" <> String.duplicate("a", 64)
+  @mcp_pack_ref "linux-core@1.0.0/" <> @mcp_pack_hash
 
   defp account_with_runner do
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -108,6 +111,120 @@ defmodule Emisar.RunbooksTest do
     do: Runs.list_runs_for_runbook_execution(account.id, execution_id)
 
   defp step_ids(runs), do: runs |> Enum.map(& &1.runbook_step_id) |> Enum.sort()
+
+  defp mcp_execution_fixture(runner_count) do
+    {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+    _policy = Fixtures.Policies.create_policy(account_id: account.id)
+    {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "runbook agent"}, owner_subject)
+    subject = Subject.for_api_key(key, account)
+
+    runners =
+      Enum.map(1..runner_count, fn _index ->
+        runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+        assert {:ok, _runner} =
+                 Catalog.observe_state(runner, %{
+                   "hostname" => runner.hostname,
+                   "version" => runner.runner_version,
+                   "labels" => runner.labels,
+                   "packs" => %{
+                     "linux-core" => %{"version" => "1.0.0", "hash" => @mcp_pack_hash}
+                   },
+                   "actions" => [
+                     %{
+                       "id" => "linux.uptime",
+                       "pack_id" => "linux-core",
+                       "title" => "Uptime",
+                       "kind" => "exec",
+                       "risk" => "low",
+                       "summary" => "Reports uptime",
+                       "description" => "Reports uptime",
+                       "side_effects" => [],
+                       "args" => [],
+                       "examples" => [],
+                       "search_terms" => []
+                     }
+                   ]
+                 })
+
+        runner
+      end)
+
+    {:ok, versions} = Catalog.list_all_pack_versions_for_account(owner_subject)
+
+    Enum.each(versions, fn version ->
+      if version.trust_state != :trusted do
+        assert {:ok, _version} = Catalog.trust_pack_version(version.id, owner_subject)
+      end
+    end)
+
+    steps = [
+      %{
+        "id" => "step1",
+        "action_id" => "linux.uptime",
+        "pack_ref" => @mcp_pack_ref,
+        "args" => %{},
+        "runner_selector" => %{"runner_id" => Enum.map(runners, & &1.id)}
+      }
+    ]
+
+    runbook =
+      published_runbook!(owner_subject, "mcp-book-#{System.unique_integer([:positive])}", steps)
+
+    %{
+      account: account,
+      owner_subject: owner_subject,
+      subject: subject,
+      key: key,
+      runners: runners,
+      runbook: runbook
+    }
+  end
+
+  defp committed_mcp_execution(operation_id) do
+    fixture = mcp_execution_fixture(1)
+    Enum.each(fixture.runners, &Runners.subscribe_runner_transport/1)
+
+    assert {:ok, result} =
+             Runbooks.dispatch_runbook(
+               fixture.runbook,
+               "inspect fleet",
+               fixture.subject,
+               operation_id: operation_id,
+               operation_fingerprint: String.duplicate("d", 64),
+               operation_ref: "#{fixture.runbook.slug}@#{fixture.runbook.version}"
+             )
+
+    Map.put(fixture, :execution, Repo.get!(RunbookExecution, result.execution_id))
+  end
+
+  describe "list_all_runbooks/1" do
+    test "returns every non-deleted version in the account without pagination" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = draft_runbook!(subject, "all-one")
+
+      {:ok, second} =
+        Runbooks.save_new_version(
+          first,
+          %{"description" => "second", "status" => "draft"},
+          subject
+        )
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      _other = draft_runbook!(other_subject, "not-visible")
+
+      assert {:ok, runbooks} = Runbooks.list_all_runbooks(subject)
+      assert MapSet.new(runbooks, & &1.id) == MapSet.new([first.id, second.id])
+    end
+
+    test "rejects a subject without runbook-view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:error, :unauthorized} =
+               Runbooks.list_all_runbooks(Subject.for_runner(runner, account))
+    end
+  end
 
   describe "list_runbooks/2" do
     setup do
@@ -278,6 +395,119 @@ defmodule Emisar.RunbooksTest do
 
       assert {:error, :unauthorized} =
                Runbooks.fetch_published_runbook("guarded-book", runner_subject)
+    end
+  end
+
+  describe "fetch_published_runbook_version/3" do
+    test "selects the exact immutable version and never crosses accounts" do
+      {_account, subject, runner} = account_with_runner()
+      v1 = published_runbook!(subject, "fixed-version", uptime_steps(1, runner_target(runner)))
+
+      {:ok, v2_draft} =
+        Runbooks.save_new_version(v1, %{"description" => "v2", "status" => "draft"}, subject)
+
+      {:ok, v2} = Runbooks.publish(v2_draft, subject)
+
+      assert {:ok, fetched_v1} =
+               Runbooks.fetch_published_runbook_version("fixed-version", 1, subject)
+
+      assert {:ok, fetched_v2} =
+               Runbooks.fetch_published_runbook_version("fixed-version", 2, subject)
+
+      assert fetched_v1.id == v1.id
+      assert fetched_v2.id == v2.id
+
+      {_user, _account, foreign_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} =
+               Runbooks.fetch_published_runbook_version("fixed-version", 1, foreign_subject)
+
+      assert {:error, :not_found} =
+               Runbooks.fetch_published_runbook_version("fixed-version", 3, subject)
+    end
+  end
+
+  describe "fetch_mcp_draft_by_operation/2" do
+    test "recovers only the draft owned by the current credential lineage" do
+      account = Fixtures.Accounts.create_account()
+      subject = api_client_subject(account)
+      operation_id = "op_144NN9NMDZ1T76NARWCKM5A0D6"
+
+      attrs = %{
+        "title" => "Recovered draft",
+        "name" => "Recovered draft",
+        "slug" => "recovered-draft",
+        "definition" => %{"steps" => uptime_steps(1)}
+      }
+
+      assert {:ok, :created, draft} =
+               Runbooks.create_mcp_draft(
+                 attrs,
+                 operation_id,
+                 String.duplicate("a", 64),
+                 subject
+               )
+
+      assert {:ok, fetched} = Runbooks.fetch_mcp_draft_by_operation(operation_id, subject)
+      assert fetched.id == draft.id
+
+      {_raw, other_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      other_subject = Subject.for_api_key(other_key, account)
+
+      assert {:error, :not_found} =
+               Runbooks.fetch_mcp_draft_by_operation(operation_id, other_subject)
+    end
+  end
+
+  describe "fetch_execution_by_operation/2" do
+    test "recovers only the execution owned by the current credential lineage" do
+      operation_id = "op_244NN9NMDZ1T76NARWCKM5A0D6"
+
+      %{account: account, subject: subject, owner_subject: owner, execution: execution} =
+        committed_mcp_execution(operation_id)
+
+      assert {:ok, fetched} = Runbooks.fetch_execution_by_operation(operation_id, subject)
+      assert fetched.id == execution.id
+
+      {:ok, _raw, other_key} = Emisar.ApiKeys.create_key(%{name: "other lineage"}, owner)
+      other_subject = Subject.for_api_key(other_key, account)
+
+      assert {:error, :not_found} =
+               Runbooks.fetch_execution_by_operation(operation_id, other_subject)
+    end
+  end
+
+  describe "fetch_execution_by_id/2" do
+    test "checks the complete execution against current subject and account scope" do
+      %{subject: subject, execution: execution} =
+        committed_mcp_execution("op_344NN9NMDZ1T76NARWCKM5A0D6")
+
+      assert {:ok, fetched} = Runbooks.fetch_execution_by_id(execution.id, subject)
+      assert fetched.id == execution.id
+      assert {:error, :not_found} = Runbooks.fetch_execution_by_id("not-a-uuid", subject)
+
+      {_user, _account, foreign_subject} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Runbooks.fetch_execution_by_id(execution.id, foreign_subject)
+    end
+  end
+
+  describe "fetch_runbook_for_execution/2" do
+    test "retains the exact immutable runbook after its visible family is soft-deleted" do
+      %{owner_subject: owner, runbook: runbook, execution: execution} =
+        committed_mcp_execution("op_444NN9NMDZ1T76NARWCKM5A0D6")
+
+      assert {:ok, _deleted} =
+               runbook
+               |> Runbooks.Runbook.Changeset.delete()
+               |> Repo.update()
+
+      assert {:ok, fetched} = Runbooks.fetch_runbook_for_execution(execution, owner)
+      assert fetched.id == runbook.id
+
+      {_user, _account, foreign_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} =
+               Runbooks.fetch_runbook_for_execution(execution, foreign_subject)
     end
   end
 
@@ -478,6 +708,85 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, runbook} = save_runbook(subject, [step])
       assert runbook.status == :draft
+    end
+  end
+
+  describe "create_mcp_draft/4" do
+    test "atomically creates and exactly replays one lineage-owned draft" do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "draft agent"}, owner_subject)
+      subject = Subject.for_api_key(key, account)
+      operation_id = "op_724NN9NMDZ1T76NARWCKM5A0D6"
+      fingerprint = String.duplicate("b", 64)
+
+      attrs = %{
+        "title" => "agent draft",
+        "name" => "agent draft",
+        "slug" => "agent-draft",
+        "description" => "review me",
+        "definition" => %{"steps" => uptime_steps(1)}
+      }
+
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, :created, created} =
+               Runbooks.create_mcp_draft(attrs, operation_id, fingerprint, subject)
+
+      assert_receive {:list_changed, :runbook, "runbook.created", created_id}
+      assert created_id == created.id
+
+      assert created.id ==
+               MCPOperations.resource_id(operation_id, :create_runbook_draft, subject)
+
+      assert {:ok, :replay, replayed} =
+               Runbooks.create_mcp_draft(attrs, operation_id, fingerprint, subject)
+
+      assert replayed.id == created.id
+      refute_receive {:list_changed, :runbook, _, _}, 100
+
+      assert {:ok, fetched} = Runbooks.fetch_mcp_draft_by_operation(operation_id, subject)
+      assert fetched.id == created.id
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+
+      created_events =
+        Repo.all(Emisar.Audit.Event)
+        |> Enum.filter(&(&1.event_type == "runbook.created" and &1.target_id == created.id))
+
+      assert length(created_events) == 1
+    end
+
+    test "rejects changed facts without creating another draft" do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "draft agent"}, owner_subject)
+      subject = Subject.for_api_key(key, account)
+      operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+
+      attrs = %{
+        "title" => "agent draft",
+        "name" => "agent draft",
+        "slug" => "agent-draft",
+        "definition" => %{"steps" => uptime_steps(1)}
+      }
+
+      assert {:ok, :created, created} =
+               Runbooks.create_mcp_draft(
+                 attrs,
+                 operation_id,
+                 String.duplicate("b", 64),
+                 subject
+               )
+
+      assert {:error, :operation_conflict} =
+               Runbooks.create_mcp_draft(
+                 attrs,
+                 operation_id,
+                 String.duplicate("c", 64),
+                 subject
+               )
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 1
+      assert {:ok, fetched} = Runbooks.fetch_mcp_draft_by_operation(operation_id, subject)
+      assert fetched.id == created.id
     end
   end
 
@@ -1046,6 +1355,47 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
 
+    test "a caller can atomically tighten per-step and total expansion limits", %{
+      subject: subject
+    } do
+      wide_step = %{
+        "id" => "wide",
+        "action_id" => "linux.uptime",
+        "args" => %{},
+        "runner_selector" => %{"runner_id" => Enum.map(1..17, &"wide-#{&1}")}
+      }
+
+      assert {:error, {:step_fan_out_too_large, 16}} =
+               wide_step
+               |> then(&draft_with_steps(subject, [&1]))
+               |> Runbooks.dispatch_runbook("go", subject,
+                 max_runners_per_step: 16,
+                 max_fan_out: 256
+               )
+
+      total_steps =
+        Enum.map(1..17, fn step ->
+          %{
+            "id" => "step#{step}",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{
+              "runner_id" => Enum.map(1..16, &"runner-#{step}-#{&1}")
+            }
+          }
+        end)
+
+      assert {:error, {:fan_out_too_large, 256}} =
+               total_steps
+               |> then(&draft_with_steps(subject, &1))
+               |> Runbooks.dispatch_runbook("go", subject,
+                 max_runners_per_step: 16,
+                 max_fan_out: 256
+               )
+
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
     test "a step whose policy requires approval queues a pending-approval run, not a hard error" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
 
@@ -1278,6 +1628,116 @@ defmodule Emisar.RunbooksTest do
 
       assert {_msg, opts} = changeset.errors[:runbook_execution_id]
       assert opts[:constraint_name] == "action_runs_execution_step_runner_index"
+    end
+  end
+
+  describe "dispatch_runbook/4 MCP operation" do
+    test "commits execution and complete first wave before delivery, then replays silently" do
+      %{account: account, subject: subject, runbook: runbook, runners: runners} =
+        mcp_execution_fixture(2)
+
+      Enum.each(runners, &Runners.subscribe_runner_transport/1)
+      operation_id = "op_524NN9NMDZ1T76NARWCKM5A0D6"
+      fingerprint = String.duplicate("d", 64)
+      operation_ref = "#{runbook.slug}@#{runbook.version}"
+
+      opts = [
+        operation_id: operation_id,
+        operation_fingerprint: fingerprint,
+        operation_ref: operation_ref
+      ]
+
+      assert {:ok, first} = Runbooks.dispatch_runbook(runbook, "inspect fleet", subject, opts)
+      assert first.total == 2
+      assert length(first.runs) == 2
+      assert Enum.all?(first.runs, &(&1.status == :sent))
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+
+      assert {:ok, execution} = Runbooks.fetch_execution_by_operation(operation_id, subject)
+      assert execution.id == first.execution_id
+      assert execution.mcp_operation_record_id
+
+      first_ids = first.runs |> Enum.map(& &1.id) |> Enum.sort()
+      assert {:ok, replay} = Runbooks.dispatch_runbook(runbook, "inspect fleet", subject, opts)
+      assert replay.execution_id == first.execution_id
+      assert replay.runs |> Enum.map(& &1.id) |> Enum.sort() == first_ids
+      refute_receive {:cloud_to_runner, _}, 100
+
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+      assert Repo.aggregate(RunbookExecution, :count) == 1
+      assert Repo.aggregate(Runs.ActionRun, :count) == 2
+      assert Enum.all?(first.runs, &(&1.account_id == account.id))
+    end
+
+    test "rolls back operation, execution, audit, and earlier targets on a later preflight error" do
+      %{account: account, subject: subject, owner_subject: owner, runbook: base, runners: [ready]} =
+        mcp_execution_fixture(1)
+
+      missing = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, draft} =
+        Runbooks.save_new_version(
+          base,
+          %{
+            "status" => "draft",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "step1",
+                  "action_id" => "linux.uptime",
+                  "pack_ref" => @mcp_pack_ref,
+                  "args" => %{},
+                  "runner_selector" => %{"runner_id" => [ready.id, missing.id]}
+                }
+              ]
+            }
+          },
+          owner
+        )
+
+      {:ok, runbook} = Runbooks.publish(draft, owner)
+      :ok = Runners.subscribe_runner_transport(ready)
+
+      audit_count = Repo.aggregate(Emisar.Audit.Event, :count)
+
+      assert {:error, :action_not_found} =
+               Runbooks.dispatch_runbook(runbook, "inspect fleet", subject,
+                 operation_id: "op_424NN9NMDZ1T76NARWCKM5A0D6",
+                 operation_fingerprint: String.duplicate("e", 64),
+                 operation_ref: "#{runbook.slug}@#{runbook.version}"
+               )
+
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(RunbookExecution)
+      refute Repo.exists?(Runs.ActionRun)
+      assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_count
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+
+    test "rejects operation reuse with different facts and preserves the original execution" do
+      %{subject: subject, runbook: runbook} = mcp_execution_fixture(1)
+      operation_id = "op_324NN9NMDZ1T76NARWCKM5A0D6"
+      operation_ref = "#{runbook.slug}@#{runbook.version}"
+
+      assert {:ok, first} =
+               Runbooks.dispatch_runbook(runbook, "inspect fleet", subject,
+                 operation_id: operation_id,
+                 operation_fingerprint: String.duplicate("f", 64),
+                 operation_ref: operation_ref
+               )
+
+      assert {:error, :operation_conflict} =
+               Runbooks.dispatch_runbook(runbook, "inspect fleet", subject,
+                 operation_id: operation_id,
+                 operation_fingerprint: String.duplicate("0", 64),
+                 operation_ref: operation_ref
+               )
+
+      assert {:ok, execution} = Runbooks.fetch_execution_by_operation(operation_id, subject)
+      assert execution.id == first.execution_id
+      assert Repo.aggregate(RunbookExecution, :count) == 1
     end
   end
 

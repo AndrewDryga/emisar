@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://emisar.dev/v1/schemas/catalog.schema.json",
   "title": "emisar pack registry catalog",
-  "description": "The published catalog.json contract: the full set of installable packs with their content hashes, immutable tarball URLs, detect signals, and action summaries. Emitted by `emisar pack catalog build`. Trust rests on content_hash + the runner's re-hash, not on this document.",
+  "description": "The published catalog.json contract: installable packs, immutable content identity, and complete reviewed action descriptors. Emitted by `emisar pack catalog build`. Trust rests on the authenticated artifact plus content_hash and the runner's re-hash.",
   "type": "object",
   "required": ["schema_version", "packs"],
   "additionalProperties": false,
@@ -50,7 +50,12 @@
       "properties": {
         "version": {"type": "string", "minLength": 1},
         "content_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "tarball_url": {"type": "string", "format": "uri"}
+        "tarball_url": {"type": "string", "format": "uri"},
+        "actions": {
+          "description": "Complete descriptor snapshot. Missing on historical v1 entries, which are not executable through MCP.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/action"}
+        }
       }
     },
     "detect": {
@@ -65,13 +70,43 @@
     },
     "action": {
       "type": "object",
-      "required": ["id", "title", "kind", "risk"],
+      "required": [
+        "id", "title", "summary", "description", "kind", "risk",
+        "side_effects", "args", "examples", "search_terms"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": {"type": "string"},
-        "title": {"type": "string"},
+        "id": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 160},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 512},
+        "description": {"type": "string", "minLength": 1, "maxLength": 4096},
         "kind": {"type": "string", "enum": ["exec", "script"]},
         "risk": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+        "side_effects": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
+        "examples": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["title", "args"],
+            "additionalProperties": false,
+            "properties": {
+              "title": {"type": "string", "minLength": 1, "maxLength": 160},
+              "args": {"type": "object"}
+            }
+          }
+        },
+        "search_terms": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 80}
+        },
         "command": {
           "type": "object",
           "required": ["binary", "argv"],
@@ -81,6 +116,42 @@
             "argv": {"type": "array", "items": {"type": "string"}}
           }
         }
+      }
+    },
+    "arg": {
+      "type": "object",
+      "required": ["name", "type", "required"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "duration", "path", "string_array", "integer_array"]
+        },
+        "required": {"type": "boolean"},
+        "sensitive": {"type": "boolean"},
+        "default": {},
+        "description": {"type": "string"},
+        "validation": {"$ref": "#/$defs/validation"}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enum": {"type": "array"},
+        "pattern": {"type": "string"},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "allowed": {"type": "array"},
+        "allowed_paths": {"type": "array", "items": {"type": "string"}},
+        "denied_paths": {"type": "array", "items": {"type": "string"}},
+        "allowed_prefixes": {"type": "array", "items": {"type": "string"}},
+        "denied_prefixes": {"type": "array", "items": {"type": "string"}},
+        "max_items": {"type": "integer"},
+        "max_length": {"type": "integer"},
+        "min_duration": {"type": "string"},
+        "max_duration": {"type": "string"}
       }
     }
   }

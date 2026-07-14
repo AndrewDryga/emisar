@@ -27,6 +27,7 @@ func TestNonceJournalAppendsAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	if accepted, err := store.consume(first, now, now); err != nil || !accepted {
 		t.Fatalf("consume first = %v, %v", accepted, err)
 	}
@@ -44,11 +45,15 @@ func TestNonceJournalAppendsAndSurvivesRestart(t *testing.T) {
 	if !bytes.HasPrefix(afterSecond, afterFirst) {
 		t.Fatal("ordinary nonce consumption rewrote the journal instead of appending")
 	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close before restart: %v", err)
+	}
 
 	restarted, err := OpenNonceStore(path, time.Hour)
 	if err != nil {
 		t.Fatalf("OpenNonceStore after restart: %v", err)
 	}
+	t.Cleanup(func() { _ = restarted.Close() })
 	if accepted, err := restarted.consume(first, now, now.Add(2*time.Minute)); err != nil || accepted {
 		t.Fatalf("restarted consume replay = %v, %v", accepted, err)
 	}
@@ -70,6 +75,7 @@ func TestNonceJournalMigratesLegacySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenNonceStore legacy: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	migrated, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +94,7 @@ func TestNonceJournalCompactsExpiredRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	store.compactAfter = 1
 	now := time.Now().UTC()
 	oldNonce := journalNonce("expired")
@@ -147,6 +154,7 @@ func TestNonceJournalByteLimitFailsWithoutConsumingNonce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	store.maxBytes = store.fileSize + 1
 	now := time.Now().UTC()
 	nonce := journalNonce("byte-limit")
@@ -162,12 +170,34 @@ func TestNonceJournalByteLimitFailsWithoutConsumingNonce(t *testing.T) {
 	}
 }
 
+func TestNonceJournalLockRejectsASecondOwnerAndReleasesCleanly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nonce-cache.json")
+	owner, err := OpenNonceStore(path, time.Hour)
+	if err != nil {
+		t.Fatalf("OpenNonceStore owner: %v", err)
+	}
+	if _, err := OpenNonceStore(path, time.Hour); err == nil ||
+		!strings.Contains(err.Error(), "another runner process owns the journal") {
+		t.Fatalf("second owner error = %v", err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatalf("Close owner: %v", err)
+	}
+
+	reopened, err := OpenNonceStore(path, time.Hour)
+	if err != nil {
+		t.Fatalf("OpenNonceStore after release: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+}
+
 func TestNonceJournalRejectsRetentionWidening(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonce-cache.json")
 	store, err := OpenNonceStore(path, time.Hour)
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	if err := store.bindRetention(30 * time.Minute); err != nil {
 		t.Fatalf("narrowing retention must be safe: %v", err)
 	}
@@ -177,6 +207,9 @@ func TestNonceJournalRejectsRetentionWidening(t *testing.T) {
 	if err := store.bindRetention(2 * time.Hour); err == nil {
 		t.Fatal("in-process retention widening must be rejected")
 	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close before restart: %v", err)
+	}
 	if _, err := OpenNonceStore(path, 2*time.Hour); err == nil {
 		t.Fatal("restart-time retention widening must be rejected")
 	}
@@ -185,23 +218,26 @@ func TestNonceJournalRejectsRetentionWidening(t *testing.T) {
 func TestVerifierReloadRejectsRetentionWidening(t *testing.T) {
 	cas, _ := testCA(t)
 	store := NewMemoryNonceStore()
-	if _, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store); err != nil {
+	if _, err := NewVerifier(true, cas, time.Hour, testRunnerID, testOrigin, testGroup, testLabels(), store); err != nil {
 		t.Fatalf("initial verifier: %v", err)
 	}
-	if _, err := NewVerifier(true, cas, 2*time.Hour, testRunnerID, testGroup, testLabels(), store); err == nil {
+	if _, err := NewVerifier(true, cas, 2*time.Hour, testRunnerID, testOrigin, testGroup, testLabels(), store); err == nil {
 		t.Fatal("replacement verifier widened the replay horizon")
 	}
 }
 
 func TestNonceJournalRejectsTornAndUnknownRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonce-cache.json")
-	_, err := OpenNonceStore(path, time.Hour)
+	store, err := OpenNonceStore(path, time.Hour)
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
 	header, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close before corruption tests: %v", err)
 	}
 
 	t.Run("torn", func(t *testing.T) {
@@ -234,6 +270,7 @@ func TestNonceJournalAppendFailureLatchesClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenNonceStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	if err := os.Chmod(path, 0o400); err != nil {
 		t.Fatal(err)
 	}

@@ -29,6 +29,10 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
+    |> put_change(
+      :credential_lineage_id,
+      Keyword.get(opts, :credential_lineage_id, Ecto.UUID.generate())
+    )
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> validate_required([:account_id, :name])
@@ -86,6 +90,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
+    |> put_change(:credential_lineage_id, Ecto.UUID.generate())
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:auto_generated_at, DateTime.utc_now())

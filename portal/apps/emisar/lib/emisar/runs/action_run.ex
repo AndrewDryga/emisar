@@ -29,11 +29,23 @@ defmodule Emisar.Runs.ActionRun do
     # instead of dispatching a fresh one. Nil when the caller didn't
     # send the header (UI / runbook paths).
     field :idempotency_key, :string
+    # Stable bridge-owned identity for one public MCP mutation. Fan-out creates
+    # one row per runner under the same operation id; retries reuse those rows.
+    field :operation_id, :string
     field :source, Ecto.Enum, values: [:operator, :runbook, :mcp, :scheduled], default: :operator
     field :reason, :string
 
     field :args, :map, default: %{}
+    # Exact JSON token received for run_action.args. Policy and UI use `args`;
+    # attestation hashing and runner delivery use these bytes without re-encoding.
+    field :args_raw, :binary
     field :args_sha256, :string
+    # Immutable content identity selected by the caller and checked against the
+    # runner advertisement before the run is created.
+    field :pack_ref, :string
+    # Stable model-facing target identity snapshotted at authorization. History
+    # must not depend on the runner row still existing or retaining its name.
+    field :runner_ref, :string
     # The trusted pack hash snapshotted at authorization (MAJOR-5): the dispatch
     # ships THIS hash, so the runner verifies the exact bytes that were authorized
     # for this run. Nil for a pack-less action.
@@ -126,6 +138,7 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :policy, Emisar.Policies.Policy, where: [deleted_at: nil]
+    belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
     # api_key_id is already a field above; this reuses it so the run can
     # name its initiator (e.g. the "Claude Code" key) without a second FK.
     belongs_to :api_key, Emisar.ApiKeys.ApiKey,

@@ -13,6 +13,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
+	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
@@ -65,7 +66,7 @@ type Options struct {
 
 	// Verifier is the INITIAL signature verifier gating dispatches; SIGHUP
 	// swaps it live via Client.SetVerifier. Nil (or a non-enforcing verifier)
-	// means legacy trust — run whatever the cloud sends.
+	// means client-signature enforcement is disabled.
 	Verifier *signing.Verifier
 }
 
@@ -80,7 +81,7 @@ type Client struct {
 	// verifier gates dispatches; held behind an atomic pointer so a SIGHUP
 	// (SetVerifier) can rotate or revoke a trusted key live, while in-flight
 	// runs keep the verifier they read at the gate. Mirrors the engine's
-	// atomic registry. A nil load means legacy trust — run whatever arrives.
+	// atomic registry. A nil load means client-signature enforcement is disabled.
 	verifier atomic.Pointer[signing.Verifier]
 
 	mu    sync.Mutex
@@ -149,7 +150,7 @@ func NewClient(d Dialer, opts Options) *Client {
 }
 
 // Verifier returns the signature verifier currently gating dispatches (nil =
-// legacy trust). The StateBuilder reads it through this getter so the advertised
+// signature enforcement disabled). The StateBuilder reads it through this getter so the advertised
 // key set tracks live swaps, the same way it reads the engine's registry.
 func (c *Client) Verifier() *signing.Verifier { return c.verifier.Load() }
 
@@ -368,8 +369,8 @@ func (c *Client) enqueueTransient(requestID string, msg any) {
 // onto the runState. It does NOT call conn.Send directly; the sender
 // loop is responsible for delivery.
 //
-// Trust gate: if the cloud supplied ExpectedPackHash, re-hash the
-// action's pack from disk and refuse to execute on mismatch. Also
+// Trust gate: if the cloud supplied PackRef, re-hash the action's pack from disk
+// and refuse to execute on a different immutable ref. Also
 // signal a re-advertisement so cloud sees the new hash and flips the
 // pack to pending in the trust UI.
 func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
@@ -413,7 +414,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		return
 	}
 
-	if !c.passesTrustGate(s, m) {
+	registry, trusted := c.passesTrustGate(s, m)
+	if !trusted {
 		s.mu.Lock()
 		s.finished = true
 		s.mu.Unlock()
@@ -440,6 +442,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		ActionID:              m.ActionID,
 		Args:                  m.Args,
 		Reason:                m.Reason,
+		RegistrySnapshot:      registry,
 		OnProgress:            progress,
 	}
 	if m.Opts != nil {
@@ -506,8 +509,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 }
 
 // passesSignatureGate verifies the client attestation when the operator turned
-// on enforcement. A nil (or non-enforcing) verifier always passes — legacy
-// trust, run whatever the cloud sends. On refusal it logs the reason and
+// on enforcement. A nil (or non-enforcing) verifier always passes. On refusal
+// it logs the reason and
 // enqueues a terminal `signature_invalid` result the cloud records as a refused
 // run; it deliberately does NOT re-advertise (unlike a pack mismatch, a bad
 // signature says nothing about this runner's catalog).
@@ -519,17 +522,13 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 
 	var att *signing.Attestation
 	if m.Attestation != nil {
-		att = &signing.Attestation{
-			Version:   m.Attestation.Version,
-			Signature: m.Attestation.Signature,
-			Nonce:     m.Attestation.Nonce,
-			IssuedAt:  m.Attestation.IssuedAt,
-			Targets:   m.Attestation.Targets,
-			Cert:      m.Attestation.Cert,
-		}
+		att = m.Attestation
 	}
 
-	dec := verifier.Check(m.ActionID, m.Args, att)
+	dec := verifier.Check(signing.Dispatch{
+		ActionID: m.ActionID, PackRef: m.PackRef, ArgsRaw: m.ArgsRaw,
+		Reason: m.Reason, OperationID: m.OperationID,
+	}, att)
 	if dec.Allowed {
 		return true
 	}
@@ -552,30 +551,31 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 	return false
 }
 
-// passesTrustGate re-hashes the action's pack from disk and compares it
-// to the cloud-supplied ExpectedPackHash. Returns true (proceed) when
-// the cloud didn't supply a hash, the action is unknown, or the
-// computed hash matches. Returns false (refuse) on mismatch — in that
-// case it enqueues a `pack_hash_mismatch` ActionResultMsg and asks the
-// state loop to re-broadcast so the cloud's catalog sees the new bytes
-// and flips the (pack, version) to pending_trust.
-func (c *Client) passesTrustGate(s *runState, m RunActionMsg) bool {
-	expected := m.ExpectedPackHash
+// passesTrustGate re-hashes the action's pack from disk and compares it to the
+// cloud-supplied PackRef. On success it returns the exact registry snapshot that
+// was checked, which Engine.Run must retain through execution. On mismatch it
+// enqueues a pack_hash_mismatch result and requests a catalog re-advertisement.
+func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, bool) {
+	reg := c.opts.Engine.Registry()
+	expected := m.PackRef
 	if expected == "" {
-		// Cloud has no trusted hash on file yet (very early observation
-		// or runner pre-dates Phase 2). Skip the gate.
-		return true
+		// Signature-enforcing runners reject a missing signed PackRef before this
+		// point. With enforcement off, an absent ref skips only the hash check.
+		return reg, true
 	}
 
-	reg := c.opts.Engine.Registry()
 	action, ok := reg.Action(m.ActionID)
 	if !ok || action.PackID == "" {
 		// Action vanished or has no pack. Let the engine produce its
 		// own unknown_action result; nothing to gate.
-		return true
+		return reg, true
 	}
 
-	got, err := reg.RecomputePackHash(action.PackID)
+	pack, ok := reg.Pack(action.PackID)
+	if !ok {
+		return reg, true
+	}
+	hash, err := reg.RecomputePackHash(action.PackID)
 	if err != nil {
 		c.opts.Logger.Warn("cloud.pack_rehash_failed",
 			"request_id", m.RequestID,
@@ -588,11 +588,12 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) bool {
 		// and we shouldn't run a half-existing pack on the assumption it
 		// matched.
 		c.emitPackMismatch(s, m, action.PackID, expected, "rehash_failed:"+err.Error())
-		return false
+		return nil, false
 	}
 
+	got := fmt.Sprintf("%s@%s/%s", pack.ID, pack.Version, hash)
 	if got == expected {
-		return true
+		return reg, true
 	}
 
 	c.opts.Logger.Warn("cloud.pack_hash_mismatch",
@@ -606,7 +607,7 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) bool {
 	// Kick a state re-advertisement so cloud sees the new hash and
 	// flips the pack to pending_trust in the UI.
 	c.Readvertise()
-	return false
+	return nil, false
 }
 
 // emitPackMismatch enqueues the terminal ActionResultMsg the cloud

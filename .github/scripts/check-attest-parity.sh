@@ -15,14 +15,16 @@ extract_vectors() {
   sed -n \
     -e '/^const (/,/^)/p' \
     -e '/^func vectorClaims()/,/^}$/p' \
-    -e '/^func vectorCerts()/,/^}$/p' \
+    -e '/^func vectorCert()/,/^}$/p' \
+    -e '/^func vectorEnvelope(/,/^}$/p' \
     "$1"
 }
 
 for test_file in "$mcp/attest_test.go" "$runner/attest_test.go"; do
   vectors=$(extract_vectors "$test_file")
-  if ! grep -q 'name:  "empty args"' <<<"$vectors" ||
-    ! grep -q 'name:  "empty scope (any runner)"' <<<"$vectors"; then
+  if ! grep -Eq 'name:[[:space:]]*"empty args"' <<<"$vectors" ||
+    ! grep -Eq 'certBytes[[:space:]]*=' <<<"$vectors" ||
+    ! grep -Eq 'envelopeBase64URL[[:space:]]*=' <<<"$vectors"; then
     echo "failed to extract complete attestation vectors from $test_file" >&2
     exit 1
   fi

@@ -6,18 +6,15 @@ import (
 	"time"
 )
 
-// sendRunActionUnsignedWithHash sends a run_action carrying a mismatched
-// expected_pack_hash and NO attestation — the input that is simultaneously
+// sendRunActionUnsignedWithPackRef sends a run_action carrying a mismatched
+// pack_ref and no attestation. The input is simultaneously
 // rejectable by both the signature gate (unsigned) and the trust gate
 // (bad hash), so the result reveals which gate fired first.
-func sendRunActionUnsignedWithHash(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash string) {
+func sendRunActionUnsignedWithPackRef(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, packRef string) {
 	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
-		Envelope:         Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
-		ActionID:         actionID,
-		Args:             args,
-		Reason:           "test",
-		ExpectedPackHash: expectedPackHash,
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		ActionID: actionID, PackRef: packRef, Args: args, Reason: "test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -27,18 +24,18 @@ func sendRunActionUnsignedWithHash(t *testing.T, c *fakeConn, requestID, actionI
 
 // Dispatch gate ORDERING: the signature gate runs before the trust
 // (pack-hash) gate. An enforcing runner gets a request that is BOTH
-// unsigned AND carries a mismatched expected_pack_hash. The result must be
+// unsigned and carries a mismatched pack_ref. The result must be
 // signature_invalid/signature_required — proving handleRun ran
 // passesSignatureGate before passesTrustGate. If the trust gate had run
 // first the result would instead be pack_hash_mismatch. The order matters:
 // a bad signature says nothing about this runner's catalog, so it must not
 // trigger the pack-mismatch re-advertise/pending-trust path.
 func TestClient_GateOrder_SignatureBeforeTrust(t *testing.T) {
-	conn, _ := runEnforcingClient(t)
+	conn, _, _ := runEnforcingClient(t)
 
 	// Both gates would refuse this: no attestation (signature gate) AND a
 	// hash that cannot match the on-disk pack (trust gate).
-	sendRunActionUnsignedWithHash(t, conn, "req_order", "t.echo",
+	sendRunActionUnsignedWithPackRef(t, conn, "req_order", "t.echo",
 		map[string]any{"msg": "x"}, "sha256:DEFINITELY_NOT_THE_HASH")
 
 	res := waitForResult(t, conn, "req_order", 3*time.Second)
