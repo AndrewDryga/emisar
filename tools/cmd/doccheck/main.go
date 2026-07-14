@@ -1,6 +1,6 @@
 // Command doccheck verifies the repository documentation contract: relative
 // Markdown links resolve to version-controlled files, and tracked source does
-// not depend on retired local agent-history paths.
+// not depend on private local agent-history paths.
 package main
 
 import (
@@ -123,24 +123,6 @@ func isPathNameByte(value byte) bool {
 		value >= '0' && value <= '9' || value == '_' || value == '-'
 }
 
-func retiredDocPaths() []string {
-	return []string{
-		"docs/" + "action-packs.md",
-		"docs/" + "cloud-boundary.md",
-		"docs/" + "deploy.md",
-		"docs/" + "install.md",
-		"docs/" + "mcp.md",
-		"docs/" + "operations.md",
-		"docs/" + "pack-registry.md",
-		"docs/" + "qa-coverage.md",
-		"docs/" + "qa-findings.md",
-		"docs/distribution/" + "mcp-catalog-submission.md",
-		"docs/distribution/" + "reviewer-tenant.md",
-		"docs/" + "sales",
-		"infra/" + "OPERATIONS.md",
-	}
-}
-
 func forbiddenVersionedPath(file string) bool {
 	parts := strings.Split(file, "/")
 	for index, part := range parts {
@@ -154,26 +136,15 @@ func forbiddenVersionedPath(file string) bool {
 		}
 		return true
 	}
-
-	for _, retired := range retiredDocPaths() {
-		if file == retired || strings.HasPrefix(file, strings.TrimSuffix(retired, "/")+"/") {
-			return true
-		}
-	}
 	return false
 }
 
-func retiredReferences(data []byte) []string {
+func privateAgentReferences(data []byte) []string {
 	var hits []string
 	for _, dir := range []string{"features", "review", "reviews", "design", "specs", "screenshots"} {
 		needle := ".agent/" + dir
 		if containsReference(data, needle) {
 			hits = append(hits, needle)
-		}
-	}
-	for _, retired := range retiredDocPaths() {
-		if containsReference(data, retired) {
-			hits = append(hits, retired)
 		}
 	}
 	return hits
@@ -218,8 +189,8 @@ func checkRepository(root string) ([]finding, int, error) {
 			continue
 		}
 
-		for _, retired := range retiredReferences(data) {
-			findings = append(findings, finding{file, "references retired local artifact " + retired})
+		for _, private := range privateAgentReferences(data) {
+			findings = append(findings, finding{file, "references private local artifact " + private})
 		}
 		if strings.HasSuffix(strings.ToLower(file), ".md") {
 			markdownFiles++

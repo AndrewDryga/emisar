@@ -1,134 +1,177 @@
-#!/usr/bin/env node
-// Regenerate the /docs console screenshots from a seeded dev account, so they
-// don't go stale when the dashboard UI changes. Logs in headless, walks the
-// console, and rewrites portal/apps/emisar_web/priv/static/images/screenshots/*.webp
-// (the images embedded in the /docs pages).
-//
-// Login is passwordless (auth is magic-link only): submits the seeded demo
-// email on /sign_in, then pulls the magic-link URL out of the dev mailbox
-// (/dev/mailbox/json) and opens it in the SAME browser — the link is
-// nonce-cookie-bound to the requesting browser.
-//
-// Prereqs (macOS): the dev server on :4000 (or DEV_URL=http://localhost:4010
-// for the compose stack), the dev seed applied so demo@emisar.dev exists,
-// Google Chrome, and ImageMagick (`magick`). See README.
-//
-//   cd portal/.agent/scripts && npm install && npm run capture
-//
-// Env overrides: DEV_URL, EMAIL, ACCOUNT_SLUG, CHROME, OUT_DIR.
-
+// Regenerate the docs screenshots end-to-end: capture → pad → webp.
+// Each is CROPPED to the feature its doc section is about (no sidebar, no page
+// chrome), then given an invisible ~20px border in its OWN background colour so
+// text never touches the edge. Logs in as demo (enterprise — has SSO + SCIM +
+// runbooks + a fleet), captures the relevant element/section, and writes the
+// final webp assets under priv/static/images. Needs ImageMagick (`magick`).
+// Run it (:4010 up) whenever a screened surface changes: `npm run capture`.
 import puppeteer from "puppeteer-core";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-
-const DEV_URL = process.env.DEV_URL ?? "http://localhost:4000";
+import { mkdirSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { resolve } from "node:path";
+const BASE = process.env.BASE_URL ?? "http://localhost:4010";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const SLUG = process.env.ACCOUNT_SLUG ?? "demo";
 const CHROME =
   process.env.CHROME ??
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-
-// output WebP name  →  console path under /app/:slug (and the docs page it sits on).
-const SHOTS = {
-  "connect-llm-agents": "/settings/agents", // docs/connect-an-llm
-  "policy-editor": "/policies", //            docs/policies-and-approvals
-  "runner-fleet": "/runners", //              docs/runners
-  "audit-view": "/audit", //                  docs/audit-and-siem
-  "team-page": "/settings/team", //           docs/teams-and-access
-  runbooks: "/runbooks", //                   docs/runbooks
+const OUT = "/tmp/docshots";
+const STATIC = resolve(import.meta.dirname, "../../apps/emisar_web/priv/static/images");
+mkdirSync(OUT, { recursive: true });
+const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+const mailId = (m) => `${m.sent_at}|${m.subject}`;
+const mailbox = async () => (await (await fetch(`${BASE}/dev/mailbox/json`)).json()).data ?? [];
+// Each crop's canvas colour, sampled from the DOM (not a corner pixel, which
+// could land on text) — the padding fills with THIS so it's invisible.
+const bgColors = {};
+const rgbToHex = (rgb) => {
+  const m = (rgb || "").match(/\d+/g);
+  return m ? "#" + m.slice(0, 3).map((n) => (+n).toString(16).padStart(2, "0")).join("") : "#09090b";
 };
 
-const OUT = process.env.OUT_DIR
-  ? resolve(process.env.OUT_DIR)
-  : resolve(
-      import.meta.dirname,
-      "../../apps/emisar_web/priv/static/images/screenshots",
-    );
-mkdirSync(OUT, { recursive: true });
-
-const tmp = mkdtempSync(join(tmpdir(), "emisar-shots-"));
-
-async function mailboxMessages() {
-  const res = await fetch(`${DEV_URL}/dev/mailbox/json`);
-  if (!res.ok) throw new Error(`mailbox fetch failed: ${res.status}`);
-  const body = await res.json();
-  return body.data ?? body;
-}
-
-// The magic-link URL from the newest mail to EMAIL that isn't in `seenIds`.
-async function pollMagicLink(seenIds) {
-  for (let i = 0; i < 20; i++) {
-    const messages = await mailboxMessages();
-    const fresh = messages.find(
-      (m) =>
-        !seenIds.has(m.id) &&
-        JSON.stringify(m.to ?? "").includes(EMAIL) &&
-        /sign_in\/magic\//.test(m.text_body ?? ""),
-    );
-    if (fresh) {
-      const match = (fresh.text_body ?? "").match(
-        /https?:\/\/[^\s"]*\/sign_in\/magic\/[^\s")]+/,
-      );
-      if (match) return match[0].replace(/^https?:\/\/[^/]+/, DEV_URL);
+async function crop(page, target, name) {
+  // Mark the target (by CSS selector, or by a heading's exact text → its
+  // enclosing <section>) with data-shot, then screenshot THAT element — a
+  // sibling above it (e.g. a filter form over a results table) is excluded by
+  // construction, and puppeteer scrolls/stitches a tall element for us.
+  const ok = await page.evaluate((t) => {
+    let el = t.selector ? document.querySelector(t.selector) : null;
+    if (!el && t.classContains) {
+      // Tailwind arbitrary classes (brackets/parens) don't select via CSS —
+      // match the element whose className contains ALL the given substrings.
+      el =
+        [...document.querySelectorAll("div,section")].find((d) =>
+          t.classContains.every((c) => d.className.includes(c)),
+        ) || null;
     }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error("no magic-link email showed up in /dev/mailbox");
+    if (!el && t.heading) {
+      // Tightest element (fewest descendants) whose text is exactly the heading —
+      // handles a heading wrapping nested spans/icons.
+      el =
+        [...document.querySelectorAll("h1,h2,h3,h4,div,span,p")]
+          .filter((n) => n.textContent.trim() === t.heading)
+          .sort((a, b) => a.querySelectorAll("*").length - b.querySelectorAll("*").length)[0] || null;
+    }
+    if (!el) return false;
+    if (t.climb) el = el.closest(t.climb) || el;
+    el.setAttribute("data-shot", "1");
+    return true;
+  }, target);
+  if (!ok) throw new Error("anchor not found: " + name);
+  await settle(150);
+  const handle = await page.$('[data-shot="1"]');
+  const box = await handle.boundingBox();
+  await handle.screenshot({ path: `${OUT}/${name}.png` });
+  // The canvas colour behind this crop = the first ancestor with a real bg.
+  bgColors[name] = rgbToHex(
+    await page.evaluate(() => {
+      let el = document.querySelector('[data-shot="1"]');
+      while (el) {
+        const c = getComputedStyle(el).backgroundColor;
+        if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c;
+        el = el.parentElement;
+      }
+      return "rgb(9, 9, 11)";
+    }),
+  );
+  await page.evaluate(() => document.querySelector('[data-shot="1"]')?.removeAttribute("data-shot"));
+  console.log(`  ✓ ${name}  ${Math.round(box.width)}x${Math.round(box.height)}  bg=${bgColors[name]}`);
 }
 
-const browser = await puppeteer.launch({
-  executablePath: CHROME,
-  headless: "new",
-  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
-});
+const b = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--force-prefers-reduced-motion"] });
+const p = await b.newPage();
+await p.setViewport({ width: 1680, height: 2800, deviceScaleFactor: 2 });
 
-try {
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1440, height: 1024, deviceScaleFactor: 2 });
+// --- login ---
+const seen = new Set((await mailbox()).map(mailId));
+await p.goto(`${BASE}/sign_in`, { waitUntil: "domcontentloaded" });
+await p.waitForSelector('input[type="email"]'); await p.type('input[type="email"]', EMAIL);
+await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}), p.keyboard.press("Enter")]);
+let link;
+for (let i = 0; i < 40; i++) { const f = (await mailbox()).find((m) => !seen.has(mailId(m)) && JSON.stringify(m.to ?? "").includes(EMAIL) && /sign_in\/magic\//.test(m.text_body ?? "")); if (f) { link = (f.text_body.match(/https?:\/\/[^\s"]*\/sign_in\/magic\/[^\s")]+/) || [])[0].replace(/^https?:\/\/[^/]+/, BASE); break; } await settle(500); }
+if (!link) throw new Error("no magic link found in mailbox");
+await p.goto(link, { waitUntil: "domcontentloaded" }); await p.waitForFunction(() => location.pathname.startsWith("/app/"));
 
-  const seenIds = new Set((await mailboxMessages()).map((m) => m.id));
-  await page.goto(`${DEV_URL}/sign_in`, { waitUntil: "networkidle2" });
-  await page.type('input[type="email"]', EMAIL);
+const go = async (path) => { await p.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" }); await settle(1100); };
+// CDP's Page.navigate rejects bracketed query params ([]); set location in-page
+// (Chrome parses it fine) for URLs that carry filter params.
+const goRaw = async (path) => {
   await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {}),
-    page.keyboard.press("Enter"),
+    p.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}),
+    p.evaluate((u) => { window.location.href = u; }, `${BASE}${path}`),
   ]);
-  const magicLink = await pollMagicLink(seenIds);
-  await page.goto(magicLink, { waitUntil: "networkidle2" });
-  await page
-    .waitForFunction(() => location.pathname.startsWith("/app/"), {
-      timeout: 20000,
-    })
-    .catch(() => {});
+  await settle(1200);
+};
 
-  if (!page.url().includes(`/app/${SLUG}`)) {
-    throw new Error(
-      `login failed (landed on ${page.url()}) — is the dev seed applied and the "${SLUG}" account loginable?`,
-    );
-  }
+await go("/app/demo/policies");
+await crop(p, { heading: "Default policy", climb: "section" }, "policy-editor");
 
-  for (const [name, path] of Object.entries(SHOTS)) {
-    await page.goto(`${DEV_URL}/app/${SLUG}${path}`, {
-      waitUntil: "networkidle2",
-    });
-    await new Promise((r) => setTimeout(r, 2500)); // let LiveView async mounts settle
-    const png = join(tmp, `${name}.png`);
-    await page.screenshot({ path: png });
-    // downscale to 1600w + WebP — crisp at the docs content width, small file.
-    execFileSync("magick", [
-      png,
-      "-resize",
-      "1600x",
-      "-quality",
-      "82",
-      join(OUT, `${name}.webp`),
-    ]);
-    console.log(`  ✓ ${name}.webp  ←  ${path}`);
-  }
-  console.log(`\nWrote ${Object.keys(SHOTS).length} screenshots to ${OUT}`);
-} finally {
-  await browser.close();
-  rmSync(tmp, { recursive: true, force: true });
+// The natural log leads with auth + runner-lifecycle noise; filter to the Run
+// group so the hero shows the audit trail's core — gated action dispatches with
+// their outcomes (Succeeded / Failed / Awaiting approval) — capped to a slice.
+await goRaw("/app/demo/audit?event_type[]=group:Run");
+await crop(p, { selector: "#audit-events" }, "audit-view"); // tall; conversion crops the top slice
+
+await go("/app/demo/runbooks");
+await crop(p, { selector: "#runbooks" }, "runbooks");
+
+await go("/app/demo/runners");
+await crop(p, { selector: "#runners" }, "runner-fleet");
+
+await go("/app/demo/settings/team");
+await crop(p, { selector: "#members", climb: "section" }, "team-page");
+
+await go("/app/demo/settings/sso/new");
+await crop(p, { selector: "#provider_form" }, "sso-add-connection");
+
+// SSO connection detail — click through from the Team page's connection link.
+await go("/app/demo/settings/team");
+await p.evaluate(() => {
+  const a = [...document.querySelectorAll('a[href*="/settings/sso/"]')].find((x) => /\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute("href")));
+  if (a) a.click();
+});
+await settle(1400);
+await crop(p, { heading: "Directory sync (SCIM)", climb: "section" }, "sso-directory-sync");
+
+// LLM agents — the "Connect an agent" client picker (the /docs/connect-an-llm
+// hero): pick a client and it mints a pre-filled key + setup. Select one so the
+// per-client config shows beside the picker, not an empty prompt.
+await go("/app/demo/agents/connect");
+await p.evaluate(() => {
+  const tab = [...document.querySelectorAll("button, a, [phx-click]")].find(
+    (b) => b.textContent.trim() === "Claude.ai",
+  );
+  if (tab) tab.click();
+});
+await settle(900);
+await crop(p, { classContains: ["grid-cols-[minmax(0,1fr)_22rem]", "gap-x-16"] }, "connect-llm-agents");
+
+await b.close();
+
+// --- pad + convert to webp (part of the pipeline, so re-running regenerates the
+// shipped assets) ---
+// Give each tight crop a border in its OWN background colour (sampled above, so
+// it's invisible) — breathing room so text never touches the edge. Tall lists
+// (audit, the SSO form) keep only a top slice. `WxH>` resizes down only (never
+// upscales a smaller crop). PAD is on the final image; it reads as ~20px once
+// the doc scales the image into its column.
+const PAD = 40, WIDTH = 1600, Q = 82;
+const SHOTS = [
+  { name: "policy-editor", out: "screenshots/policy-editor.webp" },
+  { name: "audit-view", out: "screenshots/audit-view.webp", topCss: 700 },
+  { name: "runbooks", out: "screenshots/runbooks.webp" },
+  { name: "runner-fleet", out: "screenshots/runner-fleet.webp" },
+  { name: "team-page", out: "screenshots/team-page.webp" },
+  { name: "sso-add-connection", out: "docs/sso/sso-add-connection.webp", topCss: 850 },
+  { name: "sso-directory-sync", out: "docs/sso/sso-directory-sync.webp" },
+  { name: "connect-llm-agents", out: "screenshots/connect-llm-agents.webp", topCss: 720 },
+];
+for (const s of SHOTS) {
+  const png = `${OUT}/${s.name}.png`;
+  const dest = `${STATIC}/${s.out}`;
+  const bg = bgColors[s.name] || "#09090b";
+  const w = execSync(`magick identify -format "%w" "${png}"`).toString().trim();
+  const crop = s.topCss ? `-crop ${w}x${s.topCss * 2}+0+0 +repage` : "";
+  execSync(`magick "${png}" ${crop} -resize "${WIDTH}x>" -bordercolor "${bg}" -border ${PAD} -quality ${Q} "${dest}"`);
+  console.log(`  → ${s.out}  (bg ${bg}, +${PAD}px)`);
 }
+console.log("done");

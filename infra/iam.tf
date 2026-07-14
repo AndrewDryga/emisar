@@ -34,20 +34,10 @@ resource "google_project_iam_custom_role" "cluster_discovery" {
   stage       = "GA"
 }
 
-moved {
-  from = google_project_iam_member.vm_compute_viewer
-  to   = google_project_iam_member.vm_cluster_discovery
-}
-
 resource "google_project_iam_member" "vm_cluster_discovery" {
   project = var.project_id
   role    = google_project_iam_custom_role.cluster_discovery.name
   member  = "serviceAccount:${google_service_account.vm.email}"
-}
-
-moved {
-  from = google_project_iam_member.vm_cloudsql_client
-  to   = google_project_iam_member.vm_cloudsql["roles/cloudsql.client"]
 }
 
 resource "google_project_iam_member" "vm_cloudsql" {

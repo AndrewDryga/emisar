@@ -5,38 +5,9 @@
 # runs the on-call escalation, and hosts the public status page — so detection,
 # paging, and customer communication all survive the outage they report on. It
 # monitors the public hostname rather than a provider-internal endpoint.
-#
-# The account predates this config, so the pre-existing resources are adopted
-# via import blocks (no-ops after the first apply) instead of being recreated —
-# recreating them would discard the status page's uptime history.
 
 provider "betteruptime" {
   api_token = var.betterstack_api_token
-}
-
-import {
-  to = betteruptime_on_call_calendar.primary
-  id = "391634"
-}
-
-import {
-  to = betteruptime_monitor.portal
-  id = "4499550"
-}
-
-import {
-  to = betteruptime_status_page.emisar
-  id = "250271"
-}
-
-import {
-  to = betteruptime_status_page_section.control_plane
-  id = "250271/330559"
-}
-
-import {
-  to = betteruptime_status_page_resource.portal
-  id = "250271/8901315"
 }
 
 # ── On-call & escalation ──────────────────────────────────────────────────────

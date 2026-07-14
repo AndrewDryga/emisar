@@ -58,11 +58,6 @@ locals {
 # Both paths bypass force_ssl because GCP probes the backend over plain HTTP.
 # Auto-healing checks only the BEAM: a database outage must not restart every
 # healthy VM. The load balancer additionally checks PostgreSQL before routing.
-moved {
-  from = google_compute_health_check.app
-  to   = google_compute_health_check.liveness
-}
-
 resource "google_compute_health_check" "liveness" {
   name                = "emisar-healthz"
   check_interval_sec  = 10
@@ -129,11 +124,6 @@ resource "google_compute_reservation" "emisar" {
   }
 
   depends_on = [google_project_service.apis]
-}
-
-moved {
-  from = google_compute_reservation.emisar
-  to   = google_compute_reservation.emisar["us-central1-a"]
 }
 
 # ── Instance template: Container-Optimized OS running the portal container ────

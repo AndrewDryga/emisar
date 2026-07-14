@@ -2,7 +2,7 @@
   "name": "emisar-docs-screenshots",
   "version": "1.0.0",
   "private": true,
-  "description": "Regenerate the /docs console screenshots from a seeded dev account.",
+  "description": "Regenerate cropped /docs screenshots from the seeded compose stack.",
   "scripts": {
     "capture": "node capture-docs-screenshots.mjs"
   },

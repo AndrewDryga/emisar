@@ -126,11 +126,6 @@ resource "google_sql_user" "pgaudit_owner" {
   }
 }
 
-moved {
-  from = google_sql_user.password_rollback[0]
-  to   = google_sql_user.pgaudit_owner
-}
-
 # Terraform can create the Cloud SQL IAM principal, but PostgreSQL ownership is
 # bootstrapped explicitly first (README.md). Deferring creation until that role
 # exists avoids temporarily granting the application cloudsqlsuperuser.

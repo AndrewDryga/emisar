@@ -43,33 +43,26 @@ func TestCheckMarkdownLinks(t *testing.T) {
 	}
 }
 
-func TestRetiredReferences(t *testing.T) {
+func TestPrivateAgentReferences(t *testing.T) {
 	t.Parallel()
 	agentReview := ".agent/" + "review"
 	agentReviews := agentReview + "s"
-	deployDoc := "docs/" + "deploy.md"
-	internalDistributionDoc := "docs/distribution/" + "reviewer-tenant.md"
-	internalSalesDir := "docs/" + "sales"
-	data := []byte("old " + agentReviews + "/round-1 and " + deployDoc +
-		" plus " + internalDistributionDoc + " and " + internalSalesDir +
-		"/battlecard.md; keep .agent/rules/design-system.md")
-	want := []string{agentReviews, deployDoc, internalDistributionDoc, internalSalesDir}
-	if got := retiredReferences(data); !reflect.DeepEqual(got, want) {
-		t.Fatalf("retiredReferences = %#v, want %#v", got, want)
+	data := []byte("old " + agentReviews + "/round-1; keep .agent/rules/design-system.md")
+	want := []string{agentReviews}
+	if got := privateAgentReferences(data); !reflect.DeepEqual(got, want) {
+		t.Fatalf("privateAgentReferences = %#v, want %#v", got, want)
 	}
 }
 
 func TestForbiddenVersionedPath(t *testing.T) {
 	t.Parallel()
 	agentReview := ".agent/" + "reviews/round-1.md"
-	reviewerDoc := "docs/distribution/" + "reviewer-tenant.md"
-	salesDoc := "docs/" + "sales/battlecard.md"
 	cases := map[string]bool{
-		".agent/project.yaml":    false,
-		agentReview:              true,
-		reviewerDoc:              true,
-		salesDoc:                 true,
-		"docs/security-model.md": false,
+		".agent/project.yaml":                                 false,
+		agentReview:                                           true,
+		"docs/distribution/reviewer-tenant.md":                false,
+		"docs/sales/battlecard.md":                            false,
+		"docs/security-model.md":                              false,
 		"portal/.agent/rules/elixir-doc-contract.md":          false,
 		"portal/.agent/scripts/capture-console-audit.mjs":     false,
 		"portal/.agent/secrets/reviewer.env":                  true,

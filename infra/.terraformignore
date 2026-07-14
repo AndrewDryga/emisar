@@ -10,13 +10,8 @@ crash.*.log
 # real var files may hold values; the committed *.example template is fine to keep
 terraform.tfvars
 *.auto.tfvars
-# repo-root local/dev material that must never ride along in an infra package
+# Local agent state must never ride along in an infra package.
 .agent/
-.claude/
-.codex/
-.expert/
-dev/
-docs/
 # Local validation and drill fixtures never enter the workspace package.
 tests/
 drills/
