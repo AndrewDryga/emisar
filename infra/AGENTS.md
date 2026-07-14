@@ -62,6 +62,11 @@ the separate, creds-gated deploy step.
    collapse the probes or return to delete-before-create updates. Old and new app
    versions overlap during a rollout, so schema changes must be compatible with
    both until a later release contracts the old shape.
+10. **The pack registry is one bucket.** Keep immutable packs, catalog snapshots,
+   schemas, and the two live pointers in the existing public registry bucket.
+   Enforce create-only immutable prefixes and pointer-only create/delete needed
+   for replacement through conditional IAM; do not add a history bucket, mirror
+   publisher, or route cutover.
 
 ## House style
 

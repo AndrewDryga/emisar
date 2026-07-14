@@ -70,28 +70,62 @@ resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
   member = "allUsers"
 }
 
-# ── Publisher identity — least-privilege, objects only ───────────────────────
-# The CI/publishing job writes artifacts as this SA. It gets `objectUser`
-# (objects create/get/list/delete), NOT `objectAdmin` or a project-wide storage
-# role. It can't be create-only: republishing the mutable pointers
-# (catalog.json / suggest.json) REPLACES the live object, and GCS requires
-# `storage.objects.delete` for an overwrite even with versioning on — a
-# create-only `objectCreator` 403s the second publish. History still survives a
-# replace: versioning archives the prior live generation and there is no
-# lifecycle delete rule. Accepted residual: this SA *could* explicitly delete
-# archived generations — install trust rests on the pinned `--hash` in the
-# snippets, not on the registry. Reads for post-publish verification go through
-# the public GET-only binding above (IAM is additive).
+# ── Publisher identity — least privilege by object class ─────────────────────
+# Immutable tarballs, catalog snapshots, and v1 schemas are create-only. The
+# publisher cannot replace or delete them; a repeated publish must prove that an
+# existing object has the exact expected bytes before advancing live pointers.
+# Only catalog.json and suggest.json need replacement permission. GCS implements
+# replacement with create+delete, so this identity can also delete those two live
+# pointers; their previous generations remain recoverable through versioning.
+# Collision checks use the registry's public GET binding, so the publisher needs
+# no object-read role.
 resource "google_service_account" "pack_publisher" {
   account_id   = "emisar-pack-publisher"
   display_name = "Emisar Action Pack Registry Publisher"
   project      = var.project_id
 }
 
+resource "google_storage_bucket_iam_member" "pack_registry_immutable_publisher" {
+  bucket = google_storage_bucket.pack_registry.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.pack_publisher.email}"
+
+  condition {
+    title       = "create-immutable-registry-objects"
+    description = "Create immutable packs, catalog snapshots, and schemas without overwrite or delete permission."
+    expression = join(" || ", [
+      "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/packs/')",
+      "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/catalog/')",
+      "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/schemas/')",
+    ])
+  }
+}
+
+resource "google_project_iam_custom_role" "pack_registry_pointer_publisher" {
+  project     = var.project_id
+  role_id     = "packRegistryPointerPublisher"
+  title       = "Pack Registry Pointer Publisher"
+  description = "Create, replace, or delete only the live pack-registry pointer objects."
+  permissions = [
+    "storage.objects.create",
+    "storage.objects.delete",
+  ]
+  stage = "GA"
+}
+
 resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
   bucket = google_storage_bucket.pack_registry.name
-  role   = "roles/storage.objectUser"
+  role   = google_project_iam_custom_role.pack_registry_pointer_publisher.name
   member = "serviceAccount:${google_service_account.pack_publisher.email}"
+
+  condition {
+    title       = "replace-live-registry-pointers"
+    description = "Replace or delete only the two live registry pointers; all other published objects are create-only."
+    expression = join(" || ", [
+      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/catalog.json'",
+      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/suggest.json'",
+    ])
+  }
 }
 
 # Let only the pack-registry-production environment impersonate the publisher

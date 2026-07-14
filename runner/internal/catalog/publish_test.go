@@ -7,8 +7,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -44,8 +46,10 @@ type fakeGCS struct {
 	mu       sync.Mutex
 	requests map[string]string // object name -> ifGenerationMatch value ("" if absent)
 	auth     map[string]string // object name -> Authorization header
+	readAuth map[string]string // object name -> Authorization header on collision verification
 	cache    map[string]string // object name -> Cache-Control metadata
 	status   map[string]int    // object name -> forced status
+	objects  map[string][]byte // bytes returned when an existing object is verified
 	order    []string          // object names in the order they were uploaded
 }
 
@@ -53,14 +57,39 @@ func newFakeGCS() *fakeGCS {
 	return &fakeGCS{
 		requests: map[string]string{},
 		auth:     map[string]string{},
+		readAuth: map[string]string{},
 		cache:    map[string]string{},
 		status:   map[string]int{},
+		objects:  map[string][]byte{},
 	}
 }
 
 func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			idx := strings.LastIndex(r.URL.Path, "/o/")
+			if idx == -1 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			name, err := url.PathUnescape(r.URL.Path[idx+3:])
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			f.mu.Lock()
+			data, ok := f.objects[name]
+			f.readAuth[name] = r.Header.Get("Authorization")
+			f.mu.Unlock()
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+			return
+		}
 		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
 			t.Errorf("parse upload content type: %v", err)
@@ -197,8 +226,15 @@ func TestPublish_ImmutableObjectsUploadedBeforeMutablePointers(t *testing.T) {
 func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	// A schema object already exists → 412, must be skipped, not an error.
-	f.status["v1/schemas/catalog.schema.json"] = http.StatusPreconditionFailed
+	// A schema object already exists with the expected bytes: the publisher
+	// verifies it before treating the precondition failure as idempotent.
+	const name = "v1/schemas/catalog.schema.json"
+	f.status[name] = http.StatusPreconditionFailed
+	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatalf("read existing immutable fixture: %v", err)
+	}
+	f.objects[name] = existing
 	srv := f.server(t)
 
 	res, err := Publish(context.Background(), dir, PublishOptions{
@@ -211,12 +247,86 @@ func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 	}
 	found := false
 	for _, s := range res.Skipped {
-		if s == "v1/schemas/catalog.schema.json" {
+		if s == name {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("existing immutable object not reported as skipped: %v", res.Skipped)
+	}
+	if got := f.readAuth[name]; got != "" {
+		t.Errorf("immutable collision verification used publisher credentials: %q", got)
+	}
+}
+
+func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	const name = "v1/schemas/catalog.schema.json"
+	f.status[name] = http.StatusPreconditionFailed
+	f.objects[name] = []byte("different")
+	srv := f.server(t)
+
+	_, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	})
+	if err == nil || !strings.Contains(err.Error(), "different bytes") {
+		t.Fatalf("expected immutable-byte mismatch, got %v", err)
+	}
+	assertMutablePointersUntouched(t, f)
+}
+
+func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	const name = "v1/schemas/catalog.schema.json"
+	f.status[name] = http.StatusPreconditionFailed
+	srv := f.server(t)
+
+	_, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	})
+	if err == nil || !strings.Contains(err.Error(), "verify existing immutable object") {
+		t.Fatalf("expected immutable verification failure, got %v", err)
+	}
+	assertMutablePointersUntouched(t, f)
+}
+
+func TestPublish_OversizedExistingImmutableFails(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	const name = "v1/schemas/catalog.schema.json"
+	f.status[name] = http.StatusPreconditionFailed
+	expected, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatalf("read immutable fixture: %v", err)
+	}
+	f.objects[name] = make([]byte, len(expected)+1)
+	srv := f.server(t)
+
+	_, err = Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds expected size") {
+		t.Fatalf("expected oversized immutable failure, got %v", err)
+	}
+	assertMutablePointersUntouched(t, f)
+}
+
+func assertMutablePointersUntouched(t *testing.T, f *fakeGCS) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, name := range []string{"v1/catalog.json", "v1/suggest.json"} {
+		if _, ok := f.requests[name]; ok {
+			t.Errorf("mutable pointer %s was published after immutable verification failed", name)
+		}
 	}
 }
 

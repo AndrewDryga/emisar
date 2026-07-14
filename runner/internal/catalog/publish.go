@@ -43,17 +43,16 @@ type PublishOptions struct {
 type PublishResult struct {
 	Uploaded []string
 	// Skipped are immutable objects that already existed at their content-
-	// addressed path (if-generation-match precondition failed) — expected
-	// and safe: identical bytes, so a republish is a no-op.
+	// addressed path and whose stored bytes were fetched and verified.
 	Skipped []string
 }
 
 // Publish uploads the artifact tree at dir (as described by its
 // manifest.json) to opts.Bucket. Immutable objects are uploaded with an
 // if-generation-match:0 precondition so an existing object is never
-// overwritten; a precondition failure means the identical object is already
-// published and is skipped. Mutable pointers are overwritten (the bucket's
-// object versioning retains prior generations).
+// overwritten; after a precondition failure the stored bytes must match before
+// the object is skipped. Mutable pointers are overwritten (the bucket's object
+// versioning retains prior generations).
 func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResult, error) {
 	if opts.Bucket == "" {
 		return nil, fmt.Errorf("catalog: publish requires a bucket")
@@ -187,10 +186,43 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return true, nil
 	case resp.StatusCode == http.StatusPreconditionFailed && obj.Immutable:
-		// Object already exists at its content-addressed path — identical
-		// bytes, so this is the expected idempotent-republish path.
+		stored, err := getObject(ctx, client, endpoint, bucket, obj.Path, len(data))
+		if err != nil {
+			return false, fmt.Errorf("catalog: verify existing immutable object %s: %w", obj.Path, err)
+		}
+		if !bytes.Equal(stored, data) {
+			return false, fmt.Errorf(
+				"catalog: immutable object %s already exists with different bytes (expected sha256 %s, stored sha256 %s)",
+				obj.Path, hex.EncodeToString(sha256Sum(data)), hex.EncodeToString(sha256Sum(stored)))
+		}
 		return false, nil
 	default:
 		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(body))
 	}
+}
+
+func getObject(ctx context.Context, client *http.Client, endpoint, bucket, name string, expectedSize int) ([]byte, error) {
+	objectURL := fmt.Sprintf("%s/storage/v1/b/%s/o/%s?alt=media",
+		endpoint, url.PathEscape(bucket), url.PathEscape(name))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build GET request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, fmt.Errorf("GET returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(expectedSize)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(data) > expectedSize {
+		return nil, fmt.Errorf("stored object exceeds expected size of %d bytes", expectedSize)
+	}
+	return data, nil
 }

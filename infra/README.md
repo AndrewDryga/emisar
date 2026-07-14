@@ -115,10 +115,13 @@ new child key is active, and remove the old DS only after resolver convergence.
 
 ## Pack registry
 
-`registry.emisar.dev` terminates at the same load balancer and routes directly
-to the public-read GCS backend bucket. Publisher credentials are create-only;
-published objects are versioned. Customer-facing URLs always use the registry
-domain, while the backing URL is for administration.
+`registry.emisar.dev` terminates at the shared load balancer and routes directly
+to one public-read GCS bucket. The publisher can create, but cannot replace or
+delete, objects under `v1/packs/`, `v1/catalog/`, and `v1/schemas/`. It can
+replace or delete only `catalog.json` and `suggest.json`; GCS requires delete
+permission to replace an object. A repeated immutable publication fetches the
+existing object and verifies its bytes before treating the collision as
+idempotent. Bucket versioning retains previous pointer generations.
 
 ```sh
 curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
