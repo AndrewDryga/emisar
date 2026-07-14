@@ -111,6 +111,7 @@ EMISAR_AUTH_KEY=emkey-auth-... \
 | [docs/architecture.md](docs/architecture.md)        | System components, trust boundaries, and request flow. |
 | [runner/README.md](runner/README.md)                | Runner installation, operation, and internals.       |
 | [mcp/README.md](mcp/README.md)                      | MCP bridge installation and transport behavior.      |
+| [skills/README.md](skills/README.md)                | Standalone customer agent skills and direct install. |
 | [docs/security-model.md](docs/security-model.md)    | Security guarantees, limitations, and threat model.  |
 | [docs/signed-dispatch.md](docs/signed-dispatch.md)  | Versioned client-attested dispatch protocol.         |
 | [docs/wire-protocol.md](docs/wire-protocol.md)      | Runner websocket messages and lifecycle.             |
@@ -145,6 +146,7 @@ runner/                          Go module — on-host runner binary
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
 packs/                           versioned action-pack catalog consumed by the runner + portal
+skills/                          standalone customer agent skills; no repository checkout required
 tools/                           Go module — repository-only generators and CI checks
 docs/                            versioned architecture, security, protocol, release, and distribution docs
 docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners

@@ -56,7 +56,7 @@ check_manual_text() {
   local findings
   findings="$(mktemp)"
 
-  if rg -n 'coop tasks list|xx_done' AGENTS.md .claude/skills portal/AGENTS.md runner/AGENTS.md mcp/AGENTS.md packs/AGENTS.md infra/AGENTS.md >"$findings"; then
+  if rg -n 'coop tasks list|xx_done' AGENTS.md .claude/skills skills portal/AGENTS.md runner/AGENTS.md mcp/AGENTS.md packs/AGENTS.md infra/AGENTS.md >"$findings"; then
     cat "$findings" >&2
     fail "manuals or skills still mention stale coop task commands/state names"
   else
@@ -67,7 +67,7 @@ check_manual_text() {
 
 check_skill_text() {
   local findings
-  findings="$(rg -n -i '(/code-review|/security-review)|v0\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`' .claude/skills || true)"
+  findings="$(rg -n -i '(/code-review|/security-review)|v0\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`' .claude/skills skills || true)"
 
   if [[ -n "$findings" ]]; then
     printf '%s\n' "$findings" >&2
@@ -153,6 +153,34 @@ check_skills() {
   ok "skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes"
 }
 
+check_public_skills() {
+  local file dir name description effort argument_hint allowed_tools count
+
+  [[ -f skills/README.md ]] || fail "skills/README.md is required for customer installation"
+  count=0
+
+  while IFS= read -r file; do
+    count=$((count + 1))
+    dir="$(basename "$(dirname "$file")")"
+    name="$(extract_frontmatter_value "$file" name)"
+    description="$(extract_frontmatter_value "$file" description)"
+    effort="$(extract_frontmatter_value "$file" effort)"
+    argument_hint="$(extract_frontmatter_value "$file" argument-hint)"
+    allowed_tools="$(extract_frontmatter_value "$file" allowed-tools)"
+
+    [[ -n "$name" ]] || fail "$file missing frontmatter name"
+    [[ -n "$description" ]] || fail "$file missing frontmatter description"
+    [[ "$name" == "$dir" ]] || fail "$file name is '$name', expected '$dir'"
+    [[ -z "$effort" ]] || fail "$file uses contributor-only effort frontmatter"
+    [[ -z "$argument_hint" ]] || fail "$file uses contributor-only argument-hint frontmatter"
+    [[ -z "$allowed_tools" ]] || fail "$file uses contributor-only allowed-tools frontmatter"
+    [[ ! -e ".claude/skills/$name" ]] || fail "$file is duplicated under .claude/skills/$name"
+  done < <(find skills -mindepth 2 -maxdepth 2 -name SKILL.md | sort)
+
+  [[ "$count" -gt 0 ]] || fail "skills/ contains no customer SKILL.md files"
+  ok "public skills have portable metadata and remain separate from contributor skills"
+}
+
 for project in . infra mcp packs portal runner; do
   expect_link "$project/CLAUDE.md" AGENTS.md
 done
@@ -165,6 +193,7 @@ check_coop
 check_task_dirs
 check_rule_names
 check_skills
+check_public_skills
 
 if [[ "$failures" -gt 0 ]]; then
   printf '\nLLM setup audit failed: %d issue(s)\n' "$failures" >&2

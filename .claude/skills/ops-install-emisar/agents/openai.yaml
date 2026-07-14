@@ -1,4 +1,0 @@
-interface:
-  display_name: "Install Emisar"
-  short_description: "Install and certify an Emisar environment"
-  default_prompt: "Use $ops-install-emisar to install and verify Emisar end to end on this environment."

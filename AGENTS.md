@@ -104,9 +104,10 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 
 - **Instructions** — `AGENTS.md` is canonical. Codex reads it natively; Claude reads it through the `CLAUDE.md` symlink at each level (root + every project).
 - **State + rules** — `.agent/` is read and written identically by both tools.
-- **Skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
+- **Contributor skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
+- **Customer skills** — public product artifacts live under `skills/<name>/`, use portable frontmatter and public interfaces, and never depend on a repository checkout, `AGENTS.md`, `.agent/`, internal contributor skills, or `.claude/` / `.codex/` discovery. `skills/README.md` owns direct customer installation.
 - **Enforcement** — Claude hooks under `.claude/` (Stop, commit-gate); the *logic* lives in shared scripts so CI or another tool can reuse it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
-- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `.codex/`, hooks, or task-queue conventions, run `bash .agent/scripts/audit-llm-setup.sh`. It checks the cross-tool symlinks, current `coop` verbs/state names, and basic skill metadata so stale agent instructions fail fast.
+- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `skills/`, `.codex/`, hooks, or task-queue conventions, run `bash .agent/scripts/audit-llm-setup.sh`. It checks the cross-tool symlinks, current `coop` verbs/state names, and contributor/customer skill metadata so stale agent instructions fail fast.
 
 ---
 
@@ -119,4 +120,4 @@ Two kinds:
 
 For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan. Use `/review-ship` for a lighter proportional review; the fix plan can be queued straight into `.agent/tasks/00_todo/` for `/workflow-sweep`.
 
-Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share the **same** skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo).
+Contributor skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share those internal skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo). Customer-distributed skills are a separate public product surface under `skills/`; see `skills/README.md`.
