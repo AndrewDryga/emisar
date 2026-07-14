@@ -10,6 +10,7 @@ locals {
     database_user            = "emisar-vm@test-project.iam"
     database_name            = "emisar"
     database_role            = "emisar_owner"
+    database_pool_size       = 5
     disable_billing          = false
     database_connection_name = "test-project:us-central1:emisar"
     runtime_secrets = {

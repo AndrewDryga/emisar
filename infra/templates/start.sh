@@ -77,6 +77,7 @@ NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   printf 'NODE_IP=%s\n' "$NODE_IP"
   printf 'EMISAR_CLUSTER_PROJECT=%s\n' "${project_id}"
   printf 'EMISAR_CLUSTER_VALUE=%s\n' "${cluster_value}"
+  printf 'POOL_SIZE=%s\n' "${database_pool_size}"
 %{ if database_role != "" ~}
   printf 'DATABASE_ROLE=%s\n' "${database_role}"
 %{ endif ~}

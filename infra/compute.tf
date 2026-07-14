@@ -1,5 +1,9 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
+  # db-g1-small permits 50 connections. A five-connection pool per VM leaves
+  # room for Cloud SQL internals and for old + new fleets to overlap during a
+  # create-before-destroy MIG replacement without deadlocking the rollout.
+  portal_database_pool_size = 5
   ensure_image_script = templatefile("${path.module}/templates/ensure-image.sh", {
     container_image       = var.container_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
@@ -19,6 +23,7 @@ locals {
     database_user            = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
     database_name            = google_sql_database.emisar.name
     database_role            = var.database_owner_role_ready ? "emisar_owner" : ""
+    database_pool_size       = local.portal_database_pool_size
     release_cookie_ready     = var.release_cookie_ready
   })
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
