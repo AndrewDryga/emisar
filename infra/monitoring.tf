@@ -10,20 +10,11 @@ resource "google_monitoring_notification_channel" "email" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_monitoring_notification_channel" "better_stack" {
-  display_name = "Emisar: Better Stack Escalation"
-  type         = "webhook_tokenauth"
-  labels = {
-    url = betteruptime_google_monitoring_integration.gcp.webhook_url
-  }
-  depends_on = [google_project_service.apis]
-}
-
+# Better Stack's Google Monitoring webhook requires a paid integration. Keep
+# native GCP alerts on the included email path; Better Stack still owns and
+# pages for its external portal and registry monitors in uptime.tf.
 locals {
-  alert_notification_channels = [
-    google_monitoring_notification_channel.email.id,
-    google_monitoring_notification_channel.better_stack.id,
-  ]
+  alert_notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
 # External readiness check proves the site and its database are serving.
@@ -348,6 +339,8 @@ resource "google_logging_metric" "recurrent_job_failures" {
     value_type  = "INT64"
     unit        = "1"
   }
+
+  depends_on = [google_project_iam_member.terraform_apply_authority]
 }
 
 resource "google_logging_metric" "billing_sync_failures" {
@@ -360,6 +353,8 @@ resource "google_logging_metric" "billing_sync_failures" {
     value_type  = "INT64"
     unit        = "1"
   }
+
+  depends_on = [google_project_iam_member.terraform_apply_authority]
 }
 
 resource "google_logging_metric" "cluster_failures" {
@@ -372,6 +367,8 @@ resource "google_logging_metric" "cluster_failures" {
     value_type  = "INT64"
     unit        = "1"
   }
+
+  depends_on = [google_project_iam_member.terraform_apply_authority]
 }
 
 resource "google_monitoring_alert_policy" "recurrent_job_failures" {

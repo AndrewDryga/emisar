@@ -3,7 +3,7 @@ set -euo pipefail
 
 project=${PROJECT_ID:-emisar}
 source_instance=${SOURCE_INSTANCE:-emisar}
-zone=${DRILL_ZONE:-us-central1-b}
+zone=${DRILL_ZONE:-us-central1-c}
 apply=false
 
 if [[ ${1:-} == --apply ]]; then

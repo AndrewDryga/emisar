@@ -17,7 +17,7 @@ variable "region" {
 variable "zones" {
   type        = list(string)
   description = "Distinct zones used by the regional MIG and its per-zone steady-state reservations. Every zone must belong to var.region and instance_count must cover every zone."
-  default     = ["us-central1-a", "us-central1-b"]
+  default     = ["us-central1-a", "us-central1-c"]
 
   validation {
     condition = (
@@ -169,12 +169,6 @@ variable "github_repository" {
   type        = string
   description = "Repository whose main CD workflow may assume the pack-publisher identity."
   default     = "AndrewDryga/emisar"
-}
-
-variable "enforce_org_policies" {
-  description = "Promote dry-run organization policies after Policy Simulator and a reviewed plan are clean."
-  type        = bool
-  default     = false
 }
 
 variable "mailer_from_email" {

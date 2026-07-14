@@ -40,7 +40,6 @@ resource "google_project_service" "apis" {
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "iap.googleapis.com",
-    "orgpolicy.googleapis.com",
     # Workload Identity Federation for the GitHub Actions deploy identity
     # (deploy.tf): pool/provider live in iam, the token exchange is sts, and
     # the impersonation call is iamcredentials.

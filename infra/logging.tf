@@ -11,7 +11,10 @@ resource "google_logging_project_bucket_config" "security_evidence" {
     prevent_destroy = true
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_logging_project_sink" "security_evidence" {

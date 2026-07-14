@@ -200,10 +200,11 @@ The cutover is deliberately reversible and fits one short maintenance window:
 
 ## Terraform authority
 
-The single HCP Terraform workspace owns the complete production stack,
-including IAM, WIF, secret containers, and workload resources. Its HCP token
-and apply identity are production-admin credentials. Organization policies
-start in dry-run and are enforced only after Policy Simulator and clean plans.
+The single HCP Terraform workspace owns the complete project-scoped production
+stack, including IAM, WIF, secret containers, and workload resources. Its HCP
+token and apply identity are production-admin credentials. Organization Policy
+administration is intentionally excluded: Google grants that authority above
+the project, where it would also cover unrelated projects in the organization.
 
 ## DNS and DNSSEC
 

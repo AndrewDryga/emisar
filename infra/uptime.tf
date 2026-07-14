@@ -123,16 +123,6 @@ resource "betteruptime_policy" "incident" {
   repeat_delay = 5 * 60
 }
 
-# Cloud Monitoring sends every native GCP alert into the same Better Stack
-# escalation policy as external uptime incidents. Email remains a second,
-# independent notification path in monitoring.tf.
-resource "betteruptime_google_monitoring_integration" "gcp" {
-  name            = "Emisar GCP production"
-  policy_id       = betteruptime_policy.incident.id
-  recovery_period = 180
-  paused          = false
-}
-
 # ── Monitors ──────────────────────────────────────────────────────────────────
 resource "betteruptime_monitor_group" "production" {
   name       = "Emisar Production"

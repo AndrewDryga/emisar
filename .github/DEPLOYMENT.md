@@ -51,10 +51,13 @@ HCP dynamic GCP credentials use separate identities. Plans impersonate
 roles and cannot access secret payloads or mutate the project. Applies
 impersonate `terraform@emisar.iam.gserviceaccount.com` through an
 apply-phase-only WIF binding and service-specific administrative roles. The
-provider condition is pinned to workspace `Dryga/emisar/emisar` and the
-`plan`/`apply` phases. Never restore the pool-wide impersonation binding or
-`roles/editor`. The single workspace owns the complete production stack, so
-its HCP token and apply identity are production-admin credentials.
+workspace records its required `roles/logging.configWriter` binding in
+`infra/iam.tf`; bootstrap it once before the first apply that creates Logging
+configuration. The provider condition is pinned to workspace
+`Dryga/emisar/emisar` and the `plan`/`apply` phases. Never restore the pool-wide
+impersonation binding or `roles/editor`. The single workspace owns the complete
+production stack, so its HCP token and apply identity are production-admin
+credentials.
 
 ## Repository rules
 

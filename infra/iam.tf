@@ -5,6 +5,14 @@ resource "google_service_account" "vm" {
   display_name = "Emisar Control Plane Instances"
 }
 
+# The HCP apply identity already holds project IAM administration. Record the
+# narrower service role required by Logging resources in this workspace.
+resource "google_project_iam_member" "terraform_apply_authority" {
+  project = var.project_id
+  role    = "roles/logging.configWriter"
+  member  = "serviceAccount:terraform@${var.project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_project_iam_member" "vm_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"
