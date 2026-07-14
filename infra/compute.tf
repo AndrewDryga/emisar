@@ -211,11 +211,10 @@ resource "google_compute_instance_template" "emisar" {
 # Presence span nodes and runs don't strand in :sent. DB migrations run on boot
 # guarded by Ecto's advisory lock in the release entrypoint, so concurrent instances are safe.
 resource "google_compute_region_instance_group_manager" "emisar" {
-  # The provider replaces a regional MIG when its zone set changes. A stable
-  # name forces destroy-before-create because both groups cannot coexist under
-  # one name, taking every backend out at once. Deriving the name from the zone
-  # set lets Terraform bring the successor up before retiring the old group.
-  name               = "emisar-${substr(sha256(join(",", sort(var.zones))), 0, 8)}"
+  # Keep the operator-facing fleet name stable. A zone-set replacement cannot
+  # create two same-named MIGs, so topology changes require an explicitly staged
+  # migration rather than an ordinary one-plan replacement.
+  name               = "emisar"
   base_instance_name = "emisar"
   region             = var.region
   # A blank database is bootstrapped before any application VM may start. The

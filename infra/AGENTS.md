@@ -62,15 +62,19 @@ the separate, creds-gated deploy step.
    A regional MIG's fixed surge must be at least its zone count; keep
    `max_surge_fixed = length(var.zones)` and `max_unavailable_fixed = 0`. Old and
    new app versions overlap during a rollout, so schema changes must be compatible
-   with both until a later release contracts the old shape. Topology and readiness
-   contract replacements use generation-named health checks and backend services
-   with `create_before_destroy`, so the URL map switches between complete serving
-   paths only after `backendServices.getHealth` reports every expected VM healthy,
-   the documented edge-propagation hold passes, and a second health read remains
-   green. Never edit the only live backend's group or readiness contract in place,
-   or replace the health barrier with only a fixed sleep. Portal port 4000 is a
-   committed fleet contract, not a workspace variable; changing it requires a
-   separately staged successor fleet and backend rather than an ordinary rollout.
+   with both until a later release contracts the old shape. Readiness-contract
+   replacements use generation-named health checks and backend services with
+   `create_before_destroy`, so the URL map switches between complete serving paths
+   only after `backendServices.getHealth` reports every expected VM healthy.
+   Retain the previous backend for the documented edge-propagation hold after the
+   URL-map switch; a pre-switch sleep does not protect edge proxies that still
+   resolve the previous backend reference. Never edit the only live backend's
+   readiness contract in place, or replace the health barrier with only a fixed
+   sleep. The regional MIG is named `emisar`;
+   changing its zone set requires an explicitly staged migration because two
+   same-named MIGs cannot overlap. Portal port 4000 is a committed fleet contract,
+   not a workspace variable; changing it requires a separately staged successor
+   fleet and backend rather than an ordinary rollout.
 10. **The pack registry is one bucket.** Keep immutable packs, catalog snapshots,
    schemas, and the two live pointers in the existing public registry bucket.
    Enforce create-only immutable prefixes and pointer-only create/delete needed
@@ -102,4 +106,5 @@ must also read naturally when spoken by an automated call, so omit punctuation
 there (`Emisar Control Plane`). Public status-page resources use customer-facing
 product terms (`Control Plane`, `Action Pack Registry`), never CLI commands,
 Terraform identifiers, or lowercase implementation labels. Put related monitors
-in a named group instead of leaving them ungrouped.
+in a named group instead of leaving them ungrouped. Stable top-level workload
+resources use the product name, not topology hashes or implementation suffixes.

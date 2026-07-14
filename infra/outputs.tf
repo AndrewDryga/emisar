@@ -25,7 +25,7 @@ output "container_image" {
 }
 
 output "mig_name" {
-  description = "Generation-qualified regional managed instance group name for operational commands."
+  description = "Stable regional managed instance group name for operational commands."
   value       = google_compute_region_instance_group_manager.emisar.name
 }
 

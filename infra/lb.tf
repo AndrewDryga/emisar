@@ -87,9 +87,8 @@ resource "google_certificate_manager_certificate_map_entry" "mta_sts" {
 # Cloud CDN stays off (the console is authenticated + dynamic). Cloud Armor can
 # attach here later via security_policy for WAF/rate-limiting.
 resource "google_compute_backend_service" "app" {
-  # A topology change replaces the regional MIG. Give its backend the same
-  # generation so Terraform creates a complete successor, atomically switches
-  # the URL map, and only then removes the old serving path.
+  # A readiness-contract change gets a complete successor backend. The URL map
+  # switches only after that backend passes the barrier below.
   name                            = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
   load_balancing_scheme           = "EXTERNAL_MANAGED"
   protocol                        = "HTTP"
@@ -129,7 +128,7 @@ resource "terraform_data" "app_backend_ready" {
     command     = <<-EOT
       set -euo pipefail
 
-      for tool in cat curl grep mktemp seq sleep tr wc; do
+      for tool in curl grep mktemp seq sleep tr wc; do
         command -v "$tool" >/dev/null || {
           echo "backend readiness check requires $tool" >&2
           exit 1
@@ -140,7 +139,6 @@ resource "terraform_data" "app_backend_ready" {
       payload=$(printf '{"group":"%s"}' "$INSTANCE_GROUP")
       response_file=$(mktemp)
       trap 'rm -f "$response_file"' EXIT
-      edge_stabilized=false
 
       for attempt in $(seq 1 60); do
         if ! status=$(curl --silent --show-error \
@@ -175,17 +173,7 @@ resource "terraform_data" "app_backend_ready" {
           grep -o '"healthState":"HEALTHY"' | wc -l | tr -d ' ') || healthy=0
 
         if [ "$healthy" -ge "$EXPECTED_INSTANCES" ]; then
-          if [ "$edge_stabilized" = true ]; then
-            exit 0
-          fi
-
-          # getHealth leads external managed-LB edge propagation. A production
-          # cutover returned 503 for about two minutes after getHealth was
-          # fully green, so retain the old URL-map target for five minutes and
-          # require a second healthy read before switching it.
-          sleep 300
-          edge_stabilized=true
-          continue
+          exit 0
         fi
 
         sleep 10
@@ -254,6 +242,26 @@ resource "google_compute_url_map" "https" {
   path_matcher {
     name            = "mta-sts"
     default_service = google_compute_backend_bucket.mta_sts.id
+  }
+}
+
+# URL-map updates can reach the control plane before every edge proxy. Keep the
+# previous backend alive for five minutes after the switch; otherwise lagging
+# edges can return 503 while still resolving the previous backend reference.
+resource "terraform_data" "app_backend_edge_propagated" {
+  # All three graph edges are load-bearing: this trigger ties the old hold to
+  # the old backend, depends_on puts its successor after the URL-map update, and
+  # create_before_destroy keeps the old hold until the successor sleep finishes.
+  triggers_replace = [google_compute_backend_service.app.id]
+
+  depends_on = [google_compute_url_map.https]
+
+  provisioner "local-exec" {
+    command = "sleep 300"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 

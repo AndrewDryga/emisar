@@ -61,11 +61,13 @@ IAM-capable digest. Images from before the IAM database runtime are not rollback
 candidates. The Cloud SQL Auth Proxy is a separately pinned infrastructure
 container, so changing the portal image never changes or removes it.
 
-Topology or readiness-contract replacements build a complete successor backend,
-wait for every expected VM to pass `/readyz`, hold the old URL-map target for five
-additional minutes of edge propagation, and require a second green read before
-switching traffic. `getHealth` alone is not sufficient: Google edge proxies can
-lag the control-plane health result.
+Readiness-contract replacements build a complete successor backend, wait for
+every expected VM to pass `/readyz`, switch the URL map, and retain the previous
+backend for five minutes while that change reaches every edge proxy. `getHealth`
+alone is not sufficient: Google edge proxies can lag the control-plane URL-map
+result. The regional MIG keeps the stable name `emisar`; changing its zone set
+requires a separately reviewed staged migration, not an ordinary one-plan
+replacement.
 
 ## Runtime shape
 
