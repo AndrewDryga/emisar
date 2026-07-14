@@ -99,4 +99,4 @@ assert_output infra=true "$out"
 assert_output deps=false "$out"
 assert_no_output infra_release=true "$out"
 
-echo "ok: CI selector and frozen-migration adversarial cases pass"
+echo "ok: CI selector and frozen-migration cases pass"

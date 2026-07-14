@@ -31,9 +31,13 @@ Configure these environments with deployment branches restricted to `main`:
 |---|---|---|---|
 | `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
-| `pack-registry-production` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials; starts only after approval succeeds. |
+| `pack-registry-production` | Required reviewer + protected `main` | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. A second approval is intentional: a rerun of an old publication job cannot mint fresh credentials from an approval granted to the original run. |
 | `public-releases` | Required reviewer + `runner-v*` and `mcp-v*` policies | None | Signed runner and MCP bridge builds. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
 | `mcp-registry-publication` | Required reviewer + `v*` and `main` recovery policies | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. `main` is allowed only so the current hardened publisher can recover an existing product release. |
+
+Run `infra/scripts/verify-pack-environment.sh` and retain the green output before
+setting foundation variable `publisher_environment_protected=true`; the
+replacement WIF grant remains absent while that variable is false.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -45,12 +49,14 @@ runs: an unconfirmed standard plan holds the workspace lock indefinitely.
 
 HCP dynamic GCP credentials use separate identities. Plans impersonate
 `terraform-plan@emisar.iam.gserviceaccount.com`, which has Viewer, IAM Security
-Reviewer, and Secret Manager Viewer only; it cannot access secret payloads or
-mutate the project. Applies impersonate `terraform@emisar.iam.gserviceaccount.com`
+Reviewer, Secret Manager Viewer, and bucket-level metadata read only; it cannot
+access secret payloads or mutate the project. Applies impersonate `terraform@emisar.iam.gserviceaccount.com`
 through an apply-phase-only WIF binding and service-specific administrative
 roles. The provider condition is pinned to workspace `Dryga/emisar/emisar` and
 the `plan`/`apply` phases. Never restore the pool-wide impersonation binding or
-`roles/editor`.
+`roles/editor`. The handoff is incomplete until
+`infra/scripts/cleanup-workload-authority.sh --apply` proves the apply identity's
+project roles exactly match the routine allowlist and act-as is VM-scoped.
 
 ## Repository rules
 
@@ -89,7 +95,9 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
    unavailable capacity. A replacement must pass `/readyz` before an old
    instance drains.
 5. Verify liveness, readiness, sign-in, runner reconnections, registry output,
-   and external monitors before calling the rollout complete.
+   the expected two running MIG instances across distinct zones, and the BEAM
+   cluster view. Any `cluster discovery failed` or `cluster: can't connect` log
+   now pages and blocks calling the rollout complete.
 
 ```sh
 curl -fsS https://emisar.dev/healthz
@@ -130,9 +138,17 @@ compatibility keeps the prior image runnable. Data recovery restores Cloud SQL
 to a new instance or point in time and promotes it only after isolated
 verification.
 
+IAM database mode adds one transition rule: images published before passwordless
+database runtime configuration was added are not image-only rollback candidates.
+While the password rollback path is retained, reverting to one of those images
+must set `database_auth_mode=password` in the same saved plan. The separately
+pinned Cloud SQL Auth Proxy container is infrastructure and does not change with
+an application rollback.
+
 ## Health and observability
 
-- `/healthz` is database-independent liveness and drives auto-healing.
+- `/healthz` requires one successful database check after BEAM startup, then
+  becomes database-independent liveness and drives auto-healing.
 - `/readyz` checks database readiness and controls load-balancer eligibility.
 - `/metrics` on `METRICS_PORT` (default 9091) is private.
 - `/admin/live` is the admin-gated Phoenix LiveDashboard.

@@ -665,10 +665,23 @@ jobs:
         run: |
           terraform init -backend=false -input=false
           terraform validate
+          terraform -chdir=foundation init -backend=false -input=false
+          terraform -chdir=foundation validate
+          terraform -chdir=foundation-bootstrap init -backend=false -input=false
+          terraform -chdir=foundation-bootstrap validate
 
       - name: Run TFLint
         working-directory: infra
-        run: tflint
+        run: |
+          tflint
+          tflint --chdir=foundation
+          tflint --chdir=foundation-bootstrap
+
+      - name: Validate rendered cloud-init and shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cloud-init shellcheck
+          infra/scripts/validate-templates.sh
 
   dep-age:
     name: Dependencies - Release age
@@ -741,7 +754,7 @@ jobs:
         run: shellcheck .github/scripts/*.sh
 
       - name: Run workflow security regression tests
-        run: .github/scripts/test-ci-guards.sh
+        run: .github/scripts/ci.test.sh
 
   ci-gate:
     name: Required - CI
