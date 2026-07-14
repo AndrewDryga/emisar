@@ -16,6 +16,15 @@ sha256() {
   fi
 }
 
+extract_launchd_runner() {
+  awk '
+    /^launchd_runner_script\(\) \{/ { in_function = 1; next }
+    in_function && /^  cat <<'\''LAUNCHD_RUNNER'\''$/ { copying = 1; next }
+    copying && /^LAUNCHD_RUNNER$/ { exit }
+    copying { print }
+  ' install.sh
+}
+
 case "$module" in
   runner)
     EMISAR_PACKS="" bash install.sh --yes --no-service \
@@ -41,6 +50,26 @@ case "$module" in
     after=$(sha256 "$tmp/bin/emisar")
     test "$before" = "$after"
     grep -Fq "restored previous binary after failed upgrade" "$tmp/failure.log"
+
+    # launchd has no EnvironmentFile directive. Execute the exact wrapper
+    # embedded in install.sh and prove it exports runner.env before replacing
+    # itself with the runner, while preserving a config path with spaces.
+    launchd_runner="$tmp/run-launchd.sh"
+    extract_launchd_runner >"$launchd_runner"
+    chmod +x "$launchd_runner"
+    cat >"$tmp/fake-emisar" <<'FAKE_RUNNER'
+#!/bin/sh
+set -eu
+printf '%s\n' "$EMISAR_SMOKE_SECRET" "$@" >"$EMISAR_SMOKE_OUTPUT"
+FAKE_RUNNER
+    chmod +x "$tmp/fake-emisar"
+    printf 'EMISAR_SMOKE_SECRET=loaded\nEMISAR_SMOKE_OUTPUT=%s\n' "$tmp/launchd.out" \
+      >"$tmp/runner.env"
+    config="$tmp/config path.yaml"
+    : >"$config"
+    "$launchd_runner" "$tmp/fake-emisar" "$config" "$tmp/runner.env"
+    printf 'loaded\n--config\n%s\nconnect\n' "$config" >"$tmp/launchd.want"
+    diff -u "$tmp/launchd.want" "$tmp/launchd.out"
     ;;
   mcp)
     bash install-mcp.sh --yes --install-dir "$tmp/bin" >/dev/null

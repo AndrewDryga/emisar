@@ -355,10 +355,10 @@ launchd_plist() {
 
     <key>ProgramArguments</key>
     <array>
+        <string>${ETC_DIR}/run-launchd.sh</string>
         <string>${BIN_DIR}/emisar</string>
-        <string>--config</string>
         <string>${ETC_DIR}/config.yaml</string>
-        <string>connect</string>
+        <string>${ETC_DIR}/runner.env</string>
     </array>
 
     <!-- Supervision: relaunch on exit, with throttling. KeepAlive
@@ -373,9 +373,8 @@ launchd_plist() {
     </dict>
     <key>ThrottleInterval</key><integer>5</integer>
 
-    <!-- Read runner.env for EMISAR_AUTH_KEY. launchd doesn't have
-         EnvironmentFile so we splice the var below; the install script
-         injects placeholders during install. -->
+    <!-- run-launchd.sh loads the root-owned runner.env before exec.
+         launchd has no EnvironmentFile equivalent. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin</string>
@@ -392,6 +391,30 @@ launchd_plist() {
 </dict>
 </plist>
 EOF
+}
+
+launchd_runner_script() {
+  cat <<'LAUNCHD_RUNNER'
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 3 ]; then
+  echo "usage: run-launchd.sh <emisar-binary> <config> <runner-env>" >&2
+  exit 2
+fi
+
+binary="$1"
+config="$2"
+runner_env="$3"
+
+if [ -f "$runner_env" ]; then
+  set -a
+  . "$runner_env"
+  set +a
+fi
+
+exec "$binary" --config "$config" connect
+LAUNCHD_RUNNER
 }
 
 config_skeleton() {
@@ -949,6 +972,11 @@ install_systemd() {
 
 install_launchd() {
   local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
+  local runner="${ETC_DIR}/run-launchd.sh"
+  log "writing ${runner}"
+  launchd_runner_script > "${runner}"
+  chown root:wheel "${runner}"
+  chmod 700 "${runner}"
   log "writing ${plist}"
   launchd_plist > "${plist}"
   chown root:wheel "${plist}"

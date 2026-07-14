@@ -87,7 +87,9 @@ checksum from GitHub releases).
     - Linux: `/etc/systemd/system/emisar.service`, enabled but not
       started until you configure the auth key.
     - macOS: `/Library/LaunchDaemons/com.emisar.runner.plist`,
-      registered with launchd.
+      registered with launchd. A root-owned `/etc/emisar/run-launchd.sh`
+      wrapper loads the protected `runner.env` before it replaces itself with
+      the runner; launchd has no `EnvironmentFile` equivalent.
 11. On upgrades (where `config.yaml` already exists with a valid auth
     key configured), restarts the service.
 
@@ -172,7 +174,12 @@ actions with longer grace windows, raise `TimeoutStopSec` to match.
 The bundled plist uses `KeepAlive` with `SuccessfulExit=false` plus
 `Crashed=true`. Equivalent to systemd's `Restart=on-failure`. The
 `ThrottleInterval=5` matches systemd's `RestartSec=5s`. `ExitTimeOut=420`
-is the SIGTERM → SIGKILL window (7 minutes, same reasoning).
+is the SIGTERM → SIGKILL window (7 minutes, same reasoning). The installer runs
+the LaunchDaemon as root and supports macOS for development and evaluation, not
+production; create a dedicated `_emisar` user and review its permissions before
+using a custom macOS deployment. Update the plist plus the wrapper, config,
+secret, state, and log ownership as one change; changing only `UserName` leaves
+the daemon unable to read `runner.env`.
 
 ## Useful commands
 
