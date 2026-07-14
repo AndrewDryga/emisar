@@ -18,48 +18,21 @@ locals {
     }
   }
 
-  ensure_image_iam = templatefile("${path.module}/../../templates/ensure-image.sh", {
+  ensure_image = templatefile("${path.module}/../../templates/ensure-image.sh", {
     container_image       = local.common.container_image
     cloud_sql_proxy_image = local.common.cloud_sql_proxy_image
-    database_auth_mode    = "iam"
-  })
-  ensure_image_password = templatefile("${path.module}/../../templates/ensure-image.sh", {
-    container_image       = local.common.container_image
-    cloud_sql_proxy_image = local.common.cloud_sql_proxy_image
-    database_auth_mode    = "password"
   })
 
-  start_iam = templatefile("${path.module}/../../templates/start.sh", merge(local.common, {
-    database_auth_mode   = "iam"
+  start = templatefile("${path.module}/../../templates/start.sh", merge(local.common, {
     release_cookie_ready = true
     runtime_secrets = merge(local.common.runtime_secrets, {
       "emisar-release-cookie" = { env_name = "RELEASE_COOKIE", version = "1" }
     })
   }))
-  start_password = templatefile("${path.module}/../../templates/start.sh", merge(local.common, {
-    database_auth_mode   = "password"
-    database_role        = ""
-    release_cookie_ready = false
-    runtime_secrets = merge(local.common.runtime_secrets, {
-      "emisar-database-url" = { env_name = "DATABASE_URL", version = "1" }
-    })
-  }))
 
-  cloud_init_iam = templatefile("${path.module}/../../templates/cloud-init.yaml", {
-    database_auth_mode       = "iam"
-    db_server_ca             = ""
-    ensure_image_script      = local.ensure_image_iam
-    start_script             = local.start_iam
-    container_image          = local.common.container_image
-    cloud_sql_proxy_image    = local.common.cloud_sql_proxy_image
-    database_connection_name = local.common.database_connection_name
-    app_port                 = local.common.app_port
-  })
-  cloud_init_password = templatefile("${path.module}/../../templates/cloud-init.yaml", {
-    database_auth_mode       = "password"
-    db_server_ca             = "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----"
-    ensure_image_script      = local.ensure_image_password
-    start_script             = local.start_password
+  cloud_init = templatefile("${path.module}/../../templates/cloud-init.yaml", {
+    ensure_image_script      = local.ensure_image
+    start_script             = local.start
     container_image          = local.common.container_image
     cloud_sql_proxy_image    = local.common.cloud_sql_proxy_image
     database_connection_name = local.common.database_connection_name
@@ -67,10 +40,6 @@ locals {
   })
 }
 
-output "cloud_init_iam" {
-  value = local.cloud_init_iam
-}
-
-output "cloud_init_password" {
-  value = local.cloud_init_password
+output "cloud_init" {
+  value = local.cloud_init
 }

@@ -51,24 +51,28 @@ Review every resource action and the run's commit before selecting **Confirm &
 Apply** in HCP Terraform. Workspace auto-apply must remain disabled. A replaced
 or stale saved plan is discarded instead of applying against changed state.
 
-Normal image rollouts create one replacement VM whose `/healthz` remains false
-until the release has reached PostgreSQL once, wait for that gate, and only then
-drain an old VM. The load balancer independently requires `/readyz` continuously.
-Old and new application versions overlap, so schema
-changes use expand/contract sequencing. Rollback is another reviewed plan that
-sets `container_image` to a previously published digest. During the IAM cutover,
-a pre-cutover image rollback must atomically set `database_auth_mode=password`
-and retain `database_password_rollback_enabled=true` in that same plan: those
-images do not understand the passwordless database runtime configuration. The
-Cloud SQL Auth Proxy is a separately pinned infrastructure container, so changing
-the portal image never changes or removes it.
+Normal image rollouts may create one replacement VM per zone while retaining
+every old serving VM. Each replacement's `/healthz` remains false until the
+release has reached PostgreSQL once; only then can an old VM drain. The load
+balancer independently requires `/readyz` continuously. Old and new application
+versions overlap, so schema changes use expand/contract sequencing. Rollback is
+another reviewed plan that sets `container_image` to a previously published
+IAM-capable digest. Images from before the IAM database runtime are not rollback
+candidates. The Cloud SQL Auth Proxy is a separately pinned infrastructure
+container, so changing the portal image never changes or removes it.
+
+Topology or readiness-contract replacements build a complete successor backend,
+wait for every expected VM to pass `/readyz`, hold the old URL-map target for five
+additional minutes of edge propagation, and require a second green read before
+switching traffic. `getHealth` alone is not sufficient: Google edge proxies can
+lag the control-plane health result.
 
 ## Runtime shape
 
 Cloud-init fetches exact Secret Manager versions, assigns the
 instance's internal IP to `NODE_IP`, runs Ecto migrations under their advisory
-lock, and starts the already-cached immutable container digest. In IAM mode a
-separately pinned loopback Cloud SQL Auth Proxy container obtains short-lived
+lock, and starts the already-cached immutable container digest. A separately
+pinned loopback Cloud SQL Auth Proxy container obtains short-lived
 database credentials from the VM identity; the application assumes the non-login
 `emisar_owner` role. The portal image contains only the application release.
 `Emisar.Cluster.GCE` discovers running peers by
@@ -83,9 +87,10 @@ health-check source ranges. Public traffic terminates TLS at the load balancer.
 
 Externally issued credentials are sensitive HCP Terraform workspace variables.
 `SECRET_KEY_BASE` and `RELEASE_COOKIE` are separate values with independent
-generations. Production
-database access uses IAM; the password secret exists only during cutover as a
-tested rollback path. Adding a secret requires:
+generations. Production database access uses IAM and no DATABASE_URL secret
+version exists. The protected empty container remains only to avoid destructive
+removal and name reuse; retained access evidence lives in the locked logging
+bucket. Adding a secret requires:
 
 1. A sensitive variable in `variables.tf` when the value is externally issued.
 2. A Terraform-managed secret container and an `app_secrets` entry in `secrets.tf`.
@@ -108,7 +113,8 @@ necessarily the value running VMs use. This command intentionally fails until
 the new exact-version template has fully rolled out.
 
 ```sh
-instances=$(gcloud compute instance-groups managed list-instances emisar \
+mig=$(terraform output -raw mig_name)
+instances=$(gcloud compute instance-groups managed list-instances "$mig" \
   --project emisar --region us-central1 --format=json)
 jq -e 'length > 0 and all(.[];
   .instanceStatus == "RUNNING" and .currentAction == "NONE" and
@@ -141,62 +147,53 @@ failed cookie rotation is recovered by writing the preceding value at a new
 generation and rolling forward, never by following `latest` or decrementing a
 write-only generation.
 
-## Database IAM and pgAudit cutover
+## Database IAM and pgAudit
 
-The cutover is deliberately reversible and fits one short maintenance window:
+Production database access is IAM-only. The VM identity logs in through the
+loopback Cloud SQL Auth Proxy, then assumes the non-login `emisar_owner` role for
+migrations and application queries. `scripts/verify-database-iam.sql` proves the
+login is not elevated, verifies application and pgAudit ownership, and performs
+a reversible DDL probe.
 
-1. Apply with `database_auth_mode=password`, `pgaudit_log=none`, and password
-   rollback enabled. Enabling the Cloud SQL pgAudit flag restarts the zonal
-   instance; wait for `/readyz` and record the interruption.
-2. Run `scripts/prepare-database-iam.sql` through the existing database user.
-   It installs pgAudit, creates `emisar_owner`, and reassigns database, schema,
-   relation, sequence, type, and function ownership.
-3. Confirm `local.cloud_sql_proxy_image` is the reviewed official version-and-digest
-   pin. Set `database_owner_role_ready=true` and roll the candidate portal image
-   while still in password mode. Start a temporary proxy from the pinned sidecar
-   image on one serving VM; this uses the production VM identity, not the
-   operator's IAM principal:
+The built-in `emisar` principal remains because it owns pgAudit's protected
+event triggers. Terraform gives it a generated apply-only password that is
+never exposed as plaintext in Terraform state or Secret Manager; Cloud SQL keeps
+only what it needs to verify logins. No DATABASE_URL version or VM secret access
+remains.
 
-   ```sh
-   instance_url=$(gcloud compute instance-groups managed list-instances emisar \
-     --project emisar --region us-central1 --format=json | jq -er '.[0].instance')
-   vm=${instance_url##*/}
-   zone=$(printf '%s' "$instance_url" | awk -F/ '{print $(NF-2)}')
-   connection_name=$(gcloud sql instances describe emisar --project emisar \
-     --format='value(connectionName)')
-   proxy_image='gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c'
-   gcloud compute ssh "$vm" --project emisar --zone "$zone" --tunnel-through-iap \
-     --command="sudo docker rm -f emisar-iam-verify 2>/dev/null || true; sudo docker run -d --rm --name emisar-iam-verify --network host '$proxy_image' --private-ip --auto-iam-authn --address 127.0.0.1 --port 55432 '$connection_name'"
-   gcloud compute ssh "$vm" --project emisar --zone "$zone" --tunnel-through-iap \
-     -- -N -L 55432:127.0.0.1:55432
-   gcloud compute ssh "$vm" --project emisar --zone "$zone" --tunnel-through-iap \
-     --command='sudo docker rm -f emisar-iam-verify'
-   ```
+A genuinely blank database uses a two-phase bootstrap:
 
-   While that tunnel remains open, run from a second terminal. When the verifier
-   returns, stop the tunnel with Ctrl-C; the next command in the first terminal
-   removes the temporary proxy:
+1. Apply with `database_owner_role_ready=false`. Terraform creates the database
+   and keeps the application MIG at zero.
+2. Create one disposable private VM and service account. Grant that identity
+   conditional `roles/cloudsql.client` and `roles/cloudsql.instanceUser` access
+   to only the `emisar` Cloud SQL instance.
+3. Set a short-lived random password on the built-in `emisar` principal. Run the
+   pinned proxy without auto-IAM authentication and execute
+   `scripts/prepare-database-iam.sql` through an IAP tunnel.
+4. Create a temporary `CLOUD_IAM_SERVICE_ACCOUNT` database user for the
+   disposable VM identity with `database_roles=["emisar_owner"]`. Restart the
+   pinned proxy with `--private-ip --auto-iam-authn`, then run `/app/bin/migrate`
+   from the exact `container_image` digest with `DATABASE_ROLE=emisar_owner`,
+   `POOL_SIZE=1`, a disposable `SECRET_KEY_BASE`, and billing disabled. This
+   creates the application extensions and schema before any serving VM exists.
+5. Through the IAM proxy, run `scripts/verify-database-iam.sql` with the temporary
+   database username as `expected_session_user`.
+6. Increment `google_sql_user.pgaudit_owner.password_wo_version`, set
+   `database_owner_role_ready=true`, and apply both changes together. This
+   replaces the temporary password with a new inaccessible value before creating
+   the production IAM database user and starting the application fleet.
+7. Verify production IAM login, migrations, readiness, and clustering. Delete the
+   temporary database user, VM, IAM bindings, service account, and local password
+   file, then prove the retired password fails.
 
-   ```sh
-   psql -h 127.0.0.1 -p 55432 -U emisar-vm@emisar.iam -d emisar \
-     -v expected_session_user=emisar-vm@emisar.iam \
-     -f infra/scripts/verify-database-iam.sql
-   ```
+A PITR restore already contains the roles, extensions, and migrations, so it uses
+the verifier and skips the blank-database bootstrap.
 
-   The verifier refuses the password rollback principal and proves migration
-   ownership. Then set `database_auth_mode=iam` and roll one VM at a time. Prove
-   boot, migration, reconnect, cluster formation, readiness, and both rollback
-   cases before proceeding: an IAM-runtime-capable image changes only
-   `container_image`; a pre-IAM-runtime image changes `container_image` and
-   `database_auth_mode=password` atomically while rollback resources still exist.
-4. Set `pgaudit_log=role,ddl`. Confirm `AUDIT:` entries for role/DDL activity and
-   confirm normal `SELECT`, `INSERT`, `UPDATE`, and `DELETE` traffic is absent.
-   `pgaudit.log_parameter` remains off. Revert to `none` immediately if volume
-   is not as expected.
-5. After the rollback period, set `database_password_rollback_enabled=false`.
-   That removes the built-in password user and DATABASE_URL version from new
-   runtime configuration. The database URL version is deleted deliberately;
-   its container, access logs, and the independent 400-day audit evidence remain.
+pgAudit records only `ROLE` and `DDL`. In Cloud Audit Logs these are Data Access
+entries with `protoPayload.methodName=cloudsql.instances.query`; parameters are
+disabled and normal `SELECT`, `INSERT`, `UPDATE`, and `DELETE` workload traffic
+is excluded. The security evidence sink retains those entries for 400 days.
 
 ## Terraform authority
 

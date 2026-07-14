@@ -137,17 +137,6 @@ variable "container_image" {
   }
 }
 
-variable "app_port" {
-  type        = number
-  description = "Port the portal container listens on (LB backend + health check)."
-  default     = 4000
-
-  validation {
-    condition     = var.app_port >= 1 && var.app_port <= 65535 && floor(var.app_port) == var.app_port
-    error_message = "app_port must be an integer between 1 and 65535."
-  }
-}
-
 variable "backend_timeout_sec" {
   type        = number
   description = "LB backend timeout (caps a single connection, incl. the runner WebSocket; the runner reconnects)."
@@ -236,53 +225,14 @@ variable "mixpanel_token" {
 # ── Database ──────────────────────────────────────────────────────────────────
 variable "db_tier" {
   type        = string
-  description = "Cloud SQL machine tier, set per-workspace. Shared-core tiers (db-f1-micro / db-g1-small) don't support REGIONAL HA or Query Insights; db-custom-* tiers support both."
+  description = "Cloud SQL machine tier, set per-workspace. Shared-core tiers do not support Query Insights; db-custom-* tiers do."
   default     = "db-custom-1-3840"
-}
-
-variable "db_availability_type" {
-  type        = string
-  description = "Cloud SQL availability type, set per-workspace. REGIONAL runs a synchronous standby with automatic failover and requires a db-custom-* db_tier; ZONAL is single-zone (backups + PITR still apply)."
-  default     = "ZONAL"
-
-  validation {
-    condition     = contains(["ZONAL", "REGIONAL"], var.db_availability_type)
-    error_message = "db_availability_type must be ZONAL or REGIONAL."
-  }
-}
-
-variable "database_auth_mode" {
-  type        = string
-  description = "Database connection path for new instance templates. Keep password through owner-role bootstrap; select iam only after database_owner_role_ready is true."
-  default     = "password"
-
-  validation {
-    condition     = contains(["password", "iam"], var.database_auth_mode)
-    error_message = "database_auth_mode must be password or iam."
-  }
 }
 
 variable "database_owner_role_ready" {
   type        = bool
-  description = "Confirms the idempotent PostgreSQL bootstrap created emisar_owner, installed pgAudit, and reassigned existing objects before IAM login is enabled."
+  description = "Confirms the PostgreSQL bootstrap and IAM verifier succeeded. False keeps the application MIG at zero for a blank-database bootstrap; restored production databases retain the role and extension."
   default     = false
-}
-
-variable "database_password_rollback_enabled" {
-  type        = bool
-  description = "Retain the built-in database user and DATABASE_URL secret as a tested rollback path during the IAM-auth soak. Set false only after the ownership and rollback checks in README.md."
-  default     = true
-}
-
-variable "pgaudit_log" {
-  type        = string
-  description = "Cloud SQL pgAudit classes. Start at none, install the extension, then select role,ddl; normal application reads and writes must never be enabled."
-  default     = "none"
-
-  validation {
-    condition     = contains(["none", "role,ddl"], var.pgaudit_log)
-    error_message = "pgaudit_log must be none or role,ddl. READ/WRITE workload auditing is intentionally prohibited."
-  }
 }
 
 variable "db_disk_size_gb" {

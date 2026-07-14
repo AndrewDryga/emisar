@@ -18,6 +18,4 @@ ensure_image() {
 }
 
 ensure_image "${container_image}"
-%{ if database_auth_mode == "iam" ~}
 ensure_image "${cloud_sql_proxy_image}"
-%{ endif ~}

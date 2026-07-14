@@ -87,7 +87,10 @@ resource "google_certificate_manager_certificate_map_entry" "mta_sts" {
 # Cloud CDN stays off (the console is authenticated + dynamic). Cloud Armor can
 # attach here later via security_policy for WAF/rate-limiting.
 resource "google_compute_backend_service" "app" {
-  name                            = "emisar-backend"
+  # A topology change replaces the regional MIG. Give its backend the same
+  # generation so Terraform creates a complete successor, atomically switches
+  # the URL map, and only then removes the old serving path.
+  name                            = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
   load_balancing_scheme           = "EXTERNAL_MANAGED"
   protocol                        = "HTTP"
   port_name                       = "http"
@@ -106,6 +109,100 @@ resource "google_compute_backend_service" "app" {
     balancing_mode  = "UTILIZATION"
     capacity_scaler = 1.0
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+ephemeral "google_client_config" "current" {}
+
+# Creating a backend service does not mean its health-check state has propagated.
+# Switching the URL map earlier produced a full 503 outage even though both VMs
+# were ready. Fail closed on the old serving path until Compute reports every
+# expected instance healthy through the successor backend service.
+resource "terraform_data" "app_backend_ready" {
+  triggers_replace = [google_compute_backend_service.app.id]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+
+      for tool in cat curl grep mktemp seq sleep tr wc; do
+        command -v "$tool" >/dev/null || {
+          echo "backend readiness check requires $tool" >&2
+          exit 1
+        }
+      done
+
+      url="https://compute.googleapis.com/compute/v1/projects/$PROJECT_ID/global/backendServices/$BACKEND_SERVICE/getHealth"
+      payload=$(printf '{"group":"%s"}' "$INSTANCE_GROUP")
+      response_file=$(mktemp)
+      trap 'rm -f "$response_file"' EXIT
+      edge_stabilized=false
+
+      for attempt in $(seq 1 60); do
+        if ! status=$(curl --silent --show-error \
+          --connect-timeout 5 --max-time 30 --output "$response_file" \
+          --write-out '%%{http_code}' \
+          -X POST \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Content-Type: application/json" \
+          --data "$payload" \
+          "$url"); then
+          echo "backend health request failed on attempt $attempt" >&2
+          exit 1
+        fi
+
+        case "$status" in
+          200) ;;
+          429|5??)
+            sleep 10
+            continue
+            ;;
+          401|403)
+            echo "backend health authentication was rejected with HTTP $status" >&2
+            exit 1
+            ;;
+          *)
+            echo "backend health request returned unexpected HTTP $status" >&2
+            exit 1
+            ;;
+        esac
+
+        healthy=$(tr -d '[:space:]' < "$response_file" | \
+          grep -o '"healthState":"HEALTHY"' | wc -l | tr -d ' ') || healthy=0
+
+        if [ "$healthy" -ge "$EXPECTED_INSTANCES" ]; then
+          if [ "$edge_stabilized" = true ]; then
+            exit 0
+          fi
+
+          # getHealth leads external managed-LB edge propagation. A production
+          # cutover returned 503 for about two minutes after getHealth was
+          # fully green, so retain the old URL-map target for five minutes and
+          # require a second healthy read before switching it.
+          sleep 300
+          edge_stabilized=true
+          continue
+        fi
+
+        sleep 10
+      done
+
+      echo "backend $BACKEND_SERVICE did not reach $EXPECTED_INSTANCES healthy instances" >&2
+      exit 1
+    EOT
+
+    environment = {
+      ACCESS_TOKEN       = ephemeral.google_client_config.current.access_token
+      BACKEND_SERVICE    = google_compute_backend_service.app.name
+      EXPECTED_INSTANCES = tostring(var.database_owner_role_ready ? var.instance_count : 0)
+      INSTANCE_GROUP     = google_compute_region_instance_group_manager.emisar.instance_group
+      PROJECT_ID         = var.project_id
+    }
+  }
 }
 
 # ── TLS policy: modern ciphers, TLS 1.2+ ─────────────────────────────────────
@@ -119,6 +216,8 @@ resource "google_compute_ssl_policy" "restricted" {
 resource "google_compute_url_map" "https" {
   name            = "emisar-https"
   default_service = google_compute_backend_service.app.id
+
+  depends_on = [terraform_data.app_backend_ready]
 
   # registry.<domain> serves the public pack-registry bucket straight from the
   # LB (packs_registry.tf) — no portal hop, so `emisar pack install` keeps

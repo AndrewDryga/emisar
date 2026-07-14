@@ -59,9 +59,6 @@ grep -q '^RELEASE_COOKIE=' "$ENV_FILE" || { echo "RELEASE_COOKIE missing from Se
 SKB=$(grep '^SECRET_KEY_BASE=' "$ENV_FILE" | cut -d= -f2-)
 printf 'RELEASE_COOKIE=%s\n' "$(printf 'emisar-release-cookie:%s' "$SKB" | sha256sum | cut -d' ' -f1)" >> "$ENV_FILE"
 %{ endif ~}
-%{ if database_auth_mode == "password" ~}
-grep -q '^DATABASE_URL=' "$ENV_FILE" || { echo "DATABASE_URL missing from Secret Manager" >&2; exit 1; }
-%{ endif ~}
 
 NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   --retry-connrefused --connect-timeout 5 --max-time 30 \
@@ -78,32 +75,20 @@ NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   printf 'EMISAR_CLUSTER_PROJECT=%s\n' "${project_id}"
   printf 'EMISAR_CLUSTER_VALUE=%s\n' "${cluster_value}"
   printf 'POOL_SIZE=%s\n' "${database_pool_size}"
-%{ if database_role != "" ~}
   printf 'DATABASE_ROLE=%s\n' "${database_role}"
-%{ endif ~}
-%{ if database_auth_mode == "iam" ~}
   printf 'DATABASE_HOST=127.0.0.1\n'
   printf 'DATABASE_PORT=5432\n'
   printf 'DATABASE_USER=%s\n' "${database_user}"
   printf 'DATABASE_NAME=%s\n' "${database_name}"
-%{ else ~}
-  printf 'DATABASE_SSL=1\n'
-  printf 'DATABASE_SSL_CACERTFILE=/etc/emisar/db-server-ca.pem\n'
-%{ endif ~}
 %{ if disable_billing ~}
   printf 'EMISAR_DISABLE_BILLING=1\n'
 %{ endif ~}
 } >> "$ENV_FILE"
 
-%{ if database_auth_mode == "iam" ~}
 curl --fail --silent --show-error --retry 30 --retry-delay 2 \
   --retry-connrefused --connect-timeout 2 --max-time 5 \
   http://127.0.0.1:9090/readiness >/dev/null
-%{ endif ~}
 
 docker rm -f emisar 2>/dev/null || true
 exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
-%{ if database_auth_mode == "password" ~}
-  -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
-%{ endif ~}
   ${container_image}

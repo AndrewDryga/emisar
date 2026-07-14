@@ -1,38 +1,47 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
-  # db-g1-small permits 50 connections. A five-connection pool per VM leaves
-  # room for Cloud SQL internals and for old + new fleets to overlap during a
-  # create-before-destroy MIG replacement without deadlocking the rollout.
+  # The release image, instance firewall, MIG named port, and load-balancer
+  # probes share this contract. Changing it requires a staged successor fleet;
+  # it is not a routine workspace input.
+  portal_port = 4000
+  readiness_contract = {
+    request_path        = "/readyz"
+    port                = local.portal_port
+    check_interval_sec  = 10
+    timeout_sec         = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+  readiness_generation = substr(sha256(jsonencode(local.readiness_contract)), 0, 8)
+  # A five-connection pool per VM leaves ample room on the production shared-core
+  # tier for Cloud SQL internals and for old + new fleets to overlap during a
+  # create-before-destroy MIG replacement or multi-zone surge.
   portal_database_pool_size = 5
   ensure_image_script = templatefile("${path.module}/templates/ensure-image.sh", {
     container_image       = var.container_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
-    database_auth_mode    = var.database_auth_mode
   })
   start_script = templatefile("${path.module}/templates/start.sh", {
     container_image          = var.container_image
     project_id               = var.project_id
     domain                   = var.domain
-    app_port                 = var.app_port
+    app_port                 = local.portal_port
     mailer_from_email        = var.mailer_from_email
     cluster_value            = "emisar"
     disable_billing          = var.disable_billing
     runtime_secrets          = local.runtime_secrets
-    database_auth_mode       = var.database_auth_mode
     database_connection_name = google_sql_database_instance.emisar.connection_name
     database_user            = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
     database_name            = google_sql_database.emisar.name
-    database_role            = var.database_owner_role_ready ? "emisar_owner" : ""
+    database_role            = "emisar_owner"
     database_pool_size       = local.portal_database_pool_size
     release_cookie_ready     = var.release_cookie_ready
   })
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
     container_image          = var.container_image
     cloud_sql_proxy_image    = local.cloud_sql_proxy_image
-    app_port                 = var.app_port
-    database_auth_mode       = var.database_auth_mode
+    app_port                 = local.portal_port
     database_connection_name = google_sql_database_instance.emisar.connection_name
-    db_server_ca             = google_sql_database_instance.emisar.server_ca_cert[0].cert
     ensure_image_script      = local.ensure_image_script
     start_script             = local.start_script
   })
@@ -63,22 +72,26 @@ resource "google_compute_health_check" "liveness" {
 
   http_health_check {
     request_path = "/healthz"
-    port         = var.app_port
+    port         = local.portal_port
   }
 
   depends_on = [google_project_service.apis]
 }
 
 resource "google_compute_health_check" "readiness" {
-  name                = "emisar-readyz"
-  check_interval_sec  = 10
-  timeout_sec         = 5
-  healthy_threshold   = 2
-  unhealthy_threshold = 3
+  name                = "emisar-readyz-${local.readiness_generation}"
+  check_interval_sec  = local.readiness_contract.check_interval_sec
+  timeout_sec         = local.readiness_contract.timeout_sec
+  healthy_threshold   = local.readiness_contract.healthy_threshold
+  unhealthy_threshold = local.readiness_contract.unhealthy_threshold
 
   http_health_check {
-    request_path = "/readyz"
-    port         = var.app_port
+    request_path = local.readiness_contract.request_path
+    port         = local.readiness_contract.port
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   depends_on = [google_project_service.apis]
@@ -86,9 +99,9 @@ resource "google_compute_health_check" "readiness" {
 
 # ── Capacity reservation: steady-state fleet ─────────────────────────────────
 # Guarantee capacity for the serving fleet without paying continuously for a
-# rollout-only VM. The one-VM surge remains zero-unavailable but uses ordinary
-# on-demand capacity, so a zonal stockout can delay a rollout without reducing
-# the already-running serving capacity.
+# rollout surge. Regional MIGs require fixed surge to be at least their zone
+# count; those transient VMs use ordinary on-demand capacity, so a zonal
+# stockout can delay a rollout without reducing existing serving capacity.
 resource "google_compute_reservation" "emisar" {
   for_each = local.zone_reservation_counts
 
@@ -169,7 +182,7 @@ resource "google_compute_instance_template" "emisar" {
   }
 
   metadata = {
-    user-data                 = local.cloud_init
+    user-data                 = sensitive(local.cloud_init)
     google-logging-enabled    = "true"
     google-monitoring-enabled = "true"
     # Block project-wide SSH keys; access is IAP + OS Login only.
@@ -202,10 +215,13 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   # name forces destroy-before-create because both groups cannot coexist under
   # one name, taking every backend out at once. Deriving the name from the zone
   # set lets Terraform bring the successor up before retiring the old group.
-  name                             = "emisar-${substr(sha256(join(",", sort(var.zones))), 0, 8)}"
-  base_instance_name               = "emisar"
-  region                           = var.region
-  target_size                      = var.instance_count
+  name               = "emisar-${substr(sha256(join(",", sort(var.zones))), 0, 8)}"
+  base_instance_name = "emisar"
+  region             = var.region
+  # A blank database is bootstrapped before any application VM may start. The
+  # reviewed readiness attestation raises this from zero after the IAM verifier
+  # succeeds; restores already contain the owner role and skip that ceremony.
+  target_size                      = var.database_owner_role_ready ? var.instance_count : 0
   distribution_policy_target_shape = "EVEN"
   distribution_policy_zones        = var.zones
 
@@ -220,7 +236,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
 
   named_port {
     name = "http"
-    port = var.app_port
+    port = local.portal_port
   }
 
   auto_healing_policies {
@@ -230,13 +246,13 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     initial_delay_sec = 240
   }
 
-  # Create one healthy replacement before removing an old VM. Combined with LB
-  # readiness and connection draining, this keeps target capacity serving for
-  # the whole rollout, including when target_size == 1.
+  # Create a healthy replacement in every zone before removing an old VM.
+  # Combined with LB readiness and connection draining, this keeps target
+  # capacity serving throughout the rollout.
   update_policy {
     type                         = "PROACTIVE"
     minimal_action               = "REPLACE"
-    max_surge_fixed              = 1
+    max_surge_fixed              = length(var.zones)
     max_unavailable_fixed        = 0
     instance_redistribution_type = "PROACTIVE"
   }
@@ -261,20 +277,6 @@ resource "google_compute_region_instance_group_manager" "emisar" {
       error_message = "Billing is enabled (disable_billing = false) but paddle_api_key / paddle_webhook_secret / paddle_client_token are not all set in the TFC workspace. Set all three, or set disable_billing = true to ship the Paddle stub."
     }
 
-    precondition {
-      condition     = var.database_auth_mode != "iam" || var.database_owner_role_ready
-      error_message = "database_auth_mode=iam requires database_owner_role_ready=true after the PostgreSQL ownership bootstrap has succeeded."
-    }
-
-    precondition {
-      condition     = var.database_auth_mode != "password" || var.database_password_rollback_enabled
-      error_message = "database_auth_mode=password requires database_password_rollback_enabled=true."
-    }
-
-    precondition {
-      condition     = var.pgaudit_log != "role,ddl" || var.database_owner_role_ready
-      error_message = "pgaudit_log=role,ddl requires the bootstrap that installs the pgaudit extension first."
-    }
   }
 
   # Runtime boot prerequisites: without explicit edges the MIG can come up before
@@ -287,9 +289,9 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_compute_firewall.cluster_dist,
     google_secret_manager_secret_version.secret_key_base,
     google_sql_database.emisar,
-    google_secret_manager_secret_version.database_url,
     google_secret_manager_secret_version.release_cookie,
     google_secret_manager_secret_version.optional,
+    google_sql_user.pgaudit_owner,
     google_sql_user.emisar_vm,
   ]
 }

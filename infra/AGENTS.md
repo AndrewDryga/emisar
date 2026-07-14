@@ -36,9 +36,9 @@ the separate, creds-gated deploy step.
    reviewed act — never to make a `terraform destroy` "work".
 4. **Secrets discipline.** Secret custody is Terraform Cloud BY DECISION:
    externally-issued credentials enter as SENSITIVE workspace variables
-   (`variables.tf`), machine secrets (SECRET_KEY_BASE, DB password) are generated
+   (`variables.tf`), machine secrets such as SECRET_KEY_BASE are generated
    ephemerally in-config, and write-only provider arguments keep payloads out of
-   new state snapshots while delivering them to Secret Manager and Cloud SQL.
+   new state snapshots while delivering them to Secret Manager or Cloud SQL.
    Never put a secret value in git, a `.tf` default, or a tfvars file — the TFC
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
    to it is production access. A new secret = a sensitive variable + an
@@ -55,13 +55,22 @@ the separate, creds-gated deploy step.
 8. **Migrations run on boot under Ecto's advisory lock** (the release server entrypoint), so concurrent
    instances are safe. Committed portal migrations stay frozen (portal AGENTS.md §8).
 9. **Portal rollouts preserve serving capacity.** Reserve exactly the steady-state
-   fleet with automatic consumption and let the one-VM rollout surge use on-demand
-   capacity; a stockout may delay deployment but must not remove a serving VM. Keep
-   `max_surge_fixed = 1` and `max_unavailable_fixed = 0`. Auto-healing uses
-   DB-independent `/healthz`; the load balancer uses DB-aware `/readyz`. Never
-   collapse the probes or return to delete-before-create updates. Old and new app
-   versions overlap during a rollout, so schema changes must be compatible with
-   both until a later release contracts the old shape.
+   fleet with automatic consumption and let the rollout surge use on-demand
+   capacity; a stockout may delay deployment but must not remove a serving VM.
+   Auto-healing uses DB-independent `/healthz`; the load balancer uses DB-aware
+   `/readyz`. Never collapse the probes or return to delete-before-create updates.
+   A regional MIG's fixed surge must be at least its zone count; keep
+   `max_surge_fixed = length(var.zones)` and `max_unavailable_fixed = 0`. Old and
+   new app versions overlap during a rollout, so schema changes must be compatible
+   with both until a later release contracts the old shape. Topology and readiness
+   contract replacements use generation-named health checks and backend services
+   with `create_before_destroy`, so the URL map switches between complete serving
+   paths only after `backendServices.getHealth` reports every expected VM healthy,
+   the documented edge-propagation hold passes, and a second health read remains
+   green. Never edit the only live backend's group or readiness contract in place,
+   or replace the health barrier with only a fixed sleep. Portal port 4000 is a
+   committed fleet contract, not a workspace variable; changing it requires a
+   separately staged successor fleet and backend rather than an ordinary rollout.
 10. **The pack registry is one bucket.** Keep immutable packs, catalog snapshots,
    schemas, and the two live pointers in the existing public registry bucket.
    Enforce create-only immutable prefixes and pointer-only create/delete needed

@@ -93,10 +93,11 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
    resource action, output, and immutable portal image digest.
 3. Select **Confirm & Apply** in HCP Terraform. GitHub never applies the plan.
 4. Wait for the managed instance group to replace instances with zero
-   unavailable capacity. A replacement must pass `/readyz` before an old
-   instance drains.
+   unavailable capacity. A replacement must pass `/healthz` after reaching the
+   database once before an old instance drains; the load balancer independently
+   requires `/readyz` before sending traffic.
 5. Verify liveness, readiness, sign-in, runner reconnections, registry output,
-   the expected two running MIG instances across distinct zones, and the BEAM
+   the expected MIG instance count across distinct zones, and the BEAM
    cluster view. Any `cluster discovery failed` or `cluster: can't connect` log
    now pages and blocks calling the rollout complete.
 
@@ -139,12 +140,10 @@ compatibility keeps the prior image runnable. Data recovery restores Cloud SQL
 to a new instance or point in time and promotes it only after isolated
 verification.
 
-IAM database mode adds one transition rule: images published before passwordless
-database runtime configuration was added are not image-only rollback candidates.
-While the password rollback path is retained, reverting to one of those images
-must set `database_auth_mode=password` in the same saved plan. The separately
-pinned Cloud SQL Auth Proxy container is infrastructure and does not change with
-an application rollback.
+Images published before IAM database runtime was added are not rollback
+candidates: production has no database password or DATABASE_URL secret. The
+separately pinned Cloud SQL Auth Proxy container is infrastructure and does not
+change with an application rollback.
 
 ## Health and observability
 

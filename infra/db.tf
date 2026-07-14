@@ -2,8 +2,7 @@
 # onlytty is DB-less; emisar is a control plane with real state, so this is the
 # central emisar-specific addition. SOC 2 posture:
 #   • PRIVATE IP only (no public surface) — reachable solely over the VPC peering.
-#   • Availability per var.db_availability_type (workspace-set): REGIONAL runs a
-#     synchronous standby with automatic failover; ZONAL relies on backups/PITR.
+#   • Intentionally ZONAL: recovery uses backups/PITR rather than paid HA.
 #   • Automated backups + point-in-time recovery — durability / DR (RPO minutes).
 #   • Encryption in transit required (ENCRYPTED_ONLY) and at rest (Google-managed;
 #     swap in CMEK via `encryption_key_name` if key custody is required).
@@ -29,7 +28,7 @@ resource "google_sql_database_instance" "emisar" {
     # moving to Plus is a deliberate edition+tier change, not a default.
     edition           = "ENTERPRISE"
     tier              = var.db_tier
-    availability_type = var.db_availability_type
+    availability_type = "ZONAL"
     disk_type         = "PD_SSD"
     disk_size         = var.db_disk_size_gb
     disk_autoresize   = true
@@ -64,11 +63,6 @@ resource "google_sql_database_instance" "emisar" {
     }
 
     database_flags {
-      name  = "log_min_duration_statement"
-      value = "1000" # log statements slower than 1s (perf + audit signal)
-    }
-
-    database_flags {
       name  = "cloudsql.iam_authentication"
       value = "on"
     }
@@ -78,12 +72,11 @@ resource "google_sql_database_instance" "emisar" {
       value = "on"
     }
 
-    # Start with none until CREATE EXTENSION pgaudit has run. The only permitted
-    # production classes are role + DDL; ordinary SELECT/INSERT/UPDATE/DELETE
-    # traffic is deliberately excluded.
+    # Only role + DDL are permitted in production; ordinary
+    # SELECT/INSERT/UPDATE/DELETE traffic is deliberately excluded.
     database_flags {
       name  = "pgaudit.log"
-      value = var.pgaudit_log
+      value = "role,ddl"
     }
 
     database_flags {
@@ -100,12 +93,6 @@ resource "google_sql_database_instance" "emisar" {
 
   lifecycle {
     prevent_destroy = true
-
-    # Catch the invalid combo at plan time, not after a ten-minute create attempt.
-    precondition {
-      condition     = var.db_availability_type == "ZONAL" || startswith(var.db_tier, "db-custom-")
-      error_message = "REGIONAL HA requires a db-custom-* db_tier — shared-core tiers (db-f1-micro / db-g1-small) are ZONAL-only."
-    }
   }
 }
 
@@ -118,27 +105,30 @@ resource "google_sql_database" "emisar" {
   }
 }
 
-# App DB credential. Generated ephemerally during initial provisioning, then
-# sent to Cloud SQL and Secret Manager through write-only arguments. The payload
-# never enters new state snapshots. Rotation is a deliberate maintenance change,
-# not a shared generation knob on ordinary infrastructure applies.
-ephemeral "random_password" "db" {
-  count   = var.database_password_rollback_enabled ? 1 : 0
-  length  = 32
+# pgAudit creates superuser-only event triggers owned by the built-in Cloud SQL
+# administrator. Keep that principal as their owner, but replace its old runtime
+# password with an inaccessible apply-only value.
+ephemeral "random_password" "pgaudit_owner" {
+  length  = 64
   special = false
 }
 
-resource "google_sql_user" "password_rollback" {
-  count               = var.database_password_rollback_enabled ? 1 : 0
-  name                = "emisar"
-  instance            = google_sql_database_instance.emisar.name
-  password_wo         = ephemeral.random_password.db[0].result
-  password_wo_version = 1
+resource "google_sql_user" "pgaudit_owner" {
+  name        = "emisar"
+  instance    = google_sql_database_instance.emisar.name
+  password_wo = ephemeral.random_password.pgaudit_owner.result
+  # Increment in the reviewed apply that closes a blank-database bootstrap so
+  # any temporary operator-known password is replaced before the fleet starts.
+  password_wo_version = 2
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 moved {
-  from = google_sql_user.emisar
-  to   = google_sql_user.password_rollback[0]
+  from = google_sql_user.password_rollback[0]
+  to   = google_sql_user.pgaudit_owner
 }
 
 # Terraform can create the Cloud SQL IAM principal, but PostgreSQL ownership is
@@ -154,26 +144,4 @@ resource "google_sql_user" "emisar_vm" {
   lifecycle {
     prevent_destroy = true
   }
-}
-
-# DATABASE_URL the release reads (the secret CONTAINER is declared in secrets.tf;
-# this fills its value from the private IP + generated password). SSL is required
-# by the instance and switched on in the release via DATABASE_SSL=1 (compute.tf).
-resource "google_secret_manager_secret_version" "database_url" {
-  count  = var.database_password_rollback_enabled ? 1 : 0
-  secret = google_secret_manager_secret.app["emisar-database-url"].id
-  secret_data_wo = format(
-    "ecto://%s:%s@%s/%s",
-    google_sql_user.password_rollback[0].name,
-    ephemeral.random_password.db[0].result,
-    google_sql_database_instance.emisar.private_ip_address,
-    google_sql_database.emisar.name,
-  )
-  secret_data_wo_version = local.secret_generations["emisar-database-url"]
-  deletion_policy        = "DELETE"
-}
-
-moved {
-  from = google_secret_manager_secret_version.database_url
-  to   = google_secret_manager_secret_version.database_url[0]
 }

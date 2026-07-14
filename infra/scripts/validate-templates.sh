@@ -16,46 +16,31 @@ terraform -chdir="$render_dir" init -backend=false -input=false >/dev/null
 terraform -chdir="$render_dir" apply -auto-approve -input=false \
   -state="$tmp/render.tfstate" >/dev/null
 
-for mode in iam password; do
-  rendered="$tmp/cloud-init-${mode}.yaml"
-  terraform -chdir="$render_dir" output -state="$tmp/render.tfstate" \
-    -raw "cloud_init_${mode}" >"$rendered"
-  ruby -ryaml -e 'YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)' "$rendered"
-  cloud-init schema --config-file "$rendered"
+rendered="$tmp/cloud-init.yaml"
+terraform -chdir="$render_dir" output -state="$tmp/render.tfstate" \
+  -raw cloud_init >"$rendered"
+ruby -ryaml -e 'YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)' "$rendered"
+cloud-init schema --config-file "$rendered"
 
-  if [ "$mode" = iam ]; then
-    grep -Fq "ensure_image \"$proxy_image\"" "$rendered"
-    grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$rendered"
-    grep -Fq 'Wants=emisar-cloud-sql-proxy.service' "$rendered"
-    if grep -Eq '^[[:space:]]+(Requires|BindsTo|PartOf|Requisite|PropagatesStopTo)=.*emisar-cloud-sql-proxy' "$rendered"; then
-      echo "portal service must not restart with the Cloud SQL Auth Proxy" >&2
-      exit 1
-    fi
-  else
-    if grep -Fq "$proxy_image" "$rendered"; then
-      echo "password-mode cloud-init must not pull or start the Cloud SQL Auth Proxy" >&2
-      exit 1
-    fi
-    if grep -Fq 'http://127.0.0.1:9090/readiness' "$rendered"; then
-      echo "password-mode startup must not wait for the Cloud SQL Auth Proxy" >&2
-      exit 1
-    fi
-  fi
+grep -Fq "ensure_image \"$proxy_image\"" "$rendered"
+grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$rendered"
+grep -Fq 'Wants=emisar-cloud-sql-proxy.service' "$rendered"
+if grep -Eq '^[[:space:]]+(Requires|BindsTo|PartOf|Requisite|PropagatesStopTo)=.*emisar-cloud-sql-proxy' "$rendered"; then
+  echo "portal service must not restart with the Cloud SQL Auth Proxy" >&2
+  exit 1
+fi
+ruby -ryaml -e '
+  document = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+  document.fetch("write_files").each do |entry|
+    next unless entry.fetch("path").end_with?(".sh")
+    destination = File.join(ARGV.fetch(1), File.basename(entry.fetch("path")))
+    File.write(destination, entry.fetch("content"))
+  end
+' "$rendered" "$tmp"
 
-  ruby -ryaml -e '
-    document = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
-    document.fetch("write_files").each do |entry|
-      next unless entry.fetch("path").end_with?(".sh")
-      destination = File.join(ARGV.fetch(1), File.basename(entry.fetch("path")))
-      File.write(destination, entry.fetch("content"))
-    end
-  ' "$rendered" "$tmp"
-
-  for script in "$tmp"/*.sh; do
-    bash -n "$script"
-    shellcheck "$script"
-  done
-  rm -f "$tmp"/*.sh
+for script in "$tmp"/*.sh; do
+  bash -n "$script"
+  shellcheck "$script"
 done
 
 mta_policy="${infra_dir}/templates/mta-sts.txt"

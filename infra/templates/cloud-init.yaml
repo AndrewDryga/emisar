@@ -3,12 +3,6 @@
 # SQL Auth Proxy containers; neither service pulls an image on routine restart.
 
 write_files:
-%{ if database_auth_mode == "password" ~}
-  - path: /etc/emisar/db-server-ca.pem
-    permissions: "0444"
-    content: |
-      ${indent(6, db_server_ca)}
-%{ endif ~}
 
   - path: /var/lib/emisar/ensure-image.sh
     permissions: "0755"
@@ -35,7 +29,6 @@ write_files:
       RestartSec=15
       ExecStart=/bin/bash /var/lib/emisar/ensure-image.sh
 
-%{ if database_auth_mode == "iam" ~}
   # The proxy is independently pinned infrastructure. Keeping it in its own
   # container leaves the portal image application-only and rollbacks uncoupled.
   - path: /etc/systemd/system/emisar-cloud-sql-proxy.service
@@ -53,7 +46,6 @@ write_files:
       ExecStop=/usr/bin/docker stop -t 10 emisar-cloud-sql-proxy
       [Install]
       WantedBy=multi-user.target
-%{ endif ~}
 
   - path: /etc/systemd/system/emisar.service
     permissions: "0644"
@@ -61,11 +53,9 @@ write_files:
       [Unit]
       Description=emisar portal
       Wants=emisar-image.service
-%{ if database_auth_mode == "iam" ~}
       # A proxy restart is a readiness failure, not a reason to restart the BEAM.
       Wants=emisar-cloud-sql-proxy.service
-%{ endif ~}
-      After=emisar-image.service%{ if database_auth_mode == "iam" } emisar-cloud-sql-proxy.service%{ endif }
+      After=emisar-image.service emisar-cloud-sql-proxy.service
       [Service]
       Restart=always
       RestartSec=5
@@ -80,7 +70,5 @@ runcmd:
   - /sbin/iptables -A INPUT -p tcp --dport 4369 -j ACCEPT
   - /sbin/iptables -A INPUT -p tcp --dport 9100:9105 -j ACCEPT
   - systemctl daemon-reload
-%{ if database_auth_mode == "iam" ~}
   - systemctl enable --now emisar-cloud-sql-proxy.service
-%{ endif ~}
   - systemctl enable --now emisar.service

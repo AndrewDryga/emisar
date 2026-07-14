@@ -9,9 +9,8 @@
 # versions are intentionally stable: a real rotation is a reviewed maintenance
 # change to the affected credential, never a global infrastructure knob.
 #
-# Machine-generated secrets are not variables at all: SECRET_KEY_BASE is created
-# here (random_password) and DATABASE_URL is assembled in db.tf — no human ever
-# needs either value. An optional secret left "" in TFC gets NO version, so
+# SECRET_KEY_BASE is generated here rather than supplied by a human. An optional
+# secret left "" in TFC gets NO version, so
 # cloud-init skips its env var and the release treats the feature as off
 # (runtime.exs); Paddle completeness is enforced at plan time in compute.tf.
 locals {
@@ -30,7 +29,7 @@ locals {
 
   app_secrets = {
     for id, env_name in local.secret_definitions : id => env_name
-    if id != "emisar-release-cookie" || var.release_cookie_ready
+    if id != "emisar-database-url" && (id != "emisar-release-cookie" || var.release_cookie_ready)
   }
 
   # One deliberately edited generation per secret. Changing a generation writes
@@ -40,7 +39,6 @@ locals {
   secret_generations = {
     "emisar-secret-key-base"         = 1
     "emisar-release-cookie"          = 1
-    "emisar-database-url"            = 1
     "emisar-paddle-api-key"          = 1
     "emisar-paddle-webhook-secret"   = 1
     "emisar-paddle-client-token"     = 1
@@ -74,23 +72,16 @@ locals {
   # rendered secret is therefore required: IAM, network, HTTP, and payload
   # failures stop the VM before it can become ready with degraded production
   # behavior hidden behind a fallback.
-  mandatory_runtime_secrets = merge(
-    {
-      "emisar-secret-key-base" = {
-        env_name = "SECRET_KEY_BASE"
-        version  = google_secret_manager_secret_version.secret_key_base.version
-      }
+  mandatory_runtime_secrets = merge({
+    "emisar-secret-key-base" = {
+      env_name = "SECRET_KEY_BASE"
+      version  = google_secret_manager_secret_version.secret_key_base.version
+    }
     },
     var.release_cookie_ready ? {
       "emisar-release-cookie" = {
         env_name = "RELEASE_COOKIE"
         version  = google_secret_manager_secret_version.release_cookie[0].version
-      }
-    } : {},
-    var.database_auth_mode == "password" ? {
-      "emisar-database-url" = {
-        env_name = "DATABASE_URL"
-        version  = google_secret_manager_secret_version.database_url[0].version
       }
     } : {},
   )
@@ -123,7 +114,12 @@ resource "google_secret_manager_secret" "app" {
 }
 
 resource "google_secret_manager_secret_iam_member" "vm_access" {
-  for_each  = local.secret_definitions
+  # Keep the retired DATABASE_URL container to avoid destructive removal and
+  # name reuse. Audit evidence lives independently in the locked logging bucket.
+  for_each = {
+    for id, env_name in local.secret_definitions : id => env_name
+    if id != "emisar-database-url"
+  }
   project   = var.project_id
   secret_id = google_secret_manager_secret.app[each.key].id
   role      = "roles/secretmanager.secretAccessor"

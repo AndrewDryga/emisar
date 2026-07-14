@@ -24,6 +24,11 @@ output "container_image" {
   value       = var.container_image
 }
 
+output "mig_name" {
+  description = "Generation-qualified regional managed instance group name for operational commands."
+  value       = google_compute_region_instance_group_manager.emisar.name
+}
+
 output "db_private_ip" {
   description = "Cloud SQL private IP used by the local IAM-auth proxy."
   value       = google_sql_database_instance.emisar.private_ip_address

@@ -77,7 +77,7 @@ resource "google_compute_firewall" "lb_to_app" {
   direction = "INGRESS"
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.app_port)]
+    ports    = [tostring(local.portal_port)]
   }
   # Google global LB proxies + health checkers.
   source_ranges = ["130.211.0.0/22", "35.191.0.0/16"]
