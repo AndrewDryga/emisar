@@ -465,6 +465,9 @@ const Tooltip = {
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
+  // Tab-resume reconnects often finish inside LiveView's 500ms default. The
+  // neutral recovery notice should still acknowledge the interruption.
+  disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
   hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip }
 })

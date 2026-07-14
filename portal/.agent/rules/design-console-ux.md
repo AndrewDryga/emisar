@@ -273,6 +273,20 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     `USER · ACTOR` / `RUNNER · TARGET`, with the kind first and brighter and the role
     second and quieter. When no kind was recorded, retain the role alone so the empty
     state still has context.
+17. **A leading status marker centers on the primary line it qualifies.** When a row
+    stacks a primary label over secondary metadata, calculate the marker's top offset
+    from the primary line box: `(line height - marker size) / 2`. Do not center it on
+    the full content stack or use an unrelated generic margin; both visually detach it
+    from the label. Sweep status dots beside stacked copy in `items-start` rows.
+18. **Transient recovery is neutral, not an error.** An automatic reconnect, retry, or
+    resume that normally resolves without operator action uses neutral styling and
+    recovery language. Rose, error icons, and failure copy are reserved for terminal or
+    actionable failures. Sweep state-driven notices whose only action is waiting.
+19. **Recovery feedback covers the common interruption, not only long outages.** Keep
+    a short grace period to suppress zero-duration flicker, but tune it below the normal
+    tab-resume reconnect window so the operator can see that recovery occurred. Verify
+    brief and sustained disconnects in the browser; a notice whose debounce outlasts
+    the common case is functionally absent.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

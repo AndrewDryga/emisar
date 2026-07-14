@@ -36,7 +36,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :string, doc: "the optional id of flash container"
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
   attr :title, :string, default: nil
-  attr :kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup"
+  attr :kind, :atom, values: [:info, :error, :neutral], doc: "used for styling and flash lookup"
 
   attr :auto_close, :boolean,
     default: true,
@@ -51,7 +51,7 @@ defmodule EmisarWeb.CoreComponents do
       assigns
       |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
       # Errors get a beat longer to read; either way, hovering pauses the countdown.
-      |> assign(:close_ms, if(assigns.kind == :info, do: 5000, else: 7000))
+      |> assign(:close_ms, if(assigns.kind == :error, do: 7000, else: 5000))
 
     ~H"""
     <div
@@ -64,13 +64,15 @@ defmodule EmisarWeb.CoreComponents do
       class={[
         "fixed top-4 right-4 z-50 w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
         @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
-        @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40"
+        @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40",
+        @kind == :neutral && "bg-zinc-900 text-zinc-200 ring-white/10"
       ]}
       {@rest}
     >
       <p :if={@title} class="flex items-center gap-2 text-sm font-semibold">
         <.icon :if={@kind == :info} name="hero-information-circle-mini" class="h-4 w-4" />
         <.icon :if={@kind == :error} name="hero-exclamation-circle-mini" class="h-4 w-4" />
+        <.icon :if={@kind == :neutral} name="hero-wifi-mini" class="h-4 w-4" />
         {@title}
       </p>
       <p class="mt-1 text-sm leading-relaxed">{msg}</p>
@@ -87,7 +89,8 @@ defmodule EmisarWeb.CoreComponents do
         class={[
           "absolute inset-x-0 bottom-0 h-0.5 origin-left",
           @kind == :info && "bg-brand-400/70",
-          @kind == :error && "bg-rose-400/70"
+          @kind == :error && "bg-rose-400/70",
+          @kind == :neutral && "bg-zinc-500/70"
         ]}
       />
     </div>
@@ -111,27 +114,27 @@ defmodule EmisarWeb.CoreComponents do
       <.flash kind={:error} title={gettext("Something went wrong")} flash={@flash} />
       <.flash
         id="client-error"
-        kind={:error}
-        title={gettext("Connection lost")}
+        kind={:neutral}
+        title={gettext("Reconnecting")}
         auto_close={false}
         phx-disconnected={show(".phx-client-error #client-error")}
         phx-connected={hide("#client-error")}
         hidden
       >
-        {gettext("Trying to reconnect…")}
+        {gettext("Restoring connection…")}
         <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
 
       <.flash
         id="server-error"
-        kind={:error}
-        title={gettext("Server didn't respond")}
+        kind={:neutral}
+        title={gettext("Reconnecting")}
         auto_close={false}
         phx-disconnected={show(".phx-server-error #server-error")}
         phx-connected={hide("#server-error")}
         hidden
       >
-        {gettext("Recovering…")}
+        {gettext("Restoring connection…")}
         <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
     </div>

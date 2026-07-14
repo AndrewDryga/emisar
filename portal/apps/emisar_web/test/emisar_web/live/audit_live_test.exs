@@ -52,6 +52,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "db-prod-01"
       refute html =~ "db-prod-01 · → db-prod-01"
       event_primary = lv |> element("#event-#{event.id} [data-audit-event-primary]") |> render()
+      outcome_dot = lv |> element("#event-#{event.id} [data-audit-outcome-dot]") |> render()
       actor_primary = lv |> element("#event-#{event.id} [data-audit-primary]") |> render()
 
       target_primary =
@@ -63,6 +64,8 @@ defmodule EmisarWeb.AuditLiveTest do
         assert primary =~ "text-sm"
         assert primary =~ "leading-5"
       end
+
+      assert outcome_dot =~ "mt-1.5"
 
       # The whole row is the one link — into the EVENT detail.
       assert html =~ ~p"/app/#{account}/audit/#{event.id}"

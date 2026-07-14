@@ -43,12 +43,30 @@ defmodule EmisarWeb.Components.FlashTest do
 
       html =
         rendered_to_string(
-          ~H"<CoreComponents.flash kind={:error} auto_close={false}>Reconnecting</CoreComponents.flash>"
+          ~H"<CoreComponents.flash kind={:neutral} auto_close={false}>Reconnecting</CoreComponents.flash>"
         )
 
       refute html =~ "FlashAutoClose"
       refute html =~ "data-flash-bar"
       refute html =~ "data-close-ms"
+    end
+
+    test "connection recovery flashes use neutral styling, not error styling" do
+      assigns = %{flash: %{}}
+
+      document =
+        rendered_to_string(~H"<CoreComponents.flash_group flash={@flash} />")
+        |> LazyHTML.from_fragment()
+
+      for id <- ["client-error", "server-error"] do
+        flash = LazyHTML.query_by_id(document, id)
+        assert [classes] = LazyHTML.attribute(flash, "class")
+        assert classes =~ "bg-zinc-900"
+        assert classes =~ "ring-white/10"
+        refute classes =~ "rose"
+        assert LazyHTML.text(flash) =~ "Reconnecting"
+        assert LazyHTML.text(flash) =~ "Restoring connection"
+      end
     end
 
     test "escapes interpolated message text (IL-16)" do

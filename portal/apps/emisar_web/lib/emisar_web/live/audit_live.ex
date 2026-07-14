@@ -461,7 +461,14 @@ defmodule EmisarWeb.AuditLive do
               class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04] xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:items-start xl:gap-4"
             >
               <div class="flex min-w-0 flex-1 items-start gap-3 xl:flex-auto">
-                <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1" />
+                <%!-- (20px title line - 8px dot) / 2 = 6px: center the dot on
+                     the primary label, not the full two-line event stack. --%>
+                <.status_dot
+                  tone={outcome_tone(event.event_type)}
+                  size={:md}
+                  class="mt-1.5"
+                  data-audit-outcome-dot
+                />
                 <div class="min-w-0 flex-1">
                   <div
                     class={["truncate text-sm leading-5", event_title_class(event.event_type)]}
