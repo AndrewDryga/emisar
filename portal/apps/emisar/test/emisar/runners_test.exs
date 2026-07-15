@@ -2060,6 +2060,60 @@ defmodule Emisar.RunnersTest do
       assert id1 == id2
     end
 
+    test "an exhausted single-use key retries only its original runner identity" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      {raw, key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: false
+        )
+
+      attrs = %{hostname: "durable-host", group: "prod", external_id: "durable-ext-id"}
+
+      assert {:ok, %Runner{id: runner_id}, %Token{id: first_token_id}, first_raw} =
+               Runners.register_via_enrollment_key(raw, attrs)
+
+      assert is_nil(Runners.peek_enrollment_key_by_secret(raw))
+
+      assert {:ok, %Runner{id: ^runner_id}, %Token{id: second_token_id}, second_raw} =
+               Runners.register_via_enrollment_key(raw, attrs)
+
+      refute first_token_id == second_token_id
+      refute first_raw == second_raw
+      assert is_nil(Repo.get(Token, first_token_id))
+      assert %Token{} = Repo.get(Token, second_token_id)
+      assert Repo.reload!(key).uses_count == 1
+
+      assert {:error, :enrollment_key_invalid} =
+               Runners.register_via_enrollment_key(raw, %{attrs | external_id: "other-host"})
+
+      assert Repo.aggregate(
+               Runner.Query.by_account_id(Runner.Query.not_deleted(), account.id),
+               :count
+             ) == 1
+    end
+
+    test "revocation disables an exhausted-key retry for the bound identity" do
+      {account, user, subject} = account_with_owner_subject()
+
+      {raw, key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: false
+        )
+
+      attrs = %{hostname: "revoked-host", group: "prod", external_id: "revoked-ext-id"}
+      assert {:ok, %Runner{}, %Token{}, _} = Runners.register_via_enrollment_key(raw, attrs)
+      assert {:ok, %EnrollmentKey{}} = Runners.revoke_enrollment_key(Repo.reload!(key), subject)
+
+      assert {:error, :enrollment_key_invalid} =
+               Runners.register_via_enrollment_key(raw, attrs)
+    end
+
     test "re-registration after a soft-delete creates a fresh runner" do
       # The (account_id, external_id) unique index is partial
       # (WHERE deleted_at IS NULL), so a soft-deleted runner no longer

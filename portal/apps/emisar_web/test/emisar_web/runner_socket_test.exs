@@ -28,20 +28,45 @@ defmodule EmisarWeb.RunnerSocketTest do
       %{account: account, user: user, raw_key: raw_key}
     end
 
-    test "exchanges auth key for runner token", %{conn: conn, raw_key: raw_key} do
-      conn =
+    test "exchanges and safely retries a single-use enrollment key", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      external_id = Ecto.UUID.generate()
+
+      first =
         conn
         |> put_req_header("authorization", "Bearer " <> raw_key)
         |> post(~p"/runner/register", %{
-          "external_id" => Ecto.UUID.generate(),
+          "external_id" => external_id,
           "hostname" => "ip-10-0-0-1",
           "group" => "default",
           "version" => "0.2.0"
         })
 
-      body = json_response(conn, 201)
-      assert %{"token" => "rnrtok-" <> _} = body
-      assert map_size(body) == 1
+      first_body = json_response(first, 201)
+      assert %{"token" => "rnrtok-" <> first_token} = first_body
+      assert map_size(first_body) == 1
+
+      retry =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw_key)
+        |> post(~p"/runner/register", %{
+          "external_id" => external_id,
+          "hostname" => "ip-10-0-0-1",
+          "group" => "default",
+          "version" => "0.2.0"
+        })
+
+      assert %{"token" => "rnrtok-" <> retry_token} = json_response(retry, 201)
+      refute first_token == retry_token
+
+      different_identity =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw_key)
+        |> post(~p"/runner/register", %{"external_id" => Ecto.UUID.generate()})
+
+      assert json_response(different_identity, 401) == %{"error" => "enrollment_key_invalid"}
     end
 
     test "rejects missing bearer", %{conn: conn} do

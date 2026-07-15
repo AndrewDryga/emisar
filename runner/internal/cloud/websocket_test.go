@@ -142,10 +142,83 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 	if fc.registerSeen != 1 {
 		t.Errorf("register called %d times, want 1", fc.registerSeen)
 	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "token.json" {
+		t.Fatalf("token directory contains temporary files after activation: %v", entries)
+	}
 
 	// Drain the server-side ws so the goroutine doesn't leak.
 	srvConn := <-fc.wsAccepted
 	srvConn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebsocketDialerDoesNotConnectBeforeTokenPersistence(t *testing.T) {
+	fc, srv := newFakeCloud(t)
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("block"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &WebsocketDialer{
+		URL:        srv.URL,
+		AuthKey:    fc.authKey,
+		TokenPath:  filepath.Join(blocker, "token.json"),
+		Hostname:   "test-host",
+		Group:      "default",
+		Version:    "0.test",
+		ExternalID: "stable-id-123",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if conn, err := d.Dial(ctx); err == nil {
+		_ = conn.Close()
+		t.Fatal("Dial succeeded without durably persisting the minted token")
+	}
+	if fc.registerSeen != 1 {
+		t.Fatalf("register called %d times, want 1", fc.registerSeen)
+	}
+	select {
+	case conn := <-fc.wsAccepted:
+		_ = conn.Close(websocket.StatusInternalError, "unexpected connection")
+		t.Fatal("WebSocket opened before token persistence")
+	default:
+	}
+}
+
+func TestWriteTokenLeavesTargetUntouchedWhenActivationFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "token.json")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	originalPath := filepath.Join(path, "original")
+	if err := os.WriteFile(originalPath, []byte("unchanged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &WebsocketDialer{TokenPath: path}
+	if err := d.writeToken(agentToken{Raw: "new", KeyFP: "new-fingerprint"}); err == nil {
+		t.Fatal("writeToken replaced a directory target")
+	}
+	got, err := os.ReadFile(originalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "unchanged" {
+		t.Fatalf("failed replacement changed the target: got %q", got)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "token.json" {
+		t.Fatalf("failed replacement left temporary files: %v", entries)
+	}
 }
 
 func TestWebsocketDialerSendsExternalID(t *testing.T) {

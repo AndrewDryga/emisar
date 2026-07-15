@@ -148,7 +148,6 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 		d.logger().Info("cloud.auth_key_rotated",
 			"path", d.TokenPath,
 			"detail", "configured auth key no longer matches the cached token; re-registering")
-		_ = os.Remove(d.TokenPath)
 	}
 
 	if d.AuthKey == "" {
@@ -162,9 +161,7 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 	token.KeyFP = keyFingerprint(d.AuthKey)
 
 	if err := d.writeToken(token); err != nil {
-		// Non-fatal: we proceed with the in-memory token but log that
-		// we'll have to re-register next time.
-		(d.logger()).Warn("cloud.token_persist_failed", "path", d.TokenPath, "error", err)
+		return agentToken{}, fmt.Errorf("persist runner token: %w", err)
 	}
 
 	return token, nil
@@ -218,10 +215,11 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 
 func (d *WebsocketDialer) writeToken(t agentToken) error {
 	if d.TokenPath == "" {
-		return nil
+		return errors.New("token path is empty")
 	}
 
-	if err := fsutil.SecureMkdirAll(filepath.Dir(d.TokenPath), 0o750); err != nil {
+	dir := filepath.Dir(d.TokenPath)
+	if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -233,13 +231,39 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 		return err
 	}
 
-	// Write atomically: a partial-write that crashes mid-flight should
-	// not leave a corrupt token file.
-	tmp := d.TokenPath + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return err
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(d.TokenPath)+".tmp-")
+	if err != nil {
+		return fmt.Errorf("create temporary token: %w", err)
 	}
-	return os.Rename(tmp, d.TokenPath)
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		cleanup()
+		return fmt.Errorf("secure temporary token: %w", err)
+	}
+	if _, err := tmp.Write(body); err != nil {
+		cleanup()
+		return fmt.Errorf("write temporary token: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("sync temporary token: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temporary token: %w", err)
+	}
+	if err := os.Rename(tmpPath, d.TokenPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("activate runner token: %w", err)
+	}
+	if err := fsutil.SyncDirectory(dir); err != nil {
+		return fmt.Errorf("sync token directory: %w", err)
+	}
+	return nil
 }
 
 // keyFingerprint is a short, one-way fingerprint of the bootstrap auth

@@ -10,6 +10,12 @@ defmodule Emisar.Runners.Token.Query do
   def by_runner_id(queryable, runner_id),
     do: where(queryable, [tokens: t], t.runner_id == ^runner_id)
 
+  def by_issued_via_key_id(queryable, key_id),
+    do: where(queryable, [tokens: t], t.issued_via_key_id == ^key_id)
+
+  def unused(queryable),
+    do: where(queryable, [tokens: t], is_nil(t.last_used_at))
+
   def by_prefix(queryable, prefix),
     do: where(queryable, [tokens: t], t.token_prefix == ^prefix)
 

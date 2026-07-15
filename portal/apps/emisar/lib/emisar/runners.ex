@@ -1187,7 +1187,13 @@ defmodule Emisar.Runners do
       nil
     else
       hash = Crypto.hash(raw)
-      peek_by_prefix(raw, hash, @enrollment_key_prefix_size)
+
+      with %EnrollmentKey{} = key <- peek_by_prefix(raw, hash, @enrollment_key_prefix_size),
+           true <- EnrollmentKey.usable?(key) do
+        key
+      else
+        _ -> nil
+      end
     end
   end
 
@@ -1197,13 +1203,10 @@ defmodule Emisar.Runners do
     else
       prefix = String.slice(raw, 0, size)
 
-      # Deliberately all(): `usable?/1` below is the single liveness gate
-      # (it rejects deleted/revoked/expired/exhausted in one place).
       queryable = EnrollmentKey.Query.all() |> EnrollmentKey.Query.by_key_prefix(prefix)
 
       with %EnrollmentKey{} = key <- Repo.peek(queryable),
-           true <- Crypto.secure_compare(key.key_hash, hash),
-           true <- EnrollmentKey.usable?(key) do
+           true <- Crypto.secure_compare(key.key_hash, hash) do
         key
       else
         _ -> nil
@@ -1287,7 +1290,9 @@ defmodule Emisar.Runners do
   def register_via_enrollment_key(raw_or_key, attrs, context \\ %RequestContext{})
 
   def register_via_enrollment_key(raw, attrs, context) when is_binary(raw) do
-    case peek_enrollment_key_by_secret(raw) do
+    hash = Crypto.hash(raw)
+
+    case peek_by_prefix(raw, hash, @enrollment_key_prefix_size) do
       nil -> {:error, :enrollment_key_invalid}
       %EnrollmentKey{} = key -> register_via_enrollment_key(key, attrs, context)
     end
@@ -1310,15 +1315,10 @@ defmodule Emisar.Runners do
     |> Multi.run(:lock_account, fn repo, _changes ->
       Accounts.fetch_and_lock_account(key.account_id, repo: repo)
     end)
-    # Atomically claim a use of this auth key. The conditional UPDATE only
-    # succeeds if the key is still usable AT the moment of the update —
-    # defeating the race where two concurrent registrations both see
-    # uses_count = 0.
-    |> Multi.run(:consume, fn _repo, _changes ->
-      case consume_enrollment_key(key) do
-        :ok -> {:ok, :consumed}
-        {:error, reason} -> {:error, reason}
-      end
+    # Atomically claim a use, or recognize the one narrow retry case: an
+    # exhausted single-use key presented by the exact runner it already bound.
+    |> Multi.run(:authorize_key, fn repo, _changes ->
+      authorize_registration(repo, key, external_id)
     end)
     # Surface the auto→permanent promotion. The mint itself is deliberately
     # silent (would flood the log), so binding is where the key first
@@ -1328,6 +1328,12 @@ defmodule Emisar.Runners do
       register_or_reuse_runner(repo, key, attrs, external_id)
     end)
     |> maybe_audit_runner_registered(key, context)
+    |> Multi.delete_all(:unused_tokens, fn %{registration: {runner, _fresh?}} ->
+      Token.Query.all()
+      |> Token.Query.by_runner_id(runner.id)
+      |> Token.Query.by_issued_via_key_id(key.id)
+      |> Token.Query.unused()
+    end)
     |> Multi.run(:token, fn repo, %{registration: {runner, _fresh?}} ->
       {:ok, mint_runner_token(runner, key.id, repo: repo)}
     end)
@@ -1469,14 +1475,47 @@ defmodule Emisar.Runners do
   # Atomically charge one use against `key`. The WHERE clause
   # re-evaluates every `usable?` condition at SQL level so we can't
   # TOCTOU between SELECT and UPDATE.
-  defp consume_enrollment_key(%EnrollmentKey{} = key) do
+  defp authorize_registration(repo, key, external_id) do
+    case consume_enrollment_key(repo, key) do
+      :ok ->
+        {:ok, :consumed}
+
+      {:error, :enrollment_key_invalid} ->
+        authorize_registration_retry(repo, key, external_id)
+    end
+  end
+
+  defp authorize_registration_retry(repo, key, external_id) do
+    now = DateTime.utc_now()
+    key_queryable = EnrollmentKey.Query.all() |> EnrollmentKey.Query.by_id(key.id)
+
+    with {:ok, current_key} <- repo.fetch(key_queryable, EnrollmentKey.Query),
+         true <- registration_retry_key?(current_key, now),
+         {:ok, runner} <-
+           fetch_runner_by_external_id_for_account(external_id, current_key.account_id,
+             repo: repo
+           ),
+         true <- runner.bootstrap_enrollment_key_id == current_key.id do
+      {:ok, :retry}
+    else
+      _ -> {:error, :enrollment_key_invalid}
+    end
+  end
+
+  defp registration_retry_key?(%EnrollmentKey{} = key, now) do
+    not key.reusable and key.uses_count == 1 and is_nil(key.revoked_at) and
+      is_nil(key.deleted_at) and
+      (is_nil(key.expires_at) or DateTime.compare(now, key.expires_at) != :gt)
+  end
+
+  defp consume_enrollment_key(repo, %EnrollmentKey{} = key) do
     now = DateTime.utc_now()
 
     query =
       EnrollmentKey.Query.consumable_by_id(key.id, now)
       |> EnrollmentKey.Query.consume_one(now)
 
-    case Repo.update_all(query, []) do
+    case repo.update_all(query, []) do
       {1, _} -> :ok
       {0, _} -> {:error, :enrollment_key_invalid}
     end
