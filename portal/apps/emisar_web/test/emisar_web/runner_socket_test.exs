@@ -469,13 +469,33 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "a result for an unknown request_id is acked and remembered", %{state: state} do
-      frame_in = result_frame("req_does_not_exist", "success", [])
+      request_id = "req_0000000000000000000000"
+      frame_in = result_frame(request_id, "success", [])
       assert {:push, ack, state} = RunnerSocket.handle_in({frame_in, text()}, state)
-      assert %{"type" => "ack_result", "request_id" => "req_does_not_exist"} = decode(ack)
+      assert %{"type" => "ack_result", "request_id" => ^request_id} = decode(ack)
 
       # Remembered: a retry of the same unknown id is deduped (still acked,
       # never re-attempts the unknown-request lookup/log).
       assert {:push, _ack, ^state} = RunnerSocket.handle_in({frame_in, text()}, state)
+    end
+
+    test "noncanonical correlated IDs close without retention or reflection", %{state: state} do
+      request_id = "req_" <> String.duplicate("x", 100_000)
+
+      for msg <- [
+            %{"type" => "action_result", "request_id" => request_id, "status" => "success"},
+            %{
+              "type" => "action_progress",
+              "request_id" => request_id,
+              "seq" => 1,
+              "stream" => "stdout",
+              "chunk" => "x"
+            },
+            %{"type" => "error", "request_id" => request_id, "code" => "x", "message" => "x"}
+          ] do
+        assert {:stop, :normal, {1002, _reason}, ^state} =
+                 RunnerSocket.handle_in({runner_frame(msg), text()}, state)
+      end
     end
   end
 
@@ -673,12 +693,14 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "error envelope is audited without dropping the socket", %{state: state} do
+      request_id = Emisar.Crypto.run_request_id()
+
       raw =
         runner_frame(%{
           "type" => "error",
           "code" => "exec_failed",
           "message" => "binary not found",
-          "request_id" => "req_err"
+          "request_id" => request_id
         })
 
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
@@ -744,10 +766,12 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "progress for an unknown request_id is swallowed", %{state: state} do
+      request_id = Emisar.Crypto.run_request_id()
+
       raw =
         runner_frame(%{
           "type" => "action_progress",
-          "request_id" => "req_phantom",
+          "request_id" => request_id,
           "seq" => 1,
           "stream" => "stdout",
           "chunk" => "x"
@@ -756,11 +780,11 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
-    # a progress chunk with a nil request_id is dropped at
-    # the `fetch_run_id(nil, _)` guard before any DB touch; the socket stays up.
-    test "progress with a nil request_id is dropped quietly", %{state: state} do
+    test "progress with a nil request_id closes as a protocol error", %{state: state} do
       raw = runner_frame(%{"type" => "action_progress", "seq" => 1, "chunk" => "x"})
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      assert {:stop, :normal, {1002, "Invalid action_progress request_id."}, ^state} =
+               RunnerSocket.handle_in({raw, text()}, state)
     end
 
     # the historical fix: `chunk`/`stream` are persisted
@@ -867,10 +891,11 @@ defmodule EmisarWeb.RunnerSocketTest do
     # genuinely terminal: acked AND remembered so a retry never re-runs the
     # unknown-request lookup/log. (The same-account scoping variant is above.)
     test "an unknown request_id is acked and remembered (no reprocess on retry)", %{state: state} do
-      frame_in = result_frame("req_never_dispatched", "success", exit_code: 0)
+      request_id = "req_1111111111111111111111"
+      frame_in = result_frame(request_id, "success", exit_code: 0)
 
       assert {:push, ack, state} = RunnerSocket.handle_in({frame_in, text()}, state)
-      assert %{"type" => "ack_result", "request_id" => "req_never_dispatched"} = decode(ack)
+      assert %{"type" => "ack_result", "request_id" => ^request_id} = decode(ack)
 
       assert {:push, _ack, ^state} = RunnerSocket.handle_in({frame_in, text()}, state)
     end
@@ -1013,13 +1038,14 @@ defmodule EmisarWeb.RunnerSocketTest do
         RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "emisar-runner/9.9.9"})
 
       state = %{state | request_context: context}
+      request_id = Emisar.Crypto.run_request_id()
 
       raw =
         runner_frame(%{
           "type" => "error",
           "code" => "exec_failed",
           "message" => "binary not found",
-          "request_id" => "req_err_1"
+          "request_id" => request_id
         })
 
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
@@ -1031,7 +1057,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert row, "expected a runner.error audit row"
       assert row.payload["code"] == "exec_failed"
       assert row.payload["message"] == "binary not found"
-      assert row.payload["request_id"] == "req_err_1"
+      assert row.payload["request_id"] == request_id
       # The connect IP/UA rides the runner's own lifecycle event.
       assert row.ip_address == "203.0.113.7"
       assert row.user_agent == "emisar-runner/9.9.9"
@@ -1046,7 +1072,8 @@ defmodule EmisarWeb.RunnerSocketTest do
       user: user,
       state: state
     } do
-      raw = runner_frame(%{"type" => "error", "request_id" => "req_err_2"})
+      request_id = Emisar.Crypto.run_request_id()
+      raw = runner_frame(%{"type" => "error", "request_id" => request_id})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
@@ -1054,7 +1081,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       row =
         Enum.find(events, fn e ->
-          e.event_type == "runner.error" and e.payload["request_id"] == "req_err_2"
+          e.event_type == "runner.error" and e.payload["request_id"] == request_id
         end)
 
       assert row, "expected a runner.error audit row even with missing fields"

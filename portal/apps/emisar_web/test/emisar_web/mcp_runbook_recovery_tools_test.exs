@@ -535,7 +535,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     attrs = %{
       account_id: account.id,
       runner_id: runner.id,
-      request_id: Ecto.UUID.generate(),
+      request_id: Emisar.Crypto.run_request_id(),
       action_id: "operations.health",
       source: :mcp,
       status: :pending,

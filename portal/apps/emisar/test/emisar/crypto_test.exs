@@ -173,7 +173,12 @@ defmodule Emisar.CryptoTest do
 
   describe "OIDC and dispatch credentials" do
     test "use fixed prefixes and PKCE's S256 transform" do
-      assert Crypto.run_request_id() =~ ~r/\Areq_[A-Za-z0-9_-]+\z/
+      request_id = Crypto.run_request_id()
+      assert request_id =~ ~r/\Areq_[A-Za-z0-9_-]{22}\z/
+      assert Crypto.valid_run_request_id?(request_id)
+      refute Crypto.valid_run_request_id?("req_short")
+      refute Crypto.valid_run_request_id?("req_000000000000000000000!")
+      refute Crypto.valid_run_request_id?(nil)
       assert Crypto.runner_name_suffix() =~ ~r/\A[A-Za-z0-9_-]+\z/
       assert Crypto.oidc_state() =~ ~r/\A[A-Za-z0-9_-]{43}\z/
       assert Crypto.oidc_nonce() =~ ~r/\A[A-Za-z0-9_-]{43}\z/

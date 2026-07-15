@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Runs do
   """
 
   import Ecto.Changeset, only: [change: 2]
-  alias Emisar.{Fixtures, Repo}
+  alias Emisar.{Crypto, Fixtures, Repo}
   alias Emisar.Runs.ActionRun
 
   @doc """
@@ -25,7 +25,7 @@ defmodule Emisar.Fixtures.Runs do
     params = %{
       account_id: attrs[:account_id] || runner.account_id,
       runner_id: attrs[:runner_id] || runner.id,
-      request_id: attrs[:request_id] || Ecto.UUID.generate(),
+      request_id: attrs[:request_id] || Crypto.run_request_id(),
       action_id: attrs[:action_id] || "svc.read",
       source: attrs[:source] || :operator,
       status: attrs[:status] || :success

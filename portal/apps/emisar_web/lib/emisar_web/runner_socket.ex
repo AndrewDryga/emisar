@@ -22,12 +22,13 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Catalog, Compat, RequestContext, Runners, Runs}
+  alias Emisar.{Catalog, Compat, Crypto, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
   @known_runner_message_types ~w(runner_state action_progress action_result heartbeat error)
+  @required_request_id_message_types ~w(action_progress action_result)
 
   # -- WebSock callbacks ----------------------------------------------
 
@@ -106,10 +107,15 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp handle_versioned_envelope(type, msg, state)
        when type in @known_runner_message_types do
-    if Map.get(msg, "protocol_version") == @protocol_version do
-      handle_envelope(type, msg, state)
-    else
-      {:stop, :normal, {1002, "Unsupported runner protocol_version."}, state}
+    cond do
+      Map.get(msg, "protocol_version") != @protocol_version ->
+        {:stop, :normal, {1002, "Unsupported runner protocol_version."}, state}
+
+      not valid_envelope_request_id?(type, msg) ->
+        {:stop, :normal, {1002, "Invalid #{type} request_id."}, state}
+
+      true ->
+        handle_envelope(type, msg, state)
     end
   end
 
@@ -321,8 +327,10 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("action_result", msg, state) do
-    if already_seen?(msg["request_id"], state) do
-      {:push, ack_result_frame(msg["request_id"]), state}
+    request_id = msg["request_id"]
+
+    if already_seen?(request_id, state) do
+      {:push, ack_result_frame(request_id), state}
     else
       case Runs.finalize_from_connection(
              state.account_id,
@@ -333,23 +341,21 @@ defmodule EmisarWeb.RunnerSocket do
            ) do
         {:ok, _run} ->
           # Remember only AFTER the result is durably persisted, so a transient
-          # finalize failure (below) leaves the request un-acked and the
-          # runner's retry re-finalizes instead of being silently deduped.
+          # finalize failure leaves the request un-acked and retryable.
           send(self(), :dispatch_queued)
-          {:push, ack_result_frame(msg["request_id"]), remember_request(msg["request_id"], state)}
+          {:push, ack_result_frame(request_id), remember_request(request_id, state)}
 
         {:error, :unknown_request_id} ->
           Logger.warning(
-            "runner #{state.runner_id} sent result for unknown/foreign request_id #{msg["request_id"]}"
+            "runner #{state.runner_id} sent result for unknown/foreign request_id #{request_id}"
           )
 
-          # Genuinely terminal (no matching run) — remember so we don't reprocess.
-          {:push, ack_result_frame(msg["request_id"]), remember_request(msg["request_id"], state)}
+          {:push, ack_result_frame(request_id), remember_request(request_id, state)}
 
         {:error, reason} ->
           # Transient persist failure — do NOT remember; the runner retries.
           Logger.error("finalize_from_result failed: #{inspect(reason)}")
-          {:push, error_frame(msg["request_id"], "finalize_failed", inspect(reason)), state}
+          {:push, error_frame(request_id, "finalize_failed", inspect(reason)), state}
       end
     end
   end
@@ -383,6 +389,16 @@ defmodule EmisarWeb.RunnerSocket do
     Logger.debug("runner_socket unknown envelope type #{type}")
     {:ok, state}
   end
+
+  defp valid_envelope_request_id?(type, msg)
+       when type in @required_request_id_message_types,
+       do: Crypto.valid_run_request_id?(msg["request_id"])
+
+  defp valid_envelope_request_id?("error", msg) do
+    is_nil(msg["request_id"]) or Crypto.valid_run_request_id?(msg["request_id"])
+  end
+
+  defp valid_envelope_request_id?(_type, _msg), do: true
 
   # -- Version enforcement --------------------------------------------
 
@@ -466,13 +482,9 @@ defmodule EmisarWeb.RunnerSocket do
   # stays O(1) on a long-lived socket past capacity.
   @dedup_capacity 5_000
 
-  defp already_seen?(nil, _state), do: false
-
   defp already_seen?(request_id, state) do
     MapSet.member?(state.seen_request_set, request_id)
   end
-
-  defp remember_request(nil, state), do: state
 
   defp remember_request(request_id, state) do
     if MapSet.member?(state.seen_request_set, request_id) do

@@ -7,7 +7,7 @@ defmodule Emisar.Runs.ActionRunTest do
       %{
         account_id: Ecto.UUID.generate(),
         runner_id: Ecto.UUID.generate(),
-        request_id: "req_x",
+        request_id: Emisar.Crypto.run_request_id(),
         action_id: "linux.uptime",
         source: "operator"
       },
@@ -116,6 +116,13 @@ defmodule Emisar.Runs.ActionRunTest do
 
       refute changeset.valid?
       assert {"is invalid", _} = changeset.errors[:source]
+    end
+
+    test "rejects a noncanonical request id" do
+      changeset = ActionRun.Changeset.create(create_attrs(%{request_id: "req_x"}))
+
+      refute changeset.valid?
+      assert {"must be a canonical run request id", _} = changeset.errors[:request_id]
     end
 
     test "rejects an oversized operator reason before the DB string column does" do

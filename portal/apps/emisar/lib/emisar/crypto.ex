@@ -221,8 +221,16 @@ defmodule Emisar.Crypto do
   # 16 random bytes keeps them unguessable without bloating log lines.
   @request_id_bytes 16
 
+  @request_id_pattern ~r/\Areq_[A-Za-z0-9_-]{22}\z/
+
   @doc "Correlation id for one action dispatch (`req_…`)."
   def run_request_id, do: "req_" <> random_secret(@request_id_bytes)
+
+  @doc "Whether a value is a canonical action-dispatch correlation id."
+  def valid_run_request_id?(value) when is_binary(value),
+    do: Regex.match?(@request_id_pattern, value)
+
+  def valid_run_request_id?(_value), do: false
 
   # Auto-generated runner names only need to avoid casual collision (the
   # partial unique index on the name is the real guarantee), so a short

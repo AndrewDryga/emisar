@@ -1,5 +1,6 @@
 defmodule Emisar.Runs.ActionRun.Changeset do
   use Emisar, :changeset
+  alias Emisar.Crypto
   alias Emisar.Repo.Changeset, as: RepoChangeset
   alias Emisar.Runs.ActionRun
 
@@ -45,6 +46,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     %ActionRun{}
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source, :args_raw])
+    |> validate_change(:request_id, &validate_request_id/2)
     |> validate_length(:reason, max: @max_reason_length)
     |> validate_length(:operation_id, max: @max_db_string_length)
     |> validate_length(:pack_ref, max: @max_db_string_length)
@@ -59,6 +61,12 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> unique_constraint([:runbook_execution_id, :runbook_step_id, :runner_id],
       name: :action_runs_execution_step_runner_index
     )
+  end
+
+  defp validate_request_id(:request_id, request_id) do
+    if Crypto.valid_run_request_id?(request_id),
+      do: [],
+      else: [request_id: "must be a canonical run request id"]
   end
 
   defp action_args_raw(attrs) do
