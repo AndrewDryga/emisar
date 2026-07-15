@@ -918,6 +918,8 @@ func (b *bridge) forwardRequestContext(
 	if !meta.valid {
 		return nil, errors.New("invalid JSON-RPC request envelope")
 	}
+	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
 	if err := b.refreshCredentialState(); err != nil {
 		return nil, fmt.Errorf("refresh credential state: %w", err)
 	}
@@ -934,7 +936,10 @@ func (b *bridge) forwardRequestContext(
 			return nil, fmt.Errorf("attest run_action: %w", signErr)
 		}
 	}
-	rotationPrefix, rotationHash := b.rotationProposal(meta.method)
+	rotationPrefix, rotationHash := "", ""
+	if !meta.notification() {
+		rotationPrefix, rotationHash = b.rotationProposal()
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.endpoint, bytes.NewReader(frame))
 	if err != nil {
@@ -993,67 +998,29 @@ func (b *bridge) forwardRequestContext(
 		req.Header.Set("Idempotency-Key", k)
 	}
 
-	resp, err := b.client.Do(req)
-	if err != nil {
-		return nil, err
+	result, err := b.forwardAttempt(req, meta)
+	if err != nil && operationID != "" && ctx.Err() == nil {
+		result, err = b.forwardAttempt(cloneRequestWithBody(req, ctx, frame), meta)
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
+	if result.status == http.StatusUnauthorized {
 		recoveryKey, recoveryErr := b.readOnlyRecoveryKey()
 		if recoveryErr != nil {
-			_ = resp.Body.Close()
 			return nil, fmt.Errorf("recover read-only credential state: %w", recoveryErr)
 		}
 		if recoveryKey != "" && recoveryKey != apiKey {
-			_ = resp.Body.Close()
-			retry := req.Clone(ctx)
-			retry.Body = io.NopCloser(bytes.NewReader(frame))
+			retry := cloneRequestWithBody(req, ctx, frame)
 			retry.Header.Set("Authorization", "Bearer "+recoveryKey)
-			resp, err = b.client.Do(retry)
-			if err != nil {
-				return nil, err
-			}
-			if (resp.StatusCode >= 200 && resp.StatusCode < 500) &&
-				resp.StatusCode != http.StatusUnauthorized {
+			result, err = b.forwardAttempt(retry, meta)
+			if err == nil && (result.status >= 200 && result.status < 500) &&
+				result.status != http.StatusUnauthorized {
 				b.adoptReadOnlyRecoveryKey(recoveryKey)
 			}
 		}
 	}
-	defer resp.Body.Close()
-
-	if meta.notification() {
-		if resp.StatusCode != http.StatusAccepted {
-			return nil, fmt.Errorf("portal returned status %d for a notification", resp.StatusCode)
-		}
-		body, err := readCappedBody(resp.Body, maxResponseBytes)
-		if err != nil {
-			return nil, err
-		}
-		if len(bytes.TrimSpace(body)) != 0 {
-			return nil, errors.New("portal returned a body for a notification")
-		}
-		return nil, nil
-	}
-	if resp.StatusCode == http.StatusAccepted {
-		return nil, errors.New("portal returned notification status for a request")
-	}
-
-	if resp.StatusCode != http.StatusOK && (resp.StatusCode < 400 || resp.StatusCode >= 500) {
-		return nil, fmt.Errorf("unsupported portal response status %d", resp.StatusCode)
-	}
-	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || !strings.EqualFold(mediaType, "application/json") {
-		return nil, errors.New("portal response is not application/json")
-	}
-	body, err := readCappedBody(resp.Body, maxResponseBytes)
 	if err != nil {
 		return nil, err
 	}
-	if !utf8.Valid(body) {
-		return nil, errors.New("portal response is not valid UTF-8")
-	}
-	if err := validateRPCResponse(meta, resp.StatusCode, body); err != nil {
-		return nil, err
-	}
+	body := result.body
 
 	if meta.method == "initialize" {
 		version, hasResult, valid := responseProtocolVersion(body)
@@ -1065,11 +1032,68 @@ func (b *bridge) forwardRequestContext(
 		}
 	}
 
-	if meta.method == "initialize" && resp.StatusCode == http.StatusOK {
-		b.acknowledgeRotation(resp.Header.Get(rotationAckHeader))
+	if !meta.notification() {
+		b.acknowledgeRotation(result.header.Get(rotationAckHeader))
 	}
 
 	return body, nil
+}
+
+type portalResponse struct {
+	status int
+	header http.Header
+	body   []byte
+}
+
+func (b *bridge) forwardAttempt(req *http.Request, meta requestMeta) (portalResponse, error) {
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return portalResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	result := portalResponse{status: resp.StatusCode, header: resp.Header.Clone()}
+	if meta.notification() {
+		if resp.StatusCode != http.StatusAccepted {
+			return result, fmt.Errorf("portal returned status %d for a notification", resp.StatusCode)
+		}
+		body, err := readCappedBody(resp.Body, maxResponseBytes)
+		if err != nil {
+			return result, err
+		}
+		if len(bytes.TrimSpace(body)) != 0 {
+			return result, errors.New("portal returned a body for a notification")
+		}
+		return result, nil
+	}
+	if resp.StatusCode == http.StatusAccepted {
+		return result, errors.New("portal returned notification status for a request")
+	}
+	if resp.StatusCode != http.StatusOK && (resp.StatusCode < 400 || resp.StatusCode >= 500) {
+		return result, fmt.Errorf("unsupported portal response status %d", resp.StatusCode)
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || !strings.EqualFold(mediaType, "application/json") {
+		return result, errors.New("portal response is not application/json")
+	}
+	body, err := readCappedBody(resp.Body, maxResponseBytes)
+	if err != nil {
+		return result, err
+	}
+	if !utf8.Valid(body) {
+		return result, errors.New("portal response is not valid UTF-8")
+	}
+	if err := validateRPCResponse(meta, resp.StatusCode, body); err != nil {
+		return result, err
+	}
+	result.body = body
+	return result, nil
+}
+
+func cloneRequestWithBody(req *http.Request, ctx context.Context, frame []byte) *http.Request {
+	retry := req.Clone(ctx)
+	retry.Body = io.NopCloser(bytes.NewReader(frame))
+	return retry
 }
 
 func (b *bridge) transportState() (apiKey, protocolVersion string) {

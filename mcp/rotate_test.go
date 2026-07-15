@@ -358,6 +358,51 @@ func TestForward_RotationPersistsPendingBeforeRequestAndCurrentBeforeActivation(
 	}
 }
 
+func TestForward_LongLivedBridgeActivatesRotationOnOrdinaryRequest(t *testing.T) {
+	current := testAPIKey(42)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	var attempts int
+	var proposedPrefix, proposedHash string
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		prefix := req.Header.Get(rotationPrefixHeader)
+		hash := req.Header.Get(rotationHashHeader)
+		if prefix == "" || hash == "" {
+			t.Fatal("request omitted the durable rotation proposal")
+		}
+		if attempts == 1 {
+			proposedPrefix, proposedHash = prefix, hash
+			return jsonRPCResponse(""), nil // Outside the portal rotation window.
+		}
+		if prefix != proposedPrefix || hash != proposedHash {
+			t.Fatalf("ordinary request changed pending proposal: %q/%q vs %q/%q", prefix, hash, proposedPrefix, proposedHash)
+		}
+		return jsonRPCResponse(hash), nil // The same process has crossed into the window.
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize outside rotation window: %v", err)
+	}
+	pending := b.pendingKey
+	if b.apiKey != current || pending == "" {
+		t.Fatalf("outside-window state = %q/%q, want current plus pending", b.apiKey, pending)
+	}
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil {
+		t.Fatalf("ordinary request after entering rotation window: %v", err)
+	}
+	if attempts != 2 || b.apiKey != pending || b.pendingKey != "" {
+		t.Fatalf("rotation did not activate on ordinary response: attempts=%d current=%q pending=%q", attempts, b.apiKey, b.pendingKey)
+	}
+	loaded, err := store.load("unused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Current != pending || loaded.Pending != "" {
+		t.Fatalf("ordinary-response activation was not durable: %#v", loaded)
+	}
+}
+
 func TestForward_LostRequestKeepsOldKeyAndRecoverablePending(t *testing.T) {
 	current := testAPIKey(8)
 	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
@@ -432,7 +477,7 @@ func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
 			current := testAPIKey(10)
 			store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 			b := newRotationTestBridge(store, current)
-			_, hash := b.rotationProposal("initialize")
+			_, hash := b.rotationProposal()
 			pending := b.pendingKey
 			stage.inject(store, errors.New("injected "+stage.name+" failure"))
 
@@ -442,7 +487,7 @@ func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
 			}
 
 			store.ops = defaultCredentialFileOps()
-			prefix, proposalHash := b.rotationProposal("initialize")
+			prefix, proposalHash := b.rotationProposal()
 			if stage.name == "directory sync" {
 				if b.apiKey != pending || b.pendingKey != "" {
 					t.Fatal("complete promoted state was not re-synced before activation")
@@ -467,7 +512,7 @@ func TestRotationProposal_GenerationFailureAndNoConfigStayOnOldKey(t *testing.T)
 	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	store.random = iotest.ErrReader(errors.New("entropy unavailable"))
 	b := newRotationTestBridge(store, current)
-	if prefix, hash := b.rotationProposal("initialize"); prefix != "" || hash != "" {
+	if prefix, hash := b.rotationProposal(); prefix != "" || hash != "" {
 		t.Fatalf("generation failure produced proposal %q/%q", prefix, hash)
 	}
 	if _, err := os.Stat(store.path); !errors.Is(err, os.ErrNotExist) {
@@ -478,7 +523,7 @@ func TestRotationProposal_GenerationFailureAndNoConfigStayOnOldKey(t *testing.T)
 	}
 
 	withoutConfig := newRotationTestBridge(nil, current)
-	if prefix, hash := withoutConfig.rotationProposal("initialize"); prefix != "" || hash != "" {
+	if prefix, hash := withoutConfig.rotationProposal(); prefix != "" || hash != "" {
 		t.Fatal("bridge without durable config must not offer a successor")
 	}
 }
@@ -487,7 +532,7 @@ func TestAcknowledgeRotation_WrongAckIsIgnored(t *testing.T) {
 	current := testAPIKey(12)
 	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	b := newRotationTestBridge(store, current)
-	_, _ = b.rotationProposal("initialize")
+	_, _ = b.rotationProposal()
 	pending := b.pendingKey
 	b.acknowledgeRotation(strings.Repeat("0", 64))
 	if b.apiKey != current || b.pendingKey != pending {
@@ -551,7 +596,7 @@ func TestRotationProposal_SamePrefixProcessesConvergeOnOnePendingKey(t *testing.
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			prefix, hash := candidate.rotationProposal("initialize")
+			prefix, hash := candidate.rotationProposal()
 			proposals <- proposal{prefix, hash}
 		}()
 	}
@@ -582,7 +627,7 @@ func TestForward_PeerPromotionRefreshesLiveBridge(t *testing.T) {
 	peer := newRotationTestBridge(storeA, current)
 	live := newRotationTestBridge(storeB, current)
 
-	_, acknowledgement := peer.rotationProposal("initialize")
+	_, acknowledgement := peer.rotationProposal()
 	if err := live.refreshCredentialState(); err != nil {
 		t.Fatalf("load pending peer state: %v", err)
 	}
@@ -599,8 +644,11 @@ func TestForward_PeerPromotionRefreshesLiveBridge(t *testing.T) {
 	if want := "Bearer " + peer.apiKey; authorization != want {
 		t.Fatalf("authorization = %q, want peer-promoted %q", authorization, want)
 	}
-	if live.apiKey != peer.apiKey || live.pendingKey != "" {
-		t.Fatal("live bridge did not adopt the peer-promoted credential state")
+	if live.apiKey != peer.apiKey {
+		t.Fatal("live bridge did not adopt the peer-promoted credential")
+	}
+	if live.pendingKey == "" {
+		t.Fatal("ordinary request did not durably prepare the next successor")
 	}
 }
 
@@ -626,7 +674,7 @@ func TestInitializeCredentialState_ReadOnlyFallbackWaitsForAuthFailure(t *testin
 	if b.apiKey != current || b.pendingKey != "" {
 		t.Fatalf("read-only initial state = %q/%q, want configured current and no pending", b.apiKey, b.pendingKey)
 	}
-	if prefix, hash := b.rotationProposal("initialize"); prefix != "" || hash != "" {
+	if prefix, hash := b.rotationProposal(); prefix != "" || hash != "" {
 		t.Fatalf("read-only bridge proposed a rotation: prefix=%q hash=%q", prefix, hash)
 	}
 

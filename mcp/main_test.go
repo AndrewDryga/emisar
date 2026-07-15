@@ -476,6 +476,124 @@ func TestForward_5xxBecomesError(t *testing.T) {
 	}
 }
 
+func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing.T) {
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{"name":"maintenance"}}}`)
+	var attempts int
+	var idempotencyKeys, operationIDs, authorizations []string
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "ua",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			idempotencyKeys = append(idempotencyKeys, req.Header.Get("Idempotency-Key"))
+			operationIDs = append(operationIDs, req.Header.Get(operationIDHeader))
+			authorizations = append(authorizations, req.Header.Get("Authorization"))
+			if attempts == 1 {
+				return nil, errors.New("connect failed before admission")
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(body, frame) {
+				t.Fatalf("retry body = %s, want %s", body, frame)
+			}
+			return jsonRPCResponse(""), nil
+		})},
+	}
+
+	if _, err := b.forward(frame); err != nil {
+		t.Fatalf("bounded mutation retry: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want exactly 2", attempts)
+	}
+	if len(idempotencyKeys) != 2 || idempotencyKeys[0] == "" || idempotencyKeys[0] != idempotencyKeys[1] {
+		t.Fatalf("idempotency identity changed across retry: %#v", idempotencyKeys)
+	}
+	if len(operationIDs) != 2 || operationIDs[0] == "" || operationIDs[0] != operationIDs[1] {
+		t.Fatalf("operation identity changed across retry: %#v", operationIDs)
+	}
+	if len(authorizations) != 2 || authorizations[0] != "Bearer key" || authorizations[0] != authorizations[1] {
+		t.Fatalf("credential generation changed across retry: %#v", authorizations)
+	}
+}
+
+func TestForward_MutationRetriesOnceAfterAmbiguousResponseLoss(t *testing.T) {
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_runbook","arguments":{"runbook_id":"rb_1"}}}`)
+	type observed struct {
+		body           string
+		idempotencyKey string
+		operationID    string
+		authorization  string
+	}
+	var attempts []observed
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "ua",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempts = append(attempts, observed{
+				body: string(body), idempotencyKey: req.Header.Get("Idempotency-Key"),
+				operationID: req.Header.Get(operationIDHeader), authorization: req.Header.Get("Authorization"),
+			})
+			if len(attempts) == 1 {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(iotest.ErrReader(errors.New("response connection lost"))),
+				}, nil
+			}
+			return jsonRPCResponse(""), nil
+		})},
+	}
+
+	if _, err := b.forward(frame); err != nil {
+		t.Fatalf("ambiguous mutation retry: %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("attempts = %d, want exactly 2", len(attempts))
+	}
+	if attempts[0] != attempts[1] || attempts[0].body != string(frame) || attempts[0].idempotencyKey == "" || attempts[0].operationID == "" {
+		t.Fatalf("retry changed authenticated mutation request: %#v", attempts)
+	}
+}
+
+func TestForward_DoesNotRetryReadsOrRetryMutationsMoreThanOnce(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		frame        []byte
+		wantAttempts int
+	}{
+		{"read", []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), 1},
+		{"mutation", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{}}}`), 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			attempts := 0
+			b := &bridge{
+				endpoint: "https://example.test/api/mcp/rpc", apiKey: "key", userAgent: "ua", sessionID: "session",
+				client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					attempts++
+					return nil, errors.New("transport unavailable")
+				})},
+			}
+			if _, err := b.forward(test.frame); err == nil {
+				t.Fatal("persistent transport failure unexpectedly succeeded")
+			}
+			if attempts != test.wantAttempts {
+				t.Fatalf("attempts = %d, want %d", attempts, test.wantAttempts)
+			}
+		})
+	}
+}
+
 func TestForward_4xxIsReturnedVerbatim(t *testing.T) {
 	// 4xx responses are JSON-RPC error frames shaped by the portal —
 	// forward them as-is so the client sees the structured error.
@@ -1475,7 +1593,7 @@ func TestServe_CancellationRefreshesPeerPromotedCredential(t *testing.T) {
 		t.Fatalf("target authorization = %q, want %q", authorization, originalAuthorization)
 	}
 	peer := newRotationTestBridge(storeA, current)
-	_, acknowledgement := peer.rotationProposal("initialize")
+	_, acknowledgement := peer.rotationProposal()
 	peer.acknowledgeRotation(acknowledgement)
 	rotatedAuthorization := "Bearer " + peer.apiKey
 
@@ -2183,11 +2301,13 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 
 func TestForward_ContextCancellationStopsTransport(t *testing.T) {
 	started := make(chan struct{})
+	var attempts atomic.Int32
 	b := &bridge{
 		endpoint:  "https://example.test/api/mcp/rpc",
 		apiKey:    "k",
 		userAgent: "ua",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts.Add(1)
 			close(started)
 			<-req.Context().Done()
 			return nil, req.Context().Err()
@@ -2210,6 +2330,9 @@ func TestForward_ContextCancellationStopsTransport(t *testing.T) {
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("forward error = %v, want context.Canceled", err)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("cancelled mutation was retried %d times", attempts.Load())
 	}
 }
 

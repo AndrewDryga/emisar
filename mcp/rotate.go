@@ -431,8 +431,8 @@ func (b *bridge) adoptReadOnlyRecoveryKey(key string) {
 	}
 }
 
-func (b *bridge) rotationProposal(method string) (prefix, hash string) {
-	if method != "initialize" || b.credentialStore == nil {
+func (b *bridge) rotationProposal() (prefix, hash string) {
+	if b.credentialStore == nil {
 		return "", ""
 	}
 

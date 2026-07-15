@@ -101,7 +101,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_message(conn, :request, method, raw_params, id) do
     case params_map(raw_params) do
       {:ok, params} ->
-        conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation(method)
+        conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation()
         result = Cancellation.track(conn, method, id, &dispatch(&1, method, params))
         respond(conn, :request, id, result)
 
@@ -541,11 +541,11 @@ defmodule EmisarWeb.MCPRpcController do
     RequestContext.mcp_session_id(conn)
   end
 
-  # The bridge persists a client-generated successor before initialize and
-  # sends only its lookup prefix + SHA-256 digest. The portal installs those
-  # exact non-secret values idempotently and acknowledges the digest; the raw
-  # bearer never crosses this boundary outside Authorization.
-  defp maybe_acknowledge_rotation(conn, "initialize") do
+  # The bridge persists a client-generated successor before proposing it on an
+  # authenticated request. The portal installs those exact non-secret values
+  # idempotently and acknowledges the digest; retrying on ordinary requests lets
+  # a long-lived bridge cross into the rotation window without reconnecting.
+  defp maybe_acknowledge_rotation(conn) do
     with true <- bridge_client?(conn),
          {:ok, prefix, hash} <- rotation_proposal(conn),
          {:ok, _successor} <-
@@ -559,8 +559,6 @@ defmodule EmisarWeb.MCPRpcController do
       _ -> conn
     end
   end
-
-  defp maybe_acknowledge_rotation(conn, _method), do: conn
 
   defp rotation_proposal(conn) do
     case {

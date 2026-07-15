@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MCPRpcControllerTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{ApiKeys, Repo}
+  alias Emisar.{ApiKeys, Crypto, Repo}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.MCPOperations.Operation
   alias EmisarWeb.MCP.SchemaRegistry
@@ -353,6 +353,39 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert body["error"]["code"] == -32_002
       assert body["error"]["data"]["required"] == "mcp"
+    end
+  end
+
+  describe "bridge key rotation" do
+    test "an ordinary authenticated request can acknowledge a pending successor", %{
+      conn: conn,
+      subject: subject
+    } do
+      expires_at = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, raw, key} =
+        ApiKeys.create_key(
+          %{name: "long-lived bridge", kind: :mcp, expires_at: expires_at},
+          subject
+        )
+
+      {_successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      response =
+        conn
+        |> authorize(raw)
+        |> put_req_header("user-agent", "emisar-mcp/1.0.0 (client=test)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", Base.encode16(hash, case: :lower))
+        |> rpc("ping")
+
+      assert json_response(response, 200)["result"] == %{}
+
+      assert get_resp_header(response, "x-emisar-rotation-ack") == [
+               Base.encode16(hash, case: :lower)
+             ]
+
+      assert Repo.reload!(key).rotated_to_id
     end
   end
 
