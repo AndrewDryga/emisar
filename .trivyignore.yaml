@@ -32,3 +32,9 @@ vulnerabilities:
   - id: CVE-2026-9538
     statement: the running portal does not execute Perl; Debian has deferred a package fix.
     expired_at: 2026-07-26
+  - id: CVE-2026-13221
+    statement: the non-root portal process does not execute Perl or process attacker-supplied regular expressions through Perl.
+    expired_at: 2026-07-26
+  - id: CVE-2026-57432
+    statement: the non-root portal process does not execute Perl; Debian does not yet publish a fixed package.
+    expired_at: 2026-07-26
