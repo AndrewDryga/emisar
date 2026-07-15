@@ -9,12 +9,8 @@ import (
 	"time"
 )
 
-// This file closes the PHASE-2 "gap" rows for RSEC-013 (journal fan-out):
-// EventID assignment, multi-sink delivery, one-sink-fails-others, UTC
-// coercion, mutex serialization, and Close error joining (journal.go:40-79).
-
-// memSink is an in-memory Sink for fan-out tests. It records every event it
-// receives and can be configured to fail on Write and/or Close.
+// memSink is an in-memory Sink for journal tests. It records every event it
+// receives and can be configured to fail on Write or Close.
 type memSink struct {
 	mu        sync.Mutex
 	events    []Event
@@ -50,9 +46,6 @@ func (m *memSink) recorded() []Event {
 	return append([]Event(nil), m.events...)
 }
 
-// TestJournal_AssignsPrefixedEventID — an event recorded with
-// an empty EventID gets a fresh "evt"-prefixed ULID; a caller-supplied EventID
-// is left untouched.
 func TestJournal_AssignsPrefixedEventID(t *testing.T) {
 	sink := &memSink{}
 	j := New(Defaults{}, sink)
@@ -93,55 +86,22 @@ func TestJournal_SetAgentIDUpdatesSubsequentEvents(t *testing.T) {
 	}
 }
 
-// TestJournal_FansOutToEverySink — one Record reaches every
-// configured sink, each carrying the same stamped event.
-func TestJournal_FansOutToEverySink(t *testing.T) {
-	a, b := &memSink{}, &memSink{}
-	j := New(Defaults{AgentID: "agt"}, a, b)
-
-	ev, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.do"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, s := range map[string]*memSink{"a": a, "b": b} {
-		got := s.recorded()
-		if len(got) != 1 {
-			t.Fatalf("sink %s should get exactly one event, got %d", name, len(got))
-		}
-		if got[0].EventID != ev.EventID || got[0].ActionID != "x.do" {
-			t.Fatalf("sink %s got the wrong event: %+v", name, got[0])
-		}
-	}
-}
-
-// TestJournal_OneSinkFailsOthersStillGetIt — when one sink's
-// Write errors, the other sinks still receive the event, the joined error is
-// returned, and the stamped event is still returned to the caller.
-func TestJournal_OneSinkFailsOthersStillGetIt(t *testing.T) {
-	failErr := errors.New("disk full")
-	bad := &memSink{writeErr: failErr}
-	good := &memSink{}
-	j := New(Defaults{}, bad, good)
+func TestJournal_ReturnsSinkWriteError(t *testing.T) {
+	writeErr := errors.New("disk full")
+	j := New(Defaults{}, &memSink{writeErr: writeErr})
 
 	ev, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted})
 	if err == nil {
-		t.Fatal("expected the failing sink's error to be returned")
+		t.Fatal("expected sink error")
 	}
-	if !errors.Is(err, failErr) {
-		t.Fatalf("returned error should wrap the sink error, got %v", err)
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("Record error = %v, want %v", err, writeErr)
 	}
-	// The healthy sink still got the event despite the other failing.
-	if got := good.recorded(); len(got) != 1 {
-		t.Fatalf("healthy sink should still receive the event, got %d", len(got))
-	}
-	// The stamped event is returned even on partial failure.
 	if ev.EventID == "" {
-		t.Fatal("stamped event should be returned even when a sink fails")
+		t.Fatal("Record should return the stamped event on write failure")
 	}
 }
 
-// TestJournal_CoercesTimeToUTC — a zero Time is filled with
-// now() in UTC; a non-UTC Time is normalized to UTC (same instant).
 func TestJournal_CoercesTimeToUTC(t *testing.T) {
 	sink := &memSink{}
 	j := New(Defaults{}, sink)
@@ -173,10 +133,6 @@ func TestJournal_CoercesTimeToUTC(t *testing.T) {
 	}
 }
 
-// TestJournal_ConcurrentRecordsSerialized — concurrent Record
-// calls are serialized by the journal mutex: every event lands exactly once in
-// each sink, with no race (run under -race) and no lost write. A writeWait hook
-// forces overlap so a missing lock would corrupt the slice.
 func TestJournal_ConcurrentRecordsSerialized(t *testing.T) {
 	const n = 50
 	gate := make(chan struct{})
@@ -212,29 +168,22 @@ func TestJournal_ConcurrentRecordsSerialized(t *testing.T) {
 	}
 }
 
-// TestJournal_CloseJoinsSinkErrors — Close attempts every sink
-// and joins their errors; one sink's Close failure does not skip the others.
-func TestJournal_CloseJoinsSinkErrors(t *testing.T) {
-	errA := errors.New("close a failed")
-	a := &memSink{closeErr: errA}
-	b := &memSink{}
-	j := New(Defaults{}, a, b)
+func TestJournal_ReturnsSinkCloseError(t *testing.T) {
+	closeErr := errors.New("close failed")
+	sink := &memSink{closeErr: closeErr}
+	j := New(Defaults{}, sink)
 
 	err := j.Close()
-	if !errors.Is(err, errA) {
-		t.Fatalf("Close should join sink errors, got %v", err)
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("Close error = %v, want %v", err, closeErr)
 	}
-	if !b.closed {
-		t.Fatal("the healthy sink must still be closed even when another errors")
+	if !sink.closed {
+		t.Fatal("Close did not close sink")
 	}
 }
 
-// BenchmarkRecordFanOut — Record cost scales linearly with sink
-// count under the serializing mutex. Uses in-memory sinks so the measurement
-// isolates fan-out + stamping from disk I/O.
-func BenchmarkRecordFanOut(b *testing.B) {
-	sinks := []Sink{&memSink{}, &memSink{}, &memSink{}}
-	j := New(Defaults{AgentID: "agt"}, sinks...)
+func BenchmarkJournalRecord(b *testing.B) {
+	j := New(Defaults{AgentID: "agt"}, &memSink{})
 	ev := Event{Type: EventExecutionCompleted, ActionID: "x.do"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

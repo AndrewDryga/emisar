@@ -2,14 +2,11 @@ package audit
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
 )
 
-// Sink is a destination for journal events. JSONL is the default sink; a
-// future cloud sink can be added by satisfying this interface.
+// Sink is the durable destination for journal events.
 type Sink interface {
 	Write(ctx context.Context, ev Event) error
 	Close() error
@@ -22,17 +19,15 @@ type Defaults struct {
 	Group   string
 }
 
-// Journal fans events out to one or more sinks. Sink failures are joined
-// into the returned error but do not stop other sinks from being attempted.
 type Journal struct {
 	mu       sync.Mutex
-	sinks    []Sink
+	sink     Sink
 	defaults Defaults
 }
 
-// New returns a Journal that writes to all given sinks.
-func New(defaults Defaults, sinks ...Sink) *Journal {
-	return &Journal{sinks: sinks, defaults: defaults}
+// New returns a Journal that writes to sink.
+func New(defaults Defaults, sink Sink) *Journal {
+	return &Journal{sink: sink, defaults: defaults}
 }
 
 // SetAgentID updates the runner identity stamped onto subsequent events.
@@ -43,8 +38,8 @@ func (j *Journal) SetAgentID(id string) {
 	j.mu.Unlock()
 }
 
-// Record writes the event to every configured sink, stamping default
-// fields and assigning an EventID if empty.
+// Record stamps default fields, assigns an EventID if empty, and writes the
+// event to the durable sink.
 func (j *Journal) Record(ctx context.Context, ev Event) (Event, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -64,25 +59,13 @@ func (j *Journal) Record(ctx context.Context, ev Event) (Event, error) {
 		ev.AgentID = j.defaults.AgentID
 	}
 
-	var errs []error
-	for _, s := range j.sinks {
-		if err := s.Write(ctx, ev); err != nil {
-			errs = append(errs, fmt.Errorf("%T: %w", s, err))
-		}
-	}
-	if len(errs) > 0 {
-		return ev, errors.Join(errs...)
+	if err := j.sink.Write(ctx, ev); err != nil {
+		return ev, err
 	}
 	return ev, nil
 }
 
-// Close closes all sinks.
+// Close closes the durable sink.
 func (j *Journal) Close() error {
-	var errs []error
-	for _, s := range j.sinks {
-		if err := s.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return j.sink.Close()
 }
