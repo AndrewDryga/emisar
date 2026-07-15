@@ -574,6 +574,17 @@ func redactedCommand(binary string, argv []string, cleanArgs map[string]any, sch
 // any context that stringifies the value as one blob.
 func sensitiveValues(args map[string]any, schema []actionspec.Arg) []string {
 	var out []string
+	seen := make(map[string]struct{})
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
 	for _, a := range schema {
 		if !a.Sensitive {
 			continue
@@ -583,14 +594,11 @@ func sensitiveValues(args map[string]any, schema []actionspec.Arg) []string {
 			continue
 		}
 		for _, s := range expressions.ArgStrings(v) {
-			if s != "" {
-				out = append(out, s)
-			}
+			add(s)
 		}
-		if s := fmt.Sprintf("%v", v); s != "" {
-			out = append(out, s)
-		}
+		add(fmt.Sprintf("%v", v))
 	}
+	sort.SliceStable(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
 	return out
 }
 

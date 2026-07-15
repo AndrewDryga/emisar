@@ -215,3 +215,19 @@ func TestEngine_SensitiveListRedactedPerElement(t *testing.T) {
 		t.Fatalf("redactedCommand() = %q, want %q", got, want)
 	}
 }
+
+func TestEngine_OverlappingSensitiveValuesRedactedLongestFirst(t *testing.T) {
+	schema := []actionspec.Arg{
+		{Name: "short", Sensitive: true},
+		{Name: "long", Sensitive: true},
+	}
+	args := map[string]any{"short": "abc", "long": "abc123"}
+
+	got := redactedCommand("tool", []string{"--token=abc123"}, args, schema)
+	if strings.Contains(got, "abc") || strings.Contains(got, "123") {
+		t.Fatalf("executed_command leaked an overlapping secret: %s", got)
+	}
+	if want := `tool '--token=[REDACTED]'`; got != want {
+		t.Fatalf("redactedCommand() = %q, want %q", got, want)
+	}
+}
