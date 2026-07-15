@@ -123,8 +123,8 @@ stream, and returns `405` for GET and DELETE. After initialization, clients send
 the negotiated `MCP-Protocol-Version` on each POST.
 
 The stdio bridge keeps one random process nonce solely as local namespace
-material for operation IDs, idempotency digests, and request-generation
-digests. The nonce itself never crosses HTTP and is not presented as an MCP
+material for operation IDs and request-generation digests. The nonce itself
+never crosses HTTP and is not presented as an MCP
 session. This keeps portal nodes interchangeable without weakening exact
 mutation recovery or cancellation correlation.
 
@@ -693,8 +693,7 @@ never relies on pagination or truncation.
 Bare durations, minutes, negative values, and values above 60 seconds are
 rejected rather than clamped. A whitespace-only `reason`, including Unicode
 space characters, is invalid. Callers cannot supply `attestation`,
-`operation_id`, exact argument bytes, or an idempotency key. The transport owns
-them.
+`operation_id`, or exact argument bytes. The transport owns them.
 
 ### Exact argument-byte contract
 
@@ -740,24 +739,27 @@ rejection above. Bridge, portal, and runner gates run the same byte vectors.
 
 ### Operation identity and atomicity
 
-The JSON-RPC request `id` correlates a protocol response. It is not itself an
-execution identity, and its JSON type matters. The bridge requires request IDs
-to be unique for the life of its stdio process.
+The JSON-RPC request `id` correlates a protocol response. It is not an execution
+identity. A client may reuse an ID after its response completes; the bridge
+rejects only a concurrent duplicate so cancellation remains unambiguous.
 
-For each mutation, the bridge derives an `operation_id` from its random 128-bit
-process nonce and the type-tagged MCP request ID. This produces a stable 128-bit
-digest for transport retries without a local journal. The digest is encoded as
-26 Crockford-base32 characters and has no timestamp semantics. Models never
-supply or invent operation or idempotency keys.
+For each admitted `tools/call`, the bridge derives an `operation_id` from its
+random 128-bit process nonce and monotonically increasing admission sequence.
+This produces a stable 128-bit digest across every retry of that admitted
+request, while a later request reusing the same JSON-RPC ID receives a distinct
+identity. The digest is encoded as 26 Crockford-base32 characters and has no
+timestamp semantics. Models never supply or invent operation IDs.
 
-For `run_action`, `execute_runbook`, and `create_runbook_draft`, the bridge sends
-the operation ID in a bounded private header over authenticated HTTPS. Reads do
-not carry one. The portal binds it to the authenticated account and credential
-lineage and to a versioned tool-specific mutation fingerprint. The same
-operation ID and fingerprint reaches the idempotent operation lookup; different
-facts under the same ID are rejected. The API key already authenticates the
-bridge-to-portal request, so there is no generic mutation signature, bridge
-leaf-key pin, freshness envelope, or portal nonce store.
+The bridge sends the operation ID for every request-shaped `tools/call` in a
+bounded private header over authenticated HTTPS. The portal ignores it for
+reads and consumes it for current or future mutations, so adding a mutation does
+not require a bridge release. The portal binds a consumed ID to the
+authenticated account and credential lineage and to a versioned tool-specific
+mutation fingerprint. The same operation ID and fingerprint reaches the
+idempotent operation lookup; different facts under the same ID are rejected.
+The API key already authenticates the bridge-to-portal request, so there is no
+generic mutation signature, bridge leaf-key pin, freshness envelope, or portal
+nonce store.
 
 `run_action` separately carries the customer-CA action attestation described
 below. That signature is not a second HTTP authentication layer: it is

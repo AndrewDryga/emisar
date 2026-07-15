@@ -107,19 +107,22 @@ defaults + per-action overrides, default-deny) → grant fast-path
 either immediate dispatch, an approval request (`pending_approval`
 content tells the LLM to wait or escalate), or a refusal.
 
-For each mutation, the bridge derives a bounded operation ID from its private
-process nonce and the JSON-RPC request ID's exact type and value. The portal reserves
-that ID under the API-key rotation lineage in the same transaction as the
-mutation. Native HTTP clients do not need the private bridge header: the portal
-derives the same kind of identity from the exact request and credential lineage.
-An identical retry returns the original resource; changed facts or a different
-mutation tool conflict. Numeric `7` and string `"7"`, and different bridge
-processes, never alias. `get_operation` is the recovery path after an ambiguous
-transport failure: the bridge's correlated JSON-RPC error includes the operation
-ID and a typed `get_operation` continuation. Reads carry no operation header.
+For every admitted `tools/call`, the bridge derives a bounded operation ID from
+its private process nonce and monotonically increasing request sequence. The
+portal reserves that ID for mutations under the API-key rotation lineage in the
+same transaction as the mutation. Native HTTP clients do not need the private
+bridge header: the portal derives the same kind of identity from the exact
+request and credential lineage. An identical retry returns the original
+resource; changed facts or a different mutation tool conflict. Distinct
+admissions, including sequential reuse of the same JSON-RPC id, and different
+bridge processes never alias. `get_operation` is the recovery path after an
+ambiguous transport failure: the bridge's correlated JSON-RPC error includes
+the operation ID and a typed `get_operation` continuation. Read handlers ignore
+the header.
 
-Request IDs are one-use within a bridge process. The bridge permits eight
-in-flight requests within a 1 MiB aggregate request budget, caps each request at
+Request IDs may be reused after completion; only concurrent duplicates are
+rejected. The bridge permits eight in-flight requests within a 1 MiB aggregate
+request budget, caps each request at
 128 KiB and each response at 512 KiB, and bounds decoded string IDs and integer
 decimal forms to 4,096 bytes so every accepted ID can be echoed inside that
 response ceiling. It keeps a 90-second HTTP deadline above the portal's
@@ -167,7 +170,7 @@ that endpoint-bound bootstrap prefix to the current secret, and live bridge
 processes refresh peer promotions before every request. A sandboxed read-only
 bridge keeps using its active key; only after the portal rejects that key does it
 retry a validated current or pending successor from the state file. The retry
-uses the same request and idempotency identity. Corrupt endpoint-bound state is
+uses the same request token and operation identity. Corrupt endpoint-bound state is
 a startup error rather than a reason to send a stored secret to an unverified
 origin. If no durable config directory is available, the bridge continues with
 the configured key but does not offer automatic

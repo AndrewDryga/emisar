@@ -764,10 +764,10 @@ func TestForward_ReadOnlyCredentialRetriesSuccessorAfterUnauthorized(t *testing.
 	if readOnly, err := b.initializeCredentialState(); err != nil || !readOnly {
 		t.Fatalf("initialize read-only state: readOnly=%t err=%v", readOnly, err)
 	}
-	var authorizations, idempotencyKeys []string
+	var authorizations, requestTokens []string
 	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		authorizations = append(authorizations, req.Header.Get("Authorization"))
-		idempotencyKeys = append(idempotencyKeys, req.Header.Get("Idempotency-Key"))
+		requestTokens = append(requestTokens, req.Header.Get(requestTokenHeader))
 		if req.Header.Get("Authorization") == "Bearer "+current {
 			return &http.Response{
 				StatusCode: http.StatusUnauthorized,
@@ -787,8 +787,8 @@ func TestForward_ReadOnlyCredentialRetriesSuccessorAfterUnauthorized(t *testing.
 	if !slices.Equal(authorizations, wantAuth) {
 		t.Fatalf("authorization attempts = %#v, want %#v", authorizations, wantAuth)
 	}
-	if len(idempotencyKeys) != 2 || idempotencyKeys[0] == "" || idempotencyKeys[0] != idempotencyKeys[1] {
-		t.Fatalf("retry changed idempotency identity: %#v", idempotencyKeys)
+	if len(requestTokens) != 2 || requestTokens[0] == "" || requestTokens[0] != requestTokens[1] {
+		t.Fatalf("retry changed request identity: %#v", requestTokens)
 	}
 	if b.apiKey != successor || b.pendingKey != "" {
 		t.Fatalf("successful recovery was not adopted: current=%q pending=%q", b.apiKey, b.pendingKey)

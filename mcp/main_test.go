@@ -24,101 +24,29 @@ import (
 // The bridge is a thin stdio↔HTTP shim. Its only jobs are:
 //   1. POST each JSON-RPC frame to the portal's /api/mcp/rpc endpoint.
 //   2. Forward the response back to stdout.
-//   3. Mint a stable per-(process, JSON-RPC-id) idempotency key so a
-//      transport retry collapses to one run at the cloud.
+//   3. Mint one private request token so retries preserve transport identity.
 //
 // All MCP-protocol semantics (renderRunBlocks, wait_for_run,
 // pending-approval messages) now live in the portal, so the tests here
 // only pin the proxy contract, not any tool-output formatting.
 
 func (b *bridge) forward(frame []byte) ([]byte, error) {
+	meta := parseRequestMeta(frame)
+	requestToken := b.requestToken(1)
 	return b.forwardRequestContext(
-		context.Background(), frame, parseRequestMeta(frame), requestHeaders{},
+		context.Background(),
+		frame,
+		meta,
+		requestHeaders{
+			requestToken: requestToken,
+			operationID:  toolCallOperationID(meta, requestToken),
+		},
 	)
 }
 
-func (b *bridge) idempotencyKey(frame []byte) string {
-	return b.idempotencyKeyFor(parseRequestMeta(frame))
-}
-
-// -- idempotencyKey: parses `id` out of a raw JSON-RPC frame ---------
-
-func TestIdempotencyKey_StableForSameID(t *testing.T) {
-	b := &bridge{processNonce: "deadbeef"}
-	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
-	got := b.idempotencyKey(frame)
-	if !strings.HasPrefix(got, "mcp-") || len(got) != len("mcp-")+64 {
-		t.Fatalf("key = %q, want a bounded SHA-256 token", got)
-	}
-	if a, c := b.idempotencyKey(frame), b.idempotencyKey(frame); a != c {
-		t.Errorf("same frame should yield same key: %q vs %q", a, c)
-	}
-}
-
-func TestIdempotencyKey_DiffersByID(t *testing.T) {
-	b := &bridge{processNonce: "deadbeef"}
-	a := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
-	c := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`))
-	if a == c {
-		t.Errorf("distinct ids must not collide: both %q", a)
-	}
-}
-
-func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
-	b := &bridge{processNonce: "deadbeef"}
-	// Notification (no id field) — must yield empty key so the cloud
-	// treats it as fire-and-forget instead of a dedupable run.
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)); got != "" {
-		t.Errorf("missing id should yield empty key, got %q", got)
-	}
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":null,"method":"ping"}`)); got != "" {
-		t.Errorf("null id should yield empty key, got %q", got)
-	}
-}
-
-func TestIdempotencyKey_DistinguishesStringAndNumericIDs(t *testing.T) {
-	b := &bridge{processNonce: "s"}
-	stringID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7","method":"ping"}`))
-	numericID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))
-	if stringID == numericID {
-		t.Fatalf("string and numeric ids must not collide: both %q", stringID)
-	}
-}
-
-func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
-	b := &bridge{processNonce: "s"}
-
-	// params (carrying its own "id"-ish content) serialized BEFORE the
-	// envelope id. A naive first-"id" byte-scan would latch onto the nested
-	// occurrence; the envelope id is the only correct key.
-	frame := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"id":"nested"}},"id":42}`)
-	want := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":42,"method":"tools/call"}`))
-	if got := b.idempotencyKey(frame); got != want {
-		t.Errorf("must key off the envelope id: got %q, want %q", got, want)
-	}
-
-	// A param value that is literally the string "id" must not be mistaken
-	// for the (absent) envelope id of a notification.
-	notif := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"id"}}`)
-	if got := b.idempotencyKey(notif); got != "" {
-		t.Errorf("notification with an \"id\" param value should yield no key, got %q", got)
-	}
-
-	// Malformed JSON yields no key and is rejected before forwarding.
-	if got := b.idempotencyKey([]byte(`{not json`)); got != "" {
-		t.Errorf("malformed frame should yield no key, got %q", got)
-	}
-}
-
-func TestOperationIDIsStableBoundedAndTyped(t *testing.T) {
-	b := &bridge{processNonce: "deadbeef"}
-	operationID := func(frame string) string {
-		t.Helper()
-		return b.operationIDFor(parseRequestMeta([]byte(frame)))
-	}
-
-	first := operationID(`{"jsonrpc":"2.0","id":7,"method":"ping"}`)
-	if first != "op_724NN9NMDZ1T76NARWCKM5A0D6" {
+func TestOperationIDForTokenIsStableAndBounded(t *testing.T) {
+	first := operationIDForToken("request-token-1")
+	if first != "op_1P6W2Q2PWTYR9XGMHYJH7CA4R0" {
 		t.Fatalf("operation ID vector drifted: %q", first)
 	}
 	if got, want := len(first), len("op_")+26; got != want {
@@ -132,72 +60,36 @@ func TestOperationIDIsStableBoundedAndTyped(t *testing.T) {
 			t.Fatalf("operation ID contains non-Crockford character %q: %q", value, first)
 		}
 	}
-	if again := operationID(`{"method":"ping","id":7,"jsonrpc":"2.0"}`); again != first {
-		t.Errorf("same typed request id changed operation ID: %q vs %q", first, again)
+	if again := operationIDForToken("request-token-1"); again != first {
+		t.Errorf("same request token changed operation ID: %q vs %q", first, again)
 	}
-	if stringID := operationID(`{"jsonrpc":"2.0","id":"7","method":"ping"}`); stringID == first {
-		t.Fatalf("numeric and string ids share operation ID %q", first)
+	if other := operationIDForToken("request-token-2"); other == first {
+		t.Fatalf("different request tokens share operation ID %q", first)
 	}
-	if otherProcess := (&bridge{processNonce: "cafebabe"}).operationIDFor(parseRequestMeta([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))); otherProcess == first {
-		t.Fatalf("different bridge processes share operation ID %q", first)
-	}
-}
-
-func TestOperationIDUsesSemanticStringAndIntegerIdentity(t *testing.T) {
-	b := &bridge{processNonce: "session"}
-	operationID := func(frame string) string {
-		t.Helper()
-		return b.operationIDFor(parseRequestMeta([]byte(frame)))
-	}
-
-	plain := operationID(`{"jsonrpc":"2.0","id":"alpha","method":"ping"}`)
-	escaped := operationID(`{"jsonrpc":"2.0","id":"\u0061lpha","method":"ping"}`)
-	if plain != escaped {
-		t.Errorf("equivalent JSON string ids changed operation identity: %q vs %q", plain, escaped)
-	}
-	zero := operationID(`{"jsonrpc":"2.0","id":0,"method":"ping"}`)
-	negativeZero := operationID(`{"jsonrpc":"2.0","id":-0,"method":"ping"}`)
-	if zero != negativeZero {
-		t.Errorf("equivalent integer ids changed operation identity: %q vs %q", zero, negativeZero)
+	if got := operationIDForToken(""); got != "" {
+		t.Fatalf("empty request token produced operation ID %q", got)
 	}
 }
 
-func TestOperationIDEmptyForNotificationsAndInvalidRequests(t *testing.T) {
-	b := &bridge{processNonce: "session"}
-	for _, frame := range []string{
-		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
-		`{"jsonrpc":"2.0","id":null,"method":"ping"}`,
-		`{"jsonrpc":"2.0","id":1.5,"method":"ping"}`,
-		`{"id":1,"method":"ping"}`,
-	} {
-		if got := b.operationIDFor(parseRequestMeta([]byte(frame))); got != "" {
-			t.Errorf("operation ID for %s = %q, want empty", frame, got)
-		}
-	}
-}
-
-func TestMutationOperationIDOnlyForFixedMutations(t *testing.T) {
-	b := &bridge{processNonce: "session"}
+func TestToolCallOperationIDIsIndependentOfPortalToolNames(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
 		want bool
 	}{
 		{"action", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"args":{}}}}`, true},
-		{"runbook", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`, true},
-		{"draft", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{}}}`, true},
-		{"read", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}`, false},
+		{"read", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}`, true},
+		{"future tool", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"future_tool","arguments":{}}}`, true},
+		{"missing params", `{"jsonrpc":"2.0","id":1,"method":"tools/call"}`, true},
 		{"ping", `{"jsonrpc":"2.0","id":1,"method":"ping"}`, false},
-		{"unknown", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"future_mutation","arguments":{}}}`, false},
-		{"malformed call", `{"jsonrpc":"2.0","id":1,"method":"tools/call"}`, false},
 		{"notification", `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			frame := []byte(tc.body)
-			got := b.mutationOperationID(frame, parseRequestMeta(frame))
+			got := toolCallOperationID(parseRequestMeta(frame), "request-token")
 			if (got != "") != tc.want {
-				t.Fatalf("mutationOperationID() = %q, want present=%v", got, tc.want)
+				t.Fatalf("toolCallOperationID() = %q, want present=%v", got, tc.want)
 			}
 		})
 	}
@@ -345,7 +237,7 @@ func TestNewProcessNonce_UniquePerProcess(t *testing.T) {
 }
 
 // A rand read failure must fail closed (error), never fall back to a
-// shared constant that would alias two processes' idempotency keys.
+// shared constant that would alias two processes' request tokens.
 func TestNewProcessNonce_FailsClosedOnRandError(t *testing.T) {
 	if _, err := newProcessNonce(iotest.ErrReader(errors.New("rand unavailable"))); err == nil {
 		t.Error("newProcessNonce returned nil error on a failing reader — must fail closed")
@@ -354,14 +246,13 @@ func TestNewProcessNonce_FailsClosedOnRandError(t *testing.T) {
 
 // -- forward: HTTP plumbing -----------------------------------------
 
-func TestForward_SetsAuthUserAgentIdempotencyAndOperationHeaders(t *testing.T) {
-	var gotAuth, gotUA, gotIdem, gotOperationID string
-	var hadIdem, hadOperationID bool
+func TestForward_SetsAuthUserAgentRequestAndOperationHeaders(t *testing.T) {
+	var gotAuth, gotUA, gotRequestToken, gotOperationID string
+	var hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotUA = r.Header.Get("User-Agent")
-		gotIdem = r.Header.Get("Idempotency-Key")
-		_, hadIdem = r.Header["Idempotency-Key"]
+		gotRequestToken = r.Header.Get(requestTokenHeader)
 		gotOperationID = r.Header.Get(operationIDHeader)
 		_, hadOperationID = r.Header[operationIDHeader]
 		w.WriteHeader(http.StatusOK)
@@ -382,21 +273,18 @@ func TestForward_SetsAuthUserAgentIdempotencyAndOperationHeaders(t *testing.T) {
 	if gotUA != "ua" {
 		t.Errorf("User-Agent = %q, want %q", gotUA, "ua")
 	}
-	if gotIdem != b.idempotencyKey(frame) {
-		t.Errorf("Idempotency-Key = %q, want %q", gotIdem, b.idempotencyKey(frame))
+	if gotRequestToken != b.requestToken(1) {
+		t.Errorf("%s = %q, want %q", requestTokenHeader, gotRequestToken, b.requestToken(1))
 	}
-	if !hadIdem {
-		t.Error("frame with id should set the Idempotency-Key header")
-	}
-	if gotOperationID != b.mutationOperationID(frame, parseRequestMeta(frame)) {
-		t.Errorf("%s = %q, want %q", operationIDHeader, gotOperationID, b.mutationOperationID(frame, parseRequestMeta(frame)))
+	if gotOperationID != operationIDForToken(gotRequestToken) {
+		t.Errorf("%s = %q, want token-derived operation", operationIDHeader, gotOperationID)
 	}
 	if !hadOperationID {
 		t.Errorf("frame with id should set the %s header", operationIDHeader)
 	}
 }
 
-func TestForward_OmitsOperationHeaderForReads(t *testing.T) {
+func TestForward_OmitsOperationHeaderForNonToolCalls(t *testing.T) {
 	var hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, hadOperationID = r.Header[operationIDHeader]
@@ -405,12 +293,12 @@ func TestForward_OmitsOperationHeaderForReads(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}`)
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
 	if _, err := b.forward(frame); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
 	if hadOperationID {
-		t.Errorf("read call must not set the %s header", operationIDHeader)
+		t.Errorf("non-tool request must not set the %s header", operationIDHeader)
 	}
 }
 
@@ -434,9 +322,9 @@ func TestForward_NeverSendsMcpSessionIDHeader(t *testing.T) {
 }
 
 func TestForward_OmitsRequestIdentityHeadersForNotifications(t *testing.T) {
-	var hadIdem, hadOperationID bool
+	var hadRequestToken, hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, hadIdem = r.Header["Idempotency-Key"]
+		_, hadRequestToken = r.Header[requestTokenHeader]
 		_, hadOperationID = r.Header[operationIDHeader]
 		// Notifications get 202 + empty body per JSON-RPC over HTTP.
 		w.WriteHeader(http.StatusAccepted)
@@ -454,8 +342,8 @@ func TestForward_OmitsRequestIdentityHeadersForNotifications(t *testing.T) {
 	if body != nil {
 		t.Errorf("202 should yield nil body, got %q", body)
 	}
-	if hadIdem {
-		t.Error("notifications must NOT set the Idempotency-Key header")
+	if hadRequestToken {
+		t.Errorf("notifications must NOT set the %s header", requestTokenHeader)
 	}
 	if hadOperationID {
 		t.Errorf("notifications must NOT set the %s header", operationIDHeader)
@@ -486,7 +374,7 @@ func TestForward_5xxBecomesError(t *testing.T) {
 func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing.T) {
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{"name":"maintenance"}}}`)
 	var attempts int
-	var idempotencyKeys, operationIDs, authorizations []string
+	var requestTokens, operationIDs, authorizations []string
 	b := &bridge{
 		endpoint:     "https://example.test/api/mcp/rpc",
 		apiKey:       "key",
@@ -494,7 +382,7 @@ func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing
 		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			attempts++
-			idempotencyKeys = append(idempotencyKeys, req.Header.Get("Idempotency-Key"))
+			requestTokens = append(requestTokens, req.Header.Get(requestTokenHeader))
 			operationIDs = append(operationIDs, req.Header.Get(operationIDHeader))
 			authorizations = append(authorizations, req.Header.Get("Authorization"))
 			if attempts == 1 {
@@ -517,8 +405,8 @@ func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want exactly 2", attempts)
 	}
-	if len(idempotencyKeys) != 2 || idempotencyKeys[0] == "" || idempotencyKeys[0] != idempotencyKeys[1] {
-		t.Fatalf("idempotency identity changed across retry: %#v", idempotencyKeys)
+	if len(requestTokens) != 2 || requestTokens[0] == "" || requestTokens[0] != requestTokens[1] {
+		t.Fatalf("request identity changed across retry: %#v", requestTokens)
 	}
 	if len(operationIDs) != 2 || operationIDs[0] == "" || operationIDs[0] != operationIDs[1] {
 		t.Fatalf("operation identity changed across retry: %#v", operationIDs)
@@ -531,10 +419,10 @@ func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing
 func TestForward_MutationRetriesOnceAfterAmbiguousResponseLoss(t *testing.T) {
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_runbook","arguments":{"runbook_id":"rb_1"}}}`)
 	type observed struct {
-		body           string
-		idempotencyKey string
-		operationID    string
-		authorization  string
+		body          string
+		requestToken  string
+		operationID   string
+		authorization string
 	}
 	var attempts []observed
 	b := &bridge{
@@ -548,7 +436,7 @@ func TestForward_MutationRetriesOnceAfterAmbiguousResponseLoss(t *testing.T) {
 				t.Fatal(err)
 			}
 			attempts = append(attempts, observed{
-				body: string(body), idempotencyKey: req.Header.Get("Idempotency-Key"),
+				body: string(body), requestToken: req.Header.Get(requestTokenHeader),
 				operationID: req.Header.Get(operationIDHeader), authorization: req.Header.Get("Authorization"),
 			})
 			if len(attempts) == 1 {
@@ -568,7 +456,7 @@ func TestForward_MutationRetriesOnceAfterAmbiguousResponseLoss(t *testing.T) {
 	if len(attempts) != 2 {
 		t.Fatalf("attempts = %d, want exactly 2", len(attempts))
 	}
-	if attempts[0] != attempts[1] || attempts[0].body != string(frame) || attempts[0].idempotencyKey == "" || attempts[0].operationID == "" {
+	if attempts[0] != attempts[1] || attempts[0].body != string(frame) || attempts[0].requestToken == "" || attempts[0].operationID == "" {
 		t.Fatalf("retry changed authenticated mutation request: %#v", attempts)
 	}
 }
@@ -968,53 +856,6 @@ func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 	}
 }
 
-// -- idempotencyKey: cross-process + odd ids ------------------------
-
-// The private process nonce namespaces idempotency keys across processes:
-// two bridges with different nonces derive different keys for the same
-// JSON-RPC id, so one process's id:1 never aliases another's run at the portal.
-func TestIdempotencyKey_ProcessNonceNamespacesAcrossProcesses(t *testing.T) {
-	a := (&bridge{processNonce: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
-	b := (&bridge{processNonce: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
-	if a == b {
-		t.Fatalf("different bridge processes must not alias the same id: both %q", a)
-	}
-	if len(a) != 68 || len(b) != 68 {
-		t.Fatalf("keys must remain fixed-length: %q, %q", a, b)
-	}
-}
-
-// Large and odd-shaped ids decode without float conversion. Every accepted id,
-// including a maximum-length string and an integer past 2^53, produces the same
-// bounded key length; fractional and over-limit ids produce no key.
-func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
-	b := &bridge{processNonce: "s"}
-	cases := []string{
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`,
-		`{"jsonrpc":"2.0","id":9007199254740993,"method":"tools/call"}`,
-		`{"jsonrpc":"2.0","id":"a-b_c","method":"tools/call"}`,
-		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", maxRequestIDBytes) + `","method":"tools/call"}`,
-	}
-	seen := make(map[string]bool, len(cases))
-	for _, frame := range cases {
-		got := b.idempotencyKey([]byte(frame))
-		if len(got) != 68 {
-			t.Errorf("idempotencyKey(%s) has length %d, want 68", frame, len(got))
-		}
-		if seen[got] {
-			t.Errorf("distinct raw typed ids collided at %q", got)
-		}
-		seen[got] = true
-	}
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":12.5,"method":"ping"}`)); got != "" {
-		t.Errorf("fractional MCP id must not produce an idempotency key, got %q", got)
-	}
-	overLimit := `{"jsonrpc":"2.0","id":"` + strings.Repeat("x", maxRequestIDBytes+1) + `","method":"ping"}`
-	if got := b.idempotencyKey([]byte(overLimit)); got != "" {
-		t.Errorf("over-limit MCP id must not produce an idempotency key, got %q", got)
-	}
-}
-
 // -- parseEndpoint: case-insensitive loopback -----------------------
 
 // the loopback allowance for cleartext http is case-insensitive on
@@ -1248,7 +1089,7 @@ func TestServe_MutationTransportErrorCarriesOperationRecovery(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &response); err != nil {
 		t.Fatalf("decode synthetic response: %v (%s)", err, out.Bytes())
 	}
-	want := b.mutationOperationID(frame, parseRequestMeta(frame))
+	want := operationIDForToken(b.requestToken(1))
 	if response.Error.Data.OperationID != want ||
 		response.Error.Data.Next.Tool != "get_operation" ||
 		response.Error.Data.Next.Arguments.OperationID != want {
@@ -1672,10 +1513,12 @@ func TestServe_CancellationBypassesFullConcurrencyCap(t *testing.T) {
 	}
 }
 
-func TestServe_LateCancellationDoesNotReachPortalAndReusedIDIsRejected(t *testing.T) {
+func TestServe_LateCancellationDoesNotReachPortalAndSequentialIDReuseIsDistinct(t *testing.T) {
 	var hits atomic.Int32
+	var operationIDs []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
+		operationIDs = append(operationIDs, r.Header.Get(operationIDHeader))
 		var request struct {
 			ID json.RawMessage `json:"id"`
 		}
@@ -1689,20 +1532,59 @@ func TestServe_LateCancellationDoesNotReachPortalAndReusedIDIsRejected(t *testin
 	done := make(chan error, 1)
 	go func() { done <- newTestBridge(srv).serve(reader, output) }()
 
-	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"reused","method":"ping"}`+"\n")
+	request := `{"jsonrpc":"2.0","id":"reused","method":"tools/call","params":{"name":"list_packs","arguments":{}}}` + "\n"
+	_, _ = io.WriteString(writer, request)
 	_ = receiveFrame(t, output.writes)
 	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"reused"}}`+"\n")
-	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"reused","method":"ping"}`+"\n")
+	_, _ = io.WriteString(writer, request)
 	_ = writer.Close()
 
-	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":"reused"`) || !strings.Contains(frame, "already used") {
-		t.Fatalf("reused-id rejection = %q", frame)
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":"reused"`) || !strings.Contains(frame, `"result"`) {
+		t.Fatalf("reused-id response = %q", frame)
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	if got := hits.Load(); got != 1 {
-		t.Errorf("portal requests = %d, want only the original ping", got)
+	if got := hits.Load(); got != 2 {
+		t.Errorf("portal requests = %d, want two sequential calls and no late cancellation", got)
+	}
+	if len(operationIDs) != 2 || operationIDs[0] == "" || operationIDs[0] == operationIDs[1] {
+		t.Errorf("sequential operation identities = %#v, want two distinct values", operationIDs)
+	}
+}
+
+func TestServe_ConcurrentDuplicateIDIsRejected(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"duplicate","result":{}}`))
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	request := `{"jsonrpc":"2.0","id":"duplicate","method":"ping"}` + "\n"
+	_, _ = io.WriteString(writer, request)
+	<-started
+	_, _ = io.WriteString(writer, request)
+
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":"duplicate"`) ||
+		!strings.Contains(frame, "request id is already in flight") {
+		t.Fatalf("duplicate-id response = %q", frame)
+	}
+
+	close(release)
+	_ = writer.Close()
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"result"`) {
+		t.Fatalf("original response = %q", frame)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
 	}
 }
 
@@ -1786,41 +1668,11 @@ func TestRequestIDKey_DistinguishesTypesAndRejectsExponentIDs(t *testing.T) {
 	}
 }
 
-func TestHandleFrame_ProcessRequestIDCapFailsClosedWithoutAdmission(t *testing.T) {
-	state := serveState{
-		inflight:      make(map[string]*inflightRequest),
-		requestTokens: make(map[string]string),
-		seenIDs:       make(map[string]struct{}, maxProcessRequestIDs),
-	}
-	for id := range maxProcessRequestIDs {
-		state.seenIDs[fmt.Sprintf("seen-%d", id)] = struct{}{}
-	}
-
-	var output bytes.Buffer
-	err := (&bridge{}).handleFrame(
-		frameRead{line: []byte(`{"jsonrpc":"2.0","id":"new","method":"ping"}`)},
-		&output,
-		&state,
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("handleFrame: %v", err)
-	}
-	if !strings.Contains(output.String(), "bridge request id limit reached") {
-		t.Fatalf("cap response = %q", output.String())
-	}
-	if len(state.inflight) != 0 {
-		t.Fatal("over-cap request was admitted")
-	}
-}
-
 func TestHandleFrame_AggregateRequestBudgetFailsClosed(t *testing.T) {
 	state := serveState{
 		inflight:      make(map[string]*inflightRequest),
 		inflightBytes: maxInflightRequestBytes,
 		requestTokens: make(map[string]string),
-		seenIDs:       make(map[string]struct{}),
 	}
 	var output bytes.Buffer
 	err := (&bridge{}).handleFrame(
@@ -1875,7 +1727,6 @@ func TestHandleFrame_CancellationBypassesAggregateRequestBudget(t *testing.T) {
 		},
 		inflightBytes: maxInflightRequestBytes,
 		requestTokens: map[string]string{idKey: "request-token"},
-		seenIDs:       map[string]struct{}{idKey: {}},
 	}
 	cancelResults := make(chan struct{}, 1)
 	b := &bridge{
@@ -1930,7 +1781,6 @@ func TestHandleFrame_AggregateRequestBytesAreReleasedOnCompletion(t *testing.T) 
 		inflight:      make(map[string]*inflightRequest),
 		inflightBytes: initialBytes,
 		requestTokens: make(map[string]string),
-		seenIDs:       make(map[string]struct{}),
 	}
 	results := make(chan forwardResult, 1)
 	b := &bridge{
@@ -2303,9 +2153,6 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	}
 	if maxInflightRequestBytes != maxConcurrentRequests*maxFrameBytes {
 		t.Errorf("maxInflightRequestBytes = %d, want %d", maxInflightRequestBytes, maxConcurrentRequests*maxFrameBytes)
-	}
-	if maxProcessRequestIDs != 65_536 {
-		t.Errorf("maxProcessRequestIDs = %d, want 65536", maxProcessRequestIDs)
 	}
 }
 

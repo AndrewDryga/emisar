@@ -65,7 +65,6 @@ const httpTimeout = 90 * time.Second
 const (
 	maxConcurrentRequests      = 8
 	maxInflightRequestBytes    = maxConcurrentRequests * maxFrameBytes
-	maxProcessRequestIDs       = 65_536
 	maxRequestIDBytes          = 4_096
 	cancellationForwardTimeout = 5 * time.Second
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
@@ -346,8 +345,8 @@ type bridge struct {
 	userAgent    string
 	client       *http.Client
 	stateMu      sync.RWMutex
-	// processNonce identifies this bridge process and namespaces request tokens,
-	// idempotency keys, and operation ids. It never leaves those derived values:
+	// processNonce identifies this bridge process and namespaces request tokens
+	// and operation ids. It never leaves those derived values:
 	// the stateless portal does not issue or accept an MCP session id.
 	processNonce string
 	// signer, when set, creates the private action-attestation header for
@@ -383,7 +382,6 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 	state := serveState{
 		inflight:      make(map[string]*inflightRequest, maxConcurrentRequests),
 		requestTokens: make(map[string]string, maxConcurrentRequests),
-		seenIDs:       make(map[string]struct{}),
 	}
 
 	for frames != nil || len(state.inflight) > 0 || state.cancelForwards > 0 {
@@ -463,7 +461,6 @@ type serveState struct {
 	inflight       map[string]*inflightRequest
 	inflightBytes  int
 	requestTokens  map[string]string
-	seenIDs        map[string]struct{}
 	sequence       uint64
 	cancelForwards int
 }
@@ -532,11 +529,8 @@ func (b *bridge) handleFrame(
 
 	idKey := requestIDKey(meta)
 	if idKey != "" {
-		if _, used := state.seenIDs[idKey]; used {
-			return writeFrame(w, rpcErrorFrame(meta, -32600, "request id was already used by this bridge process"))
-		}
-		if len(state.seenIDs) >= maxProcessRequestIDs {
-			return writeFrame(w, rpcErrorFrame(meta, -32000, "bridge request id limit reached"))
+		if _, inFlight := state.requestTokens[idKey]; inFlight {
+			return writeFrame(w, rpcErrorFrame(meta, -32600, "request id is already in flight"))
 		}
 	}
 	if len(state.inflight) >= maxConcurrentRequests {
@@ -556,7 +550,7 @@ func (b *bridge) handleFrame(
 	token := b.requestToken(state.sequence)
 	ctx, cancel := context.WithCancel(context.Background())
 	apiKey, protocolVersion := b.transportState()
-	operationID := b.mutationOperationID(frame.line, meta)
+	operationID := toolCallOperationID(meta, token)
 	state.inflight[token] = &inflightRequest{
 		meta:            meta,
 		idKey:           idKey,
@@ -568,7 +562,6 @@ func (b *bridge) handleFrame(
 	state.inflightBytes += len(frame.line)
 	if idKey != "" {
 		state.requestTokens[idKey] = token
-		state.seenIDs[idKey] = struct{}{}
 	}
 
 	headers := requestHeaders{
@@ -925,7 +918,7 @@ func (b *bridge) forwardRequestContext(
 
 	operationID := headers.operationID
 	if operationID == "" {
-		operationID = b.mutationOperationID(frame, meta)
+		operationID = toolCallOperationID(meta, headers.requestToken)
 	}
 	attestationValue := ""
 	if b.signer != nil {
@@ -979,15 +972,6 @@ func (b *bridge) forwardRequestContext(
 	// MCP action runs. Omitted entirely when unconfigured.
 	if b.clientMetadata != "" {
 		req.Header.Set(clientMetadataHeader, b.clientMetadata)
-	}
-
-	// Idempotency key: stable per (bridge process, request-id) so a duplicated
-	// downstream delivery collapses to a single run on the portal. MCP request
-	// ids themselves are single-use within the bridge process. The portal honors
-	// `Idempotency-Key` against the
-	// `(api_key_id, idempotency_key)` unique index.
-	if k := b.idempotencyKeyFor(meta); k != "" {
-		req.Header.Set("Idempotency-Key", k)
 	}
 
 	result, err := b.forwardAttempt(req, meta)
@@ -1210,51 +1194,27 @@ func readCappedBody(r io.Reader, limit int) ([]byte, error) {
 	return body, nil
 }
 
-func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
-	if !meta.valid || !meta.hasID || meta.idKind == 0 {
-		return ""
-	}
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(b.processNonce))
-	_, _ = hash.Write([]byte{0, meta.idKind, 0})
-	_, _ = hash.Write(meta.id)
-	return "mcp-" + hex.EncodeToString(hash.Sum(nil))
-}
-
-// operationIDFor derives the private operation identity from this bridge
-// process and the typed JSON-RPC request id. It is distinct from JSON-RPC
-// correlation and from Idempotency-Key, but stable across transport retries of
-// one request. Notifications intentionally have no operation identity.
-func (b *bridge) operationIDFor(meta requestMeta) string {
-	requestIdentity, ok := canonicalRequestID(meta)
-	if !ok {
+// operationIDForToken derives a private operation identity from one admitted
+// request token. JSON-RPC ids are only correlation values and may be reused
+// after completion; transport retries retain the original token and operation.
+func operationIDForToken(requestToken string) string {
+	if requestToken == "" {
 		return ""
 	}
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("emisar-mcp-operation-v1"))
 	_, _ = digest.Write([]byte{0})
-	_, _ = digest.Write([]byte(b.processNonce))
-	_, _ = digest.Write([]byte{0})
-	_, _ = digest.Write([]byte(requestIdentity))
+	_, _ = digest.Write([]byte(requestToken))
 	var operationBytes [16]byte
 	copy(operationBytes[:], digest.Sum(nil))
 	return "op_" + encodeCrockford128(operationBytes)
 }
 
-func (b *bridge) mutationOperationID(frame []byte, meta requestMeta) string {
+func toolCallOperationID(meta requestMeta, requestToken string) string {
 	if !meta.valid || meta.notification() || meta.method != "tools/call" {
 		return ""
 	}
-	parsed, err := parseProtocolJSON(frame)
-	if err != nil {
-		return ""
-	}
-	switch parsed.ToolName {
-	case "run_action", "execute_runbook", "create_runbook_draft":
-		return b.operationIDFor(meta)
-	default:
-		return ""
-	}
+	return operationIDForToken(requestToken)
 }
 
 func encodeCrockford128(value [16]byte) string {
