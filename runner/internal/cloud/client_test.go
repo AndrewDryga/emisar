@@ -38,6 +38,18 @@ type fakeConn struct {
 	failResults atomic.Bool
 }
 
+// blockedOutboundConn models a portal that keeps dispatching but stops reading
+// after registration. Session cancellation must unblock Send as Conn promises.
+type blockedOutboundConn struct{ *fakeConn }
+
+func (c *blockedOutboundConn) Send(ctx context.Context, msg any) error {
+	if _, ok := msg.(RunnerStateMsg); ok {
+		return c.fakeConn.Send(ctx, msg)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 func newFakeConn() *fakeConn {
 	return &fakeConn{
 		in:       make(chan []byte, 16),
@@ -187,6 +199,29 @@ output:
   max_stderr_bytes: 1024
 `
 
+const stubbornActionYAML = `
+schema_version: 1
+id: t.stubborn
+title: Ignore graceful cancellation
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "trap '' TERM; touch /tmp/emisar-cloud-shutdown-ready; while :; do sleep 1; done"
+  timeout: 1m
+  cancel_grace: 500ms
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
 func buildClient(t *testing.T, dialer Dialer, mod ...func(*Options)) *Client {
 	t.Helper()
 	root := t.TempDir()
@@ -204,10 +239,12 @@ description: t
 actions:
   - actions/echo.yaml
   - actions/sleep.yaml
+  - actions/stubborn.yaml
   - actions/truncated.yaml
 `), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "echo.yaml"), []byte(echoActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "sleep.yaml"), []byte(longActionYAML), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "stubborn.yaml"), []byte(stubbornActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "truncated.yaml"), []byte(truncatedActionYAML), 0o644))
 	reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
 	must(err)
@@ -815,6 +852,90 @@ func TestClient_ConcurrencyCap(t *testing.T) {
 			t.Fatalf("timed out waiting for two responses; results=%v errs=%v",
 				len(results), len(errs))
 		}
+	}
+}
+
+func TestClient_RejectedDispatchStateIsBounded(t *testing.T) {
+	conn := &blockedOutboundConn{fakeConn: newFakeConn()}
+	cli := buildClient(t, &mixedDialer{conns: []Conn{conn}}, func(o *Options) {
+		o.MaxConcurrentRuns = 1
+		o.DedupRingSize = 4
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.runSession(ctx)
+		done <- err
+	}()
+	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) == 1 })
+
+	sendRunAction(t, conn.fakeConn, cli, "req_active", "t.sleep", nil)
+	waitUntil(t, 2*time.Second, func() bool { return cli.countInflight() == 1 })
+
+	for i := 0; i < 8; i++ {
+		sendRunAction(t, conn.fakeConn, cli, fmt.Sprintf("req_rejected_%d", i), "t.echo", map[string]any{"msg": "rejected"})
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, errResponseBacklogFull) {
+			t.Fatalf("session error=%v, want response backlog backpressure", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("session kept accepting dispatches after its bounded response backlog filled")
+	}
+
+	cli.mu.Lock()
+	states := len(cli.runs)
+	maxTransientStates := cli.opts.MaxConcurrentRuns + cli.opts.DedupRingSize
+	cli.mu.Unlock()
+	if states > maxTransientStates {
+		t.Fatalf("run states=%d, bounded transient capacity=%d", states, maxTransientStates)
+	}
+
+	cancel()
+	if err := cli.shutdown(context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("shutdown error=%v", err)
+	}
+}
+
+func TestClient_RunWaitsForActionHandlersOnShutdown(t *testing.T) {
+	const readyPath = "/tmp/emisar-cloud-shutdown-ready"
+	_ = os.Remove(readyPath)
+	t.Cleanup(func() { _ = os.Remove(readyPath) })
+
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+
+	sendRunAction(t, conn, cli, "req_shutdown", "t.stubborn", nil)
+	waitUntil(t, 3*time.Second, func() bool {
+		_, err := os.Stat(readyPath)
+		return err == nil
+	})
+
+	started := time.Now()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run error=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not wait for the cancelled action handler")
+	}
+	if elapsed := time.Since(started); elapsed < 400*time.Millisecond {
+		t.Fatalf("Run returned after %s, before the action's cancellation grace elapsed", elapsed)
+	}
+	result, ok := cli.dedup.lookup("req_shutdown")
+	if !ok || result.Status != "cancelled" {
+		t.Fatalf("persisted shutdown result=%+v, found=%v", result, ok)
+	}
+	if got := cli.countInflight(); got != 0 {
+		t.Fatalf("active handlers after Run returned=%d", got)
 	}
 }
 
