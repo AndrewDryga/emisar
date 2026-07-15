@@ -132,9 +132,9 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 		return nil, fmt.Errorf("cloud: ws dial failed: %w", err)
 	}
 
-	// Disable the library's read-size cap; large action_result envelopes
-	// can exceed the default 32KB.
-	conn.SetReadLimit(8 * 1024 * 1024)
+	// run_action is the largest cloud-to-runner envelope and enforces the same
+	// bound while decoding. Keep the transport ceiling aligned with it.
+	conn.SetReadLimit(maxRunActionMessageBytes)
 
 	return &wsConn{ws: conn, log: log}, nil
 }

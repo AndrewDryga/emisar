@@ -12,7 +12,7 @@ import (
 func sendRunActionUnsignedWithPackRef(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, packRef string) {
 	t.Helper()
 	raw, err := marshalRunActionMsg(RunActionMsg{
-		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: testRequestID(requestID)},
 		ActionID: actionID, PackRef: packRef, Args: args, Reason: "test",
 	})
 	if err != nil {

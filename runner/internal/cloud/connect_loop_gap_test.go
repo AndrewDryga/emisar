@@ -318,7 +318,7 @@ func TestClient_EmittedMetadataCoversNormalizedRedactedChunks(t *testing.T) {
 
 	var stdout string
 	for _, progress := range conn.sentByType(MsgActionProgress) {
-		if progress["request_id"] == "req_integrity" && progress["stream"] == "stdout" {
+		if progress["request_id"] == testRequestID("req_integrity") && progress["stream"] == "stdout" {
 			stdout += progress["chunk"].(string)
 		}
 	}
@@ -385,7 +385,7 @@ func TestClient_Heartbeat_CarriesActionLoad(t *testing.T) {
 		t.Fatal("no heartbeat reported action_load >= 1 while a run was in flight")
 	}
 	// Cancel the in-flight sleep so the test shuts down promptly.
-	raw, _ := json.Marshal(CancelMsg{Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: "req_busy"}})
+	raw, _ := json.Marshal(CancelMsg{Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: testRequestID("req_busy")}})
 	conn.in <- raw
 }
 

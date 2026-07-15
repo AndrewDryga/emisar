@@ -120,7 +120,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 	// The refusal must be in the dedup ring — that's what makes the replay
 	// skip the gate.
-	if cached, ok := cli.dedup.lookup("req_cached"); !ok || cached.Status != "pack_hash_mismatch" {
+	if cached, ok := cli.dedup.lookup(testRequestID("req_cached")); !ok || cached.Status != "pack_hash_mismatch" {
 		t.Fatalf("refusal not cached for replay: cached=%+v ok=%v", cached, ok)
 	}
 
@@ -135,14 +135,14 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 	waitUntil(t, 3*time.Second, func() bool {
 		count := 0
 		for _, m := range conn.sentByType(MsgActionResult) {
-			if m["request_id"] == "req_cached" {
+			if m["request_id"] == testRequestID("req_cached") {
 				count++
 			}
 		}
 		return count >= 2
 	})
 	for _, result := range conn.sentByType(MsgActionResult) {
-		if result["request_id"] == "req_cached" && result["event_id"] != firstEventID {
+		if result["request_id"] == testRequestID("req_cached") && result["event_id"] != firstEventID {
 			t.Fatalf("replay event_id=%v, want cached %q", result["event_id"], firstEventID)
 		}
 	}
@@ -247,7 +247,7 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	args := map[string]any{"msg": "ok"}
 	att := attestationFor(t, cli, priv, "t.echo", args)
 	raw, err := marshalRunActionMsg(RunActionMsg{
-		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_admit_deny"},
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: testRequestID("req_admit_deny")},
 		ActionID: "t.echo", ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
 		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
 	})

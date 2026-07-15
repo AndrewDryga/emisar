@@ -3,7 +3,9 @@
 The runner and portal communicate over one TLS websocket initiated by the
 runner. The portal never opens a connection to a runner. Every message is a JSON
 object with `type` and `protocol_version`; action-correlated messages also carry
-`request_id`.
+`request_id`. A request ID is exactly `req_` plus 22 base64url characters
+(`[A-Za-z0-9_-]`), 26 ASCII bytes total. Both peers reject any other shape
+before lookup, logging, acknowledgement, or in-memory retention.
 
 Protocol version: **1**.
 
@@ -106,7 +108,7 @@ that runner/action from execution.
 {
   "type": "run_action",
   "protocol_version": 1,
-  "request_id": "req_01HZP4...",
+  "request_id": "req_0000000000000000000000",
   "operation_id": "op_724NN9NMDZ1T76NARWCKM5A0D6",
   "action_id": "cassandra.nodetool_status",
   "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
@@ -228,6 +230,7 @@ logs.
 | Item | Limit |
 | --- | ---: |
 | Complete `run_action` message | 128 KiB |
+| Correlation `request_id` | 26 ASCII bytes |
 | Exact `args` object | 32 KiB |
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |

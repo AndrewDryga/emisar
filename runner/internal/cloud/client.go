@@ -363,20 +363,20 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		if err := requireProtocolVersion(envelope); err != nil {
 			return err
 		}
-		var m CancelMsg
-		if err := json.Unmarshal(raw, &m); err != nil {
+		if err := validateRequestID(envelope.RequestID); err != nil {
+			c.opts.Logger.Warn("cloud.bad_cancel", "error", err)
 			return nil
 		}
-		c.cancelRun(m.RequestID)
+		c.cancelRun(envelope.RequestID)
 	case MsgAckResult:
 		if err := requireProtocolVersion(envelope); err != nil {
 			return err
 		}
-		var m AckResultMsg
-		if err := json.Unmarshal(raw, &m); err != nil {
+		if err := validateRequestID(envelope.RequestID); err != nil {
+			c.opts.Logger.Warn("cloud.bad_ack_result", "error", err)
 			return nil
 		}
-		c.ackRun(m.RequestID)
+		c.ackRun(envelope.RequestID)
 	default:
 		c.opts.Logger.Debug("cloud.unknown_message", "type", envelope.Type)
 	}

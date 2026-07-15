@@ -2,6 +2,8 @@ package cloud
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -300,7 +302,7 @@ func sendRunActionWithPackRef(t *testing.T, c *fakeConn, cli *Client, requestID,
 func sendRunActionWithPackContract(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash, packRef string) {
 	t.Helper()
 	raw, err := marshalRunActionMsg(RunActionMsg{
-		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: testRequestID(requestID)},
 		ActionID: actionID, ExpectedPackHash: expectedPackHash, PackRef: packRef,
 		Args: args, Reason: "test",
 	})
@@ -335,6 +337,7 @@ func currentPackRef(t *testing.T, cli *Client, packID string) string {
 
 func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Duration) map[string]any {
 	t.Helper()
+	requestID = testRequestID(requestID)
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 	timeout := time.After(deadline)
@@ -350,6 +353,14 @@ func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Du
 			t.Fatalf("no result for %s within %s", requestID, deadline)
 		}
 	}
+}
+
+func testRequestID(label string) string {
+	if validateRequestID(label) == nil {
+		return label
+	}
+	digest := sha256.Sum256([]byte(label))
+	return "req_" + base64.RawURLEncoding.EncodeToString(digest[:16])
 }
 
 func requireResultEventID(t *testing.T, result map[string]any) string {
@@ -599,7 +610,7 @@ func TestClient_ReplaysResultAcrossReconnect(t *testing.T) {
 
 	// The original connection must NOT have received the result.
 	for _, m := range conn1.sentByType(MsgActionResult) {
-		if m["request_id"] == "req_replay" {
+		if m["request_id"] == testRequestID("req_replay") {
 			t.Fatalf("result was sent on dead conn1: %+v", m)
 		}
 	}
@@ -723,7 +734,7 @@ func TestClient_CancelMsgTerminatesInflightAction(t *testing.T) {
 
 	// Now send the cancel.
 	raw, err := json.Marshal(CancelMsg{
-		Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: "req_cancel"},
+		Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: testRequestID("req_cancel")},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -992,7 +1003,7 @@ func TestClient_RunWaitsForActionHandlersOnShutdown(t *testing.T) {
 	if elapsed := time.Since(started); elapsed < 400*time.Millisecond {
 		t.Fatalf("Run returned after %s, before the action's cancellation grace elapsed", elapsed)
 	}
-	result, ok := cli.dedup.lookup("req_shutdown")
+	result, ok := cli.dedup.lookup(testRequestID("req_shutdown"))
 	if !ok || result.Status != "cancelled" {
 		t.Fatalf("persisted shutdown result=%+v, found=%v", result, ok)
 	}

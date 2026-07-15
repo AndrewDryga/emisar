@@ -2,15 +2,48 @@ package cloud
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 )
 
+func TestClientRejectsNoncanonicalControlRequestIDs(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{})
+	requestID := "req_" + strings.Repeat("x", maxRunActionMessageBytes)
+
+	cancelRaw, err := json.Marshal(CancelMsg{
+		Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.dispatch(context.Background(), cancelRaw); err != nil {
+		t.Fatal(err)
+	}
+	if len(cli.preCanceled) != 0 || len(cli.preCanceledOrder) != 0 {
+		t.Fatal("noncanonical cancel request_id reached pre-cancel retention")
+	}
+
+	cli.runs[requestID] = &runState{requestID: requestID, finished: true}
+	ackRaw, err := json.Marshal(AckResultMsg{
+		Envelope: Envelope{Type: MsgAckResult, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.dispatch(context.Background(), ackRaw); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := cli.runs[requestID]; !exists {
+		t.Fatal("noncanonical ack_result request_id reached run state")
+	}
+}
+
 func TestRunActionMsgPreservesExactArgumentBytes(t *testing.T) {
 	wantArgs := "{\"job_id\":891234567890123456, \"ratio\":1e3, \"nested\":{\"ok\":true}}"
 	wantHash := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	raw := []byte("{\"type\":\"run_action\",\"protocol_version\":1,\"request_id\":\"req_exact\",\"action_id\":\"db.pause\",\"expected_pack_hash\":\"" + wantHash + "\",\"pack_ref\":\"db@1.0.0/" + wantHash + "\",\"args\":" + wantArgs + ",\"reason\":\"maintenance\",\"operation_id\":\"op_00000000000000000000000000\"}")
+	raw := []byte("{\"type\":\"run_action\",\"protocol_version\":1,\"request_id\":\"" + testRequestID("req_exact") + "\",\"action_id\":\"db.pause\",\"expected_pack_hash\":\"" + wantHash + "\",\"pack_ref\":\"db@1.0.0/" + wantHash + "\",\"args\":" + wantArgs + ",\"reason\":\"maintenance\",\"operation_id\":\"op_00000000000000000000000000\"}")
 
 	var msg RunActionMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
@@ -58,7 +91,7 @@ func TestRunActionMsgRejectsNoncanonicalKnownFieldAliases(t *testing.T) {
 }
 
 func TestRunActionMsgAllowsUnrelatedFutureFields(t *testing.T) {
-	raw := []byte("{\"type\":\"run_action\",\"request_id\":\"req_future\",\"action_id\":\"a.b\",\"args\":{},\"future_top\":1,\"opts\":{\"future_opt\":true},\"attestation\":{\"future_attestation\":true}}")
+	raw := []byte("{\"type\":\"run_action\",\"request_id\":\"" + testRequestID("req_future") + "\",\"action_id\":\"a.b\",\"args\":{},\"future_top\":1,\"opts\":{\"future_opt\":true},\"attestation\":{\"future_attestation\":true}}")
 	var msg RunActionMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		t.Fatalf("Unmarshal additive fields: %v", err)
@@ -78,7 +111,7 @@ func TestRunActionMsgRejectsLossyUnicodeInputs(t *testing.T) {
 		}
 	}
 
-	validPair := []byte("{\"type\":\"run_action\",\"request_id\":\"req_unicode\",\"action_id\":\"a.b\",\"args\":{\"x\":\"\\uD83D\\uDE80\"}}")
+	validPair := []byte("{\"type\":\"run_action\",\"request_id\":\"" + testRequestID("req_unicode") + "\",\"action_id\":\"a.b\",\"args\":{\"x\":\"\\uD83D\\uDE80\"}}")
 	var msg RunActionMsg
 	if err := json.Unmarshal(validPair, &msg); err != nil {
 		t.Fatalf("Unmarshal valid surrogate pair: %v", err)
@@ -101,6 +134,30 @@ func TestRunActionMsgRequiresRequestID(t *testing.T) {
 	}
 }
 
+func TestRunActionMsgRejectsNoncanonicalRequestID(t *testing.T) {
+	raw := []byte(`{"type":"run_action","request_id":"req_short","action_id":"a.b","args":{}}`)
+	var msg RunActionMsg
+	if err := json.Unmarshal(raw, &msg); err == nil || !strings.Contains(err.Error(), "must match") {
+		t.Fatalf("Unmarshal error = %v, want noncanonical request_id refusal", err)
+	}
+}
+
+func TestRequestIDRequiresCanonicalPortalShape(t *testing.T) {
+	for _, requestID := range []string{
+		"req_short",
+		"req_00000000000000000000000",
+		"req_000000000000000000000!",
+		"other_0000000000000000000000",
+	} {
+		if err := validateRequestID(requestID); err == nil {
+			t.Fatalf("validateRequestID(%q) accepted noncanonical id", requestID)
+		}
+	}
+	if requestID := "req_0000000000000000000000"; validateRequestID(requestID) != nil {
+		t.Fatalf("validateRequestID(%q) rejected canonical id", requestID)
+	}
+}
+
 func TestRunActionMsgRejectsInvalidArgumentShapeAndBudget(t *testing.T) {
 	for _, raw := range []string{
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\"}",
@@ -114,7 +171,7 @@ func TestRunActionMsgRejectsInvalidArgumentShapeAndBudget(t *testing.T) {
 		}
 	}
 
-	oversized := []byte("{\"type\":\"run_action\",\"request_id\":\"req_big\",\"action_id\":\"a.b\",\"args\":{\"value\":\"" +
+	oversized := []byte("{\"type\":\"run_action\",\"request_id\":\"" + testRequestID("req_big") + "\",\"action_id\":\"a.b\",\"args\":{\"value\":\"" +
 		strings.Repeat("x", maxActionArgsBytes) + "\"}}")
 	var oversizedArgs RunActionMsg
 	if err := json.Unmarshal(oversized, &oversizedArgs); err == nil || !strings.Contains(err.Error(), "exceed") {
