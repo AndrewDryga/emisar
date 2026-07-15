@@ -263,9 +263,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
-  describe "initialize and sessions" do
+  describe "initialize and protocol lifecycle" do
     test "negotiates supported protocol versions and fixed capabilities", %{raw: raw} do
-      for version <- ~w(2025-11-25 2025-06-18 2024-11-05) do
+      for version <- ~w(2025-11-25 2025-06-18) do
         body =
           build_conn()
           |> authorize(raw)
@@ -276,6 +276,14 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         assert body["result"]["serverInfo"]["name"] == "emisar"
         assert get_in(body, ["result", "capabilities", "tools", "listChanged"]) == false
       end
+
+      legacy =
+        build_conn()
+        |> authorize(raw)
+        |> rpc("initialize", %{"protocolVersion" => "2024-11-05"})
+        |> json_response(200)
+
+      assert legacy["result"]["protocolVersion"] == "2025-11-25"
     end
 
     test "records only bounded known clientInfo fields", %{conn: conn, raw: raw, key: key} do
@@ -303,29 +311,23 @@ defmodule EmisarWeb.MCPRpcControllerTest do
              }
     end
 
-    test "reuses valid session ids and replaces blank or oversized values", %{raw: raw} do
-      fresh = build_conn() |> authorize(raw) |> rpc("initialize")
-      assert [generated] = get_resp_header(fresh, "mcp-session-id")
-      assert {:ok, _uuid} = Ecto.UUID.cast(generated)
-
-      reused =
+    test "the stateless endpoint never assigns or echoes an MCP session id", %{raw: raw} do
+      initialize =
         build_conn()
         |> authorize(raw)
-        |> put_req_header("mcp-session-id", "existing-session")
+        |> put_req_header("mcp-session-id", "client-invented")
         |> rpc("initialize")
 
-      assert get_resp_header(reused, "mcp-session-id") == ["existing-session"]
+      assert get_resp_header(initialize, "mcp-session-id") == []
 
-      for invalid <- ["", String.duplicate("s", 256)] do
-        replaced =
-          build_conn()
-          |> authorize(raw)
-          |> put_req_header("mcp-session-id", invalid)
-          |> rpc("initialize")
+      ping =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("mcp-session-id", "client-invented")
+        |> put_req_header("mcp-protocol-version", "2025-11-25")
+        |> rpc("ping")
 
-        assert [minted] = get_resp_header(replaced, "mcp-session-id")
-        assert {:ok, _uuid} = Ecto.UUID.cast(minted)
-      end
+      assert get_resp_header(ping, "mcp-session-id") == []
     end
 
     test "omitted params default to an empty initialize object", %{conn: conn, raw: raw} do

@@ -9,8 +9,8 @@ defmodule Emisar.Checks.NoProcessDictionary do
       onto engine audit rows running in the same process — the bug the
       `%Emisar.RequestContext{}` refactor removed.
 
-      Request metadata (ip_address / user_agent / request_id /
-      mcp_session_id) is a struct: it rides on `%Auth.Subject{}.context` for
+      Request metadata (ip_address / user_agent / request_id) is a struct: it
+      rides on `%Auth.Subject{}.context` for
       authenticated callers (every `Audit.Events` builder pulls it via
       `actor/1`) and is passed as an explicit `context` argument on pre-auth
       paths. Thread it; never stash it in the process dictionary.

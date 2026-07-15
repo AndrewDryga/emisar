@@ -42,10 +42,9 @@ defmodule EmisarWeb.MCPRpcController do
   alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
   alias EmisarWeb.MCP.ClientMetadata
   alias EmisarWeb.MCP.{Instructions, RawJSON, ResponseBudget, SchemaRegistry, Transport}
-  alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-11-25"
-  @supported_protocol_versions [@latest_protocol_version, "2025-06-18", "2024-11-05"]
+  @supported_protocol_versions [@latest_protocol_version, "2025-06-18"]
   @server_name "emisar"
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
@@ -87,7 +86,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_message(conn, :notification, "notifications/" <> _ = method, raw_params, _id) do
     case params_map(raw_params) do
       {:ok, params} ->
-        result = Cancellation.track(conn, method, nil, &dispatch(&1, method, params))
+        result = Cancellation.track(conn, method, &dispatch(&1, method, params))
         respond(conn, :notification, nil, result)
 
       :error ->
@@ -101,8 +100,8 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_message(conn, :request, method, raw_params, id) do
     case params_map(raw_params) do
       {:ok, params} ->
-        conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation()
-        result = Cancellation.track(conn, method, id, &dispatch(&1, method, params))
+        conn = maybe_acknowledge_rotation(conn)
+        result = Cancellation.track(conn, method, &dispatch(&1, method, params))
         respond(conn, :request, id, result)
 
       :error ->
@@ -258,8 +257,8 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
-  defp dispatch(conn, "notifications/cancelled", params) do
-    :ok = Cancellation.cancel(conn, params)
+  defp dispatch(conn, "notifications/cancelled", _params) do
+    :ok = Cancellation.cancel(conn)
     :no_reply
   end
 
@@ -525,21 +524,6 @@ defmodule EmisarWeb.MCPRpcController do
        do: requested
 
   defp negotiated_protocol_version(_params), do: @latest_protocol_version
-
-  # MCP Streamable-HTTP session id. At `initialize` we hand the client a
-  # session id (reusing one it already sent) via the Mcp-Session-Id response
-  # header; the client echoes it on later requests, which we record on runs
-  # + audit events for session correlation.
-  defp maybe_emit_session_id(conn, "initialize") do
-    session_id = req_session_id(conn) || Ecto.UUID.generate()
-    put_resp_header(conn, "mcp-session-id", session_id)
-  end
-
-  defp maybe_emit_session_id(conn, _method), do: conn
-
-  defp req_session_id(conn) do
-    RequestContext.mcp_session_id(conn)
-  end
 
   # The bridge persists a client-generated successor before proposing it on an
   # authenticated request. The portal installs those exact non-secret values

@@ -7,7 +7,7 @@ defmodule Emisar.Audit.Event.Changeset do
   # The columns are varchar(255); TRUNCATE rather than let an over-long
   # value fail the insert — a rejected insert drops the audit row entirely,
   # letting an attacker suppress their own failed-attempt trail.
-  @request_meta_fields [:ip_address, :user_agent, :request_id, :mcp_session_id]
+  @request_meta_fields [:ip_address, :user_agent, :request_id]
   @request_meta_limit 255
   # Audit events record runner and request failures, so payloads can originate
   # outside the control plane. Keep the event row even when its detail is too
@@ -31,7 +31,6 @@ defmodule Emisar.Audit.Event.Changeset do
       :ip_address,
       :user_agent,
       :request_id,
-      :mcp_session_id,
       :auth_method,
       :mfa,
       :user_identity_id,

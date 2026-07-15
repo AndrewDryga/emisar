@@ -9,15 +9,13 @@ defmodule Emisar.RequestContextTest do
           ip_address: "203.0.113.7",
           user_agent: "emisar-mcp/1.0",
           request_id: "req-123",
-          mcp_session_id: "session-456",
           ignored: "not persisted"
         })
 
       assert context == %RequestContext{
                ip_address: "203.0.113.7",
                user_agent: "emisar-mcp/1.0",
-               request_id: "req-123",
-               mcp_session_id: "session-456"
+               request_id: "req-123"
              }
     end
 

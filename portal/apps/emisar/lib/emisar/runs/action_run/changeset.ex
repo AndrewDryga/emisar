@@ -5,7 +5,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
   @create_fields ~w[
     account_id runner_id request_id action_id args args_raw args_sha256 client_info mcp_client_metadata
-    mcp_session_id ip_address user_agent opts attestation reason source requested_by_id api_key_id idempotency_key
+    ip_address user_agent opts attestation reason source requested_by_id api_key_id idempotency_key
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at
@@ -45,7 +45,6 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
     |> validate_length(:reason, max: @max_reason_length)
-    |> validate_length(:mcp_session_id, max: @max_db_string_length)
     |> validate_length(:operation_id, max: @max_db_string_length)
     |> validate_length(:pack_ref, max: @max_db_string_length)
     |> validate_length(:runner_ref, max: 113)

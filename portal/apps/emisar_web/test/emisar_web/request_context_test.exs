@@ -7,18 +7,16 @@ defmodule EmisarWeb.RequestContextTest do
   defp conn, do: Plug.Test.conn(:get, "/")
 
   describe "from_conn/1" do
-    test "pulls user-agent, request-id (resp header), and mcp-session-id from the request" do
+    test "pulls user-agent and request-id response metadata" do
       context =
         conn()
         |> put_req_header("user-agent", "curl/8.5.0")
-        |> put_req_header("mcp-session-id", "sess_1")
         |> put_resp_header("x-request-id", "req_1")
         |> Builder.from_conn()
 
       assert %RequestContext{} = context
       assert context.user_agent == "curl/8.5.0"
       assert context.request_id == "req_1"
-      assert context.mcp_session_id == "sess_1"
     end
 
     test "uses GCP's right-anchored client IP and ignores a forged prefix" do
@@ -52,15 +50,6 @@ defmodule EmisarWeb.RequestContextTest do
         |> Builder.from_conn()
 
       assert context.ip_address == "192.0.2.5"
-    end
-
-    test "drops an oversized MCP session id before it reaches a varchar field" do
-      context =
-        conn()
-        |> put_req_header("mcp-session-id", String.duplicate("s", 256))
-        |> Builder.from_conn()
-
-      assert context.mcp_session_id == nil
     end
 
     test "is an all-nil struct when no client metadata is present" do

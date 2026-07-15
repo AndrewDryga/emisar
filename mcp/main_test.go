@@ -24,7 +24,7 @@ import (
 // The bridge is a thin stdio↔HTTP shim. Its only jobs are:
 //   1. POST each JSON-RPC frame to the portal's /api/mcp/rpc endpoint.
 //   2. Forward the response back to stdout.
-//   3. Mint a stable per-(session, JSON-RPC-id) idempotency key so a
+//   3. Mint a stable per-(process, JSON-RPC-id) idempotency key so a
 //      transport retry collapses to one run at the cloud.
 //
 // All MCP-protocol semantics (renderRunBlocks, wait_for_run,
@@ -44,7 +44,7 @@ func (b *bridge) idempotencyKey(frame []byte) string {
 // -- idempotencyKey: parses `id` out of a raw JSON-RPC frame ---------
 
 func TestIdempotencyKey_StableForSameID(t *testing.T) {
-	b := &bridge{sessionID: "deadbeef"}
+	b := &bridge{processNonce: "deadbeef"}
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
 	got := b.idempotencyKey(frame)
 	if !strings.HasPrefix(got, "mcp-") || len(got) != len("mcp-")+64 {
@@ -56,7 +56,7 @@ func TestIdempotencyKey_StableForSameID(t *testing.T) {
 }
 
 func TestIdempotencyKey_DiffersByID(t *testing.T) {
-	b := &bridge{sessionID: "deadbeef"}
+	b := &bridge{processNonce: "deadbeef"}
 	a := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	c := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`))
 	if a == c {
@@ -65,7 +65,7 @@ func TestIdempotencyKey_DiffersByID(t *testing.T) {
 }
 
 func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
-	b := &bridge{sessionID: "deadbeef"}
+	b := &bridge{processNonce: "deadbeef"}
 	// Notification (no id field) — must yield empty key so the cloud
 	// treats it as fire-and-forget instead of a dedupable run.
 	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)); got != "" {
@@ -77,7 +77,7 @@ func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
 }
 
 func TestIdempotencyKey_DistinguishesStringAndNumericIDs(t *testing.T) {
-	b := &bridge{sessionID: "s"}
+	b := &bridge{processNonce: "s"}
 	stringID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7","method":"ping"}`))
 	numericID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))
 	if stringID == numericID {
@@ -86,7 +86,7 @@ func TestIdempotencyKey_DistinguishesStringAndNumericIDs(t *testing.T) {
 }
 
 func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
-	b := &bridge{sessionID: "s"}
+	b := &bridge{processNonce: "s"}
 
 	// params (carrying its own "id"-ish content) serialized BEFORE the
 	// envelope id. A naive first-"id" byte-scan would latch onto the nested
@@ -111,7 +111,7 @@ func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
 }
 
 func TestOperationIDIsStableBoundedAndTyped(t *testing.T) {
-	b := &bridge{sessionID: "deadbeef"}
+	b := &bridge{processNonce: "deadbeef"}
 	operationID := func(frame string) string {
 		t.Helper()
 		return b.operationIDFor(parseRequestMeta([]byte(frame)))
@@ -138,13 +138,13 @@ func TestOperationIDIsStableBoundedAndTyped(t *testing.T) {
 	if stringID := operationID(`{"jsonrpc":"2.0","id":"7","method":"ping"}`); stringID == first {
 		t.Fatalf("numeric and string ids share operation ID %q", first)
 	}
-	if otherSession := (&bridge{sessionID: "cafebabe"}).operationIDFor(parseRequestMeta([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))); otherSession == first {
-		t.Fatalf("different sessions share operation ID %q", first)
+	if otherProcess := (&bridge{processNonce: "cafebabe"}).operationIDFor(parseRequestMeta([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))); otherProcess == first {
+		t.Fatalf("different bridge processes share operation ID %q", first)
 	}
 }
 
 func TestOperationIDUsesSemanticStringAndIntegerIdentity(t *testing.T) {
-	b := &bridge{sessionID: "session"}
+	b := &bridge{processNonce: "session"}
 	operationID := func(frame string) string {
 		t.Helper()
 		return b.operationIDFor(parseRequestMeta([]byte(frame)))
@@ -163,7 +163,7 @@ func TestOperationIDUsesSemanticStringAndIntegerIdentity(t *testing.T) {
 }
 
 func TestOperationIDEmptyForNotificationsAndInvalidRequests(t *testing.T) {
-	b := &bridge{sessionID: "session"}
+	b := &bridge{processNonce: "session"}
 	for _, frame := range []string{
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":null,"method":"ping"}`,
@@ -177,7 +177,7 @@ func TestOperationIDEmptyForNotificationsAndInvalidRequests(t *testing.T) {
 }
 
 func TestMutationOperationIDOnlyForFixedMutations(t *testing.T) {
-	b := &bridge{sessionID: "session"}
+	b := &bridge{processNonce: "session"}
 	tests := []struct {
 		name string
 		body string
@@ -324,31 +324,31 @@ func TestParseEndpoint(t *testing.T) {
 	}
 }
 
-func TestNewSessionID_UniquePerProcess(t *testing.T) {
+func TestNewProcessNonce_UniquePerProcess(t *testing.T) {
 	// Bind to vars so the comparison is two distinct evaluations, not a
 	// syntactically-identical `f() == f()` (which static analysis flags as
 	// a tautology even though the nonce makes the values differ).
-	first, err := newSessionID(rand.Reader)
+	first, err := newProcessNonce(rand.Reader)
 	if err != nil {
-		t.Fatalf("newSessionID: %v", err)
+		t.Fatalf("newProcessNonce: %v", err)
 	}
-	second, err := newSessionID(rand.Reader)
+	second, err := newProcessNonce(rand.Reader)
 	if err != nil {
-		t.Fatalf("newSessionID: %v", err)
+		t.Fatalf("newProcessNonce: %v", err)
 	}
 	if first == second {
-		t.Error("two session ids collided — nonce isn't random")
+		t.Error("two process nonces collided")
 	}
 	if len(first) != 32 || len(second) != 32 {
-		t.Fatalf("session ids must carry 128 bits: %q / %q", first, second)
+		t.Fatalf("process nonces must carry 128 bits: %q / %q", first, second)
 	}
 }
 
 // A rand read failure must fail closed (error), never fall back to a
 // shared constant that would alias two processes' idempotency keys.
-func TestNewSessionID_FailsClosedOnRandError(t *testing.T) {
-	if _, err := newSessionID(iotest.ErrReader(errors.New("rand unavailable"))); err == nil {
-		t.Error("newSessionID returned nil error on a failing reader — must fail closed")
+func TestNewProcessNonce_FailsClosedOnRandError(t *testing.T) {
+	if _, err := newProcessNonce(iotest.ErrReader(errors.New("rand unavailable"))); err == nil {
+		t.Error("newProcessNonce returned nil error on a failing reader — must fail closed")
 	}
 }
 
@@ -414,10 +414,10 @@ func TestForward_OmitsOperationHeaderForReads(t *testing.T) {
 	}
 }
 
-func TestForward_SetsMcpSessionIDHeader(t *testing.T) {
-	var gotSession string
+func TestForward_NeverSendsMcpSessionIDHeader(t *testing.T) {
+	var hadSession bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotSession = r.Header.Get("Mcp-Session-Id")
+		_, hadSession = r.Header["Mcp-Session-Id"]
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
 	}))
@@ -425,14 +425,11 @@ func TestForward_SetsMcpSessionIDHeader(t *testing.T) {
 
 	b := newTestBridge(srv)
 
-	// Every forwarded frame carries the per-process session id so the
-	// portal can stamp it on the run + audit event. stdio clients can't
-	// echo a server-issued Mcp-Session-Id, so the bridge supplies its own.
 	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if gotSession != "sess" {
-		t.Errorf("Mcp-Session-Id = %q, want %q", gotSession, "sess")
+	if hadSession {
+		t.Fatal("stateless bridge must not invent an MCP session id")
 	}
 }
 
@@ -491,10 +488,10 @@ func TestForward_MutationRetriesOnceAfterPreAdmissionTransportFailure(t *testing
 	var attempts int
 	var idempotencyKeys, operationIDs, authorizations []string
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "ua",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "ua",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			attempts++
 			idempotencyKeys = append(idempotencyKeys, req.Header.Get("Idempotency-Key"))
@@ -541,10 +538,10 @@ func TestForward_MutationRetriesOnceAfterAmbiguousResponseLoss(t *testing.T) {
 	}
 	var attempts []observed
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "ua",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "ua",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			body, err := io.ReadAll(req.Body)
 			if err != nil {
@@ -588,7 +585,7 @@ func TestForward_DoesNotRetryReadsOrRetryMutationsMoreThanOnce(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			attempts := 0
 			b := &bridge{
-				endpoint: "https://example.test/api/mcp/rpc", apiKey: "key", userAgent: "ua", sessionID: "session",
+				endpoint: "https://example.test/api/mcp/rpc", apiKey: "key", userAgent: "ua", processNonce: "session",
 				client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 					attempts++
 					return nil, errors.New("transport unavailable")
@@ -862,7 +859,7 @@ func TestServe_NetworkErrorEmitsJSONRPCError(t *testing.T) {
 }
 
 func TestServe_OversizedFrameKeepsServing(t *testing.T) {
-	// An over-long frame must be rejected for that line ALONE — the session
+	// An over-long frame must be rejected for that line alone; the stdio stream
 	// (the LLM's only path to the cloud) keeps serving the next frame. The old
 	// bufio.Scanner returned ErrTooLong → serve error → os.Exit(1), killing it.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -886,7 +883,7 @@ func TestServe_OversizedFrameKeepsServing(t *testing.T) {
 		t.Errorf("oversized frame should yield a -32600 error frame, got %q", body)
 	}
 	if !strings.Contains(body, `"result":"ok"`) {
-		t.Error("the frame after an oversized one was not served — the session died")
+		t.Error("the frame after an oversized one was not served")
 	}
 }
 
@@ -973,14 +970,14 @@ func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 
 // -- idempotencyKey: cross-process + odd ids ------------------------
 
-// the session prefix namespaces idempotency keys across processes:
-// two bridges with different session ids derive different keys for the same
+// The private process nonce namespaces idempotency keys across processes:
+// two bridges with different nonces derive different keys for the same
 // JSON-RPC id, so one process's id:1 never aliases another's run at the portal.
-func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
-	a := (&bridge{sessionID: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
-	b := (&bridge{sessionID: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+func TestIdempotencyKey_ProcessNonceNamespacesAcrossProcesses(t *testing.T) {
+	a := (&bridge{processNonce: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	b := (&bridge{processNonce: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if a == b {
-		t.Fatalf("different sessions must not alias the same id: both %q", a)
+		t.Fatalf("different bridge processes must not alias the same id: both %q", a)
 	}
 	if len(a) != 68 || len(b) != 68 {
 		t.Fatalf("keys must remain fixed-length: %q, %q", a, b)
@@ -991,7 +988,7 @@ func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
 // including a maximum-length string and an integer past 2^53, produces the same
 // bounded key length; fractional and over-limit ids produce no key.
 func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
-	b := &bridge{sessionID: "s"}
+	b := &bridge{processNonce: "s"}
 	cases := []string{
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`,
 		`{"jsonrpc":"2.0","id":9007199254740993,"method":"tools/call"}`,
@@ -1190,11 +1187,11 @@ func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
 // URL first.)
 func TestForward_RequestBuildErrorSurfaced(t *testing.T) {
 	b := &bridge{
-		endpoint:  "http://example.com/\x7f", // invalid control char → NewRequest fails
-		apiKey:    "k",
-		userAgent: "ua",
-		client:    newHTTPClient(),
-		sessionID: "sess",
+		endpoint:     "http://example.com/\x7f", // invalid control char → NewRequest fails
+		apiKey:       "k",
+		userAgent:    "ua",
+		client:       newHTTPClient(),
+		processNonce: "sess",
 	}
 	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
 		t.Fatal("a malformed endpoint should surface a request-build error")
@@ -1547,6 +1544,9 @@ func TestServe_CancellationStopsExactRequestAndStaysSilent(t *testing.T) {
 
 	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"job-7","method":"tools/call"}`+"\n")
 	requestToken := <-targetStarted
+	if len(requestToken) != 2*sha256.Size || strings.Contains(requestToken, "sess") {
+		t.Fatalf("request token must be a fixed digest that keeps the process nonce private: %q", requestToken)
+	}
 	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"job-7"}}`+"\n")
 	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"job-7"}}`+"\n")
 	_ = writer.Close()
@@ -1786,13 +1786,13 @@ func TestRequestIDKey_DistinguishesTypesAndRejectsExponentIDs(t *testing.T) {
 	}
 }
 
-func TestHandleFrame_SessionIDCapFailsClosedWithoutAdmission(t *testing.T) {
+func TestHandleFrame_ProcessRequestIDCapFailsClosedWithoutAdmission(t *testing.T) {
 	state := serveState{
 		inflight:      make(map[string]*inflightRequest),
 		requestTokens: make(map[string]string),
-		seenIDs:       make(map[string]struct{}, maxSessionRequestIDs),
+		seenIDs:       make(map[string]struct{}, maxProcessRequestIDs),
 	}
-	for id := range maxSessionRequestIDs {
+	for id := range maxProcessRequestIDs {
 		state.seenIDs[fmt.Sprintf("seen-%d", id)] = struct{}{}
 	}
 
@@ -1807,7 +1807,7 @@ func TestHandleFrame_SessionIDCapFailsClosedWithoutAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleFrame: %v", err)
 	}
-	if !strings.Contains(output.String(), "session request id limit reached") {
+	if !strings.Contains(output.String(), "bridge request id limit reached") {
 		t.Fatalf("cap response = %q", output.String())
 	}
 	if len(state.inflight) != 0 {
@@ -1879,10 +1879,10 @@ func TestHandleFrame_CancellationBypassesAggregateRequestBudget(t *testing.T) {
 	}
 	cancelResults := make(chan struct{}, 1)
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "test",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "test",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusAccepted,
@@ -1934,10 +1934,10 @@ func TestHandleFrame_AggregateRequestBytesAreReleasedOnCompletion(t *testing.T) 
 	}
 	results := make(chan forwardResult, 1)
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "test",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "test",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -2015,10 +2015,10 @@ func TestServe_WriteErrorCancelsOtherInflightRequests(t *testing.T) {
 	blockedStarted := make(chan struct{})
 	blockedCancelled := make(chan struct{})
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "ua",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "ua",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			body, _ := io.ReadAll(req.Body)
 			var request struct {
@@ -2056,10 +2056,10 @@ func TestServe_ReadErrorCancelsInflightRequestsWithoutDraining(t *testing.T) {
 	requestStarted := make(chan struct{})
 	requestCancelled := make(chan struct{})
 	b := &bridge{
-		endpoint:  "https://example.test/api/mcp/rpc",
-		apiKey:    "key",
-		userAgent: "ua",
-		sessionID: "session",
+		endpoint:     "https://example.test/api/mcp/rpc",
+		apiKey:       "key",
+		userAgent:    "ua",
+		processNonce: "session",
 		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			close(requestStarted)
 			<-req.Context().Done()
@@ -2304,8 +2304,8 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	if maxInflightRequestBytes != maxConcurrentRequests*maxFrameBytes {
 		t.Errorf("maxInflightRequestBytes = %d, want %d", maxInflightRequestBytes, maxConcurrentRequests*maxFrameBytes)
 	}
-	if maxSessionRequestIDs != 65_536 {
-		t.Errorf("maxSessionRequestIDs = %d, want 65536", maxSessionRequestIDs)
+	if maxProcessRequestIDs != 65_536 {
+		t.Errorf("maxProcessRequestIDs = %d, want 65536", maxProcessRequestIDs)
 	}
 }
 
@@ -2322,7 +2322,7 @@ func TestForward_ContextCancellationStopsTransport(t *testing.T) {
 			<-req.Context().Done()
 			return nil, req.Context().Err()
 		})},
-		sessionID: "sess",
+		processNonce: "sess",
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2408,7 +2408,7 @@ func newTestBridge(srv *httptest.Server) *bridge {
 		apiKey:       "k",
 		userAgent:    "ua",
 		client:       client,
-		sessionID:    "sess",
+		processNonce: "sess",
 	}
 }
 

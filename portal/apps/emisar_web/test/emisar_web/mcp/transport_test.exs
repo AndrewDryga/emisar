@@ -2,7 +2,7 @@ defmodule EmisarWeb.MCP.TransportTest do
   use ExUnit.Case, async: true
   alias EmisarWeb.MCP.Transport
 
-  @supported ["2025-06-18", "2024-11-05"]
+  @supported ["2025-11-25", "2025-06-18"]
 
   describe "allowed_origin?/2" do
     test "an absent Origin (server-to-server / stdio bridge / curl) is allowed" do
@@ -71,12 +71,13 @@ defmodule EmisarWeb.MCP.TransportTest do
 
     test "a supported version is accepted" do
       assert Transport.acceptable_protocol_version?(["2025-06-18"], @supported)
-      assert Transport.acceptable_protocol_version?(["2024-11-05"], @supported)
+      assert Transport.acceptable_protocol_version?(["2025-11-25"], @supported)
     end
 
     test "an unsupported or garbage version is rejected" do
       refute Transport.acceptable_protocol_version?(["1999-01-01"], @supported)
       refute Transport.acceptable_protocol_version?(["not-a-version"], @supported)
+      refute Transport.acceptable_protocol_version?(["2024-11-05"], @supported)
     end
   end
 end

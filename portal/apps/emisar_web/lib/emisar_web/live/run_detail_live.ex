@@ -233,13 +233,6 @@ defmodule EmisarWeb.RunDetailLive do
                 <span :if={!who && !via} class="text-zinc-500">—</span>
                 <span :if={client_version(@run)} class="text-zinc-500">{client_version(@run)}</span>
               </span>
-              <span
-                :if={@run.mcp_session_id}
-                class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
-                title={@run.mcp_session_id}
-              >
-                session {String.slice(@run.mcp_session_id, 0, 8)}
-              </span>
             </.meta_field>
             <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
                (text-zinc-500) — never the value span's brighter/monospace styling,

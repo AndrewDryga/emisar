@@ -838,7 +838,7 @@ func newRotationTestBridge(store *credentialStore, current string) *bridge {
 		apiKey:          current,
 		userAgent:       "emisar-mcp/test",
 		client:          newHTTPClient(),
-		sessionID:       "rotation-test",
+		processNonce:    "rotation-test",
 		credentialStore: store,
 	}
 }

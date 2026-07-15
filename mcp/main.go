@@ -65,7 +65,7 @@ const httpTimeout = 90 * time.Second
 const (
 	maxConcurrentRequests      = 8
 	maxInflightRequestBytes    = maxConcurrentRequests * maxFrameBytes
-	maxSessionRequestIDs       = 65_536
+	maxProcessRequestIDs       = 65_536
 	maxRequestIDBytes          = 4_096
 	cancellationForwardTimeout = 5 * time.Second
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
@@ -310,7 +310,7 @@ func main() {
 		fatalln(err)
 	}
 
-	sessionID, err := newSessionID(rand.Reader)
+	processNonce, err := newProcessNonce(rand.Reader)
 	if err != nil {
 		fatalln(err)
 	}
@@ -321,7 +321,7 @@ func main() {
 		apiKey:          apiKey,
 		userAgent:       buildUserAgent(),
 		client:          newHTTPClient(),
-		sessionID:       sessionID,
+		processNonce:    processNonce,
 		signer:          sign,
 		clientMetadata:  clientMetadata,
 		credentialStore: credentialStore,
@@ -346,11 +346,10 @@ type bridge struct {
 	userAgent    string
 	client       *http.Client
 	stateMu      sync.RWMutex
-	// sessionID identifies this bridge process. It doubles as the MCP
-	// session id (sent as Mcp-Session-Id) and the namespace for
-	// idempotency keys, so a session's runs correlate and any downstream
-	// transport replay collapses to one run.
-	sessionID string
+	// processNonce identifies this bridge process and namespaces request tokens,
+	// idempotency keys, and operation ids. It never leaves those derived values:
+	// the stateless portal does not issue or accept an MCP session id.
+	processNonce string
 	// signer, when set, creates the private action-attestation header for
 	// run_action. Nil = signing disabled.
 	signer *signer
@@ -370,7 +369,7 @@ type bridge struct {
 
 // serve has one scheduling goroutine and one stdout owner. HTTP work may finish
 // out of order, while frames and goroutines remain bounded. Cancellation is
-// handled before ordinary admission so a saturated session can still release a
+// handled before ordinary admission so a saturated bridge can still release a
 // long-running request.
 func (b *bridge) serve(r io.Reader, w io.Writer) error {
 	frames := make(chan frameRead, 1)
@@ -534,10 +533,10 @@ func (b *bridge) handleFrame(
 	idKey := requestIDKey(meta)
 	if idKey != "" {
 		if _, used := state.seenIDs[idKey]; used {
-			return writeFrame(w, rpcErrorFrame(meta, -32600, "request id was already used in this session"))
+			return writeFrame(w, rpcErrorFrame(meta, -32600, "request id was already used by this bridge process"))
 		}
-		if len(state.seenIDs) >= maxSessionRequestIDs {
-			return writeFrame(w, rpcErrorFrame(meta, -32000, "session request id limit reached"))
+		if len(state.seenIDs) >= maxProcessRequestIDs {
+			return writeFrame(w, rpcErrorFrame(meta, -32000, "bridge request id limit reached"))
 		}
 	}
 	if len(state.inflight) >= maxConcurrentRequests {
@@ -554,7 +553,7 @@ func (b *bridge) handleFrame(
 	}
 
 	state.sequence++
-	token := fmt.Sprintf("%s-%x", b.sessionID, state.sequence)
+	token := b.requestToken(state.sequence)
 	ctx, cancel := context.WithCancel(context.Background())
 	apiKey, protocolVersion := b.transportState()
 	operationID := b.mutationOperationID(frame.line, meta)
@@ -647,6 +646,16 @@ func canonicalRequestID(meta requestMeta) (string, bool) {
 func digestRequestID(canonical string) string {
 	digest := sha256.Sum256([]byte(canonical))
 	return string(digest[:])
+}
+
+func (b *bridge) requestToken(sequence uint64) string {
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("emisar-mcp-request-v1"))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write([]byte(b.processNonce))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write(strconv.AppendUint(nil, sequence, 10))
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func cancellationTargetKey(frame []byte) string {
@@ -965,13 +974,6 @@ func (b *bridge) forwardRequestContext(
 		req.Header.Set(attestationHeader, attestationValue)
 	}
 
-	// MCP session id. One bridge process = one client session, so the
-	// per-process id is the session boundary. The portal reuses it at
-	// `initialize` and records it on each run + audit event, so a session's
-	// actions can be correlated (stdio clients can't echo a server-issued
-	// Mcp-Session-Id, so we supply our own).
-	req.Header.Set("Mcp-Session-Id", b.sessionID)
-
 	// Self-reported client metadata (untrusted correlation enrichment). Forwarded
 	// verbatim on every request; the portal re-validates it and snapshots it onto
 	// MCP action runs. Omitted entirely when unconfigured.
@@ -979,9 +981,9 @@ func (b *bridge) forwardRequestContext(
 		req.Header.Set(clientMetadataHeader, b.clientMetadata)
 	}
 
-	// Idempotency key: stable per (process, request-id) so a duplicated
+	// Idempotency key: stable per (bridge process, request-id) so a duplicated
 	// downstream delivery collapses to a single run on the portal. MCP request
-	// ids themselves are single-use within the bridge session. The portal honors
+	// ids themselves are single-use within the bridge process. The portal honors
 	// `Idempotency-Key` against the
 	// `(api_key_id, idempotency_key)` unique index.
 	if k := b.idempotencyKeyFor(meta); k != "" {
@@ -1211,14 +1213,14 @@ func (b *bridge) idempotencyKeyFor(meta requestMeta) string {
 		return ""
 	}
 	hash := sha256.New()
-	_, _ = hash.Write([]byte(b.sessionID))
+	_, _ = hash.Write([]byte(b.processNonce))
 	_, _ = hash.Write([]byte{0, meta.idKind, 0})
 	_, _ = hash.Write(meta.id)
 	return "mcp-" + hex.EncodeToString(hash.Sum(nil))
 }
 
 // operationIDFor derives the private operation identity from this bridge
-// session and the typed JSON-RPC request id. It is distinct from JSON-RPC
+// process and the typed JSON-RPC request id. It is distinct from JSON-RPC
 // correlation and from Idempotency-Key, but stable across transport retries of
 // one request. Notifications intentionally have no operation identity.
 func (b *bridge) operationIDFor(meta requestMeta) string {
@@ -1229,7 +1231,7 @@ func (b *bridge) operationIDFor(meta requestMeta) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("emisar-mcp-operation-v1"))
 	_, _ = digest.Write([]byte{0})
-	_, _ = digest.Write([]byte(b.sessionID))
+	_, _ = digest.Write([]byte(b.processNonce))
 	_, _ = digest.Write([]byte{0})
 	_, _ = digest.Write([]byte(requestIdentity))
 	var operationBytes [16]byte
@@ -1356,18 +1358,15 @@ func buildUserAgent() string {
 	return fmt.Sprintf("%s/%s (client=%s; host=%s; os=%s)", bridgeName, Version, client, host, runtime.GOOS)
 }
 
-// newSessionID returns a 16-byte hex nonce identifying this bridge
-// process. It serves as the MCP session id (Mcp-Session-Id) and
-// namespaces idempotency keys: two unrelated bridge processes never
-// alias each other's request ids, and the same process's resend of a
-// frame collapses to one run. It fails closed on a rand read error
-// (like newNonce) rather than returning a shared constant — a bridge
-// that can't mint a unique session id can't namespace idempotency or
-// correlate audit, so main() aborts instead.
-func newSessionID(r io.Reader) (string, error) {
+// newProcessNonce returns a 16-byte random hex namespace for one bridge
+// process. It stays local; only fixed-length digests and request-generation
+// tokens derived from it cross the transport. Failure is fatal because a
+// process that cannot mint a unique namespace cannot safely correlate retries
+// or concurrent requests.
+func newProcessNonce(r io.Reader) (string, error) {
 	var b [16]byte
 	if _, err := io.ReadFull(r, b[:]); err != nil {
-		return "", fmt.Errorf("session id: %w", err)
+		return "", fmt.Errorf("process nonce: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
 }

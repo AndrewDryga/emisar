@@ -114,6 +114,20 @@ error results against those same internal result schemas.
 
 ## Common contracts
 
+### Transport lifecycle
+
+The canonical endpoint is stateless JSON-only Streamable HTTP. It negotiates
+`2025-11-25` or `2025-06-18`; the pre-Streamable-HTTP `2024-11-05` transport is
+not supported. The portal does not issue or echo `Mcp-Session-Id`, offers no SSE
+stream, and returns `405` for GET and DELETE. After initialization, clients send
+the negotiated `MCP-Protocol-Version` on each POST.
+
+The stdio bridge keeps one random process nonce solely as local namespace
+material for operation IDs, idempotency digests, and request-generation
+digests. The nonce itself never crosses HTTP and is not presented as an MCP
+session. This keeps portal nodes interchangeable without weakening exact
+mutation recovery or cancellation correlation.
+
 ### Scope and disclosure
 
 Every read uses the API key's account and the minting operator's current runner
@@ -727,11 +741,11 @@ rejection above. Bridge, portal, and runner gates run the same byte vectors.
 ### Operation identity and atomicity
 
 The JSON-RPC request `id` correlates a protocol response. It is not itself an
-execution identity, and its JSON type matters. MCP requires request IDs to be
-unique within a session.
+execution identity, and its JSON type matters. The bridge requires request IDs
+to be unique for the life of its stdio process.
 
 For each mutation, the bridge derives an `operation_id` from its random 128-bit
-session ID and the type-tagged MCP request ID. This produces a stable 128-bit
+process nonce and the type-tagged MCP request ID. This produces a stable 128-bit
 digest for transport retries without a local journal. The digest is encoded as
 26 Crockford-base32 characters and has no timestamp semantics. Models never
 supply or invent operation or idempotency keys.
@@ -1171,6 +1185,10 @@ error when the operation ID was returned or recorded before a process loss.
 - Cancelling `wait_for_run` stops observation only; it never cancels the run.
 - The bridge maps cancellation by the original typed JSON-RPC ID and never emits
   a response to the cancelled request.
+- Across HTTP, the bridge sends only a fixed-length digest naming that one
+  request generation. The stateless portal binds it to the account and current
+  key (or its immediate rotation successor). Native HTTP requests without this
+  private token are not cross-request cancellable.
 
 These semantics follow MCP cancellation's race-tolerant contract without
 pretending that cancellation of observation can transactionally undo a remote

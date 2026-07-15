@@ -368,7 +368,7 @@ defmodule EmisarWeb.Router do
 
   # -- MCP / LLM tool surface -----------------------------------------
 
-  # Streamable-HTTP (MCP 2025-06-18) JSON-RPC endpoint — the canonical MCP
+  # Streamable-HTTP JSON-RPC endpoint — the canonical MCP
   # surface the stdio bridge and remote connectors (Claude / ChatGPT / Cursor)
   # use. Deliberately OUTSIDE the `:api` pipeline: a Streamable-HTTP GET opens an
   # SSE stream with `Accept: text/event-stream`, which `:accepts, ["json"]`

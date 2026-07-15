@@ -391,16 +391,15 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "serialized row shape" do
-    test "omits mcp_session_id / auth_method / mfa / user_identity_id from the feed", %{
+    test "omits auth_method / mfa / user_identity_id from the feed", %{
       conn: conn,
       account: account,
       raw_key: raw
     } do
-      # These four columns exist on the audit row (surfaced in the UI detail
+      # These columns exist on the audit row (surfaced in the UI detail
       # view) but are deliberately NOT projected into the SIEM feed.
       _ =
         insert_event(account, "user.signed_in",
-          mcp_session_id: "5985d95cf73715ff",
           auth_method: "sso",
           mfa: true,
           user_identity_id: Ecto.UUID.generate()
@@ -413,9 +412,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
         |> ndjson()
         |> parse_ndjson()
 
-      # The projected columns are present; these 4 UI-only ones are absent.
+      # The projected columns are present; these UI-only ones are absent.
       assert event["event_type"] == "user.signed_in"
-      refute Map.has_key?(event, "mcp_session_id")
       refute Map.has_key?(event, "auth_method")
       refute Map.has_key?(event, "mfa")
       refute Map.has_key?(event, "user_identity_id")

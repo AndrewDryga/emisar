@@ -154,26 +154,6 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "Claude Code"
   end
 
-  test "shows the MCP session id as a sub-line under Source, not its own cell", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
-
-    run =
-      run_with(account, %{
-        source: "mcp",
-        api_key_id: key.id,
-        mcp_session_id: "5985d95cab127f30"
-      })
-
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
-
-    # The truncated id rides under the Source cell (full id on hover); the
-    # standalone "MCP session" meta cell is gone.
-    assert html =~ "session 5985d95c"
-    assert html =~ ~s(title="5985d95cab127f30")
-    refute html =~ "MCP session"
-  end
-
   test "renders self-reported client metadata, labeled as not verified posture", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 

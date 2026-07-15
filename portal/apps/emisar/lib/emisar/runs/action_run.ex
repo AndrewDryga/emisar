@@ -65,9 +65,6 @@ defmodule Emisar.Runs.ActionRun do
     # enrichment, validated at the MCP boundary; empty for non-MCP runs. Never a
     # policy/approval/authorization input.
     field :mcp_client_metadata, :map, default: %{}
-    # MCP Streamable-HTTP session id (Mcp-Session-Id), for correlating the
-    # runs from one session; nil for non-MCP runs.
-    field :mcp_session_id, :string
     # The dispatcher's source ip + user agent, snapshotted from the dispatch
     # request at create time so every run-lifecycle audit event can attribute the
     # action — even the terminal one logged from the runner socket, where there is

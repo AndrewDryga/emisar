@@ -368,7 +368,6 @@ defmodule EmisarWeb.MCP.Service do
           optional(:reason) => String.t() | nil,
           optional(:wait_ms) => non_neg_integer(),
           optional(:idempotency_key) => String.t() | nil,
-          optional(:mcp_session_id) => String.t() | nil,
           optional(:attestation) => map() | nil | :invalid
         }
 
@@ -402,7 +401,6 @@ defmodule EmisarWeb.MCP.Service do
     reason = Map.get(opts, :reason)
     idempotency_key = Map.get(opts, :idempotency_key)
     wait_ms = Map.get(opts, :wait_ms, 0)
-    mcp_session_id = Map.get(opts, :mcp_session_id)
     attestation = Map.get(opts, :attestation)
 
     with :ok <- validate_reason(reason),
@@ -422,7 +420,6 @@ defmodule EmisarWeb.MCP.Service do
             source: "mcp",
             api_key_id: api_key.id,
             client_info: api_key.last_client_info || %{},
-            mcp_session_id: mcp_session_id,
             attestation: attestation,
             idempotency_key: per_runner_key,
             requested_by_membership_id: api_key.created_by_membership_id
@@ -463,7 +460,6 @@ defmodule EmisarWeb.MCP.Service do
           source: "mcp",
           api_key_id: api_key.id,
           client_info: api_key.last_client_info || %{},
-          mcp_session_id: request_session_id(conn),
           attestation: intent.attestation,
           idempotency_key: Idempotency.per_runner(intent.operation_id, target.id),
           operation_id: intent.operation_id,
@@ -614,13 +610,6 @@ defmodule EmisarWeb.MCP.Service do
     if Runs.ActionRun.terminal?(status),
       do: nil,
       else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
-  end
-
-  defp request_session_id(conn) do
-    case Plug.Conn.get_req_header(conn, "mcp-session-id") do
-      [session_id | _] when session_id != "" -> session_id
-      _ -> nil
-    end
   end
 
   # -- Run fetch + long-poll ------------------------------------------

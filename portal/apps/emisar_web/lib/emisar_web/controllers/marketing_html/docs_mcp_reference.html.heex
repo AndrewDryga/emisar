@@ -20,8 +20,9 @@
         <p>
           emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP. The current negotiated protocol is <code>2025-11-25</code>;
           <code>2025-06-18</code>
-          and <code>2024-11-05</code>
-          remain supported.
+          remains supported. The endpoint is stateless: it does not issue an
+          <code>Mcp-Session-Id</code>
+          or require sticky routing.
         </p>
         <ul>
           <li><code>initialize</code> returns capabilities and operating instructions.</li>

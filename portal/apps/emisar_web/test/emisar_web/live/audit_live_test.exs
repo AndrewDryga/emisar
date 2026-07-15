@@ -1009,24 +1009,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "emisar-mcp/dev (client=claude-desktop"
     end
 
-    test "shows the MCP session id when the event carries one", %{conn: conn, account: account} do
-      {:ok, event} =
-        Audit.log(account.id, "action_run.success",
-          actor_kind: "api_key",
-          actor_label: "Claude Code",
-          target_kind: "action_run",
-          target_label: "nomad.job_status",
-          ip_address: "127.0.0.1",
-          user_agent: "emisar-mcp/0.1.1 (client=claude-code; host=mac)",
-          mcp_session_id: "5985d95cf73715ff"
-        )
-
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
-
-      assert html =~ "MCP session"
-      assert html =~ "5985d95cf73715ff"
-    end
-
     test "redirects to list with flash when event id is unknown", %{conn: conn, account: account} do
       missing = Ecto.UUID.generate()
 

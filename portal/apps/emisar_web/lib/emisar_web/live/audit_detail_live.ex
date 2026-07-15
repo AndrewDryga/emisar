@@ -101,8 +101,8 @@ defmodule EmisarWeb.AuditDetailLive do
       <div class="mt-4 space-y-12">
         <div>
           <%!-- Event facts on the CANVAS — when it occurred, where from,
-               request id (the actor's MCP session/client ride the Actor
-               cluster: they describe who acted, not the event). --%>
+               request id (the MCP client rides the Actor cluster: it describes
+               who acted, not the event). --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
             <%!-- wrap: forensic precision must survive a phone — the timestamp takes
              the full row and wraps rather than clipping (it isn't copy-backed). --%>
@@ -155,7 +155,6 @@ defmodule EmisarWeb.AuditDetailLive do
               user_agent={@event.user_agent}
               auth_method={@event.auth_method}
               mfa={@event.mfa}
-              mcp_session={@event.mcp_session_id}
               mcp_client={if posture.bridge?, do: posture.client}
               mcp_client_host={if posture.bridge?, do: posture.host}
               mcp_client_os={if posture.bridge?, do: posture.os}
@@ -346,7 +345,6 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :user_agent, :string, default: nil
   attr :runner, :map, default: nil
   attr :run, :map, default: nil
-  attr :mcp_session, :string, default: nil
   attr :mcp_client, :string, default: nil
   attr :mcp_client_host, :string, default: nil
   attr :mcp_client_os, :string, default: nil
@@ -400,9 +398,7 @@ defmodule EmisarWeb.AuditDetailLive do
            20px minimum row with a 4px gap; copy buttons can no longer make the
            ID row taller than the text-only rows below it. --%>
       <dl
-        :if={
-          @id || @runner || @run || @device || @auth_method || @mcp_client_label != "" || @mcp_session
-        }
+        :if={@id || @runner || @run || @device || @auth_method || @mcp_client_label != ""}
         class="mt-3 grid grid-cols-[5.25rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
         data-audit-facts
       >
@@ -450,15 +446,6 @@ defmodule EmisarWeb.AuditDetailLive do
           title={@mcp_client_label}
         >
           {@mcp_client_label}
-        </dd>
-
-        <dt :if={@mcp_session} class={entity_fact_label_class()}>MCP session</dt>
-        <dd
-          :if={@mcp_session}
-          class={[entity_fact_value_class(), "truncate font-mono"]}
-          title={@mcp_session}
-        >
-          {@mcp_session}
         </dd>
       </dl>
     </div>

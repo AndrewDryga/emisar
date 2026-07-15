@@ -1,11 +1,12 @@
 defmodule EmisarWeb.MCP.Transport do
   @moduledoc """
-  Pure Streamable-HTTP (MCP 2025-06-18) transport-conformance predicates for the
+  Pure Streamable-HTTP transport-conformance predicates for the current MCP
+  revision and the supported 2025-06-18 revision at the
   stateless `/api/mcp/rpc` endpoint. The controller wires each into a plug;
   keeping the decision pure makes every rule unit-testable in isolation.
 
   emisar is a JSON-only, **stateless** MCP server: it opens no SSE stream and
-  issues no durable session, so a GET/DELETE to the endpoint is answered `405`.
+  issues no MCP session id, so a GET/DELETE to the endpoint is answered `405`.
   On POST it accepts only a JSON body, requires the client to accept
   `application/json` back, validates the `MCP-Protocol-Version` header when
   present on a post-initialize request, and rejects a cross-origin browser

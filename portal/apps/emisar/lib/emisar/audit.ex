@@ -1,7 +1,7 @@
 defmodule Emisar.Audit do
   @moduledoc """
   System-of-record audit log. Append-only; queryable by time, type,
-  actor, subject. Distinct from `Runs.RunEvent` (progress chunks for
+  actor, target. Distinct from `Runs.RunEvent` (progress chunks for
   one run) — `Audit.Event` is the human-facing "what happened?" log.
 
   ## Public read API
@@ -19,8 +19,8 @@ defmodule Emisar.Audit do
 
   ## Request metadata
 
-  IP, user agent, request id, and MCP session are the inbound request's
-  context. They ride in a `%RequestContext{}` passed via the `:context`
+  IP, user agent, and request id are the inbound request's context. They
+  ride in a `%RequestContext{}` passed via the `:context`
   attr key — from the caller's `%Subject{}` for an authenticated event
   (`Audit.Events` builders pull `subject.context` automatically), or
   explicitly on the pre-auth path. An event with no `:context` (system /
@@ -208,7 +208,6 @@ defmodule Emisar.Audit do
           # "request" for a run — promoted to a first-class field instead of
           # being buried in (and duplicated by) the payload.
           request_id: run.request_id,
-          mcp_session_id: run.mcp_session_id,
           # The dispatcher's ip/ua, snapshotted on the run at create time — so even
           # the terminal event written from the runner-socket process (no inbound
           # request) attributes the action to its source, never the runner's socket.

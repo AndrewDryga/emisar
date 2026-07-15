@@ -2,7 +2,7 @@ defmodule EmisarWeb.RequestContext do
   @moduledoc """
   Builds an `Emisar.RequestContext` from the inbound HTTP connection or
   the LiveView socket — the web boundary's single place for pulling the
-  client IP, user agent, request id, and MCP session id off the wire.
+  client IP, user agent, and request id off the wire.
 
   The resulting struct is carried on `%Auth.Subject{}.context` for an
   authenticated caller (so every audit row the caller produces inherits
@@ -17,37 +17,22 @@ defmodule EmisarWeb.RequestContext do
   import Plug.Conn, only: [get_req_header: 2, get_resp_header: 2]
   alias Emisar.RequestContext
 
-  @mcp_session_id_max_bytes 255
-
   @doc "Request context for an HTTP request (`%Plug.Conn{}`)."
   def from_conn(conn) do
     RequestContext.new(%{
       ip_address: client_ip(conn),
       user_agent: List.first(get_req_header(conn, "user-agent")),
-      request_id: List.first(get_resp_header(conn, "x-request-id")),
-      mcp_session_id: mcp_session_id(conn)
+      request_id: List.first(get_resp_header(conn, "x-request-id"))
     })
   end
 
   @doc "Client IP from the trusted GCP forwarding tail, or the direct socket peer."
   def client_ip(conn), do: normalize_ip(forwarded_for(conn) || peer_ip(conn))
 
-  @doc "The bounded MCP session id from the request, or nil when absent or oversized."
-  def mcp_session_id(conn) do
-    case get_req_header(conn, "mcp-session-id") do
-      [value | _]
-      when is_binary(value) and value != "" and byte_size(value) <= @mcp_session_id_max_bytes ->
-        value
-
-      _ ->
-        nil
-    end
-  end
-
   @doc """
   Request context for a LiveView socket, from its connect info. Carries
-  IP + user agent only — request id and MCP session are HTTP-request
-  concerns the socket doesn't have. Like `from_conn/1`, the client IP comes
+  IP + user agent only — request ids are an HTTP-request concern the socket
+  doesn't have. Like `from_conn/1`, the client IP comes
   from the GCP-appended tail of `x-forwarded-for`. Requires `:peer_data`,
   `:user_agent`, and `:x_headers` in the endpoint's `socket "/live"`
   `connect_info`.

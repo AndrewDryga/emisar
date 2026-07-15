@@ -10,12 +10,11 @@ defmodule Emisar.AuditTest do
       %{account: account}
     end
 
-    test "stamps IP/UA/request_id/mcp_session from the :context struct", %{account: account} do
+    test "stamps IP, user agent, and request id from the context struct", %{account: account} do
       context = %RequestContext{
         ip_address: "10.0.0.42",
         user_agent: "curl/8.5.0",
-        request_id: "req_abc",
-        mcp_session_id: "sess_xyz"
+        request_id: "req_abc"
       }
 
       {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system", context: context)
@@ -23,7 +22,6 @@ defmodule Emisar.AuditTest do
       assert event.ip_address == "10.0.0.42"
       assert event.user_agent == "curl/8.5.0"
       assert event.request_id == "req_abc"
-      assert event.mcp_session_id == "sess_xyz"
     end
 
     test "explicit attrs win over the context struct", %{account: account} do
@@ -47,7 +45,6 @@ defmodule Emisar.AuditTest do
       assert event.ip_address == nil
       assert event.user_agent == nil
       assert event.request_id == nil
-      assert event.mcp_session_id == nil
     end
 
     test "over-long request metadata is truncated, not rejected (audit can't be evaded)", %{
@@ -260,10 +257,10 @@ defmodule Emisar.AuditTest do
   end
 
   describe "run_event_changeset/1" do
-    # request_id + mcp_session_id are promoted to first-class
-    # fields (not buried in payload), and nil payload keys are compacted so a
+    # request_id is promoted to a first-class field (not buried in payload),
+    # and nil payload keys are compacted so a
     # freshly-created run's row doesn't bloat with still-empty fields.
-    test "promotes request_id + mcp_session_id and drops nil payload keys" do
+    test "promotes request_id and drops nil payload keys" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -279,7 +276,6 @@ defmodule Emisar.AuditTest do
       changeset = Audit.run_event_changeset(run)
 
       assert Ecto.Changeset.get_field(changeset, :request_id) == run.request_id
-      assert Ecto.Changeset.get_field(changeset, :mcp_session_id) == run.mcp_session_id
 
       # The changeset payload carries atom keys (compact/1 builds an atom-keyed
       # map; JSON serialization to string keys happens at insert time).
@@ -365,9 +361,9 @@ defmodule Emisar.AuditTest do
 
   describe "system/engine-origin builders carry no caller request metadata" do
     # An engine-written run event is system-origin (no %Subject{}), so it inherits
-    # NO caller ip/ua/mcp_session — the runner-UA-bleed class of bug. It DOES carry
+    # No caller IP or user agent — the runner-UA-bleed class of bug. It does carry
     # the run's OWN request_id (the intended audit↔run link, not a context bleed).
-    test "a system-origin run event carries no caller ip/ua/mcp_session" do
+    test "a system-origin run event carries no caller IP or user agent" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -385,7 +381,6 @@ defmodule Emisar.AuditTest do
       assert event.actor_kind == "system"
       assert event.ip_address == nil
       assert event.user_agent == nil
-      assert event.mcp_session_id == nil
       # The run's own request_id is correlated (links the audit row to the run);
       # it is NOT a caller's bled-through request id.
       assert event.request_id == run.request_id
@@ -414,8 +409,7 @@ defmodule Emisar.AuditTest do
       context = %RequestContext{
         ip_address: "203.0.113.7",
         user_agent: "Mozilla/5.0",
-        request_id: "req_evt",
-        mcp_session_id: "sess_evt"
+        request_id: "req_evt"
       }
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
@@ -426,11 +420,10 @@ defmodule Emisar.AuditTest do
       assert event.actor_kind == "user"
       assert event.actor_id == user.id
       # …and so does the request metadata — the lever that lets every
-      # builder inherit ip/ua/request_id/mcp_session without threading a conn.
+      # builder inherit IP, user agent, and request id without threading a conn.
       assert event.ip_address == "203.0.113.7"
       assert event.user_agent == "Mozilla/5.0"
       assert event.request_id == "req_evt"
-      assert event.mcp_session_id == "sess_evt"
     end
 
     test "a subject with the default (empty) context yields no request metadata", %{
@@ -445,7 +438,6 @@ defmodule Emisar.AuditTest do
       assert event.ip_address == nil
       assert event.user_agent == nil
       assert event.request_id == nil
-      assert event.mcp_session_id == nil
     end
 
     test "a builder stamps the subject's auth provenance onto the event", %{
