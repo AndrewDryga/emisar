@@ -1,0 +1,111 @@
+# Engagement and Retention
+
+<!-- livebook: {"persist_outputs": true} -->
+
+An active account dispatched at least one action in the period. This measures product use, not sign-in activity.
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Active accounts
+
+```elixir
+activity =
+  Analytics.query(db, """
+  SELECT
+    count(DISTINCT account_id) FILTER (WHERE inserted_at >= now() - interval '1 day') AS active_1d,
+    count(DISTINCT account_id) FILTER (WHERE inserted_at >= now() - interval '7 days') AS active_7d,
+    count(DISTINCT account_id) FILTER (WHERE inserted_at >= now() - interval '30 days') AS active_30d,
+    count(DISTINCT account_id) FILTER (WHERE inserted_at >= now() - interval '90 days') AS active_90d
+  FROM action_runs
+  """)
+  |> hd()
+
+Analytics.kpis([
+  {"Active accounts, 1d", activity["active_1d"]},
+  {"Active accounts, 7d", activity["active_7d"]},
+  {"Active accounts, 30d", activity["active_30d"]},
+  {"Active accounts, 90d", activity["active_90d"]}
+])
+```
+
+## Weekly active accounts
+
+```elixir
+weekly_active =
+  Analytics.query(db, """
+  WITH weeks AS (
+    SELECT generate_series(date_trunc('week', now()) - interval '25 weeks', date_trunc('week', now()), interval '1 week') AS week
+  )
+  SELECT to_char(weeks.week, 'YYYY-MM-DD') AS week, count(DISTINCT ar.account_id) AS active_accounts
+  FROM weeks
+  LEFT JOIN action_runs ar ON ar.inserted_at >= weeks.week AND ar.inserted_at < weeks.week + interval '1 week'
+  GROUP BY weeks.week
+  ORDER BY weeks.week
+  """)
+
+Analytics.line(weekly_active, "week", "active_accounts", title: "Weekly active accounts", y_title: "Accounts")
+```
+
+## Weekly cohort retention
+
+Week zero is the signup week. Later columns count accounts that dispatched an action in that relative week.
+
+```elixir
+retention =
+  Analytics.query(db, """
+  WITH cohorts AS (
+    SELECT id, date_trunc('week', inserted_at)::date AS cohort_week
+    FROM accounts
+    WHERE deleted_at IS NULL AND inserted_at >= date_trunc('week', now()) - interval '12 weeks'
+  ), activity AS (
+    SELECT DISTINCT account_id, date_trunc('week', inserted_at)::date AS active_week
+    FROM action_runs
+  )
+  SELECT to_char(c.cohort_week, 'YYYY-MM-DD') AS cohort_week,
+    count(DISTINCT c.id) AS cohort_size,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week) AS week_0,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week + 7) AS week_1,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week + 14) AS week_2,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week + 28) AS week_4,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week + 56) AS week_8,
+    count(DISTINCT c.id) FILTER (WHERE a.active_week = c.cohort_week + 84) AS week_12
+  FROM cohorts c
+  LEFT JOIN activity a ON a.account_id = c.id
+  GROUP BY c.cohort_week
+  ORDER BY c.cohort_week
+  """)
+
+Analytics.table(retention)
+```
+
+## Account engagement
+
+```elixir
+engagement =
+  Analytics.query(db, """
+  SELECT a.name AS account,
+    count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days') AS runs_30d,
+    count(DISTINCT ar.action_id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days') AS actions_30d,
+    max(ar.inserted_at) AS last_run_at
+  FROM accounts a
+  LEFT JOIN action_runs ar ON ar.account_id = a.id
+  WHERE a.deleted_at IS NULL
+  GROUP BY a.id, a.name
+  ORDER BY runs_30d DESC, a.name
+  LIMIT 500
+  """)
+
+Analytics.table(engagement)
+```

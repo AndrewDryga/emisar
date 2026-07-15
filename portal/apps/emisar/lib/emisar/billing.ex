@@ -771,7 +771,6 @@ defmodule Emisar.Billing do
         :ok
 
       %Accounts.Account{} = account ->
-        price_id = extract_price_id(subscription_data)
         cancel_scheduled? = scheduled_cancel?(subscription_data)
 
         # Plan identity: the product custom_data's own slug wins, then the
@@ -799,12 +798,10 @@ defmodule Emisar.Billing do
             status: subscription_data["status"],
             cancel_at_period_end: cancel_scheduled?
           }
+          |> Map.merge(subscription_item_attrs(subscription_data))
           |> put_present(:entitlements, Entitlements.from_paddle_subscription(subscription_data))
-          |> put_present(:paddle_price_id, price_id)
-          |> put_present(:billing_interval, extract_billing_interval(subscription_data))
           |> put_present(:current_period_end, period_end(subscription_data, cancel_scheduled?))
           |> put_present(:current_period_start, extract_current_period_start(subscription_data))
-          |> put_present(:quantity, extract_quantity(subscription_data))
           |> put_present(:paddle_updated_at, extract_paddle_updated_at(subscription_data))
 
         upsert_subscription(account.id, attrs)
@@ -832,26 +829,59 @@ defmodule Emisar.Billing do
 
   defp extract_current_period_start(_), do: nil
 
-  # Paddle bills a single line item; its quantity is the seat/runner count.
-  defp extract_quantity(%{"items" => [%{"quantity" => quantity} | _]}) when is_integer(quantity),
-    do: quantity
+  @doc false
+  # Paddle bills one recurring line item. Keep all price-derived mirror fields
+  # together so webhooks and the reconciliation sweep cannot drift. Invalid or
+  # absent vendor values are omitted, preserving the last known-good mirror.
+  def subscription_item_attrs(%{"items" => [%{"price" => price} = item | _]})
+      when is_map(price) do
+    cycle = map_or_empty(price["billing_cycle"])
+    unit_price = map_or_empty(price["unit_price"])
 
-  defp extract_quantity(_), do: nil
+    %{}
+    |> put_present(:paddle_price_id, present_binary(price["id"]))
+    |> put_present(:billing_interval, present_binary(cycle["interval"]))
+    |> put_present(:billing_frequency, positive_integer(cycle["frequency"]))
+    |> put_present(:unit_price_amount, non_negative_integer(unit_price["amount"]))
+    |> put_present(:currency_code, currency_code(unit_price["currency_code"]))
+    |> put_present(:quantity, positive_integer(item["quantity"]))
+  end
 
-  # Paddle subscription payloads nest the price under `items[].price.id`.
-  # We bill a single line item, so the first item's price id is the plan.
-  defp extract_price_id(%{"items" => [%{"price" => %{"id" => id}} | _]}) when is_binary(id),
-    do: id
+  def subscription_item_attrs(_subscription_data), do: %{}
 
-  defp extract_price_id(_), do: nil
+  defp map_or_empty(value) when is_map(value), do: value
+  defp map_or_empty(_value), do: %{}
 
-  # The billing cadence ("month" | "year") from the first item's price — the
-  # same item extract_price_id reads. Absent nesting (or no items) → nil, which
-  # billing_summary reads as monthly.
-  defp extract_billing_interval(%{"items" => [item | _]}),
-    do: get_in(item, ["price", "billing_cycle", "interval"])
+  defp present_binary(value) when is_binary(value) and value != "", do: value
+  defp present_binary(_value), do: nil
 
-  defp extract_billing_interval(_), do: nil
+  defp positive_integer(value) when is_integer(value) and value > 0, do: value
+
+  defp positive_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer > 0 -> integer
+      _ -> nil
+    end
+  end
+
+  defp positive_integer(_value), do: nil
+
+  defp non_negative_integer(value) when is_integer(value) and value >= 0, do: value
+
+  defp non_negative_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer >= 0 -> integer
+      _ -> nil
+    end
+  end
+
+  defp non_negative_integer(_value), do: nil
+
+  defp currency_code(value) when is_binary(value) do
+    if String.match?(value, ~r/^[A-Z]{3}$/), do: value
+  end
+
+  defp currency_code(_value), do: nil
 
   # nil-tolerant adapter: Paddle payloads may omit the customer id.
   defp peek_account_by_paddle_customer(customer_id) when is_binary(customer_id),

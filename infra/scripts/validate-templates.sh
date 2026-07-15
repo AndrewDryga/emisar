@@ -62,6 +62,45 @@ ruby -ryaml -e '
   end
 ' "$livebook_rendered" "$livebook_scripts"
 
+livebook_notebooks="$tmp/livebook-notebooks"
+mkdir "$livebook_notebooks"
+ruby -ryaml -e '
+  document = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+  document.fetch("write_files").each do |entry|
+    next unless entry.fetch("path").end_with?(".livemd")
+    destination = File.join(ARGV.fetch(1), File.basename(entry.fetch("path")))
+    File.write(destination, entry.fetch("content"))
+  end
+' "$livebook_rendered" "$livebook_notebooks"
+
+for notebook in "${infra_dir}"/livebook/notebooks/*.livemd; do
+  cmp "$notebook" "$livebook_notebooks/$(basename "$notebook")"
+done
+
+rendered_notebook_count=$(find "$livebook_notebooks" -type f -name '*.livemd' | wc -l | tr -d ' ')
+source_notebook_count=$(find "${infra_dir}/livebook/notebooks" -type f -name '*.livemd' | wc -l | tr -d ' ')
+[ "$rendered_notebook_count" = "$source_notebook_count" ]
+
+docker run --rm --read-only --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --tmpfs /data:rw,nosuid,nodev,size=64m \
+  --mount type=bind,src="$livebook_notebooks",dst=/notebooks,readonly \
+  --entrypoint /app/bin/livebook "$livebook_image" eval '
+    files = Path.wildcard("/notebooks/*.livemd")
+    files == [] && raise "no Livebook notebooks rendered"
+
+    Enum.each(files, fn file ->
+      {notebook, %{warnings: warnings}} =
+        file |> File.read!() |> Livebook.LiveMarkdown.notebook_from_livemd()
+
+      warnings != [] && raise "#{Path.basename(file)}: #{inspect(warnings)}"
+
+      notebook
+      |> Livebook.Notebook.Export.Elixir.notebook_to_elixir()
+      |> Code.string_to_quoted!()
+    end)
+  '
+
 grep -Fq "ensure_image \"$livebook_image\"" "$livebook_rendered"
 grep -Fq "ensure_image \"$proxy_image\"" "$livebook_rendered"
 grep -Fq 'LIVEBOOK_IDENTITY_PROVIDER=google_iap:' "$livebook_rendered"
@@ -69,6 +108,9 @@ grep -Fq 'LIVEBOOK_TOKEN_ENABLED=false' "$livebook_rendered"
 grep -Fq 'LIVEBOOK_NODE=livebook@' "$livebook_rendered"
 grep -Fq 'PGOPTIONS=-c default_transaction_read_only=on' "$livebook_rendered"
 grep -Fq 'install -d -o 1000 -g 1000 -m 0750 "$mountpoint/.livebook"' "$livebook_rendered"
+grep -Fq 'if [ ! -e "$destination" ]; then' "$livebook_rendered"
+grep -Fq '/data/notebooks/Emisar Product Analytics' "${infra_dir}/README.md"
+grep -Fq 'product_analytics.exs' "$livebook_rendered"
 grep -Fq -- '--user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-privileges' "$livebook_rendered"
 grep -Fq -- '--tmpfs /app/tmp:rw,nosuid,nodev,size=64m' "$livebook_rendered"
 grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$livebook_rendered"

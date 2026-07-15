@@ -1,0 +1,117 @@
+# Runs and Reliability
+
+<!-- livebook: {"persist_outputs": true} -->
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Terminal reliability, 30 days
+
+```elixir
+reliability =
+  Analytics.query(db, """
+  SELECT
+    count(*) AS runs,
+    count(*) FILTER (WHERE status = 'success') AS successful,
+    count(*) FILTER (WHERE status IN ('failed', 'error', 'validation_failed', 'unknown_action', 'cancelled', 'timed_out', 'refused', 'denied')) AS unsuccessful,
+    count(*) FILTER (WHERE status IN ('pending', 'pending_approval', 'sent', 'running')) AS unsettled,
+    round(percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p50_duration_ms,
+    round(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p95_duration_ms
+  FROM action_runs
+  WHERE inserted_at >= now() - interval '30 days'
+  """)
+  |> hd()
+
+terminal = reliability["successful"] + reliability["unsuccessful"]
+
+Analytics.kpis([
+  {"Runs, 30d", reliability["runs"]},
+  {"Terminal success", Analytics.percent(reliability["successful"], terminal)},
+  {"Unsuccessful", reliability["unsuccessful"]},
+  {"Unsettled", reliability["unsettled"]},
+  {"p50 duration", "#{reliability["p50_duration_ms"] || 0} ms"},
+  {"p95 duration", "#{reliability["p95_duration_ms"] || 0} ms"}
+])
+```
+
+## Daily outcomes
+
+```elixir
+daily_outcomes =
+  Analytics.query(db, """
+  WITH days AS (
+    SELECT generate_series(current_date - 29, current_date, interval '1 day')::date AS day
+  ), outcomes AS (
+    SELECT inserted_at::date AS day,
+      CASE WHEN status = 'success' THEN 'success'
+           WHEN status IN ('pending', 'pending_approval', 'sent', 'running') THEN 'unsettled'
+           ELSE 'unsuccessful' END AS outcome,
+      count(*) AS runs
+    FROM action_runs
+    WHERE inserted_at >= current_date - 29
+    GROUP BY inserted_at::date, outcome
+  )
+  SELECT to_char(days.day, 'YYYY-MM-DD') AS day, labels.outcome, coalesce(outcomes.runs, 0) AS runs
+  FROM days
+  CROSS JOIN (VALUES ('success'), ('unsuccessful'), ('unsettled')) labels(outcome)
+  LEFT JOIN outcomes ON outcomes.day = days.day AND outcomes.outcome = labels.outcome
+  ORDER BY days.day, labels.outcome
+  """)
+
+Analytics.stacked_bar(daily_outcomes, "day", "runs", "outcome", title: "Daily run outcomes", y_title: "Runs")
+```
+
+## Action reliability
+
+```elixir
+actions =
+  Analytics.query(db, """
+  SELECT action_id,
+    count(*) AS runs,
+    count(*) FILTER (WHERE status = 'success') AS successful,
+    round(100.0 * count(*) FILTER (WHERE status = 'success') / NULLIF(count(*) FILTER (WHERE status IN ('success', 'failed', 'error', 'validation_failed', 'unknown_action', 'cancelled', 'timed_out', 'refused', 'denied')), 0), 1)::float8 AS success_rate,
+    round(percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p50_ms,
+    round(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p95_ms
+  FROM action_runs
+  WHERE inserted_at >= now() - interval '30 days'
+  GROUP BY action_id
+  ORDER BY runs DESC
+  LIMIT 100
+  """)
+
+Analytics.table(actions)
+```
+
+## Runner reliability
+
+```elixir
+runners =
+  Analytics.query(db, """
+  SELECT a.name AS account, r.name AS runner,
+    count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days') AS runs_30d,
+    count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days' AND ar.status <> 'success' AND ar.status NOT IN ('pending', 'pending_approval', 'sent', 'running')) AS unsuccessful_30d,
+    max(ar.inserted_at) AS last_run_at,
+    r.last_connected_at,
+    r.last_disconnected_at
+  FROM runners r
+  JOIN accounts a ON a.id = r.account_id
+  LEFT JOIN action_runs ar ON ar.runner_id = r.id
+  WHERE r.deleted_at IS NULL
+  GROUP BY a.name, r.id, r.name, r.last_connected_at, r.last_disconnected_at
+  ORDER BY unsuccessful_30d DESC, runs_30d DESC
+  LIMIT 500
+  """)
+
+Analytics.table(runners)
+```

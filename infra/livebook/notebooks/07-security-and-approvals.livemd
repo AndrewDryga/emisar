@@ -1,0 +1,119 @@
+# Security and Approvals
+
+<!-- livebook: {"persist_outputs": true} -->
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Current security posture
+
+```elixir
+posture =
+  Analytics.query(db, """
+  SELECT
+    (SELECT count(*) FROM approval_requests WHERE status = 'pending') AS pending_approvals,
+    (SELECT count(*) FROM approval_requests WHERE status = 'pending' AND expires_at < now()) AS overdue_approvals,
+    (SELECT count(*) FROM users WHERE deleted_at IS NULL AND mfa_enabled_at IS NOT NULL) AS mfa_users,
+    (SELECT count(*) FROM users WHERE deleted_at IS NULL) AS users,
+    (SELECT count(*) FROM runners WHERE deleted_at IS NULL AND enforce_signatures) AS signature_enforcing_runners,
+    (SELECT count(*) FROM runners WHERE deleted_at IS NULL) AS runners,
+    (SELECT count(*) FROM action_runs WHERE inserted_at >= now() - interval '30 days' AND status = 'denied') AS policy_denials_30d,
+    (SELECT count(*) FROM action_runs WHERE inserted_at >= now() - interval '30 days' AND status = 'refused') AS runner_refusals_30d
+  """)
+  |> hd()
+
+Analytics.kpis([
+  {"Pending approvals", posture["pending_approvals"]},
+  {"Expired while pending", posture["overdue_approvals"]},
+  {"MFA adoption", Analytics.percent(posture["mfa_users"], posture["users"])},
+  {"Signature enforcement", Analytics.percent(posture["signature_enforcing_runners"], posture["runners"])},
+  {"Policy denials, 30d", posture["policy_denials_30d"]},
+  {"Runner refusals, 30d", posture["runner_refusals_30d"]}
+])
+```
+
+## Approval outcomes and latency, 90 days
+
+```elixir
+approvals =
+  Analytics.query(db, """
+  SELECT status,
+    count(*) AS requests,
+    round(avg(extract(epoch FROM decided_at - requested_at)) FILTER (WHERE decided_at IS NOT NULL), 1)::float8 AS average_decision_seconds,
+    round((percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM decided_at - requested_at)) FILTER (WHERE decided_at IS NOT NULL))::numeric, 1)::float8 AS p95_decision_seconds
+  FROM approval_requests
+  WHERE requested_at >= now() - interval '90 days'
+  GROUP BY status
+  ORDER BY requests DESC
+  """)
+
+Analytics.table(approvals)
+```
+
+## Daily policy and trust outcomes
+
+```elixir
+trust_outcomes =
+  Analytics.query(db, """
+  SELECT to_char(inserted_at::date, 'YYYY-MM-DD') AS day, status, count(*) AS runs
+  FROM action_runs
+  WHERE inserted_at >= current_date - 89
+    AND status IN ('denied', 'refused', 'validation_failed', 'unknown_action')
+  GROUP BY inserted_at::date, status
+  ORDER BY inserted_at::date, status
+  """)
+
+Analytics.stacked_bar(trust_outcomes, "day", "runs", "status", title: "Policy and trust failures", y_title: "Runs")
+```
+
+## Audit event coverage, 30 days
+
+```elixir
+audit_coverage =
+  Analytics.query(db, """
+  SELECT event_type, actor_kind, count(*) AS events, max(occurred_at) AS latest_event
+  FROM audit_events
+  WHERE occurred_at >= now() - interval '30 days'
+  GROUP BY event_type, actor_kind
+  ORDER BY events DESC
+  LIMIT 100
+  """)
+
+Analytics.table(audit_coverage)
+```
+
+## Account security coverage
+
+```elixir
+account_security =
+  Analytics.query(db, """
+  SELECT a.name AS account,
+    count(DISTINCT m.user_id) FILTER (WHERE m.deleted_at IS NULL AND m.disabled_at IS NULL) AS active_members,
+    count(DISTINCT m.user_id) FILTER (WHERE m.deleted_at IS NULL AND m.disabled_at IS NULL AND u.mfa_enabled_at IS NOT NULL) AS mfa_members,
+    count(DISTINCT r.id) FILTER (WHERE r.deleted_at IS NULL) AS runners,
+    count(DISTINCT r.id) FILTER (WHERE r.deleted_at IS NULL AND r.enforce_signatures) AS signature_enforcing_runners,
+    count(DISTINCT p.id) FILTER (WHERE p.deleted_at IS NULL) AS policies
+  FROM accounts a
+  LEFT JOIN memberships m ON m.account_id = a.id
+  LEFT JOIN users u ON u.id = m.user_id
+  LEFT JOIN runners r ON r.account_id = a.id
+  LEFT JOIN policies p ON p.account_id = a.id
+  WHERE a.deleted_at IS NULL
+  GROUP BY a.id, a.name
+  ORDER BY a.name
+  LIMIT 500
+  """)
+
+Analytics.table(account_security)
+```

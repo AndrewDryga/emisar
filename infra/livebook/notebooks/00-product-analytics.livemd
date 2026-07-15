@@ -1,0 +1,49 @@
+# Emisar Product Analytics
+
+<!-- livebook: {"persist_outputs": true} -->
+
+This notebook pack reports product, revenue, reliability, and security facts from the production PostgreSQL mirror. Every query is aggregate or bounded, runs through an IAM-authenticated local proxy, defaults to read-only, and has a 30-second statement timeout.
+
+## Dashboards
+
+1. [Executive overview](./01-executive-overview.livemd)
+2. [Growth and activation](./02-growth-and-activation.livemd)
+3. [Revenue](./03-revenue.livemd)
+4. [Engagement and retention](./04-engagement-and-retention.livemd)
+5. [Runs and reliability](./05-runs-and-reliability.livemd)
+6. [MCP agents and client families](./06-mcp-agents-and-client-families.livemd)
+7. [Security and approvals](./07-security-and-approvals.livemd)
+8. [Account health](./08-account-health.livemd)
+9. [Metric definitions and data quality](./09-metric-definitions-and-data-quality.livemd)
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Data freshness
+
+```elixir
+freshness =
+  Analytics.query(db, """
+  SELECT 'accounts' AS dataset, max(inserted_at) AS latest_record FROM accounts
+  UNION ALL
+  SELECT 'action_runs', max(inserted_at) FROM action_runs
+  UNION ALL
+  SELECT 'audit_events', max(inserted_at) FROM audit_events
+  UNION ALL
+  SELECT 'subscriptions', max(updated_at) FROM subscriptions
+  ORDER BY dataset
+  """)
+
+Analytics.table(freshness)
+```

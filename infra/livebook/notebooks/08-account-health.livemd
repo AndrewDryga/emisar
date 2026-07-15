@@ -1,0 +1,127 @@
+# Account Health
+
+<!-- livebook: {"persist_outputs": true} -->
+
+Runner connectivity is last-known database activity, not the live Presence registry. Use an explicit Erlang distribution connection when debugging exact online state.
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Health matrix
+
+```elixir
+health =
+  Analytics.query(db, """
+  WITH members AS (
+    SELECT account_id, count(*) FILTER (WHERE deleted_at IS NULL AND disabled_at IS NULL) AS members
+    FROM memberships GROUP BY account_id
+  ), runner_health AS (
+    SELECT account_id,
+      count(*) FILTER (WHERE deleted_at IS NULL AND disabled_at IS NULL) AS runners,
+      count(*) FILTER (WHERE deleted_at IS NULL AND disabled_at IS NULL AND last_connected_at >= now() - interval '7 days') AS connected_7d,
+      max(last_connected_at) AS last_runner_connection
+    FROM runners GROUP BY account_id
+  ), agents AS (
+    SELECT account_id,
+      count(*) FILTER (WHERE kind = 'mcp' AND deleted_at IS NULL AND revoked_at IS NULL AND expires_at > now() AND created_by_membership_id IS NOT NULL AND (auto_generated_at IS NULL OR last_used_at IS NOT NULL)) AS agents,
+      max(last_used_at) FILTER (WHERE kind = 'mcp' AND deleted_at IS NULL AND revoked_at IS NULL AND expires_at > now() AND created_by_membership_id IS NOT NULL AND (auto_generated_at IS NULL OR last_used_at IS NOT NULL)) AS last_agent_use
+    FROM api_keys GROUP BY account_id
+  ), runs AS (
+    SELECT account_id,
+      count(*) FILTER (WHERE inserted_at >= now() - interval '30 days') AS runs_30d,
+      count(*) FILTER (WHERE inserted_at >= now() - interval '30 days' AND status = 'success') AS successful_30d,
+      count(*) FILTER (WHERE inserted_at >= now() - interval '30 days' AND status IN ('success', 'failed', 'error', 'validation_failed', 'unknown_action', 'cancelled', 'timed_out', 'refused', 'denied')) AS terminal_30d,
+      max(inserted_at) AS last_run_at
+    FROM action_runs GROUP BY account_id
+  )
+  SELECT a.name AS account, a.inserted_at AS account_created_at,
+    coalesce(m.members, 0) AS members,
+    coalesce(rh.runners, 0) AS runners,
+    coalesce(rh.connected_7d, 0) AS runners_connected_7d,
+    rh.last_runner_connection,
+    coalesce(ag.agents, 0) AS active_agents,
+    ag.last_agent_use,
+    coalesce(ru.runs_30d, 0) AS runs_30d,
+    round(100.0 * coalesce(ru.successful_30d, 0) / NULLIF(ru.terminal_30d, 0), 1)::float8 AS success_rate_30d,
+    ru.last_run_at,
+    coalesce(s.plan, 'free') AS plan,
+    s.status AS subscription_status,
+    s.currency_code,
+    round(CASE
+      WHEN s.status = 'active' AND s.billing_interval = 'month' THEN s.unit_price_amount * s.quantity::numeric / NULLIF(s.billing_frequency, 0)
+      WHEN s.status = 'active' AND s.billing_interval = 'year' THEN s.unit_price_amount * s.quantity::numeric / NULLIF(12 * s.billing_frequency, 0)
+    END, 2) AS mrr_minor_units
+  FROM accounts a
+  LEFT JOIN members m ON m.account_id = a.id
+  LEFT JOIN runner_health rh ON rh.account_id = a.id
+  LEFT JOIN agents ag ON ag.account_id = a.id
+  LEFT JOIN runs ru ON ru.account_id = a.id
+  LEFT JOIN subscriptions s ON s.account_id = a.id
+  WHERE a.deleted_at IS NULL
+  ORDER BY runs_30d DESC, a.name
+  LIMIT 500
+  """)
+
+Analytics.table(health)
+```
+
+## Accounts needing attention
+
+```elixir
+attention =
+  Analytics.query(db, """
+  WITH last_use AS (
+    SELECT a.id, a.name,
+      (SELECT max(r.last_connected_at) FROM runners r WHERE r.account_id = a.id AND r.deleted_at IS NULL) AS last_runner_connection,
+      (SELECT max(ar.inserted_at) FROM action_runs ar WHERE ar.account_id = a.id) AS last_run_at,
+      (SELECT count(*) FROM approval_requests ap WHERE ap.account_id = a.id AND ap.status = 'pending') AS pending_approvals,
+      (SELECT count(*) FROM api_keys k WHERE k.account_id = a.id AND k.kind = 'mcp' AND k.deleted_at IS NULL AND k.revoked_at IS NULL AND k.expires_at > now() AND k.created_by_membership_id IS NOT NULL AND k.auto_generated_at IS NULL AND k.last_used_at IS NULL) AS unused_agents
+    FROM accounts a
+    WHERE a.deleted_at IS NULL
+  )
+  SELECT name AS account, last_runner_connection, last_run_at, pending_approvals, unused_agents,
+    CASE
+      WHEN last_run_at IS NULL THEN 'never activated'
+      WHEN last_run_at < now() - interval '30 days' THEN 'no runs in 30 days'
+      WHEN pending_approvals > 0 THEN 'pending approval'
+      WHEN unused_agents > 0 THEN 'unused agent credentials'
+    END AS attention_reason
+  FROM last_use
+  WHERE last_run_at IS NULL
+     OR last_run_at < now() - interval '30 days'
+     OR pending_approvals > 0
+     OR unused_agents > 0
+  ORDER BY last_run_at ASC NULLS FIRST
+  LIMIT 500
+  """)
+
+Analytics.table(attention)
+```
+
+## Recent account activity
+
+```elixir
+recent_activity =
+  Analytics.query(db, """
+  SELECT a.name AS account, ar.inserted_at, ar.source, ar.action_id, ar.status,
+    r.name AS runner, ar.duration_ms
+  FROM action_runs ar
+  JOIN accounts a ON a.id = ar.account_id
+  LEFT JOIN runners r ON r.id = ar.runner_id
+  ORDER BY ar.inserted_at DESC
+  LIMIT 250
+  """)
+
+Analytics.table(recent_activity)
+```

@@ -6,12 +6,17 @@ locals {
     google_service_account.livebook[0].email,
     ".gserviceaccount.com",
   ) : ""
+  livebook_notebooks = {
+    for notebook in fileset("${path.module}/livebook/notebooks", "*.livemd") :
+    notebook => file("${path.module}/livebook/notebooks/${notebook}")
+  }
 
   livebook_ensure_images_script = templatefile("${path.module}/templates/livebook-ensure-images.sh", {
     livebook_image        = local.livebook_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
   })
-  livebook_prepare_data_script = file("${path.module}/templates/livebook-prepare-data.sh")
+  livebook_prepare_data_script      = file("${path.module}/templates/livebook-prepare-data.sh")
+  livebook_product_analytics_script = file("${path.module}/livebook/product_analytics.exs")
   livebook_cluster_nodes_script = templatefile("${path.module}/templates/livebook-cluster-nodes.sh", {
     project_id = var.project_id
   })
@@ -31,13 +36,15 @@ locals {
     database_statement_timeout_ms = 30000
   })
   livebook_cloud_init = templatefile("${path.module}/templates/livebook-cloud-init.yaml", {
-    cloud_sql_proxy_image         = local.cloud_sql_proxy_image
-    livebook_port                 = local.livebook_port
-    database_connection_name      = google_sql_database_instance.emisar.connection_name
-    livebook_ensure_images_script = local.livebook_ensure_images_script
-    livebook_prepare_data_script  = local.livebook_prepare_data_script
-    livebook_cluster_nodes_script = local.livebook_cluster_nodes_script
-    livebook_start_script         = local.livebook_start_script
+    cloud_sql_proxy_image             = local.cloud_sql_proxy_image
+    livebook_port                     = local.livebook_port
+    database_connection_name          = google_sql_database_instance.emisar.connection_name
+    livebook_ensure_images_script     = local.livebook_ensure_images_script
+    livebook_prepare_data_script      = local.livebook_prepare_data_script
+    livebook_product_analytics_script = local.livebook_product_analytics_script
+    livebook_cluster_nodes_script     = local.livebook_cluster_nodes_script
+    livebook_start_script             = local.livebook_start_script
+    livebook_notebooks                = local.livebook_notebooks
   })
 }
 

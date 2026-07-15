@@ -1,0 +1,97 @@
+# Growth and Activation
+
+<!-- livebook: {"persist_outputs": true} -->
+
+Activation means the account dispatched its first action. Runner registration is shown as the preceding setup milestone.
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## 90-day activation funnel
+
+```elixir
+funnel =
+  Analytics.query(db, """
+  WITH cohort AS (
+    SELECT id, inserted_at FROM accounts
+    WHERE deleted_at IS NULL AND inserted_at >= now() - interval '90 days'
+  )
+  SELECT stage, accounts
+  FROM (
+    SELECT 1 AS position, 'Created account' AS stage, count(*) AS accounts FROM cohort
+    UNION ALL
+    SELECT 2, 'Registered runner', count(*) FROM cohort c
+      WHERE EXISTS (SELECT 1 FROM runners r WHERE r.account_id = c.id AND r.deleted_at IS NULL)
+    UNION ALL
+    SELECT 3, 'Dispatched action', count(*) FROM cohort c
+      WHERE EXISTS (SELECT 1 FROM action_runs ar WHERE ar.account_id = c.id)
+    UNION ALL
+    SELECT 4, 'Dispatched MCP action', count(*) FROM cohort c
+      WHERE EXISTS (SELECT 1 FROM action_runs ar WHERE ar.account_id = c.id AND ar.source = 'mcp')
+  ) stages
+  ORDER BY position
+  """)
+
+Analytics.bar(funnel, "stage", "accounts", title: "Account activation funnel", sort: nil, y_title: "Accounts")
+```
+
+## Time to activation
+
+```elixir
+activation =
+  Analytics.query(db, """
+  WITH milestones AS (
+    SELECT a.id, a.name, a.inserted_at,
+      (SELECT min(r.inserted_at) FROM runners r WHERE r.account_id = a.id AND r.deleted_at IS NULL) AS first_runner_at,
+      (SELECT min(ar.inserted_at) FROM action_runs ar WHERE ar.account_id = a.id) AS first_run_at
+    FROM accounts a
+    WHERE a.deleted_at IS NULL
+  )
+  SELECT name,
+    inserted_at AS account_created_at,
+    first_runner_at,
+    first_run_at,
+    round(extract(epoch FROM first_runner_at - inserted_at) / 3600.0, 1) AS hours_to_runner,
+    round(extract(epoch FROM first_run_at - inserted_at) / 3600.0, 1) AS hours_to_first_run
+  FROM milestones
+  ORDER BY inserted_at DESC
+  LIMIT 200
+  """)
+
+Analytics.table(activation)
+```
+
+## Signup cohorts
+
+```elixir
+cohorts =
+  Analytics.query(db, """
+  SELECT to_char(date_trunc('week', a.inserted_at), 'YYYY-MM-DD') AS cohort_week,
+    count(*) AS accounts,
+    count(*) FILTER (WHERE EXISTS (
+      SELECT 1 FROM action_runs ar
+      WHERE ar.account_id = a.id AND ar.inserted_at <= a.inserted_at + interval '7 days'
+    )) AS activated_7d,
+    round(100.0 * count(*) FILTER (WHERE EXISTS (
+      SELECT 1 FROM action_runs ar
+      WHERE ar.account_id = a.id AND ar.inserted_at <= a.inserted_at + interval '7 days'
+    )) / NULLIF(count(*), 0), 1)::float8 AS activation_rate_7d
+  FROM accounts a
+  WHERE a.deleted_at IS NULL AND a.inserted_at >= now() - interval '26 weeks'
+  GROUP BY date_trunc('week', a.inserted_at)
+  ORDER BY date_trunc('week', a.inserted_at)
+  """)
+
+Analytics.table(cohorts)
+```

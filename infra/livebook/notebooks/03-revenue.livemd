@@ -1,0 +1,111 @@
+# Revenue
+
+<!-- livebook: {"persist_outputs": true} -->
+
+MRR is computed from Paddle's mirrored charged unit amount, quantity, currency, interval, and frequency. It includes active subscriptions only, separates currencies, and never substitutes catalog display prices. Historical MRR movements are not available from the current-state subscription mirror.
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Current MRR by currency
+
+`mrr_minor_units` is authoritative and remains in Paddle's currency minor unit. `mrr_two_decimal_display` is convenient for the currently billed two-decimal currencies and must not be used for a zero- or three-decimal currency.
+
+```elixir
+mrr =
+  Analytics.query(db, """
+  WITH normalized AS (
+    SELECT currency_code,
+      CASE
+        WHEN billing_interval = 'month' THEN unit_price_amount * quantity::numeric / billing_frequency
+        WHEN billing_interval = 'year' THEN unit_price_amount * quantity::numeric / (12 * billing_frequency)
+      END AS mrr_minor
+    FROM subscriptions
+    WHERE status = 'active'
+      AND unit_price_amount IS NOT NULL
+      AND currency_code IS NOT NULL
+      AND billing_frequency > 0
+      AND billing_interval IN ('month', 'year')
+  )
+  SELECT currency_code,
+    round(sum(mrr_minor), 2) AS mrr_minor_units,
+    round(sum(mrr_minor) / 100.0, 2) AS mrr_two_decimal_display,
+    count(*) AS subscriptions
+  FROM normalized
+  GROUP BY currency_code
+  ORDER BY currency_code
+  """)
+
+Analytics.table(mrr)
+```
+
+## Subscription mix
+
+```elixir
+subscription_mix =
+  Analytics.query(db, """
+  SELECT plan, status,
+    coalesce(billing_interval, 'unknown') AS billing_interval,
+    count(*) AS subscriptions,
+    sum(quantity) AS billed_quantity
+  FROM subscriptions
+  GROUP BY plan, status, coalesce(billing_interval, 'unknown')
+  ORDER BY subscriptions DESC, plan, status
+  """)
+
+Analytics.table(subscription_mix)
+```
+
+## Account recurring revenue
+
+```elixir
+account_revenue =
+  Analytics.query(db, """
+  SELECT a.name AS account, s.plan, s.status, s.currency_code,
+    s.unit_price_amount,
+    s.quantity,
+    s.billing_interval,
+    s.billing_frequency,
+    round(CASE
+      WHEN s.status <> 'active' THEN 0
+      WHEN s.billing_interval = 'month' THEN s.unit_price_amount * s.quantity::numeric / NULLIF(s.billing_frequency, 0)
+      WHEN s.billing_interval = 'year' THEN s.unit_price_amount * s.quantity::numeric / NULLIF(12 * s.billing_frequency, 0)
+    END, 2) AS mrr_minor_units,
+    s.current_period_end
+  FROM subscriptions s
+  JOIN accounts a ON a.id = s.account_id AND a.deleted_at IS NULL
+  ORDER BY mrr_minor_units DESC NULLS LAST, a.name
+  LIMIT 500
+  """)
+
+Analytics.table(account_revenue)
+```
+
+## Revenue data quality
+
+```elixir
+revenue_quality =
+  Analytics.query(db, """
+  SELECT
+    count(*) FILTER (WHERE status = 'active') AS active_subscriptions,
+    count(*) FILTER (WHERE status = 'active' AND unit_price_amount IS NULL) AS missing_amount,
+    count(*) FILTER (WHERE status = 'active' AND currency_code IS NULL) AS missing_currency,
+    count(*) FILTER (WHERE status = 'active' AND billing_frequency IS NULL) AS missing_frequency,
+    count(*) FILTER (WHERE status = 'active' AND (billing_interval IS NULL OR billing_interval NOT IN ('month', 'year'))) AS unsupported_cadence,
+    count(*) FILTER (WHERE status = 'active' AND unit_price_amount IS NOT NULL AND currency_code IS NOT NULL AND billing_frequency > 0 AND billing_interval IN ('month', 'year')) AS included_in_mrr
+  FROM subscriptions
+  """)
+
+Analytics.table(revenue_quality)
+```

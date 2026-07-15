@@ -34,6 +34,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
 
         attrs =
           %{status: subscription_data["status"]}
+          |> Map.merge(Billing.subscription_item_attrs(subscription_data))
           |> put_present(:plan, plan)
           |> put_present(:entitlements, entitlements)
           |> put_present(:current_period_end, Billing.extract_next_billed_at(subscription_data))

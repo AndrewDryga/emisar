@@ -1,0 +1,114 @@
+# Executive Overview
+
+<!-- livebook: {"persist_outputs": true} -->
+
+## Setup
+
+```elixir
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+
+Code.require_file("/opt/emisar/product_analytics.exs")
+alias EmisarProductAnalytics, as: Analytics
+db = Analytics.connect!()
+```
+
+## Current product pulse
+
+```elixir
+pulse =
+  Analytics.query(db, """
+  SELECT
+    (SELECT count(*) FROM accounts WHERE deleted_at IS NULL) AS accounts,
+    (SELECT count(*) FROM accounts WHERE deleted_at IS NULL AND inserted_at >= now() - interval '30 days') AS accounts_30d,
+    (SELECT count(*) FROM users WHERE deleted_at IS NULL) AS users,
+    (SELECT count(*) FROM runners WHERE deleted_at IS NULL AND disabled_at IS NULL) AS runners,
+    (SELECT count(*) FROM api_keys WHERE kind = 'mcp' AND deleted_at IS NULL AND revoked_at IS NULL AND expires_at > now() AND created_by_membership_id IS NOT NULL AND (auto_generated_at IS NULL OR last_used_at IS NOT NULL)) AS active_agents,
+    (SELECT count(*) FROM action_runs WHERE inserted_at >= now() - interval '30 days') AS runs_30d,
+    (SELECT count(*) FROM subscriptions WHERE status = 'active') AS active_subscriptions
+  """)
+
+row = hd(pulse)
+
+success =
+  Analytics.query(db, """
+  SELECT
+    count(*) FILTER (WHERE status = 'success') AS successful,
+    count(*) FILTER (WHERE status IN ('success', 'failed', 'error', 'validation_failed', 'unknown_action', 'cancelled', 'timed_out', 'refused', 'denied')) AS terminal
+  FROM action_runs
+  WHERE inserted_at >= now() - interval '30 days'
+  """)
+  |> hd()
+
+Analytics.kpis([
+  {"Accounts", row["accounts"]},
+  {"New accounts, 30d", row["accounts_30d"]},
+  {"Users", row["users"]},
+  {"Enabled runners", row["runners"]},
+  {"Active MCP agents", row["active_agents"]},
+  {"Runs, 30d", row["runs_30d"]},
+  {"30d terminal success", Analytics.percent(success["successful"], success["terminal"])},
+  {"Active subscriptions", row["active_subscriptions"]}
+])
+```
+
+## Account growth
+
+```elixir
+account_growth =
+  Analytics.query(db, """
+  WITH days AS (
+    SELECT generate_series(current_date - 89, current_date, interval '1 day')::date AS day
+  )
+  SELECT to_char(days.day, 'YYYY-MM-DD') AS day, count(accounts.id) AS accounts
+  FROM days
+  LEFT JOIN accounts ON accounts.inserted_at::date = days.day AND accounts.deleted_at IS NULL
+  GROUP BY days.day
+  ORDER BY days.day
+  """)
+
+Analytics.line(account_growth, "day", "accounts", title: "Accounts created per day", y_title: "Accounts")
+```
+
+## Run sources, 30 days
+
+```elixir
+run_sources =
+  Analytics.query(db, """
+  SELECT source, count(*) AS runs
+  FROM action_runs
+  WHERE inserted_at >= now() - interval '30 days'
+  GROUP BY source
+  ORDER BY runs DESC
+  """)
+
+Analytics.bar(run_sources, "source", "runs", title: "Run source mix", y_title: "Runs")
+```
+
+## Current recurring revenue
+
+Revenue is separated by currency. Rows without complete charged-price facts or with unsupported billing cadences are excluded and surfaced in the revenue dashboard.
+
+```elixir
+mrr =
+  Analytics.query(db, """
+  SELECT currency_code,
+    round(sum(CASE
+      WHEN billing_interval = 'month' THEN unit_price_amount * quantity::numeric / billing_frequency
+      WHEN billing_interval = 'year' THEN unit_price_amount * quantity::numeric / (12 * billing_frequency)
+    END), 2) AS mrr_minor_units
+  FROM subscriptions
+  WHERE status = 'active'
+    AND unit_price_amount IS NOT NULL
+    AND currency_code IS NOT NULL
+    AND billing_frequency > 0
+    AND billing_interval IN ('month', 'year')
+  GROUP BY currency_code
+  ORDER BY currency_code
+  """)
+
+Analytics.table(mrr)
+```

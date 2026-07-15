@@ -71,13 +71,18 @@ locals {
   })
 
   livebook_cloud_init = templatefile("${path.module}/../../templates/livebook-cloud-init.yaml", {
-    cloud_sql_proxy_image         = local.livebook.cloud_sql_proxy_image
-    livebook_port                 = local.livebook.livebook_port
-    database_connection_name      = local.livebook.database_connection_name
-    livebook_ensure_images_script = local.livebook_ensure_images
-    livebook_prepare_data_script  = file("${path.module}/../../templates/livebook-prepare-data.sh")
-    livebook_cluster_nodes_script = local.livebook_cluster_nodes
-    livebook_start_script         = local.livebook_start
+    cloud_sql_proxy_image             = local.livebook.cloud_sql_proxy_image
+    livebook_port                     = local.livebook.livebook_port
+    database_connection_name          = local.livebook.database_connection_name
+    livebook_ensure_images_script     = local.livebook_ensure_images
+    livebook_prepare_data_script      = file("${path.module}/../../templates/livebook-prepare-data.sh")
+    livebook_product_analytics_script = file("${path.module}/../../livebook/product_analytics.exs")
+    livebook_cluster_nodes_script     = local.livebook_cluster_nodes
+    livebook_start_script             = local.livebook_start
+    livebook_notebooks = {
+      for notebook in fileset("${path.module}/../../livebook/notebooks", "*.livemd") :
+      notebook => file("${path.module}/../../livebook/notebooks/${notebook}")
+    }
   })
 }
 

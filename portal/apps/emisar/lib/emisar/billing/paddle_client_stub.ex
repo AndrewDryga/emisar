@@ -85,14 +85,27 @@ defmodule Emisar.Billing.PaddleClient.Stub do
 
   @impl true
   def retrieve_subscription(id) do
+    now = DateTime.utc_now()
+
     {:ok,
      %{
        "id" => id,
        "status" => "active",
+       "updated_at" => DateTime.to_iso8601(now),
        "next_billed_at" =>
-         DateTime.utc_now()
+         now
          |> DateTime.add(30 * 86_400, :second)
-         |> DateTime.to_iso8601()
+         |> DateTime.to_iso8601(),
+       "items" => [
+         %{
+           "quantity" => 2,
+           "price" => %{
+             "id" => "pri_stub_team_month",
+             "billing_cycle" => %{"interval" => "month", "frequency" => 1},
+             "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+           }
+         }
+       ]
      }}
   end
 

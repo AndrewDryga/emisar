@@ -23,6 +23,18 @@ write_files:
     content: |
       ${indent(6, livebook_cluster_nodes_script)}
 
+  - path: /var/lib/emisar-livebook/tools/product_analytics.exs
+    permissions: "0644"
+    content: |
+      ${indent(6, livebook_product_analytics_script)}
+
+%{ for notebook in sort(keys(livebook_notebooks)) ~}
+  - path: /var/lib/emisar-livebook/notebooks/${notebook}
+    permissions: "0644"
+    content: |
+      ${indent(6, livebook_notebooks[notebook])}
+
+%{ endfor ~}
   - path: /etc/systemd/system/emisar-livebook-image.service
     permissions: "0644"
     content: |

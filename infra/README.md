@@ -109,10 +109,23 @@ Google/IAP browser identity automatically and never presents a second Livebook
 login. Google's managed client is intentionally limited to users inside the
 project's organization.
 
-Notebooks and Livebook configuration persist on a separately protected disk.
-The container runs as an unprivileged user with a read-only root filesystem and
-an independently pinned image. `/public/health` remains available to Google
-health checks; every operator route requires a valid IAP assertion.
+Notebooks and Livebook configuration persist on the separately protected
+`emisar-livebook-data` disk, mounted at `/data` in the container. Saved notebooks
+live under `/data/notebooks`; Livebook configuration is
+`/data/.livebook/livebook_config.v1.ets`. The VM boot disk and container are
+disposable. Unsaved sessions are not a backup, and this stack does not create
+automatic disk snapshots. Snapshot the data disk before high-risk notebook or
+configuration changes.
+
+The version-controlled product dashboard pack is seeded into
+`/data/notebooks/Emisar Product Analytics` only when a file is missing. Reboots
+and instance replacements therefore preserve operator edits, while Git remains
+the recovery source for the canonical dashboards. Adding a new canonical file
+seeds it on the next data-preparation run; changing an existing canonical file
+does not overwrite the saved copy. The container runs as an unprivileged user
+with a read-only root filesystem and an independently pinned image.
+`/public/health` remains available to Google health checks; every operator route
+requires a valid IAP assertion.
 
 The local Cloud SQL Auth Proxy logs in as the dedicated Livebook service account
 and Cloud SQL assigns it `emisar_owner`. `DATABASE_URL` and standard `PG*`
@@ -120,22 +133,14 @@ variables are available inside notebooks; there is no database password.
 Analysis connections must retain the read-only defaults exposed by the runtime:
 
 ```elixir
-Mix.install([{:postgrex, "~> 0.21"}])
+Mix.install([
+  {:postgrex, "~> 0.22.0"},
+  {:kino, "~> 0.19.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
 
-{:ok, db} =
-  Postgrex.start_link(
-    hostname: System.fetch_env!("PGHOST"),
-    port: String.to_integer(System.fetch_env!("PGPORT")),
-    database: System.fetch_env!("PGDATABASE"),
-    username: System.fetch_env!("PGUSER"),
-    password: "",
-    parameters: [
-      default_transaction_read_only: "on",
-      statement_timeout: System.fetch_env!("EMISAR_DATABASE_STATEMENT_TIMEOUT_MS")
-    ]
-  )
-
-Postgrex.query!(db, "SET ROLE " <> System.fetch_env!("EMISAR_DATABASE_ROLE"), [])
+Code.require_file("/opt/emisar/product_analytics.exs")
+db = EmisarProductAnalytics.connect!()
 ```
 
 This is an accidental-write guard, not a privilege boundary: the shared Erlang

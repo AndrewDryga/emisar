@@ -3,6 +3,8 @@ set -euo pipefail
 
 device=/dev/disk/by-id/google-livebook-data
 mountpoint=/mnt/disks/emisar-livebook
+notebook_source=/var/lib/emisar-livebook/notebooks
+notebook_target="$mountpoint/notebooks/Emisar Product Analytics"
 
 for _attempt in $(seq 1 60); do
   [ -b "$device" ] && break
@@ -30,3 +32,16 @@ fi
 chown 1000:1000 "$mountpoint"
 chmod 0750 "$mountpoint"
 install -d -o 1000 -g 1000 -m 0750 "$mountpoint/.livebook"
+install -d -o 1000 -g 1000 -m 0750 "$mountpoint/notebooks"
+install -d -o 1000 -g 1000 -m 0750 "$notebook_target"
+
+# Canonical dashboards recover from Git, while operator edits on the persistent
+# disk win. A reboot or replacement seeds only files that are not already there.
+for source in "$notebook_source"/*.livemd; do
+  [ -e "$source" ] || continue
+  destination="$notebook_target/$(basename "$source")"
+
+  if [ ! -e "$destination" ]; then
+    install -o 1000 -g 1000 -m 0640 "$source" "$destination"
+  fi
+done

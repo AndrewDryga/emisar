@@ -57,7 +57,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
     %{account: Fixtures.Accounts.create_account()}
   end
 
-  test "execute/1 refreshes status + period end from the vendor", %{account: account} do
+  test "execute/1 refreshes status, period, and recurring price facts from the vendor", %{
+    account: account
+  } do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_sync_1",
@@ -72,6 +74,12 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
     # The stub reports every subscription as active with a fresh period.
     assert synced.status == "active"
     assert %DateTime{} = synced.current_period_end
+    assert synced.paddle_price_id == "pri_stub_team_month"
+    assert synced.billing_interval == "month"
+    assert synced.billing_frequency == 1
+    assert synced.quantity == 2
+    assert synced.unit_price_amount == 2_000
+    assert synced.currency_code == "USD"
   end
 
   test "execute/1 skips a mirror row with no vendor subscription id", %{account: account} do

@@ -4,8 +4,8 @@ defmodule Emisar.Billing.Subscription.Changeset do
 
   @fields ~w[
     account_id paddle_subscription_id paddle_price_id plan status billing_interval
-    entitlements quantity current_period_start current_period_end cancel_at_period_end
-    trial_end paddle_updated_at
+    unit_price_amount currency_code billing_frequency entitlements quantity
+    current_period_start current_period_end cancel_at_period_end trial_end paddle_updated_at
   ]a
 
   def upsert(subscription \\ %Subscription{}, attrs) do
@@ -25,6 +25,8 @@ defmodule Emisar.Billing.Subscription.Changeset do
       subscription
       |> cast(attrs, @fields)
       |> validate_required([:account_id, :plan, :status])
+      |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
+      |> validate_number(:billing_frequency, greater_than: 0)
       |> unique_constraint(:account_id)
     end
   end

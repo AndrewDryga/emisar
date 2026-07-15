@@ -24,6 +24,14 @@ defmodule Emisar.Billing.Subscription do
     # unseen cadence must LOAD and degrade to monthly, not raise). nil = monthly
     # (pre-annual rows). Read via `Billing.billing_summary` to price the period.
     field :billing_interval, :string
+    # The exact recurring price Paddle charges, in the currency's minor unit.
+    # These remain nullable because legacy rows are backfilled by the hourly
+    # reconciliation job, and Paddle remains the source of truth.
+    field :unit_price_amount, :integer
+    field :currency_code, :string
+    # Paddle's billing_cycle.frequency (for example every 2 months). Combined
+    # with billing_interval so analytics can normalize recurring revenue.
+    field :billing_frequency, :integer
     # Paddle-mirrored plan entitlements (the product's custom_data), validated
     # into canonical form by `Billing.Entitlements` at extraction — limits are
     # non-negative ints or the string "unlimited", feature flags booleans. A

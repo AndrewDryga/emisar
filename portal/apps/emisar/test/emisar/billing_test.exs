@@ -792,6 +792,29 @@ defmodule Emisar.BillingTest do
       assert subscription.billing_interval == "year"
     end
 
+    test "mirrors the exact charged recurring price for revenue analytics" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_revenue_01"})
+
+      event =
+        subscription_created_event("evt_revenue", account.paddle_customer_id, "pri_custom_01",
+          cycle: "year",
+          frequency: 2,
+          quantity: 3,
+          unit_price_amount: "48000",
+          currency_code: "USD"
+        )
+
+      assert :ok = Billing.record_and_apply_event("evt_revenue", "subscription.created", event)
+
+      subscription = Repo.one!(Subscription)
+      assert subscription.paddle_price_id == "pri_custom_01"
+      assert subscription.billing_interval == "year"
+      assert subscription.billing_frequency == 2
+      assert subscription.quantity == 3
+      assert subscription.unit_price_amount == 48_000
+      assert subscription.currency_code == "USD"
+    end
+
     test "mirrors product custom_data into entitlements and takes the plan from its slug" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_01"})
 
@@ -1705,11 +1728,32 @@ defmodule Emisar.BillingTest do
 
     price =
       case Keyword.get(opts, :cycle) do
-        nil -> price
-        interval -> Map.put(price, "billing_cycle", %{"interval" => interval})
+        nil ->
+          price
+
+        interval ->
+          Map.put(price, "billing_cycle", %{
+            "interval" => interval,
+            "frequency" => Keyword.get(opts, :frequency, 1)
+          })
       end
 
-    item = %{"price" => price}
+    price =
+      if Keyword.has_key?(opts, :unit_price_amount) do
+        Map.put(price, "unit_price", %{
+          "amount" => opts[:unit_price_amount],
+          "currency_code" => opts[:currency_code]
+        })
+      else
+        price
+      end
+
+    item =
+      if Keyword.has_key?(opts, :quantity) do
+        %{"price" => price, "quantity" => opts[:quantity]}
+      else
+        %{"price" => price}
+      end
 
     if Keyword.get(opts, :product, true) do
       product = %{
@@ -1721,6 +1765,45 @@ defmodule Emisar.BillingTest do
       Map.put(item, "product", product)
     else
       item
+    end
+  end
+
+  describe "subscription_item_attrs/1" do
+    test "omits malformed vendor values instead of clearing the mirror" do
+      payload = %{
+        "items" => [
+          %{
+            "quantity" => 0,
+            "price" => %{
+              "id" => "",
+              "billing_cycle" => %{"interval" => "", "frequency" => "invalid"},
+              "unit_price" => %{"amount" => "12x", "currency_code" => "usd"}
+            }
+          }
+        ]
+      }
+
+      assert Billing.subscription_item_attrs(payload) == %{}
+    end
+
+    test "treats malformed nested price objects as absent" do
+      payload = %{
+        "items" => [
+          %{
+            "quantity" => 2,
+            "price" => %{
+              "id" => "pri_valid",
+              "billing_cycle" => "invalid",
+              "unit_price" => ["invalid"]
+            }
+          }
+        ]
+      }
+
+      assert Billing.subscription_item_attrs(payload) == %{
+               paddle_price_id: "pri_valid",
+               quantity: 2
+             }
     end
   end
 
