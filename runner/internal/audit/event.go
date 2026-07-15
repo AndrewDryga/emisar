@@ -1,8 +1,8 @@
-// Package audit implements the local JSONL security log. Every action
-// attempt — validation-failed, executed, errored — produces a single event
-// line. The cloud control plane is the system of record for fleet audit;
-// this log exists for on-host forensics and as a transient outbox for
-// results the cloud hasn't acked yet.
+// Package audit implements the local JSONL security log. Every action attempt
+// produces one terminal event; attempts that reach the process boundary first
+// produce an execution_started event so a crash cannot erase evidence that
+// execution began. The cloud control plane is the system of record for fleet
+// audit; this log exists for on-host forensics.
 package audit
 
 import (
@@ -16,6 +16,7 @@ type EventType string
 
 const (
 	EventValidationFailed   EventType = "validation_failed"
+	EventDispatchRefused    EventType = "dispatch_refused"
 	EventExecutionStarted   EventType = "execution_started"
 	EventExecutionCompleted EventType = "execution_completed"
 	EventExecutionFailed    EventType = "execution_failed"

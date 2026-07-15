@@ -171,6 +171,7 @@ func TestClient_SignatureGate_RefusesUnsigned(t *testing.T) {
 	if res["reason"] != "signature_required" {
 		t.Fatalf("reason=%v, want signature_required", res["reason"])
 	}
+	requireResultEventID(t, res)
 }
 
 // A signature is bound to the args: a dispatch whose args were altered after

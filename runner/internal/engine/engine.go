@@ -206,6 +206,44 @@ func (e *Engine) journal(ctx context.Context, ev audit.Event) audit.Event {
 	return rec
 }
 
+// RecordDispatchRefusal records a cloud dispatch that was rejected before Run.
+func (e *Engine) RecordDispatchRefusal(ctx context.Context, req Request, detail string) string {
+	return e.recordPreExecutionEvent(ctx, req, audit.EventDispatchRefused, detail).EventID
+}
+
+// RecordDispatchCancellation records a dispatch cancelled before process start.
+func (e *Engine) RecordDispatchCancellation(ctx context.Context, req Request, detail string) string {
+	return e.recordPreExecutionEvent(ctx, req, audit.EventActionCancelled, detail).EventID
+}
+
+// RecordExecutionFailure records a recovered failure outside Run's terminal paths.
+func (e *Engine) RecordExecutionFailure(ctx context.Context, req Request, detail string) string {
+	return e.recordPreExecutionEvent(ctx, req, audit.EventExecutionFailed, detail).EventID
+}
+
+func (e *Engine) recordPreExecutionEvent(ctx context.Context, req Request, eventType audit.EventType, detail string) audit.Event {
+	ev := e.baseEvent(req, eventType, time.Now().UTC())
+	ev.ActionID = req.ActionID
+	ev.Request = &audit.RequestInfo{Reason: req.Reason}
+	ev.Error = detail
+
+	reg := req.RegistrySnapshot
+	if reg == nil {
+		reg = e.Registry()
+	}
+	if reg != nil {
+		if act, ok := reg.Action(req.ActionID); ok {
+			ev.PackID = act.PackID
+			ev.ActionID = act.ID
+			ev.Metadata = metaFor(act)
+		}
+	}
+	// These events precede schema validation or pack verification. Never persist
+	// their untrusted argument values, even when the current registry knows the
+	// action and could redact them.
+	return e.journal(ctx, ev)
+}
+
 // Run executes one action call end to end.
 func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	now := time.Now().UTC()
@@ -307,11 +345,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		renderedArgv, err = expressions.RenderArgv(act.Execution.Argv, cleanArgs)
 	}
 	if err != nil {
-		return e.emitExecError(ctx, req, act, cleanArgs, now, err)
+		return e.emitExecError(ctx, req, act, cleanArgs, err)
 	}
 	envRendered, err := expressions.RenderEnv(act.Execution.Env, cleanArgs)
 	if err != nil {
-		return e.emitExecError(ctx, req, act, cleanArgs, now, err)
+		return e.emitExecError(ctx, req, act, cleanArgs, err)
 	}
 
 	limits := clampLimits(act, req.Opts)
@@ -325,7 +363,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	case actionspec.KindScript:
 		si, ok := reg.ScriptInfo(act.ID)
 		if !ok {
-			return e.emitExecError(ctx, req, act, cleanArgs, now,
+			return e.emitExecError(ctx, req, act, cleanArgs,
 				fmt.Errorf("script for action %s missing from registry", act.ID))
 		}
 		// Re-verify the script bytes against the hash the loader recorded when
@@ -335,7 +373,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		// access to the pack dir — the trusted hash no longer describes what
 		// we'd run. Refuse rather than execute unreviewed bytes.
 		if err := verifyScriptSHA(si); err != nil {
-			return e.emitExecError(ctx, req, act, cleanArgs, now, err)
+			return e.emitExecError(ctx, req, act, cleanArgs, err)
 		}
 		scriptSHA = si.SHA256
 		plan = executor.PlanForScript(act, si.Path, si.SHA256, renderedArgv, envRendered, limits)
@@ -389,9 +427,18 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 
+	started := e.baseEvent(req, audit.EventExecutionStarted, time.Now().UTC())
+	started.PackID = act.PackID
+	started.ActionID = act.ID
+	started.Metadata = metaFor(act)
+	started.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
+	started.Execution = executionStartInfo(plan, scriptSHA)
+	started.Execution.ExecutedCommand = redactedCommand(plan.Binary, plan.Argv, cleanArgs, act.Args)
+	e.journal(ctx, started)
+
 	execRes, execErr := e.Executor.Execute(ctx, plan)
 	if execErr != nil {
-		return e.emitExecError(ctx, req, act, cleanArgs, now, execErr)
+		return e.emitExecError(ctx, req, act, cleanArgs, execErr)
 	}
 
 	var (
@@ -442,7 +489,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	// redacted form is forwarded to the cloud.
 	executedCommand := redactedCommand(execRes.Binary, execRes.Argv, cleanArgs, act.Args)
 
-	ev := e.baseEvent(req, evType, now)
+	ev := e.baseEvent(req, evType, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
@@ -480,8 +527,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 }
 
 func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec.Action,
-	cleanArgs map[string]any, now time.Time, err error) (*Result, error) {
-	ev := e.baseEvent(req, audit.EventExecutionFailed, now)
+	cleanArgs map[string]any, err error) (*Result, error) {
+	ev := e.baseEvent(req, audit.EventExecutionFailed, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
@@ -696,6 +743,26 @@ func (e *Engine) executionInfo(r *executor.Result, redactedStdout, redactedStder
 		StdoutPreview: truncatePreview(redactedStdout, e.PreviewBytes),
 		StderrPreview: truncatePreview(redactedStderr, e.PreviewBytes),
 		ScriptSHA256:  scriptSHA,
+	}
+}
+
+func executionStartInfo(plan executor.Plan, scriptSHA string) *audit.ExecutionInfo {
+	envKeys := make([]string, 0, len(plan.Env))
+	for key := range plan.Env {
+		envKeys = append(envKeys, key)
+	}
+	sort.Strings(envKeys)
+	argv := append([]string(nil), plan.Argv...)
+	joined := strings.Join(append([]string{plan.Binary}, argv...), "\x00")
+	argvHash := sha256.Sum256([]byte(joined))
+	return &audit.ExecutionInfo{
+		Binary:       plan.Binary,
+		Argv:         argv,
+		ArgvSHA256:   hex.EncodeToString(argvHash[:]),
+		CWD:          plan.CWD,
+		EnvKeys:      envKeys,
+		Timeout:      plan.Limits.Timeout.String(),
+		ScriptSHA256: scriptSHA,
 	}
 }
 

@@ -79,6 +79,7 @@ func TestJSONLSink_PermsNeverDowngraded(t *testing.T) {
 func TestEvent_AllTypesSerializeAndVerify(t *testing.T) {
 	types := []EventType{
 		EventValidationFailed,
+		EventDispatchRefused,
 		EventExecutionStarted,
 		EventExecutionCompleted,
 		EventExecutionFailed,

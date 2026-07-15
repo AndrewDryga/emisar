@@ -41,6 +41,86 @@ func readJournalEvents(t *testing.T, root string) []audit.Event {
 	return evs
 }
 
+func TestEngine_ExecutionStartPrecedesTerminalEvent(t *testing.T) {
+	e, j, root := setupEngine(t)
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{
+		ControlPlaneRequestID: "req-start",
+		ActionID:              "t.echo",
+		Args:                  map[string]any{"msg": "hello"},
+		Reason:                "verify start evidence",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := readJournalEvents(t, root)
+	if len(events) != 2 {
+		t.Fatalf("events=%d, want execution_started plus terminal event", len(events))
+	}
+	if events[0].Type != audit.EventExecutionStarted || events[1].Type != audit.EventExecutionCompleted {
+		t.Fatalf("event types = [%s, %s]", events[0].Type, events[1].Type)
+	}
+	if events[0].Caller.ControlPlaneRequestID != "req-start" {
+		t.Fatalf("start request id=%q", events[0].Caller.ControlPlaneRequestID)
+	}
+	if events[0].Execution == nil || events[0].Execution.Binary == "" || events[0].Execution.ArgvSHA256 == "" {
+		t.Fatalf("start event missing execution facts: %+v", events[0].Execution)
+	}
+	if events[1].Time.Before(events[0].Time) {
+		t.Fatalf("terminal time %s precedes start time %s", events[1].Time, events[0].Time)
+	}
+	if events[1].EventID != res.EventID {
+		t.Fatalf("terminal event id=%q, result id=%q", events[1].EventID, res.EventID)
+	}
+}
+
+func TestEngine_PreExecutionEventsNeverPersistArguments(t *testing.T) {
+	e, j, root := setupEngine(t)
+	defer j.Close()
+	const secret = "do-not-persist-this-value"
+	req := Request{
+		ControlPlaneRequestID: "req-refused",
+		ActionID:              "t.echo",
+		Args:                  map[string]any{"msg": secret},
+		Reason:                "untrusted dispatch",
+	}
+	ids := []string{
+		e.RecordDispatchRefusal(context.Background(), req, "signature required"),
+		e.RecordDispatchCancellation(context.Background(), req, "cancelled before start"),
+		e.RecordExecutionFailure(context.Background(), req, "recovered internal failure"),
+	}
+	for _, eventID := range ids {
+		if eventID == "" {
+			t.Fatal("pre-execution event missing event id")
+		}
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), secret) {
+		t.Fatal("pre-execution refusal persisted untrusted arguments")
+	}
+	events := readJournalEvents(t, root)
+	if len(events) != 3 {
+		t.Fatalf("events=%+v", events)
+	}
+	wantTypes := []audit.EventType{audit.EventDispatchRefused, audit.EventActionCancelled, audit.EventExecutionFailed}
+	for i, ev := range events {
+		if ev.Type != wantTypes[i] {
+			t.Fatalf("event %d type=%q, want %q", i, ev.Type, wantTypes[i])
+		}
+		if ev.Request == nil || ev.Request.Reason != req.Reason {
+			t.Fatalf("event %d request metadata=%+v", i, ev.Request)
+		}
+		if ev.Request.ArgsSHA256 != "" || len(ev.Request.ArgsRedacted) != 0 {
+			t.Fatalf("event %d contains argument data: %+v", i, ev.Request)
+		}
+	}
+}
+
 // A dispatch the runner-local admission policy denies must be journaled as the
 // dedicated EventActionBlockedByAdmission type — not a generic
 // validation_failed — so a SIEM rule keyed on that string can alert on it

@@ -379,7 +379,7 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 	digest, err := dispatchDigest(m)
 	if err != nil {
-		if !c.enqueueTransient(m.RequestID, failedDispatchResult(m.RequestID, "dispatch_invalid", err.Error())) {
+		if !c.enqueueTransient(m.RequestID, c.refusedDispatchResult(parent, m, "dispatch_invalid", err.Error())) {
 			return errResponseBacklogFull
 		}
 		return nil
@@ -403,12 +403,12 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 	decision, cached, err := c.dedup.inspect(m.RequestID, digest)
 	if err != nil {
 		c.mu.Unlock()
-		if !c.dispatchReservationFailed(m.RequestID, err) {
+		if !c.dispatchReservationFailed(parent, m, err) {
 			return errResponseBacklogFull
 		}
 		return nil
 	}
-	if handled, enqueued := c.handleReservationDecision(m.RequestID, digest, decision, cached); handled {
+	if handled, enqueued := c.handleReservationDecision(parent, m, digest, decision, cached); handled {
 		c.mu.Unlock()
 		if !enqueued {
 			return errResponseBacklogFull
@@ -422,6 +422,7 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 			"request_id", m.RequestID,
 			"cap", c.opts.MaxConcurrentRuns,
 		)
+		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "concurrency cap reached")
 		enqueued := c.enqueueTransientLocked(m.RequestID, ErrorMsg{
 			Envelope: Envelope{Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 			Code:     "concurrency_cap_reached",
@@ -437,12 +438,12 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 	decision, cached, err = c.dedup.reserve(m.RequestID, digest)
 	if err != nil {
 		c.mu.Unlock()
-		if !c.dispatchReservationFailed(m.RequestID, err) {
+		if !c.dispatchReservationFailed(parent, m, err) {
 			return errResponseBacklogFull
 		}
 		return nil
 	}
-	if handled, enqueued := c.handleReservationDecision(m.RequestID, digest, decision, cached); handled {
+	if handled, enqueued := c.handleReservationDecision(parent, m, digest, decision, cached); handled {
 		c.mu.Unlock()
 		if !enqueued {
 			return errResponseBacklogFull
@@ -456,10 +457,13 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 			Status:   "cancelled",
 			ExitCode: -1,
 			Reason:   "cancelled_before_start",
+			EventID: c.opts.Engine.RecordDispatchCancellation(
+				context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "cancelled before process start",
+			),
 		}
 		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
 			c.mu.Unlock()
-			if !c.dispatchReservationFailed(m.RequestID, err) {
+			if !c.dispatchReservationFailed(parent, m, err) {
 				return errResponseBacklogFull
 			}
 			return nil
@@ -474,6 +478,7 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 	}
 	if len(c.runs) >= c.maxRunStates() {
 		c.mu.Unlock()
+		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "response backlog full")
 		return errResponseBacklogFull
 	}
 
@@ -491,28 +496,32 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 }
 
 func (c *Client) handleReservationDecision(
-	requestID, digest string,
+	ctx context.Context,
+	m RunActionMsg,
+	digest string,
 	decision reservationDecision,
 	cached ActionResultMsg,
 ) (handled, enqueued bool) {
 	switch decision {
 	case reservationReplay:
-		c.opts.Logger.Info("cloud.dedup_replay", "request_id", requestID)
-		return true, c.enqueueTransientLocked(requestID, cached)
+		c.opts.Logger.Info("cloud.dedup_replay", "request_id", m.RequestID)
+		return true, c.enqueueTransientLocked(m.RequestID, cached)
 	case reservationPending:
-		result := failedDispatchResult(
-			requestID,
+		result := c.refusedDispatchResult(
+			ctx,
+			m,
 			"execution_outcome_unknown",
 			"runner restarted after reserving this dispatch; it was not re-executed because prior side effects are unknown",
 		)
-		if err := c.dedup.complete(requestID, digest, result); err != nil {
-			c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", requestID, "error", err)
+		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
+			c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", m.RequestID, "error", err)
 		}
-		return true, c.enqueueTransientLocked(requestID, result)
+		return true, c.enqueueTransientLocked(m.RequestID, result)
 	case reservationConflict:
-		c.opts.Logger.Warn("cloud.dispatch_id_conflict", "request_id", requestID)
-		return true, c.enqueueTransientLocked(requestID, failedDispatchResult(
-			requestID,
+		c.opts.Logger.Warn("cloud.dispatch_id_conflict", "request_id", m.RequestID)
+		return true, c.enqueueTransientLocked(m.RequestID, c.refusedDispatchResult(
+			ctx,
+			m,
 			"dispatch_id_conflict",
 			"request_id was already bound to different execution facts; action was not executed",
 		))
@@ -521,13 +530,22 @@ func (c *Client) handleReservationDecision(
 	}
 }
 
-func (c *Client) dispatchReservationFailed(requestID string, err error) bool {
-	c.opts.Logger.Error("cloud.dispatch_reservation_failed", "request_id", requestID, "error", err)
-	return c.enqueueTransient(requestID, failedDispatchResult(
-		requestID,
+func (c *Client) dispatchReservationFailed(ctx context.Context, m RunActionMsg, err error) bool {
+	c.opts.Logger.Error("cloud.dispatch_reservation_failed", "request_id", m.RequestID, "error", err)
+	return c.enqueueTransient(m.RequestID, c.refusedDispatchResult(
+		ctx,
+		m,
 		"dispatch_reservation_failed",
 		"runner could not durably reserve this dispatch; action was not executed",
 	))
+}
+
+func (c *Client) refusedDispatchResult(ctx context.Context, m RunActionMsg, reason, detail string) ActionResultMsg {
+	result := failedDispatchResult(m.RequestID, reason, detail)
+	result.EventID = c.opts.Engine.RecordDispatchRefusal(
+		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
+	)
+	return result
 }
 
 func failedDispatchResult(requestID, reason, detail string) ActionResultMsg {
@@ -602,11 +620,15 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			already := s.finished
 			s.mu.Unlock()
 			if !already {
-				c.finishRun(s, m, failedDispatchResult(
+				result := failedDispatchResult(
 					m.RequestID,
 					"engine_panic",
 					"the runner hit an internal error handling this action",
-				))
+				)
+				result.EventID = c.opts.Engine.RecordExecutionFailure(
+					context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "runner recovered an internal dispatch panic",
+				)
+				c.finishRun(s, m, result)
 			}
 		}
 	}()
@@ -618,11 +640,11 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 
 	// Authenticity first (did a real user sign this dispatch?), then pack
 	// integrity (do the on-disk bytes still match what was trusted?).
-	if !c.passesSignatureGate(s, m) {
+	if !c.passesSignatureGate(ctx, s, m) {
 		return
 	}
 
-	registry, trusted := c.passesTrustGate(s, m)
+	registry, trusted := c.passesTrustGate(ctx, s, m)
 	if !trusted {
 		return
 	}
@@ -642,21 +664,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		}, dropOldestProgress)
 	}
 
-	req := engine.Request{
-		ControlPlaneRequestID: m.RequestID,
-		ActionID:              m.ActionID,
-		Args:                  m.Args,
-		Reason:                m.Reason,
-		RegistrySnapshot:      registry,
-		OnProgress:            progress,
-	}
-	if m.Opts != nil {
-		req.Opts = engine.Opts{
-			Timeout:        m.Opts.Timeout.Std(),
-			MaxStdoutBytes: m.Opts.MaxStdoutBytes,
-			MaxStderrBytes: m.Opts.MaxStderrBytes,
-		}
-	}
+	req := requestForDispatch(m, registry, progress)
 	res, err := c.opts.Engine.Run(ctx, req)
 
 	s.mu.Lock()
@@ -669,7 +677,11 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			"action_id", m.ActionID,
 			"error", err.Error(),
 		)
-		c.finishRun(s, m, failedDispatchResult(m.RequestID, "engine_error", err.Error()))
+		result := failedDispatchResult(m.RequestID, "engine_error", err.Error())
+		result.EventID = c.opts.Engine.RecordExecutionFailure(
+			context.WithoutCancel(ctx), req, "engine returned an internal error: "+err.Error(),
+		)
+		c.finishRun(s, m, result)
 	} else {
 		// One log line per completed run. Non-success statuses get Warn
 		// so they stand out in operator logs; success is Info.
@@ -726,7 +738,7 @@ func (c *Client) finishRun(s *runState, m RunActionMsg, result ActionResultMsg) 
 // enqueues a terminal `signature_invalid` result the cloud records as a refused
 // run; it deliberately does NOT re-advertise (unlike a pack mismatch, a bad
 // signature says nothing about this runner's catalog).
-func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
+func (c *Client) passesSignatureGate(ctx context.Context, s *runState, m RunActionMsg) bool {
 	verifier := c.verifier.Load()
 	if verifier == nil {
 		return true
@@ -757,6 +769,9 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 		DurationMS: 0,
 		Error:      "refused: " + dec.Detail,
 		Reason:     dec.Code,
+		EventID: c.opts.Engine.RecordDispatchRefusal(
+			context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "signature refused: "+dec.Code,
+		),
 	}
 	c.finishRun(s, m, result)
 	return false
@@ -766,7 +781,7 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 // control plane's trusted hash. Signed calls also carry PackRef, which must
 // describe the same local pack. On success it returns the exact registry
 // snapshot that Engine.Run retains through execution.
-func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, bool) {
+func (c *Client) passesTrustGate(ctx context.Context, s *runState, m RunActionMsg) (*packs.Registry, bool) {
 	reg := c.opts.Engine.Registry()
 	action, ok := reg.Action(m.ActionID)
 	if !ok || action.PackID == "" {
@@ -791,7 +806,7 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, 
 		// cause is the operator deleted files between load and dispatch,
 		// and we shouldn't run a half-existing pack on the assumption it
 		// matched.
-		c.emitPackMismatch(s, m, action.PackID, m.ExpectedPackHash, "rehash_failed:"+err.Error())
+		c.emitPackMismatch(ctx, s, m, action.PackID, m.ExpectedPackHash, "rehash_failed:"+err.Error())
 		return nil, false
 	}
 
@@ -807,7 +822,7 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, 
 			"expected", expected,
 			"got", hash,
 		)
-		c.emitPackMismatch(s, m, action.PackID, expected, hash)
+		c.emitPackMismatch(ctx, s, m, action.PackID, expected, hash)
 		c.Readvertise()
 		return nil, false
 	}
@@ -821,7 +836,7 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, 
 			"expected", m.PackRef,
 			"got", gotRef,
 		)
-		c.emitPackMismatch(s, m, action.PackID, m.PackRef, gotRef)
+		c.emitPackMismatch(ctx, s, m, action.PackID, m.PackRef, gotRef)
 		c.Readvertise()
 		return nil, false
 	}
@@ -834,19 +849,42 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, 
 // surfaces this as a run with status="pack_hash_mismatch" — the UI
 // renders it as a tamper alert, and the pending_trust card shows up on
 // /app/packs as soon as the runner's re-broadcast lands.
-func (c *Client) emitPackMismatch(s *runState, m RunActionMsg, packID, expected, got string) {
+func (c *Client) emitPackMismatch(ctx context.Context, s *runState, m RunActionMsg, packID, expected, got string) {
+	detail := fmt.Sprintf(
+		"pack %q does not match the dispatch trust contract (expected %s, got %s); refused — operator must review the drift in /app/packs",
+		packID, expected, got,
+	)
 	result := ActionResultMsg{
 		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 		Status:     "pack_hash_mismatch",
 		ExitCode:   -1,
 		DurationMS: 0,
-		Error: fmt.Sprintf(
-			"pack %q does not match the dispatch trust contract (expected %s, got %s); refused — operator must review the drift in /app/packs",
-			packID, expected, got,
+		Error:      detail,
+		Reason:     "pack_hash_mismatch",
+		EventID: c.opts.Engine.RecordDispatchRefusal(
+			context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
 		),
-		Reason: "pack_hash_mismatch",
 	}
 	c.finishRun(s, m, result)
+}
+
+func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engine.ProgressFunc) engine.Request {
+	req := engine.Request{
+		ControlPlaneRequestID: m.RequestID,
+		ActionID:              m.ActionID,
+		Args:                  m.Args,
+		Reason:                m.Reason,
+		RegistrySnapshot:      registry,
+		OnProgress:            progress,
+	}
+	if m.Opts != nil {
+		req.Opts = engine.Opts{
+			Timeout:        m.Opts.Timeout.Std(),
+			MaxStdoutBytes: m.Opts.MaxStdoutBytes,
+			MaxStderrBytes: m.Opts.MaxStderrBytes,
+		}
+	}
+	return req
 }
 
 // dropPolicy controls what happens when the per-run buffer is full.

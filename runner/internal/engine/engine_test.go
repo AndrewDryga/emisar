@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -791,16 +790,18 @@ func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
 		t.Fatalf("cloud stdout hash=%q, want digest of emitted redacted output %x", res.StdoutSHA256, wantHash)
 	}
 
-	body, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
-	if err != nil {
-		t.Fatal(err)
+	var terminal *audit.Event
+	for _, ev := range readJournalEvents(t, root) {
+		if ev.EventID == res.EventID {
+			terminal = &ev
+			break
+		}
 	}
-	var ev audit.Event
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(body))), &ev); err != nil {
-		t.Fatal(err)
+	if terminal == nil || terminal.Execution == nil {
+		t.Fatalf("terminal event %q missing execution metadata", res.EventID)
 	}
-	if ev.Execution.StdoutBytes <= 512 {
-		t.Fatalf("local raw stdout bytes=%d, want proof that executor truncation metadata remains local", ev.Execution.StdoutBytes)
+	if terminal.Execution.StdoutBytes <= 512 {
+		t.Fatalf("local raw stdout bytes=%d, want proof that executor truncation metadata remains local", terminal.Execution.StdoutBytes)
 	}
 }
 

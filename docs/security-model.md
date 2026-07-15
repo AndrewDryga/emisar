@@ -54,12 +54,17 @@
     baked into the image overrides anything the cloud asks for: a
     suppressed action is hidden from the catalog AND refused at dispatch,
     journaling `action_blocked_by_admission`.
-12. **A local hash-chained JSONL log.** Every attempt — validation-failed,
-   executed, errored — produces a line in `/var/log/emisar/events.jsonl`.
-   Each entry carries `prev_hash = sha256(previous_line)`, so cutting,
-   reordering, or mutating any line is detected by `emisar audit verify`.
-   The runner only appends to the file. It is meant for on-host forensics;
-   a privileged attacker can still delete or rewrite the entire file.
+12. **A local hash-chained JSONL log.** Every dispatch decision produces a
+   terminal line in `/var/log/emisar/events.jsonl`. An accepted execution first
+   records `execution_started` immediately before crossing the process boundary,
+   then records its terminal outcome; a crash can therefore leave an unmatched
+   start rather than erasing evidence that execution began. Pre-execution trust,
+   signature, capacity, and reservation refusals record `dispatch_refused`
+   without persisting untrusted arguments. Each entry carries
+   `prev_hash = sha256(previous_line)`, so cutting, reordering, or mutating any
+   line is detected by `emisar audit verify`. The runner only appends to the
+   file. It is meant for on-host forensics; a privileged attacker can still
+   delete or rewrite the entire file.
 13. **Client-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid Ed25519 signature
     over the canonical portal origin, action, immutable pack, digest of the
@@ -195,5 +200,6 @@ available.
   environment file or a secrets manager. Do not commit them.
 - Treat each pack as code. Packs are baked into VM images by your image
   pipeline; reviewing them is reviewing what the LLM can do on that host.
-- Audit the JSONL log for `validation_failed` and `execution_failed`
-  events — they're often the most interesting signal.
+- Audit the JSONL log for `dispatch_refused`, `validation_failed`,
+  `execution_failed`, and `execution_started` events without a later terminal
+  event for the same request — they're often the most interesting signal.

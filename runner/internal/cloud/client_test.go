@@ -340,6 +340,15 @@ func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Du
 	}
 }
 
+func requireResultEventID(t *testing.T, result map[string]any) string {
+	t.Helper()
+	eventID, ok := result["event_id"].(string)
+	if !ok || eventID == "" {
+		t.Fatalf("result missing local audit event id: %+v", result)
+	}
+	return eventID
+}
+
 func queuedResult(t *testing.T, cli *Client, requestID string) ActionResultMsg {
 	t.Helper()
 	cli.mu.Lock()
@@ -381,6 +390,9 @@ func TestClient_RestartedReservationFailsClosedWithoutExecution(t *testing.T) {
 	if result.Status != "failed" || result.Reason != "execution_outcome_unknown" {
 		t.Fatalf("result=%+v", result)
 	}
+	if result.EventID == "" {
+		t.Fatal("outcome-unknown refusal missing local audit event id")
+	}
 	if replay, ok := cli.dedup.lookup(msg.RequestID); !ok || replay.Reason != result.Reason {
 		t.Fatalf("outcome-unknown result was not durably completed: ok=%v result=%+v", ok, replay)
 	}
@@ -407,6 +419,9 @@ func TestClient_RequestIDFactConflictIsRefused(t *testing.T) {
 	if result.Status != "failed" || result.Reason != "dispatch_id_conflict" {
 		t.Fatalf("result=%+v", result)
 	}
+	if result.EventID == "" {
+		t.Fatal("dispatch conflict missing local audit event id")
+	}
 }
 
 func TestClient_UnavailableDispatchLogPreventsExecution(t *testing.T) {
@@ -424,6 +439,9 @@ func TestClient_UnavailableDispatchLogPreventsExecution(t *testing.T) {
 	result := queuedResult(t, cli, msg.RequestID)
 	if result.Status != "failed" || result.Reason != "dispatch_reservation_failed" {
 		t.Fatalf("result=%+v", result)
+	}
+	if result.EventID == "" {
+		t.Fatal("reservation failure missing local audit event id")
 	}
 }
 

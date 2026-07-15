@@ -54,6 +54,7 @@ func TestClient_TrustGate_MissingExpectedHashRefuses(t *testing.T) {
 	if !strings.Contains(res["error"].(string), "<missing>") {
 		t.Fatalf("error=%v, want missing-hash detail", res["error"])
 	}
+	requireResultEventID(t, res)
 	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 2 })
 }
 
@@ -115,6 +116,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 	if res["status"] != "pack_hash_mismatch" {
 		t.Fatalf("first dispatch status=%v, want pack_hash_mismatch", res["status"])
 	}
+	firstEventID := requireResultEventID(t, res)
 	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 2 })
 
 	// The refusal must be in the dedup ring — that's what makes the replay
@@ -140,6 +142,11 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 		}
 		return count >= 2
 	})
+	for _, result := range conn.sentByType(MsgActionResult) {
+		if result["request_id"] == "req_cached" && result["event_id"] != firstEventID {
+			t.Fatalf("replay event_id=%v, want cached %q", result["event_id"], firstEventID)
+		}
+	}
 
 	// No further re-advertisement: the replay never re-entered passesTrustGate.
 	// Give a brief grace for any (erroneous) extra state to land, then assert it
