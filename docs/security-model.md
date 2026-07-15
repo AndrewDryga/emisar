@@ -139,7 +139,7 @@ its actions from itself:
 | LLM tries to read /etc/shadow            | Path arg `denied_paths`; OS perms still apply.                |
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |
-| Output flood                             | Stdout/stderr byte caps; surplus dropped, counted, signalled. |
+| Output flood                             | Stdout/stderr byte caps; buffered progress is bounded, dropped chunks are counted structurally, and portal summaries mark incomplete delivery. |
 | Pack swapped on disk after trust         | Runner recomputes the cloud-pinned trusted hash before execution. |
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
 | Action outlives a dying runner           | `Pdeathsig` (Linux) + process-group SIGTERM/SIGKILL on cancel/timeout. |

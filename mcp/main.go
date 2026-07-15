@@ -57,10 +57,10 @@ import (
 
 const bridgeName = "emisar-mcp"
 
-// The portal permits wait_for_run to hold a request for five minutes. Keep 30
-// seconds of bounded transport headroom so its graceful "still waiting"
-// response wins the boundary race without allowing an indefinite connection.
-const httpTimeout = 330 * time.Second
+// The portal permits a wait to hold a request for 60 seconds. Keep 30 seconds
+// of bounded transport headroom so its graceful "still waiting" response wins
+// the boundary race without allowing an indefinite connection.
+const httpTimeout = 90 * time.Second
 
 const (
 	maxConcurrentRequests      = 8

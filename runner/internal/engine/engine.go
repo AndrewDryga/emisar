@@ -8,6 +8,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
@@ -426,6 +428,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 				return
 			}
 			if emitted := sr.Write(data); len(emitted) > 0 {
+				emitted = normalizeUTF8Bytes(emitted)
 				req.OnProgress(stream, emitted)
 				buf.Write(emitted)
 			}
@@ -462,10 +465,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		// Execute has returned, so both stream goroutines are done and no
 		// further OnChunk can run — draining the held-back tails needs no lock.
 		if tail := outRed.Flush(); len(tail) > 0 {
+			tail = normalizeUTF8Bytes(tail)
 			req.OnProgress(executor.StreamStdout, tail)
 			stdoutBuf.Write(tail)
 		}
 		if tail := errRed.Flush(); len(tail) > 0 {
+			tail = normalizeUTF8Bytes(tail)
 			req.OnProgress(executor.StreamStderr, tail)
 			stderrBuf.Write(tail)
 		}
@@ -476,6 +481,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		var hs1, hs2 []redact.Hit
 		redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)
 		redactedStderr, hs2 = combinedRedactor.Apply(execRes.Stderr)
+		redactedStdout = normalizeUTF8String(redactedStdout)
+		redactedStderr = normalizeUTF8String(redactedStderr)
 		hits = redact.MergeHits(hs1, hs2)
 	}
 
@@ -536,6 +543,20 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		TruncatedErr:    execRes.Truncated.Stderr,
 		ExecutedCommand: executedCommand,
 	}, nil
+}
+
+func normalizeUTF8Bytes(data []byte) []byte {
+	if utf8.Valid(data) {
+		return data
+	}
+	return bytes.ToValidUTF8(data, []byte("\uFFFD"))
+}
+
+func normalizeUTF8String(value string) string {
+	if utf8.ValidString(value) {
+		return value
+	}
+	return strings.ToValidUTF8(value, "\uFFFD")
 }
 
 func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec.Action,

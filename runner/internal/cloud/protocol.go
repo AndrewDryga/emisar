@@ -516,25 +516,28 @@ type ActionProgressMsg struct {
 }
 
 // ActionResultMsg is the terminal message for an action call. Stdout/stderr
-// content is *not* repeated here when streaming was used — cloud already
-// has the chunks. SHA-256s + byte counts cover those exact redacted chunks so
-// cloud can verify integrity without learning hashes of raw sensitive output.
+// content is not repeated here. Emitted-output hashes and byte counts cover
+// every normalized, redacted byte admitted by the action's output caps; the
+// progress counters let the portal distinguish those facts from the subset it
+// durably received.
 type ActionResultMsg struct {
 	Envelope
-	Status       string             `json:"status"`
-	ExitCode     int                `json:"exit_code"`
-	DurationMS   int64              `json:"duration_ms"`
-	TimedOut     bool               `json:"timed_out,omitempty"`
-	StdoutSHA256 string             `json:"stdout_sha256,omitempty"`
-	StderrSHA256 string             `json:"stderr_sha256,omitempty"`
-	StdoutBytes  int                `json:"stdout_bytes"`
-	StderrBytes  int                `json:"stderr_bytes"`
-	TruncatedOut bool               `json:"truncated_stdout,omitempty"`
-	TruncatedErr bool               `json:"truncated_stderr,omitempty"`
-	Redactions   []RedactionSummary `json:"redactions,omitempty"`
-	Reason       string             `json:"reason,omitempty"`
-	Error        string             `json:"error,omitempty"`
-	EventID      string             `json:"event_id"`
+	Status                string             `json:"status"`
+	ExitCode              int                `json:"exit_code"`
+	DurationMS            int64              `json:"duration_ms"`
+	TimedOut              bool               `json:"timed_out,omitempty"`
+	EmittedStdoutSHA256   string             `json:"emitted_stdout_sha256,omitempty"`
+	EmittedStderrSHA256   string             `json:"emitted_stderr_sha256,omitempty"`
+	EmittedStdoutBytes    int                `json:"emitted_stdout_bytes"`
+	EmittedStderrBytes    int                `json:"emitted_stderr_bytes"`
+	ProgressChunks        int                `json:"progress_chunks"`
+	DroppedProgressChunks int                `json:"dropped_progress_chunks,omitempty"`
+	TruncatedOut          bool               `json:"truncated_stdout,omitempty"`
+	TruncatedErr          bool               `json:"truncated_stderr,omitempty"`
+	Redactions            []RedactionSummary `json:"redactions,omitempty"`
+	Reason                string             `json:"reason,omitempty"`
+	Error                 string             `json:"error,omitempty"`
+	EventID               string             `json:"event_id"`
 	// ExecutedCommand is the exact command the runner ran, shell-quoted,
 	// with sensitive arg values masked runner-side.
 	ExecutedCommand string `json:"executed_command,omitempty"`

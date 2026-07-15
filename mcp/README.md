@@ -122,8 +122,8 @@ Request IDs are one-use within a bridge session. The bridge permits eight
 in-flight requests within a 1 MiB aggregate request budget, caps each request at
 128 KiB and each response at 512 KiB, and bounds decoded string IDs and integer
 decimal forms to 4,096 bytes so every accepted ID can be echoed inside that
-response ceiling. It keeps a 330-second HTTP deadline above the portal's
-five-minute wait cap. Pings and unrelated calls remain responsive during a
+response ceiling. It keeps a 90-second HTTP deadline above the portal's
+60-second wait cap. Pings and unrelated calls remain responsive during a
 wait. Cancellation after send stops observation only; it never claims to undo
 committed infrastructure work.
 

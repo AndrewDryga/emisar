@@ -169,11 +169,21 @@ formats.
 ## Progress and result
 
 `action_progress` carries a monotonically increasing sequence, stream, and one
-already-redacted output chunk. `action_result` is emitted exactly once after the
-process exits or the runner refuses the call. It carries terminal status, exit
-code, duration, stream hashes/counts, truncation flags, redaction counts, masked
-executed command, reason, and local audit event ID. Output bytes are not repeated
-in the terminal message.
+already-redacted, valid-UTF-8 output chunk. The runner normalizes invalid bytes
+after redaction and before progress emission, parsing, audit hashing, or byte
+counting, so every downstream representation uses one byte stream.
+
+`action_result` is emitted exactly once after the process exits or the runner
+refuses the call. It carries terminal status, exit code, duration, emitted
+stream hashes/counts, total and dropped progress-chunk counts, truncation flags,
+redaction counts, masked executed command, reason, and local audit event ID.
+Output bytes are not repeated in the terminal message. Emitted hashes describe
+every normalized, redacted byte admitted by the action's output caps; truncation
+flags disclose bytes omitted at those caps. The hashes do not claim that every
+emitted chunk reached the portal. The portal accepts unique chunks idempotently,
+keeps later chunks even when an earlier one was lost, and persists
+`output_complete` only when its accepted count matches the runner's total and
+the runner reports no local drops.
 
 Stable result statuses are `success`, `failed`, `error`, `validation_failed`,
 `unknown_action`, `pack_hash_mismatch`, and `signature_invalid`.

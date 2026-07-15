@@ -64,7 +64,7 @@ defmodule EmisarWeb.MCP.InstructionsTest do
   test "pins the security and retry taxonomy" do
     for fragment <- [
           "pending_approval",
-          "five minutes",
+          "60 seconds",
           "operation_conflict",
           "pack_untrusted",
           "descriptor_mismatch",

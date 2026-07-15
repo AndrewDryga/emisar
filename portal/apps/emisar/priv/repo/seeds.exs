@@ -870,10 +870,11 @@ if existing_runs == [] do
         "status" => "success",
         "exit_code" => 0,
         "duration_ms" => duration_ms,
-        "stdout_bytes" => chunks_bytes.(chunks, "stdout"),
-        "stderr_bytes" => chunks_bytes.(chunks, "stderr"),
-        "stdout_sha256" => chunks_sha.(chunks, "stdout"),
-        "stderr_sha256" => chunks_sha.(chunks, "stderr"),
+        "emitted_stdout_bytes" => chunks_bytes.(chunks, "stdout"),
+        "emitted_stderr_bytes" => chunks_bytes.(chunks, "stderr"),
+        "emitted_stdout_sha256" => chunks_sha.(chunks, "stdout"),
+        "emitted_stderr_sha256" => chunks_sha.(chunks, "stderr"),
+        "progress_chunks" => length(chunks),
         "event_id" => "seed-" <> Ecto.UUID.generate()
       })
 
@@ -894,10 +895,11 @@ if existing_runs == [] do
         "exit_code" => exit_code,
         "duration_ms" => 4500,
         "reason" => reason,
-        "stdout_bytes" => chunks_bytes.(chunks, "stdout"),
-        "stderr_bytes" => chunks_bytes.(chunks, "stderr"),
-        "stdout_sha256" => chunks_sha.(chunks, "stdout"),
-        "stderr_sha256" => chunks_sha.(chunks, "stderr"),
+        "emitted_stdout_bytes" => chunks_bytes.(chunks, "stdout"),
+        "emitted_stderr_bytes" => chunks_bytes.(chunks, "stderr"),
+        "emitted_stdout_sha256" => chunks_sha.(chunks, "stdout"),
+        "emitted_stderr_sha256" => chunks_sha.(chunks, "stderr"),
+        "progress_chunks" => length(chunks),
         "event_id" => "seed-" <> Ecto.UUID.generate()
       })
 
@@ -1195,10 +1197,11 @@ if existing_runs == [] do
     finished_at: hours_ago.(24),
     exit_code: 0,
     duration_ms: 1820,
-    stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
-    stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
-    stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
-    stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr")
+    emitted_stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
+    emitted_stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
+    emitted_stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
+    emitted_stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr"),
+    output_complete: true
   )
   |> Repo.update!()
 

@@ -161,9 +161,9 @@
         <p>
           <code>run_action</code>
           waits up to 60 seconds. <code>wait_for_run</code>
-          waits up to five
-          minutes and returns the current state when its deadline expires. The stdio bridge keeps up
-          to eight requests in flight and uses a 330-second HTTP deadline, so pings and unrelated
+          waits up to 60 seconds and returns the current state when its deadline expires. One
+          credential lineage may hold eight waits per portal node. The stdio bridge also keeps up
+          to eight requests in flight and uses a 90-second HTTP deadline, so pings and unrelated
           calls remain responsive. Cancelling after send stops observation only; it does not roll
           back committed infrastructure work.
         </p>

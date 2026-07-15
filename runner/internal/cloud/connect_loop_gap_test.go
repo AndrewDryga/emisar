@@ -196,12 +196,10 @@ func TestClient_CancelBeforeRunActionPreventsExecution(t *testing.T) {
 
 // When the per-run outbox overflows with progress chunks (the disconnected
 // case: the sender isn't draining, so progress piles up past MaxPendingPerRun),
-// each overflow drops the oldest chunk and bumps s.dropped — and that lost
-// count is surfaced on the terminal result's reason via buildReasonWithDrops,
-// so an operator reading the result still learns output went missing. This
-// exercises the real enqueue drop-accounting and the real reason-suffix
-// builder together (client.go:634-643, 844-853).
-func TestClient_Outbox_ProgressDropCountSurfacedOnReason(t *testing.T) {
+// each overflow drops the oldest chunk and bumps s.dropped. The terminal result
+// carries that count structurally so the portal can mark output incomplete
+// without parsing human-readable failure text.
+func TestClient_Outbox_ProgressDropCountIsStructured(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}}, func(o *Options) {
 		o.MaxPendingPerRun = 4
 	})
@@ -235,12 +233,17 @@ func TestClient_Outbox_ProgressDropCountSurfacedOnReason(t *testing.T) {
 		t.Fatalf("dropped=%d, want %d (pushed %d, cap %d)", dropped, want, pushed, cli.opts.MaxPendingPerRun)
 	}
 
-	// The terminal result's reason carries the drop count so it survives to the
-	// cloud even though the chunks themselves were discarded.
-	reason := buildReasonWithDrops("completed", dropped)
-	wantSuffix := "progress chunks dropped during disconnect"
-	if reason == "completed" || !containsSub(reason, wantSuffix) {
-		t.Fatalf("result reason %q must surface the dropped-chunk count (%q)", reason, wantSuffix)
+	result := ActionResultMsg{ProgressChunks: pushed, DroppedProgressChunks: dropped}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["progress_chunks"] != float64(pushed) || payload["dropped_progress_chunks"] != float64(dropped) {
+		t.Fatalf("structured progress accounting = %s", encoded)
 	}
 }
 
@@ -327,23 +330,23 @@ func TestClient_Result_OmitsStdoutStderrContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Integrity metadata IS present instead — that's how the cloud verifies the
-	// chunks it reassembled.
-	if _, ok := res["stdout_sha256"]; !ok {
-		t.Fatalf("result should carry stdout_sha256 (integrity over content): %s", raw)
+	// Emitted-output metadata is present instead. It describes the runner's
+	// complete bounded stream; delivery completeness is a separate field.
+	if _, ok := res["emitted_stdout_sha256"]; !ok {
+		t.Fatalf("result should carry emitted_stdout_sha256: %s", raw)
 	}
-	if _, ok := res["stdout_bytes"]; !ok {
-		t.Fatalf("result should carry stdout_bytes: %s", raw)
+	if _, ok := res["emitted_stdout_bytes"]; !ok {
+		t.Fatalf("result should carry emitted_stdout_bytes: %s", raw)
 	}
 	// And there is no field on the result type at all that could carry content:
 	// guard against a future field named like one. (StdoutBytes proves bytes
 	// were produced, so omission is a real choice, not an empty run.)
-	if b, ok := res["stdout_bytes"].(float64); !ok || b == 0 {
-		t.Fatalf("expected non-zero stdout_bytes so the omission is meaningful: %v", res["stdout_bytes"])
+	if b, ok := res["emitted_stdout_bytes"].(float64); !ok || b == 0 {
+		t.Fatalf("expected non-zero emitted_stdout_bytes so omission is meaningful: %v", res["emitted_stdout_bytes"])
 	}
 }
 
-func TestClient_ResultIntegrityCoversEmittedRedactedChunks(t *testing.T) {
+func TestClient_EmittedMetadataCoversNormalizedRedactedChunks(t *testing.T) {
 	conn := newFakeConn()
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
 
@@ -362,11 +365,14 @@ func TestClient_ResultIntegrityCoversEmittedRedactedChunks(t *testing.T) {
 		}
 	}
 	wantHash := sha256.Sum256([]byte(stdout))
-	if got := res["stdout_sha256"]; got != fmt.Sprintf("%x", wantHash) {
-		t.Fatalf("stdout_sha256=%v, want digest of emitted chunks %x", got, wantHash)
+	if got := res["emitted_stdout_sha256"]; got != fmt.Sprintf("%x", wantHash) {
+		t.Fatalf("emitted_stdout_sha256=%v, want digest of emitted chunks %x", got, wantHash)
 	}
-	if got := res["stdout_bytes"]; got != float64(len(stdout)) {
-		t.Fatalf("stdout_bytes=%v, emitted chunk bytes=%d", got, len(stdout))
+	if got := res["emitted_stdout_bytes"]; got != float64(len(stdout)) {
+		t.Fatalf("emitted_stdout_bytes=%v, emitted chunk bytes=%d", got, len(stdout))
+	}
+	if got := res["progress_chunks"]; got != float64(len(conn.sentByType(MsgActionProgress))) {
+		t.Fatalf("progress_chunks=%v, sent progress frames=%d", got, len(conn.sentByType(MsgActionProgress)))
 	}
 	if res["truncated_stdout"] != true {
 		t.Fatalf("truncated_stdout=%v, want true", res["truncated_stdout"])
@@ -605,15 +611,4 @@ func (d *failThenConnDialer) Dial(context.Context) (Conn, error) {
 		return d.conn, nil
 	}
 	return nil, io.ErrUnexpectedEOF
-}
-
-// containsSub is a tiny substring check kept local to avoid pulling strings in
-// only for one assertion-style call.
-func containsSub(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return len(sub) == 0
 }

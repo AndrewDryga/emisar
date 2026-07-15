@@ -3053,6 +3053,63 @@ defmodule Emisar.RunsTest do
       assert ActionRun.terminal?(:success)
     end
 
+    test "marks output complete when every unique progress chunk arrived", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 1,
+                 kind: "progress",
+                 stream: "stdout",
+                 payload: %{"chunk" => "ok\n"}
+               })
+
+      assert {:error, :duplicate_event} =
+               Runs.append_event(run, %{
+                 seq: 1,
+                 kind: "progress",
+                 stream: "stdout",
+                 payload: %{"chunk" => "ok\n"}
+               })
+
+      payload = %{
+        "status" => "success",
+        "progress_chunks" => 1,
+        "emitted_stdout_bytes" => 3,
+        "emitted_stderr_bytes" => 0
+      }
+
+      assert {:ok, %ActionRun{output_complete: true}} = Runs.mark_finished(run, payload)
+    end
+
+    test "keeps later output but marks it incomplete when progress was dropped", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 2,
+                 kind: "progress",
+                 stream: "stdout",
+                 payload: %{"chunk" => "later chunk"}
+               })
+
+      payload = %{
+        "status" => "success",
+        "progress_chunks" => 2,
+        "dropped_progress_chunks" => 1,
+        "emitted_stdout_bytes" => 11,
+        "emitted_stderr_bytes" => 0
+      }
+
+      assert {:ok, %ActionRun{output_complete: false}} = Runs.mark_finished(run, payload)
+    end
+
     test "a terminal run is final — later transitions no-op and never re-open it", %{
       account: account,
       runner: runner

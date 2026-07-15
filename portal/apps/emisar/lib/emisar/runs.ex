@@ -1957,7 +1957,7 @@ defmodule Emisar.Runs do
            run,
            :any_nonterminal,
            status,
-           result_attrs(result_payload),
+           result_attrs(run, result_payload),
            connection
          ) do
       {:ok, finished} = ok ->
@@ -1977,16 +1977,19 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp result_attrs(payload) do
+  defp result_attrs(%ActionRun{} = run, payload) do
+    current = peek_run_by_id(run.id) || run
+
     %{
       finished_at: DateTime.utc_now(),
       exit_code: payload["exit_code"],
       duration_ms: payload["duration_ms"],
       timed_out: payload["timed_out"] || false,
-      stdout_sha256: payload["stdout_sha256"],
-      stderr_sha256: payload["stderr_sha256"],
-      stdout_bytes: payload["stdout_bytes"],
-      stderr_bytes: payload["stderr_bytes"],
+      emitted_stdout_sha256: payload["emitted_stdout_sha256"],
+      emitted_stderr_sha256: payload["emitted_stderr_sha256"],
+      emitted_stdout_bytes: payload["emitted_stdout_bytes"],
+      emitted_stderr_bytes: payload["emitted_stderr_bytes"],
+      output_complete: output_complete?(current, payload),
       stdout_truncated: payload["truncated_stdout"] || false,
       stderr_truncated: payload["truncated_stderr"] || false,
       event_id: payload["event_id"],
@@ -2000,6 +2003,12 @@ defmodule Emisar.Runs do
       # (omitempty drops it on an ordinary failure, so this stays the reason).
       error_message: payload["error"] || payload["reason"]
     }
+  end
+
+  defp output_complete?(%ActionRun{} = run, payload) do
+    payload["dropped_progress_chunks"] in [nil, 0] and
+      is_integer(payload["progress_chunks"]) and
+      payload["progress_chunks"] == run.progress_event_count
   end
 
   defp transition(%ActionRun{} = run, status, attrs),
@@ -2235,8 +2244,8 @@ defmodule Emisar.Runs do
           do: {:error, :duplicate_event},
           else: {:error, changeset}
 
-      # :unknown_run | :run_terminal | :progress_budget_exceeded from the guard —
-      # all benign to the runner socket, which drops them quietly.
+      # Guard refusals are benign to the runner socket. The unique event index
+      # rejects replays, while terminal progress counts reveal omitted chunks.
       {:error, reason} ->
         {:error, reason}
     end

@@ -868,9 +868,8 @@ defmodule EmisarWeb.MarketingTest do
       end
 
       assert html =~ "60 seconds"
-      assert html =~ ~r/five\s+minutes/
       assert html =~ "eight requests"
-      assert html =~ "330-second"
+      assert html =~ "90-second"
       assert html =~ "notifications/cancelled"
       assert html =~ "2025-11-25"
       assert html =~ "strings or integers"

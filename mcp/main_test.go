@@ -2292,8 +2292,8 @@ func TestForward_UnboundedResponseStreamIsBounded(t *testing.T) {
 // hang the bridge or lift the OOM guard). Pin the exact values so a change is a
 // deliberate, reviewed edit to the constants.
 func TestTransportConstantsAreFixed(t *testing.T) {
-	if httpTimeout != 330*time.Second {
-		t.Errorf("httpTimeout = %v, want 330s", httpTimeout)
+	if httpTimeout != 90*time.Second {
+		t.Errorf("httpTimeout = %v, want 90s", httpTimeout)
 	}
 	if maxResponseBytes != 512<<10 {
 		t.Errorf("maxResponseBytes = %d, want 512 KiB", maxResponseBytes)

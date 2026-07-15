@@ -449,6 +449,17 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert elapsed < 1_500
   end
 
+  test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
+    result =
+      call(conn, "wait_for_run", %{
+        "run_id" => Ecto.UUID.generate(),
+        "timeout" => "61s"
+      })
+
+    assert result["error"]["code"] == "invalid_args"
+    assert result["error"]["message"] =~ "60s"
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, name, arguments, operation_id \\ nil) do

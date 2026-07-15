@@ -67,10 +67,6 @@
       "type": "string",
       "pattern": "^(0|([1-9]|[1-5][0-9]|60)s|([1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)ms)$"
     },
-    "wait_long": {
-      "type": "string",
-      "pattern": "^(0|[1-5]m|([1-9]|[1-9][0-9]|[12][0-9]{2}|300)s|([1-9][0-9]{0,4}|[12][0-9]{5}|300000)ms)$"
-    },
     "runner_refs": {
       "type": "array",
       "minItems": 1,
@@ -152,7 +148,7 @@
       "properties": {
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "timeout": {"$ref": "#/$defs/wait_long", "default": "5m"}
+        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s"}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
@@ -380,10 +376,11 @@
         "duration_ms": {"type": "integer", "minimum": 0},
         "stdout": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stdout."},
         "stderr": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stderr."},
-        "stdout_bytes": {"type": "integer", "minimum": 0},
-        "stderr_bytes": {"type": "integer", "minimum": 0},
-        "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "emitted_stdout_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stdout bytes emitted within the runner's output cap."},
+        "emitted_stderr_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stderr bytes emitted within the runner's output cap."},
+        "emitted_stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stdout emitted within the runner's output cap."},
+        "emitted_stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stderr emitted within the runner's output cap."},
+        "output_complete": {"type": "boolean", "description": "True when every progress chunk the runner reports emitting was durably received; false means the previews may have gaps."},
         "truncated_stdout": {"type": "boolean"},
         "truncated_stderr": {"type": "boolean"},
         "approval": {"$ref": "#/$defs/approval"},
@@ -410,6 +407,10 @@
         {
           "if": {"properties": {"status": {"const": "sent"}}},
           "then": {"required": ["wait_until"]}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["success", "failed", "error", "validation_failed", "unknown_action", "cancelled", "timed_out", "refused", "denied"]}}},
+          "then": {"required": ["output_complete"]}
         }
       ]
     },

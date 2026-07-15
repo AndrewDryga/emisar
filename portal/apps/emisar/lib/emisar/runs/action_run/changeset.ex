@@ -14,8 +14,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @transition_fields ~w[
     runner_connection_generation sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
-    stdout_sha256 stderr_sha256 stdout_bytes stderr_bytes stdout_truncated stderr_truncated
-    event_id reason_text error_message executed_command
+    emitted_stdout_sha256 emitted_stderr_sha256 emitted_stdout_bytes emitted_stderr_bytes
+    output_complete stdout_truncated stderr_truncated event_id reason_text error_message executed_command
   ]a
 
   # Generous caps — well above any real action's args (the largest, the shell
@@ -72,11 +72,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:reason_text, max: @max_reason_length)
     |> validate_length(:error_message, max: @max_runner_text_length)
     |> validate_length(:executed_command, max: @max_runner_text_length)
-    |> validate_length(:stdout_sha256, max: @max_db_string_length)
-    |> validate_length(:stderr_sha256, max: @max_db_string_length)
+    |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
+    |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
-    |> validate_number(:stdout_bytes, greater_than_or_equal_to: 0)
-    |> validate_number(:stderr_bytes, greater_than_or_equal_to: 0)
+    |> validate_number(:emitted_stdout_bytes, greater_than_or_equal_to: 0)
+    |> validate_number(:emitted_stderr_bytes, greater_than_or_equal_to: 0)
     |> validate_number(:duration_ms, greater_than_or_equal_to: 0)
   end
 

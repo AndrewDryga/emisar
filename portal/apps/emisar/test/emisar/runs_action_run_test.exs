@@ -164,8 +164,8 @@ defmodule Emisar.Runs.ActionRunTest do
           error_message: "exit status 1",
           executed_command: "uptime -p",
           event_id: "evt_123",
-          stdout_sha256: String.duplicate("a", 64),
-          stderr_sha256: String.duplicate("b", 64)
+          emitted_stdout_sha256: String.duplicate("a", 64),
+          emitted_stderr_sha256: String.duplicate("b", 64)
         })
 
       assert changeset.valid?
@@ -184,7 +184,12 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects oversized runner result string fields before the DB does" do
-      for field <- [:reason_text, :event_id, :stdout_sha256, :stderr_sha256] do
+      for field <- [
+            :reason_text,
+            :event_id,
+            :emitted_stdout_sha256,
+            :emitted_stderr_sha256
+          ] do
         changeset =
           ActionRun.Changeset.transition(transition_run(), :failed, %{
             field => String.duplicate("x", 256)
@@ -196,7 +201,7 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects negative byte/duration metadata from a hostile runner" do
-      for field <- [:stdout_bytes, :stderr_bytes, :duration_ms] do
+      for field <- [:emitted_stdout_bytes, :emitted_stderr_bytes, :duration_ms] do
         changeset = ActionRun.Changeset.transition(transition_run(), :success, %{field => -1})
 
         refute changeset.valid?

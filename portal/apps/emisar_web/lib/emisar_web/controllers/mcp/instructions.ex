@@ -47,7 +47,7 @@ defmodule EmisarWeb.MCP.Instructions do
 
   Error handling:
   - `pending_approval` is not a failure. Tell the operator approval is pending and continue with \
-  the returned `wait_for_run` call. Each wait may block for up to five minutes.
+  the returned `wait_for_run` call. Each wait may block for up to 60 seconds.
   - `operation_conflict` means the operation ID already names different mutation facts. Do not \
   retry under that ID.
   - `pack_untrusted`, `pack_rejected`, `pack_retired`, `descriptor_mismatch`, and \

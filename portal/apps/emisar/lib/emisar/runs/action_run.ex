@@ -120,10 +120,11 @@ defmodule Emisar.Runs.ActionRun do
     field :exit_code, :integer
     field :duration_ms, :integer
     field :timed_out, :boolean, default: false
-    field :stdout_sha256, :string
-    field :stderr_sha256, :string
-    field :stdout_bytes, :integer
-    field :stderr_bytes, :integer
+    field :emitted_stdout_sha256, :string
+    field :emitted_stderr_sha256, :string
+    field :emitted_stdout_bytes, :integer
+    field :emitted_stderr_bytes, :integer
+    field :output_complete, :boolean, default: false
     field :stdout_truncated, :boolean, default: false
     field :stderr_truncated, :boolean, default: false
     field :event_id, :string

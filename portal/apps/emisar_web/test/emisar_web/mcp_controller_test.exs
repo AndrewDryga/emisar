@@ -1434,8 +1434,9 @@ defmodule EmisarWeb.MCPControllerTest do
         set: [
           status: "success",
           exit_code: 0,
-          stdout_sha256: digest,
-          stdout_bytes: total_bytes,
+          emitted_stdout_sha256: digest,
+          emitted_stdout_bytes: total_bytes,
+          output_complete: true,
           finished_at: DateTime.utc_now()
         ]
       )
@@ -1453,8 +1454,9 @@ defmodule EmisarWeb.MCPControllerTest do
       refute body["stdout"] =~ "HEAD-MARKER-DROPPED"
 
       # Hash + byte count are the FULL values (cover the whole stream, not the tail).
-      assert body["stdout_sha256"] == digest
-      assert body["stdout_bytes"] == total_bytes
+      assert body["emitted_stdout_sha256"] == digest
+      assert body["emitted_stdout_bytes"] == total_bytes
+      assert body["output_complete"]
       assert total_bytes > 65_536
     end
 
@@ -1533,7 +1535,8 @@ defmodule EmisarWeb.MCPControllerTest do
         from(r in Emisar.Runs.ActionRun, where: r.id == ^run.id),
         set: [
           status: "success",
-          stdout_bytes: byte_size(output),
+          emitted_stdout_bytes: byte_size(output),
+          output_complete: true,
           stdout_truncated: true,
           finished_at: DateTime.utc_now()
         ]
@@ -1547,7 +1550,8 @@ defmodule EmisarWeb.MCPControllerTest do
 
       assert body["stdout"] == output
       assert body["stdout_truncated"] == true
-      assert body["stdout_bytes"] == byte_size(output)
+      assert body["emitted_stdout_bytes"] == byte_size(output)
+      assert body["output_complete"]
     end
 
     test "the policy block carries decision, reason, and matched rules", %{
@@ -1706,7 +1710,7 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "long-poll wait caps (REST)" do
-    test "dispatch ?wait is capped at 60s; /runs/:id ?wait at five minutes", %{
+    test "dispatch and run reads clamp waits to 60 seconds", %{
       conn: conn,
       account: account,
       user: user
@@ -1715,9 +1719,9 @@ defmodule EmisarWeb.MCPControllerTest do
       # parse_wait's clamp, even when a client asks for a larger duration.
       # Assert the clamp CONSTANTS (no sleeping):
       #   - dispatch (POST /tools/:id) uses max_wait_ms (60s),
-      #   - get_run (GET /runs/:id) uses max_get_run_wait_ms (five minutes).
+      #   - get_run (GET /runs/:id) uses the same repeatable 60-second window.
       assert Service.parse_wait("5m", Service.max_wait_ms()) == {:ok, 60_000}
-      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 300_000}
+      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 60_000}
 
       # And the get_run endpoint ACCEPTS an over-cap ?wait rather than rejecting it
       # as invalid_wait — the clamp is silent. A terminal run returns 200 (the cap

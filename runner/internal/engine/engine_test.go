@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
@@ -627,6 +628,58 @@ func TestEngine_StreamingProgress(t *testing.T) {
 	defer mu.Unlock()
 	if len(chunks) == 0 || !strings.Contains(strings.Join(chunks, ""), "stream") {
 		t.Fatalf("expected streamed chunks containing 'stream', got %v", chunks)
+	}
+}
+
+const invalidUTF8Action = `
+schema_version: 1
+id: t.invalid_utf8
+title: Emit invalid UTF-8
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "printf '\\377ok\\n'"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+func TestEngine_StreamingNormalizesUTF8BeforeEmissionAndHashing(t *testing.T) {
+	e, journal, _ := setupEngineExtra(t, map[string]string{"invalid_utf8.yaml": invalidUTF8Action})
+	defer journal.Close()
+
+	var streamed strings.Builder
+	result, err := e.Run(context.Background(), Request{
+		ActionID: "t.invalid_utf8",
+		Reason:   "verify output normalization",
+		OnProgress: func(stream executor.Stream, chunk []byte) {
+			if stream == executor.StreamStdout {
+				streamed.Write(chunk)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%q", result.Status, result.Reason)
+	}
+	if !utf8.ValidString(streamed.String()) || !utf8.ValidString(result.Stdout) {
+		t.Fatalf("invalid UTF-8 escaped normalization: progress=%q result=%q", streamed.String(), result.Stdout)
+	}
+	if streamed.String() != result.Stdout || !strings.Contains(result.Stdout, "\uFFFDok\n") {
+		t.Fatalf("progress=%q result=%q, want one normalized stream", streamed.String(), result.Stdout)
+	}
+	wantHash := sha256.Sum256([]byte(result.Stdout))
+	if result.StdoutSHA256 != fmt.Sprintf("%x", wantHash) || result.StdoutBytes != len(result.Stdout) {
+		t.Fatalf("produced metadata does not cover normalized output: %+v", result)
 	}
 }
 

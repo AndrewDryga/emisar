@@ -204,7 +204,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
        if(status in ~w(pending running pending_approval),
          do: %{
            tool: "wait_for_run",
-           arguments: %{runbook_execution_id: execution.id, timeout: "5m"}
+           arguments: %{runbook_execution_id: execution.id, timeout: "60s"}
          }
        )
      )}

@@ -142,7 +142,7 @@ func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 
 func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 	digest := testDispatchDigest("req")
-	result := `{"type":"action_result","protocol_version":1,"request_id":"req","status":"success","exit_code":0,"duration_ms":0,"stdout_bytes":0,"stderr_bytes":0,"event_id":"evt"}`
+	result := `{"type":"action_result","protocol_version":1,"request_id":"req","status":"success","exit_code":0,"duration_ms":0,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,"event_id":"evt"}`
 	tests := map[string]string{
 		"legacy shape":           `{"request_id":"req","result":` + result + `}`,
 		"unknown field":          `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{},"extra":true}`,

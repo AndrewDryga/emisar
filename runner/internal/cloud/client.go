@@ -714,21 +714,23 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		)
 
 		result := ActionResultMsg{
-			Envelope:        Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-			Status:          string(res.Status),
-			ExitCode:        res.ExitCode,
-			DurationMS:      res.DurationMS,
-			TimedOut:        res.TimedOut,
-			StdoutSHA256:    res.StdoutSHA256,
-			StderrSHA256:    res.StderrSHA256,
-			StdoutBytes:     res.StdoutBytes,
-			StderrBytes:     res.StderrBytes,
-			TruncatedOut:    res.TruncatedOut,
-			TruncatedErr:    res.TruncatedErr,
-			Redactions:      toProtocolRedactions(res.Redactions),
-			Reason:          buildReasonWithDrops(res.Reason, dropped),
-			EventID:         res.EventID,
-			ExecutedCommand: res.ExecutedCommand,
+			Envelope:              Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+			Status:                string(res.Status),
+			ExitCode:              res.ExitCode,
+			DurationMS:            res.DurationMS,
+			TimedOut:              res.TimedOut,
+			EmittedStdoutSHA256:   res.StdoutSHA256,
+			EmittedStderrSHA256:   res.StderrSHA256,
+			EmittedStdoutBytes:    res.StdoutBytes,
+			EmittedStderrBytes:    res.StderrBytes,
+			ProgressChunks:        seq,
+			DroppedProgressChunks: dropped,
+			TruncatedOut:          res.TruncatedOut,
+			TruncatedErr:          res.TruncatedErr,
+			Redactions:            toProtocolRedactions(res.Redactions),
+			Reason:                res.Reason,
+			EventID:               res.EventID,
+			ExecutedCommand:       res.ExecutedCommand,
 		}
 		c.finishRun(s, m, result)
 	}
@@ -1182,20 +1184,6 @@ func (c *Client) shutdown(reason error) error {
 	}
 	c.handlerWG.Wait()
 	return reason
-}
-
-// buildReasonWithDrops appends a "(N progress chunks dropped)" suffix to
-// the reason when the per-run outbox lost progress messages during a
-// disconnect, so the dropped count survives in the final result.
-func buildReasonWithDrops(reason string, dropped int) string {
-	if dropped <= 0 {
-		return reason
-	}
-	suffix := fmt.Sprintf("(%d progress chunks dropped during disconnect)", dropped)
-	if reason == "" {
-		return suffix
-	}
-	return reason + " " + suffix
 }
 
 func toProtocolRedactions(hits []redact.Hit) []RedactionSummary {

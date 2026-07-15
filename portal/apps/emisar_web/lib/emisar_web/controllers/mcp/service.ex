@@ -14,7 +14,7 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Approvals, Catalog, Runbooks, Runners, Runs}
-  alias EmisarWeb.MCP.{Cancellation, Idempotency, ToolMetadata, ToolSchema}
+  alias EmisarWeb.MCP.{Cancellation, Idempotency, ToolMetadata, ToolSchema, WaitLimiter}
   require Logger
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -23,10 +23,7 @@ defmodule EmisarWeb.MCP.Service do
   @max_runners_per_call 16
   @max_runner_target_bytes 512
   @max_wait_ms 60_000
-  # Approval decisions commonly take longer than an action-result wait. Give the
-  # dedicated `wait_for_run` tool one useful approval window; action dispatches
-  # remain capped at 60s above so ordinary tool calls cannot hold a request as long.
-  @max_get_run_wait_ms 300_000
+  @max_get_run_wait_ms 60_000
   # The wait is event-driven — it blocks on the run's PubSub topic and wakes on
   # each `{:run_updated, _}` broadcast. This timer is only the safety net: a
   # missed broadcast, or a state change that doesn't broadcast at all, is still
@@ -542,14 +539,15 @@ defmodule EmisarWeb.MCP.Service do
       duration_ms: run.duration_ms,
       stdout: details.stdout,
       stderr: details.stderr,
-      stdout_bytes: run.stdout_bytes,
-      stderr_bytes: run.stderr_bytes,
-      stdout_sha256: run.stdout_sha256,
-      stderr_sha256: run.stderr_sha256,
+      emitted_stdout_bytes: run.emitted_stdout_bytes,
+      emitted_stderr_bytes: run.emitted_stderr_bytes,
+      emitted_stdout_sha256: run.emitted_stdout_sha256,
+      emitted_stderr_sha256: run.emitted_stderr_sha256,
+      output_complete: terminal_output_complete(run),
       truncated_stdout:
         output_truncated?(
           details.stdout,
-          run.stdout_bytes,
+          run.emitted_stdout_bytes,
           run.stdout_truncated,
           details.stdout_truncated,
           details.output_events_truncated
@@ -557,7 +555,7 @@ defmodule EmisarWeb.MCP.Service do
       truncated_stderr:
         output_truncated?(
           details.stderr,
-          run.stderr_bytes,
+          run.emitted_stderr_bytes,
           run.stderr_truncated,
           details.stderr_truncated,
           details.output_events_truncated
@@ -580,6 +578,10 @@ defmodule EmisarWeb.MCP.Service do
        ) do
     runner_truncated? or locally_truncated? or events_truncated? or
       (is_integer(total_bytes) and total_bytes > byte_size(preview))
+  end
+
+  defp terminal_output_complete(%{status: status, output_complete: complete?}) do
+    if Runs.ActionRun.terminal?(status), do: complete?, else: nil
   end
 
   defp fixed_approval(%{status: :pending_approval} = run, subject) do
@@ -611,7 +613,7 @@ defmodule EmisarWeb.MCP.Service do
   defp fixed_run_next(%{status: status, id: run_id}) do
     if Runs.ActionRun.terminal?(status),
       do: nil,
-      else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "5m"}}
+      else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
   end
 
   defp request_session_id(conn) do
@@ -625,11 +627,12 @@ defmodule EmisarWeb.MCP.Service do
 
   @doc """
   Single run state, with optional long-poll until terminal. `wait_ms`
-  is clamped to five minutes. Returns `{:ok, payload, status}` where status
+  is clamped to 60 seconds. Returns `{:ok, payload, status}` where status
   is `:terminal` or `:waiting` so the caller can choose a 200 vs 202.
   """
   @spec fetch_run(Plug.Conn.t(), String.t(), non_neg_integer()) ::
-          {:ok, map(), :terminal | :waiting} | {:error, :cancelled | :not_found | :invalid_wait}
+          {:ok, map(), :terminal | :waiting}
+          | {:error, :cancelled | :not_found | :invalid_wait | :wait_saturated}
   def fetch_run(conn, id, wait_ms) when is_integer(wait_ms) and wait_ms >= 0 do
     subject = conn.assigns.current_subject
 
@@ -641,24 +644,26 @@ defmodule EmisarWeb.MCP.Service do
         if wait_ms == 0 do
           {:ok, full_run_payload(run, subject), run_status_kind(run)}
         else
-          deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
+          WaitLimiter.run(conn, fn ->
+            deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
 
-          case poll_to_terminal(subject, run.id, deadline, Cancellation.topic(conn)) do
-            {:terminal, final} ->
-              {:ok, full_run_payload(final, subject), :terminal}
+            case poll_to_terminal(subject, run.id, deadline, Cancellation.topic(conn)) do
+              {:terminal, final} ->
+                {:ok, full_run_payload(final, subject), :terminal}
 
-            :cancelled ->
-              {:error, :cancelled}
+              :cancelled ->
+                {:error, :cancelled}
 
-            :timeout ->
-              current =
-                case Runs.fetch_run_by_id(run.id, subject) do
-                  {:ok, r} -> r
-                  {:error, _} -> run
-                end
+              :timeout ->
+                current =
+                  case Runs.fetch_run_by_id(run.id, subject) do
+                    {:ok, r} -> r
+                    {:error, _} -> run
+                  end
 
-              {:ok, full_run_payload(current, subject), :waiting}
-          end
+                {:ok, full_run_payload(current, subject), :waiting}
+            end
+          end)
         end
     end
   end
@@ -1373,10 +1378,11 @@ defmodule EmisarWeb.MCP.Service do
       stdout_truncated: run.stdout_truncated or stdout_truncated?,
       stderr_truncated: run.stderr_truncated or stderr_truncated?,
       output_events_truncated: output_events_truncated?,
-      stdout_sha256: run.stdout_sha256,
-      stderr_sha256: run.stderr_sha256,
-      stdout_bytes: run.stdout_bytes,
-      stderr_bytes: run.stderr_bytes,
+      emitted_stdout_sha256: run.emitted_stdout_sha256,
+      emitted_stderr_sha256: run.emitted_stderr_sha256,
+      emitted_stdout_bytes: run.emitted_stdout_bytes,
+      emitted_stderr_bytes: run.emitted_stderr_bytes,
+      output_complete: terminal_output_complete(run),
       policy: %{
         decision: run.policy_decision,
         reason: run.policy_reason,

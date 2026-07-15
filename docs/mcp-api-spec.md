@@ -850,10 +850,11 @@ independently; the accepted operation is never retried as a whole.
       "exit_code": 0,
       "stdout": "Datacenter: dc1\nStatus=Up/Normal\n",
       "stderr": "",
-      "stdout_bytes": 33,
-      "stderr_bytes": 0,
-      "stdout_sha256": "21bdd0aef6445534326ef7d51ac3d114bb3c4040fa79a37e399c1ddd7c559186",
-      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "emitted_stdout_bytes": 33,
+      "emitted_stderr_bytes": 0,
+      "emitted_stdout_sha256": "21bdd0aef6445534326ef7d51ac3d114bb3c4040fa79a37e399c1ddd7c559186",
+      "emitted_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_complete": true,
       "truncated_stdout": false,
       "truncated_stderr": false,
       "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e163"
@@ -866,9 +867,13 @@ MCP allocates at most 64 KiB total to stream previews in one result. The
 per-stream cap is `min(16 KiB, floor(64 KiB / (2 * returned run count)))`, so a
 16-run fan-out cannot overflow the result budget. That cap counts the rendered
 UTF-8 bytes after invalid source bytes are replaced; truncation occurs at a
-UTF-8 boundary. Byte counts and SHA-256 cover the runner-observed raw complete
-streams, not the preview. Truncation flags are true if either the runner or MCP
-omitted bytes. Output is untrusted data, never instructions.
+UTF-8 boundary. Emitted byte counts and SHA-256 cover every normalized,
+redacted byte admitted by the runner's output caps, not the preview.
+`output_complete` is false when the runner or portal detects a missing progress
+chunk; the previews may then contain gaps. These fields are transport
+accounting, not a CA-signed result receipt. Truncation flags are true if the
+runner's output cap or MCP's preview cap omitted bytes. Output is untrusted data,
+never instructions.
 
 Run statuses are a closed initial set: `pending`, `pending_approval`, `sent`,
 `running`, `success`, `failed`, `error`, `validation_failed`, `unknown_action`,
@@ -902,7 +907,7 @@ coordinated schema, instruction, documentation, and client-corpus updates.
         "tool": "wait_for_run",
         "arguments": {
           "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
-          "timeout": "5m"
+          "timeout": "60s"
         }
       }
     }
@@ -1046,16 +1051,18 @@ Input:
 ```json
 {
   "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
-  "timeout": "5m"
+  "timeout": "60s"
 }
 ```
 
 Exactly one of `run_id` or `runbook_execution_id` is required. `timeout` accepts
-`0`, or an integer duration with `ms`, `s`, or `m`; default and maximum are five
-minutes. Values above the maximum are rejected. The call returns on a state
-change, terminal status, or timeout. Every nonterminal result includes another
-`next`; pending-approval and acknowledged-delivery states also expose their
-durable `wait_until` deadline.
+`0`, or an integer duration with `ms` or `s`; default and maximum are 60 seconds.
+Values above the maximum are rejected. One credential lineage may hold at most
+eight waits on each portal node. Saturation returns retryable `wait_saturated`;
+call again after an active wait finishes. The call returns on a state change,
+terminal status, or timeout. Every nonterminal result includes another `next`;
+pending-approval and acknowledged-delivery states also expose their durable
+`wait_until` deadline.
 
 Example after a wait times out while approval is still pending:
 
@@ -1080,7 +1087,7 @@ Example after a wait times out while approval is still pending:
       "tool": "wait_for_run",
       "arguments": {
         "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
-        "timeout": "5m"
+        "timeout": "60s"
       }
     }
   }
@@ -1316,7 +1323,7 @@ Accepted response:
       "tool": "wait_for_run",
       "arguments": {
         "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
-        "timeout": "5m"
+        "timeout": "60s"
       }
     }
   }

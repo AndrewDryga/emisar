@@ -8,13 +8,13 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runs}
   alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, ResponseBudget}
-  alias EmisarWeb.MCP.{RunbookTools, Service}
+  alias EmisarWeb.MCP.{RunbookTools, Service, WaitLimiter}
 
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @action_id ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
   @runner_ref ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}\z/
   @step_id ~r/\A[a-z][a-z0-9_-]{0,79}\z/
-  @max_wait_ms 300_000
+  @max_wait_ms 60_000
   @recheck_ms 2_000
 
   @doc "Executes one of the three fixed recovery tools."
@@ -114,9 +114,16 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read that run.")}
 
+      {:error, :wait_saturated} ->
+        {:error,
+         retryable_error(
+           "wait_saturated",
+           "This credential already has eight active waits. Retry after one finishes."
+         )}
+
       {:error, :invalid_wait} ->
         {:error,
-         error("invalid_args", "wait_for_run requires one id and a timeout no longer than 5m.")}
+         error("invalid_args", "wait_for_run requires one id and a timeout no longer than 60s.")}
     end
   end
 
@@ -131,7 +138,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          execution_id <- args["runbook_execution_id"],
          true <- exactly_one?(run_id, execution_id),
          true <- valid_uuid_or_nil?(run_id) and valid_uuid_or_nil?(execution_id),
-         {:ok, timeout_ms} <- parse_wait(args["timeout"] || "5m") do
+         {:ok, timeout_ms} <- parse_wait(args["timeout"] || "60s") do
       target =
         if run_id,
           do: %{kind: :run, id: run_id, timeout_ms: timeout_ms},
@@ -143,8 +150,16 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     end
   end
 
-  defp wait_for_target(conn, %{kind: :run} = target), do: wait_for_action_run(conn, target)
-  defp wait_for_target(conn, %{kind: :execution} = target), do: wait_for_execution(conn, target)
+  defp wait_for_target(conn, %{timeout_ms: 0} = target), do: do_wait_for_target(conn, target)
+
+  defp wait_for_target(conn, target) do
+    WaitLimiter.run(conn, fn -> do_wait_for_target(conn, target) end)
+  end
+
+  defp do_wait_for_target(conn, %{kind: :run} = target), do: wait_for_action_run(conn, target)
+
+  defp do_wait_for_target(conn, %{kind: :execution} = target),
+    do: wait_for_execution(conn, target)
 
   defp wait_for_action_run(conn, %{id: run_id, timeout_ms: timeout_ms}) do
     subject = conn.assigns.current_subject
@@ -473,5 +488,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       error: %{code: code, message: message, retryable: false},
       dispatch_started: false
     }
+  end
+
+  defp retryable_error(code, message) do
+    %{ok: false, error: %{code: code, message: message, retryable: true}, dispatch_started: false}
   end
 end
