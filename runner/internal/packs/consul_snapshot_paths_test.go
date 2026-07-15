@@ -20,8 +20,9 @@ func TestDispatch_ConsulSnapshotPaths_ScopedToBackupRoots(t *testing.T) {
 
 	for _, id := range []string{"consul.snapshot_save", "consul.snapshot_restore", "consul.snapshot_inspect"} {
 		t.Run(id, func(t *testing.T) {
-			// The documented example root — in scope.
-			accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/var/backups/consul-pre-migration.snap"}))
+			// A portable backup root — in scope even when the test process cannot
+			// traverse the host's root-owned /var/backups directory.
+			accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/tmp/consul-pre-migration.snap"}))
 			// Consul's data dir — also in scope.
 			accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/var/lib/consul/snap.snap"}))
 

@@ -368,13 +368,9 @@ func resolveForCheck(p string) (string, error) {
 				return "", fmt.Errorf("resolve existing component %q: %w", parent, err)
 			}
 			return filepath.Clean(filepath.Join(resolved, tail)), nil
-		} else if !os.IsNotExist(err) && !os.IsPermission(err) {
+		} else if !os.IsNotExist(err) {
 			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
 		}
-		// The runner service account may not be able to inspect a root-owned
-		// directory that the action's configured execution identity can access.
-		// Keep walking to a resolvable ancestor; any existing symlink component
-		// we can Lstat still has to pass EvalSymlinks above.
 		tail = filepath.Join(filepath.Base(parent), tail)
 		next := filepath.Dir(parent)
 		if next == parent {
