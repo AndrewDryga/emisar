@@ -32,8 +32,8 @@ defmodule EmisarWeb.MCPRpcController do
   `mcp/main.go` is a thin transport shim that reads stdio JSON-RPC,
   forwards the same JSON body to this endpoint, and writes the JSON-RPC
   response back to stdout. All MCP shaping (tool descriptors, content
-  blocks, synthetic tools) lives in this controller + `MCP.Service` +
-  `MCP.ContentBlocks`.
+  blocks, and fixed tools) lives in this controller and the `MCP.*Tools`
+  modules it delegates to.
   """
 
   use EmisarWeb, :controller
