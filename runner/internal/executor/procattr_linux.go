@@ -69,27 +69,10 @@ func applyCredential(cmd *exec.Cmd, username string) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Credential = &syscall.Credential{
-		Uid: uint32(uid),
-		Gid: uint32(gid),
-		// NoSetGroups=true means we do NOT call setgroups() in the child.
-		// Effect: the child inherits the runner process's supplementary
-		// groups. If the runner runs as root with the default
-		// supplementary set, the dropped child sees that same set —
-		// including any group the runner happens to belong to.
-		//
-		// Honest v1 stance: pack authors who rely on `user:` must run
-		// the runner under a restricted service account (or, for true
-		// least-privilege, drop the runner itself to a low-privilege
-		// uid via systemd User= and grant CAP_SETUID).
-		//
-		// We deliberately don't enumerate the target user's groups via
-		// getgrouplist(3) (which would mean Groups: [...] with
-		// NoSetGroups: false): it needs a cgo helper or an /etc/group
-		// parser, and isn't needed for the supported deployment (a
-		// cassandra runner under root dropping to the cassandra user —
-		// the inherited supplementary set is what the OS would give
-		// that user anyway).
-		NoSetGroups: true,
+		Uid:         uint32(uid),
+		Gid:         uint32(gid),
+		Groups:      nil,
+		NoSetGroups: false,
 	}
 	return nil
 }

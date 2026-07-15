@@ -3,9 +3,12 @@
 package executor
 
 import (
+	"os"
 	"os/exec"
 	"os/user"
 	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -32,8 +35,46 @@ func TestApplyCredential_PopulatesUidGidFromName(t *testing.T) {
 	if int(c.Uid) != wantUid || int(c.Gid) != wantGid {
 		t.Fatalf("Credential={Uid:%d Gid:%d}; want {Uid:%d Gid:%d}", c.Uid, c.Gid, wantUid, wantGid)
 	}
-	if !c.NoSetGroups {
-		t.Error("expected NoSetGroups=true to skip supplementary-group clobbering")
+	if c.NoSetGroups || len(c.Groups) != 0 {
+		t.Errorf("Credential must clear supplementary groups: %+v", c)
+	}
+}
+
+func TestApplyCredential_ClearsSupplementaryGroups(t *testing.T) {
+	const helperEnv = "EMISAR_TEST_CREDENTIAL_GROUPS"
+	if os.Getenv(helperEnv) == "1" {
+		if err := syscall.Setgroups([]int{42424}); err != nil {
+			t.Fatalf("seed supplementary group: %v", err)
+		}
+		u, err := user.LookupId("0")
+		if err != nil {
+			t.Fatalf("lookup root: %v", err)
+		}
+		id, err := exec.LookPath("id")
+		if err != nil {
+			t.Fatalf("look up id: %v", err)
+		}
+		cmd := exec.Command(id, "-G")
+		if err := applyCredential(cmd, u.Uid); err != nil {
+			t.Fatalf("applyCredential: %v", err)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run id: %v: %s", err, out)
+		}
+		if got := strings.TrimSpace(string(out)); got != u.Gid {
+			t.Fatalf("groups after credential drop = %q, want only primary gid %q", got, u.Gid)
+		}
+		return
+	}
+
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to seed and clear supplementary groups")
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestApplyCredential_ClearsSupplementaryGroups$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("credential helper: %v\n%s", err, out)
 	}
 }
 
