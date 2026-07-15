@@ -569,6 +569,28 @@ func TestWebsocketDialerHTTPClientHasHandshakeDeadline(t *testing.T) {
 	}
 }
 
+func TestWebsocketWriteContextIsBounded(t *testing.T) {
+	ctx, cancel := websocketWriteContext(context.Background())
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("websocket write context has no deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 || remaining > cloudWebsocketWriteTimeout {
+		t.Fatalf("write deadline remaining = %s, want (0, %s]", remaining, cloudWebsocketWriteTimeout)
+	}
+
+	parent, parentCancel := context.WithTimeout(context.Background(), time.Second)
+	defer parentCancel()
+	ctx, cancel = websocketWriteContext(parent)
+	defer cancel()
+	deadline, _ = ctx.Deadline()
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > time.Second {
+		t.Fatalf("earlier parent deadline was not preserved: %s", remaining)
+	}
+}
+
 func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 	fc.failWSUpgrade = true

@@ -78,6 +78,7 @@ var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked auth key /
 
 const (
 	cloudHandshakeTimeout        = 10 * time.Second
+	cloudWebsocketWriteTimeout   = 15 * time.Second
 	maxRegistrationResponseBytes = 4 << 10
 	maxRunnerTokenBytes          = 512
 )
@@ -488,7 +489,16 @@ func (c *wsConn) Send(ctx context.Context, msg any) error {
 	if err != nil {
 		return fmt.Errorf("cloud: encode msg: %w", err)
 	}
-	return c.ws.Write(ctx, websocket.MessageText, bytes)
+	writeCtx, cancel := websocketWriteContext(ctx)
+	defer cancel()
+	if err := c.ws.Write(writeCtx, websocket.MessageText, bytes); err != nil {
+		return fmt.Errorf("cloud: write msg: %w", err)
+	}
+	return nil
+}
+
+func websocketWriteContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, cloudWebsocketWriteTimeout)
 }
 
 func (c *wsConn) Recv(ctx context.Context) ([]byte, error) {
