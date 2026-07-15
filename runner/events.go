@@ -28,16 +28,16 @@ queries use the cloud UI.`,
 	return cmd
 }
 
-func openJSONL() (*os.File, *audit.Journal, error) {
-	rt, err := boot()
+func openJSONL() (*os.File, error) {
+	cfg, err := loadConfig()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	f, err := os.Open(rt.cfg.Events.JSONLPath)
+	f, err := os.Open(cfg.Events.JSONLPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open jsonl: %w", err)
+		return nil, fmt.Errorf("open jsonl: %w", err)
 	}
-	return f, rt.journal, nil
+	return f, nil
 }
 
 func eventsTailCmd() *cobra.Command {
@@ -47,12 +47,11 @@ func eventsTailCmd() *cobra.Command {
 		Short: "Print the last N events; optionally follow new ones",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("lines")
-			f, j, err := openJSONL()
+			f, err := openJSONL()
 			if err != nil {
 				return err
 			}
 			defer f.Close()
-			defer j.Close()
 			lines, err := lastNLines(f, n)
 			if err != nil {
 				return err
@@ -114,12 +113,11 @@ func eventsCatCmd() *cobra.Command {
 		Use:   "cat",
 		Short: "Print the entire JSONL log to stdout",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			f, j, err := openJSONL()
+			f, err := openJSONL()
 			if err != nil {
 				return err
 			}
 			defer f.Close()
-			defer j.Close()
 			_, err = io.Copy(os.Stdout, f)
 			return err
 		},
@@ -136,12 +134,11 @@ func eventsGrepCmd() *cobra.Command {
 		Use:   "grep",
 		Short: "Filter the JSONL log by a few common fields",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			f, j, err := openJSONL()
+			f, err := openJSONL()
 			if err != nil {
 				return err
 			}
 			defer f.Close()
-			defer j.Close()
 			s := bufio.NewScanner(f)
 			s.Buffer(make([]byte, 64*1024), 4*1024*1024)
 			for s.Scan() {

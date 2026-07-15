@@ -286,28 +286,17 @@ func reloadVerifier(externalID string, nonceStore *signing.NonceStore) (*signing
 // Presenting a stable id on every register lets the cloud map reconnects
 // (and reboots) back to the same runner row instead of creating a new one.
 func resolveExternalID(configuredID, dataDir string) (string, error) {
-	if id := strings.TrimSpace(configuredID); id != "" {
-		return id, nil
+	id, found, err := existingExternalID(configuredID, dataDir)
+	if err != nil || found {
+		return id, err
 	}
 
-	path := filepath.Join(dataDir, "runner_id")
-	b, err := os.ReadFile(path)
-	if err == nil {
-		id := strings.TrimSpace(string(b))
-		if id == "" {
-			return "", fmt.Errorf("runner identity %s is empty", path)
-		}
-		return id, nil
-	}
-	if !os.IsNotExist(err) {
-		return "", fmt.Errorf("read runner identity %s: %w", path, err)
-	}
-
-	id, err := newUUIDv4()
+	id, err = newUUIDv4()
 	if err != nil {
 		return "", err
 	}
 
+	path := filepath.Join(dataDir, "runner_id")
 	if err := fsutil.SecureMkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return "", err
 	}
@@ -347,6 +336,26 @@ func resolveExternalID(configuredID, dataDir string) (string, error) {
 		return "", fmt.Errorf("sync runner identity directory: %w", err)
 	}
 	return id, nil
+}
+
+func existingExternalID(configuredID, dataDir string) (string, bool, error) {
+	if id := strings.TrimSpace(configuredID); id != "" {
+		return id, true, nil
+	}
+
+	path := filepath.Join(dataDir, "runner_id")
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read runner identity %s: %w", path, err)
+	}
+	id := strings.TrimSpace(string(b))
+	if id == "" {
+		return "", false, fmt.Errorf("runner identity %s is empty", path)
+	}
+	return id, true, nil
 }
 
 // newUUIDv4 builds an RFC 4122 v4 UUID from crypto/rand — no external dep.

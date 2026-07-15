@@ -136,9 +136,9 @@ func resolveAuditPath(args []string) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
 	}
-	rt, err := boot()
+	cfg, err := loadConfig()
 	if err != nil {
 		return "", err
 	}
-	return rt.cfg.Events.JSONLPath, nil
+	return cfg.Events.JSONLPath, nil
 }

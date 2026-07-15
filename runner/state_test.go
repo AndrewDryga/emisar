@@ -10,7 +10,7 @@ import (
 
 // `emisar state` builds the runner_state advertisement from config + the
 // loaded registry + admission and prints it as JSON. This drives the real
-// command (boot → StateBuilder → printJSON) against a temp config + a
+// command (read-only load → StateBuilder → printJSON) against a temp config + a
 // one-action pack and asserts the advertised shape: identity from config,
 // the loaded pack and its action present.
 func TestStateCmd_PrintsAdvertisedState(t *testing.T) {
@@ -91,7 +91,7 @@ func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
 	}
 }
 
-func TestStateCmd_PersistsDurableIDAndAdvertisesSigningPolicy(t *testing.T) {
+func TestStateCmd_DoesNotPersistRuntimeStateAndAdvertisesSigningPolicy(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packs := writePack(t, dir+"/packs", "linux")
@@ -120,12 +120,13 @@ func TestStateCmd_PersistsDurableIDAndAdvertisesSigningPolicy(t *testing.T) {
 	if _, ok := st["runner_id"]; ok {
 		t.Fatalf("runner_id duplicates the authenticated socket identity: %s", out)
 	}
-	persisted, err := os.ReadFile(filepath.Join(dir, "data", "runner_id"))
-	if err != nil {
-		t.Fatalf("read durable runner id: %v", err)
-	}
-	if strings.TrimSpace(string(persisted)) == "" {
-		t.Fatal("state command did not persist the durable runner id used by signature policy")
+	for _, path := range []string{
+		filepath.Join(dir, "data", "runner_id"),
+		filepath.Join(dir, "events.jsonl"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("state command created runtime file %s: %v", path, err)
+		}
 	}
 	if st["enforce_signatures"] != true {
 		t.Fatalf("state must advertise configured signature enforcement:\n%s", out)

@@ -26,12 +26,15 @@ func actionListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List loaded actions",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			rt, err := boot()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			defer rt.journal.Close()
-			actions := rt.registry().Actions()
+			registry, _, err := loadRegistry(cfg)
+			if err != nil {
+				return err
+			}
+			actions := registry.Actions()
 			if flagJSONOut {
 				return printJSON(actions)
 			}
@@ -52,12 +55,15 @@ func actionDescribeCmd() *cobra.Command {
 		Short: "Print full action definition",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			rt, err := boot()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			defer rt.journal.Close()
-			a, ok := rt.registry().Action(args[0])
+			registry, _, err := loadRegistry(cfg)
+			if err != nil {
+				return err
+			}
+			a, ok := registry.Action(args[0])
 			if !ok {
 				return fmt.Errorf("unknown action: %s", args[0])
 			}

@@ -82,24 +82,33 @@ func isRegularFile(p string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// boot loads config, packs, and the JSONL journal, then constructs the
-// action engine. CLI subcommands call this and use whichever fields they
-// need.
-func boot() (*runtime, error) {
+func loadConfig() (*config.Config, error) {
 	cfgPath, err := resolveConfigPath()
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		return nil, err
-	}
+	return config.Load(cfgPath)
+}
 
+func loadRegistry(cfg *config.Config) (*packs.Registry, []string, error) {
 	packDirs := cfg.Paths.Packs
 	if len(flagPacksDir) > 0 {
 		packDirs = flagPacksDir
 	}
 	registry, err := packs.LoadAll(packDirs, packs.LoadOptions{})
+	return registry, packDirs, err
+}
+
+// boot loads config, packs, and the JSONL journal, then constructs the
+// action engine. CLI subcommands call this and use whichever fields they
+// need.
+func boot() (*runtime, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	registry, packDirs, err := loadRegistry(cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 // `emisar action list` renders the loaded registry as a table by default.
-// Driven through the real command (boot → registry().Actions() → tabwriter)
+// Driven through the real command (read-only load → registry.Actions() → tabwriter)
 // against a temp config + one-action pack; the header and the single action's
 // id/pack/risk land in the output.
 func TestActionListCmd_Table(t *testing.T) {
@@ -28,6 +29,9 @@ func TestActionListCmd_Table(t *testing.T) {
 	})
 	if execErr != nil {
 		t.Fatalf("action list: %v", execErr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("action list created the audit journal: %v", err)
 	}
 	for _, want := range []string{"ID", "PACK", "KIND", "RISK", "TITLE", "linux.ping", "linux", "low"} {
 		if !strings.Contains(out, want) {

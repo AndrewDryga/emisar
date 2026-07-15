@@ -171,15 +171,13 @@ func TestEventsTailCmd_ShortAndEmptyLog(t *testing.T) {
 }
 
 // `events tail` errors when the JSONL file can't be opened — here the path
-// doesn't exist (boot's append-open creates it, but tail opens read-only via
-// os.Open, which fails). The command surfaces `open jsonl: …` rather than
+// is not a readable file. The command surfaces `open jsonl: …` rather than
 // printing garbage.
 func TestEventsTailCmd_FileOpenFailure(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
-	// Point jsonl_path at a directory: boot()'s append-open of a directory
-	// fails, so openJSONL returns the error before any read.
+	// Point jsonl_path at a directory so the read-only open fails.
 	asDir := filepath.Join(dir, "events.jsonl")
 	if err := os.MkdirAll(asDir, 0o750); err != nil {
 		t.Fatal(err)
@@ -221,13 +219,13 @@ func TestEventsCatCmd_FullDump(t *testing.T) {
 }
 
 // `events cat` errors when the JSONL path can't be opened as a file — here it
-// resolves to a directory, so boot()'s append-open fails and the command
-// surfaces that error rather than dumping garbage.
+// resolves to a directory, so the command surfaces that error rather than
+// dumping garbage.
 func TestEventsCatCmd_BadPathErrors(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
-	// Point jsonl_path at a directory. Opening a directory for append fails.
+	// Point jsonl_path at a directory. Reading it as JSONL must fail.
 	asDir := filepath.Join(dir, "events.jsonl")
 	if err := os.MkdirAll(asDir, 0o750); err != nil {
 		t.Fatal(err)

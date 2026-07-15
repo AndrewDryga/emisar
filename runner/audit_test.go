@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,7 +42,12 @@ func TestAuditVerifyCmd_IntactChainNoPath(t *testing.T) {
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
 	flagConfig = writeMinimalConfig(t, dir, packDir)
-	writeChain(t, filepath.Join(dir, "events.jsonl"), 3)
+	path := filepath.Join(dir, "events.jsonl")
+	writeChain(t, path, 3)
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
 	var execErr error
 	out := captureStdout(t, func() {
