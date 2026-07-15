@@ -1,11 +1,33 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReloadComponents_ReloadsSigningAfterPackFailure(t *testing.T) {
+	packErr := errors.New("malformed pack")
+	signingCalled := false
+	changed, gotPackErr, signingErr := reloadComponents(
+		func() error { return packErr },
+		func() error {
+			signingCalled = true
+			return nil
+		},
+	)
+	if !signingCalled {
+		t.Fatal("signing reload was skipped after pack failure")
+	}
+	if !errors.Is(gotPackErr, packErr) || signingErr != nil {
+		t.Fatalf("errors = (%v, %v), want (%v, nil)", gotPackErr, signingErr, packErr)
+	}
+	if !changed {
+		t.Fatal("successful signing reload must trigger re-advertisement")
+	}
+}
 
 func TestConnectRequiresDurableDataDir(t *testing.T) {
 	for _, dataDir := range []string{"", "  ", "\n"} {

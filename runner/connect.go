@@ -150,19 +150,25 @@ env var can be unset after the first successful connect.`,
 					case <-ctx.Done():
 						return
 					case <-hup:
-						if err := rt.engine.Reload(); err != nil {
-							logger.Error("reload_failed", "error", err)
-							continue
+						changed, packErr, signingErr := reloadComponents(
+							rt.engine.Reload,
+							func() error {
+								verifier, err := reloadVerifier(externalID, nonceStore)
+								if err == nil {
+									client.SetVerifier(verifier)
+								}
+								return err
+							},
+						)
+						if packErr != nil {
+							logger.Error("reload_failed", "error", packErr)
 						}
-						// Pack reload succeeded; refresh signing keys independently
-						// so a key-only edit (rotation/revocation) takes effect, and
-						// still re-advertise the packs even if the signing reload fails.
-						if verifier, err := reloadVerifier(externalID, nonceStore); err != nil {
-							logger.Error("signing_reload_failed", "error", err)
-						} else {
-							client.SetVerifier(verifier)
+						if signingErr != nil {
+							logger.Error("signing_reload_failed", "error", signingErr)
 						}
-						client.Readvertise()
+						if changed {
+							client.Readvertise()
+						}
 					}
 				}
 			}()
@@ -188,6 +194,12 @@ func validateConnectDataDir(dataDir string) error {
 		return fmt.Errorf("connect requires paths.data_dir for durable identity and dispatch reservations")
 	}
 	return nil
+}
+
+func reloadComponents(reloadPacks, reloadSigning func() error) (changed bool, packErr, signingErr error) {
+	packErr = reloadPacks()
+	signingErr = reloadSigning()
+	return packErr == nil || signingErr == nil, packErr, signingErr
 }
 
 // buildVerifier constructs the dispatch signature verifier from config: the
