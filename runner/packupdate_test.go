@@ -51,7 +51,7 @@ func TestFetchPackIndex_HTTPError(t *testing.T) {
 	}
 }
 
-func TestUpdateOnePack_VerifiesHashAndSwapsAtomically(t *testing.T) {
+func TestUpdateOnePack_VerifiesHashAndReplacesSafely(t *testing.T) {
 	const id = "redis"
 	srcDir := writeSourcePack(t, id)
 
@@ -101,8 +101,9 @@ func TestUpdateOnePack_VerifiesHashAndSwapsAtomically(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(installed, "pack.yaml")); err != nil {
 		t.Errorf("updated pack should have pack.yaml: %v", err)
 	}
-	if _, err := os.Stat(installed + ".tmp-update"); !os.IsNotExist(err) {
-		t.Error("staging dir should be cleaned up")
+	staging, err := filepath.Glob(filepath.Join(dest, ".redis.stage-*"))
+	if err != nil || len(staging) != 0 {
+		t.Fatalf("staging dir should be cleaned up: paths=%v err=%v", staging, err)
 	}
 }
 
@@ -279,8 +280,9 @@ func TestPackUpdate_DryRunTouchesNothing(t *testing.T) {
 	if mtime(t, filepath.Join(dest, "redis", "pack.yaml")) != pinned {
 		t.Error("--dry-run must not modify the installed pack")
 	}
-	if _, err := os.Stat(filepath.Join(dest, "redis.tmp-update")); !os.IsNotExist(err) {
-		t.Error("--dry-run must not create a staging dir")
+	staging, err := filepath.Glob(filepath.Join(dest, ".redis.stage-*"))
+	if err != nil || len(staging) != 0 {
+		t.Fatalf("--dry-run must not create a staging dir: paths=%v err=%v", staging, err)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -289,7 +290,7 @@ func TestPackInstall_FromTarballURL(t *testing.T) {
 }
 
 // Re-installing an already-present pack id is refused unless --force is given;
-// with --force the old install is RemoveAll'd and replaced (pack.go:246-254).
+// with --force the old install is replaced through the rollback-safe staging path.
 // This stops a silent overwrite of a trusted pack while still letting an
 // operator deliberately replace one.
 func TestPackInstall_AlreadyInstalledNeedsForce(t *testing.T) {
@@ -330,13 +331,73 @@ func TestPackInstall_AlreadyInstalledNeedsForce(t *testing.T) {
 	if err := install("--force"); err != nil {
 		t.Fatalf("install --force must overwrite: %v", err)
 	}
-	// --force RemoveAll'd the old tree first, so the sentinel is gone but the
-	// real pack files are back.
+	// --force replaced the old tree, so the sentinel is gone but the real pack
+	// files are back.
 	if _, statErr := os.Stat(sentinel); !os.IsNotExist(statErr) {
-		t.Errorf("--force should RemoveAll the old install (sentinel should be gone): %v", statErr)
+		t.Errorf("--force should replace the old install (sentinel should be gone): %v", statErr)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "redis", "pack.yaml")); err != nil {
 		t.Fatalf("--force should have re-copied the pack: %v", err)
+	}
+}
+
+func TestReplacePackTree_RestoresPreviousTreeOnActivationFailure(t *testing.T) {
+	src := writeValidPack(t, t.TempDir(), "redis")
+	parent := t.TempDir()
+	target := filepath.Join(parent, "redis")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(target, "OLD")
+	if err := os.WriteFile(sentinel, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	renames := 0
+	err := replacePackTreeWithRename(src, target, true, func(oldPath, newPath string) error {
+		renames++
+		if renames == 2 {
+			return errors.New("injected activation failure")
+		}
+		return os.Rename(oldPath, newPath)
+	})
+	if err == nil || !strings.Contains(err.Error(), "activate pack") {
+		t.Fatalf("activation error=%v", err)
+	}
+	if body, err := os.ReadFile(sentinel); err != nil || string(body) != "old" {
+		t.Fatalf("previous pack was not restored: body=%q err=%v", body, err)
+	}
+	if _, err := os.Stat(filepath.Join(parent, ".redis.previous")); !os.IsNotExist(err) {
+		t.Fatalf("rollback backup remains after restore: %v", err)
+	}
+	staging, err := filepath.Glob(filepath.Join(parent, ".redis.stage-*"))
+	if err != nil || len(staging) != 0 {
+		t.Fatalf("staging remains after rollback: paths=%v err=%v", staging, err)
+	}
+}
+
+func TestReplacePackTree_RecoversInterruptedBackupBeforeRefusingOverwrite(t *testing.T) {
+	src := writeValidPack(t, t.TempDir(), "redis")
+	parent := t.TempDir()
+	target := filepath.Join(parent, "redis")
+	backup := filepath.Join(parent, ".redis.previous")
+	if err := os.MkdirAll(backup, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(backup, "OLD")
+	if err := os.WriteFile(sentinel, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := replacePackTree(src, target, false)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("recovered install error=%v, want existing-pack refusal", err)
+	}
+	if body, err := os.ReadFile(filepath.Join(target, "OLD")); err != nil || string(body) != "old" {
+		t.Fatalf("interrupted backup was not restored: body=%q err=%v", body, err)
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Fatalf("backup path remains after recovery: %v", err)
 	}
 }
 

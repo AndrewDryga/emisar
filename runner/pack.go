@@ -279,20 +279,8 @@ The pack is copied to <dest>/<pack-id>. After install, reload the runner
 			}
 
 			target := filepath.Join(dest, pack.ID)
-			if _, err := os.Stat(target); err == nil {
-				if !force {
-					return fmt.Errorf("pack %q already installed at %s (pass --force to overwrite)", pack.ID, target)
-				}
-				if err := os.RemoveAll(target); err != nil {
-					return fmt.Errorf("remove existing %s: %w", target, err)
-				}
-			}
-
-			if err := os.MkdirAll(dest, 0o755); err != nil {
-				return fmt.Errorf("create packs dir %s: %w", dest, err)
-			}
-			if err := copyTree(src, target); err != nil {
-				return fmt.Errorf("copy pack: %w", err)
+			if err := replacePackTree(src, target, force); err != nil {
+				return err
 			}
 
 			fmt.Printf("installed %s → %s\n", pack.ID, target)
@@ -474,6 +462,88 @@ func copyTree(src, dst string) error {
 		}
 		return copyFile(path, out, d)
 	})
+}
+
+type packTreeRename func(oldPath, newPath string) error
+
+// replacePackTree stages a complete tree beside target before touching the
+// active pack. Replacement uses a deterministic backup so an activation error
+// rolls back immediately and a later command can recover an interrupted swap.
+// It deliberately does not claim crash atomicity across the two renames.
+func replacePackTree(src, target string, replace bool) error {
+	return replacePackTreeWithRename(src, target, replace, os.Rename)
+}
+
+func replacePackTreeWithRename(src, target string, replace bool, rename packTreeRename) error {
+	parent := filepath.Dir(target)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return fmt.Errorf("create packs dir %s: %w", parent, err)
+	}
+
+	backup := filepath.Join(parent, "."+filepath.Base(target)+".previous")
+	targetExists, err := pathExists(target)
+	if err != nil {
+		return fmt.Errorf("inspect installed pack %s: %w", target, err)
+	}
+	backupExists, err := pathExists(backup)
+	if err != nil {
+		return fmt.Errorf("inspect pack backup %s: %w", backup, err)
+	}
+	if !targetExists && backupExists {
+		if err := rename(backup, target); err != nil {
+			return fmt.Errorf("restore interrupted pack replacement: %w", err)
+		}
+		targetExists = true
+		backupExists = false
+	}
+	if targetExists && backupExists {
+		if err := os.RemoveAll(backup); err != nil {
+			return fmt.Errorf("remove completed pack backup %s: %w", backup, err)
+		}
+	}
+	if targetExists && !replace {
+		return fmt.Errorf("pack %q already installed at %s (pass --force to overwrite)", filepath.Base(target), target)
+	}
+
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(target)+".stage-")
+	if err != nil {
+		return fmt.Errorf("create pack staging directory: %w", err)
+	}
+	defer os.RemoveAll(staging)
+	if err := copyTree(src, staging); err != nil {
+		return fmt.Errorf("stage pack: %w", err)
+	}
+
+	if targetExists {
+		if err := rename(target, backup); err != nil {
+			return fmt.Errorf("back up installed pack: %w", err)
+		}
+	}
+	if err := rename(staging, target); err != nil {
+		if targetExists {
+			if rollbackErr := rename(backup, target); rollbackErr != nil {
+				return fmt.Errorf("activate pack: %v; restore previous pack: %w", err, rollbackErr)
+			}
+		}
+		return fmt.Errorf("activate pack: %w", err)
+	}
+	if targetExists {
+		if err := os.RemoveAll(backup); err != nil {
+			return fmt.Errorf("remove previous pack backup %s: %w", backup, err)
+		}
+	}
+	return nil
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func copyFile(src, dst string, d os.DirEntry) error {

@@ -86,12 +86,18 @@ FAKE_RUNNER
     if [ "$(id -u)" -eq 0 ]; then
       ensure_dirs_lib="$tmp/ensure-dirs.sh"
       extract_shell_function install.sh ensure_dirs >"$ensure_dirs_lib"
+      extract_shell_function install.sh secure_pack_tree >"$tmp/secure-pack-tree.sh"
       mkdir -p "$tmp/service-etc" "$tmp/service-data" "$tmp/service-log"
       printf 'signing:\n  enforce: true\n' >"$tmp/service-etc/config.yaml"
       chown root:root "$tmp/service-etc/config.yaml"
+      mkdir -p "$tmp/service-etc/packs/test/actions"
+      : >"$tmp/service-etc/packs/test/pack.yaml"
+      chown -R nobody:"$(id -gn nobody)" "$tmp/service-etc/packs"
       (
         # shellcheck disable=SC1090
         source "$ensure_dirs_lib"
+        # shellcheck disable=SC1090,SC1091
+        source "$tmp/secure-pack-tree.sh"
         log() { :; }
         log ""
         export SERVICE_USER=nobody
@@ -103,8 +109,10 @@ FAKE_RUNNER
         export DATA_DIR="$tmp/service-data"
         export LOG_DIR="$tmp/service-log"
         ensure_dirs
+        secure_pack_tree
       )
       test "$(stat -c %U "$tmp/service-etc/config.yaml")" = root
+      test "$(stat -c %U "$tmp/service-etc/packs/test/pack.yaml")" = root
     fi
     ;;
   mcp)

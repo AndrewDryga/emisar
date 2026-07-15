@@ -76,7 +76,10 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 			return nil, fmt.Errorf("packs: list %s: %w", root, err)
 		}
 		for _, e := range entries {
-			if !e.IsDir() {
+			// Pack installation stages and recovery backups are hidden siblings.
+			// Never parse them during SIGHUP; only the public target directory is
+			// eligible for the live registry.
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
 			sub := filepath.Join(root, e.Name())

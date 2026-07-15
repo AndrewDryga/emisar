@@ -157,8 +157,8 @@ sudo systemctl reload emisar
 }
 
 // updateOnePack fetches id from the registry, verifies it validates and its
-// hash matches the index, then atomically swaps it into dir: stage into a
-// sibling temp dir and rename, so a failed copy never leaves a broken pack.
+// hash matches the index, then replaces it through the rollback-safe shared
+// pack installer. A failed stage or activation leaves the old tree available.
 func updateOnePack(ctx context.Context, id, dir, registry string, rp registryPack) error {
 	url := strings.TrimRight(registry, "/") + "/packs/" + id + "/pack.tar.gz"
 	src, cleanup, err := packs.Fetch(ctx, url, nil)
@@ -183,20 +183,7 @@ func updateOnePack(ctx context.Context, id, dir, registry string, rp registryPac
 	}
 
 	target := filepath.Join(dir, id)
-	staging := target + ".tmp-update"
-	_ = os.RemoveAll(staging)
-	if err := copyTree(src, staging); err != nil {
-		_ = os.RemoveAll(staging)
-		return fmt.Errorf("stage updated pack: %w", err)
-	}
-	if err := os.RemoveAll(target); err != nil {
-		_ = os.RemoveAll(staging)
-		return fmt.Errorf("remove old pack: %w", err)
-	}
-	if err := os.Rename(staging, target); err != nil {
-		return fmt.Errorf("swap in updated pack: %w", err)
-	}
-	return nil
+	return replacePackTree(src, target, true)
 }
 
 // fetchPackIndex GETs the registry's /packs.json and returns it keyed by id.

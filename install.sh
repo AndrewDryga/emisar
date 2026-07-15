@@ -861,7 +861,7 @@ install_default_packs() {
     prompt="install core starter packs (${selected[*]})? (--no-service skips host-detected packs)"
   fi
   if ! confirm "${prompt}"; then
-    log "skipping starter packs — add them later with: ${BIN_DIR}/emisar pack install <name>"
+    log "skipping starter packs — add them later with: sudo ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
 
@@ -875,9 +875,6 @@ install_default_packs() {
     fi
   done
 
-  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
-    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
-  fi
 }
 
 # install_suggested_packs queries the full registry catalog for packs that
@@ -891,7 +888,7 @@ install_suggested_packs() {
   local out
 
   if [ "${INIT}" = "none" ]; then
-    log "binary-only install: skipping host-detected pack suggestions; add packs later with: ${BIN_DIR}/emisar pack install <name>"
+    log "binary-only install: skipping host-detected pack suggestions; add packs later with: sudo ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
 
@@ -909,7 +906,7 @@ install_suggested_packs() {
   names="${names% }"
 
   if ! confirm "detected services on this host — install their packs (${names})?"; then
-    log "skipping — add them later with: ${BIN_DIR}/emisar pack install <name>"
+    log "skipping — add them later with: sudo ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
 
@@ -923,9 +920,6 @@ install_suggested_packs() {
     fi
   done
 
-  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
-    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
-  fi
 }
 
 # install_named_packs installs an explicit, operator-given pack set
@@ -944,7 +938,7 @@ install_named_packs() {
   local requested
   requested="$(printf '%s' "${PRE_PACKS}" | tr ',' ' ')"
   if [ -z "$(printf '%s' "${requested}" | tr -d '[:space:]')" ]; then
-    log "EMISAR_PACKS is set but empty — installing no packs (explicit set); add later with: ${BIN_DIR}/emisar pack install <name>"
+    log "EMISAR_PACKS is set but empty — installing no packs (explicit set); add later with: sudo ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
 
@@ -971,9 +965,20 @@ install_named_packs() {
     fi
   done
 
-  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
-    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
-  fi
+}
+
+secure_pack_tree() {
+  local dst="${ETC_DIR}/packs"
+  [ -d "${dst}" ] || return 0
+
+  # Packs are administrator-trusted executable content. The runner only needs
+  # the normalized read/execute modes written by `pack install`; ownership stays
+  # outside the service account so a compromised runner cannot rewrite a future
+  # action. Running this on every upgrade also repairs older installations.
+  case "${OS}" in
+    linux)  chown -R root:root "${dst}";;
+    darwin) chown -R root:wheel "${dst}";;
+  esac
 }
 
 install_systemd() {
@@ -1139,6 +1144,7 @@ do_install() {
     install_default_packs "${extracted}"
     install_suggested_packs
   fi
+  secure_pack_tree
   drop_config_skeleton
 
   case "${INIT}" in
@@ -1251,8 +1257,8 @@ EOF
 Action packs:
   Installed:  ${installed:-(none)}
   Suggest:    ${BIN_DIR}/emisar pack suggest             (host-matched packs for what's running)
-  Add more:   ${BIN_DIR}/emisar pack install <name>      (then reload the runner)
-  Remove:     ${BIN_DIR}/emisar pack uninstall <name>    (then reload the runner)
+  Add more:   sudo ${BIN_DIR}/emisar pack install <name>      (then reload the runner)
+  Remove:     sudo ${BIN_DIR}/emisar pack uninstall <name>    (then reload the runner)
   Browse:     https://emisar.dev/packs
 EOF
 

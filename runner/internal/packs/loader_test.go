@@ -126,6 +126,28 @@ func TestLoad_DuplicateActionIDsAcrossPacks(t *testing.T) {
 	}
 }
 
+func TestLoadAll_IgnoresHiddenReplacementDirectories(t *testing.T) {
+	tmp := t.TempDir()
+	writePack(t, tmp, "visible", map[string]string{
+		"pack.yaml":      packYAML("visible"),
+		"actions/a.yaml": actionYAML("visible.a"),
+	})
+	writePack(t, tmp, ".visible.stage-incomplete", map[string]string{
+		"pack.yaml": "not valid pack yaml",
+	})
+	writePack(t, tmp, ".visible.previous", map[string]string{
+		"pack.yaml": "also invalid",
+	})
+
+	reg, err := LoadAll([]string{tmp}, LoadOptions{})
+	if err != nil {
+		t.Fatalf("hidden replacement directories reached the loader: %v", err)
+	}
+	if loaded := reg.Packs(); len(loaded) != 1 || loaded[0].ID != "visible" {
+		t.Fatalf("loaded packs=%v, want only visible", loaded)
+	}
+}
+
 func TestLoad_MultiLevelNamespaceAllowed(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{
