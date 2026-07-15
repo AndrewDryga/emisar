@@ -73,7 +73,6 @@ func setupRegistry(t *testing.T) *packs.Registry {
 func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	reg := setupRegistry(t)
 	b := &StateBuilder{
-		AgentID:     "agt_test",
 		Version:     "0.2.0",
 		Labels:      map[string]string{"role": "test"},
 		GetRegistry: func() *packs.Registry { return reg },
@@ -140,7 +139,7 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 
 	// No verifier: enforcement off, omitted from the wire (omitempty) so older
 	// clouds see nothing new.
-	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	off := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if off.EnforceSignatures {
 		t.Fatal("default state must not advertise enforcement")
 	}
@@ -154,14 +153,14 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
-	offWithVerifier := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return nonEnforcing }}).Build()
+	offWithVerifier := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return nonEnforcing }}).Build()
 	if offWithVerifier.EnforceSignatures {
 		t.Fatal("a non-enforcing verifier must not advertise enforcement")
 	}
 
 	// An enforcing verifier advertises enforcement on the wire.
 	v := enforcingVerifier(t, "mcp-prod")
-	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
+	on := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
 	if !on.EnforceSignatures {
 		t.Fatal("enforcing builder must advertise enforcement")
 	}
@@ -174,14 +173,14 @@ func TestStateBuilder_AdvertisesSigningCAIDsAndMaxAge(t *testing.T) {
 	reg := setupRegistry(t)
 
 	// Omitted from the wire when not enforcing (omitempty).
-	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	off := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if raw, _ := json.Marshal(off); strings.Contains(string(raw), "signing_ca_ids") ||
 		strings.Contains(string(raw), "max_attestation_age_seconds") {
 		t.Fatalf("CA ids / max age must be omitted when unset: %s", raw)
 	}
 
 	v := enforcingVerifier(t, "ca-prod", "ca-staging")
-	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
+	on := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
 
 	// CAIDs() returns sorted ids; the 24h window is advertised as seconds.
 	if got := on.SigningCAIDs; len(got) != 2 || got[0] != "ca-prod" {
@@ -202,7 +201,6 @@ func TestStateBuilder_Build_ReflectsSwappedVerifier(t *testing.T) {
 	reg := setupRegistry(t)
 	current := enforcingVerifier(t, "old-ca")
 	b := &StateBuilder{
-		AgentID:     "a",
 		Version:     "v",
 		GetRegistry: func() *packs.Registry { return reg },
 		GetVerifier: func() *signing.Verifier { return current },
@@ -224,7 +222,6 @@ func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		AgentID:     "agt_test",
 		Version:     "0.2.0",
 		GetRegistry: func() *packs.Registry { return reg },
 		Admission:   pol,
@@ -292,7 +289,6 @@ actions:
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		AgentID:     "agt_test",
 		Version:     "0.2.0",
 		GetRegistry: func() *packs.Registry { return reg },
 		Admission:   pol,
@@ -310,7 +306,6 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		AgentID:     "agt_test",
 		Version:     "0.2.0",
 		GetRegistry: func() *packs.Registry { return reg },
 		Admission:   pol,
@@ -321,21 +316,18 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 	}
 }
 
-// An empty or nil registry yields an identity-only advertisement: the runner
-// still reports who it is (id/version/hostname/group/labels) with zero actions
+// An empty or nil registry still advertises runtime metadata with zero actions
 // and no packs, so the cloud sees a connected-but-empty runner rather than a
 // malformed or dropped state. Covers both no-GetRegistry and GetRegistry→nil.
-func TestStateBuilder_Build_EmptyRegistryIsIdentityOnly(t *testing.T) {
+func TestStateBuilder_Build_EmptyRegistryAdvertisesRuntimeState(t *testing.T) {
 	cases := map[string]*StateBuilder{
 		"nil GetRegistry": {
-			AgentID:  "agt_id",
 			Version:  "9.9.9",
 			Hostname: "host-a",
 			Group:    "g",
 			Labels:   map[string]string{"role": "edge"},
 		},
 		"GetRegistry returns nil": {
-			AgentID:     "agt_id",
 			Version:     "9.9.9",
 			Hostname:    "host-a",
 			Group:       "g",
@@ -349,9 +341,8 @@ func TestStateBuilder_Build_EmptyRegistryIsIdentityOnly(t *testing.T) {
 			if msg.Type != MsgRunnerState || msg.ProtocolVersion != ProtocolVersion {
 				t.Fatalf("envelope wrong: type=%s pv=%d", msg.Type, msg.ProtocolVersion)
 			}
-			// Identity is fully populated.
-			if msg.AgentID != "agt_id" || msg.Version != "9.9.9" || msg.Hostname != "host-a" || msg.Group != "g" {
-				t.Fatalf("identity not advertised: %+v", msg)
+			if msg.Version != "9.9.9" || msg.Hostname != "host-a" || msg.Group != "g" {
+				t.Fatalf("runtime state not advertised: %+v", msg)
 			}
 			if msg.Labels["role"] != "edge" {
 				t.Fatalf("labels not advertised: %v", msg.Labels)
@@ -375,7 +366,7 @@ func TestStateBuilder_Build_HostnameFallback(t *testing.T) {
 	reg := setupRegistry(t)
 
 	// Explicit hostname wins, even if it differs from the machine's.
-	explicit := (&StateBuilder{AgentID: "a", Version: "v", Hostname: "pinned-host", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	explicit := (&StateBuilder{Version: "v", Hostname: "pinned-host", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if explicit.Hostname != "pinned-host" {
 		t.Fatalf("explicit hostname not used: %q", explicit.Hostname)
 	}
@@ -386,13 +377,13 @@ func TestStateBuilder_Build_HostnameFallback(t *testing.T) {
 	if err != nil {
 		t.Skipf("os.Hostname() unavailable on this host: %v", err)
 	}
-	fell := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	fell := (&StateBuilder{Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if fell.Hostname != want {
 		t.Fatalf("empty hostname should fall back to os.Hostname() %q, got %q", want, fell.Hostname)
 	}
 }
 
-func TestPeekType_AndEnvelope(t *testing.T) {
+func TestPeekEnvelope(t *testing.T) {
 	m := RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "r1"},
 		ActionID: "x.y",
@@ -401,11 +392,11 @@ func TestPeekType_AndEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mt, err := PeekType(raw)
+	envelope, err := PeekEnvelope(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mt != MsgRunAction {
-		t.Fatalf("got %q", mt)
+	if envelope.Type != MsgRunAction || envelope.ProtocolVersion != ProtocolVersion || envelope.RequestID != "r1" {
+		t.Fatalf("got %+v", envelope)
 	}
 }

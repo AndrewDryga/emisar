@@ -5,10 +5,10 @@
 // the runner (no inbound port on the host). The control plane is the only
 // peer; there is no peer-to-peer runner traffic.
 //
-// Protocol versioning: every message carries protocol_version. Unknown
-// message types are silently ignored (so an old runner can tolerate a newer
-// cloud that learned new messages). Schema additions inside a known message
-// type are tolerated via "ignore unknown fields" JSON decoding.
+// Protocol versioning: every known message carries the exact protocol_version.
+// Unknown message types are silently ignored so additive message families do
+// not break an older peer. Schema additions inside a known message type are
+// tolerated via "ignore unknown fields" JSON decoding.
 package cloud
 
 import (
@@ -454,7 +454,6 @@ type AckResultMsg struct {
 // configuration. Labels are free-form additional tags.
 type RunnerStateMsg struct {
 	Envelope
-	AgentID  string              `json:"runner_id"`
 	Version  string              `json:"version"`
 	Hostname string              `json:"hostname,omitempty"`
 	Group    string              `json:"group"`
@@ -562,11 +561,12 @@ type ErrorMsg struct {
 	Message string `json:"message"`
 }
 
-// PeekType reads only the envelope to learn which concrete type to unmarshal.
-func PeekType(raw []byte) (MessageType, error) {
+// PeekEnvelope reads only the envelope needed to choose and validate a concrete
+// message before its payload is decoded.
+func PeekEnvelope(raw []byte) (Envelope, error) {
 	var env Envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return "", err
+		return Envelope{}, err
 	}
-	return env.Type, nil
+	return env, nil
 }

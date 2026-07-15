@@ -103,11 +103,6 @@ env var can be unset after the first successful connect.`,
 			}
 
 			builder := &cloud.StateBuilder{
-				// The RESOLVED durable id (config → persisted → fresh UUID), the
-				// same one we register with above — not the config-only
-				// rt.cfg.Runner.ID, which is empty when the operator didn't pin
-				// one, making the runner advertise runner_id: "".
-				AgentID:     externalID,
 				Version:     Version,
 				Hostname:    hostname,
 				Group:       rt.cfg.Runner.Group,

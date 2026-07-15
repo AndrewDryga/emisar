@@ -26,7 +26,6 @@ func stateCmd() *cobra.Command {
 				return err
 			}
 			b := &cloud.StateBuilder{
-				AgentID:     externalID,
 				Version:     Version,
 				Group:       rt.cfg.Runner.Group,
 				Labels:      rt.cfg.Runner.Labels,

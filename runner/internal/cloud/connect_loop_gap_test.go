@@ -553,9 +553,9 @@ type alwaysFailDialer struct {
 	calls atomic.Int64
 }
 
-func (d *alwaysFailDialer) Dial(context.Context) (Conn, string, error) {
+func (d *alwaysFailDialer) Dial(context.Context) (Conn, error) {
 	d.calls.Add(1)
-	return nil, "", io.ErrUnexpectedEOF
+	return nil, io.ErrUnexpectedEOF
 }
 
 // sendStateFailingConn rejects its FIRST Send (the runner_state advertised on
@@ -583,16 +583,16 @@ type failThenConnDialer struct {
 	done  bool
 }
 
-func (d *failThenConnDialer) Dial(context.Context) (Conn, string, error) {
+func (d *failThenConnDialer) Dial(context.Context) (Conn, error) {
 	if d.fails > 0 {
 		d.fails--
-		return nil, "", io.ErrUnexpectedEOF
+		return nil, io.ErrUnexpectedEOF
 	}
 	if !d.done {
 		d.done = true
-		return d.conn, "agt_test", nil
+		return d.conn, nil
 	}
-	return nil, "", io.ErrUnexpectedEOF
+	return nil, io.ErrUnexpectedEOF
 }
 
 // containsSub is a tiny substring check kept local to avoid pulling strings in

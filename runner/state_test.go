@@ -78,9 +78,9 @@ func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &st); err != nil {
 		t.Fatalf("state output is not JSON: %v\n%s", err, out)
 	}
-	// Identity is still advertised.
+	// Runtime metadata is still advertised.
 	if st["type"] != "runner_state" || st["group"] != "test" {
-		t.Fatalf("identity should still be present: type=%v group=%v", st["type"], st["group"])
+		t.Fatalf("runtime state should still be present: type=%v group=%v", st["type"], st["group"])
 	}
 	// No actions, and no non-empty packs map (omitempty may drop it entirely).
 	if actions, _ := st["actions"].([]any); len(actions) != 0 {
@@ -91,7 +91,7 @@ func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
 	}
 }
 
-func TestStateCmd_UsesDurableIDAndSigningPolicy(t *testing.T) {
+func TestStateCmd_PersistsDurableIDAndAdvertisesSigningPolicy(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packs := writePack(t, dir+"/packs", "linux")
@@ -117,16 +117,15 @@ func TestStateCmd_UsesDurableIDAndSigningPolicy(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &st); err != nil {
 		t.Fatalf("state output is not JSON: %v\n%s", err, out)
 	}
-	runnerID, ok := st["runner_id"].(string)
-	if !ok || runnerID == "" {
-		t.Fatalf("runner_id = %v, want resolved durable id", st["runner_id"])
+	if _, ok := st["runner_id"]; ok {
+		t.Fatalf("runner_id duplicates the authenticated socket identity: %s", out)
 	}
 	persisted, err := os.ReadFile(filepath.Join(dir, "data", "runner_id"))
 	if err != nil {
 		t.Fatalf("read durable runner id: %v", err)
 	}
-	if strings.TrimSpace(string(persisted)) != runnerID {
-		t.Fatalf("persisted runner id = %q, advertised %q", persisted, runnerID)
+	if strings.TrimSpace(string(persisted)) == "" {
+		t.Fatal("state command did not persist the durable runner id used by signature policy")
 	}
 	if st["enforce_signatures"] != true {
 		t.Fatalf("state must advertise configured signature enforcement:\n%s", out)

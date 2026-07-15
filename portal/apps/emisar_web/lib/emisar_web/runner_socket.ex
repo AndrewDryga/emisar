@@ -27,6 +27,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
+  @known_runner_message_types ~w(runner_state action_progress action_result heartbeat error)
 
   # -- WebSock callbacks ----------------------------------------------
 
@@ -87,12 +88,7 @@ defmodule EmisarWeb.RunnerSocket do
     if connection_owner?(state) do
       case Jason.decode(raw) do
         {:ok, %{"type" => type} = msg} ->
-          if Map.get(msg, "protocol_version") in [nil, @protocol_version] do
-            handle_envelope(type, msg, state)
-          else
-            {:push, error_frame(nil, "protocol_version_mismatch", "unsupported protocol_version"),
-             state}
-          end
+          handle_versioned_envelope(type, msg, state)
 
         {:ok, _} ->
           {:push, error_frame(nil, "bad_envelope", "missing type field"), state}
@@ -108,6 +104,17 @@ defmodule EmisarWeb.RunnerSocket do
   def handle_in({_payload, [opcode: opcode]}, state) when opcode in [:binary, :ping, :pong] do
     {:ok, state}
   end
+
+  defp handle_versioned_envelope(type, msg, state)
+       when type in @known_runner_message_types do
+    if Map.get(msg, "protocol_version") == @protocol_version do
+      handle_envelope(type, msg, state)
+    else
+      {:stop, :normal, {1002, "Unsupported runner protocol_version."}, state}
+    end
+  end
+
+  defp handle_versioned_envelope(type, msg, state), do: handle_envelope(type, msg, state)
 
   @impl true
   def handle_info(_message, %{rejected?: true} = state), do: {:stop, :normal, state}

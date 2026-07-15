@@ -61,11 +61,7 @@ func newFakeCloud(t *testing.T) (*fakeCloud, *httptest.Server) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"runner_id":  "agt_test_001",
-			"token":      fc.mintedToken,
-			"account_id": "acct_test",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": fc.mintedToken})
 	})
 
 	mux.HandleFunc("/runner/socket/websocket", func(w http.ResponseWriter, r *http.Request) {
@@ -115,15 +111,11 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, agentID, err := d.Dial(ctx)
+	conn, err := d.Dial(ctx)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer conn.Close()
-
-	if agentID != "agt_test_001" {
-		t.Errorf("runner_id = %q, want %q", agentID, "agt_test_001")
-	}
 
 	// Token was persisted with mode 0600 and contains the minted token.
 	info, err := os.Stat(tokenPath)
@@ -136,12 +128,15 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 
 	body, _ := os.ReadFile(tokenPath)
 	var stored struct {
-		Token   string `json:"token"`
-		AgentID string `json:"runner_id"`
+		Token string `json:"token"`
+		KeyFP string `json:"key_fp"`
 	}
 	_ = json.Unmarshal(body, &stored)
 	if stored.Token != fc.mintedToken {
 		t.Errorf("stored token = %q, want %q", stored.Token, fc.mintedToken)
+	}
+	if stored.KeyFP != keyFingerprint(fc.authKey) {
+		t.Errorf("stored key_fp = %q, want enrollment-key fingerprint", stored.KeyFP)
 	}
 
 	if fc.registerSeen != 1 {
@@ -169,7 +164,7 @@ func TestWebsocketDialerSendsExternalID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := d.Dial(ctx)
+	conn, err := d.Dial(ctx)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -206,7 +201,7 @@ func TestWebsocketDialerRejectsInvalidExternalIDBeforeRegistration(t *testing.T)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			conn, _, err := d.Dial(ctx)
+			conn, err := d.Dial(ctx)
 			if err == nil || !strings.Contains(err.Error(), "external id must be 1-255 characters") {
 				t.Fatalf("Dial() = %v, %v; want external-id error", conn, err)
 			}
@@ -219,7 +214,7 @@ func TestWebsocketDialerRejectsInvalidExternalIDBeforeRegistration(t *testing.T)
 
 func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	dir := t.TempDir()
-	body := []byte(`{"token":"t","runner_id":"r"}`)
+	body := []byte(`{"token":"t","key_fp":"fp"}`)
 
 	// 0600 regular file reads fine.
 	good := filepath.Join(dir, "token.json")
@@ -251,79 +246,26 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	}
 }
 
-// readToken parses two backward-compatible on-disk shapes: a legacy JSON token
-// file using the old `agent_id` field (renamed to `runner_id`), and a token
-// file holding just the raw token bytes (an even earlier format). Both must
-// still load so a runner upgraded from an older build reuses its token instead
-// of needlessly re-registering.
-func TestReadToken_LegacyAgentIDAndRawString(t *testing.T) {
-	dir := t.TempDir()
-
-	t.Run("legacy agent_id JSON", func(t *testing.T) {
-		p := filepath.Join(dir, "legacy.json")
-		// Old field name `agent_id`, no `runner_id`.
-		if err := os.WriteFile(p, []byte(`{"token":"tok-legacy","agent_id":"agt_old_42","key_fp":"abcd"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
-		if err != nil {
-			t.Fatalf("legacy agent_id token should parse: %v", err)
-		}
-		if tok.Raw != "tok-legacy" {
-			t.Errorf("Raw = %q, want tok-legacy", tok.Raw)
-		}
-		// The legacy agent_id is read into AgentID when runner_id is absent.
-		if tok.AgentID != "agt_old_42" {
-			t.Errorf("AgentID = %q, want the legacy agent_id agt_old_42", tok.AgentID)
-		}
-		if tok.KeyFP != "abcd" {
-			t.Errorf("KeyFP = %q, want abcd", tok.KeyFP)
-		}
-	})
-
-	t.Run("runner_id wins over legacy agent_id", func(t *testing.T) {
-		p := filepath.Join(dir, "both.json")
-		// Both fields present — the new runner_id must take precedence.
-		if err := os.WriteFile(p, []byte(`{"token":"t","runner_id":"new_id","agent_id":"old_id"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
-		if err != nil {
-			t.Fatalf("readToken: %v", err)
-		}
-		if tok.AgentID != "new_id" {
-			t.Errorf("AgentID = %q, want runner_id to win (new_id)", tok.AgentID)
-		}
-	})
-
-	t.Run("raw-string token", func(t *testing.T) {
-		p := filepath.Join(dir, "raw.token")
-		// Not JSON — an even older format stored the raw token bytes.
-		if err := os.WriteFile(p, []byte("  raw-token-bytes\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
-		if err != nil {
-			t.Fatalf("raw-string token should parse: %v", err)
-		}
-		// Trimmed, taken as the token; no id/fp.
-		if tok.Raw != "raw-token-bytes" {
-			t.Errorf("Raw = %q, want the trimmed raw bytes", tok.Raw)
-		}
-		if tok.AgentID != "" || tok.KeyFP != "" {
-			t.Errorf("raw-string token carries no id/fp, got AgentID=%q KeyFP=%q", tok.AgentID, tok.KeyFP)
-		}
-	})
-
-	t.Run("empty file is an error", func(t *testing.T) {
-		p := filepath.Join(dir, "empty.token")
-		if err := os.WriteFile(p, []byte("   \n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := (&WebsocketDialer{TokenPath: p}).readToken(); err == nil {
-			t.Error("an empty token file must error, not yield a blank token")
-		}
-	})
+func TestReadTokenRejectsUnsupportedShapes(t *testing.T) {
+	for name, body := range map[string]string{
+		"raw string":        "raw-token-bytes\n",
+		"agent id field":    `{"token":"t","agent_id":"old"}`,
+		"runner id field":   `{"token":"t","runner_id":"old"}`,
+		"unknown field":     `{"token":"t","extra":true}`,
+		"trailing document": `{"token":"t"} {"token":"other"}`,
+		"empty token":       `{"token":""}`,
+		"empty file":        "   \n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "token.json")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := (&WebsocketDialer{TokenPath: path}).readToken(); err == nil {
+				t.Fatal("readToken accepted an unsupported token-file shape")
+			}
+		})
+	}
 }
 
 func TestWebsocketDialerReusesCachedToken(t *testing.T) {
@@ -334,8 +276,8 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 
 	// Pre-seed the token file.
 	cached, _ := json.Marshal(map[string]string{
-		"token":     fc.mintedToken,
-		"runner_id": "agt_cached_007",
+		"token":  fc.mintedToken,
+		"key_fp": keyFingerprint(fc.authKey),
 	})
 	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
 		t.Fatalf("seed token: %v", err)
@@ -343,7 +285,7 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 
 	d := &WebsocketDialer{
 		URL:        srv.URL,
-		AuthKey:    "should-not-be-used",
+		AuthKey:    fc.authKey,
 		TokenPath:  tokenPath,
 		Hostname:   "test-host",
 		Group:      "default",
@@ -353,7 +295,7 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := d.Dial(ctx)
+	conn, err := d.Dial(ctx)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -377,9 +319,8 @@ func TestWebsocketDialerReregistersWhenAuthKeyRotated(t *testing.T) {
 	// a new account and EMISAR_AUTH_KEY was swapped under it. The cached
 	// token is still well-formed, but its key fingerprint no longer matches.
 	seeded, _ := json.Marshal(map[string]string{
-		"token":     "token-from-old-account",
-		"runner_id": "agt_old",
-		"key_fp":    keyFingerprint("emkey-auth-OLD-account"),
+		"token":  "token-from-old-account",
+		"key_fp": keyFingerprint("emkey-auth-OLD-account"),
 	})
 	if err := os.WriteFile(tokenPath, seeded, 0o600); err != nil {
 		t.Fatalf("seed token: %v", err)
@@ -397,7 +338,7 @@ func TestWebsocketDialerReregistersWhenAuthKeyRotated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := d.Dial(ctx)
+	conn, err := d.Dial(ctx)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -435,9 +376,8 @@ func TestWebsocketDialerReusesTokenWhenAuthKeyUnchanged(t *testing.T) {
 	// Token stamped with the same key the dialer is configured with — a
 	// normal restart, no re-register.
 	seeded, _ := json.Marshal(map[string]string{
-		"token":     fc.mintedToken,
-		"runner_id": "agt_cached",
-		"key_fp":    keyFingerprint(fc.authKey),
+		"token":  fc.mintedToken,
+		"key_fp": keyFingerprint(fc.authKey),
 	})
 	if err := os.WriteFile(tokenPath, seeded, 0o600); err != nil {
 		t.Fatalf("seed token: %v", err)
@@ -455,7 +395,7 @@ func TestWebsocketDialerReusesTokenWhenAuthKeyUnchanged(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := d.Dial(ctx)
+	conn, err := d.Dial(ctx)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -484,7 +424,7 @@ func TestWebsocketDialer401OnRegisterIsUnauthorized(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, _, err := d.Dial(ctx)
+	_, err := d.Dial(ctx)
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -502,8 +442,7 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	tokenPath := filepath.Join(dir, "token.json")
 
 	cached, _ := json.Marshal(map[string]string{
-		"token":     "stale-token",
-		"runner_id": "agt_cached",
+		"token": "stale-token",
 	})
 	_ = os.WriteFile(tokenPath, cached, 0o600)
 
@@ -519,7 +458,7 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, _, err := d.Dial(ctx)
+	_, err := d.Dial(ctx)
 	if err == nil {
 		t.Fatal("expected error from 401 upgrade")
 	}

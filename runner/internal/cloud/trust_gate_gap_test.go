@@ -305,7 +305,6 @@ actions:
 	})
 	cli := NewClient(dialer, Options{
 		StateBuilder: &StateBuilder{
-			AgentID:     "agt",
 			Version:     "0.2.0",
 			GetRegistry: eng.Registry,
 		},

@@ -39,8 +39,9 @@ defmodule EmisarWeb.RunnerSocketTest do
           "version" => "0.2.0"
         })
 
-      assert %{"runner_id" => _, "token" => "rnrtok-" <> _, "account_id" => _} =
-               json_response(conn, 201)
+      body = json_response(conn, 201)
+      assert %{"token" => "rnrtok-" <> _} = body
+      assert map_size(body) == 1
     end
 
     test "rejects missing bearer", %{conn: conn} do
@@ -73,7 +74,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       end
 
       response = register(conn, raw_key, %{"external_id" => "valid-after-malformed"})
-      assert %{"runner_id" => _} = json_response(response, 201)
+      assert %{"token" => "rnrtok-" <> _} = json_response(response, 201)
     end
 
     test "rejects invalid external IDs without consuming the enrollment key", %{
@@ -87,7 +88,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       end
 
       response = register(conn, raw_key, %{"external_id" => "valid-after-invalid"})
-      assert %{"runner_id" => _} = json_response(response, 201)
+      assert %{"token" => "rnrtok-" <> _} = json_response(response, 201)
     end
   end
 
@@ -144,7 +145,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         response =
           register(build_conn(), raw_key, %{"external_id" => "free-#{n}", "hostname" => "h#{n}"})
 
-        assert %{"runner_id" => _} = json_response(response, 201)
+        assert %{"token" => "rnrtok-" <> _} = json_response(response, 201)
       end
 
       over = register(conn, raw_key, %{"external_id" => "free-4", "hostname" => "h4"})
@@ -161,16 +162,21 @@ defmodule EmisarWeb.RunnerSocketTest do
       first =
         register(conn, raw_key, %{"external_id" => "squat-a", "hostname" => "shared-name"})
 
-      assert %{"runner_id" => runner_id} = json_response(first, 201)
+      assert %{"token" => "rnrtok-" <> _} = json_response(first, 201)
 
       # Same external_id → same runner back, no conflict (idempotent boot).
       again =
         register(build_conn(), raw_key, %{"external_id" => "squat-a", "hostname" => "shared-name"})
 
-      assert %{"runner_id" => ^runner_id} = json_response(again, 201)
+      assert %{"token" => "rnrtok-" <> _} = json_response(again, 201)
 
       # Bring the holder online — only an ACTIVE holder defends its name.
-      runner = Repo.get!(Emisar.Runners.Runner, runner_id)
+      runner =
+        Runner.Query.all()
+        |> Runner.Query.by_account_id(account.id)
+        |> Runner.Query.by_external_id("squat-a")
+        |> Repo.one!()
+
       Runners.connect_runner(runner)
       assert Runners.online?(account.id, runner.id)
 
@@ -345,8 +351,8 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   # Drives the real `handle_in/2` text seam and `handle_envelope/3` behind
   # it — the same path production hits when a runner sends a JSON frame.
-  # Frames that don't carry a valid type/protocol are answered with an
-  # error envelope; the socket NEVER crashes or disconnects on bad input.
+  # Malformed envelopes are answered without crashing. Known message types
+  # with an incompatible version close before their payload is handled.
   describe "handle_in/2 — malformed + unknown frames" do
     setup [:connected_socket]
 
@@ -372,10 +378,18 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
-    test "mismatched protocol_version is rejected without dispatching", %{state: state} do
+    test "mismatched protocol_version closes before dispatching", %{state: state} do
       raw = Jason.encode!(%{"type" => "heartbeat", "protocol_version" => 99})
-      assert {:push, frame, ^state} = RunnerSocket.handle_in({raw, text()}, state)
-      assert %{"code" => "protocol_version_mismatch"} = decode(frame)
+
+      assert {:stop, :normal, {1002, "Unsupported runner protocol_version."}, ^state} =
+               RunnerSocket.handle_in({raw, text()}, state)
+    end
+
+    test "missing protocol_version closes a known message", %{state: state} do
+      raw = Jason.encode!(%{"type" => "heartbeat"})
+
+      assert {:stop, :normal, {1002, "Unsupported runner protocol_version."}, ^state} =
+               RunnerSocket.handle_in({raw, text()}, state)
     end
 
     test "binary / ping / pong opcodes are accepted and ignored", %{state: state} do
@@ -389,7 +403,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, state} = RunnerSocket.handle_in({junk, text()}, state)
 
       # A real heartbeat right after still works (presence updates, no crash).
-      hb = Jason.encode!(%{"type" => "heartbeat", "action_load" => 3})
+      hb = runner_frame(%{"type" => "heartbeat", "action_load" => 3})
       assert {:ok, _state} = RunnerSocket.handle_in({hb, text()}, state)
     end
   end
@@ -484,7 +498,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       state: state,
       runner: runner
     } do
-      raw = Jason.encode!(%{"type" => "heartbeat", "action_load" => 9})
+      raw = runner_frame(%{"type" => "heartbeat", "action_load" => 9})
       assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
 
       assert %{metas: [meta | _]} =
@@ -566,7 +580,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       runner: runner
     } do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "runner_state",
           "hostname" => "renamed-host",
           "version" => "0.9.9",
@@ -584,7 +598,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "a socket whose runner row vanished is fenced before state mutation", %{state: state} do
       gone = %{state | runner_id: Ecto.UUID.generate()}
-      raw = Jason.encode!(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
 
       assert {:stop, :normal, {1008, "Runner connection ownership was superseded."}, ^gone} =
                RunnerSocket.handle_in({raw, text()}, gone)
@@ -627,7 +641,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "error envelope is audited without dropping the socket", %{state: state} do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "error",
           "code" => "exec_failed",
           "message" => "binary not found",
@@ -643,7 +657,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "appends a progress event to the run", %{state: state, run: run} do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "action_progress",
           "request_id" => run.request_id,
           "seq" => 1,
@@ -698,7 +712,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "progress for an unknown request_id is swallowed", %{state: state} do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "action_progress",
           "request_id" => "req_phantom",
           "seq" => 1,
@@ -712,7 +726,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     # a progress chunk with a nil request_id is dropped at
     # the `fetch_run_id(nil, _)` guard before any DB touch; the socket stays up.
     test "progress with a nil request_id is dropped quietly", %{state: state} do
-      raw = Jason.encode!(%{"type" => "action_progress", "seq" => 1, "chunk" => "x"})
+      raw = runner_frame(%{"type" => "action_progress", "seq" => 1, "chunk" => "x"})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
@@ -724,7 +738,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       run: run
     } do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "action_progress",
           "request_id" => run.request_id,
           "seq" => 7,
@@ -767,7 +781,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       {:ok, state_b} = RunnerSocket.init(%{token: token_b, runner: runner_b})
 
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "action_progress",
           "request_id" => run.request_id,
           "seq" => 1,
@@ -842,7 +856,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       runner: runner
     } do
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "runner_state",
           "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:deadbeef"}},
           "actions" => [
@@ -870,7 +884,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       novel = "linux.nonexistent_action_#{System.unique_integer([:positive])}"
 
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "runner_state",
           "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:abc"}},
           "actions" => [
@@ -894,7 +908,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     } do
       assert Runners.online?(account.id, runner.id)
 
-      raw = Jason.encode!(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
       assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
 
       assert Runners.online?(account.id, runner.id)
@@ -912,12 +926,12 @@ defmodule EmisarWeb.RunnerSocketTest do
       runner: runner
     } do
       # Seed a known load first…
-      first = Jason.encode!(%{"type" => "heartbeat", "action_load" => 5})
+      first = runner_frame(%{"type" => "heartbeat", "action_load" => 5})
       assert {:ok, state} = RunnerSocket.handle_in({first, text()}, state)
 
       # …then a heartbeat with NO action_load field — the `|| meta.action_load`
       # fallback keeps the prior value; nothing raises.
-      bare = Jason.encode!(%{"type" => "heartbeat"})
+      bare = runner_frame(%{"type" => "heartbeat"})
       assert {:ok, _state} = RunnerSocket.handle_in({bare, text()}, state)
 
       assert %{metas: [meta | _]} =
@@ -937,7 +951,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     } do
       peer = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
-      raw = Jason.encode!(%{"type" => "heartbeat", "action_load" => 11})
+      raw = runner_frame(%{"type" => "heartbeat", "action_load" => 11})
       assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
 
       metas = Runners.connection_metas(account.id)
@@ -968,7 +982,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       state = %{state | request_context: context}
 
       raw =
-        Jason.encode!(%{
+        runner_frame(%{
           "type" => "error",
           "code" => "exec_failed",
           "message" => "binary not found",
@@ -999,7 +1013,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       user: user,
       state: state
     } do
-      raw = Jason.encode!(%{"type" => "error", "request_id" => "req_err_2"})
+      raw = runner_frame(%{"type" => "error", "request_id" => "req_err_2"})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
@@ -1128,8 +1142,11 @@ defmodule EmisarWeb.RunnerSocketTest do
   defp result_frame(request_id, status, extra) do
     %{"type" => "action_result", "request_id" => request_id, "status" => status}
     |> Map.merge(Map.new(extra, fn {k, v} -> {to_string(k), v} end))
-    |> Jason.encode!()
+    |> runner_frame()
   end
+
+  defp runner_frame(message),
+    do: message |> Map.put("protocol_version", 1) |> Jason.encode!()
 
   defp count_terminal_audit_events(run, subject) do
     {:ok, events, _meta} = Emisar.Audit.list_events(subject, page: [limit: 200])

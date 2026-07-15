@@ -71,6 +71,7 @@ defmodule EmisarWeb.RunnerSocketVersionTest do
   defp runner_state_frame(version) do
     Jason.encode!(%{
       "type" => "runner_state",
+      "protocol_version" => 1,
       "version" => version,
       "packs" => %{},
       "actions" => []

@@ -8,8 +8,10 @@ object with `type` and `protocol_version`; action-correlated messages also carry
 Protocol version: **1**.
 
 Unknown message types and unknown fields inside known messages are tolerated so
-additive changes do not break an older peer. Security-sensitive known fields use
-their exact lowercase JSON names; case aliases are rejected.
+additive changes do not break an older peer. Every known message requires the
+exact supported protocol version; a missing or different version closes the
+session before the message is handled. Security-sensitive known fields use their
+exact lowercase JSON names; case aliases are rejected.
 
 ## Trust boundaries
 
@@ -61,7 +63,6 @@ signature-enforcement state, trusted CA IDs, and maximum attestation age.
 {
   "type": "runner_state",
   "protocol_version": 1,
-  "runner_id": "agt_01HZP3X9...",
   "version": "0.2.0",
   "hostname": "dbcas103",
   "group": "cassandra",

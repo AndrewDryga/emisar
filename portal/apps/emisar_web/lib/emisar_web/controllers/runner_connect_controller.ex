@@ -19,7 +19,7 @@ defmodule EmisarWeb.RunnerConnectController do
   def register(conn, params) do
     with {:ok, enrollment_key} <- read_bearer(conn),
          {:ok, attrs} <- registration_attrs(params),
-         {:ok, runner, token, raw_token} <-
+         {:ok, _runner, _token, raw_token} <-
            Runners.register_via_enrollment_key(
              enrollment_key,
              attrs,
@@ -27,12 +27,7 @@ defmodule EmisarWeb.RunnerConnectController do
            ) do
       conn
       |> put_status(:created)
-      |> json(%{
-        runner_id: runner.id,
-        token: raw_token,
-        token_id: token.id,
-        account_id: runner.account_id
-      })
+      |> json(%{token: raw_token})
     else
       :missing_bearer ->
         unauthorized(conn, "missing_bearer")

@@ -14,7 +14,6 @@ import (
 // each called every Build() so post-reload state reflects the current pack
 // set and the current trusted signing keys.
 type StateBuilder struct {
-	AgentID     string
 	Version     string
 	Hostname    string
 	Group       string
@@ -46,7 +45,6 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 	}
 	msg := RunnerStateMsg{
 		Envelope: Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
-		AgentID:  b.AgentID,
 		Version:  b.Version,
 		Hostname: hostname,
 		Group:    b.Group,

@@ -33,10 +33,9 @@ type Conn interface {
 	Close() error
 }
 
-// Dialer establishes a Conn. Returns the assigned runner_id alongside the
-// connection so callers can update their identity from the auth response.
+// Dialer establishes a Conn authenticated as the runner configured on it.
 type Dialer interface {
-	Dial(ctx context.Context) (conn Conn, agentID string, err error)
+	Dial(ctx context.Context) (Conn, error)
 }
 
 // Options configure the Client behaviour.
@@ -242,7 +241,7 @@ func (c *Client) Run(ctx context.Context) error {
 // whether the dial+register handshake succeeded (i.e. we actually
 // connected), so the caller can reset its reconnect backoff on success.
 func (c *Client) runSession(parent context.Context) (bool, error) {
-	conn, _, err := c.dialer.Dial(parent)
+	conn, err := c.dialer.Dial(parent)
 	if err != nil {
 		return false, fmt.Errorf("dial: %w", err)
 	}
@@ -338,13 +337,16 @@ func (c *Client) requeueUnacknowledgedResults() int {
 // dispatch routes one inbound message. parent (not sessionCtx) is the
 // outer context so that started runs outlive the connection.
 func (c *Client) dispatch(parent context.Context, raw []byte) error {
-	mt, err := PeekType(raw)
+	envelope, err := PeekEnvelope(raw)
 	if err != nil {
 		c.opts.Logger.Warn("cloud.bad_envelope", "error", err)
 		return nil
 	}
-	switch mt {
+	switch envelope.Type {
 	case MsgRunAction:
+		if err := requireProtocolVersion(envelope); err != nil {
+			return err
+		}
 		var m RunActionMsg
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.UseNumber()
@@ -354,19 +356,37 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		}
 		return c.startRun(parent, m)
 	case MsgCancel:
+		if err := requireProtocolVersion(envelope); err != nil {
+			return err
+		}
 		var m CancelMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return nil
 		}
 		c.cancelRun(m.RequestID)
 	case MsgAckResult:
+		if err := requireProtocolVersion(envelope); err != nil {
+			return err
+		}
 		var m AckResultMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return nil
 		}
 		c.ackRun(m.RequestID)
 	default:
-		c.opts.Logger.Debug("cloud.unknown_message", "type", mt)
+		c.opts.Logger.Debug("cloud.unknown_message", "type", envelope.Type)
+	}
+	return nil
+}
+
+func requireProtocolVersion(envelope Envelope) error {
+	if envelope.ProtocolVersion != ProtocolVersion {
+		return fmt.Errorf(
+			"cloud: %s protocol_version %d does not match supported version %d",
+			envelope.Type,
+			envelope.ProtocolVersion,
+			ProtocolVersion,
+		)
 	}
 	return nil
 }

@@ -132,15 +132,15 @@ type queuedDialer struct {
 	conns []*fakeConn
 }
 
-func (d *queuedDialer) Dial(ctx context.Context) (Conn, string, error) {
+func (d *queuedDialer) Dial(ctx context.Context) (Conn, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if len(d.conns) == 0 {
-		return nil, "", errors.New("no more conns")
+		return nil, errors.New("no more conns")
 	}
 	c := d.conns[0]
 	d.conns = d.conns[1:]
-	return c, "agt_test", nil
+	return c, nil
 }
 
 const echoActionYAML = `
@@ -271,7 +271,6 @@ actions:
 	})
 	opts := Options{
 		StateBuilder: &StateBuilder{
-			AgentID:     "agt",
 			Version:     "0.2.0",
 			GetRegistry: eng.Registry,
 		},
@@ -668,15 +667,15 @@ type mixedDialer struct {
 	conns []Conn
 }
 
-func (d *mixedDialer) Dial(ctx context.Context) (Conn, string, error) {
+func (d *mixedDialer) Dial(ctx context.Context) (Conn, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if len(d.conns) == 0 {
-		return nil, "", errors.New("no more conns")
+		return nil, errors.New("no more conns")
 	}
 	c := d.conns[0]
 	d.conns = d.conns[1:]
-	return c, "agt_test", nil
+	return c, nil
 }
 
 // TestClient_CancelMsgTerminatesInflightAction verifies the end-to-end
@@ -744,51 +743,36 @@ func TestClient_CancelMsgTerminatesInflightAction(t *testing.T) {
 	}
 }
 
-// TestClient_TolerantOfNewerProtocolVersion confirms the
-// documented compatibility rule: an inbound message of a known type
-// decodes and dispatches even if it claims a newer protocol_version
-// than this runner. The runner never refuses unknown versions on known
-// types — it just decodes what it understands.
-func TestClient_TolerantOfNewerProtocolVersion(t *testing.T) {
-	conn := newFakeConn()
-	d := &queuedDialer{conns: []*fakeConn{conn}}
-	cli := buildClient(t, d)
+func TestClientRejectsKnownMessagesWithIncompatibleProtocolVersion(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- cli.Run(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	for _, version := range []int{0, 999} {
+		t.Run(fmt.Sprintf("version_%d", version), func(t *testing.T) {
+			raw, err := json.Marshal(RunActionMsg{
+				Envelope: Envelope{
+					Type:            MsgRunAction,
+					ProtocolVersion: version,
+					RequestID:       fmt.Sprintf("req_version_%d", version),
+				},
+				ActionID:         "t.echo",
+				ExpectedPackHash: currentPackHash(t, cli, "t"),
+				Args:             map[string]any{"msg": "must not execute"},
+				Reason:           "test",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	// Send a run_action that claims a far-future protocol_version.
-	raw, err := json.Marshal(RunActionMsg{
-		Envelope: Envelope{
-			Type:            MsgRunAction,
-			ProtocolVersion: 999,
-			RequestID:       "req_future",
-		},
-		ActionID:         "t.echo",
-		ExpectedPackHash: currentPackHash(t, cli, "t"),
-		Args:             map[string]any{"msg": "future ok"},
-		Reason:           "test",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn.in <- raw
-
-	res := waitForResult(t, conn, "req_future", 3*time.Second)
-	if res["status"] != "success" {
-		t.Fatalf("future protocol_version should still execute; status=%v", res["status"])
-	}
-	// And the runner's reply must use the RUNNER's protocol_version, not
-	// echo back the inbound one — outbound messages always advertise
-	// what the runner speaks.
-	if got := int(res["protocol_version"].(float64)); got != ProtocolVersion {
-		t.Fatalf("runner reply protocol_version=%d, want %d", got, ProtocolVersion)
+			if err := cli.dispatch(context.Background(), raw); err == nil {
+				t.Fatal("dispatch accepted an incompatible protocol version")
+			}
+			cli.mu.Lock()
+			started := len(cli.runs)
+			cli.mu.Unlock()
+			if started != 0 {
+				t.Fatalf("incompatible message started %d run(s)", started)
+			}
+		})
 	}
 }
 
@@ -1063,18 +1047,18 @@ type dropAfterConnectDialer struct {
 	done  bool
 }
 
-func (d *dropAfterConnectDialer) Dial(context.Context) (Conn, string, error) {
+func (d *dropAfterConnectDialer) Dial(context.Context) (Conn, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.fails > 0 {
 		d.fails--
-		return nil, "", errors.New("register returned 409")
+		return nil, errors.New("register returned 409")
 	}
 	if !d.done {
 		d.done = true
-		return d.conn, "agt_test", nil
+		return d.conn, nil
 	}
-	return nil, "", errors.New("no more conns")
+	return nil, errors.New("no more conns")
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {

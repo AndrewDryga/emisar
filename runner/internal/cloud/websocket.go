@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -77,30 +78,30 @@ var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked auth key /
 // Dial implements cloud.Dialer. It ensures a token exists (calling
 // register if needed), then opens the websocket and returns a wrapper
 // satisfying cloud.Conn.
-func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, string, error) {
+func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 	log := d.Logger
 	if log == nil {
 		log = slog.Default()
 	}
 
 	if d.URL == "" {
-		return nil, "", errors.New("cloud: WebsocketDialer.URL is empty")
+		return nil, errors.New("cloud: WebsocketDialer.URL is empty")
 	}
 
 	token, err := d.loadOrMintToken(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	wsURL, err := d.deriveWSURL()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+token.Raw)
 
-	log.Info("cloud.dial", "url", wsURL, "runner_id", token.AgentID)
+	log.Info("cloud.dial", "url", wsURL, "external_id", d.ExternalID)
 
 	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: headers,
@@ -113,23 +114,22 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, string, error) {
 			// re-runs /runner/register (in case the old token was rotated
 			// or revoked).
 			_ = os.Remove(d.TokenPath)
-			return nil, "", fmt.Errorf("%w: ws upgrade returned 401", ErrUnauthorized)
+			return nil, fmt.Errorf("%w: ws upgrade returned 401", ErrUnauthorized)
 		}
-		return nil, "", fmt.Errorf("cloud: ws dial failed: %w", err)
+		return nil, fmt.Errorf("cloud: ws dial failed: %w", err)
 	}
 
 	// Disable the library's read-size cap; large action_result envelopes
 	// can exceed the default 32KB.
 	conn.SetReadLimit(8 * 1024 * 1024)
 
-	return &wsConn{ws: conn, log: log}, token.AgentID, nil
+	return &wsConn{ws: conn, log: log}, nil
 }
 
 // -- Token persistence ----------------------------------------------
 
 type agentToken struct {
-	Raw     string
-	AgentID string
+	Raw string
 	// KeyFP fingerprints the auth key that minted this token, so a later
 	// boot can tell when the operator swapped the key under it.
 	KeyFP string
@@ -140,10 +140,9 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 		// Reuse the cached token unless the operator has rotated the auth
 		// key under it (e.g. moving the runner to another account): a
 		// configured key whose fingerprint no longer matches the one stamped
-		// on the token means re-register with the new key. An empty key
-		// (operator unset it after first boot) or an unstamped legacy token
-		// keeps the old reuse-always behavior.
-		if d.AuthKey == "" || existing.KeyFP == "" || existing.KeyFP == keyFingerprint(d.AuthKey) {
+		// on the token means re-register with the new key. An empty key means
+		// the operator intentionally relies only on the persisted runner token.
+		if d.AuthKey == "" || existing.KeyFP == keyFingerprint(d.AuthKey) {
 			return existing, nil
 		}
 		d.logger().Info("cloud.auth_key_rotated",
@@ -194,35 +193,27 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 		return agentToken{}, fmt.Errorf("token file %s has insecure perms %#o (want 0600); refusing to reuse it", d.TokenPath, perm)
 	}
 
-	bytes, err := io.ReadAll(f)
+	contents, err := io.ReadAll(f)
 	if err != nil {
 		return agentToken{}, err
 	}
 
 	var stored struct {
 		Token string `json:"token"`
-		// Read both field names — the rename to `runner_id` left existing
-		// dev installs with `agent_id` on disk. Prefer the new name.
-		RunnerID    string `json:"runner_id"`
-		LegacyAgent string `json:"agent_id"`
-		KeyFP       string `json:"key_fp"`
+		KeyFP string `json:"key_fp"`
 	}
-
-	if err := json.Unmarshal(bytes, &stored); err != nil {
-		// Backwards compat: an earlier version may have stored just the
-		// raw bytes. Treat that as the token.
-		raw := strings.TrimSpace(string(bytes))
-		if raw == "" {
-			return agentToken{}, errors.New("token file empty")
-		}
-		return agentToken{Raw: raw}, nil
+	decoder := json.NewDecoder(bytes.NewReader(contents))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&stored); err != nil {
+		return agentToken{}, fmt.Errorf("decode token file: %w", err)
 	}
-
-	id := stored.RunnerID
-	if id == "" {
-		id = stored.LegacyAgent
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return agentToken{}, errors.New("decode token file: trailing JSON value")
 	}
-	return agentToken{Raw: stored.Token, AgentID: id, KeyFP: stored.KeyFP}, nil
+	if stored.Token == "" {
+		return agentToken{}, errors.New("token file has empty token")
+	}
+	return agentToken{Raw: stored.Token, KeyFP: stored.KeyFP}, nil
 }
 
 func (d *WebsocketDialer) writeToken(t agentToken) error {
@@ -235,10 +226,9 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 	}
 
 	body, err := json.Marshal(struct {
-		Token   string `json:"token"`
-		AgentID string `json:"runner_id"`
-		KeyFP   string `json:"key_fp,omitempty"`
-	}{t.Raw, t.AgentID, t.KeyFP})
+		Token string `json:"token"`
+		KeyFP string `json:"key_fp,omitempty"`
+	}{t.Raw, t.KeyFP})
 	if err != nil {
 		return err
 	}
@@ -343,8 +333,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	}
 
 	var parsed struct {
-		AgentID string `json:"runner_id"`
-		Token   string `json:"token"`
+		Token string `json:"token"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
@@ -355,7 +344,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		return agentToken{}, errors.New("cloud: register returned empty token")
 	}
 
-	return agentToken{Raw: parsed.Token, AgentID: parsed.AgentID}, nil
+	return agentToken{Raw: parsed.Token}, nil
 }
 
 // -- URL derivation --------------------------------------------------
