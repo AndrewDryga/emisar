@@ -291,21 +291,21 @@ an execution revision.
 ### MCP annotations
 
 Descriptions and annotations come only from the normative registry above and
-are fixture-compared byte for byte. Annotations stay truthful even though
-Emisar, rather than the client, owns authorization and approval:
+are fixture-compared byte for byte. They describe the stable MCP interaction;
+Emisar owns the action-specific risk, authorization, and approval decision:
 
 - Catalog, history, and wait tools advertise `readOnlyHint: true` and
   `idempotentHint: true`.
 - `create_runbook_draft` advertises `readOnlyHint: false`,
-  `destructiveHint: false`, and `idempotentHint: false`.
+  `destructiveHint: false`, `idempotentHint: false`, and
+  `openWorldHint: false`: it saves only a portal-local proposal.
 - `run_action` and `execute_runbook` advertise `readOnlyHint: false`,
-  `destructiveHint: true`, and `idempotentHint: false` because separate tool
-  calls may execute separate infrastructure changes.
+  `destructiveHint: false`, and `idempotentHint: false`. A single static tool
+  spans read-only through critical actions, so a coarse destructive hint would
+  misclassify most calls and duplicate Emisar's exact policy and approval gate.
 
-These are optional model/UI hints, not confirmation gates. A client may still
-apply its own host policy or display a warning; the server cannot prevent that
-without falsely describing a tool that can perform destructive work. Emisar
-does not request a second confirmation inside its tool workflow.
+These are optional model/UI hints, not confirmation gates. Emisar does not
+request a second confirmation inside its tool workflow.
 
 ### Success and error results
 

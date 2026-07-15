@@ -2,6 +2,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
   use EmisarWeb.ConnCase, async: true
   import EmisarWeb.MCPContractAssertions
   alias Emisar.{ApiKeys, Catalog, Crypto, Runners, Runs}
+  alias EmisarWeb.MCP.WaitLimiter
 
   @hash "sha256:" <> String.duplicate("a", 64)
 
@@ -44,6 +45,11 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     refute Enum.any?(result, &Map.has_key?(&1, "outputSchema"))
     assert byte_size(Jason.encode!(result)) <= 32_768
+
+    by_name = Map.new(result, &{&1["name"], &1})
+    assert get_in(by_name, ["run_action", "annotations", "destructiveHint"]) == false
+    assert get_in(by_name, ["execute_runbook", "annotations", "destructiveHint"]) == false
+    assert get_in(by_name, ["create_runbook_draft", "annotations", "openWorldHint"]) == false
   end
 
   test "catalog reads paginate, rank exact ids first, and never expose drifted runner prose", %{
@@ -307,6 +313,50 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
 
+  @tag timeout: 5_000
+  test "saturated observation capacity returns fresh and replayed accepted runs immediately", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "saturated-wait")
+    pack_ref = "database@1.0.0/#{@hash}"
+
+    observe!(
+      runner,
+      %{"database" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action("database.pause_job", "database", args: job_args())]
+    )
+
+    trust_all!(subject)
+    :ok = Runners.subscribe_runner_transport(runner)
+
+    runner_ref = "saturated-wait~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+    operation_id = "op_424NN9NMDZ1T76NARWCKM5A0D6"
+    body = run_action_body(pack_ref, runner_ref, ~s({"job_id":7}), "Bound the wait", "60s")
+
+    limiter_conn =
+      conn
+      |> Plug.Conn.assign(:api_key, key)
+      |> Plug.Conn.assign(:current_subject, subject)
+
+    waits = hold_waits(limiter_conn, 8)
+
+    try do
+      response = raw_action(conn, body, operation_id)
+      assert response["ok"]
+      assert [%{"run_id" => run_id}] = response["runs"]
+      assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+      replay = raw_action(conn, body, operation_id)
+      assert get_in(replay, ["runs", Access.at(0), "run_id"]) == run_id
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
+    after
+      release_waits(waits)
+    end
+  end
+
   test "run_action fails closed on signed-fact mismatch, unsigned enforcing targets, and operation reuse",
        %{
          conn: conn,
@@ -420,8 +470,33 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert_valid_tool_result("run_action", result)
   end
 
-  defp run_action_body(pack_ref, runner_ref, args_raw, reason) do
-    ~s({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"database.pause_job","pack_ref":"#{pack_ref}","runner_refs":["#{runner_ref}"],"args":#{args_raw},"reason":"#{reason}","wait":"0"}}})
+  defp run_action_body(pack_ref, runner_ref, args_raw, reason, wait \\ "0") do
+    ~s({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"database.pause_job","pack_ref":"#{pack_ref}","runner_refs":["#{runner_ref}"],"args":#{args_raw},"reason":"#{reason}","wait":"#{wait}"}}})
+  end
+
+  defp hold_waits(conn, count) do
+    parent = self()
+
+    waits =
+      Enum.map(1..count, fn _index ->
+        Task.async(fn ->
+          WaitLimiter.run(conn, fn ->
+            send(parent, :wait_acquired)
+
+            receive do
+              :release -> :ok
+            end
+          end)
+        end)
+      end)
+
+    Enum.each(waits, fn _task -> assert_receive :wait_acquired, 500 end)
+    waits
+  end
+
+  defp release_waits(waits) do
+    Enum.each(waits, &send(&1.pid, :release))
+    assert Enum.map(waits, &Task.await(&1, 500)) == List.duplicate(:ok, length(waits))
   end
 
   defp attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason) do

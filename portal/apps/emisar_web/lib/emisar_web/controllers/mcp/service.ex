@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Approvals, Runs}
-  alias EmisarWeb.MCP.Cancellation
+  alias EmisarWeb.MCP.{Cancellation, WaitLimiter}
 
   @max_wait_ms 60_000
   @recheck_interval_ms 2_000
@@ -42,6 +42,7 @@ defmodule EmisarWeb.MCP.Service do
          true <- complete_target_set?(runs, targets),
          :ok <-
            maybe_poll_to_terminal(
+             conn,
              subject,
              fixed_dispatch_results(runs, targets),
              wait_ms,
@@ -66,6 +67,7 @@ defmodule EmisarWeb.MCP.Service do
          false <- runs == [],
          :ok <-
            maybe_poll_to_terminal(
+             conn,
              subject,
              fixed_replay_results(runs),
              wait_ms,
@@ -241,9 +243,9 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Per-runner long-poll + result rendering ------------------------
 
-  defp maybe_poll_to_terminal(_subject, _results, 0, _cancellation_topic), do: :ok
+  defp maybe_poll_to_terminal(_conn, _subject, _results, 0, _cancellation_topic), do: :ok
 
-  defp maybe_poll_to_terminal(subject, results, ms, cancellation_topic) do
+  defp maybe_poll_to_terminal(conn, subject, results, ms, cancellation_topic) do
     polling_ids =
       for {_name, {:ok, :running, %{id: id}}, _runner} <- results, do: id
 
@@ -251,7 +253,15 @@ defmodule EmisarWeb.MCP.Service do
       :ok
     else
       deadline = System.monotonic_time(:millisecond) + ms
-      poll_all_to_terminal(subject, polling_ids, deadline, cancellation_topic)
+
+      case WaitLimiter.run(conn, fn ->
+             poll_all_to_terminal(subject, polling_ids, deadline, cancellation_topic)
+           end) do
+        # The mutation is already durable. Capacity exhaustion changes only
+        # response latency; the caller receives the current accepted state.
+        {:error, :wait_saturated} -> :ok
+        result -> result
+      end
     end
   end
 
