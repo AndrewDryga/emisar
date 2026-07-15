@@ -2,43 +2,62 @@ package cloud
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
+
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
 
-// dedupRing is a bounded FIFO of completed action results keyed by
-// request_id. If cloud retries a request_id we've already executed,
-// startRun replays the cached result instead of re-running the action.
+// dedupRing is a bounded persistent dispatch log. A reservation is durably
+// written before execution begins, then replaced by the terminal result. This
+// gives each runner at-most-once execution across process and host crashes:
+// after a restart, an unfinished reservation is reported as outcome-unknown
+// instead of re-running an action that may already have changed the host.
 //
-// When storePath is set the ring is ALSO persisted to disk and reloaded on
-// the next start, so dedup survives a runner restart (and isn't lost the way
-// a purely in-memory ring is). Without this, a result lost in flight makes
-// the cloud re-dispatch (RunDispatchTimeout); if that re-dispatch lands after
-// a restart the empty ring re-executes the action — double-running a mutating
-// action. The file is the "persistent dispatch log": an atomic rewrite of the
-// current ring on every remember (so it stays bounded to max entries), and a
-// crash-torn trailing line is skipped on load.
-//
-// The persisted ActionResultMsg carries only status, exit code, byte counts,
-// and output HASHES — never raw stdout/stderr (streamed separately) and never
-// an unmasked arg (executed_command is masked runner-side) — so the file holds
-// no secret material. It is written 0600 in the runner's data_dir regardless.
+// A completed result remains non-evictable until the control plane acknowledges
+// receipt. Each request_id is also bound to a digest of every delivered execution fact.
+// Reusing an id with different facts is refused rather than replaying an
+// unrelated result. Persisted results contain hashes and byte counts, never raw
+// stdout/stderr or unmasked arguments, and the store is always mode 0600.
 type dedupRing struct {
 	mu        sync.Mutex
 	max       int
 	keys      []string // insertion order, oldest at index 0
-	cached    map[string]ActionResultMsg
+	records   map[string]dedupEntry
 	storePath string // "" = in-memory only
 	logger    *slog.Logger
+	loadErr   error
 }
 
-// dedupEntry is one persisted line: a request_id and the result to replay.
+type dispatchState string
+
+const (
+	dispatchReserved     dispatchState = "reserved"
+	dispatchCompleted    dispatchState = "completed"
+	dispatchAcknowledged dispatchState = "acknowledged"
+)
+
 type dedupEntry struct {
-	RequestID string          `json:"request_id"`
-	Result    ActionResultMsg `json:"result"`
+	RequestID      string          `json:"request_id"`
+	DispatchSHA256 string          `json:"dispatch_sha256"`
+	State          dispatchState   `json:"state"`
+	Result         ActionResultMsg `json:"result,omitempty"`
 }
+
+type reservationDecision int
+
+const (
+	reservationNew reservationDecision = iota
+	reservationReplay
+	reservationPending
+	reservationConflict
+)
 
 func newDedupRing(max int, storePath string, logger *slog.Logger) *dedupRing {
 	if max <= 0 {
@@ -47,120 +66,323 @@ func newDedupRing(max int, storePath string, logger *slog.Logger) *dedupRing {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	d := &dedupRing{max: max, cached: map[string]ActionResultMsg{}, storePath: storePath, logger: logger}
+	d := &dedupRing{max: max, records: map[string]dedupEntry{}, storePath: storePath, logger: logger}
 	d.load()
 	return d
 }
 
-// load reads a persisted ring at startup. A missing/unreadable file starts
-// empty; a crash-torn or garbage line is skipped (the file is rewritten whole
-// on the next remember). The in-file order is the insertion order, so the
-// FIFO bound is re-applied keeping the most recent entries.
+// load keeps every complete line with a valid state and digest. A crash-torn
+// trailing line is skipped; the next successful mutation rewrites the file.
 func (d *dedupRing) load() {
 	if d.storePath == "" {
 		return
 	}
 	f, err := os.Open(d.storePath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			d.loadErr = fmt.Errorf("open dispatch log: %w", err)
+			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
+		}
 		return
 	}
 	defer f.Close()
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	lineNumber := 0
 	for sc.Scan() {
+		lineNumber++
 		var e dedupEntry
-		if json.Unmarshal(sc.Bytes(), &e) != nil || e.RequestID == "" {
-			continue
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil || !validDedupEntry(e) {
+			d.keys = nil
+			d.records = map[string]dedupEntry{}
+			d.loadErr = fmt.Errorf("invalid dispatch log entry on line %d", lineNumber)
+			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
+			return
 		}
-		if _, exists := d.cached[e.RequestID]; !exists {
+		if _, exists := d.records[e.RequestID]; !exists {
 			d.keys = append(d.keys, e.RequestID)
 		}
-		d.cached[e.RequestID] = e.Result
+		d.records[e.RequestID] = e
+	}
+	if err := sc.Err(); err != nil {
+		d.keys = nil
+		d.records = map[string]dedupEntry{}
+		d.loadErr = fmt.Errorf("read dispatch log: %w", err)
+		d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
+		return
 	}
 	for len(d.keys) > d.max {
-		delete(d.cached, d.keys[0])
-		d.keys = d.keys[1:]
+		if !d.evictOldestAcknowledgedLocked() {
+			break
+		}
 	}
 }
 
-// remember caches a completed result. Duplicate inserts are ignored.
-func (d *dedupRing) remember(requestID string, result ActionResultMsg) {
+func validDedupEntry(e dedupEntry) bool {
+	if e.RequestID == "" || len(e.DispatchSHA256) != sha256.Size*2 {
+		return false
+	}
+	if _, err := hex.DecodeString(e.DispatchSHA256); err != nil {
+		return false
+	}
+	return e.State == dispatchReserved || e.State == dispatchCompleted || e.State == dispatchAcknowledged
+}
+
+// reserve binds requestID to digest and persists the reservation before the
+// caller may execute. Existing exact records replay; an unfinished record is
+// reported separately so the caller can fail it closed; fact conflicts refuse.
+func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, ActionResultMsg, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if _, exists := d.cached[requestID]; exists {
-		return
+	if d.loadErr != nil {
+		return reservationNew, ActionResultMsg{}, d.loadErr
 	}
-	if len(d.keys) >= d.max {
-		oldest := d.keys[0]
-		d.keys = d.keys[1:]
-		delete(d.cached, oldest)
+	if !validDispatchDigest(digest) {
+		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
+	}
+
+	if existing, ok := d.records[requestID]; ok {
+		if existing.DispatchSHA256 != digest {
+			return reservationConflict, ActionResultMsg{}, nil
+		}
+		if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
+			return reservationReplay, existing.Result, nil
+		}
+		return reservationPending, ActionResultMsg{}, nil
+	}
+
+	oldKeys := append([]string(nil), d.keys...)
+	oldRecords := cloneDedupRecords(d.records)
+	if len(d.keys) >= d.max && !d.evictOldestAcknowledgedLocked() {
+		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: dispatch log capacity reached with active or unacknowledged dispatches")
 	}
 	d.keys = append(d.keys, requestID)
-	d.cached[requestID] = result
-	d.persist()
-}
-
-// persist atomically rewrites the store from the current ring (caller holds
-// mu). Best-effort: a write failure leaves the in-memory ring intact and the
-// previous file in place (the atomic rename means the file is never torn), and
-// the next remember retries — dedup degrades to in-memory (the pre-persistence
-// behaviour), never to a corrupt store. A failure is logged at Warn because it
-// silently reopens the restart-double-execution window. The runner's dispatch
-// rate is low enough that a whole-file rewrite per completed action is not a
-// hot path.
-func (d *dedupRing) persist() {
-	if d.storePath == "" {
-		return
+	d.records[requestID] = dedupEntry{
+		RequestID: requestID, DispatchSHA256: digest, State: dispatchReserved,
 	}
 	if err := d.writeStore(); err != nil {
-		d.logger.Warn("cloud.dedup_persist_failed", "error", err, "path", d.storePath)
+		d.keys = oldKeys
+		d.records = oldRecords
+		return reservationNew, ActionResultMsg{}, err
+	}
+	return reservationNew, ActionResultMsg{}, nil
+}
+
+// inspect classifies an existing record without creating a new reservation.
+// The client uses it before the concurrency cap so cached replays and fact
+// conflicts are deterministic even while every execution slot is occupied.
+func (d *dedupRing) inspect(requestID, digest string) (reservationDecision, ActionResultMsg, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.loadErr != nil {
+		return reservationNew, ActionResultMsg{}, d.loadErr
+	}
+	if !validDispatchDigest(digest) {
+		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
+	}
+	existing, ok := d.records[requestID]
+	if !ok {
+		return reservationNew, ActionResultMsg{}, nil
+	}
+	if existing.DispatchSHA256 != digest {
+		return reservationConflict, ActionResultMsg{}, nil
+	}
+	if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
+		return reservationReplay, existing.Result, nil
+	}
+	return reservationPending, ActionResultMsg{}, nil
+}
+
+func validDispatchDigest(digest string) bool {
+	if len(digest) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
+}
+
+func (d *dedupRing) evictOldestAcknowledgedLocked() bool {
+	for index, key := range d.keys {
+		if d.records[key].State == dispatchAcknowledged {
+			delete(d.records, key)
+			d.keys = append(d.keys[:index], d.keys[index+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func cloneDedupRecords(records map[string]dedupEntry) map[string]dedupEntry {
+	cloned := make(map[string]dedupEntry, len(records))
+	for key, entry := range records {
+		cloned[key] = entry
+	}
+	return cloned
+}
+
+// complete replaces an exact reservation with its terminal result. A digest
+// mismatch is a programming error: it must never overwrite another intent.
+func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	existing, ok := d.records[requestID]
+	if !ok {
+		return fmt.Errorf("cloud: complete unreserved dispatch %q", requestID)
+	}
+	if existing.DispatchSHA256 != digest {
+		return fmt.Errorf("cloud: dispatch digest changed for %q", requestID)
+	}
+	if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
+		return nil
+	}
+	existing.State = dispatchCompleted
+	existing.Result = result
+	d.records[requestID] = existing
+	return d.writeStore()
+}
+
+// acknowledge records that the control plane durably received a terminal
+// result. Only acknowledged entries may later be evicted to make room.
+func (d *dedupRing) acknowledge(requestID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	existing, ok := d.records[requestID]
+	if !ok {
+		return nil
+	}
+	switch existing.State {
+	case dispatchReserved:
+		return fmt.Errorf("cloud: acknowledge incomplete dispatch %q", requestID)
+	case dispatchAcknowledged:
+		return nil
+	case dispatchCompleted:
+		existing.State = dispatchAcknowledged
+		d.records[requestID] = existing
+		if err := d.writeStore(); err != nil {
+			existing.State = dispatchCompleted
+			d.records[requestID] = existing
+			return err
+		}
+		return nil
+	default:
+		return fmt.Errorf("cloud: acknowledge dispatch %q with invalid state %q", requestID, existing.State)
 	}
 }
 
 func (d *dedupRing) writeStore() error {
+	if d.storePath == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(d.storePath), 0o750); err != nil {
+		return err
+	}
 	tmp := d.storePath + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriter(f)
-	for _, k := range d.keys {
-		line, err := json.Marshal(dedupEntry{RequestID: k, Result: d.cached[k]})
-		if err != nil {
-			continue
-		}
-		_, _ = w.Write(line)
-		_ = w.WriteByte('\n')
-	}
-	if err := w.Flush(); err != nil {
+	removeTemp := func() {
 		_ = f.Close()
 		_ = os.Remove(tmp)
+	}
+	w := bufio.NewWriter(f)
+	for _, key := range d.keys {
+		line, err := json.Marshal(d.records[key])
+		if err != nil {
+			removeTemp()
+			return err
+		}
+		if _, err := w.Write(line); err != nil {
+			removeTemp()
+			return err
+		}
+		if err := w.WriteByte('\n'); err != nil {
+			removeTemp()
+			return err
+		}
+	}
+	if err := w.Flush(); err != nil {
+		removeTemp()
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+		removeTemp()
 		return err
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, d.storePath)
+	if err := os.Rename(tmp, d.storePath); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return fsutil.SyncDirectory(filepath.Dir(d.storePath))
 }
 
-// lookup returns the cached result for requestID, if any.
 func (d *dedupRing) lookup(requestID string) (ActionResultMsg, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	r, ok := d.cached[requestID]
-	return r, ok
+	e, ok := d.records[requestID]
+	if !ok || (e.State != dispatchCompleted && e.State != dispatchAcknowledged) {
+		return ActionResultMsg{}, false
+	}
+	return e.Result, true
 }
 
-// size returns the number of cached entries (for tests / metrics).
+func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	results := make([]ActionResultMsg, 0)
+	for _, requestID := range d.keys {
+		entry := d.records[requestID]
+		if entry.State == dispatchCompleted {
+			results = append(results, entry.Result)
+		}
+	}
+	return results
+}
+
+func (d *dedupRing) contains(requestID string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, ok := d.records[requestID]
+	return ok
+}
+
 func (d *dedupRing) size() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return len(d.keys)
+}
+
+// dispatchDigest covers all facts that can change what the runner authorizes
+// or executes. ArgsRaw preserves large JSON numbers and exact scalar spellings.
+func dispatchDigest(m RunActionMsg) (string, error) {
+	args := m.ArgsRaw
+	if len(args) == 0 {
+		var err error
+		args, err = json.Marshal(m.Args)
+		if err != nil {
+			return "", fmt.Errorf("cloud: marshal dispatch args: %w", err)
+		}
+	}
+	facts := struct {
+		ActionID    string          `json:"action_id"`
+		PackRef     string          `json:"pack_ref"`
+		Args        json.RawMessage `json:"args"`
+		Opts        *RunOpts        `json:"opts"`
+		Reason      string          `json:"reason"`
+		OperationID string          `json:"operation_id"`
+		Attestation *Attestation    `json:"attestation"`
+	}{m.ActionID, m.PackRef, args, m.Opts, m.Reason, m.OperationID, m.Attestation}
+	raw, err := json.Marshal(facts)
+	if err != nil {
+		return "", fmt.Errorf("cloud: marshal dispatch facts: %w", err)
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
 }

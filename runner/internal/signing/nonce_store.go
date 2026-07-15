@@ -483,7 +483,7 @@ func (s *NonceStore) rewriteLocked() error {
 		return fmt.Errorf("signing: replace nonce journal: %w", err)
 	}
 	removeTemp = false
-	if err := syncDirectory(dir); err != nil {
+	if err := fsutil.SyncDirectory(dir); err != nil {
 		return fmt.Errorf("signing: sync nonce-journal directory: %w", err)
 	}
 	s.fileSize = int64(data.Len())
@@ -500,16 +500,4 @@ func writeJSONLine(writer *bufio.Writer, value any) error {
 		return err
 	}
 	return writer.WriteByte('\n')
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := directory.Sync(); err != nil {
-		_ = directory.Close()
-		return err
-	}
-	return directory.Close()
 }

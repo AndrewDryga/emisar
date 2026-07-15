@@ -141,6 +141,9 @@ func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
 	if len(wire.Args) == 0 {
 		return fmt.Errorf("cloud: run_action args are required")
 	}
+	if strings.TrimSpace(wire.RequestID) == "" {
+		return fmt.Errorf("cloud: run_action request_id is required")
+	}
 	args, err := decodeActionArgs(wire.Args)
 	if err != nil {
 		return err

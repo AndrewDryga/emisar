@@ -44,6 +44,9 @@ env var can be unset after the first successful connect.`,
 			if rt.cfg.Cloud.URL == "" {
 				return fmt.Errorf("cloud.url not set in config (this binary has no other long-running mode)")
 			}
+			if err := validateConnectDataDir(rt.cfg.Paths.DataDir); err != nil {
+				return err
+			}
 
 			authKey := os.Getenv(rt.cfg.Cloud.AuthKeyEnv)
 			tokenPath := rt.cfg.Cloud.TokenPath
@@ -61,15 +64,6 @@ env var can be unset after the first successful connect.`,
 				}
 			}
 
-			hostname, _ := os.Hostname()
-
-			// Durable identity, persisted next to the token so reconnects
-			// (and reboots) map back to the same runner row in the cloud.
-			externalID, err := resolveExternalID(rt.cfg.Runner.ID, rt.cfg.Paths.DataDir)
-			if err != nil {
-				return fmt.Errorf("resolve runner id: %w", err)
-			}
-
 			// Client-attested dispatch: build the verifier from config. When
 			// enforcing, the runner advertises it (cloud disables its own
 			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
@@ -82,11 +76,20 @@ env var can be unset after the first successful connect.`,
 			// every verifier. Close releases the cross-process journal lock only
 			// after the client and its dispatch goroutines have stopped.
 			defer nonceStore.Close()
+
+			// The nonce journal lock is also the process-lifetime data-directory
+			// lock. Resolve identity only after acquiring it, so two first boots
+			// cannot mint different ids for one installation.
+			externalID, err := resolveExternalID(rt.cfg.Runner.ID, rt.cfg.Paths.DataDir)
+			if err != nil {
+				return fmt.Errorf("resolve runner id: %w", err)
+			}
 			verifier, err := buildVerifier(rt.cfg, externalID, nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
 
+			hostname, _ := os.Hostname()
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 			dialer := &cloud.WebsocketDialer{
 				URL:        rt.cfg.Cloud.URL,
@@ -112,15 +115,11 @@ env var can be unset after the first successful connect.`,
 				GetRegistry: rt.engine.Registry,
 				Admission:   rt.admission,
 			}
-			dedupStorePath := ""
-			if rt.cfg.Paths.DataDir != "" {
-				dedupStorePath = filepath.Join(rt.cfg.Paths.DataDir, "dedup.jsonl")
-			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
 				Engine:         rt.engine,
 				Cursor:         rt.cursor,
-				DedupStorePath: dedupStorePath,
+				DedupStorePath: filepath.Join(rt.cfg.Paths.DataDir, "dedup.jsonl"),
 				Logger:         logger,
 				HeartbeatEvery: rt.cfg.Cloud.HeartbeatEvery.Std(),
 				ReconnectMin:   rt.cfg.Cloud.ReconnectMin.Std(),
@@ -182,6 +181,13 @@ env var can be unset after the first successful connect.`,
 			return err
 		},
 	}
+}
+
+func validateConnectDataDir(dataDir string) error {
+	if strings.TrimSpace(dataDir) == "" {
+		return fmt.Errorf("connect requires paths.data_dir for durable identity and dispatch reservations")
+	}
+	return nil
 }
 
 // buildVerifier constructs the dispatch signature verifier from config: the
@@ -271,10 +277,16 @@ func resolveExternalID(configuredID, dataDir string) (string, error) {
 	}
 
 	path := filepath.Join(dataDir, "runner_id")
-	if b, err := os.ReadFile(path); err == nil {
-		if id := strings.TrimSpace(string(b)); id != "" {
-			return id, nil
+	b, err := os.ReadFile(path)
+	if err == nil {
+		id := strings.TrimSpace(string(b))
+		if id == "" {
+			return "", fmt.Errorf("runner identity %s is empty", path)
 		}
+		return id, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read runner identity %s: %w", path, err)
 	}
 
 	id, err := newUUIDv4()
@@ -285,13 +297,40 @@ func resolveExternalID(configuredID, dataDir string) (string, error) {
 	if err := fsutil.SecureMkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return "", err
 	}
-	// Write atomically so a crash mid-write can't leave a corrupt id.
+	// Sync the file and its directory around the atomic rename. Returning an id
+	// before the directory entry is durable can mint a different logical runner
+	// after a power loss, which defeats dispatch and nonce isolation.
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
-		return "", err
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create runner identity: %w", err)
+	}
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		cleanup()
+		return "", fmt.Errorf("secure runner identity: %w", err)
+	}
+	if _, err := f.WriteString(id); err != nil {
+		cleanup()
+		return "", fmt.Errorf("write runner identity: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		cleanup()
+		return "", fmt.Errorf("sync runner identity: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return "", fmt.Errorf("close runner identity: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		return "", err
+		_ = os.Remove(tmp)
+		return "", fmt.Errorf("activate runner identity: %w", err)
+	}
+	if err := fsutil.SyncDirectory(filepath.Dir(path)); err != nil {
+		return "", fmt.Errorf("sync runner identity directory: %w", err)
 	}
 	return id, nil
 }

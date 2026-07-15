@@ -54,8 +54,8 @@ type Options struct {
 	// count is reported on the eventual ActionResultMsg.
 	MaxPendingPerRun int
 
-	// DedupRingSize bounds the count of completed results we keep cached
-	// for idempotent replay. Defaults to 1024.
+	// DedupRingSize bounds the persistent dispatch log. Active and completed
+	// but unacknowledged entries are never evicted. Defaults to 1024.
 	DedupRingSize int
 
 	// DedupStorePath persists the dedup ring so it survives a runner
@@ -88,6 +88,12 @@ type Client struct {
 	runs  map[string]*runState // request_id -> in-flight state
 	dedup *dedupRing           // bounded cache of completed results
 
+	// A cancel can race just ahead of its run_action on the websocket. Remember
+	// unknown request ids briefly so that wire reordering cannot turn an operator
+	// cancellation into execution. The ring is bounded with the dedup capacity.
+	preCanceled      map[string]struct{}
+	preCanceledOrder []string
+
 	// readvertise is a coalescing wake-up: Readvertise() does a
 	// non-blocking send and readvertiseLoop drains it. Buffered size 1,
 	// so many calls between drains collapse into a single extra send.
@@ -104,8 +110,9 @@ type Client struct {
 // sender goroutine drains it; both live independently of the current
 // websocket connection.
 type runState struct {
-	requestID string
-	cancel    context.CancelFunc
+	requestID      string
+	dispatchDigest string
+	cancel         context.CancelFunc
 
 	mu       sync.Mutex
 	pending  []any // queued outbound messages
@@ -142,6 +149,7 @@ func NewClient(d Dialer, opts Options) *Client {
 		opts:        opts,
 		runs:        map[string]*runState{},
 		dedup:       newDedupRing(opts.DedupRingSize, opts.DedupStorePath, opts.Logger),
+		preCanceled: map[string]struct{}{},
 		readvertise: make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
 	}
@@ -244,10 +252,12 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	if err := conn.Send(sessionCtx, state); err != nil {
 		return true, fmt.Errorf("send state: %w", err)
 	}
+	requeuedResults := c.requeueUnacknowledgedResults()
 	c.opts.Logger.Info("cloud.connected",
 		"actions", len(state.Actions),
 		"packs", len(state.Packs),
 		"inflight_runs", c.countInflight(),
+		"requeued_results", requeuedResults,
 	)
 
 	// Drain any queued messages from runs that survived a previous
@@ -266,6 +276,46 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 		}
 		c.dispatch(parent, raw)
 	}
+}
+
+// requeueUnacknowledgedResults reconciles the durable result log with the
+// connection-scoped outbox. A successful WebSocket Send is not an application
+// acknowledgement: if the portal committed the result but its ack was lost,
+// the next session must send that result again so the record can become
+// evictable. At most one copy is queued per request for this session.
+func (c *Client) requeueUnacknowledgedResults() int {
+	results := c.dedup.unacknowledgedResults()
+	if len(results) == 0 {
+		return 0
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	requeued := 0
+	for _, result := range results {
+		requestID := result.RequestID
+		if requestID == "" {
+			c.opts.Logger.Error("cloud.dedup_result_missing_request_id")
+			continue
+		}
+		if state, ok := c.runs[requestID]; ok {
+			state.mu.Lock()
+			if len(state.pending) == 0 {
+				state.pending = append(state.pending, result)
+				state.finished = true
+				requeued++
+			}
+			state.mu.Unlock()
+			continue
+		}
+		c.runs[requestID] = &runState{
+			requestID: requestID,
+			finished:  true,
+			pending:   []any{result},
+		}
+		requeued++
+	}
+	return requeued
 }
 
 // dispatch routes one inbound message. parent (not sessionCtx) is the
@@ -309,20 +359,36 @@ func (c *Client) dispatch(parent context.Context, raw []byte) {
 // Idempotency: if request_id matches a cached completed result, the
 // cached result is enqueued for re-send without re-executing.
 func (c *Client) startRun(parent context.Context, m RunActionMsg) {
-	if cached, ok := c.dedup.lookup(m.RequestID); ok {
-		c.opts.Logger.Info("cloud.dedup_replay", "request_id", m.RequestID)
-		c.enqueueTransient(m.RequestID, cached)
+	digest, err := dispatchDigest(m)
+	if err != nil {
+		c.enqueueTransient(m.RequestID, failedDispatchResult(m.RequestID, "dispatch_invalid", err.Error()))
 		return
 	}
-
 	c.mu.Lock()
-	if _, exists := c.runs[m.RequestID]; exists {
+	if existing, exists := c.runs[m.RequestID]; exists {
 		c.mu.Unlock()
-		// Still in flight — sender will eventually deliver the result.
-		c.opts.Logger.Warn("cloud.duplicate_in_flight", "request_id", m.RequestID)
+		if existing.dispatchDigest != digest {
+			// The first intent may already be executing and cannot safely be
+			// replaced or failed under the same correlation id. Keep it authoritative.
+			c.opts.Logger.Error("cloud.duplicate_in_flight_conflict", "request_id", m.RequestID)
+		} else {
+			c.opts.Logger.Warn("cloud.duplicate_in_flight", "request_id", m.RequestID)
+		}
 		return
 	}
-	if len(c.runs) >= c.opts.MaxConcurrentRuns {
+	decision, cached, err := c.dedup.inspect(m.RequestID, digest)
+	if err != nil {
+		c.mu.Unlock()
+		c.dispatchReservationFailed(m.RequestID, err)
+		return
+	}
+	if c.handleReservationDecision(m.RequestID, digest, decision, cached) {
+		c.mu.Unlock()
+		c.signalSend()
+		return
+	}
+	preCanceled := c.consumePreCancelLocked(m.RequestID)
+	if !preCanceled && len(c.runs) >= c.opts.MaxConcurrentRuns {
 		c.mu.Unlock()
 		c.opts.Logger.Warn("cloud.concurrency_cap_reached",
 			"request_id", m.RequestID,
@@ -335,34 +401,116 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) {
 		})
 		return
 	}
+	decision, cached, err = c.dedup.reserve(m.RequestID, digest)
+	if err != nil {
+		c.mu.Unlock()
+		c.dispatchReservationFailed(m.RequestID, err)
+		return
+	}
+	if c.handleReservationDecision(m.RequestID, digest, decision, cached) {
+		c.mu.Unlock()
+		c.signalSend()
+		return
+	}
+	if preCanceled {
+		result := ActionResultMsg{
+			Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+			Status:   "cancelled",
+			ExitCode: -1,
+			Reason:   "cancelled_before_start",
+		}
+		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
+			c.mu.Unlock()
+			c.dispatchReservationFailed(m.RequestID, err)
+			return
+		}
+		c.enqueueTransientLocked(m.RequestID, result)
+		c.mu.Unlock()
+		c.signalSend()
+		return
+	}
 
 	runCtx, cancel := context.WithCancel(parent)
-	s := &runState{requestID: m.RequestID, cancel: cancel}
+	s := &runState{requestID: m.RequestID, cancel: cancel, dispatchDigest: digest}
 	c.runs[m.RequestID] = s
 	c.mu.Unlock()
 
 	go c.handleRun(runCtx, s, m)
 }
 
+func (c *Client) handleReservationDecision(
+	requestID, digest string,
+	decision reservationDecision,
+	cached ActionResultMsg,
+) bool {
+	switch decision {
+	case reservationReplay:
+		c.opts.Logger.Info("cloud.dedup_replay", "request_id", requestID)
+		c.enqueueTransientLocked(requestID, cached)
+		return true
+	case reservationPending:
+		result := failedDispatchResult(
+			requestID,
+			"execution_outcome_unknown",
+			"runner restarted after reserving this dispatch; it was not re-executed because prior side effects are unknown",
+		)
+		if err := c.dedup.complete(requestID, digest, result); err != nil {
+			c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", requestID, "error", err)
+		}
+		c.enqueueTransientLocked(requestID, result)
+		return true
+	case reservationConflict:
+		c.opts.Logger.Warn("cloud.dispatch_id_conflict", "request_id", requestID)
+		c.enqueueTransientLocked(requestID, failedDispatchResult(
+			requestID,
+			"dispatch_id_conflict",
+			"request_id was already bound to different execution facts; action was not executed",
+		))
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) dispatchReservationFailed(requestID string, err error) {
+	c.opts.Logger.Error("cloud.dispatch_reservation_failed", "request_id", requestID, "error", err)
+	c.enqueueTransient(requestID, failedDispatchResult(
+		requestID,
+		"dispatch_reservation_failed",
+		"runner could not durably reserve this dispatch; action was not executed",
+	))
+}
+
+func failedDispatchResult(requestID, reason, detail string) ActionResultMsg {
+	return ActionResultMsg{
+		Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		Status:   "failed", ExitCode: -1, Reason: reason, Error: detail,
+	}
+}
+
 // enqueueTransient creates a finished runState containing exactly one
 // message (a cached result or a synthetic error). The sender picks it
 // up on its next tick.
 func (c *Client) enqueueTransient(requestID string, msg any) {
-	s := &runState{requestID: requestID, finished: true, pending: []any{msg}}
 	c.mu.Lock()
+	c.enqueueTransientLocked(requestID, msg)
+	c.mu.Unlock()
+	c.signalSend()
+}
+
+// enqueueTransientLocked appends one terminal response while c.mu is held.
+// Reservation classification runs under that same lock, so it uses this form
+// to avoid releasing the execution-cap decision before the response is queued.
+func (c *Client) enqueueTransientLocked(requestID string, msg any) {
 	// If a runState already exists (e.g., second dedup hit while the
 	// first replay is still queued), append rather than overwrite.
 	if existing, ok := c.runs[requestID]; ok {
-		c.mu.Unlock()
 		existing.mu.Lock()
 		existing.pending = append(existing.pending, msg)
 		existing.mu.Unlock()
-		c.signalSend()
 		return
 	}
-	c.runs[requestID] = s
-	c.mu.Unlock()
-	c.signalSend()
+	c.runs[requestID] = &runState{requestID: requestID, finished: true, pending: []any{msg}}
 }
 
 // handleRun executes the action and enqueues progress + result messages
@@ -387,15 +535,13 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			)
 			s.mu.Lock()
 			already := s.finished
-			s.finished = true
 			s.mu.Unlock()
-
 			if !already {
-				c.enqueue(s, ErrorMsg{
-					Envelope: Envelope{Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-					Code:     "engine_panic",
-					Message:  "the runner hit an internal error handling this action",
-				}, never)
+				c.finishRun(s, m, failedDispatchResult(
+					m.RequestID,
+					"engine_panic",
+					"the runner hit an internal error handling this action",
+				))
 			}
 		}
 	}()
@@ -408,17 +554,11 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	// Authenticity first (did a real user sign this dispatch?), then pack
 	// integrity (do the on-disk bytes still match what was trusted?).
 	if !c.passesSignatureGate(s, m) {
-		s.mu.Lock()
-		s.finished = true
-		s.mu.Unlock()
 		return
 	}
 
 	registry, trusted := c.passesTrustGate(s, m)
 	if !trusted {
-		s.mu.Lock()
-		s.finished = true
-		s.mu.Unlock()
 		return
 	}
 
@@ -464,11 +604,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			"action_id", m.ActionID,
 			"error", err.Error(),
 		)
-		c.enqueue(s, ErrorMsg{
-			Envelope: Envelope{Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-			Code:     "engine_error",
-			Message:  err.Error(),
-		}, never)
+		c.finishRun(s, m, failedDispatchResult(m.RequestID, "engine_error", err.Error()))
 	} else {
 		// One log line per completed run. Non-success statuses get Warn
 		// so they stand out in operator logs; success is Info.
@@ -500,12 +636,20 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			EventID:         res.EventID,
 			ExecutedCommand: res.ExecutedCommand,
 		}
-		c.enqueue(s, result, never)
-		c.dedup.remember(m.RequestID, result)
+		c.finishRun(s, m, result)
+	}
+}
+
+func (c *Client) finishRun(s *runState, m RunActionMsg, result ActionResultMsg) {
+	if err := c.dedup.complete(m.RequestID, s.dispatchDigest, result); err != nil {
+		// The durable reservation remains on disk if completion cannot be
+		// persisted, so a restart still refuses to execute the action again.
+		c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", m.RequestID, "error", err)
 	}
 	s.mu.Lock()
 	s.finished = true
 	s.mu.Unlock()
+	c.enqueue(s, result, never)
 }
 
 // passesSignatureGate verifies the client attestation when the operator turned
@@ -546,8 +690,7 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 		Error:      "refused: " + dec.Detail,
 		Reason:     dec.Code,
 	}
-	c.enqueue(s, result, never)
-	c.dedup.remember(m.RequestID, result)
+	c.finishRun(s, m, result)
 	return false
 }
 
@@ -627,8 +770,7 @@ func (c *Client) emitPackMismatch(s *runState, m RunActionMsg, packID, expected,
 		),
 		Reason: "pack_hash_mismatch",
 	}
-	c.enqueue(s, result, never)
-	c.dedup.remember(m.RequestID, result)
+	c.finishRun(s, m, result)
 }
 
 // dropPolicy controls what happens when the per-run buffer is full.
@@ -767,10 +909,14 @@ func (c *Client) heartbeatLoop(ctx context.Context, sessionCancel context.Cancel
 	}
 }
 
-// cancelRun cancels the per-request context.
+// cancelRun cancels the per-request context. If run_action has not arrived yet,
+// it records a bounded tombstone so a cancel/action ordering race fails closed.
 func (c *Client) cancelRun(requestID string) {
 	c.mu.Lock()
 	s, ok := c.runs[requestID]
+	if !ok && !c.dedup.contains(requestID) {
+		c.rememberPreCancelLocked(requestID)
+	}
 	c.mu.Unlock()
 	if !ok {
 		return
@@ -778,6 +924,36 @@ func (c *Client) cancelRun(requestID string) {
 	if s.cancel != nil {
 		s.cancel()
 	}
+}
+
+func (c *Client) rememberPreCancelLocked(requestID string) {
+	if requestID == "" {
+		return
+	}
+	if _, exists := c.preCanceled[requestID]; exists {
+		return
+	}
+	if len(c.preCanceledOrder) >= c.opts.DedupRingSize {
+		oldest := c.preCanceledOrder[0]
+		c.preCanceledOrder = c.preCanceledOrder[1:]
+		delete(c.preCanceled, oldest)
+	}
+	c.preCanceled[requestID] = struct{}{}
+	c.preCanceledOrder = append(c.preCanceledOrder, requestID)
+}
+
+func (c *Client) consumePreCancelLocked(requestID string) bool {
+	if _, exists := c.preCanceled[requestID]; !exists {
+		return false
+	}
+	delete(c.preCanceled, requestID)
+	for i, key := range c.preCanceledOrder {
+		if key == requestID {
+			c.preCanceledOrder = append(c.preCanceledOrder[:i], c.preCanceledOrder[i+1:]...)
+			break
+		}
+	}
+	return true
 }
 
 // ackRun is called when cloud confirms receipt of an action_result.
@@ -788,9 +964,8 @@ func (c *Client) cancelRun(requestID string) {
 //  2. Record the underlying JSONL event_id in the cursor file so a
 //     future cleanup pass can prune up to that point.
 //
-// The cached result stays in the dedup ring regardless, in case cloud
-// retries the request_id (which would happen if the ack itself was
-// lost in flight). The dedup ring is bounded so old entries roll out.
+// The cached result stays in the dedup ring in the acknowledged state, in case
+// cloud retries the request_id. Only acknowledged entries may roll out later.
 func (c *Client) ackRun(requestID string) {
 	c.mu.Lock()
 	s, ok := c.runs[requestID]
@@ -808,13 +983,20 @@ func (c *Client) ackRun(requestID string) {
 			)
 			return
 		}
+	}
+	cached, cachedOK := c.dedup.lookup(requestID)
+	if err := c.dedup.acknowledge(requestID); err != nil {
+		c.opts.Logger.Error("cloud.dedup_ack_failed", "request_id", requestID, "error", err)
+		return
+	}
+	if ok {
 		c.removeRun(requestID)
 	}
 	// Record on the cursor regardless of whether the in-flight state was
 	// still around — cloud might be acking something we already evicted
 	// from runs (legitimate during reconnect dances).
 	if c.opts.Cursor != nil {
-		if cached, ok := c.dedup.lookup(requestID); ok && cached.EventID != "" {
+		if cachedOK && cached.EventID != "" {
 			if err := c.opts.Cursor.MarkAcked(cached.EventID); err != nil {
 				c.opts.Logger.Warn("cloud.cursor_write_failed",
 					"event_id", cached.EventID,

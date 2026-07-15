@@ -90,7 +90,8 @@ func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
 	// The run is gone from c.runs (already removed after its result drained),
 	// but its completed result — carrying the JSONL event_id — is still in the
 	// dedup ring, exactly as it would be during a reconnect-driven re-ack.
-	cli.dedup.remember("req_evicted", ActionResultMsg{EventID: "evt_evicted", Status: "success"})
+	digest := testDispatchDigest("req_evicted")
+	reserveAndComplete(t, cli.dedup, "req_evicted", digest, ActionResultMsg{EventID: "evt_evicted", Status: "success"})
 
 	// Must not panic on the absent run, and must record the event on the cursor.
 	cli.ackRun("req_evicted")
@@ -100,17 +101,80 @@ func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
 	}
 }
 
-// A cancel for a request_id the runner has no in-flight state for is a no-op:
-// cancelRun looks it up, finds nothing, and returns without error or panic.
-// The cloud can legitimately send a stale cancel after the run already
-// finished and was evicted; it must be harmless.
-func TestClient_CancelRun_UnknownRequestIsNoOp(t *testing.T) {
+func TestClient_ReconnectRequeuesCompletedResultUntilAcknowledged(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
+	result := ActionResultMsg{
+		Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: "req_lost_ack"},
+		EventID:  "evt_lost_ack",
+		Status:   "success",
+	}
+	reserveAndComplete(t, cli.dedup, result.RequestID, testDispatchDigest(result.RequestID), result)
+
+	if got := cli.requeueUnacknowledgedResults(); got != 1 {
+		t.Fatalf("first reconnect requeued %d results, want 1", got)
+	}
+	if got := cli.requeueUnacknowledgedResults(); got != 0 {
+		t.Fatalf("same session queued %d duplicate results", got)
+	}
+
+	cli.mu.Lock()
+	state := cli.runs[result.RequestID]
+	cli.mu.Unlock()
+	if state == nil {
+		t.Fatal("requeued result has no outbox")
+	}
+	state.mu.Lock()
+	if len(state.pending) != 1 {
+		t.Fatalf("pending results = %d, want 1", len(state.pending))
+	}
+	state.pending = nil // successful send before the ACK was lost
+	state.mu.Unlock()
+	cli.removeRun(result.RequestID)
+
+	if got := cli.requeueUnacknowledgedResults(); got != 1 {
+		t.Fatalf("next reconnect requeued %d results, want 1", got)
+	}
+	cli.mu.Lock()
+	state = cli.runs[result.RequestID]
+	cli.mu.Unlock()
+	state.mu.Lock()
+	state.pending = nil // the retried result reached the portal
+	state.mu.Unlock()
+	cli.ackRun(result.RequestID)
+	if got := cli.requeueUnacknowledgedResults(); got != 0 {
+		t.Fatalf("acknowledged result was requeued %d times", got)
+	}
+}
+
+// An early cancel is remembered without consuming an execution slot. If its
+// run_action follows, the runner returns cancelled without invoking the engine.
+func TestClient_CancelBeforeRunActionPreventsExecution(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
 
 	before := cli.countInflight()
-	cli.cancelRun("req_never_existed") // must not panic
+	cli.cancelRun("req_cancelled_early")
 	if after := cli.countInflight(); after != before {
-		t.Fatalf("cancel of an unknown run changed the in-flight count: %d -> %d", before, after)
+		t.Fatalf("early cancel changed the in-flight count: %d -> %d", before, after)
+	}
+
+	cli.startRun(context.Background(), RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_cancelled_early"},
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "must not execute"},
+		Reason:   "test",
+	})
+
+	result, ok := cli.dedup.lookup("req_cancelled_early")
+	if !ok {
+		t.Fatal("early cancellation result was not persisted")
+	}
+	if result.Status != "cancelled" || result.Reason != "cancelled_before_start" {
+		t.Fatalf("early cancellation result = %#v", result)
+	}
+
+	cli.cancelRun("req_cancelled_early")
+	if _, exists := cli.preCanceled["req_cancelled_early"]; exists {
+		t.Fatal("stale cancel for a completed request created a new tombstone")
 	}
 }
 

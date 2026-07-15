@@ -264,6 +264,93 @@ func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Du
 	}
 }
 
+func queuedResult(t *testing.T, cli *Client, requestID string) ActionResultMsg {
+	t.Helper()
+	cli.mu.Lock()
+	state := cli.runs[requestID]
+	cli.mu.Unlock()
+	if state == nil {
+		t.Fatalf("no queued state for %s", requestID)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.pending) != 1 {
+		t.Fatalf("pending messages=%d, want 1", len(state.pending))
+	}
+	result, ok := state.pending[0].(ActionResultMsg)
+	if !ok {
+		t.Fatalf("queued message is %T, want ActionResultMsg", state.pending[0])
+	}
+	return result
+}
+
+func TestClient_RestartedReservationFailsClosedWithoutExecution(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	msg := RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req-pending"},
+		ActionID: "t.echo", Args: map[string]any{"msg": "must-not-run"}, Reason: "test",
+	}
+	digest, err := dispatchDigest(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := newDedupRing(4, path, nil)
+	if decision, _, err := seed.reserve(msg.RequestID, digest); err != nil || decision != reservationNew {
+		t.Fatalf("seed reservation: decision=%v err=%v", decision, err)
+	}
+
+	cli := buildClient(t, &queuedDialer{}, func(opts *Options) { opts.DedupStorePath = path })
+	cli.startRun(context.Background(), msg)
+	result := queuedResult(t, cli, msg.RequestID)
+	if result.Status != "failed" || result.Reason != "execution_outcome_unknown" {
+		t.Fatalf("result=%+v", result)
+	}
+	if replay, ok := cli.dedup.lookup(msg.RequestID); !ok || replay.Reason != result.Reason {
+		t.Fatalf("outcome-unknown result was not durably completed: ok=%v result=%+v", ok, replay)
+	}
+}
+
+func TestClient_RequestIDFactConflictIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	original := RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req-conflict"},
+		ActionID: "t.echo", Args: map[string]any{"msg": "first"}, Reason: "test",
+	}
+	originalDigest, err := dispatchDigest(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := newDedupRing(4, path, nil)
+	reserveAndComplete(t, seed, original.RequestID, originalDigest, ActionResultMsg{Status: "success"})
+
+	changed := original
+	changed.Args = map[string]any{"msg": "different"}
+	cli := buildClient(t, &queuedDialer{}, func(opts *Options) { opts.DedupStorePath = path })
+	cli.startRun(context.Background(), changed)
+	result := queuedResult(t, cli, changed.RequestID)
+	if result.Status != "failed" || result.Reason != "dispatch_id_conflict" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestClient_UnavailableDispatchLogPreventsExecution(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(blocker, "dedup.jsonl")
+	cli := buildClient(t, &queuedDialer{}, func(opts *Options) { opts.DedupStorePath = path })
+	msg := RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req-no-store"},
+		ActionID: "t.echo", Args: map[string]any{"msg": "must-not-run"}, Reason: "test",
+	}
+	cli.startRun(context.Background(), msg)
+	result := queuedResult(t, cli, msg.RequestID)
+	if result.Status != "failed" || result.Reason != "dispatch_reservation_failed" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
 // TestClient_TrustGate_PassWithMatchingHash — when cloud supplies a PackRef
 // whose hash matches the runner's on-disk pack, the run
 // proceeds normally and the result is delivered.

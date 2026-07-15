@@ -7,6 +7,17 @@ import (
 	"testing"
 )
 
+func TestConnectRequiresDurableDataDir(t *testing.T) {
+	for _, dataDir := range []string{"", "  ", "\n"} {
+		if err := validateConnectDataDir(dataDir); err == nil {
+			t.Fatalf("validateConnectDataDir(%q) accepted memory-only dispatch state", dataDir)
+		}
+	}
+	if err := validateConnectDataDir(t.TempDir()); err != nil {
+		t.Fatalf("validateConnectDataDir(valid): %v", err)
+	}
+}
+
 // The runner's durable identity: generated once, persisted, reused. This
 // is what lets a reconnect map back to the same cloud runner row instead
 // of registering a brand-new one each time.
@@ -55,10 +66,9 @@ func TestResolveExternalIDPrefersConfiguredID(t *testing.T) {
 	}
 }
 
-// A persisted runner_id file that is blank (or only whitespace) is treated as
-// absent — the runner mints a fresh id and overwrites the stale file, rather
-// than advertising an empty id forever.
-func TestResolveExternalIDBlankFileMintsFresh(t *testing.T) {
+// Once the identity path exists, corrupt state must fail closed. Minting a new
+// id would create a second logical runner with an independent nonce journal.
+func TestResolveExternalIDBlankFileFailsClosed(t *testing.T) {
 	for _, blank := range []string{"", "   ", "\n\t\n"} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "runner_id")
@@ -66,22 +76,19 @@ func TestResolveExternalIDBlankFileMintsFresh(t *testing.T) {
 			t.Fatalf("seed blank id file: %v", err)
 		}
 
-		id, err := resolveExternalID("", dir)
-		if err != nil {
-			t.Fatalf("resolveExternalID(blank=%q): %v", blank, err)
+		if id, err := resolveExternalID("", dir); err == nil || id != "" {
+			t.Fatalf("resolveExternalID(blank=%q) = %q, %v; want a closed failure", blank, id, err)
 		}
-		if len(id) != 36 {
-			t.Fatalf("blank id file did not mint a fresh UUID: got %q", id)
-		}
+	}
+}
 
-		// The freshly minted id is persisted back over the blank file.
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("re-read id file: %v", err)
-		}
-		if strings.TrimSpace(string(b)) != id {
-			t.Fatalf("fresh id not persisted over blank file: file=%q id=%q", strings.TrimSpace(string(b)), id)
-		}
+func TestResolveExternalIDUnreadablePathFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "runner_id"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := resolveExternalID("", dir); err == nil || id != "" {
+		t.Fatalf("resolveExternalID = %q, %v; want a closed failure", id, err)
 	}
 }
 

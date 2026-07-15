@@ -55,7 +55,7 @@ func TestRunActionMsgRejectsNoncanonicalKnownFieldAliases(t *testing.T) {
 }
 
 func TestRunActionMsgAllowsUnrelatedFutureFields(t *testing.T) {
-	raw := []byte("{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"future_top\":1,\"opts\":{\"future_opt\":true},\"attestation\":{\"future_attestation\":true}}")
+	raw := []byte("{\"type\":\"run_action\",\"request_id\":\"req_future\",\"action_id\":\"a.b\",\"args\":{},\"future_top\":1,\"opts\":{\"future_opt\":true},\"attestation\":{\"future_attestation\":true}}")
 	var msg RunActionMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		t.Fatalf("Unmarshal additive fields: %v", err)
@@ -75,13 +75,26 @@ func TestRunActionMsgRejectsLossyUnicodeInputs(t *testing.T) {
 		}
 	}
 
-	validPair := []byte("{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{\"x\":\"\\uD83D\\uDE80\"}}")
+	validPair := []byte("{\"type\":\"run_action\",\"request_id\":\"req_unicode\",\"action_id\":\"a.b\",\"args\":{\"x\":\"\\uD83D\\uDE80\"}}")
 	var msg RunActionMsg
 	if err := json.Unmarshal(validPair, &msg); err != nil {
 		t.Fatalf("Unmarshal valid surrogate pair: %v", err)
 	}
 	if !bytes.Contains(msg.ArgsRaw, []byte("\\uD83D\\uDE80")) {
 		t.Fatalf("valid surrogate pair bytes changed: %s", msg.ArgsRaw)
+	}
+}
+
+func TestRunActionMsgRequiresRequestID(t *testing.T) {
+	for _, raw := range []string{
+		`{"type":"run_action","action_id":"a.b","args":{}}`,
+		`{"type":"run_action","request_id":"","action_id":"a.b","args":{}}`,
+		`{"type":"run_action","request_id":"  ","action_id":"a.b","args":{}}`,
+	} {
+		var msg RunActionMsg
+		if err := json.Unmarshal([]byte(raw), &msg); err == nil || !strings.Contains(err.Error(), "request_id is required") {
+			t.Fatalf("Unmarshal(%s) error = %v, want request_id refusal", raw, err)
+		}
 	}
 }
 
