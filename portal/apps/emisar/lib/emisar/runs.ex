@@ -460,7 +460,7 @@ defmodule Emisar.Runs do
   """
   def create_run(attrs, opts \\ []) do
     request_id = attrs[:request_id] || Crypto.run_request_id()
-    attrs = Map.put(attrs, :request_id, request_id)
+    attrs = attrs |> put_action_arguments_raw() |> Map.put(:request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
 
     result =
@@ -706,7 +706,7 @@ defmodule Emisar.Runs do
       attrs =
         attrs
         |> Map.delete(:requested_by_membership_id)
-        |> Map.put(:args_sha256, args_sha256(attrs[:args], attrs[:args_raw]))
+        |> put_action_arguments(action)
         |> Map.put(:runner_ref, runner_ref)
         |> Map.put(:expected_pack_hash, pack_hash)
         |> Map.put(:requires_approval, false)
@@ -974,7 +974,7 @@ defmodule Emisar.Runs do
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
       |> Map.delete(:requested_by_membership_id)
-      |> Map.put(:args_sha256, args_sha256(attrs[:args], attrs[:args_raw]))
+      |> put_action_arguments(action)
       |> Map.put(:runner_ref, runner_ref)
       # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
       # so the run ships the exact bytes authorized here, not a send-time re-read.
@@ -1385,8 +1385,25 @@ defmodule Emisar.Runs do
 
   defp lookup_grant(_attrs), do: :none
 
-  defp args_sha256(_args, raw) when is_binary(raw), do: Crypto.hash_hex(raw)
-  defp args_sha256(args, _raw), do: Crypto.hash_hex(Jason.encode!(args || %{}))
+  defp put_action_arguments(attrs, action) do
+    attrs = put_action_arguments_raw(attrs)
+
+    sensitive_arg_names =
+      action.args_schema
+      |> Map.get("args", [])
+      |> Enum.filter(&(&1["sensitive"] == true))
+      |> Enum.map(& &1["name"])
+      |> Enum.filter(&is_binary/1)
+
+    attrs
+    |> Map.put(:args_sha256, Crypto.hash_hex(attrs[:args_raw]))
+    |> Map.put(:sensitive_arg_names, sensitive_arg_names)
+  end
+
+  defp put_action_arguments_raw(attrs) do
+    raw = attrs[:args_raw] || Jason.encode!(attrs[:args] || %{})
+    Map.put(attrs, :args_raw, raw)
+  end
 
   @doc """
   Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find runs
@@ -1612,8 +1629,7 @@ defmodule Emisar.Runs do
 
   defp maybe_put_attestation(payload, %ActionRun{}), do: payload
 
-  defp runner_args(%ActionRun{args_raw: raw}) when is_binary(raw), do: Jason.Fragment.new(raw)
-  defp runner_args(%ActionRun{args: args}), do: args
+  defp runner_args(%ActionRun{args_raw: raw}), do: Jason.Fragment.new(raw)
 
   defp maybe_put_signed_contract(payload, %ActionRun{
          pack_ref: pack_ref,

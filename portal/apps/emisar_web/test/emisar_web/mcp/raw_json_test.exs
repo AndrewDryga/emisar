@@ -65,4 +65,16 @@ defmodule EmisarWeb.MCP.RawJSONTest do
       assert {:error, :action_args_too_large} = RawJSON.tool_call(raw)
     end
   end
+
+  describe "decode_object/1" do
+    test "retains arbitrary precision and numeric spelling through rendering" do
+      raw = ~s({"decimal":0.1234567890123456789,"integer":9007199254740993,"scale":1.000e+3})
+
+      assert {:ok, args} = RawJSON.decode_object(raw)
+      assert args["integer"].raw == "9007199254740993"
+      assert args["decimal"].raw == "0.1234567890123456789"
+      assert args["scale"].raw == "1.000e+3"
+      assert Jason.encode!(args) == raw
+    end
+  end
 end

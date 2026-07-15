@@ -21,6 +21,13 @@ defmodule EmisarWeb.MCP.RawJSON do
           }
   end
 
+  defmodule Number do
+    @moduledoc "An exact JSON number token retained without float normalization."
+    defstruct [:raw]
+
+    @type t :: %__MODULE__{raw: binary()}
+  end
+
   @max_depth 64
   @max_action_args_bytes 32_768
   @number ~r/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/
@@ -76,6 +83,26 @@ defmodule EmisarWeb.MCP.RawJSON do
   @spec slice(binary(), Node.t()) :: binary()
   def slice(raw, %Node{start: start, stop: stop}) when is_binary(raw),
     do: binary_part(raw, start, stop - start)
+
+  @doc "Decode one JSON object while retaining every number's exact token."
+  @spec decode_object(binary()) :: {:ok, map()} | {:error, parse_error()}
+  def decode_object(raw) when is_binary(raw) do
+    case parse(raw) do
+      {:ok, %Node{type: :object} = node} -> {:ok, to_term(node)}
+      {:ok, %Node{}} -> {:error, :invalid_json}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Replace sensitive top-level action arguments before display."
+  @spec redact(map(), [String.t()]) :: map()
+  def redact(args, names) when is_map(args) and is_list(names) do
+    Enum.reduce(names, args, fn name, redacted ->
+      if Map.has_key?(redacted, name),
+        do: Map.put(redacted, name, "[REDACTED]"),
+        else: redacted
+    end)
+  end
 
   @doc "Extract exact mutation argument sidecars from one tools/call request."
   @spec tool_call(binary()) ::
@@ -327,6 +354,14 @@ defmodule EmisarWeb.MCP.RawJSON do
     end
   end
 
+  defp to_term(%Node{type: :object, children: children}) do
+    Map.new(children, fn {key, value} -> {key, to_term(value)} end)
+  end
+
+  defp to_term(%Node{type: :array, children: children}), do: Enum.map(children, &to_term/1)
+  defp to_term(%Node{type: :number, value: raw}), do: %Number{raw: raw}
+  defp to_term(%Node{value: value}), do: value
+
   defp skip_whitespace(raw, position) do
     if byte_at(raw, position) in [0x20, 0x09, 0x0A, 0x0D],
       do: skip_whitespace(raw, position + 1),
@@ -348,5 +383,13 @@ defmodule EmisarWeb.MCP.RawJSON do
       {:ok, %Node{value: value}, _position} -> value
       _ -> "<invalid>"
     end
+  end
+end
+
+defimpl Jason.Encoder, for: EmisarWeb.MCP.RawJSON.Number do
+  @number ~r/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/
+
+  def encode(%{raw: raw}, _opts) do
+    if Regex.match?(@number, raw), do: raw, else: raise(ArgumentError, "invalid JSON number")
   end
 end

@@ -4,7 +4,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   alias Emisar.Runs.ActionRun
 
   @create_fields ~w[
-    account_id runner_id request_id action_id args args_raw args_sha256 client_info mcp_client_metadata
+    account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
     ip_address user_agent opts attestation reason source requested_by_id api_key_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
@@ -23,7 +23,6 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # otherwise write a multi-MB row and fan it onto the runner's PubSub topic.
   # The runner re-validates args per-spec at execution, but the cloud-side cost
   # is paid before that rejection.
-  @max_args_bytes 262_144
   @max_reason_length 255
   # A normal v2 attestation is comfortably below 2 KB (cert, signature, nonce,
   # timestamp, and up to 16 runner ids); 8 KB is generous headroom while bounding
@@ -41,15 +40,16 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_action_args_bytes 32_768
 
   def create(attrs) do
+    attrs = Map.put(attrs, :args_raw, action_args_raw(attrs))
+
     %ActionRun{}
     |> cast(attrs, @create_fields)
-    |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
+    |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source, :args_raw])
     |> validate_length(:reason, max: @max_reason_length)
     |> validate_length(:operation_id, max: @max_db_string_length)
     |> validate_length(:pack_ref, max: @max_db_string_length)
     |> validate_length(:runner_ref, max: 113)
-    |> validate_length(:args_raw, max: @max_action_args_bytes)
-    |> RepoChangeset.validate_json_size(:args, @max_args_bytes)
+    |> validate_action_args_raw()
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
     |> unique_constraint([:account_id, :request_id])
@@ -59,6 +59,28 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> unique_constraint([:runbook_execution_id, :runbook_step_id, :runner_id],
       name: :action_runs_execution_step_runner_index
     )
+  end
+
+  defp action_args_raw(attrs) do
+    case Map.get(attrs, :args_raw) || Map.get(attrs, "args_raw") do
+      raw when is_binary(raw) -> raw
+      _ -> Jason.encode!(Map.get(attrs, :args) || Map.get(attrs, "args") || %{})
+    end
+  end
+
+  defp validate_action_args_raw(changeset) do
+    validate_change(changeset, :args_raw, fn :args_raw, raw ->
+      cond do
+        byte_size(raw) > @max_action_args_bytes ->
+          [args_raw: "is too large (max #{@max_action_args_bytes} bytes)"]
+
+        match?({:ok, %{}}, Jason.decode(raw, floats: :decimals)) ->
+          []
+
+        true ->
+          [args_raw: "must be a JSON object"]
+      end
+    end)
   end
 
   def transition(%ActionRun{} = run, status, attrs \\ %{}) when is_atom(status) do

@@ -245,7 +245,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     runner_ref = "db-primary~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
     operation_id = "op_724NN9NMDZ1T76NARWCKM5A0D6"
-    args_raw = ~s({ "job_id": 9007199254740993, "ratio": 1e3 })
+    args_raw = ~s({ "job_id": 9007199254740993, "ratio": 0.1234567890123456789 })
     reason = "Pause the maintenance job"
     header = attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason)
     body = run_action_body(pack_ref, runner_ref, args_raw, reason)

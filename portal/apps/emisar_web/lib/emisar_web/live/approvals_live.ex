@@ -222,24 +222,12 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp expiry_status(assigns), do: ~H"no expiry"
 
-  # The exact arguments an `:exact_args` grant is locked to, as a "k=v"
-  # summary. The grant row stores only the hash, so we read the raw args
-  # off the originating run (preloaded via `approval_request`). Returns
-  # nil for any-args grants, no-arg actions, or a since-pruned run — the
-  # scope chip already covers those.
+  # Keep the exact scope inspectable without repeating argument values. Some
+  # values are secrets, and the grant row intentionally stores only the hash.
   defp grant_args_line(%{args_sha256: nil}), do: nil
 
-  defp grant_args_line(%{approval_request: %{run: %{args: args}}})
-       when is_map(args) and map_size(args) > 0 do
-    args
-    |> Enum.sort_by(fn {k, _} -> k end)
-    |> Enum.map_join("  ", fn {k, v} -> "#{k}=#{grant_arg_value(v)}" end)
-  end
-
-  defp grant_args_line(_), do: nil
-
-  defp grant_arg_value(v) when is_binary(v), do: v
-  defp grant_arg_value(v), do: inspect(v)
+  defp grant_args_line(%{args_sha256: sha}) when is_binary(sha),
+    do: "sha256:#{String.slice(sha, 0, 16)}…"
 
   defp apply_grant_lifetime_cap(socket, :error) do
     {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}

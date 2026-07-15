@@ -2891,7 +2891,7 @@ defmodule EmisarWeb.CoreComponents do
         label="Arguments"
         annotation={"sha256:" <> sha}
         max_h="max-h-64"
-        code={format_json(@run.args)}
+        code={format_json(@action_args)}
       />
       <.code_panel label="Command" annotation="what the runner will execute" prompt code={@argv} />
   """

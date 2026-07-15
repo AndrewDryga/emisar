@@ -8,6 +8,7 @@ defmodule EmisarWeb.CommandPreviewTest do
   """
   use ExUnit.Case, async: true
   alias EmisarWeb.CommandPreview
+  alias EmisarWeb.MCP.RawJSON
 
   describe "render/3" do
     test "substitutes scalar args and fills declared defaults for omitted ones" do
@@ -40,6 +41,14 @@ defmodule EmisarWeb.CommandPreviewTest do
 
       assert CommandPreview.render(command, %{"n" => 3, "force" => true}, []) ==
                {:ok, "tool --count=3 --force=true"}
+    end
+
+    test "formats exact JSON numbers without rounding or changing exponent spelling" do
+      command = %{binary: "tool", argv: ["--ratio={{ args.ratio }}", "{{ args.scale }}"]}
+      {:ok, args} = RawJSON.decode_object(~s({"ratio":0.1234567890123456789,"scale":1e3}))
+
+      assert CommandPreview.render(command, args, []) ==
+               {:ok, "tool --ratio=0.1234567890123456789 1e3"}
     end
 
     test "shell-quotes values with spaces or metacharacters" do

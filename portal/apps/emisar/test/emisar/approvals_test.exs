@@ -1218,7 +1218,10 @@ defmodule Emisar.ApprovalsTest do
       {:ok, [grant], _} =
         Approvals.list_grants_for_account(subject, preload: [:approval_request_run])
 
-      assert grant.approval_request.run.args == %{"table" => "users", "full" => true}
+      assert grant.approval_request.run.args_raw |> Jason.decode!() == %{
+               "table" => "users",
+               "full" => true
+             }
     end
 
     test "a failed grant insert rolls the approval transaction back — no dispatch, no grant, no approved audit",
@@ -2364,7 +2367,7 @@ defmodule Emisar.ApprovalsTest do
       # The run insert fails inside the Multi, so the composed grant consume
       # rolls back with it — no use is burned without a durable run.
       assert {:error, changeset} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
-      assert "is too large (max 262144 bytes serialized)" in errors_on(changeset).args
+      assert "is too large (max 32768 bytes)" in errors_on(changeset).args_raw
       assert Repo.reload!(grant).uses_count == 0
     end
 

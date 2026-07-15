@@ -33,11 +33,13 @@ defmodule Emisar.Runs.ActionRun do
     field :source, Ecto.Enum, values: [:operator, :runbook, :mcp, :scheduled], default: :operator
     field :reason, :string
 
-    field :args, :map, default: %{}
-    # Exact JSON token received for run_action.args. Policy and UI use `args`;
-    # attestation hashing and runner delivery use these bytes without re-encoding.
+    # The only persisted argument representation. MCP calls retain the exact
+    # signed token; other callers encode their typed map once at creation.
     field :args_raw, :binary
     field :args_sha256, :string
+    # Snapshot only the schema fact needed to keep history and approvals
+    # redacted even if the runner later removes or replaces the pack.
+    field :sensitive_arg_names, {:array, :string}, default: []
     # Immutable content identity selected by the caller and checked against the
     # runner advertisement before the run is created.
     field :pack_ref, :string

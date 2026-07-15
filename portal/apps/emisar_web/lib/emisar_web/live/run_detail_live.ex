@@ -1,6 +1,7 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Runners, Runs}
+  alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
 
   # The output terminal shows the most-recent N chunks — the live stream caps at
@@ -51,6 +52,7 @@ defmodule EmisarWeb.RunDetailLive do
          socket
          |> assign(:page_title, "Run #{run.action_id}")
          |> assign(:run, run)
+         |> assign(:action_args, visible_action_args(run))
          |> assign(:approval_request, approval_request)
          |> assign(:runner_connection, runner_connection(run))
          # Whether any output was persisted — gates the output panel for an
@@ -85,6 +87,7 @@ defmodule EmisarWeb.RunDetailLive do
     {:noreply,
      socket
      |> assign(:run, run)
+     |> assign(:action_args, visible_action_args(run))
      |> assign(:approval_request, approval_request)}
   end
 
@@ -106,6 +109,13 @@ defmodule EmisarWeb.RunDetailLive do
     do: {:noreply, assign(socket, :runner_connection, runner_connection(socket.assigns.run))}
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp visible_action_args(run) do
+    case RawJSON.decode_object(run.args_raw) do
+      {:ok, args} -> RawJSON.redact(args, run.sensitive_arg_names)
+      {:error, _reason} -> %{}
+    end
+  end
 
   def handle_event("cancel", _params, socket) do
     Permissions.gated(
@@ -422,11 +432,11 @@ defmodule EmisarWeb.RunDetailLive do
              "what was called → what came back" — all input context above the
              result. The code panels ARE the earned artifact boxes. --%>
         <.code_panel
-          :if={@run.args && @run.args != %{}}
+          :if={@action_args != %{}}
           label="Arguments"
           annotation={@run.args_sha256 && "sha256:#{String.slice(@run.args_sha256, 0, 16)}…"}
           max_h="max-h-64"
-          code={format_json(@run.args)}
+          code={format_json(@action_args)}
         />
 
         <%!-- The exact shell command the runner ran. Sensitive arg values are

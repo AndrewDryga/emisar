@@ -180,6 +180,41 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "ssh"
   end
 
+  test "shows exact decimals while redacting sensitive arguments", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "database.scale",
+      args_schema: %{
+        "args" => [
+          %{"name" => "ratio", "type" => "number"},
+          %{"name" => "token", "type" => "string", "sensitive" => true}
+        ]
+      }
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "database.scale",
+        source: "mcp",
+        reason: "scale precisely",
+        args_raw: ~s({"ratio":0.1234567890123456789,"token":"secret-value"}),
+        sensitive_arg_names: ["token"]
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "0.1234567890123456789"
+    assert html =~ "[REDACTED]"
+    refute html =~ "0.12345678901234568"
+    refute html =~ "secret-value"
+  end
+
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

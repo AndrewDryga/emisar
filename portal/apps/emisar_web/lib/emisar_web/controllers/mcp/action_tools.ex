@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   """
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
-  alias EmisarWeb.MCP.{Attestation, Service}
+  alias EmisarWeb.MCP.{Attestation, RawJSON, Service}
 
   @required ~w(action_id pack_ref runner_refs args reason)
   @allowed @required ++ ~w(wait)
@@ -176,6 +176,7 @@ defmodule EmisarWeb.MCP.ActionTools do
          {:ok, runner_refs} <- runner_refs(args["runner_refs"]),
          true <- is_map(args["args"]),
          true <- byte_size(args_raw) <= 32_768,
+         {:ok, exact_args} <- RawJSON.decode_object(args_raw),
          true <- valid_reason?(args["reason"]),
          true <- is_binary(operation_id) and Regex.match?(@operation_id, operation_id),
          true <- is_nil(args["wait"]) or is_binary(args["wait"]) do
@@ -184,7 +185,7 @@ defmodule EmisarWeb.MCP.ActionTools do
          action_id: args["action_id"],
          pack_ref: args["pack_ref"],
          runner_refs: runner_refs,
-         args: args["args"],
+         args: exact_args,
          reason: args["reason"],
          wait: args["wait"] || "60s"
        }}

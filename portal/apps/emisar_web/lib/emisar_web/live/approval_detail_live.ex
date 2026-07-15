@@ -2,6 +2,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
   alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions}
+  alias EmisarWeb.MCP.RawJSON
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -59,6 +60,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
+         |> assign(:action_args, visible_action_args(run))
          |> assign(:action_risk, action && action.risk)
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
@@ -173,7 +175,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
              run.expected_pack_hash,
              action.pack_version
            ),
-         {:ok, line} <- CommandPreview.render(command, run.args, specs) do
+         {:ok, args} <- RawJSON.decode_object(run.args_raw),
+         {:ok, line} <- CommandPreview.render(command, args, specs) do
       line
     else
       _ -> nil
@@ -181,6 +184,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp build_command_preview(_action, _run), do: nil
+
+  defp visible_action_args(%Runs.ActionRun{} = run) do
+    case RawJSON.decode_object(run.args_raw) do
+      {:ok, args} -> RawJSON.redact(args, run.sensitive_arg_names)
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp visible_action_args(_run), do: %{}
 
   defp request_expired?(%{expires_at: %DateTime{} = expires_at}),
     do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
@@ -639,7 +651,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                holds. The command shows only when our compiled pack is provably
                the runner's (pinned hash, or advertised version); otherwise the
                raw arguments ARE the artifact. Sensitive args are masked. --%>
-            <section :if={@executed_command || @action_description || (@run && @run.args != %{})}>
+            <section :if={@executed_command || @action_description || @action_args != %{}}>
               <p
                 :if={@action_description}
                 class="mb-4 max-w-prose text-sm leading-relaxed text-zinc-400"
@@ -655,12 +667,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 code={@executed_command}
               />
               <.code_panel
-                :if={is_nil(@executed_command) && @run && @run.args != %{}}
+                :if={is_nil(@executed_command) && @action_args != %{}}
                 id={"approval-raw-args-#{@request.id}"}
                 label="Arguments"
                 annotation="what the runner will receive"
                 max_h="max-h-64"
-                code={format_json(@run.args)}
+                code={format_json(@action_args)}
               />
             </section>
 
@@ -668,7 +680,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                detail — redundant with the resolved template, but the approver
                verifying the exact payload (against its logged sha) needs them. --%>
             <.disclosure
-              :if={@executed_command && @run && @run.args != %{}}
+              :if={@executed_command && @action_args != %{}}
               id={"approval-args-#{@request.id}"}
               class="-mt-7"
             >
@@ -678,7 +690,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
                 </span>
               </:summary>
-              <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@run.args)}</pre>
+              <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@action_args)}</pre>
             </.disclosure>
 
             <%!-- ONE why-cluster: the reason given and what gated it, together —

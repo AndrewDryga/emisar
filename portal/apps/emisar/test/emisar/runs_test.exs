@@ -679,7 +679,7 @@ defmodule Emisar.RunsTest do
       assert {:error, %Ecto.Changeset{} = changeset} =
                Runs.create_run(base_attrs(account.id, runner.id, %{args: huge}))
 
-      assert Keyword.has_key?(changeset.errors, :args)
+      assert Keyword.has_key?(changeset.errors, :args_raw)
     end
 
     test "broadcasts the new run on the account topic (fresh insert only)", %{
@@ -1280,11 +1280,11 @@ defmodule Emisar.RunsTest do
       attrs = base_attrs(account.id, runner.id, %{args: rich_args})
       assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
 
-      # Persisted args come back byte-equal after the jsonb round-trip…
-      assert Repo.reload!(run).args == rich_args
-      # …and the wire envelope carries them verbatim.
+      # The exact encoded arguments are the only persisted representation.
+      assert Repo.reload!(run).args_raw |> Jason.decode!() == rich_args
+      # The wire encoder inserts those same bytes without another conversion.
       assert_receive {:cloud_to_runner, _generation, payload}, 500
-      assert payload["args"] == rich_args
+      assert payload |> Jason.encode!() |> Jason.decode!() |> Map.fetch!("args") == rich_args
     end
 
     test "a portal-originated run carries no attestation on the wire" do
@@ -1338,7 +1338,7 @@ defmodule Emisar.RunsTest do
       assert {:error, %Ecto.Changeset{} = changeset} =
                Runs.dispatch_run(base_attrs(account.id, runner.id, %{args: huge}), subject)
 
-      assert Keyword.has_key?(changeset.errors, :args)
+      assert Keyword.has_key?(changeset.errors, :args_raw)
 
       # No run persisted for this account…
       assert {:ok, [], _} = Runs.list_recent_runs(subject, limit: 50)
