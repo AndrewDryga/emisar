@@ -67,11 +67,22 @@ RUN apt-get update -y \
     && groupadd -r emisar \
     && useradd -r -g emisar -d /var/lib/emisar -s /sbin/nologin emisar \
     && mkdir -p /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar/packs /var/log/nginx \
-    && chown -R emisar:emisar /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar
+    && chown -R emisar:emisar /var/lib/emisar /var/log/emisar \
+    && chown root:emisar /etc/emisar \
+    && chmod 0750 /etc/emisar \
+    && chown root:root /opt/emisar/packs \
+    && chmod 0755 /opt/emisar/packs
 
 COPY --from=builder /out/emisar /usr/local/bin/emisar
-COPY --chown=emisar:emisar packs /opt/emisar/packs
-COPY --chown=emisar:emisar runner/docker/config.yaml /etc/emisar/config.yaml
+COPY --chown=root:root packs /opt/emisar/packs
+COPY --chown=root:emisar runner/docker/config.yaml /etc/emisar/config.yaml
+
+# Actions execute as the runtime user. Keep the runner's admission/signing
+# configuration and trusted pack bytes immutable to that same user, or an
+# allowed action could alter the next boot's security policy.
+RUN chmod 0640 /etc/emisar/config.yaml \
+    && test "$(stat -c '%U:%G:%a' /etc/emisar/config.yaml)" = "root:emisar:640" \
+    && test "$(stat -c '%U:%G:%a' /opt/emisar/packs)" = "root:root:755"
 
 USER emisar
 WORKDIR /var/lib/emisar
