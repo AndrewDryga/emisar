@@ -164,6 +164,40 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Operation, :count) == 2
   end
 
+  test "draft creation rejects invalid step arguments before reserving an operation", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "required-args")
+
+    observe_catalog!(
+      runner,
+      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action([%{"name" => "service", "type" => "string", "required" => true}])]
+    )
+
+    trust_all!(subject)
+
+    result =
+      call(conn, "create_runbook_draft", %{
+        "title" => "Invalid draft",
+        "steps" => [
+          %{
+            "step_id" => "check",
+            "action_id" => "operations.health",
+            "pack_ref" => @pack_ref,
+            "args" => %{},
+            "runner_selector" => %{"runner_refs" => [runner_ref(runner)]}
+          }
+        ]
+      })
+
+    refute result["ok"]
+    assert result["error"]["code"] == "invalid_runbook"
+    refute Repo.exists?(Operation)
+  end
+
   test "all runbook tools hide and refuse a published selector over the MCP blast radius", %{
     conn: conn,
     account: account,
@@ -609,7 +643,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   defp runner_ref(runner),
     do: "#{runner.name}~#{binary_part(Crypto.hash_hex(runner.external_id), 0, 32)}"
 
-  defp action do
+  defp action(args \\ []) do
     %{
       "id" => "operations.health",
       "pack_id" => "operations",
@@ -619,7 +653,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       "summary" => "Checks service health.",
       "description" => "Checks service health.",
       "side_effects" => [],
-      "args" => [],
+      "args" => args,
       "examples" => [],
       "search_terms" => ["health"]
     }

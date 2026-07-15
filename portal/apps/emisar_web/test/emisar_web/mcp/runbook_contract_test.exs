@@ -103,6 +103,11 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
   defp action(runner_ids) do
     %{
       "action_id" => "operations.health",
+      "args_schema" => %{
+        "args" => [
+          %{"name" => "payload", "type" => "string", "required" => false}
+        ]
+      },
       compatible_runner_ids: runner_ids
     }
   end

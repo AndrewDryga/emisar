@@ -15,6 +15,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
     required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
     schema_object(properties, required, false)
+    |> Map.put("x-emisar-maxEncodedBytes", 32_768)
   end
 
   defp schema_object(properties, required, additional_properties?) do
@@ -46,28 +47,81 @@ defmodule EmisarWeb.MCP.ToolSchema do
     |> base_type()
     |> put_if_present(:description, description(arg["description"]))
     |> put_if_present(:default, arg["default"])
-    |> apply_validation(validation_map(arg["validation"]))
+    |> apply_validation(arg["type"], validation_map(arg["validation"]))
   end
 
   defp base_type("string"), do: %{type: "string"}
   defp base_type("integer"), do: %{type: "integer"}
   defp base_type("number"), do: %{type: "number"}
   defp base_type("boolean"), do: %{type: "boolean"}
-  defp base_type("duration"), do: %{type: "string", pattern: "^[0-9]+(ns|us|ms|s|m|h)$"}
+  defp base_type("duration"), do: %{type: "string", format: "duration"}
+  defp base_type("path"), do: %{type: "string", format: "path"}
   defp base_type("string_array"), do: %{type: "array", items: %{type: "string"}}
   defp base_type("integer_array"), do: %{type: "array", items: %{type: "integer"}}
-  # Unknown / missing — widen to string so the schema stays a valid
-  # 2020-12 document. The runner catches misuse with its stricter spec.
-  defp base_type(_), do: %{type: "string"}
+  defp base_type(_), do: %{}
 
-  defp apply_validation(map, %{} = v) do
+  defp apply_validation(map, type, %{} = validation)
+       when type in ["string_array", "integer_array"] do
+    item =
+      map.items
+      |> apply_scalar_validation(validation)
+      |> apply_string_byte_limit(type, validation)
+
     map
-    |> put_if_present(:enum, validation_list(v["enum"] || v["allowed"]))
-    |> put_if_present(:pattern, validation_string(v["pattern"]))
-    |> put_if_present(:minimum, validation_number(v["min"]))
-    |> put_if_present(:maximum, validation_number(v["max"]))
-    |> put_if_present(:minItems, validation_count(v["min_items"]))
-    |> put_if_present(:maxItems, validation_count(v["max_items"]))
+    |> Map.put(:items, item)
+    |> put_if_present(:maxItems, validation_count(validation["max_items"]))
+    |> apply_path_constraints(type, validation)
+  end
+
+  defp apply_validation(map, type, %{} = validation) do
+    map
+    |> apply_scalar_validation(validation)
+    |> apply_string_byte_limit(type, validation)
+    |> apply_duration_bounds(type, validation)
+    |> apply_path_constraints(type, validation)
+  end
+
+  defp apply_scalar_validation(map, validation) do
+    map
+    |> put_if_present(:enum, enum_values(validation))
+    |> put_if_present(:pattern, validation_string(validation["pattern"]))
+    |> put_if_present(:minimum, validation_number(validation["min"]))
+    |> put_if_present(:maximum, validation_number(validation["max"]))
+  end
+
+  defp apply_string_byte_limit(map, type, validation)
+       when type in ["string", "path", "string_array"] do
+    Map.put(map, "x-emisar-maxUtf8Bytes", validation["max_length"] || 32_768)
+  end
+
+  defp apply_string_byte_limit(map, _type, _validation), do: map
+
+  defp apply_duration_bounds(map, "duration", validation) do
+    map
+    |> put_if_present("x-emisar-minDuration", validation_string(validation["min_duration"]))
+    |> put_if_present("x-emisar-maxDuration", validation_string(validation["max_duration"]))
+  end
+
+  defp apply_duration_bounds(map, _type, _validation), do: map
+
+  defp apply_path_constraints(map, type, validation) when type in ["path", "string_array"] do
+    constraints =
+      ~w(allowed_paths denied_paths allowed_prefixes denied_prefixes)
+      |> Map.new(&{&1, validation_list(validation[&1])})
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)
+      |> Map.new()
+
+    put_if_present(map, "x-emisar-pathConstraints", constraints)
+  end
+
+  defp apply_path_constraints(map, _type, _validation), do: map
+
+  defp enum_values(validation) do
+    case {validation_list(validation["enum"]), validation_list(validation["allowed"])} do
+      {nil, allowed} -> allowed
+      {enum, nil} -> enum
+      {enum, allowed} -> Enum.filter(enum, &(&1 in allowed))
+    end
   end
 
   defp validation_map(%{} = validation), do: validation
@@ -95,5 +149,6 @@ defmodule EmisarWeb.MCP.ToolSchema do
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, _key, ""), do: map
   defp put_if_present(map, _key, []), do: map
+  defp put_if_present(map, _key, value) when value == %{}, do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
 end

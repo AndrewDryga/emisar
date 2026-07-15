@@ -279,6 +279,31 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
 
+  test "run_action rejects invalid action arguments before persistence or signature checks", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary")
+    pack_ref = "database@1.0.0/#{@hash}"
+
+    observe!(runner, %{"database" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("database.pause_job", "database", args: job_args())
+    ])
+
+    trust_all!(subject)
+    runner_ref = "db-primary~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+    operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+    body = run_action_body(pack_ref, runner_ref, ~s({"ratio":2}), "Pause the job")
+
+    response = raw_action(conn, body, operation_id)
+
+    refute response["ok"]
+    assert response["error"]["code"] == "invalid_args"
+    assert response["error"]["details"]["fields"]["job_id"]["code"] == "required"
+    assert {:ok, [], _meta} = Runs.list_runs(subject)
+  end
+
   test "native HTTP run_action derives one stable operation without a private header", %{
     conn: conn,
     account: account,

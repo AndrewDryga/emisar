@@ -7,7 +7,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   """
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runners, Runs, Slug}
-  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract}
+  alias EmisarWeb.MCP.{ActionContract, CatalogCursor, ResponseBudget, RunbookContract}
 
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
@@ -402,6 +402,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
          true <- is_map(step["args"]) and byte_size(Jason.encode!(step["args"])) <= 32_768,
          %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == step["pack_ref"])),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == step["action_id"])),
+         :ok <- ActionContract.validate(step["args"], action),
          {:ok, selector, selected_count} <-
            normalize_selector(step["runner_selector"], snapshot, action) do
       {:ok,

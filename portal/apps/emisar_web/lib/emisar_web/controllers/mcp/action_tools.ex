@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   """
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
-  alias EmisarWeb.MCP.{Attestation, RawJSON, Service}
+  alias EmisarWeb.MCP.{ActionContract, Attestation, RawJSON, Service}
 
   @required ~w(action_id pack_ref runner_refs args reason)
   @allowed @required ++ ~w(wait)
@@ -141,7 +141,8 @@ defmodule EmisarWeb.MCP.ActionTools do
   end
 
   defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
-    with {:ok, targets} <- resolve_targets(conn, input),
+    with {:ok, targets, action} <- resolve_targets(conn, input),
+         :ok <- validate_action_args(input.args, action),
          facts <- attestation_facts(conn, input, args_raw, operation_attrs.operation_id),
          {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
          :ok <- require_attestation_for_enforcing(targets, attestation) do
@@ -243,13 +244,26 @@ defmodule EmisarWeb.MCP.ActionTools do
       with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == input.pack_ref)),
            %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == input.action_id)),
            {:ok, targets} <- exact_targets(snapshot.runners, action, input.runner_refs) do
-        {:ok, targets}
+        {:ok, targets, action}
       else
         _ -> target_contract_changed(input)
       end
     else
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot dispatch actions.")}
+    end
+  end
+
+  defp validate_action_args(args, action) do
+    case ActionContract.validate(args, action) do
+      :ok ->
+        :ok
+
+      {:error, issue} ->
+        {:error,
+         error("invalid_args", "Action arguments do not match the trusted contract.", false, %{
+           fields: %{issue.arg => %{code: issue.code, message: issue.message}}
+         })}
     end
   end
 

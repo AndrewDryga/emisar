@@ -9,6 +9,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
   """
 
   alias Emisar.Runbooks
+  alias EmisarWeb.MCP.ActionContract
 
   @max_steps 32
   @max_runners_per_step 16
@@ -73,6 +74,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
          true <- encoded_size(args) <= 32_768,
          %{} = pack <- Map.get(packs_by_ref, pack_ref),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
+         :ok <- ActionContract.validate(args, action),
          {:ok, selector, selected_count} <-
            public_selector(step["runner_selector"], snapshot, action) do
       {:ok,
