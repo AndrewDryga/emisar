@@ -55,6 +55,42 @@ func TestSymlink_NonexistentTargetThroughSymlinkedParent(t *testing.T) {
 	}
 }
 
+func TestSymlink_UnresolvableExistingComponentRejected(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	if err := os.MkdirAll(allowed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	schema := []actionspec.Arg{{
+		Name: "p", Type: actionspec.ArgPath, Required: true,
+		Validation: &actionspec.Validation{AllowedPrefixes: []string{allowed}},
+	}}
+
+	t.Run("dangling symlink", func(t *testing.T) {
+		escape := filepath.Join(allowed, "dangling")
+		if err := os.Symlink(filepath.Join(dir, "missing-outside"), escape); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Validate(schema, map[string]any{"p": filepath.Join(escape, "new.log")}); err == nil {
+			t.Fatal("path through dangling symlink must fail closed")
+		}
+	})
+
+	t.Run("symlink loop", func(t *testing.T) {
+		left := filepath.Join(allowed, "left")
+		right := filepath.Join(allowed, "right")
+		if err := os.Symlink(right, left); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(left, right); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Validate(schema, map[string]any{"p": filepath.Join(left, "new.log")}); err == nil {
+			t.Fatal("path through symlink loop must fail closed")
+		}
+	})
+}
+
 // TestPath_RelativeValueRejectedUnderPathRules — a relative path value never
 // matches an absolute allow/deny list, so without this guard it slips past a
 // denied_prefixes rule and the executor runs it under its CWD, resolving to

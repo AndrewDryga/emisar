@@ -112,10 +112,9 @@ func TestValidate_MinMax(t *testing.T) {
 }
 
 func TestValidate_AllowedPathsDenied(t *testing.T) {
-	// Use non-existent paths so symlink resolution falls back to
-	// filepath.Clean (predictable on every OS — macOS has /var/log
-	// symlinked to /private/var/log which would otherwise change
-	// the resolved path).
+	// Use non-existent leaves so path resolution exercises the deepest existing
+	// parent. Rules and values are resolved the same way, including on macOS
+	// where /var points to /private/var.
 	schema := []actionspec.Arg{{
 		Name: "p", Type: actionspec.ArgPath,
 		Validation: &actionspec.Validation{
@@ -138,8 +137,8 @@ func TestValidate_RootPrefix(t *testing.T) {
 	// A "/" prefix must cover every absolute path, not just the exact
 	// string "/". Otherwise allowed_prefixes:["/"] rejects everything
 	// (fail-closed but surprising) and denied_prefixes:["/"] denies
-	// nothing (fail-open). Non-existent paths keep symlink resolution
-	// deterministic across OSes.
+	// nothing (fail-open). Non-existent leaves keep the test independent of host
+	// filesystem contents.
 	allowed := []actionspec.Arg{{
 		Name: "p", Type: actionspec.ArgPath,
 		Validation: &actionspec.Validation{AllowedPrefixes: []string{"/"}},

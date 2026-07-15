@@ -260,13 +260,28 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 	// Resolve allow/deny lists too so an author writing /var/log on a
 	// host where /var → /private/var still gets a matching comparison
 	// against an input that resolves to /private/var/log/...
-	allowedPaths := resolveMany(val.AllowedPaths)
-	deniedPaths := resolveMany(val.DeniedPaths)
-	allowedPrefixes := resolveMany(val.AllowedPrefixes)
-	deniedPrefixes := resolveMany(val.DeniedPrefixes)
+	allowedPaths, err := resolveMany(val.AllowedPaths)
+	if err != nil {
+		return newError(a.Name, "path", "cannot safely resolve allowed_paths: %v", err)
+	}
+	deniedPaths, err := resolveMany(val.DeniedPaths)
+	if err != nil {
+		return newError(a.Name, "path", "cannot safely resolve denied_paths: %v", err)
+	}
+	allowedPrefixes, err := resolveMany(val.AllowedPrefixes)
+	if err != nil {
+		return newError(a.Name, "path", "cannot safely resolve allowed_prefixes: %v", err)
+	}
+	deniedPrefixes, err := resolveMany(val.DeniedPrefixes)
+	if err != nil {
+		return newError(a.Name, "path", "cannot safely resolve denied_prefixes: %v", err)
+	}
 
 	for _, s := range strs {
-		resolved := resolveForCheck(s)
+		resolved, err := resolveForCheck(s)
+		if err != nil {
+			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
+		}
 		// A relative value never matches an absolute allow/deny list, so it
 		// would slip past the deny checks below and then be run by the
 		// executor under its CWD — resolving to a denied absolute path. Path
@@ -291,15 +306,19 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 	return nil
 }
 
-func resolveMany(in []string) []string {
+func resolveMany(in []string) ([]string, error) {
 	if len(in) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]string, 0, len(in))
 	for _, p := range in {
-		out = append(out, resolveForCheck(p))
+		resolved, err := resolveForCheck(p)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", p, err)
+		}
+		out = append(out, resolved)
 	}
-	return out
+	return out, nil
 }
 
 // resolveForCheck cleans p and resolves symlinks, even when the leaf
@@ -309,31 +328,39 @@ func resolveMany(in []string) []string {
 // before /etc/foo exists: the symlinked parent resolves to /etc, and
 // the resulting /etc/foo fails any allowed_prefixes check pinned to
 // /var/log/.
-func resolveForCheck(p string) string {
+func resolveForCheck(p string) (string, error) {
 	cleaned := filepath.Clean(p)
+	if !filepath.IsAbs(cleaned) {
+		return cleaned, nil
+	}
 	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return resolved
+		return resolved, nil
 	}
 	// Walk up until we find an existing parent. We may walk all the way
 	// to the volume root ("/"); that's fine — its EvalSymlinks is "/".
 	tail := ""
 	parent := cleaned
 	for {
-		if parent == "" || parent == "/" || parent == "." {
-			// No deeper parent. Use cleaned path as-is.
-			return cleaned
-		}
 		if _, err := os.Lstat(parent); err == nil {
-			break
+			resolved, err := filepath.EvalSymlinks(parent)
+			if err != nil {
+				return "", fmt.Errorf("resolve existing component %q: %w", parent, err)
+			}
+			return filepath.Clean(filepath.Join(resolved, tail)), nil
+		} else if !os.IsNotExist(err) && !os.IsPermission(err) {
+			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
 		}
+		// The runner service account may not be able to inspect a root-owned
+		// directory that the action's configured execution identity can access.
+		// Keep walking to a resolvable ancestor; any existing symlink component
+		// we can Lstat still has to pass EvalSymlinks above.
 		tail = filepath.Join(filepath.Base(parent), tail)
-		parent = filepath.Dir(parent)
+		next := filepath.Dir(parent)
+		if next == parent {
+			return "", fmt.Errorf("path %q has no resolvable existing component", cleaned)
+		}
+		parent = next
 	}
-	resolved, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		return cleaned
-	}
-	return filepath.Clean(filepath.Join(resolved, tail))
 }
 
 func isArrayType(t actionspec.ArgType) bool {
