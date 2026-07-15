@@ -411,13 +411,13 @@ runner_specs = [
 ]
 
 # Seed runners through the registration changeset; the public product path is
-# enrollment-key self-registration, not an operator-created runner row. The fixed
-# `external_id` is what the live docker runner adopts — set it on BOTH branches
-# so re-seeding an older DB (rows created before external_id was pinned) still
-# converges to the id the container presents.
+# enrollment-key self-registration, not an operator-created runner row. Seeded
+# names are deterministic, so they are also the stable identity unless a fixture
+# explicitly models a different external id.
 insert_seed_runner = fn account_id, attrs ->
   attrs
   |> Map.put(:account_id, account_id)
+  |> Map.put_new(:external_id, Map.fetch!(attrs, :name))
   |> Runner.Changeset.register()
   |> Repo.insert()
 end
