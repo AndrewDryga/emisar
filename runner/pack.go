@@ -27,9 +27,8 @@ func packCmd() *cobra.Command {
 		Long: `Packs are the runner's action catalog: versioned bundles of action schemas
 this host may execute. Install them from a registry — the public one at
 https://emisar.dev by default, or your own (--registry / EMISAR_PACKS_REGISTRY;
-any static host serving the registry layout works). Installs pin an exact
-content hash, and the runner re-hashes on load, so trust never rests on the
-transport.
+any static host serving the registry layout works). Installs can pin an exact
+content hash with --hash, and the runner always re-hashes packs on load.
 
 Author your own packs and host a private registry with packctl — the same tool
 that builds and publishes the public registry. Guide:

@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -507,6 +508,67 @@ func TestWebsocketDialer401OnRegisterIsUnauthorized(t *testing.T) {
 	_ = fc
 }
 
+func TestWebsocketDialerRefusesAuthenticatedRedirects(t *testing.T) {
+	var redirected bool
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected = true
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("redirect leaked Authorization = %q", got)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"token":"rnrtok-leaked"}`)
+	}))
+	defer destination.Close()
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/runner/register", http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	d := &WebsocketDialer{URL: source.URL, AuthKey: "emkey-auth-secret", ExternalID: "stable-id"}
+	if _, err := d.register(context.Background()); err == nil || !strings.Contains(err.Error(), "307") {
+		t.Fatalf("register redirect error = %v, want refused 307", err)
+	}
+	if redirected {
+		t.Fatal("authenticated registration redirect was followed")
+	}
+}
+
+func TestWebsocketDialerRegistrationResponseIsBoundedAndExact(t *testing.T) {
+	tests := map[string]string{
+		"unknown field":     `{"token":"rnrtok-ok","extra":true}`,
+		"trailing document": `{"token":"rnrtok-ok"} {"token":"other"}`,
+		"whitespace token":  `{"token":" rnrtok-ok"}`,
+		"oversized body":    `{"token":"` + strings.Repeat("x", maxRegistrationResponseBytes) + `"}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, body)
+			}))
+			defer srv.Close()
+
+			d := &WebsocketDialer{URL: srv.URL, AuthKey: "key", ExternalID: "stable-id"}
+			if _, err := d.register(context.Background()); err == nil {
+				t.Fatal("register accepted an invalid response")
+			}
+		})
+	}
+}
+
+func TestWebsocketDialerHTTPClientHasHandshakeDeadline(t *testing.T) {
+	d := &WebsocketDialer{}
+	client := d.portalHTTPClient()
+	if client.Timeout != cloudHandshakeTimeout {
+		t.Fatalf("default HTTP timeout = %s, want %s", client.Timeout, cloudHandshakeTimeout)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "https://other.example", nil)
+	if err := client.CheckRedirect(req, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("redirect policy error = %v, want http.ErrUseLastResponse", err)
+	}
+}
+
 func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 	fc.failWSUpgrade = true
@@ -542,6 +604,35 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	}
 }
 
+func TestWebsocketDialer401SurfacesTokenRemovalFailure(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token.json")
+	cached, _ := json.Marshal(map[string]string{"token": "stale-token"})
+	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := os.Remove(tokenPath); err != nil {
+			t.Error(err)
+		}
+		if err := os.Mkdir(tokenPath, 0o700); err != nil {
+			t.Error(err)
+		}
+		if err := os.WriteFile(filepath.Join(tokenPath, "blocker"), []byte("x"), 0o600); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	d := &WebsocketDialer{URL: srv.URL, TokenPath: tokenPath, ExternalID: "stable-id"}
+	_, err := d.Dial(context.Background())
+	if !errors.Is(err, ErrUnauthorized) || !strings.Contains(err.Error(), "remove cached token") {
+		t.Fatalf("Dial error = %v, want unauthorized removal failure", err)
+	}
+}
+
 func TestWebsocketDialerDerivesWSScheme(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -561,6 +652,12 @@ func TestWebsocketDialerDerivesWSScheme(t *testing.T) {
 		}
 		if got != c.want {
 			t.Errorf("%s: got %s, want %s", c.in, got, c.want)
+		}
+	}
+
+	for _, invalid := range []string{"https:///missing-host", "https://user:pass@emisar.dev", "https://emisar.dev?token=x"} {
+		if _, err := (&WebsocketDialer{URL: invalid}).deriveWSURL(); err == nil {
+			t.Errorf("deriveWSURL accepted invalid base %q", invalid)
 		}
 	}
 }

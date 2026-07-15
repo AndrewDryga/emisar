@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
@@ -189,6 +190,9 @@ func updateOnePack(ctx context.Context, id, dir, registry string, rp registryPac
 // fetchPackIndex GETs the registry's /packs.json and returns it keyed by id.
 func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPack, error) {
 	url := strings.TrimRight(registry, "/") + "/packs.json"
+	if err := config.CheckEndpointScheme(url, false); err != nil {
+		return nil, fmt.Errorf("fetch pack index: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
@@ -196,7 +200,7 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := packRegistryHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch pack index %s: %w", url, err)
 	}
@@ -218,4 +222,21 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 		out[p.ID] = p
 	}
 	return out, nil
+}
+
+func packRegistryHTTPClient() *http.Client {
+	client := &http.Client{Timeout: 15 * time.Second}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if err := config.CheckEndpointScheme(req.URL.String(), false); err != nil {
+			return fmt.Errorf("redirect refused: %w", err)
+		}
+		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return fmt.Errorf("redirect refused HTTPS downgrade")
+		}
+		return nil
+	}
+	return client
 }

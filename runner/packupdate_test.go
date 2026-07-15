@@ -51,6 +51,16 @@ func TestFetchPackIndex_HTTPError(t *testing.T) {
 	}
 }
 
+func TestPackRegistryHTTPClientRefusesHTTPSDowngrade(t *testing.T) {
+	client := packRegistryHTTPClient()
+	httpsRequest, _ := http.NewRequest(http.MethodGet, "https://packs.example/packs.json", nil)
+	httpRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/packs.json", nil)
+
+	if err := client.CheckRedirect(httpRequest, []*http.Request{httpsRequest}); err == nil {
+		t.Fatal("HTTPS to HTTP redirect was accepted")
+	}
+}
+
 func TestUpdateOnePack_VerifiesHashAndReplacesSafely(t *testing.T) {
 	const id = "redis"
 	srcDir := writeSourcePack(t, id)

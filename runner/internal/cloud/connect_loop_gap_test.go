@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -472,6 +473,19 @@ func TestClient_Run_DialFailureContinuesWithBackoff(t *testing.T) {
 	}
 }
 
+func TestClient_Run_UnauthorizedDialFailureIsPermanent(t *testing.T) {
+	d := &unauthorizedDialer{}
+	cli := buildClient(t, d)
+
+	err := cli.Run(context.Background())
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Run error = %v, want ErrUnauthorized", err)
+	}
+	if got := d.calls.Load(); got != 1 {
+		t.Fatalf("unauthorized dial attempts = %d, want 1", got)
+	}
+}
+
 // A connected session that then fails its runner_state send returns
 // connected=true, which RESETS the reconnect backoff to the floor — the dial
 // succeeded, so any prior backoff escalation (from earlier failed dials) was a
@@ -569,6 +583,15 @@ func (c *failAfterNConn) Send(ctx context.Context, msg any) error {
 // portal that stays unreachable.
 type alwaysFailDialer struct {
 	calls atomic.Int64
+}
+
+type unauthorizedDialer struct {
+	calls atomic.Int64
+}
+
+func (d *unauthorizedDialer) Dial(context.Context) (Conn, error) {
+	d.calls.Add(1)
+	return nil, ErrUnauthorized
 }
 
 func (d *alwaysFailDialer) Dial(context.Context) (Conn, error) {

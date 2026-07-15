@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -291,28 +292,38 @@ func (c *Config) validateCloudTransportSecurity() error {
 		// Cleartext to the cloud sends the runner auth key in plaintext.
 		return fmt.Errorf("config: cloud.url %w (set cloud.allow_insecure: true to override)", err)
 	}
+	u, _ := url.Parse(c.Cloud.URL)
+	if u.RawQuery != "" {
+		return errors.New("config: cloud.url must not contain a query")
+	}
 	return nil
 }
 
-// CheckEndpointScheme rejects a cleartext (http/ws) URL to a non-loopback host —
-// it exposes whatever the runner sends and invites MITM. https/wss pass; an
-// unknown scheme is left for the dialer to reject; loopback passes (local dev);
-// any other insecure host needs an explicit allowInsecure opt-in. Shared by
-// cloud.url validation and the pack fetch — a MITM must not be able to serve
-// poisoned pack bytes over plain http (the pack hash is re-verified, so this is
-// defense-in-depth).
+// CheckEndpointScheme validates an HTTP/WebSocket endpoint and rejects
+// cleartext transport to a non-loopback host. Shared by cloud.url validation
+// and pack fetches.
 func CheckEndpointScheme(rawURL string, allowInsecure bool) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("%q is not a valid URL: %w", rawURL, err)
 	}
-	if u.Scheme != "http" && u.Scheme != "ws" {
-		return nil
+	if u.User != nil {
+		return errors.New("endpoint URL must not contain credentials")
 	}
-	if allowInsecure || isLoopbackHost(u.Hostname()) {
-		return nil
+	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" || u.Fragment != "" {
+		return fmt.Errorf("%q must be an absolute URL with a host and no fragment", rawURL)
 	}
-	return fmt.Errorf("%q uses cleartext %s to a non-loopback host; use https", rawURL, u.Scheme)
+	switch strings.ToLower(u.Scheme) {
+	case "https", "wss":
+		return nil
+	case "http", "ws":
+		if allowInsecure || isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("%q uses cleartext %s to a non-loopback host; use https", rawURL, u.Scheme)
+	default:
+		return fmt.Errorf("%q uses unsupported scheme %q (want http/https/ws/wss)", rawURL, u.Scheme)
+	}
 }
 
 // isLoopbackHost reports whether host is localhost or a loopback IP, the

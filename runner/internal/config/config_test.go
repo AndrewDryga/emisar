@@ -272,7 +272,7 @@ func TestValidate_RejectsWrongSchemaVersion(t *testing.T) {
 // (config.go CheckEndpointScheme) directly — the function reused by both
 // cloud.url validation and the pack fetch:
 //
-//	-: an unknown scheme passes this gate (left for the dialer).
+//	-: unsupported and hostless URLs fail before a transport is opened.
 //	-: localhost is matched case-insensitively as loopback.
 //
 // https/wss, loopback cleartext, and the allow_insecure opt-in are also
@@ -287,9 +287,12 @@ func TestCheckEndpointScheme(t *testing.T) {
 	}{
 		{"https passes", "https://cloud.emisar.dev/runner", false, false},
 		{"wss passes", "wss://cloud.emisar.dev/runner", false, false},
-		// schemes other than http/ws are not this gate's concern.
-		{"unknown scheme passes", "foo://prod-host", false, false},
-		{"empty url passes", "", false, false},
+		{"unknown scheme rejected", "foo://prod-host", false, true},
+		{"empty url rejected", "", false, true},
+		{"hostless rejected", "https:///runner", false, true},
+		{"credentials rejected", "https://user:secret@cloud.emisar.dev", false, true},
+		{"fragment rejected", "https://cloud.emisar.dev/#token", false, true},
+		{"https query accepted for signed fetch URL", "https://packs.example/pack.tgz?sig=abc", false, false},
 		// any casing of localhost is loopback.
 		{"ws LOCALHOST loopback", "ws://LOCALHOST:4000", false, false},
 		{"http LocalHost loopback", "http://LocalHost:4000", false, false},
@@ -310,5 +313,12 @@ func TestCheckEndpointScheme(t *testing.T) {
 				t.Fatalf("unexpected error for %q (allow_insecure=%v): %v", c.url, c.allowInsecure, err)
 			}
 		})
+	}
+}
+
+func TestValidateCloudTransportSecurityRejectsQuery(t *testing.T) {
+	cfg := &Config{Cloud: Cloud{URL: "https://cloud.emisar.dev?token=secret"}}
+	if err := cfg.validateCloudTransportSecurity(); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("query-bearing cloud URL error = %v, want sanitized rejection", err)
 	}
 }

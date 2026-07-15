@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/coder/websocket"
 )
@@ -75,6 +76,12 @@ type WebsocketDialer struct {
 // upgrade comes back 401. Callers should fail closed.
 var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked auth key / token)")
 
+const (
+	cloudHandshakeTimeout        = 10 * time.Second
+	maxRegistrationResponseBytes = 4 << 10
+	maxRunnerTokenBytes          = 512
+)
+
 // Dial implements cloud.Dialer. It ensures a token exists (calling
 // register if needed), then opens the websocket and returns a wrapper
 // satisfying cloud.Conn.
@@ -105,15 +112,20 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 
 	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: headers,
-		HTTPClient: d.HTTPClient,
+		HTTPClient: d.portalHTTPClient(),
 	})
 
 	if err != nil {
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			// Token was rejected — drop the file so the next attempt
+			// Token was rejected — drop the file so the next process start
 			// re-runs /runner/register (in case the old token was rotated
 			// or revoked).
-			_ = os.Remove(d.TokenPath)
+			if removeErr := os.Remove(d.TokenPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("%w: ws upgrade returned 401; remove cached token: %v", ErrUnauthorized, removeErr)
+			}
 			return nil, fmt.Errorf("%w: ws upgrade returned 401", ErrUnauthorized)
 		}
 		return nil, fmt.Errorf("cloud: ws dial failed: %w", err)
@@ -278,9 +290,8 @@ func keyFingerprint(authKey string) string {
 
 // -- Register --------------------------------------------------------
 
-// serverErrorMessage pulls a human-readable message out of an error response
-// body — preferring the JSON `message` field, then `error`, then raw text —
-// and bounds the read so a stray HTML error page can't flood the log.
+// serverErrorMessage pulls a bounded human-readable message from a JSON error
+// response. Arbitrary HTML/text is not copied into runner logs.
 func serverErrorMessage(body io.Reader) string {
 	raw, err := io.ReadAll(io.LimitReader(body, 4096))
 	if err != nil || len(raw) == 0 {
@@ -298,7 +309,7 @@ func serverErrorMessage(body io.Reader) string {
 			return parsed.Error
 		}
 	}
-	return strings.TrimSpace(string(raw))
+	return ""
 }
 
 func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
@@ -308,10 +319,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		return agentToken{}, errors.New("cloud: external id must be 1-255 characters without surrounding whitespace")
 	}
 
-	client := d.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
+	client := d.portalHTTPClient()
 
 	registerURL, err := httpURL(d.URL, "/runner/register")
 	if err != nil {
@@ -343,8 +351,8 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return agentToken{}, fmt.Errorf("%w: /runner/register returned 401", ErrUnauthorized)
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return agentToken{}, fmt.Errorf("%w: /runner/register returned %d", ErrUnauthorized, resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
@@ -356,16 +364,28 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		return agentToken{}, fmt.Errorf("cloud: register returned %d", resp.StatusCode)
 	}
 
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistrationResponseBytes+1))
+	if err != nil {
+		return agentToken{}, fmt.Errorf("cloud: register response read: %w", err)
+	}
+	if len(raw) > maxRegistrationResponseBytes {
+		return agentToken{}, fmt.Errorf("cloud: register response exceeds %d bytes", maxRegistrationResponseBytes)
+	}
+
 	var parsed struct {
 		Token string `json:"token"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&parsed); err != nil {
 		return agentToken{}, fmt.Errorf("cloud: register response decode: %w", err)
 	}
-
-	if parsed.Token == "" {
-		return agentToken{}, errors.New("cloud: register returned empty token")
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return agentToken{}, errors.New("cloud: register response has trailing JSON")
+	}
+	if parsed.Token == "" || parsed.Token != strings.TrimSpace(parsed.Token) ||
+		!utf8.ValidString(parsed.Token) || len(parsed.Token) > maxRunnerTokenBytes {
+		return agentToken{}, errors.New("cloud: register returned an invalid token")
 	}
 
 	return agentToken{Raw: parsed.Token}, nil
@@ -374,9 +394,9 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 // -- URL derivation --------------------------------------------------
 
 func (d *WebsocketDialer) deriveWSURL() (string, error) {
-	u, err := url.Parse(d.URL)
+	u, err := parsePortalBaseURL(d.URL)
 	if err != nil {
-		return "", fmt.Errorf("cloud: bad URL %q: %w", d.URL, err)
+		return "", err
 	}
 
 	switch u.Scheme {
@@ -401,7 +421,7 @@ func (d *WebsocketDialer) deriveWSURL() (string, error) {
 // mirrors deriveWSURL in reverse so both http(s):// and ws(s):// configs
 // register correctly.
 func httpURL(base, path string) (string, error) {
-	u, err := url.Parse(base)
+	u, err := parsePortalBaseURL(base)
 	if err != nil {
 		return "", err
 	}
@@ -417,6 +437,34 @@ func httpURL(base, path string) (string, error) {
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + path
 	return u.String(), nil
+}
+
+func parsePortalBaseURL(raw string) (*url.URL, error) {
+	if err := config.CheckEndpointScheme(raw, true); err != nil {
+		return nil, fmt.Errorf("cloud: invalid base URL: %w", err)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("cloud: invalid base URL: %w", err)
+	}
+	if u.RawQuery != "" {
+		return nil, errors.New("cloud: base URL must not contain a query")
+	}
+	return u, nil
+}
+
+func (d *WebsocketDialer) portalHTTPClient() *http.Client {
+	client := http.Client{}
+	if d.HTTPClient != nil {
+		client = *d.HTTPClient
+	}
+	if client.Timeout <= 0 {
+		client.Timeout = cloudHandshakeTimeout
+	}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &client
 }
 
 func (d *WebsocketDialer) logger() *slog.Logger {

@@ -135,3 +135,18 @@ func TestFetch_RefusesCleartextRemoteSource(t *testing.T) {
 		t.Fatalf("expected a cleartext-scheme error, got: %v", err)
 	}
 }
+
+func TestSecureFetchClientRefusesHTTPSDowngrade(t *testing.T) {
+	client := secureFetchClient(&http.Client{})
+	httpsRequest, _ := http.NewRequest(http.MethodGet, "https://packs.example/pack.tar.gz", nil)
+	httpRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/pack.tar.gz", nil)
+
+	if err := client.CheckRedirect(httpRequest, []*http.Request{httpsRequest}); err == nil {
+		t.Fatal("HTTPS to HTTP redirect was accepted")
+	}
+
+	loopbackRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/start", nil)
+	if err := client.CheckRedirect(httpRequest, []*http.Request{loopbackRequest}); err != nil {
+		t.Fatalf("loopback HTTP redirect error = %v", err)
+	}
+}

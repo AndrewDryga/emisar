@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,8 +31,8 @@ const (
 // pack's files at its root (pack.yaml, actions/…) ready for LoadOne. The
 // caller MUST invoke cleanup when done to remove the temp tree.
 //
-// The HTTP client is the caller's (so timeouts/transport are theirs to
-// set); a nil client defaults to a 30s-timeout client.
+// The HTTP transport and timeout are the caller's; redirect security is always
+// enforced. A nil client defaults to a 30s timeout.
 func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string, cleanup func(), err error) {
 	// Defense-in-depth: never pull pack bytes over cleartext http from a remote
 	// host (a MITM could serve poisoned bytes — the pack hash is re-verified, but
@@ -43,6 +44,7 @@ func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string,
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
+	client = secureFetchClient(client)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srcURL, nil)
 	if err != nil {
@@ -72,6 +74,23 @@ func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string,
 		return "", nil, fmt.Errorf("packs: extract %s: %w", srcURL, err)
 	}
 	return tmp, cleanup, nil
+}
+
+func secureFetchClient(base *http.Client) *http.Client {
+	client := *base
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("packs: stopped after 10 redirects")
+		}
+		if err := config.CheckEndpointScheme(req.URL.String(), false); err != nil {
+			return fmt.Errorf("packs: redirect refused: %w", err)
+		}
+		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("packs: redirect refused HTTPS downgrade")
+		}
+		return nil
+	}
+	return &client
 }
 
 // extractTarGz unpacks a gzip-compressed tar stream into dest. It is the

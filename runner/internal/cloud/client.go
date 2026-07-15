@@ -216,6 +216,9 @@ func (c *Client) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return c.shutdown(ctx.Err())
 		}
+		if errors.Is(err, ErrUnauthorized) {
+			return c.shutdown(err)
+		}
 		// A session that actually connected clears the backoff: the drop
 		// that ended it is a fresh failure, not a continuation of the
 		// reconnect storm. Without this the backoff ratchets up across
