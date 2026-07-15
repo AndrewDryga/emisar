@@ -127,6 +127,9 @@ func TestJSONLSink_BackupRotationFailureKeepsActiveChain(t *testing.T) {
 	if string(after) != string(original) {
 		t.Fatal("failed rotation modified the active log")
 	}
+	if obstruction, err := os.ReadFile(filepath.Join(path+".2", "obstruction")); err != nil || string(obstruction) != "x" {
+		t.Fatalf("failed backup replacement modified its destination: body=%q err=%v", obstruction, err)
+	}
 
 	if err := os.RemoveAll(path + ".2"); err != nil {
 		t.Fatal(err)
@@ -182,6 +185,9 @@ func TestJSONLSink_ActiveRotationFailureKeepsActiveChain(t *testing.T) {
 	}
 	if string(after) != string(original) {
 		t.Fatal("failed rotation modified the active log")
+	}
+	if obstruction, err := os.ReadFile(filepath.Join(path+".1", "obstruction")); err != nil || string(obstruction) != "x" {
+		t.Fatalf("failed active replacement modified its destination: body=%q err=%v", obstruction, err)
 	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)

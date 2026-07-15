@@ -209,7 +209,9 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	if err != nil {
 		return err
 	}
-	if info.Size()+incoming < s.maxSizeBytes {
+	// Never rotate an empty active file: the incoming event must live somewhere,
+	// even when one line is larger than the configured threshold.
+	if info.Size() == 0 || info.Size()+incoming < s.maxSizeBytes {
 		return nil
 	}
 	if err := s.f.Close(); err != nil {
@@ -252,12 +254,15 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 		return s.reopenAfterRotationFailure(openErr)
 	}
 	s.f = f
+	s.lastHash = ""
+	if err := fsutil.SyncDirectory(filepath.Dir(s.path)); err != nil {
+		return fmt.Errorf("audit: sync rotation directory: %w", err)
+	}
 	// A rotated file begins a fresh per-file hash chain: the next event
 	// becomes its head with prev_hash="". Without this reset the new
 	// file's first line would carry a backward link to the rotated-away
 	// file, which VerifyChain (per-file, expecting "" at the start) reads
 	// as a tamper break — false-alarming on every rotated log.
-	s.lastHash = ""
 	return nil
 }
 
@@ -267,6 +272,9 @@ func (s *JSONLSink) reopenAfterRotationFailure(rotationErr error) error {
 		return errors.Join(rotationErr, fmt.Errorf("audit: reopen unchanged jsonl: %w", err))
 	}
 	s.f = f
+	if err := fsutil.SyncDirectory(filepath.Dir(s.path)); err != nil {
+		return errors.Join(rotationErr, fmt.Errorf("audit: sync recovered jsonl directory: %w", err))
+	}
 	return rotationErr
 }
 
@@ -281,9 +289,6 @@ func renameReplacingIfPresent(from, to string) error {
 }
 
 func renameReplacing(from, to string) error {
-	if err := os.Remove(to); err != nil && !os.IsNotExist(err) {
-		return err
-	}
 	return os.Rename(from, to)
 }
 
