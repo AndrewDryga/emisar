@@ -296,7 +296,15 @@ FAILING_MV
       echo "two-target failure injection unexpectedly succeeded" >&2
       exit 1
     fi
+    set +e
     PATH="$tmp/failing-mv:$PATH" rollback_installations 2>>"$tmp/rollback.log"
+    rollback_status=$?
+    set -e
+    if [ "$rollback_status" -ne 0 ]; then
+      cat "$tmp/rollback.log" >&2
+      echo "two-target rollback failed" >&2
+      exit 1
+    fi
     test "$(cat "$tx_a/emisar-mcp")" = old-a
     test "$(cat "$tx_b/emisar-mcp")" = old-b
     test "$transaction_active" -eq 0

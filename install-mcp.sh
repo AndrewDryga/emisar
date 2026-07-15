@@ -275,7 +275,9 @@ rollback_installations() {
         done <<<"${backup_paths}"
       fi
       if [ -e "${bin_backup}" ]; then
-        if ! mv -f "${bin_backup}" "${bin_dst}"; then
+        if [ "${bin_backup}" -ef "${bin_dst}" ]; then
+          rm -f "${bin_backup}"
+        elif ! mv -f "${bin_backup}" "${bin_dst}"; then
           warn "could not restore ${bin_dst} from ${bin_backup}"
           failed=1
         fi
