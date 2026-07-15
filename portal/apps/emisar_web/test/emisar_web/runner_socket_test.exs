@@ -313,10 +313,19 @@ defmodule EmisarWeb.RunnerSocketTest do
          %{runner: runner, token: token} do
       assert {:ok, _state} = RunnerSocket.init(%{token: token, runner: runner})
 
-      assert {:stop, :normal, {1013, message}, %{rejected?: true}} =
+      assert {:stop, :normal, {1013, message}, %{rejected?: true} = rejected_state} =
                RunnerSocket.init(%{token: token, runner: runner})
 
       assert message =~ "cloned data directory"
+
+      # Bandit may already have buffered the runner's first frame when init
+      # rejects the upgrade. The close must win without invoking callbacks
+      # that expect a fully connected state.
+      assert {:stop, :normal, ^rejected_state} =
+               RunnerSocket.handle_in({"{}", text()}, rejected_state)
+
+      assert {:stop, :normal, ^rejected_state} =
+               RunnerSocket.handle_info(:buffered_after_rejection, rejected_state)
     end
   end
 

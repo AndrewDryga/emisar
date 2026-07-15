@@ -81,6 +81,8 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   @impl true
+  def handle_in(_frame, %{rejected?: true} = state), do: {:stop, :normal, state}
+
   def handle_in({raw, [opcode: :text]}, state) do
     if connection_owner?(state) do
       case Jason.decode(raw) do
@@ -108,6 +110,8 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   @impl true
+  def handle_info(_message, %{rejected?: true} = state), do: {:stop, :normal, state}
+
   def handle_info({:cloud_to_runner, expected_generation, msg}, state) do
     cond do
       expected_generation != state.connection_generation ->
