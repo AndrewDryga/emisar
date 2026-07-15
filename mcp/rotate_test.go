@@ -100,26 +100,6 @@ func TestCredentialStore_NamespacesStateByCanonicalEndpointOrigin(t *testing.T) 
 	}
 }
 
-func TestCredentialStore_RejectsUnboundV1State(t *testing.T) {
-	current := testAPIKey(26)
-	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
-	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	legacy := `{"version":1,"bootstrap_prefix":"` + keyPrefix(current) +
-		`","current":"` + current + `"}`
-	if err := os.WriteFile(store.legacyPath, []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := store.load(current); err == nil || !strings.Contains(err.Error(), "unbound v1") {
-		t.Fatalf("unbound legacy state error = %v", err)
-	}
-	if _, err := os.Stat(store.path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("legacy refusal created endpoint-bound state: %v", err)
-	}
-}
-
 func TestNewRotationStore_BypassesNonRotatableBearers(t *testing.T) {
 	for _, bearer := range []string{
 		"emo-oauth-access-token",

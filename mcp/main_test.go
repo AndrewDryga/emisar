@@ -31,6 +31,16 @@ import (
 // pending-approval messages) now live in the portal, so the tests here
 // only pin the proxy contract, not any tool-output formatting.
 
+func (b *bridge) forward(frame []byte) ([]byte, error) {
+	return b.forwardRequestContext(
+		context.Background(), frame, parseRequestMeta(frame), requestHeaders{},
+	)
+}
+
+func (b *bridge) idempotencyKey(frame []byte) string {
+	return b.idempotencyKeyFor(parseRequestMeta(frame))
+}
+
 // -- idempotencyKey: parses `id` out of a raw JSON-RPC frame ---------
 
 func TestIdempotencyKey_StableForSameID(t *testing.T) {

@@ -142,9 +142,10 @@ key expiring within 7 days, rotation uses a crash-safe two-phase exchange:
 
 1. The bridge generates a successor with the operating system CSPRNG and
    durably records it as pending before making the request.
-2. `initialize` sends only the successor's lookup prefix and SHA-256 digest.
-   The portal atomically installs those exact values and acknowledges the
-   digest. A retry of the same proposal returns the same acknowledgement.
+2. Authenticated requests send only the successor's lookup prefix and SHA-256
+   digest. The portal atomically installs those exact values once the key enters
+   its rotation window and acknowledges the digest. Retries use the same
+   proposal and receive the same acknowledgement.
 3. The bridge durably promotes the pending key before using it. The old key
    remains usable until the successor's first authenticated request proves the
    swap, at which point the portal retires the replaced key chain.
@@ -166,14 +167,14 @@ that endpoint-bound bootstrap prefix to the current secret, and live bridge
 processes refresh peer promotions before every request. A sandboxed read-only
 bridge keeps using its active key; only after the portal rejects that key does it
 retry a validated current or pending successor from the state file. The retry
-uses the same request and idempotency identity. Corrupt state and the old
-endpoint-unbound v1 format are startup errors rather than reasons to send a
-stored secret to an unverified origin. If no durable config directory is
-available, the bridge continues with the configured key but does not offer
-automatic rotation. Container users must mount `/config` persistently. OAuth
-and arbitrary Bearer tokens bypass local rotation state; remote connectors,
-non-expiring quick-connect keys, and audit-export tokens do not auto-rotate.
-Operators can rotate a key manually from the Agents page at any time.
+uses the same request and idempotency identity. Corrupt endpoint-bound state is
+a startup error rather than a reason to send a stored secret to an unverified
+origin. If no durable config directory is available, the bridge continues with
+the configured key but does not offer automatic
+rotation. Container users must mount `/config` persistently. OAuth and arbitrary
+Bearer tokens bypass local rotation state; remote connectors, non-expiring
+quick-connect keys, and audit-export tokens do not auto-rotate. Operators can
+rotate a key manually from the Agents page at any time.
 
 ## Development
 

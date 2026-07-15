@@ -899,16 +899,6 @@ func onlyJSONWhitespace(line []byte) bool {
 	return true
 }
 
-// forward POSTs one JSON-RPC frame to the portal. It exists as a small test and
-// call-site convenience; serve parses metadata once and calls forwardRequest.
-func (b *bridge) forward(frame []byte) ([]byte, error) {
-	return b.forwardRequest(frame, parseRequestMeta(frame))
-}
-
-func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) {
-	return b.forwardRequestContext(context.Background(), frame, meta, requestHeaders{})
-}
-
 func (b *bridge) forwardRequestContext(
 	ctx context.Context,
 	frame []byte,
@@ -1214,17 +1204,6 @@ func readCappedBody(r io.Reader, limit int) ([]byte, error) {
 		return nil, fmt.Errorf("portal response exceeds %d bytes", limit)
 	}
 	return body, nil
-}
-
-// idempotencyKey derives a bounded, stable token from the session plus the raw,
-// type-tagged JSON-RPC id. Re-sends collapse to one run, while numeric 7 and
-// string "7" remain distinct requests. Notifications and null ids get no key.
-//
-// Hashing also keeps arbitrarily long legal string ids below the portal's
-// Idempotency-Key limit. We decode only the top-level id; tool payloads remain
-// opaque to this transport layer.
-func (b *bridge) idempotencyKey(frame []byte) string {
-	return b.idempotencyKeyFor(parseRequestMeta(frame))
 }
 
 func (b *bridge) idempotencyKeyFor(meta requestMeta) string {

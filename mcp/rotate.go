@@ -51,7 +51,6 @@ type credentialFileOps struct {
 
 type credentialStore struct {
 	path            string
-	legacyPath      string
 	endpointOrigin  string
 	bootstrapPrefix string
 	random          io.Reader
@@ -106,13 +105,10 @@ func newCredentialStore(endpointOrigin, bootstrapPrefix string) (*credentialStor
 
 func newCredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *credentialStore {
 	digest := sha256.Sum256([]byte(endpointOrigin + "\x00" + bootstrapPrefix))
-	legacyDigest := sha256.Sum256([]byte(bootstrapPrefix))
 	filename := hex.EncodeToString(digest[:]) + ".json"
-	legacyFilename := hex.EncodeToString(legacyDigest[:]) + ".json"
 	dir := filepath.Join(configDir, "emisar", "credentials")
 	return &credentialStore{
 		path:            filepath.Join(dir, filename),
-		legacyPath:      filepath.Join(dir, legacyFilename),
 		endpointOrigin:  endpointOrigin,
 		bootstrapPrefix: bootstrapPrefix,
 		random:          rand.Reader,
@@ -126,13 +122,6 @@ func (store *credentialStore) load(fallback string) (credentialState, error) {
 	}
 	data, err := store.ops.readFile(store.path)
 	if errors.Is(err, os.ErrNotExist) {
-		if _, legacyErr := os.Lstat(store.legacyPath); legacyErr == nil {
-			return credentialState{}, errors.New(
-				"unbound v1 credential state exists; set EMISAR_API_KEY to that file's current key, then remove the v1 file before retrying",
-			)
-		} else if !errors.Is(legacyErr, os.ErrNotExist) {
-			return credentialState{}, fmt.Errorf("inspect unbound v1 credential state: %w", legacyErr)
-		}
 		state := credentialState{
 			Version:         credentialStateVersion,
 			EndpointOrigin:  store.endpointOrigin,
