@@ -266,18 +266,11 @@ func TestEventsTailCmd_ShortAndEmptyLog(t *testing.T) {
 	})
 }
 
-// `events tail` errors when the JSONL file can't be opened — here the path
-// is not a readable file. The command surfaces `open jsonl: …` rather than
-// printing garbage.
+// `events tail` surfaces a missing JSONL file instead of printing garbage.
 func TestEventsTailCmd_FileOpenFailure(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
-	// Point jsonl_path at a directory so the read-only open fails.
-	asDir := filepath.Join(dir, "events.jsonl")
-	if err := os.MkdirAll(asDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
 	flagConfig = writeMinimalConfig(t, dir, packDir)
 
 	cmd := eventsTailCmd()

@@ -184,9 +184,10 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	}()
 
 	runErr := cmd.Wait()
-	if errors.Is(runErr, exec.ErrWaitDelay) {
-		// The leader exited but a descendant retained an output descriptor.
-		// WaitDelay closed the Cmd-owned pipe; remove the surviving group too.
+	contextErr := tctx.Err()
+	if contextErr != nil || errors.Is(runErr, exec.ErrWaitDelay) {
+		// The leader may exit before descendants that ignored SIGTERM. Remove
+		// the group synchronously, before finish suppresses the delayed kill.
 		lifecycle.signal(syscall.SIGKILL)
 	}
 	lifecycle.finish()
@@ -197,8 +198,8 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	wg.Wait()
 	elapsed := time.Since(start)
 
-	timedOut := errors.Is(tctx.Err(), context.DeadlineExceeded)
-	cancelled := errors.Is(tctx.Err(), context.Canceled)
+	timedOut := errors.Is(contextErr, context.DeadlineExceeded)
+	cancelled := errors.Is(contextErr, context.Canceled)
 
 	res.Stdout = string(outResult.captured)
 	res.Stderr = string(errResult.captured)
@@ -221,9 +222,6 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 			first = errErr
 		}
 		res.StartError = first.Error()
-	case runErr == nil:
-		res.Status = StatusOK
-		res.ExitCode = 0
 	case timedOut:
 		res.Status = StatusTimeout
 		var exitErr *exec.ExitError
@@ -240,6 +238,9 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		} else {
 			res.ExitCode = -1
 		}
+	case runErr == nil:
+		res.Status = StatusOK
+		res.ExitCode = 0
 	default:
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {

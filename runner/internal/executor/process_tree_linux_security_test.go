@@ -47,6 +47,39 @@ func TestExecutor_CancellationKillsDescendantProcessGroup(t *testing.T) {
 	waitForProcessExit(t, childPID, 3*time.Second)
 }
 
+func TestExecutor_CancellationKillsDescendantAfterLeaderExits(t *testing.T) {
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			if _, err := os.Stat(pidPath); err == nil {
+				time.Sleep(100 * time.Millisecond)
+				cancel()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	res, err := New().Execute(ctx, Plan{
+		Binary: "/bin/sh",
+		Argv: []string{"-c", fmt.Sprintf(
+			`trap 'exit 0' TERM; (trap '' TERM; exec >/dev/null 2>&1; while :; do sleep 1; done) & echo $! > %q; while :; do sleep 1; done`,
+			pidPath,
+		)},
+		Limits:      Limits{Timeout: 10 * time.Second, MaxStdoutBytes: 1024, MaxStderrBytes: 1024},
+		CancelGrace: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusCancelled {
+		t.Fatalf("status = %s, want cancelled", res.Status)
+	}
+	waitForProcessExit(t, readProcessID(t, pidPath), 3*time.Second)
+}
+
 func TestExecutor_DescendantHoldingOutputPipeCannotHangWait(t *testing.T) {
 	pidPath := filepath.Join(t.TempDir(), "child.pid")
 	start := time.Now()
