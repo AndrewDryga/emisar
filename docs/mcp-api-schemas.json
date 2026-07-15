@@ -786,7 +786,7 @@
     },
     "get_operation": {
       "title": "Get operation",
-      "description": "Recover one exact bridge mutation by operation_id after cancellation, transport ambiguity, or process restart. Returns a typed action, runbook, or draft continuation without repeating the mutation.",
+      "description": "Look up one exact mutation by an operation_id already returned or recorded by the client. Returns a typed action, runbook, or draft continuation without repeating the mutation.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
       "inputSchema": {
         "type": "object",

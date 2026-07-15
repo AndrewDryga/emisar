@@ -44,63 +44,12 @@ Grok client configuration shapes before release. Run `emisar-mcp --help` for
 the registration commands and JSON paths. Client certification is
 version-specific transport evidence; authorization remains server-side.
 
-The fixed twelve-tool catalog keeps `tools/list` near 14 KiB so clients load the
-full surface. Against a local portal, Claude Code, Codex, Gemini CLI, and Grok
-CLI connect to the bridge and Grok's MCP doctor reports all twelve tools after
-handshake. Read and mutation authorization still happen only on the portal.
+The portal owns tools, schemas, authorization, policy, approvals, and response
+shapes. Their normative contract and examples live in
+[`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md); changing that surface does not
+require a bridge release.
 
-## Auth
-
-Two credential types, both hashed at rest:
-
-- **API keys** — minted on the portal (the Agents page auto-mints one
-  so the snippet renders pre-filled; it stays hidden from lists until
-  an LLM actually authenticates with it).
-- **OAuth** — full RFC 8414 / RFC 9728 metadata + dynamic client
-  registration (`POST /oauth/register`), authorization with a human
-  consent screen, PKCE **S256 only**, token exchange at
-  `POST /oauth/token`. Access tokens (`emo-*`) resolve to a backing
-  API key that carries scope + attribution.
-
-Scopes: `actions:read` (catalog), `actions:execute` (dispatch),
-`audit:read` (the NDJSON export at `GET /api/audit`). Per-user runner
-ACLs additionally narrow which runners a key can even see.
-
-## Tool surface
-
-`tools/list` is fixed at twelve tools regardless of fleet or pack size:
-
-- `list_packs`, `list_runners`, `find_actions`, and `get_action` discover the
-  current trusted catalog without embedding hundreds of schemas in tool setup.
-- `run_action` dispatches one exact action contract to explicit generation-bound
-  runner references.
-- `get_operation`, `wait_for_run`, and `recent_runs` recover ambiguous mutations,
-  wait for state changes, and inspect scoped history.
-- `list_runbooks`, `get_runbook`, `execute_runbook`, and
-  `create_runbook_draft` expose the governed runbook workflow.
-
-The discovery flow is `find_actions` -> `get_action` -> `run_action`.
-`get_action` returns the exact argument schema and compatible runners;
-`run_action` revalidates scope, connectivity, pack trust, schema, policy, and
-approval against current state. Defaults are 15 results, with authenticated
-cursors for additional pages. See [`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md)
-for the complete contract.
-
-Every action call must include a `reason` string — it's recorded on
-the run and shown to operators in the audit log.
-
-Catalog reads are point-in-time observations. `get_action` and `run_action`
-re-resolve current runner scope, connectivity, descriptor parity, and pack
-trust; a stale contract returns one generic refresh continuation without
-disclosing which hidden fact changed.
-
-## Dispatch semantics
-
-A `tools/call` flows: scope check → policy evaluation (risk-tier
-defaults + per-action overrides, default-deny) → grant fast-path
-(an unexpired standing approval matching key/action/runner/args) →
-either immediate dispatch, an approval request (`pending_approval`
-content tells the LLM to wait or escalate), or a refusal.
+## Transport identity and recovery
 
 For every admitted `tools/call`, the bridge derives a bounded operation ID from
 its private process nonce and monotonically increasing request sequence. The
@@ -111,9 +60,10 @@ request and credential lineage. An identical retry returns the original
 resource; changed facts or a different mutation tool conflict. Distinct
 admissions, including sequential reuse of the same JSON-RPC id, and different
 bridge processes never alias. `get_operation` is the recovery path after an
-ambiguous transport failure: the bridge's correlated JSON-RPC error includes
-the operation ID and a typed `get_operation` continuation. Read handlers ignore
-the header.
+ambiguous mutation when the client has the operation ID. A correlated transport
+error includes that ID but does not guess whether the failed call was a durable
+mutation; server instructions describe when to use `get_operation`. Reads retry
+normally. Portal read handlers ignore the private operation header.
 
 Request IDs may be reused after completion; only concurrent duplicates are
 rejected. The bridge permits eight in-flight requests within a 1 MiB aggregate
@@ -196,7 +146,9 @@ The module gate is:
 cd mcp
 gofmt -l -s .
 go vet ./...
-go mod tidy && git diff --exit-code -- go.mod go.sum
+go mod tidy
+test ! -e go.sum
+git diff --exit-code -- go.mod
 go test -race -count=1 ./...
 ```
 

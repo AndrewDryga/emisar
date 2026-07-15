@@ -781,14 +781,8 @@ func rpcErrorFrame(meta requestMeta, code int, message string) []byte {
 	return rpcErrorFrameWithData(meta, code, message, nil)
 }
 
-type operationRecoveryData struct {
+type transportErrorData struct {
 	OperationID string `json:"operation_id"`
-	Next        struct {
-		Tool      string `json:"tool"`
-		Arguments struct {
-			OperationID string `json:"operation_id"`
-		} `json:"arguments"`
-	} `json:"next"`
 }
 
 func transportErrorFrame(meta requestMeta, operationID string) []byte {
@@ -796,9 +790,7 @@ func transportErrorFrame(meta requestMeta, operationID string) []byte {
 		return rpcErrorFrame(meta, -32603, "upstream transport error")
 	}
 
-	data := &operationRecoveryData{OperationID: operationID}
-	data.Next.Tool = "get_operation"
-	data.Next.Arguments.OperationID = operationID
+	data := &transportErrorData{OperationID: operationID}
 	return rpcErrorFrameWithData(meta, -32603, "upstream transport error", data)
 }
 
@@ -806,23 +798,23 @@ func rpcErrorFrameWithData(
 	meta requestMeta,
 	code int,
 	message string,
-	data *operationRecoveryData,
+	data *transportErrorData,
 ) []byte {
 	frame, err := json.Marshal(struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
 		Error   struct {
-			Code    int                    `json:"code"`
-			Message string                 `json:"message"`
-			Data    *operationRecoveryData `json:"data,omitempty"`
+			Code    int                 `json:"code"`
+			Message string              `json:"message"`
+			Data    *transportErrorData `json:"data,omitempty"`
 		} `json:"error"`
 	}{
 		JSONRPC: "2.0",
 		ID:      meta.responseID(),
 		Error: struct {
-			Code    int                    `json:"code"`
-			Message string                 `json:"message"`
-			Data    *operationRecoveryData `json:"data,omitempty"`
+			Code    int                 `json:"code"`
+			Message string              `json:"message"`
+			Data    *transportErrorData `json:"data,omitempty"`
 		}{Code: code, Message: message, Data: data},
 	})
 	if err != nil {

@@ -794,10 +794,11 @@ that tool's fingerprint. The guarantee covers retries that retain the operation
 ID, API-key rotation, and portal delivery retries. It does not promise
 transparent recovery after the bridge loses an operation ID during a process or
 host crash. On an ambiguous transport failure while the process is alive, the
-bridge's correlated JSON-RPC error includes `data.operation_id` and a typed
-`data.next` call to `get_operation`. `get_operation` exists for callers that
-received or otherwise recorded that ID, not as a reason to add a second durable
-transaction system to the local bridge.
+bridge's correlated JSON-RPC error includes `data.operation_id`. The server
+instructions tell callers to use `get_operation` after a mutation; read calls
+simply retry. `get_operation` exists for callers that received or otherwise
+recorded an operation ID, not as a reason to add a second durable transaction
+system to the local bridge.
 
 ### Runner delivery replay
 

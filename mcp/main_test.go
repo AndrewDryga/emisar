@@ -32,15 +32,17 @@ import (
 
 func (b *bridge) forward(frame []byte) ([]byte, error) {
 	meta := parseRequestMeta(frame)
-	requestToken := b.requestToken(1)
+	headers := requestHeaders{}
+	if !meta.notification() {
+		requestToken := b.requestToken(1)
+		headers.requestToken = requestToken
+		headers.operationID = toolCallOperationID(meta, requestToken)
+	}
 	return b.forwardRequestContext(
 		context.Background(),
 		frame,
 		meta,
-		requestHeaders{
-			requestToken: requestToken,
-			operationID:  toolCallOperationID(meta, requestToken),
-		},
+		headers,
 	)
 }
 
@@ -324,8 +326,8 @@ func TestForward_NeverSendsMcpSessionIDHeader(t *testing.T) {
 func TestForward_OmitsRequestIdentityHeadersForNotifications(t *testing.T) {
 	var hadRequestToken, hadOperationID bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, hadRequestToken = r.Header[requestTokenHeader]
-		_, hadOperationID = r.Header[operationIDHeader]
+		hadRequestToken = r.Header.Get(requestTokenHeader) != ""
+		hadOperationID = r.Header.Get(operationIDHeader) != ""
 		// Notifications get 202 + empty body per JSON-RPC over HTTP.
 		w.WriteHeader(http.StatusAccepted)
 	}))
@@ -1068,32 +1070,40 @@ func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	}
 }
 
-func TestServe_MutationTransportErrorCarriesOperationRecovery(t *testing.T) {
+func TestServe_TransportErrorCarriesOnlyRequestOperationID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
 	defer srv.Close()
 
-	b := newTestBridge(srv)
-	frame := []byte(`{"jsonrpc":"2.0","id":"mutate-1","method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`)
-	var out bytes.Buffer
-	if err := b.serve(bytes.NewReader(append(frame, '\n')), &out); err != nil {
-		t.Fatalf("serve: %v", err)
+	frames := map[string][]byte{
+		"mutation": []byte(`{"jsonrpc":"2.0","id":"mutate-1","method":"tools/call","params":{"name":"execute_runbook","arguments":{}}}`),
+		"read":     []byte(`{"jsonrpc":"2.0","id":"read-1","method":"tools/call","params":{"name":"list_packs","arguments":{}}}`),
 	}
+	for name, frame := range frames {
+		t.Run(name, func(t *testing.T) {
+			b := newTestBridge(srv)
+			var out bytes.Buffer
+			if err := b.serve(bytes.NewReader(append(frame, '\n')), &out); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
 
-	var response struct {
-		Error struct {
-			Data operationRecoveryData `json:"data"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &response); err != nil {
-		t.Fatalf("decode synthetic response: %v (%s)", err, out.Bytes())
-	}
-	want := operationIDForToken(b.requestToken(1))
-	if response.Error.Data.OperationID != want ||
-		response.Error.Data.Next.Tool != "get_operation" ||
-		response.Error.Data.Next.Arguments.OperationID != want {
-		t.Fatalf("recovery data = %+v, want operation %q and get_operation next", response.Error.Data, want)
+			var response struct {
+				Error struct {
+					Data map[string]any `json:"data"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &response); err != nil {
+				t.Fatalf("decode synthetic response: %v (%s)", err, out.Bytes())
+			}
+			want := operationIDForToken(b.requestToken(1))
+			if got := response.Error.Data["operation_id"]; got != want {
+				t.Fatalf("operation_id = %v, want %q", got, want)
+			}
+			if len(response.Error.Data) != 1 {
+				t.Fatalf("transport data = %+v, want only operation_id", response.Error.Data)
+			}
+		})
 	}
 }
 

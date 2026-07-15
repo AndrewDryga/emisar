@@ -154,9 +154,11 @@
         </p>
         <p>
           A successful mutation returns its operation ID. If the bridge loses an HTTP response, its
-          correlated JSON-RPC error includes that same ID and a typed <code>get_operation</code>
-          continuation. Use it before deciding whether to issue a new mutation. Run history is for
-          investigation; it is not a substitute for exact operation recovery.
+          correlated JSON-RPC error includes that same ID. After a mutation, pass it to
+          <code>get_operation</code>
+          before deciding whether to issue new work. Read calls retry
+          normally. Run history is for investigation; it is not a substitute for exact operation
+          recovery.
         </p>
 
         <h2>Waits and cancellation</h2>
