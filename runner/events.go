@@ -184,7 +184,6 @@ func followJSONL(ctx context.Context, path string, f *os.File, out io.Writer) er
 	if err != nil {
 		return err
 	}
-	reader := bufio.NewReader(f)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -195,61 +194,63 @@ func followJSONL(ctx context.Context, path string, f *os.File, out io.Writer) er
 		case <-ticker.C:
 		}
 
-		pathInfo, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			continue
-		}
+		f, pos, err = pollFollowedJSONL(path, f, out, pos)
 		if err != nil {
 			return err
-		}
-		openInfo, err := f.Stat()
-		if err != nil {
-			return err
-		}
-		if !os.SameFile(pathInfo, openInfo) {
-			next, err := os.Open(path)
-			if os.IsNotExist(err) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			_ = f.Close()
-			f = next
-			reader.Reset(f)
-			pos = 0
-			pathInfo, err = f.Stat()
-			if err != nil {
-				return err
-			}
-		}
-
-		switch {
-		case pathInfo.Size() < pos:
-			pos = 0
-		case pathInfo.Size() == pos:
-			continue
-		}
-		if _, err := f.Seek(pos, io.SeekStart); err != nil {
-			return err
-		}
-		reader.Reset(f)
-		for {
-			line, err := reader.ReadString('\n')
-			if len(line) > 0 {
-				if _, writeErr := io.WriteString(out, line); writeErr != nil {
-					return writeErr
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					return err
-				}
-				break
-			}
-		}
-		if newPos, err := f.Seek(0, io.SeekCurrent); err == nil {
-			pos = newPos
 		}
 	}
+}
+
+func pollFollowedJSONL(path string, f *os.File, out io.Writer, pos int64) (*os.File, int64, error) {
+	pathInfo, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return f, pos, nil
+	}
+	if err != nil {
+		return f, pos, err
+	}
+	openInfo, err := f.Stat()
+	if err != nil {
+		return f, pos, err
+	}
+	if !os.SameFile(pathInfo, openInfo) {
+		pos, err = copyAppendedJSONL(f, out, pos, openInfo.Size())
+		if err != nil {
+			return f, pos, err
+		}
+		next, openErr := os.Open(path)
+		if os.IsNotExist(openErr) {
+			return f, pos, nil
+		}
+		if openErr != nil {
+			return f, pos, openErr
+		}
+		_ = f.Close()
+		f = next
+		pos = 0
+		pathInfo, err = f.Stat()
+		if err != nil {
+			return f, pos, err
+		}
+	}
+
+	pos, err = copyAppendedJSONL(f, out, pos, pathInfo.Size())
+	return f, pos, err
+}
+
+func copyAppendedJSONL(f *os.File, out io.Writer, pos, size int64) (int64, error) {
+	if size < pos {
+		pos = 0
+	}
+	if size == pos {
+		return pos, nil
+	}
+	if _, err := f.Seek(pos, io.SeekStart); err != nil {
+		return pos, err
+	}
+	written, err := io.Copy(out, f)
+	if err != nil {
+		return pos, err
+	}
+	return pos + written, nil
 }

@@ -151,6 +151,42 @@ func TestFollowJSONL_ReopensAfterRenameRotation(t *testing.T) {
 	}
 }
 
+func TestPollFollowedJSONL_DrainsOldFileBeforeReplacement(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(active, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	const oldLine = "{\"event_id\":\"evt_before_rotation\"}\n"
+	appendLine(t, active, oldLine)
+	if err := os.Rename(active, active+".1"); err != nil {
+		t.Fatal(err)
+	}
+	const newLine = "{\"event_id\":\"evt_after_rotation\"}\n"
+	if err := os.WriteFile(active, []byte(newLine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	next, pos, err := pollFollowedJSONL(active, f, &out, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if got, want := out.String(), oldLine+newLine; got != want {
+		t.Fatalf("followed bytes = %q, want old then new %q", got, want)
+	}
+	if pos != int64(len(newLine)) {
+		t.Fatalf("new active position = %d, want %d", pos, len(newLine))
+	}
+}
+
 // `events tail` with no --lines flag defaults to 50, so a short log prints
 // every event.
 func TestEventsTailCmd_DefaultLines(t *testing.T) {
