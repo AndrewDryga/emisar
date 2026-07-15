@@ -550,6 +550,7 @@ defmodule EmisarWeb.MCP.Service do
         output_truncated?(
           details.stdout,
           run.stdout_bytes,
+          run.stdout_truncated,
           details.stdout_truncated,
           details.output_events_truncated
         ),
@@ -557,6 +558,7 @@ defmodule EmisarWeb.MCP.Service do
         output_truncated?(
           details.stderr,
           run.stderr_bytes,
+          run.stderr_truncated,
           details.stderr_truncated,
           details.output_events_truncated
         ),
@@ -569,8 +571,14 @@ defmodule EmisarWeb.MCP.Service do
     |> Map.new()
   end
 
-  defp output_truncated?(preview, total_bytes, locally_truncated?, events_truncated?) do
-    locally_truncated? or events_truncated? or
+  defp output_truncated?(
+         preview,
+         total_bytes,
+         runner_truncated?,
+         locally_truncated?,
+         events_truncated?
+       ) do
+    runner_truncated? or locally_truncated? or events_truncated? or
       (is_integer(total_bytes) and total_bytes > byte_size(preview))
   end
 
@@ -1362,8 +1370,8 @@ defmodule EmisarWeb.MCP.Service do
       executed_command: run.executed_command,
       stdout: stdout,
       stderr: stderr,
-      stdout_truncated: stdout_truncated?,
-      stderr_truncated: stderr_truncated?,
+      stdout_truncated: run.stdout_truncated or stdout_truncated?,
+      stderr_truncated: run.stderr_truncated or stderr_truncated?,
       output_events_truncated: output_events_truncated?,
       stdout_sha256: run.stdout_sha256,
       stderr_sha256: run.stderr_sha256,

@@ -165,6 +165,28 @@ output:
   max_stderr_bytes: 1024
 `
 
+const truncatedActionYAML = `
+schema_version: 1
+id: t.truncated
+title: Truncated output
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "i=0; while [ $i -lt 600 ]; do printf x; i=$((i + 1)); done"
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 512
+  max_stderr_bytes: 1024
+`
+
 func buildClient(t *testing.T, dialer Dialer, mod ...func(*Options)) *Client {
 	t.Helper()
 	root := t.TempDir()
@@ -182,9 +204,11 @@ description: t
 actions:
   - actions/echo.yaml
   - actions/sleep.yaml
+  - actions/truncated.yaml
 `), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "echo.yaml"), []byte(echoActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "sleep.yaml"), []byte(longActionYAML), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "truncated.yaml"), []byte(truncatedActionYAML), 0o644))
 	reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
 	must(err)
 	sink, err := audit.OpenJSONL(filepath.Join(root, "events.jsonl"), audit.JSONLOptions{})

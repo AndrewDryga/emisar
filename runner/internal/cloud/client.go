@@ -632,6 +632,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			StderrSHA256:    res.StderrSHA256,
 			StdoutBytes:     res.StdoutBytes,
 			StderrBytes:     res.StderrBytes,
+			TruncatedOut:    res.TruncatedOut,
+			TruncatedErr:    res.TruncatedErr,
 			Redactions:      toProtocolRedactions(res.Redactions),
 			Reason:          buildReasonWithDrops(res.Reason, dropped),
 			EventID:         res.EventID,

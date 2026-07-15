@@ -97,6 +97,8 @@ type Result struct {
 	StderrSHA256 string       `json:"stderr_sha256,omitempty"`
 	StdoutBytes  int          `json:"stdout_bytes,omitempty"`
 	StderrBytes  int          `json:"stderr_bytes,omitempty"`
+	TruncatedOut bool         `json:"truncated_stdout,omitempty"`
+	TruncatedErr bool         `json:"truncated_stderr,omitempty"`
 	// ExecutedCommand is the exact command that ran, shell-quoted, with
 	// sensitive arg values masked. Forwarded to the cloud + local audit.
 	ExecutedCommand string `json:"executed_command,omitempty"`
@@ -467,10 +469,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		Redactions:      hits,
 		TimedOut:        execRes.TimedOut,
 		Reason:          reasonForStatus(status, execRes),
-		StdoutSHA256:    execRes.StdoutSHA256,
-		StderrSHA256:    execRes.StderrSHA256,
-		StdoutBytes:     execRes.StdoutBytes,
-		StderrBytes:     execRes.StderrBytes,
+		StdoutSHA256:    hashOutput(redactedStdout),
+		StderrSHA256:    hashOutput(redactedStderr),
+		StdoutBytes:     len(redactedStdout),
+		StderrBytes:     len(redactedStderr),
+		TruncatedOut:    execRes.Truncated.Stdout,
+		TruncatedErr:    execRes.Truncated.Stderr,
 		ExecutedCommand: executedCommand,
 	}, nil
 }
@@ -828,6 +832,11 @@ func hashArgs(args map[string]any) string {
 		return "unhashable"
 	}
 	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+func hashOutput(output string) string {
+	h := sha256.Sum256([]byte(output))
 	return hex.EncodeToString(h[:])
 }
 

@@ -1500,6 +1500,56 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["stdout_truncated"] == false
     end
 
+    test "reports runner-side truncation even when every emitted byte is present", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, name: "runner-truncated-host")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.cat",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "pending"
+        })
+
+      output = "bounded runner output"
+
+      {:ok, _} =
+        Emisar.Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          stream: "stdout",
+          payload: %{"chunk" => output}
+        })
+
+      Repo.update_all(
+        from(r in Emisar.Runs.ActionRun, where: r.id == ^run.id),
+        set: [
+          status: "success",
+          stdout_bytes: byte_size(output),
+          stdout_truncated: true,
+          finished_at: DateTime.utc_now()
+        ]
+      )
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(200)
+
+      assert body["stdout"] == output
+      assert body["stdout_truncated"] == true
+      assert body["stdout_bytes"] == byte_size(output)
+    end
+
     test "the policy block carries decision, reason, and matched rules", %{
       conn: conn,
       account: account,

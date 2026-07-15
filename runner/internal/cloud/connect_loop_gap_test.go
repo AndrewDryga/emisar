@@ -2,7 +2,9 @@ package cloud
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -326,6 +328,36 @@ func TestClient_Result_OmitsStdoutStderrContent(t *testing.T) {
 	// were produced, so omission is a real choice, not an empty run.)
 	if b, ok := res["stdout_bytes"].(float64); !ok || b == 0 {
 		t.Fatalf("expected non-zero stdout_bytes so the omission is meaningful: %v", res["stdout_bytes"])
+	}
+}
+
+func TestClient_ResultIntegrityCoversEmittedRedactedChunks(t *testing.T) {
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	sendRunAction(t, conn, cli, "req_integrity", "t.truncated", map[string]any{})
+	res := waitForResult(t, conn, "req_integrity", 3*time.Second)
+
+	var stdout string
+	for _, progress := range conn.sentByType(MsgActionProgress) {
+		if progress["request_id"] == "req_integrity" && progress["stream"] == "stdout" {
+			stdout += progress["chunk"].(string)
+		}
+	}
+	wantHash := sha256.Sum256([]byte(stdout))
+	if got := res["stdout_sha256"]; got != fmt.Sprintf("%x", wantHash) {
+		t.Fatalf("stdout_sha256=%v, want digest of emitted chunks %x", got, wantHash)
+	}
+	if got := res["stdout_bytes"]; got != float64(len(stdout)) {
+		t.Fatalf("stdout_bytes=%v, emitted chunk bytes=%d", got, len(stdout))
+	}
+	if res["truncated_stdout"] != true {
+		t.Fatalf("truncated_stdout=%v, want true", res["truncated_stdout"])
 	}
 }
 

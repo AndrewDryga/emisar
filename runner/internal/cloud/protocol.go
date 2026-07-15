@@ -518,7 +518,8 @@ type ActionProgressMsg struct {
 
 // ActionResultMsg is the terminal message for an action call. Stdout/stderr
 // content is *not* repeated here when streaming was used — cloud already
-// has the chunks. SHA-256s + byte counts let cloud verify integrity.
+// has the chunks. SHA-256s + byte counts cover those exact redacted chunks so
+// cloud can verify integrity without learning hashes of raw sensitive output.
 type ActionResultMsg struct {
 	Envelope
 	Status       string             `json:"status"`

@@ -1987,6 +1987,8 @@ defmodule Emisar.Runs do
       stderr_sha256: payload["stderr_sha256"],
       stdout_bytes: payload["stdout_bytes"],
       stderr_bytes: payload["stderr_bytes"],
+      stdout_truncated: payload["truncated_stdout"] || false,
+      stderr_truncated: payload["truncated_stderr"] || false,
       event_id: payload["event_id"],
       # Exact shell command the runner ran, already redacted runner-side.
       executed_command: payload["executed_command"],

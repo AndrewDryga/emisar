@@ -3038,9 +3038,18 @@ defmodule Emisar.RunsTest do
       assert running.status == :running
       assert %DateTime{} = running.started_at
 
-      {:ok, finished} = Runs.mark_finished(running, %{"status" => "success", "duration_ms" => 4})
+      {:ok, finished} =
+        Runs.mark_finished(running, %{
+          "status" => "success",
+          "duration_ms" => 4,
+          "truncated_stdout" => true,
+          "truncated_stderr" => true
+        })
+
       assert finished.status == :success
       assert %DateTime{} = finished.finished_at
+      assert finished.stdout_truncated
+      assert finished.stderr_truncated
       assert ActionRun.terminal?(:success)
     end
 

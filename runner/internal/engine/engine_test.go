@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -738,7 +741,7 @@ output:
 // redactor. A complete BEGIN marker followed by a body but no delivered END
 // marker must remain masked in both progress and the durable result.
 func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
-	e, j, _ := setupEngineExtra(t, map[string]string{"truncated_private_key.yaml": truncatedPrivateKeyAction})
+	e, j, root := setupEngineExtra(t, map[string]string{"truncated_private_key.yaml": truncatedPrivateKeyAction})
 	defer j.Close()
 	rules, err := redact.CompileAll(redact.DefaultRules())
 	if err != nil {
@@ -777,8 +780,27 @@ func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
 			t.Fatalf("unexpected %s: %q", label, body)
 		}
 	}
-	if res.StdoutBytes <= 512 {
-		t.Fatalf("raw stdout bytes=%d, want proof that executor truncation occurred", res.StdoutBytes)
+	if !res.TruncatedOut {
+		t.Fatal("stdout truncation was not propagated to the durable result")
+	}
+	if res.StdoutBytes != len(res.Stdout) {
+		t.Fatalf("cloud stdout bytes=%d, emitted redacted bytes=%d", res.StdoutBytes, len(res.Stdout))
+	}
+	wantHash := sha256.Sum256([]byte(res.Stdout))
+	if res.StdoutSHA256 != fmt.Sprintf("%x", wantHash) {
+		t.Fatalf("cloud stdout hash=%q, want digest of emitted redacted output %x", res.StdoutSHA256, wantHash)
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ev audit.Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(body))), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Execution.StdoutBytes <= 512 {
+		t.Fatalf("local raw stdout bytes=%d, want proof that executor truncation metadata remains local", ev.Execution.StdoutBytes)
 	}
 }
 

@@ -124,6 +124,8 @@ defmodule Emisar.Runs.ActionRun do
     field :stderr_sha256, :string
     field :stdout_bytes, :integer
     field :stderr_bytes, :integer
+    field :stdout_truncated, :boolean, default: false
+    field :stderr_truncated, :boolean, default: false
     field :event_id, :string
     field :reason_text, :string
     field :error_message, :string
