@@ -42,6 +42,29 @@ output:
   max_stderr_bytes: 1024
 `
 
+const cancellableAction = `
+schema_version: 1
+id: t.cancellable
+title: Cancellable
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "sleep 30"]
+  timeout: 5s
+  timeout_min: 100ms
+  timeout_max: 5s
+  cancel_grace: 100ms
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
 func setupEngine(t *testing.T) (*Engine, *audit.Journal, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -95,6 +118,46 @@ func TestEngine_Success(t *testing.T) {
 	}
 	if res.EventID == "" {
 		t.Fatal("expected event id")
+	}
+}
+
+func TestEngine_PreservesCancellationAndTimeoutStatuses(t *testing.T) {
+	e, j, root := setupEngineExtra(t, map[string]string{"cancellable.yaml": cancellableAction})
+	defer j.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	cancelled, err := e.Run(ctx, Request{ActionID: "t.cancellable", Reason: "cancel probe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != StatusCancelled || cancelled.Reason != "execution cancelled" {
+		t.Fatalf("cancelled result = status %s reason %q", cancelled.Status, cancelled.Reason)
+	}
+
+	timedOut, err := e.Run(context.Background(), Request{
+		ActionID: "t.cancellable",
+		Reason:   "timeout probe",
+		Opts:     Opts{Timeout: 100 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timedOut.Status != StatusTimedOut || timedOut.Reason != "execution timed out" {
+		t.Fatalf("timed-out result = status %s reason %q", timedOut.Status, timedOut.Reason)
+	}
+
+	journal, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, eventType := range []string{`"event_type":"action_cancelled"`, `"event_type":"execution_failed"`} {
+		if !strings.Contains(string(journal), eventType) {
+			t.Fatalf("journal missing %s:\n%s", eventType, journal)
+		}
 	}
 }
 

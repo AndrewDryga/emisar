@@ -4,10 +4,11 @@ package executor
 type Status string
 
 const (
-	StatusOK      Status = "ok"      // exit code 0
-	StatusNonZero Status = "nonzero" // process exited with non-zero code
-	StatusTimeout Status = "timeout" // killed by deadline
-	StatusFailed  Status = "failed"  // could not start or other infra error
+	StatusOK        Status = "ok"        // exit code 0
+	StatusNonZero   Status = "nonzero"   // process exited with non-zero code
+	StatusTimeout   Status = "timeout"   // killed by deadline
+	StatusCancelled Status = "cancelled" // killed because the caller cancelled
+	StatusFailed    Status = "failed"    // could not start or other infra error
 )
 
 // Truncated reports whether output streams hit their byte limits.

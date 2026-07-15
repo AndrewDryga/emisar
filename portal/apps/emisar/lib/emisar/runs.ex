@@ -1937,7 +1937,9 @@ defmodule Emisar.Runs do
     "error" => :error,
     "validation_failed" => :validation_failed,
     "unknown_action" => :unknown_action,
+    "timed_out" => :timed_out,
     "cancelled" => :cancelled,
+    "blocked_by_admission" => :refused,
     # The runner refused the dispatch on a trust check (bad/missing/stale
     # signature, or pack-hash mismatch) — a first-class terminal state distinct
     # from `:failed`; the human cause is carried in error_message.

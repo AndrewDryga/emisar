@@ -40,6 +40,8 @@ const (
 	StatusError            Status = "error"
 	StatusValidationFailed Status = "validation_failed"
 	StatusUnknownAction    Status = "unknown_action"
+	StatusTimedOut         Status = "timed_out"
+	StatusCancelled        Status = "cancelled"
 	// StatusBlockedByAdmission is returned when the runner's local
 	// allow/deny config refuses the action. Distinct from
 	// `unknown_action` (the cloud asked for something the registry
@@ -422,7 +424,10 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	status := StatusSuccess
 	if execRes.Status == executor.StatusTimeout {
 		evType = audit.EventExecutionFailed
-		status = StatusFailed
+		status = StatusTimedOut
+	} else if execRes.Status == executor.StatusCancelled {
+		evType = audit.EventActionCancelled
+		status = StatusCancelled
 	} else if execRes.Status == executor.StatusFailed {
 		evType = audit.EventExecutionFailed
 		status = StatusError
@@ -795,8 +800,10 @@ func reasonForStatus(s Status, r *executor.Result) string {
 	switch {
 	case s == StatusSuccess:
 		return ""
-	case r.TimedOut:
+	case s == StatusTimedOut:
 		return "execution timed out"
+	case s == StatusCancelled:
+		return "execution cancelled"
 	case r.Status == executor.StatusFailed:
 		return r.StartError
 	case r.ExitCode != 0:

@@ -198,6 +198,7 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	elapsed := time.Since(start)
 
 	timedOut := errors.Is(tctx.Err(), context.DeadlineExceeded)
+	cancelled := errors.Is(tctx.Err(), context.Canceled)
 
 	res.Stdout = string(outResult.captured)
 	res.Stderr = string(errResult.captured)
@@ -225,6 +226,14 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		res.ExitCode = 0
 	case timedOut:
 		res.Status = StatusTimeout
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			res.ExitCode = exitErr.ExitCode()
+		} else {
+			res.ExitCode = -1
+		}
+	case cancelled:
+		res.Status = StatusCancelled
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			res.ExitCode = exitErr.ExitCode()

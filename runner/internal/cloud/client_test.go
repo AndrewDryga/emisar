@@ -647,11 +647,8 @@ func TestClient_CancelMsgTerminatesInflightAction(t *testing.T) {
 	if elapsed > 15*time.Second {
 		t.Fatalf("cancel took too long (%s); the action timeout (1m) shouldn't have been the trigger", elapsed)
 	}
-	// Status will be failed or success-with-nonzero exit depending on
-	// how the shell happened to react. The point is that it terminated
-	// fast — not that it returned a specific status code.
-	if res["status"] == nil {
-		t.Fatalf("no status on result: %+v", res)
+	if res["status"] != "cancelled" {
+		t.Fatalf("status=%v, want cancelled: %+v", res["status"], res)
 	}
 }
 

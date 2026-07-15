@@ -3069,6 +3069,24 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :success
     end
 
+    test "preserves exact runner terminal outcomes", %{account: account, runner: runner} do
+      for {wire_status, stored_status} <- [
+            {"cancelled", :cancelled},
+            {"timed_out", :timed_out},
+            {"blocked_by_admission", :refused}
+          ] do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+        {:ok, finished} =
+          Runs.finalize_from_result(runner.id, %{
+            "request_id" => run.request_id,
+            "status" => wire_status
+          })
+
+        assert finished.status == stored_status
+      end
+    end
+
     test "a failed result writes error_message only; reason_text stays nil", %{
       account: account,
       runner: runner

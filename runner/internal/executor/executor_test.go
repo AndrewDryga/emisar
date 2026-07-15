@@ -55,6 +55,9 @@ func TestExecutor_Timeout(t *testing.T) {
 	if !res.TimedOut {
 		t.Fatalf("expected timed out, status=%s", res.Status)
 	}
+	if res.Status != StatusTimeout {
+		t.Fatalf("status=%s, want timeout", res.Status)
+	}
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("waited too long: %s", elapsed)
 	}
@@ -205,6 +208,9 @@ func TestExecutor_GracefulCancelSIGTERMThenSIGKILL(t *testing.T) {
 		t.Fatalf("expected trap exit 42, got %d (status=%s start_err=%q)",
 			res.ExitCode, res.Status, res.StartError)
 	}
+	if res.Status != StatusCancelled {
+		t.Fatalf("status=%s, want cancelled", res.Status)
+	}
 }
 
 func TestExecutor_HardKillAfterGracePeriod(t *testing.T) {
@@ -233,8 +239,8 @@ func TestExecutor_HardKillAfterGracePeriod(t *testing.T) {
 		t.Fatalf("hard kill took too long: %s", elapsed)
 	}
 	// SIGKILL must have happened — the trap couldn't keep it alive.
-	if res.Status == StatusOK {
-		t.Fatalf("a SIGKILLed process must not report StatusOK")
+	if res.Status != StatusCancelled {
+		t.Fatalf("status=%s, want cancelled after hard kill", res.Status)
 	}
 }
 
