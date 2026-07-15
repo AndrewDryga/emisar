@@ -19,6 +19,11 @@ output "url" {
   value       = "https://${var.domain}"
 }
 
+output "livebook_url" {
+  description = "IAP-protected Livebook admin workbench URL, or null when disabled."
+  value       = var.livebook_enabled ? "https://livebook.${var.domain}" : null
+}
+
 output "container_image" {
   description = "Public GHCR image the MIG runs — publish it there before apply."
   value       = var.container_image

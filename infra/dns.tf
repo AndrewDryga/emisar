@@ -74,6 +74,26 @@ resource "google_dns_record_set" "www" {
   rrdatas      = ["${var.domain}."]
 }
 
+resource "google_dns_record_set" "livebook_a" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name         = "livebook.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.ipv4.address]
+}
+
+resource "google_dns_record_set" "livebook_aaaa" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name         = "livebook.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "AAAA"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.ipv6.address]
+}
+
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
 # Proves domain control so the Google-managed cert (lb.tf) provisions. One record
 # per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
@@ -101,6 +121,16 @@ resource "google_dns_record_set" "cert_auth_mta_sts" {
   type         = google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].type
   ttl          = 300
   rrdatas      = [google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].data]
+}
+
+resource "google_dns_record_set" "cert_auth_livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name         = google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].name
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].type
+  ttl          = 300
+  rrdatas      = [google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].data]
 }
 
 # ── Pack registry host → the same LB anycast IPs ─────────────────────────────

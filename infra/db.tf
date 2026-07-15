@@ -156,3 +156,22 @@ resource "google_sql_user" "database_operator" {
     google_project_iam_member.database_operator_studio,
   ]
 }
+
+# This is intentionally an admin/debug principal. It inherits the same
+# application-owner role as the portal because the shared Erlang cookie already
+# grants equivalent production-code authority; notebook connections still set
+# read-only session defaults to prevent accidental writes during analysis.
+resource "google_sql_user" "livebook" {
+  count = var.livebook_enabled && var.database_owner_role_ready ? 1 : 0
+
+  name           = trimsuffix(google_service_account.livebook[0].email, ".gserviceaccount.com")
+  instance       = google_sql_database_instance.emisar.name
+  type           = "CLOUD_IAM_SERVICE_ACCOUNT"
+  database_roles = ["emisar_owner"]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_iam_member.livebook_cloudsql]
+}

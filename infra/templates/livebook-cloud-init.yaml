@@ -1,0 +1,91 @@
+#cloud-config
+# Container-Optimized OS. Systemd supervises separately pinned Livebook and
+# Cloud SQL Auth Proxy containers; neither service pulls on routine restart.
+
+write_files:
+  - path: /var/lib/emisar-livebook/ensure-images.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, livebook_ensure_images_script)}
+
+  - path: /var/lib/emisar-livebook/prepare-data.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, livebook_prepare_data_script)}
+
+  - path: /var/lib/emisar-livebook/start.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, livebook_start_script)}
+
+  - path: /var/lib/emisar-livebook/tools/list-portal-nodes
+    permissions: "0755"
+    content: |
+      ${indent(6, livebook_cluster_nodes_script)}
+
+  - path: /etc/systemd/system/emisar-livebook-image.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Ensure pinned Emisar Livebook images are present
+      Requires=docker.service
+      Wants=gcr-online.target network-online.target
+      After=docker.service gcr-online.target network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      Restart=on-failure
+      RestartSec=15
+      ExecStart=/bin/bash /var/lib/emisar-livebook/ensure-images.sh
+
+  - path: /etc/systemd/system/emisar-livebook-data.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Prepare the persistent Emisar Livebook data disk
+      After=local-fs.target
+      Before=emisar-livebook.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      TimeoutStartSec=120
+      ExecStart=/bin/bash /var/lib/emisar-livebook/prepare-data.sh
+
+  - path: /etc/systemd/system/emisar-livebook-cloud-sql-proxy.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Cloud SQL Auth Proxy for Emisar Livebook
+      Wants=emisar-livebook-image.service
+      After=emisar-livebook-image.service
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/docker rm -f emisar-livebook-cloud-sql-proxy
+      ExecStart=/usr/bin/docker run --rm --name emisar-livebook-cloud-sql-proxy --network host --read-only --cap-drop=ALL --security-opt=no-new-privileges ${cloud_sql_proxy_image} --private-ip --auto-iam-authn --address 127.0.0.1 --port 5432 --health-check --http-address 127.0.0.1 --http-port 9090 ${database_connection_name}
+      ExecStop=/usr/bin/docker stop -t 10 emisar-livebook-cloud-sql-proxy
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/emisar-livebook.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Emisar Livebook admin workbench
+      Requires=emisar-livebook-image.service emisar-livebook-data.service
+      Wants=emisar-livebook-cloud-sql-proxy.service
+      After=emisar-livebook-image.service emisar-livebook-data.service emisar-livebook-cloud-sql-proxy.service
+      [Service]
+      Restart=always
+      RestartSec=5
+      TimeoutStopSec=130
+      ExecStart=/bin/bash /var/lib/emisar-livebook/start.sh
+      ExecStop=/usr/bin/docker stop -t 120 emisar-livebook
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - /sbin/iptables -A INPUT -p tcp --dport ${livebook_port} -j ACCEPT
+  - systemctl daemon-reload
+  - systemctl enable --now emisar-livebook-cloud-sql-proxy.service
+  - systemctl enable --now emisar-livebook.service

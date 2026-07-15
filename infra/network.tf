@@ -84,6 +84,20 @@ resource "google_compute_firewall" "lb_to_app" {
   target_tags   = ["emisar"]
 }
 
+resource "google_compute_firewall" "lb_to_livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name      = "emisar-allow-lb-livebook"
+  network   = google_compute_network.emisar.id
+  direction = "INGRESS"
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(local.livebook_port)]
+  }
+  source_ranges = ["130.211.0.0/22", "35.191.0.0/16"]
+  target_tags   = ["emisar-livebook"]
+}
+
 # SSH ONLY via Identity-Aware Proxy — no 0.0.0.0/0 SSH. Reach a box with:
 #   gcloud compute ssh <instance> --tunnel-through-iap
 resource "google_compute_firewall" "iap_ssh" {
@@ -95,14 +109,13 @@ resource "google_compute_firewall" "iap_ssh" {
     ports    = ["22"]
   }
   source_ranges = ["35.235.240.0/20"]
-  target_tags   = ["emisar"]
+  target_tags   = ["emisar", "emisar-livebook"]
 }
 
-# Erlang distribution between portal instances: epmd (4369) + the pinned dist
-# range (rel/env.sh.eex clustering) so the nodes form one BEAM cluster — Phoenix
-# PubSub + Presence span machines, so a runner socket on one node is reachable
-# from another and runs don't strand in :sent. Scoped tag→tag; nothing else
-# reaches these ports.
+# Erlang distribution into portal instances: epmd (4369) + the pinned dist range
+# (rel/env.sh.eex clustering). Portal peers form the normal BEAM cluster;
+# Livebook may originate an explicit debug connection but is never a target or
+# discovery peer. Scoped tag→tag; nothing else reaches these ports.
 resource "google_compute_firewall" "cluster_dist" {
   name      = "emisar-allow-cluster"
   network   = google_compute_network.emisar.id
@@ -111,6 +124,6 @@ resource "google_compute_firewall" "cluster_dist" {
     protocol = "tcp"
     ports    = ["4369", "9100-9105"]
   }
-  source_tags = ["emisar"]
+  source_tags = ["emisar", "emisar-livebook"]
   target_tags = ["emisar"]
 }

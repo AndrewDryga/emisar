@@ -78,7 +78,7 @@ variable "release_cookie_ready" {
 }
 
 variable "release_cookie_value" {
-  description = "Exact RELEASE_COOKIE payload. For the first cutover, derive the current production value so old and new nodes remain one cluster."
+  description = "Exact RELEASE_COOKIE payload. Required when release_cookie_ready or livebook_enabled is true; derive the current production value so every node remains one cluster."
   type        = string
   sensitive   = true
   ephemeral   = true
@@ -86,10 +86,10 @@ variable "release_cookie_value" {
 
   validation {
     condition = (
-      !var.release_cookie_ready ||
+      (!var.release_cookie_ready && !var.livebook_enabled) ||
       (var.release_cookie_value != null && length(var.release_cookie_value) >= 32)
     )
-    error_message = "release_cookie_value must be at least 32 characters when release_cookie_ready is true."
+    error_message = "release_cookie_value must be at least 32 characters when release_cookie_ready or livebook_enabled is true."
   }
 }
 
@@ -164,6 +164,51 @@ variable "mailer_from_email" {
   type        = string
   description = "From address for outbound product mail (MAILER_FROM_EMAIL); unset, the release falls back to no-reply@emisar.dev."
   default     = "hello@emisar.dev"
+}
+
+# ── Livebook admin workbench ─────────────────────────────────────────────────
+variable "livebook_enabled" {
+  type        = bool
+  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_ready and livebook_iap_iam_user."
+  default     = false
+}
+
+variable "livebook_machine_type" {
+  type        = string
+  description = "Compute Engine machine type for the optional Livebook instance. Environment sizing is set per-workspace; the default is a small reference configuration."
+  default     = "e2-small"
+
+  validation {
+    condition     = length(trimspace(var.livebook_machine_type)) > 0
+    error_message = "livebook_machine_type must not be empty."
+  }
+}
+
+variable "livebook_data_disk_size_gb" {
+  type        = number
+  description = "Persistent Livebook notebook/configuration disk size in GB, set per-workspace."
+  default     = 10
+
+  validation {
+    condition     = var.livebook_data_disk_size_gb >= 10 && floor(var.livebook_data_disk_size_gb) == var.livebook_data_disk_size_gb
+    error_message = "livebook_data_disk_size_gb must be an integer >= 10."
+  }
+}
+
+variable "livebook_iap_iam_user" {
+  type        = string
+  description = "Lowercase Google user email allowed through IAP to the Livebook admin workbench. Set as a sensitive HCP Terraform workspace variable; null omits the workbench access grant."
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition = var.livebook_iap_iam_user == null || try(
+      var.livebook_iap_iam_user == lower(var.livebook_iap_iam_user) &&
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.livebook_iap_iam_user)),
+      false,
+    )
+    error_message = "livebook_iap_iam_user must be null or a lowercase email address."
+  }
 }
 
 # ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────

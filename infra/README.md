@@ -13,6 +13,10 @@ Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
                          |      |-> Secret Manager
                          |      |-> Cloud SQL PostgreSQL over private IP
                          |      `-> Cloud Logging and Monitoring
+                         |-> optional private Livebook instance through IAP
+                         |      |-> persistent notebook disk
+                         |      |-> Cloud SQL IAM proxy
+                         |      `-> explicit portal-node distribution
                          `-> public-read, versioned pack registry in GCS
 
 Private instances -> Cloud NAT for controlled egress
@@ -24,7 +28,7 @@ Better Stack -> external probes, on-call escalation, public status page
 
 | Area | Configuration |
 |---|---|
-| Compute | Regional managed instance group, Shielded VM, no external VM IPs, zero-unavailable rolling updates |
+| Compute | Regional managed instance group plus optional single-node Livebook workbench, Shielded VMs, no external VM IPs, zero-unavailable portal rolling updates |
 | Database | Cloud SQL PostgreSQL 18, private IP, IAM database authentication through a local proxy, PITR, automated backups, deletion protection |
 | Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH |
 | TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
@@ -79,11 +83,77 @@ database credentials from the VM identity; the application assumes the non-login
 `emisar_owner` role. The portal image contains only the application release.
 `Emisar.Cluster.GCE` discovers running peers by
 the `cluster_name` label through the Compute API. Erlang distribution is limited
-to tagged application instances on TCP 4369 and 9100-9105.
+to tagged application instances plus explicit connections originating from the
+Livebook tag on TCP 4369 and 9100-9105. Livebook has no `cluster_name` label, so
+portal discovery never adds it automatically.
 
 The load balancer uses DB-independent `/healthz` for auto-healing and DB-aware
 `/readyz` for traffic eligibility. Backend HTTP accepts only Google proxy and
 health-check source ranges. Public traffic terminates TLS at the load balancer.
+
+## Livebook admin workbench
+
+The optional Livebook instance is a production admin/debug host. Enable it with
+`livebook_enabled=true`, set its sizing as workspace variables, and set the
+sensitive `livebook_iap_iam_user` to one lowercase Google Workspace user. The VM
+has no public address. `https://livebook.<domain>` reaches a dedicated backend
+through the shared HTTPS load balancer and grants only that principal the
+resource-level IAP web-app role.
+
+IAP uses Google's managed browser OAuth client; no OAuth client secret is
+created or committed. Livebook receives
+`LIVEBOOK_IDENTITY_PROVIDER=google_iap:<signed-jwt-audience>` and validates the
+signed IAP assertion itself. `LIVEBOOK_TOKEN_ENABLED=false` and no
+`LIVEBOOK_PASSWORD` is configured. Opening the URL therefore uses the current
+Google/IAP browser identity automatically and never presents a second Livebook
+login. Google's managed client is intentionally limited to users inside the
+project's organization.
+
+Notebooks and Livebook configuration persist on a separately protected disk.
+The container runs as an unprivileged user with a read-only root filesystem and
+an independently pinned image. `/public/health` remains available to Google
+health checks; every operator route requires a valid IAP assertion.
+
+The local Cloud SQL Auth Proxy logs in as the dedicated Livebook service account
+and Cloud SQL assigns it `emisar_owner`. `DATABASE_URL` and standard `PG*`
+variables are available inside notebooks; there is no database password.
+Analysis connections must retain the read-only defaults exposed by the runtime:
+
+```elixir
+Mix.install([{:postgrex, "~> 0.21"}])
+
+{:ok, db} =
+  Postgrex.start_link(
+    hostname: System.fetch_env!("PGHOST"),
+    port: String.to_integer(System.fetch_env!("PGPORT")),
+    database: System.fetch_env!("PGDATABASE"),
+    username: System.fetch_env!("PGUSER"),
+    password: "",
+    parameters: [
+      default_transaction_read_only: "on",
+      statement_timeout: System.fetch_env!("EMISAR_DATABASE_STATEMENT_TIMEOUT_MS")
+    ]
+  )
+
+Postgrex.query!(db, "SET ROLE " <> System.fetch_env!("EMISAR_DATABASE_ROLE"), [])
+```
+
+This is an accidental-write guard, not a privilege boundary: the shared Erlang
+cookie already makes the workbench fully trusted. Portal attachment is always
+explicit. Discover current private node names from a notebook runtime, then
+connect only to the node being debugged:
+
+```elixir
+{nodes, 0} = System.cmd("/opt/emisar/list-portal-nodes", [])
+nodes
+# => "emisar@10.x.x.x\n..."
+
+Node.connect(:"emisar@10.x.x.x")
+```
+
+The Livebook node and its standalone notebook runtimes inherit the exact release
+cookie, but no automatic cluster strategy is configured and no distribution
+port is opened toward Livebook.
 
 ## Secrets
 
@@ -138,10 +208,13 @@ gcloud secrets versions access "$secret_version" --project emisar \
 ```
 
 Store that file's value as sensitive ephemeral `release_cookie_value`, securely
-delete the local file, then set
-`release_cookie_ready=true`. Old and new nodes use identical cookies, so this is
-a normal zero-unavailable rollout. Rotate signing and cookie values separately
-in later maintenance windows: first prove no migration/long-running job is in
+delete the local file, and then choose the staged consumer. Enabling Livebook
+while `release_cookie_ready=false` writes that exact value for Livebook without
+changing the portal template; portal nodes continue deriving the same cookie.
+Setting `release_cookie_ready=true` is the later, separately reviewed portal
+rollout onto the already-matching secret. Old and new nodes therefore use
+identical cookies throughout. Rotate signing and cookie values separately in
+later maintenance windows: first prove no migration/long-running job is in
 flight; increment only the affected generation; retain the preceding Secret
 Manager version; watch ready backends and cluster-failure alerts until every VM
 uses the same template; verify a single cluster and user/session behavior. A
@@ -270,6 +343,7 @@ terraform output lb_ipv6
 terraform output nameservers
 terraform output status_page_url
 terraform output pack_registry_base_url
+terraform output livebook_url
 ```
 
 ## Validation

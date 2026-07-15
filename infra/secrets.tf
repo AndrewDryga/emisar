@@ -141,7 +141,7 @@ resource "google_secret_manager_secret_version" "secret_key_base" {
 }
 
 resource "google_secret_manager_secret_version" "release_cookie" {
-  count                  = var.release_cookie_ready ? 1 : 0
+  count                  = var.release_cookie_ready || var.livebook_enabled ? 1 : 0
   secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id
   secret_data_wo         = var.release_cookie_value
   secret_data_wo_version = local.secret_generations["emisar-release-cookie"]
@@ -154,4 +154,59 @@ resource "google_secret_manager_secret_version" "optional" {
   secret_data_wo         = local.optional_secret_values[each.key]
   secret_data_wo_version = local.secret_generations[each.key]
   deletion_policy        = "ABANDON"
+}
+
+# Livebook is a separate trust domain from the portal release: its session
+# signing key is generated independently, while only the exact shared release
+# cookie grants the explicitly requested production-node debugging capability.
+resource "google_secret_manager_secret" "livebook_secret_key_base" {
+  count = var.livebook_enabled ? 1 : 0
+
+  project             = var.project_id
+  secret_id           = "emisar-livebook-secret-key-base"
+  deletion_protection = true
+
+  replication {
+    auto {}
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+ephemeral "random_password" "livebook_secret_key_base" {
+  count = var.livebook_enabled ? 1 : 0
+
+  length  = 64
+  special = false
+}
+
+resource "google_secret_manager_secret_version" "livebook_secret_key_base" {
+  count = var.livebook_enabled ? 1 : 0
+
+  secret                 = google_secret_manager_secret.livebook_secret_key_base[0].id
+  secret_data_wo         = ephemeral.random_password.livebook_secret_key_base[0].result
+  secret_data_wo_version = 1
+  deletion_policy        = "ABANDON"
+}
+
+resource "google_secret_manager_secret_iam_member" "livebook_secret_key_access" {
+  count = var.livebook_enabled ? 1 : 0
+
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.livebook_secret_key_base[0].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.livebook[0].email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "livebook_release_cookie_access" {
+  count = var.livebook_enabled ? 1 : 0
+
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.app["emisar-release-cookie"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.livebook[0].email}"
 }

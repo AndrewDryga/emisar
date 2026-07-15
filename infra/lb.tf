@@ -42,6 +42,15 @@ resource "google_certificate_manager_dns_authorization" "mta_sts" {
   depends_on  = [google_project_service.apis]
 }
 
+resource "google_certificate_manager_dns_authorization" "livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name        = "emisar-dnsauth-livebook"
+  domain      = "livebook.${var.domain}"
+  description = "DNS authorization for the private Emisar Livebook workbench"
+  depends_on  = [google_project_service.apis]
+}
+
 resource "google_certificate_manager_certificate" "emisar" {
   name = "emisar-cert"
   managed {
@@ -51,6 +60,19 @@ resource "google_certificate_manager_certificate" "emisar" {
       google_certificate_manager_dns_authorization.www.id,
       google_certificate_manager_dns_authorization.mta_sts.id,
     ]
+  }
+  depends_on = [google_project_service.apis]
+}
+
+# Keep this certificate independent: adding an admin-only hostname must not
+# replace the public portal certificate or risk its serving path.
+resource "google_certificate_manager_certificate" "livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name = "emisar-livebook-cert"
+  managed {
+    domains            = ["livebook.${var.domain}"]
+    dns_authorizations = [google_certificate_manager_dns_authorization.livebook[0].id]
   }
   depends_on = [google_project_service.apis]
 }
@@ -81,6 +103,106 @@ resource "google_certificate_manager_certificate_map_entry" "mta_sts" {
   map          = google_certificate_manager_certificate_map.emisar.name
   certificates = [google_certificate_manager_certificate.emisar.id]
   hostname     = "mta-sts.${var.domain}"
+}
+
+resource "google_certificate_manager_certificate_map_entry" "livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name         = "emisar-certmap-entry-livebook"
+  map          = google_certificate_manager_certificate_map.emisar.name
+  certificates = [google_certificate_manager_certificate.livebook[0].id]
+  hostname     = "livebook.${var.domain}"
+}
+
+resource "google_compute_health_check" "livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name                = "emisar-livebook-health"
+  check_interval_sec  = 10
+  timeout_sec         = 5
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+
+  # Livebook deliberately leaves /public available for platform probes while
+  # its signed-IAP identity provider protects every operator route.
+  http_health_check {
+    request_path = "/public/health"
+    port         = local.livebook_port
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_compute_backend_service" "livebook" {
+  count = var.livebook_enabled ? 1 : 0
+
+  name                            = local.livebook_backend_name
+  load_balancing_scheme           = "EXTERNAL_MANAGED"
+  protocol                        = "HTTP"
+  port_name                       = "livebook"
+  timeout_sec                     = var.backend_timeout_sec
+  connection_draining_timeout_sec = 120
+  health_checks                   = [google_compute_health_check.livebook[0].id]
+
+  # Omitting OAuth credentials selects Google's managed browser client. IAP
+  # authenticates the user; Livebook independently validates its signed JWT.
+  iap {
+    enabled = true
+  }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
+
+  backend {
+    group           = google_compute_instance_group.livebook[0].id
+    balancing_mode  = "UTILIZATION"
+    capacity_scaler = 1.0
+  }
+}
+
+resource "terraform_data" "livebook_backend_ready" {
+  count = var.livebook_enabled ? 1 : 0
+
+  triggers_replace = [google_compute_backend_service.livebook[0].id]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+
+      response_file=$(mktemp)
+      trap 'rm -f "$response_file"' EXIT
+      url="https://compute.googleapis.com/compute/v1/projects/$PROJECT_ID/global/backendServices/$BACKEND_SERVICE/getHealth"
+      payload=$(printf '{"group":"%s"}' "$INSTANCE_GROUP")
+
+      for _attempt in $(seq 1 60); do
+        status=$(curl --silent --show-error --connect-timeout 5 --max-time 30 \
+          --output "$response_file" --write-out '%%{http_code}' -X POST \
+          -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+          --data "$payload" "$url" || true)
+
+        if [ "$status" = 200 ] && tr -d '[:space:]' < "$response_file" | grep -q '"healthState":"HEALTHY"'; then
+          exit 0
+        fi
+        case "$status" in
+          200|429|5??) sleep 10 ;;
+          *) echo "Livebook backend health returned HTTP $status" >&2; exit 1 ;;
+        esac
+      done
+
+      echo "Livebook backend did not become healthy" >&2
+      exit 1
+    EOT
+
+    environment = {
+      ACCESS_TOKEN    = ephemeral.google_client_config.current.access_token
+      BACKEND_SERVICE = google_compute_backend_service.livebook[0].name
+      INSTANCE_GROUP  = google_compute_instance_group.livebook[0].id
+      PROJECT_ID      = var.project_id
+    }
+  }
 }
 
 # ── Backend: the MIG behind an HTTP backend service + health check ───────────
@@ -205,7 +327,10 @@ resource "google_compute_url_map" "https" {
   name            = "emisar-https"
   default_service = google_compute_backend_service.app.id
 
-  depends_on = [terraform_data.app_backend_ready]
+  depends_on = [
+    terraform_data.app_backend_ready,
+    terraform_data.livebook_backend_ready,
+  ]
 
   # registry.<domain> serves the public pack-registry bucket straight from the
   # LB (packs_registry.tf) — no portal hop, so `emisar pack install` keeps
@@ -225,6 +350,14 @@ resource "google_compute_url_map" "https" {
     path_matcher = "mta-sts"
   }
 
+  dynamic "host_rule" {
+    for_each = google_compute_backend_service.livebook
+    content {
+      hosts        = ["livebook.${var.domain}"]
+      path_matcher = "livebook"
+    }
+  }
+
   path_matcher {
     name            = "pack-registry"
     default_service = google_compute_backend_bucket.pack_registry.id
@@ -242,6 +375,14 @@ resource "google_compute_url_map" "https" {
   path_matcher {
     name            = "mta-sts"
     default_service = google_compute_backend_bucket.mta_sts.id
+  }
+
+  dynamic "path_matcher" {
+    for_each = google_compute_backend_service.livebook
+    content {
+      name            = "livebook"
+      default_service = path_matcher.value.id
+    }
   }
 }
 
