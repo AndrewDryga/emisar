@@ -33,7 +33,8 @@ defmodule Emisar.PoliciesAuditTest do
         },
         "overrides" => [
           %{"name" => "allow-status", "action" => "cassandra.status", "decision" => "allow"}
-        ]
+        ],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       {:ok, updated} = Policies.save_rules(new_rules, subject)

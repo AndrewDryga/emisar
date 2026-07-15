@@ -27,7 +27,8 @@ defmodule Emisar.RunsTest do
     %{
       "schema_version" => 2,
       "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
-      "overrides" => []
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
 
@@ -1079,7 +1080,8 @@ defmodule Emisar.RunsTest do
               "high" => "require_approval",
               "critical" => "deny"
             },
-            "overrides" => []
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           }
         )
 
@@ -1109,7 +1111,8 @@ defmodule Emisar.RunsTest do
             },
             "overrides" => [
               %{"name" => "needs-approval", "action" => "*", "decision" => "require_approval"}
-            ]
+            ],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           }
         )
 
@@ -1137,6 +1140,54 @@ defmodule Emisar.RunsTest do
 
       assert "action_run.pending_approval" in types
       refute "policy.evaluated" in types
+    end
+
+    test "corrupt approval settings block a gated dispatch before any row is created" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner)
+
+      policy =
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "require_approval",
+              "medium" => "require_approval",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+          }
+        )
+
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      corrupt_approvals = [
+        :missing,
+        %{"min_approvals" => 1},
+        %{"min_approvals" => 1, "allow_self_approval" => "yes"}
+      ]
+
+      _policy =
+        Enum.reduce(corrupt_approvals, policy, fn approval, policy ->
+          rules =
+            if approval == :missing,
+              do: Map.delete(policy.rules, "approval"),
+              else: Map.put(policy.rules, "approval", approval)
+
+          policy = policy |> Ecto.Changeset.change(rules: rules) |> Repo.update!()
+
+          assert {:error, :invalid_policy_approval} =
+                   Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+          policy
+        end)
+
+      refute Repo.exists?(ActionRun)
+      refute Repo.exists?(Emisar.Approvals.Request)
     end
 
     test "policy with no matching allow rule denies and records the attempt for audit" do
@@ -1379,7 +1430,8 @@ defmodule Emisar.RunsTest do
           "high" => "deny",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       {subject, _operator_subject, attrs} = replayable_dispatch(deny_high)
@@ -1413,7 +1465,8 @@ defmodule Emisar.RunsTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       {subject, operator_subject, attrs} = replayable_dispatch(approval_high)
@@ -1618,7 +1671,8 @@ defmodule Emisar.RunsTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       %{
@@ -1653,6 +1707,37 @@ defmodule Emisar.RunsTest do
 
       gated_run = Enum.find(runs, &(&1.status == :pending_approval))
       assert request.run_id == gated_run.id
+    end
+
+    test "corrupt approval settings roll back the complete MCP operation" do
+      gated_rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "require_approval",
+          "medium" => "require_approval",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+      }
+
+      %{account: account, subject: subject, runners: [runner], key: key} =
+        mcp_fanout_fixture(["low"], gated_rules)
+
+      policy = Emisar.Policies.peek_policy_for_account(account.id)
+      rules = Map.delete(policy.rules, "approval")
+      _policy = policy |> Ecto.Changeset.change(rules: rules) |> Repo.update!()
+
+      operation = mcp_operation_attrs("op_504NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      assert {:error, :invalid_policy_approval} =
+               Runs.dispatch_mcp_fanout(operation, [target], subject)
+
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(ActionRun)
+      refute Repo.exists?(Emisar.Approvals.Request)
     end
 
     test "rejects an already-stale signed fan-out before reserving its operation" do
@@ -1693,7 +1778,8 @@ defmodule Emisar.RunsTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       %{
@@ -2673,7 +2759,8 @@ defmodule Emisar.RunsTest do
               "high" => "deny",
               "critical" => "deny"
             },
-            "overrides" => []
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           }
         )
 

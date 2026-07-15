@@ -189,7 +189,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
             },
             "overrides" => [
               %{"name" => "drop-me", "action" => "linux.reboot", "decision" => "deny"}
-            ]
+            ],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           },
           subject
         )
@@ -299,7 +300,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
             },
             "overrides" => [
               %{"name" => "linux-status-only", "action" => "linux.*", "decision" => "allow"}
-            ]
+            ],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           },
           subject
         )
@@ -337,6 +339,45 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       policy = Policies.peek_policy_for_account(account.id)
       assert policy.rules["approval"] == %{"min_approvals" => 2, "allow_self_approval" => false}
+    end
+
+    test "a corrupt stored gate is visible and can be repaired conservatively", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      policy = Policies.peek_policy_for_account(account.id)
+      corrupt_rules = Map.delete(policy.rules, "approval")
+
+      _policy =
+        policy
+        |> Ecto.Changeset.change(rules: corrupt_rules)
+        |> Emisar.Repo.update!()
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "Stored approval settings are invalid"
+      assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="1"/
+
+      assert html =~
+               ~r/<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
+
+      html =
+        render_change(lv, "form_change", %{
+          "editor" => "account",
+          "policy" => %{
+            "approval" => %{"min_approvals" => "1", "allow_self_approval" => "false"}
+          }
+        })
+
+      assert html =~ "Stored approval settings are invalid"
+
+      html = lv |> form("#policy-form-account") |> render_submit()
+      repaired = Policies.peek_policy_for_account(account.id)
+
+      assert repaired.rules["approval"] == %{
+               "min_approvals" => 1,
+               "allow_self_approval" => false
+             }
+
+      refute html =~ "Stored approval settings are invalid"
     end
 
     test "an existing min_approvals reflects in the editor's number input", %{conn: conn} do
@@ -812,8 +853,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         )
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
-      # deny_all/0 carries no approval section → the scoped gate reads as the lax
-      # default (1 approver, self-approval allowed), i.e. weaker than the default.
+      # deny_all/0 carries the lax explicit gate (1 approver, self-approval
+      # allowed), so this scope is weaker than the strict account default.
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
@@ -1173,7 +1214,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
             "schema_version" => 2,
             "overrides" => [
               %{"name" => "block-drop", "action" => "*.drop_*", "decision" => "deny"}
-            ]
+            ],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           },
           subject
         )
@@ -1329,7 +1371,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     %{
       "schema_version" => 2,
       "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
-      "overrides" => []
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
 end

@@ -34,6 +34,7 @@ defmodule Emisar.Policies do
 
   @risk_tiers ~w(low medium high critical)
   @decisions ~w(allow require_approval deny)
+  @max_min_approvals 2_147_483_647
 
   # Conservative default for a fresh account: low+medium auto-run,
   # high needs approval, critical is blocked outright.
@@ -56,37 +57,27 @@ defmodule Emisar.Policies do
   def default_rules, do: @default_rules
   def risk_tiers, do: @risk_tiers
   def decisions, do: @decisions
+  def max_min_approvals, do: @max_min_approvals
 
   @doc """
-  Distinct-approver threshold from the (already-stored) `rules`. Floors at
-  1 — a missing `"approval"` section, a missing key, or any value < 1 reads
-  as 1, so rules persisted before this section existed stay single-approver.
+  Returns the complete approval gate stored in `rules`. Missing, extra, or
+  malformed values fail closed; callers must not invent runtime defaults after
+  the migration that made both settings explicit.
   """
-  def min_approvals_for(rules) when is_map(rules) do
-    case get_in(rules, ["approval", "min_approvals"]) do
-      n when is_integer(n) and n >= 1 -> n
-      _ -> 1
-    end
+  def approval_settings_for(%{
+        "approval" =>
+          %{
+            "min_approvals" => min_approvals,
+            "allow_self_approval" => allow_self_approval
+          } = approval
+      })
+      when map_size(approval) == 2 and is_integer(min_approvals) and min_approvals >= 1 and
+             min_approvals <= @max_min_approvals and
+             is_boolean(allow_self_approval) do
+    {:ok, %{min_approvals: min_approvals, allow_self_approval: allow_self_approval}}
   end
 
-  def min_approvals_for(_rules), do: 1
-
-  @doc """
-  Whether the requester may approve their own run, from the (already-stored)
-  `rules`. A MISSING `"approval"` section or key defaults to `true` (legacy
-  behavior, before this section existed); a PRESENT key that isn't the boolean
-  `true` fails CLOSED (no self-approval) — a corrupt/manually-written value
-  must never silently widen the gate. (Matching one level then the key also
-  avoids a raise on a non-map `"approval"` section.)
-  """
-  def self_approval_allowed?(rules) when is_map(rules) do
-    case rules do
-      %{"approval" => %{"allow_self_approval" => allowed}} -> allowed === true
-      _ -> true
-    end
-  end
-
-  def self_approval_allowed?(_rules), do: true
+  def approval_settings_for(_rules), do: {:error, :invalid_policy_approval}
 
   @doc """
   Decisions sit on a permissiveness ladder: allow < require_approval <
@@ -111,7 +102,7 @@ defmodule Emisar.Policies do
   Decision-agnostic — any shadowed override is dead code, though a shadowed
   `deny` is the security motivation (the operator believes they blocked an
   action that a broader earlier `allow` actually lets through). Pure (no Subject
-  / Repo, like `min_approvals_for/1`); tolerates a missing/empty `"overrides"`
+  / Repo, like `approval_settings_for/1`); tolerates a missing/empty `"overrides"`
   and skips overrides with a missing/blank `"action"` (they can't meaningfully
   subsume or be subsumed).
   """

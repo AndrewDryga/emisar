@@ -16,13 +16,15 @@ defmodule Emisar.PoliciesScopesTest do
       "high" => "allow",
       "critical" => "allow"
     },
-    "overrides" => []
+    "overrides" => [],
+    "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
   }
 
   @deny_all %{
     "schema_version" => 2,
     "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
-    "overrides" => []
+    "overrides" => [],
+    "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
   }
 
   describe "scoped CRUD (save / list / delete)" do
@@ -357,7 +359,8 @@ defmodule Emisar.PoliciesScopesTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       {:ok, _} = Policies.save_rules(tiered, subject)

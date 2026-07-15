@@ -164,20 +164,24 @@ defmodule Emisar.Policies.Policy.Changeset do
 
   defp check_overrides(_), do: {:error, "overrides must be a list"}
 
-  # A missing "approval" section is valid — rules stored before this gate
-  # existed default to single-approver via Policies.{min_approvals_for,
-  # self_approval_allowed?}/1.
-  defp check_approval(nil), do: :ok
+  defp check_approval(nil), do: {:error, "approval settings are required"}
 
   defp check_approval(%{} = approval) do
     cond do
       (extra = Map.keys(approval) -- @valid_approval_keys) != [] ->
         {:error, "unknown approval keys: #{inspect(extra)}"}
 
-      not valid_min_approvals?(Map.get(approval, "min_approvals", 1)) ->
-        {:error, "min_approvals must be an integer >= 1"}
+      not Map.has_key?(approval, "min_approvals") ->
+        {:error, "min_approvals is required"}
 
-      not is_boolean(Map.get(approval, "allow_self_approval", true)) ->
+      not valid_min_approvals?(approval["min_approvals"]) ->
+        {:error,
+         "min_approvals must be an integer between 1 and #{Emisar.Policies.max_min_approvals()}"}
+
+      not Map.has_key?(approval, "allow_self_approval") ->
+        {:error, "allow_self_approval is required"}
+
+      not is_boolean(approval["allow_self_approval"]) ->
         {:error, "allow_self_approval must be a boolean"}
 
       true ->
@@ -187,6 +191,8 @@ defmodule Emisar.Policies.Policy.Changeset do
 
   defp check_approval(_), do: {:error, "approval must be a JSON object"}
 
-  defp valid_min_approvals?(n) when is_integer(n) and n >= 1, do: true
+  defp valid_min_approvals?(n) when is_integer(n) and n >= 1,
+    do: n <= Emisar.Policies.max_min_approvals()
+
   defp valid_min_approvals?(_), do: false
 end

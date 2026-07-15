@@ -711,6 +711,19 @@ defmodule Emisar.ApprovalsTest do
       assert DateTime.diff(request.expires_at, DateTime.utc_now(), :hour) in 23..24
     end
 
+    test "rejects an approval threshold outside the storage range" do
+      {_account, run} = run_fixture()
+
+      assert {:error, changeset} =
+               Approvals.create_request(run, Fixtures.Users.create_user().id, "x",
+                 min_approvals: Emisar.Policies.max_min_approvals() + 1
+               )
+
+      assert "must be less than or equal to #{Emisar.Policies.max_min_approvals()}" in errors_on(
+               changeset
+             ).min_approvals
+    end
+
     test "a duplicate request for the same run is rejected by the unique constraint" do
       {_account, run} = run_fixture()
       {:ok, _} = Approvals.create_request(run, Fixtures.Users.create_user().id, "first")

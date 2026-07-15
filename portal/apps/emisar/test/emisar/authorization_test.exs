@@ -93,7 +93,8 @@ defmodule Emisar.AuthorizationTest do
           "high" => "deny",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       assert {:ok, updated} = Emisar.Policies.save_rules(new_rules, subject)
@@ -235,7 +236,8 @@ defmodule Emisar.AuthorizationTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       })
 
     Emisar.Policies.peek_policy_for_account(account.id)

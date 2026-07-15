@@ -29,8 +29,11 @@ defmodule Emisar.Fixtures.Policies do
             "high" => "allow",
             "critical" => "allow"
           },
-          "overrides" => []
+          "overrides" => [],
+          "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
         }
+
+    rules = Map.put_new(rules, "approval", %{"min_approvals" => 1, "allow_self_approval" => true})
 
     case Policies.peek_policy_for_account(account_id) do
       nil ->

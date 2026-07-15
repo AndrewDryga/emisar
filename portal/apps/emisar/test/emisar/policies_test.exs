@@ -7,8 +7,8 @@ defmodule Emisar.PoliciesTest do
 
   describe "default_rules/0" do
     test "reproduce single-approver, self-approval-allowed behavior" do
-      assert Policies.min_approvals_for(Policies.default_rules()) == 1
-      assert Policies.self_approval_allowed?(Policies.default_rules())
+      assert {:ok, %{min_approvals: 1, allow_self_approval: true}} =
+               Policies.approval_settings_for(Policies.default_rules())
     end
 
     test "carry a valid default decision for every risk tier" do
@@ -35,39 +35,47 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "min_approvals_for/1" do
-    test "reads the section, floors at 1, tolerates a missing section" do
-      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 3}}) == 3
-      # Back-compat: rules stored before the section existed read as 1.
-      assert Policies.min_approvals_for(%{"defaults" => %{}}) == 1
-      assert Policies.min_approvals_for(%{}) == 1
-      assert Policies.min_approvals_for(nil) == 1
-      # Never below 1, even from a corrupt stored value.
-      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 0}}) == 1
+  describe "max_min_approvals/0" do
+    test "matches PostgreSQL's signed integer ceiling" do
+      assert Policies.max_min_approvals() == 2_147_483_647
     end
   end
 
-  describe "self_approval_allowed?/1" do
-    test "defaults true, only an explicit boolean false forbids" do
-      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => false}}) ==
-               false
-
-      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => true}})
-      assert Policies.self_approval_allowed?(%{"defaults" => %{}})
-      assert Policies.self_approval_allowed?(%{})
-      assert Policies.self_approval_allowed?(nil)
+  describe "approval_settings_for/1" do
+    test "returns a complete, typed gate" do
+      assert {:ok, %{min_approvals: 3, allow_self_approval: false}} =
+               Policies.approval_settings_for(%{
+                 "approval" => %{"min_approvals" => 3, "allow_self_approval" => false}
+               })
     end
 
-    test "fails CLOSED on a present non-boolean value" do
-      # A corrupt / manually-written value must not silently widen the gate —
-      # only a MISSING key keeps the legacy allow-default.
-      for bad <- ["yes", "false", 0, 1, nil, %{}] do
-        refute Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => bad}}),
-               "expected #{inspect(bad)} to forbid self-approval"
-      end
+    test "fails closed on missing, partial, extra, or malformed settings" do
+      invalid = [
+        nil,
+        %{},
+        %{"approval" => "garbage"},
+        %{"approval" => %{"min_approvals" => 1}},
+        %{"approval" => %{"allow_self_approval" => false}},
+        %{"approval" => %{"min_approvals" => 0, "allow_self_approval" => false}},
+        %{
+          "approval" => %{
+            "min_approvals" => Policies.max_min_approvals() + 1,
+            "allow_self_approval" => false
+          }
+        },
+        %{"approval" => %{"min_approvals" => 1, "allow_self_approval" => "yes"}},
+        %{
+          "approval" => %{
+            "min_approvals" => 1,
+            "allow_self_approval" => false,
+            "unknown" => true
+          }
+        }
+      ]
 
-      # A non-map approval section doesn't raise and keeps the legacy default.
-      assert Policies.self_approval_allowed?(%{"approval" => "garbage"})
+      for rules <- invalid do
+        assert {:error, :invalid_policy_approval} = Policies.approval_settings_for(rules)
+      end
     end
   end
 
@@ -198,7 +206,8 @@ defmodule Emisar.PoliciesTest do
           "high" => "require_approval",
           "critical" => "deny"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       changeset =
@@ -220,7 +229,8 @@ defmodule Emisar.PoliciesTest do
           "medium" => "require_approval",
           "high" => "allow"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       changeset =
@@ -244,7 +254,8 @@ defmodule Emisar.PoliciesTest do
           "high" => "deny",
           "critical" => "require_approval"
         },
-        "overrides" => []
+        "overrides" => [],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
       changeset =
@@ -259,6 +270,9 @@ defmodule Emisar.PoliciesTest do
 
   describe "change_policy/1 — rules-shape validation (the policy-editor guardrails)" do
     defp rules_changeset(rules) do
+      rules =
+        Map.put_new(rules, "approval", %{"min_approvals" => 1, "allow_self_approval" => true})
+
       Policy.Changeset.create(%{account_id: Ecto.UUID.generate(), rules: rules})
     end
 
@@ -313,19 +327,37 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "rejects min_approvals: 0 in the approval section" do
-      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 0}})
+      changeset =
+        rules_changeset(%{
+          "approval" => %{"min_approvals" => 0, "allow_self_approval" => true}
+        })
+
       refute changeset.valid?
-      assert {"min_approvals must be an integer >= 1", _} = changeset.errors[:rules]
+
+      assert {"min_approvals must be an integer between 1 and " <> _, _} =
+               changeset.errors[:rules]
     end
 
     test "rejects a non-boolean allow_self_approval" do
-      changeset = rules_changeset(%{"approval" => %{"allow_self_approval" => "yes"}})
+      changeset =
+        rules_changeset(%{
+          "approval" => %{"min_approvals" => 1, "allow_self_approval" => "yes"}
+        })
+
       refute changeset.valid?
       assert {"allow_self_approval must be a boolean", _} = changeset.errors[:rules]
     end
 
     test "rejects an unknown key inside the approval section" do
-      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 1, "bogus" => true}})
+      changeset =
+        rules_changeset(%{
+          "approval" => %{
+            "min_approvals" => 1,
+            "allow_self_approval" => true,
+            "bogus" => true
+          }
+        })
+
       refute changeset.valid?
       assert {"unknown approval keys:" <> _, _} = changeset.errors[:rules]
     end
@@ -337,8 +369,25 @@ defmodule Emisar.PoliciesTest do
       assert changeset.valid?
     end
 
-    test "a missing approval section is valid (back-compat with rules stored before the gate)" do
-      assert rules_changeset(%{"schema_version" => 2, "defaults" => %{"low" => "allow"}}).valid?
+    test "rejects either missing approval setting" do
+      missing_min = rules_changeset(%{"approval" => %{"allow_self_approval" => false}})
+      refute missing_min.valid?
+      assert {"min_approvals is required", _} = missing_min.errors[:rules]
+
+      missing_self = rules_changeset(%{"approval" => %{"min_approvals" => 1}})
+      refute missing_self.valid?
+      assert {"allow_self_approval is required", _} = missing_self.errors[:rules]
+    end
+
+    test "rejects a missing approval section after the backfill" do
+      changeset =
+        Policy.Changeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
+        })
+
+      refute changeset.valid?
+      assert {"approval settings are required", _} = changeset.errors[:rules]
     end
 
     test "updating with no rules change doesn't bump the version" do
@@ -889,7 +938,8 @@ defmodule Emisar.PoliciesTest do
         "high" => "allow",
         "critical" => "allow"
       },
-      "overrides" => []
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
 
@@ -897,7 +947,8 @@ defmodule Emisar.PoliciesTest do
     %{
       "schema_version" => 2,
       "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
-      "overrides" => []
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
 end

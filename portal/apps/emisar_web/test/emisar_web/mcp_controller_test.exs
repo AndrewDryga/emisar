@@ -1557,7 +1557,8 @@ defmodule EmisarWeb.MCPControllerTest do
               "high" => "require_approval",
               "critical" => "require_approval"
             },
-            "overrides" => []
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
           },
           subject
         )

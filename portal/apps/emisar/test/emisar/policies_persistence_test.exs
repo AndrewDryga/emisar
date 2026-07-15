@@ -19,7 +19,8 @@ defmodule Emisar.PoliciesPersistenceTest do
         "high" => high_decision,
         "critical" => "deny"
       },
-      "overrides" => []
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
 

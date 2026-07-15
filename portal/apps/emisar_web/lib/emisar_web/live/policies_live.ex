@@ -107,7 +107,7 @@ defmodule EmisarWeb.PoliciesLive do
     rules = (policy && policy.rules) || Policies.default_rules()
     defaults = normalize_defaults(rules["defaults"])
     overrides = normalize_overrides(rules["overrides"])
-    approval = normalize_approval(rules)
+    {approval, approval_valid?} = normalize_approval(rules)
 
     %{
       uid: "account",
@@ -116,11 +116,12 @@ defmodule EmisarWeb.PoliciesLive do
       defaults: defaults,
       overrides: overrides,
       approval: approval,
+      approval_valid?: approval_valid?,
       # Snapshot of the saved rules: editor_dirty?/1 compares the live edits to
       # this, so reverting a change back clears the Save button (not a one-way flag).
       baseline_rules: to_rules(defaults, overrides, approval),
       policy: policy,
-      rules_errors: []
+      rules_errors: stored_approval_errors(approval_valid?)
     }
   end
 
@@ -128,7 +129,7 @@ defmodule EmisarWeb.PoliciesLive do
     rules = policy.rules || Policies.default_rules()
     defaults = normalize_defaults(rules["defaults"])
     overrides = normalize_overrides(rules["overrides"])
-    approval = normalize_approval(rules)
+    {approval, approval_valid?} = normalize_approval(rules)
 
     %{
       uid: policy.id,
@@ -137,9 +138,10 @@ defmodule EmisarWeb.PoliciesLive do
       defaults: defaults,
       overrides: overrides,
       approval: approval,
+      approval_valid?: approval_valid?,
       baseline_rules: to_rules(defaults, overrides, approval),
       policy: policy,
-      rules_errors: []
+      rules_errors: stored_approval_errors(approval_valid?)
     }
   end
 
@@ -155,6 +157,7 @@ defmodule EmisarWeb.PoliciesLive do
       defaults: account.defaults,
       overrides: account.overrides,
       approval: account.approval,
+      approval_valid?: true,
       baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
       # Filled in once a target is picked (set_target); no target = no catalog.
       catalog: %{},
@@ -371,6 +374,7 @@ defmodule EmisarWeb.PoliciesLive do
   # The Save button is emerald only while the editor differs from what's saved: a
   # new (unsaved) ruleset is always dirty; otherwise the live rules are compared
   # to the baseline snapshot, so a revert flips it back to outlined.
+  defp editor_dirty?(%{approval_valid?: false}), do: true
   defp editor_dirty?(%{scope_type: :account} = editor), do: rules_changed?(editor)
   defp editor_dirty?(%{policy: nil}), do: true
   defp editor_dirty?(editor), do: rules_changed?(editor)
@@ -388,12 +392,16 @@ defmodule EmisarWeb.PoliciesLive do
       overrides = merge_overrides(editor.overrides, params["overrides"] || [])
       approval = merge_approval(editor.approval, params["approval"] || %{})
 
+      rules_errors =
+        stored_approval_errors(editor.approval_valid?) ++
+          rules_errors(defaults, overrides, approval)
+
       %{
         editor
         | defaults: defaults,
           overrides: overrides,
           approval: approval,
-          rules_errors: rules_errors(defaults, overrides, approval)
+          rules_errors: rules_errors
       }
     end)
   end
@@ -441,14 +449,26 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp empty_override, do: %{"name" => "", "action" => "", "decision" => "allow"}
 
-  # The approval-gate editor state, read off the stored rules (defaults when
-  # the section is absent — rules saved before the gate existed).
+  # Corrupt stored settings block dispatch, but the editor must remain a repair
+  # path. Present a conservative complete gate and keep the editor dirty until
+  # the operator explicitly saves it.
   defp normalize_approval(rules) when is_map(rules) do
-    %{
-      "min_approvals" => Policies.min_approvals_for(rules),
-      "allow_self_approval" => Policies.self_approval_allowed?(rules)
-    }
+    case Policies.approval_settings_for(rules) do
+      {:ok, approval} ->
+        {%{
+           "min_approvals" => approval.min_approvals,
+           "allow_self_approval" => approval.allow_self_approval
+         }, true}
+
+      {:error, :invalid_policy_approval} ->
+        {%{"min_approvals" => 1, "allow_self_approval" => false}, false}
+    end
   end
+
+  defp stored_approval_errors(true), do: []
+
+  defp stored_approval_errors(false),
+    do: ["Stored approval settings are invalid. Review this gate and save the policy."]
 
   # A native checkbox posts its value only when checked, so an UNCHECKED
   # allow_self_approval (the box absent from params) reads as false. The number
@@ -1189,6 +1209,7 @@ defmodule EmisarWeb.PoliciesLive do
               name="policy[approval][min_approvals]"
               value={@approval["min_approvals"]}
               min="1"
+              max={Policies.max_min_approvals()}
               step="1"
               disabled={!@can_manage}
               class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"

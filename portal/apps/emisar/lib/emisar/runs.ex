@@ -733,7 +733,7 @@ defmodule Emisar.Runs do
         |> Map.put(:requires_approval, false)
         |> Map.put(:mcp_operation_record_id, operation_record_id)
 
-      {:ok, plan_mcp_policy(attrs, account_id, action, use_grants?)}
+      plan_mcp_policy(attrs, account_id, action, use_grants?)
     end
   end
 
@@ -743,26 +743,30 @@ defmodule Emisar.Runs do
 
     case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs, group) do
       {:deny, matched, reason, policy} ->
-        %{
-          attrs:
-            attrs
-            |> Map.merge(policy_attrs(policy, "deny", reason, matched))
-            |> Map.put(:status, :denied),
-          delivery: :none
-        }
+        {:ok,
+         %{
+           attrs:
+             attrs
+             |> Map.merge(policy_attrs(policy, "deny", reason, matched))
+             |> Map.put(:status, :denied),
+           delivery: :none
+         }}
 
       {:allow, matched, reason, policy} ->
-        %{
-          attrs: Map.merge(attrs, policy_attrs(policy, "allow", reason, matched)),
-          delivery: :runner
-        }
+        {:ok,
+         %{
+           attrs: Map.merge(attrs, policy_attrs(policy, "allow", reason, matched)),
+           delivery: :runner
+         }}
 
       {:require_approval, matched, reason, policy} ->
-        plan_mcp_approval(attrs, policy, reason, matched, use_grants?)
+        with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
+          {:ok, plan_mcp_approval(attrs, policy, reason, matched, use_grants?, approval)}
+        end
     end
   end
 
-  defp plan_mcp_approval(attrs, policy, policy_reason, matched, true) do
+  defp plan_mcp_approval(attrs, policy, policy_reason, matched, true, approval) do
     case lookup_grant(attrs) do
       {:matched, grant} ->
         %{
@@ -776,19 +780,19 @@ defmodule Emisar.Runs do
         }
 
       :none ->
-        plan_mcp_approval(attrs, policy, policy_reason, matched, false)
+        plan_mcp_approval(attrs, policy, policy_reason, matched, false, approval)
     end
   end
 
-  defp plan_mcp_approval(attrs, policy, policy_reason, matched, false) do
+  defp plan_mcp_approval(attrs, policy, policy_reason, matched, false, approval) do
     attrs =
       attrs
       |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
       |> Map.merge(%{status: :pending_approval, requires_approval: true})
 
     request_opts = [
-      min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
-      allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules),
+      min_approvals: approval.min_approvals,
+      allow_self_approval: approval.allow_self_approval,
       expires_at: approval_attestation_deadline(attrs)
     ]
 
@@ -1375,21 +1379,23 @@ defmodule Emisar.Runs do
   # `:allow`; the grant is named in the audit row so it's traceable
   # back to the human who said yes.
   defp dispatch_require_approval(attrs, policy, policy_reason, matched) do
-    case lookup_grant(attrs) do
-      {:matched, grant} ->
-        case dispatch_with_grant(attrs, policy, matched, grant) do
-          # The grant lapsed (expired / exhausted / revoked) between the peek and
-          # the atomic consume — fall back to the normal approval flow as if no
-          # grant matched, rather than burning a use or erroring the caller.
-          {:error, :grant_unusable} ->
-            file_approval_request(attrs, policy, policy_reason, matched)
+    with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
+      case lookup_grant(attrs) do
+        {:matched, grant} ->
+          case dispatch_with_grant(attrs, policy, matched, grant) do
+            # The grant lapsed (expired / exhausted / revoked) between the peek and
+            # the atomic consume — fall back to the normal approval flow as if no
+            # grant matched, rather than burning a use or erroring the caller.
+            {:error, :grant_unusable} ->
+              file_approval_request(attrs, policy, policy_reason, matched, approval)
 
-          other ->
-            other
-        end
+            other ->
+              other
+          end
 
-      :none ->
-        file_approval_request(attrs, policy, policy_reason, matched)
+        :none ->
+          file_approval_request(attrs, policy, policy_reason, matched, approval)
+      end
     end
   end
 
@@ -1423,7 +1429,7 @@ defmodule Emisar.Runs do
   # the `action_run.pending_approval` gating row (`:pending_approval` ∈
   # @audited_run_statuses) + the approval request itself already record that the
   # action was gated (audit-logging-diet #3).
-  defp file_approval_request(attrs, policy, policy_reason, matched) do
+  defp file_approval_request(attrs, policy, policy_reason, matched, approval) do
     attrs =
       attrs
       |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
@@ -1434,8 +1440,8 @@ defmodule Emisar.Runs do
     # policy_version snapshot). The operator's reason ("why I'm running this")
     # goes to the request; the policy reason stays on run.policy_reason.
     request_opts = [
-      min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
-      allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules)
+      min_approvals: approval.min_approvals,
+      allow_self_approval: approval.allow_self_approval
     ]
 
     compose =
