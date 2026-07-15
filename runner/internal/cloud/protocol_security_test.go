@@ -9,7 +9,8 @@ import (
 
 func TestRunActionMsgPreservesExactArgumentBytes(t *testing.T) {
 	wantArgs := "{\"job_id\":891234567890123456, \"ratio\":1e3, \"nested\":{\"ok\":true}}"
-	raw := []byte("{\"type\":\"run_action\",\"protocol_version\":1,\"request_id\":\"req_exact\",\"action_id\":\"db.pause\",\"pack_ref\":\"db@1.0.0/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"args\":" + wantArgs + ",\"reason\":\"maintenance\",\"operation_id\":\"op_00000000000000000000000000\"}")
+	wantHash := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	raw := []byte("{\"type\":\"run_action\",\"protocol_version\":1,\"request_id\":\"req_exact\",\"action_id\":\"db.pause\",\"expected_pack_hash\":\"" + wantHash + "\",\"pack_ref\":\"db@1.0.0/" + wantHash + "\",\"args\":" + wantArgs + ",\"reason\":\"maintenance\",\"operation_id\":\"op_00000000000000000000000000\"}")
 
 	var msg RunActionMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
@@ -21,7 +22,9 @@ func TestRunActionMsgPreservesExactArgumentBytes(t *testing.T) {
 	if got := msg.Args["job_id"].(json.Number).String(); got != "891234567890123456" {
 		t.Fatalf("decoded large integer = %s", got)
 	}
-
+	if msg.ExpectedPackHash != wantHash {
+		t.Fatalf("expected_pack_hash = %q, want %q", msg.ExpectedPackHash, wantHash)
+	}
 }
 
 func TestRunActionMsgRejectsDuplicateKeysAtEveryDepth(t *testing.T) {

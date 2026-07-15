@@ -57,18 +57,19 @@ type Envelope struct {
 // evaluated its policy; the runner re-validates args against the action's
 // declared schema and refuses if anything is off.
 //
-// PackRef is the immutable pack id/version/content hash the operator selected.
-// The runner re-hashes its on-disk pack immediately before execution and
-// refuses any different local artifact.
+// ExpectedPackHash is the content hash trusted by the control plane for every
+// dispatch. PackRef additionally binds signed MCP calls to the immutable pack
+// id/version/content hash selected by the client.
 type RunActionMsg struct {
 	Envelope
-	ActionID    string          `json:"action_id"`
-	PackRef     string          `json:"pack_ref,omitempty"`
-	Args        map[string]any  `json:"-"`
-	ArgsRaw     json.RawMessage `json:"-"`
-	Opts        *RunOpts        `json:"opts,omitempty"`
-	Reason      string          `json:"reason,omitempty"`
-	OperationID string          `json:"operation_id,omitempty"`
+	ActionID         string          `json:"action_id"`
+	ExpectedPackHash string          `json:"expected_pack_hash,omitempty"`
+	PackRef          string          `json:"pack_ref,omitempty"`
+	Args             map[string]any  `json:"-"`
+	ArgsRaw          json.RawMessage `json:"-"`
+	Opts             *RunOpts        `json:"opts,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	OperationID      string          `json:"operation_id,omitempty"`
 	// Attestation is the client signature an enforcing runner requires. The
 	// cloud RELAYS it from the originating MCP call; it cannot forge or alter
 	// it. Nil on portal-originated dispatch (operator/runbook), which an
@@ -88,13 +89,14 @@ const (
 
 type runActionMsgWire struct {
 	Envelope
-	ActionID    string          `json:"action_id"`
-	PackRef     string          `json:"pack_ref,omitempty"`
-	Args        json.RawMessage `json:"args,omitempty"`
-	Opts        *RunOpts        `json:"opts,omitempty"`
-	Reason      string          `json:"reason,omitempty"`
-	OperationID string          `json:"operation_id,omitempty"`
-	Attestation *Attestation    `json:"attestation,omitempty"`
+	ActionID         string          `json:"action_id"`
+	ExpectedPackHash string          `json:"expected_pack_hash,omitempty"`
+	PackRef          string          `json:"pack_ref,omitempty"`
+	Args             json.RawMessage `json:"args,omitempty"`
+	Opts             *RunOpts        `json:"opts,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	OperationID      string          `json:"operation_id,omitempty"`
+	Attestation      *Attestation    `json:"attestation,omitempty"`
 }
 
 // MarshalJSON lets test and internal callers provide either the decoded Args map
@@ -116,7 +118,8 @@ func (m RunActionMsg) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(runActionMsgWire{
-		Envelope: m.Envelope, ActionID: m.ActionID, PackRef: m.PackRef,
+		Envelope: m.Envelope, ActionID: m.ActionID,
+		ExpectedPackHash: m.ExpectedPackHash, PackRef: m.PackRef,
 		Args: raw, Opts: m.Opts, Reason: m.Reason, OperationID: m.OperationID,
 		Attestation: m.Attestation,
 	})
@@ -149,7 +152,8 @@ func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = RunActionMsg{
-		Envelope: wire.Envelope, ActionID: wire.ActionID, PackRef: wire.PackRef,
+		Envelope: wire.Envelope, ActionID: wire.ActionID,
+		ExpectedPackHash: wire.ExpectedPackHash, PackRef: wire.PackRef,
 		Args: args, ArgsRaw: append(json.RawMessage(nil), normalizedArgsRaw(wire.Args)...),
 		Opts: wire.Opts, Reason: wire.Reason, OperationID: wire.OperationID,
 		Attestation: wire.Attestation,

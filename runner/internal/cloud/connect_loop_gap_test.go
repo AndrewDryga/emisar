@@ -294,7 +294,7 @@ func TestClient_Result_OmitsStdoutStderrContent(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	sendRunAction(t, conn, "req_nocontent", "t.echo", map[string]any{"msg": "streamed-bytes"})
+	sendRunAction(t, conn, cli, "req_nocontent", "t.echo", map[string]any{"msg": "streamed-bytes"})
 	res := waitForResult(t, conn, "req_nocontent", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
@@ -359,7 +359,7 @@ func TestClient_Heartbeat_CarriesActionLoad(t *testing.T) {
 
 	// Start a long-running action so the in-flight count is non-zero while the
 	// heartbeats fire.
-	sendRunAction(t, conn, "req_busy", "t.sleep", nil)
+	sendRunAction(t, conn, cli, "req_busy", "t.sleep", nil)
 	waitUntil(t, 3*time.Second, func() bool { return cli.countInflight() >= 1 })
 
 	// Some heartbeat sent while the run was in flight must report the load.

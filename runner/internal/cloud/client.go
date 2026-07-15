@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -695,18 +696,11 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 }
 
 // passesTrustGate re-hashes the action's pack from disk and compares it to the
-// cloud-supplied PackRef. On success it returns the exact registry snapshot that
-// was checked, which Engine.Run must retain through execution. On mismatch it
-// enqueues a pack_hash_mismatch result and requests a catalog re-advertisement.
+// control plane's trusted hash. Signed calls also carry PackRef, which must
+// describe the same local pack. On success it returns the exact registry
+// snapshot that Engine.Run retains through execution.
 func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, bool) {
 	reg := c.opts.Engine.Registry()
-	expected := m.PackRef
-	if expected == "" {
-		// Signature-enforcing runners reject a missing signed PackRef before this
-		// point. With enforcement off, an absent ref skips only the hash check.
-		return reg, true
-	}
-
 	action, ok := reg.Action(m.ActionID)
 	if !ok || action.PackID == "" {
 		// Action vanished or has no pack. Let the engine produce its
@@ -730,27 +724,42 @@ func (c *Client) passesTrustGate(s *runState, m RunActionMsg) (*packs.Registry, 
 		// cause is the operator deleted files between load and dispatch,
 		// and we shouldn't run a half-existing pack on the assumption it
 		// matched.
-		c.emitPackMismatch(s, m, action.PackID, expected, "rehash_failed:"+err.Error())
+		c.emitPackMismatch(s, m, action.PackID, m.ExpectedPackHash, "rehash_failed:"+err.Error())
 		return nil, false
 	}
 
-	got := fmt.Sprintf("%s@%s/%s", pack.ID, pack.Version, hash)
-	if got == expected {
-		return reg, true
+	if hash != m.ExpectedPackHash {
+		expected := m.ExpectedPackHash
+		if strings.TrimSpace(expected) == "" {
+			expected = "<missing>"
+		}
+		c.opts.Logger.Warn("cloud.pack_hash_mismatch",
+			"request_id", m.RequestID,
+			"action_id", m.ActionID,
+			"pack_id", action.PackID,
+			"expected", expected,
+			"got", hash,
+		)
+		c.emitPackMismatch(s, m, action.PackID, expected, hash)
+		c.Readvertise()
+		return nil, false
 	}
 
-	c.opts.Logger.Warn("cloud.pack_hash_mismatch",
-		"request_id", m.RequestID,
-		"action_id", m.ActionID,
-		"pack_id", action.PackID,
-		"expected", expected,
-		"got", got,
-	)
-	c.emitPackMismatch(s, m, action.PackID, expected, got)
-	// Kick a state re-advertisement so cloud sees the new hash and
-	// flips the pack to pending_trust in the UI.
-	c.Readvertise()
-	return nil, false
+	gotRef := fmt.Sprintf("%s@%s/%s", pack.ID, pack.Version, hash)
+	if m.PackRef != "" && gotRef != m.PackRef {
+		c.opts.Logger.Warn("cloud.pack_ref_mismatch",
+			"request_id", m.RequestID,
+			"action_id", m.ActionID,
+			"pack_id", action.PackID,
+			"expected", m.PackRef,
+			"got", gotRef,
+		)
+		c.emitPackMismatch(s, m, action.PackID, m.PackRef, gotRef)
+		c.Readvertise()
+		return nil, false
+	}
+
+	return reg, true
 }
 
 // emitPackMismatch enqueues the terminal ActionResultMsg the cloud
@@ -765,8 +774,8 @@ func (c *Client) emitPackMismatch(s *runState, m RunActionMsg, packID, expected,
 		ExitCode:   -1,
 		DurationMS: 0,
 		Error: fmt.Sprintf(
-			"pack %q hash on disk (%s) does not match cloud-pinned trusted hash (%s); refused — operator must review the drift in /app/packs",
-			packID, got, expected,
+			"pack %q does not match the dispatch trust contract (expected %s, got %s); refused — operator must review the drift in /app/packs",
+			packID, expected, got,
 		),
 		Reason: "pack_hash_mismatch",
 	}

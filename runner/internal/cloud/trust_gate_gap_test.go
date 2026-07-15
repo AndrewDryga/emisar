@@ -26,21 +26,15 @@ import (
 // gate_test.go / signature_test.go) reaches them with no production change.
 //
 // Harness reused here: newFakeConn, queuedDialer, buildClient, sendRunAction,
-// sendRunActionWithPackRef, waitForResult, waitUntil, runEnforcingClient,
-// attestationFor, sendRunActionWithAttestation.
+// sendRunActionWithPackContract, sendRunActionWithPackRef, waitForResult,
+// waitUntil, enforcingClient, and attestationFor.
 
 // --- Pack-hash trust gate ---------------------------------------------------
 
-// /
-//
-// The cloud may not have a trusted hash on file yet (a very early observation,
-// or a runner that pre-dates pack-hash pinning). When the run_action carries NO
-// pack_ref, passesTrustGate returns early and the
-// run proceeds normally — the runner does not invent a pin the cloud never sent.
-// Distinct from a MATCHING hash (TestClient_TrustGate_PassWithMatchingHash): no
-// rehash happens at all, so even a runner whose on-disk pack differs from some
-// cloud-side record would run, because the cloud asserted no pin.
-func TestClient_TrustGate_AbsentHashSkipsGateAndProceeds(t *testing.T) {
+// A known pack-backed action must carry the hash the portal authorized. Missing
+// the hash is a malformed dispatch and fails closed; PackRef is optional only
+// because unsigned operator dispatches do not have a client attestation.
+func TestClient_TrustGate_MissingExpectedHashRefuses(t *testing.T) {
 	conn := newFakeConn()
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
 
@@ -50,21 +44,17 @@ func TestClient_TrustGate_AbsentHashSkipsGateAndProceeds(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	// Empty pack_ref: the cloud sent no pin.
-	sendRunActionWithPackRef(t, conn, "req_nopin", "t.echo", map[string]any{"msg": "ok"}, "")
+	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 1 })
+	sendRunActionWithPackContract(t, conn, "req_nopin", "t.echo", map[string]any{"msg": "ok"}, "", "")
 	res := waitForResult(t, conn, "req_nopin", 3*time.Second)
-	if res["status"] != "success" {
-		t.Fatalf("status=%v reason=%v error=%v — an absent pin must skip the trust gate, not refuse",
+	if res["status"] != "pack_hash_mismatch" {
+		t.Fatalf("status=%v reason=%v error=%v, want pack_hash_mismatch",
 			res["status"], res["reason"], res["error"])
 	}
-	if res["reason"] == "pack_hash_mismatch" {
-		t.Fatalf("trust gate must not fire when no pack_ref was sent")
+	if !strings.Contains(res["error"].(string), "<missing>") {
+		t.Fatalf("error=%v, want missing-hash detail", res["error"])
 	}
-	// No re-advertise should have been kicked — that path is only for a real
-	// mismatch. Beyond the initial connect state, there must be no follow-up.
-	if got := len(conn.sentByType(MsgRunnerState)); got != 1 {
-		t.Fatalf("expected exactly the initial runner_state (1), got %d — the no-pin path must not Readvertise", got)
-	}
+	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 2 })
 }
 
 // /
@@ -87,7 +77,7 @@ func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 
 	// A pinned hash, but for an action the registry doesn't know. The gate must
 	// defer to the engine's unknown_action rather than emit pack_hash_mismatch.
-	sendRunActionWithPackRef(t, conn, "req_unknown", "t.does_not_exist",
+	sendRunActionWithPackRef(t, conn, cli, "req_unknown", "t.does_not_exist",
 		map[string]any{"msg": "x"}, "t@0.0.1/sha256:SOME_PINNED_HASH")
 	res := waitForResult(t, conn, "req_unknown", 3*time.Second)
 	if res["status"] != "unknown_action" {
@@ -120,7 +110,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 	// First dispatch: mismatched pin → pack_hash_mismatch, refusal cached, and
 	// exactly one re-advertise kicked.
-	sendRunActionWithPackRef(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:NOT_THE_HASH")
+	sendRunActionWithPackContract(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "sha256:NOT_THE_HASH", "")
 	res := waitForResult(t, conn, "req_cached", 3*time.Second)
 	if res["status"] != "pack_hash_mismatch" {
 		t.Fatalf("first dispatch status=%v, want pack_hash_mismatch", res["status"])
@@ -137,7 +127,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 	// Second dispatch with the same request_id: the dedup path replays the
 	// cached refusal. The gate does NOT run again, so no additional re-advertise.
-	sendRunActionWithPackRef(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:NOT_THE_HASH")
+	sendRunActionWithPackContract(t, conn, "req_cached", "t.echo", map[string]any{"msg": "x"}, "sha256:NOT_THE_HASH", "")
 
 	// Wait until cloud has received the result a second time (two result copies
 	// for the same request_id).
@@ -183,7 +173,7 @@ func TestClient_RegistrySwap_NewDispatchSeesReloadedPacks(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-done })
 
 	// Before the reload, t.shout is unknown to the registry the dispatch reads.
-	sendRunAction(t, conn, "req_before_reload", "t.shout", map[string]any{"msg": "hi"})
+	sendRunAction(t, conn, cli, "req_before_reload", "t.shout", map[string]any{"msg": "hi"})
 	if res := waitForResult(t, conn, "req_before_reload", 3*time.Second); res["status"] != "unknown_action" {
 		t.Fatalf("pre-reload t.shout status=%v, want unknown_action", res["status"])
 	}
@@ -210,7 +200,7 @@ func TestClient_RegistrySwap_NewDispatchSeesReloadedPacks(t *testing.T) {
 
 	// A new dispatch after the swap must resolve and run the freshly added
 	// action — proof the dispatch path observes the swapped registry.
-	sendRunAction(t, conn, "req_after_reload", "t.shout", map[string]any{"msg": "hi"})
+	sendRunAction(t, conn, cli, "req_after_reload", "t.shout", map[string]any{"msg": "hi"})
 	if res := waitForResult(t, conn, "req_after_reload", 3*time.Second); res["status"] != "success" {
 		t.Fatalf("post-reload t.shout status=%v reason=%v — a new dispatch must see the reloaded pack set",
 			res["status"], res["reason"])
@@ -252,7 +242,7 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	att := attestationFor(t, cli, priv, "t.echo", args)
 	raw, err := json.Marshal(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_admit_deny"},
-		ActionID: "t.echo", PackRef: att.PackRef, Args: args,
+		ActionID: "t.echo", ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
 		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
 	})
 	if err != nil {

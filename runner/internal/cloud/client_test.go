@@ -214,21 +214,36 @@ actions:
 	return NewClient(dialer, opts)
 }
 
-func sendRunAction(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any) {
+func sendRunAction(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any) {
 	t.Helper()
-	sendRunActionWithPackRef(t, c, requestID, actionID, args, "")
+	sendRunActionWithPackContract(t, c, requestID, actionID, args, currentPackHash(t, cli, "t"), "")
 }
 
-func sendRunActionWithPackRef(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, packRef string) {
+func sendRunActionWithPackRef(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any, packRef string) {
+	t.Helper()
+	sendRunActionWithPackContract(t, c, requestID, actionID, args, currentPackHash(t, cli, "t"), packRef)
+}
+
+func sendRunActionWithPackContract(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash, packRef string) {
 	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
-		ActionID: actionID, PackRef: packRef, Args: args, Reason: "test",
+		ActionID: actionID, ExpectedPackHash: expectedPackHash, PackRef: packRef,
+		Args: args, Reason: "test",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.in <- raw
+}
+
+func currentPackHash(t *testing.T, cli *Client, packID string) string {
+	t.Helper()
+	hash, ok := cli.opts.Engine.Registry().PackHash(packID)
+	if !ok {
+		t.Fatalf("registry has no hash for pack %s", packID)
+	}
+	return hash
 }
 
 func currentPackRef(t *testing.T, cli *Client, packID string) string {
@@ -351,9 +366,8 @@ func TestClient_UnavailableDispatchLogPreventsExecution(t *testing.T) {
 	}
 }
 
-// TestClient_TrustGate_PassWithMatchingHash — when cloud supplies a PackRef
-// whose hash matches the runner's on-disk pack, the run
-// proceeds normally and the result is delivered.
+// TestClient_TrustGate_PassWithMatchingHash proves the ordinary unsigned
+// operator path: a matching expected_pack_hash is sufficient without PackRef.
 func TestClient_TrustGate_PassWithMatchingHash(t *testing.T) {
 	conn := newFakeConn()
 	d := &queuedDialer{conns: []*fakeConn{conn}}
@@ -365,7 +379,7 @@ func TestClient_TrustGate_PassWithMatchingHash(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	sendRunActionWithPackRef(t, conn, "req_pass", "t.echo", map[string]any{"msg": "ok"}, currentPackRef(t, cli, "t"))
+	sendRunAction(t, conn, cli, "req_pass", "t.echo", map[string]any{"msg": "ok"})
 	res := waitForResult(t, conn, "req_pass", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
@@ -402,7 +416,7 @@ func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
 	}
 	initialStateCount := len(conn.sentByType(MsgRunnerState))
 
-	sendRunActionWithPackRef(t, conn, "req_refuse", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:DEFINITELY_NOT_THE_HASH")
+	sendRunActionWithPackRef(t, conn, cli, "req_refuse", "t.echo", map[string]any{"msg": "x"}, "t@0.0.1/sha256:DEFINITELY_NOT_THE_HASH")
 	res := waitForResult(t, conn, "req_refuse", 3*time.Second)
 	if res["status"] != "pack_hash_mismatch" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
@@ -441,7 +455,7 @@ func TestClient_DeliversResultsOnSingleConn(t *testing.T) {
 		<-done
 	})
 
-	sendRunAction(t, conn, "req_a", "t.echo", map[string]any{"msg": "hi"})
+	sendRunAction(t, conn, cli, "req_a", "t.echo", map[string]any{"msg": "hi"})
 	res := waitForResult(t, conn, "req_a", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
@@ -473,7 +487,7 @@ func TestClient_ReplaysResultAcrossReconnect(t *testing.T) {
 	// rather than racing it. (Progress and runner_state still go out on conn1;
 	// only the result is refused, which fails the sender and ends the session.)
 	conn1.failResults.Store(true)
-	sendRunAction(t, conn1, "req_replay", "t.echo", map[string]any{"msg": "across"})
+	sendRunAction(t, conn1, cli, "req_replay", "t.echo", map[string]any{"msg": "across"})
 
 	// The client should fail conn1's sender, back off briefly, dial
 	// conn2, send runner_state, then replay the queued result on conn2.
@@ -601,7 +615,7 @@ func TestClient_CancelMsgTerminatesInflightAction(t *testing.T) {
 
 	// Kick off the sleep action.
 	start := time.Now()
-	sendRunAction(t, conn, "req_cancel", "t.sleep", nil)
+	sendRunAction(t, conn, cli, "req_cancel", "t.sleep", nil)
 
 	// Wait briefly for the runner to register the in-flight run. Polling
 	// is cheap; we just need handleRun to have inserted into c.runs.
@@ -667,9 +681,10 @@ func TestClient_TolerantOfNewerProtocolVersion(t *testing.T) {
 			ProtocolVersion: 999,
 			RequestID:       "req_future",
 		},
-		ActionID: "t.echo",
-		Args:     map[string]any{"msg": "future ok"},
-		Reason:   "test",
+		ActionID:         "t.echo",
+		ExpectedPackHash: currentPackHash(t, cli, "t"),
+		Args:             map[string]any{"msg": "future ok"},
+		Reason:           "test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -704,7 +719,7 @@ func TestClient_OutboundProtocolVersionConsistent(t *testing.T) {
 		<-done
 	})
 
-	sendRunAction(t, conn, "req_v", "t.echo", map[string]any{"msg": "v"})
+	sendRunAction(t, conn, cli, "req_v", "t.echo", map[string]any{"msg": "v"})
 	_ = waitForResult(t, conn, "req_v", 3*time.Second)
 
 	conn.mu.Lock()
@@ -744,8 +759,8 @@ func TestClient_ConcurrencyCap(t *testing.T) {
 	})
 
 	// Two concurrent runs; second should be rejected.
-	sendRunAction(t, conn, "req_first", "t.echo", map[string]any{"msg": "1"})
-	sendRunAction(t, conn, "req_second", "t.echo", map[string]any{"msg": "2"})
+	sendRunAction(t, conn, cli, "req_first", "t.echo", map[string]any{"msg": "1"})
+	sendRunAction(t, conn, cli, "req_second", "t.echo", map[string]any{"msg": "2"})
 
 	// Look for any error message with concurrency_cap_reached. We can't
 	// guarantee ordering — the first might finish before the second

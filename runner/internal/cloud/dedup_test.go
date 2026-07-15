@@ -341,7 +341,7 @@ func TestDedupRing_ConcurrentReservations(t *testing.T) {
 
 func TestDispatchDigest_PreservesFactsAndLargeJSONNumbers(t *testing.T) {
 	base := RunActionMsg{
-		ActionID: "cockroach.pause_job", PackRef: "cockroach@1/abc",
+		ActionID: "cockroach.pause_job", ExpectedPackHash: "sha256:abc", PackRef: "cockroach@1/sha256:abc",
 		ArgsRaw: json.RawMessage(`{"job_id":9007199254740993}`),
 		Reason:  "maintenance", OperationID: "op-1",
 	}
@@ -357,5 +357,14 @@ func TestDispatchDigest_PreservesFactsAndLargeJSONNumbers(t *testing.T) {
 	}
 	if first == second || len(first) != 64 || strings.Trim(first, "0123456789abcdef") != "" {
 		t.Fatalf("bad dispatch digests: %q %q", first, second)
+	}
+	changed = base
+	changed.ExpectedPackHash = "sha256:def"
+	third, err := dispatchDigest(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == third {
+		t.Fatal("expected_pack_hash must be part of the dispatch digest")
 	}
 }

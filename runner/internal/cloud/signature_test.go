@@ -119,11 +119,11 @@ func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.Priv
 	}
 }
 
-func sendRunActionWithAttestation(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, att *Attestation) {
+func sendRunActionWithAttestation(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any, att *Attestation) {
 	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
-		ActionID: actionID, PackRef: att.PackRef, Args: args,
+		ActionID: actionID, ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
 		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
 	})
 	if err != nil {
@@ -151,7 +151,7 @@ func TestClient_SignatureGate_PassesWhenSigned(t *testing.T) {
 	args := map[string]any{"msg": "ok"}
 	att := attestationFor(t, cli, priv, "t.echo", args)
 
-	sendRunActionWithAttestation(t, conn, "req_signed", "t.echo", args, att)
+	sendRunActionWithAttestation(t, conn, cli, "req_signed", "t.echo", args, att)
 	res := waitForResult(t, conn, "req_signed", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
@@ -161,9 +161,9 @@ func TestClient_SignatureGate_PassesWhenSigned(t *testing.T) {
 // An enforcing runner refuses an unsigned dispatch — the cloud (which can't
 // forge a signature) cannot originate a run on this host.
 func TestClient_SignatureGate_RefusesUnsigned(t *testing.T) {
-	conn, _, _ := runEnforcingClient(t)
+	conn, cli, _ := runEnforcingClient(t)
 
-	sendRunAction(t, conn, "req_unsigned", "t.echo", map[string]any{"msg": "ok"})
+	sendRunAction(t, conn, cli, "req_unsigned", "t.echo", map[string]any{"msg": "ok"})
 	res := waitForResult(t, conn, "req_unsigned", 3*time.Second)
 	if res["status"] != "signature_invalid" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
@@ -180,7 +180,7 @@ func TestClient_SignatureGate_RefusesTamperedArgs(t *testing.T) {
 	// Signed for {"msg":"ok"} but dispatched with {"msg":"evil"}.
 	att := attestationFor(t, cli, priv, "t.echo", map[string]any{"msg": "ok"})
 
-	sendRunActionWithAttestation(t, conn, "req_tampered", "t.echo", map[string]any{"msg": "evil"}, att)
+	sendRunActionWithAttestation(t, conn, cli, "req_tampered", "t.echo", map[string]any{"msg": "evil"}, att)
 	res := waitForResult(t, conn, "req_tampered", 3*time.Second)
 	if res["status"] != "signature_invalid" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
@@ -202,7 +202,7 @@ func TestClient_SignatureGate_PreservesExactLargeInteger(t *testing.T) {
 	}
 	att := attestationFor(t, cli, priv, "t.echo", args)
 
-	sendRunActionWithAttestation(t, conn, "req_large_integer", "t.echo", args, att)
+	sendRunActionWithAttestation(t, conn, cli, "req_large_integer", "t.echo", args, att)
 	res := waitForResult(t, conn, "req_large_integer", 3*time.Second)
 	if res["status"] != "validation_failed" {
 		t.Fatalf("status=%v reason=%v, want validation_failed after the signature gate", res["status"], res["reason"])
@@ -224,7 +224,7 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 
 	// A ca1-certified dispatch runs while ca1 is trusted.
 	args := map[string]any{"msg": "ok"}
-	sendRunActionWithAttestation(t, conn, "req_before", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
+	sendRunActionWithAttestation(t, conn, cli, "req_before", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
 	if res := waitForResult(t, conn, "req_before", 3*time.Second); res["status"] != "success" {
 		t.Fatalf("pre-revoke status=%v, want success", res["status"])
 	}
@@ -241,7 +241,7 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 
 	// The same validly-ca1-certified dispatch shape is now refused — ca1 is
 	// unknown to the swapped-in verifier.
-	sendRunActionWithAttestation(t, conn, "req_after", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
+	sendRunActionWithAttestation(t, conn, cli, "req_after", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
 	if res := waitForResult(t, conn, "req_after", 3*time.Second); res["status"] != "signature_invalid" {
 		t.Fatalf("post-revoke status=%v, want signature_invalid", res["status"])
 	}
@@ -291,7 +291,7 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 	args := map[string]any{"msg": "ok"}
 	_, leafPubHex := keyFromSeed(t, sigTestLeafSeed)
 	newAtt := attestationCertifiedBy(t, cli, priv, ca2Priv, "ca2", leafPubHex, "nonce-ca2", "t.echo", args)
-	sendRunActionWithAttestation(t, conn, "req_newca", "t.echo", args, newAtt)
+	sendRunActionWithAttestation(t, conn, cli, "req_newca", "t.echo", args, newAtt)
 	if res := waitForResult(t, conn, "req_newca", 3*time.Second); res["status"] != "success" {
 		t.Fatalf("a dispatch certified by the rotated-in CA must pass; status=%v reason=%v error=%v",
 			res["status"], res["reason"], res["error"])
@@ -299,7 +299,7 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 
 	// And a dispatch certified by the OLD CA (ca1) is now rejected by the same
 	// swapped verifier — both directions of the rotation hold simultaneously.
-	sendRunActionWithAttestation(t, conn, "req_oldca", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
+	sendRunActionWithAttestation(t, conn, cli, "req_oldca", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
 	if res := waitForResult(t, conn, "req_oldca", 3*time.Second); res["status"] != "signature_invalid" {
 		t.Fatalf("the rotated-out CA must be refused; status=%v", res["status"])
 	}

@@ -452,14 +452,15 @@ func dispatchDigest(m RunActionMsg) (string, error) {
 		}
 	}
 	facts := struct {
-		ActionID    string          `json:"action_id"`
-		PackRef     string          `json:"pack_ref"`
-		Args        json.RawMessage `json:"args"`
-		Opts        *RunOpts        `json:"opts"`
-		Reason      string          `json:"reason"`
-		OperationID string          `json:"operation_id"`
-		Attestation *Attestation    `json:"attestation"`
-	}{m.ActionID, m.PackRef, args, m.Opts, m.Reason, m.OperationID, m.Attestation}
+		ActionID         string          `json:"action_id"`
+		ExpectedPackHash string          `json:"expected_pack_hash"`
+		PackRef          string          `json:"pack_ref"`
+		Args             json.RawMessage `json:"args"`
+		Opts             *RunOpts        `json:"opts"`
+		Reason           string          `json:"reason"`
+		OperationID      string          `json:"operation_id"`
+		Attestation      *Attestation    `json:"attestation"`
+	}{m.ActionID, m.ExpectedPackHash, m.PackRef, args, m.Opts, m.Reason, m.OperationID, m.Attestation}
 	raw, err := json.Marshal(facts)
 	if err != nil {
 		return "", fmt.Errorf("cloud: marshal dispatch facts: %w", err)
