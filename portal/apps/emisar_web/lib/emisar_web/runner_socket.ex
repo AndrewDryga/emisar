@@ -47,7 +47,6 @@ defmodule EmisarWeb.RunnerSocket do
         Runners.subscribe_runner_transport(runner)
         Emisar.PubSub.subscribe(EmisarWeb.RunnerSocketDrain.drain_topic())
         Runners.audit_runner_connected(runner, token.id, request_context)
-        send(self(), :dispatch_queued)
         {:ok, state}
 
       {:error, :already_connected} ->
@@ -263,7 +262,14 @@ defmodule EmisarWeb.RunnerSocket do
         # the heartbeat-timeout watcher now that we have a catalog. The
         # runner's version is first known here (it rides runner_state, not the
         # connect upgrade), so version enforcement gates on it now.
-        maybe_enforce_runner_version(runner, state)
+        case maybe_enforce_runner_version(runner, state) do
+          {:ok, _new_state} = result ->
+            send(self(), :dispatch_queued)
+            result
+
+          other ->
+            other
+        end
 
       {:error, reason} ->
         Logger.warning("runner_state ingest failed for #{state.runner_id}: #{inspect(reason)}")

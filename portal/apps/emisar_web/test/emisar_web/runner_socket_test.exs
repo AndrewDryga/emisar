@@ -344,7 +344,15 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert Repo.get!(ActionRun, run.id).status == :pending
       assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
-      assert {:ok, ^state} = RunnerSocket.handle_info(:dispatch_queued, state)
+
+      refute_receive :dispatch_queued
+
+      raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      assert {:ok, refreshed_state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert_receive :dispatch_queued
+
+      assert {:ok, ^refreshed_state} =
+               RunnerSocket.handle_info(:dispatch_queued, refreshed_state)
 
       assert_receive {:cloud_to_runner, _generation,
                       %{"type" => "run_action", "request_id" => request_id}},

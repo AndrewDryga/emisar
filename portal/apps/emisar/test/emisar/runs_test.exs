@@ -2075,15 +2075,10 @@ defmodule Emisar.RunsTest do
       assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
     end
 
-    test "passes when the runner no longer advertises the action (nothing to dispatch to)", %{
+    test "passes a packless run when the runner no longer advertises the action", %{
       account: account,
       runner: runner
     } do
-      # when the runner no longer advertises the action mid approval-window
-      # (offline / pack unloaded), recheck returns :ok: there is nothing live to
-      # ship the wrong bytes to, so the gate doesn't block. The drift-to-:pending
-      # threat is the OTHER clause above; the dispatch itself then fails to reach
-      # a live action.
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
@@ -2094,6 +2089,23 @@ defmodule Emisar.RunsTest do
         })
 
       assert :ok = Runs.recheck_run_pack_trust(run.id)
+    end
+
+    test "refuses a versioned run when its advertised action disappeared", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "ghost.action",
+          source: "operator",
+          args: %{},
+          expected_pack_hash: "sha256:AUTHORIZED"
+        })
+
+      assert {:error, :action_not_found} = Runs.recheck_run_pack_trust(run.id)
     end
   end
 
@@ -2300,6 +2312,22 @@ defmodule Emisar.RunsTest do
       # Another runner's in-flight run is out of scope — untouched.
       reloaded_other = Runs.peek_run_by_id(other_sent.id)
       assert DateTime.compare(reloaded_other.sent_at, other_sent.sent_at) == :eq
+    end
+
+    test "leaves a versioned run pending until its catalog action is available", %{
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{expected_pack_hash: "sha256:AUTHORIZED"})
+        )
+
+      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert Runs.peek_run_by_id(run.id).status == :pending
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
     end
   end
 
@@ -2562,7 +2590,7 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :refused
     end
 
-    test "ships the hash snapshotted at authorization, not a re-read after re-trust (MAJOR-5)" do
+    test "refuses redelivery after trust moves away from the snapshotted hash" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       {runner, pack_version} = observe_pending_pack(account, subject)
@@ -2607,11 +2635,9 @@ defmodule Emisar.RunsTest do
       {:ok, [drifted], _} = Emisar.Catalog.list_pack_versions(subject)
       {:ok, _} = Emisar.Catalog.trust_pack_version(drifted.id, subject)
 
-      # Redelivery ships the ORIGINAL snapshot (NOPE), never the new trusted hash.
-      assert :ok = Runs.redeliver_to_runner(run)
-
-      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => "sha256:NOPE"}},
-                     500
+      assert {:error, :pack_untrusted} = Runs.redeliver_to_runner(run)
+      assert Runs.peek_run_by_id(run.id).status == :refused
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
     end
 
     # Observe a custom (no-baseline) pack + its action; the version lands

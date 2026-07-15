@@ -1020,24 +1020,7 @@ defmodule Emisar.Runs do
   :action_not_found}` — the caller refuses the approval on error.
   """
   def recheck_run_pack_trust(run_id) when is_binary(run_id) do
-    run = fetch_run!(run_id)
-
-    case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
-      {:ok, action} ->
-        # A gate, not a hash provider — normalize the {:ok, hash} to :ok.
-        case check_pack_trust(action, run.account_id) do
-          {:ok, _hash} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:error, :action_not_found} ->
-        # The runner no longer advertises this action (offline / pack
-        # unloaded) — the dispatch itself will fail to reach a live action,
-        # so there is nothing to ship the wrong bytes to. The threat this
-        # gate closes is an advertised pack that DRIFTED to :pending; that
-        # path returns the action above and is refused by check_pack_trust.
-        :ok
-    end
+    run_id |> fetch_run!() |> recheck_snapshotted_pack_trust()
   end
 
   @doc """
@@ -1686,18 +1669,21 @@ defmodule Emisar.Runs do
             error
         end
 
-      :unavailable ->
-        # A versioned pack with no trusted hash to pin — refuse to deliver a
-        # hash-less envelope (the runner would skip its hash gate, fail-open).
-        # The upstream `check_pack_trust` passed at creation, so this is a pack
-        # that DRIFTED to pending/rejected before this (re)delivery: mark the
-        # run refused so the operator sees a terminal row with the cause.
+      {:error, :action_not_found} = error ->
+        # A reconnect owns the socket before its runner_state catalog arrives.
+        # Leave pending work retryable; the socket schedules another dispatch
+        # after every successful catalog sync.
+        error
+
+      {:error, reason} ->
+        # The exact pack snapshot is no longer trusted. Refuse instead of
+        # silently upgrading the authorization decision to different bytes.
         mark_refused(
           run,
           "pack trust changed after this run was authorized — re-trust the pack in /app/packs and re-dispatch"
         )
 
-        {:error, :pack_untrusted}
+        {:error, reason}
     end
   end
 
@@ -1724,35 +1710,38 @@ defmodule Emisar.Runs do
   defp maybe_put(payload, _key, nil), do: payload
   defp maybe_put(payload, key, value), do: Map.put(payload, key, value)
 
-  # Stamp the trusted pack hash into the wire envelope so the runner can re-hash
-  # its on-disk pack and refuse a dispatch whose bytes don't match what cloud
-  # trusts. Fail CLOSED for a versioned pack: returns `:unavailable` (the caller
-  # refuses delivery) rather than ship a hash-less envelope the runner would
-  # wave through. We fetch the catalog action scoped to the run's own account
-  # (no Subject) — this runs inside an already-authorized dispatch path.
-  #
   # Stamp the SNAPSHOTTED pack hash (captured at authorization) into the wire
   # envelope. A pack-less run (nil snapshot) ships no hash. A versioned run ships
   # the hash the operator/policy authorized for THIS run — never a send-time
-  # re-read, so a pack that drifted then re-trusted to different bytes can't swap
-  # the hash underneath it (MAJOR-5). Still fail CLOSED at send: re-confirm the
-  # pack is STILL trusted (an operator may have rejected it since authorization);
-  # if not, `:unavailable` so the caller refuses delivery.
+  # re-read. Re-confirm the exact snapshot before every send; catalog absence is
+  # retryable because a reconnect's first runner_state may still be in flight.
   defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: nil}), do: {:ok, payload}
 
   defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: hash} = run) do
-    if pack_still_trusted?(run),
-      do: {:ok, Map.put(payload, "expected_pack_hash", hash)},
-      else: :unavailable
+    with :ok <- recheck_snapshotted_pack_trust(run) do
+      {:ok, Map.put(payload, "expected_pack_hash", hash)}
+    end
   end
 
-  defp pack_still_trusted?(%ActionRun{} = run) do
-    case Emisar.Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
-      # The catalog mirror row vanished (runner offline / pack unloaded) — the
-      # run was already trust-gated at creation, so don't block a redelivery on a
-      # missing row; the runner re-hashes its on-disk pack and refuses a mismatch.
-      {:error, _} -> true
-      {:ok, action} -> match?({:ok, _hash}, Emisar.Catalog.check_pack_trusted(action))
+  defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
+    case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
+      {:ok, action} ->
+        case check_pack_trust(action, run.account_id) do
+          {:ok, hash} when is_nil(run.expected_pack_hash) or hash == run.expected_pack_hash ->
+            :ok
+
+          {:ok, _different_hash} ->
+            {:error, :pack_untrusted}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, :action_not_found} when is_nil(run.expected_pack_hash) ->
+        :ok
+
+      {:error, :action_not_found} ->
+        {:error, :action_not_found}
     end
   end
 
