@@ -107,7 +107,10 @@ signed IAP assertion itself. `LIVEBOOK_TOKEN_ENABLED=false` and no
 `LIVEBOOK_PASSWORD` is configured. Opening the URL therefore uses the current
 Google/IAP browser identity automatically and never presents a second Livebook
 login. Google's managed client is intentionally limited to users inside the
-project's organization.
+project's organization. The load balancer sends only Livebook's `/public/*`
+health, tokenized input, and widget-asset routes to a separate non-IAP backend;
+this is required because widgets load from `livebookusercontent.com` without an
+operator IAP cookie. Every other route retains the IAP backend as its default.
 
 Notebooks and Livebook configuration persist on the separately protected
 `emisar-livebook-data` disk, mounted at `/data` in the container. Saved notebooks
@@ -128,8 +131,8 @@ Mix and Hex build artifacts live in an executable, bounded
 `/home/livebook` tmpfs because `Mix.install/1` runs downloaded build tools;
 that dependency cache is intentionally discarded on service restart. Only
 notebooks and Livebook configuration persist on `/data`.
-`/public/health` remains available to Google health checks; every operator route
-requires a valid IAP assertion.
+`/public/health` and ephemeral widget assets remain available without IAP; every
+operator route requires a valid IAP assertion.
 
 The local Cloud SQL Auth Proxy logs in as the dedicated Livebook service account
 and Cloud SQL assigns it `emisar_owner`. `DATABASE_URL` and standard `PG*`

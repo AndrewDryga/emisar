@@ -13,7 +13,8 @@ proxy_version=$(docker run --rm --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges "$proxy_image" --version)
 grep -Fq 'cloud-sql-proxy version 2.23.0+container' <<<"$proxy_version"
 
-grep -Fqx "  livebook_image        = \"$livebook_image\"" "${infra_dir}/livebook.tf"
+sed -nE 's/^[[:space:]]*livebook_image[[:space:]]*=[[:space:]]*//p' \
+  "${infra_dir}/livebook.tf" | grep -Fqx "\"$livebook_image\""
 livebook_version=$(docker run --rm --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges --entrypoint /app/bin/livebook \
   "$livebook_image" version)

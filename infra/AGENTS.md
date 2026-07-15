@@ -89,6 +89,11 @@ the separate, creds-gated deploy step.
    ephemeral home tmpfs must opt into `exec` while retaining `nosuid` and `nodev`.
    Behavior-probe the rendered mount with the pinned runtime image; a test-only
    cache or environment override is not proof that a real notebook session works.
+13. **Livebook public assets bypass IAP by path, never by host.** Widgets execute
+   on `livebookusercontent.com` without an operator IAP cookie, so route only
+   `/public/*` to a non-IAP backend and keep the IAP backend as the host default.
+   Retain URL-map tests for both the public asset and protected operator paths;
+   never make the whole Livebook host public to fix widget loading.
 
 ## House style
 

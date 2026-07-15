@@ -1,7 +1,8 @@
 locals {
-  livebook_image        = "ghcr.io/livebook-dev/livebook:0.19.8@sha256:38eed8467d3df794dd36cbe722768e46d709b02e00368e0a06aa7508220a8763"
-  livebook_port         = 8080
-  livebook_backend_name = "emisar-livebook-backend"
+  livebook_image               = "ghcr.io/livebook-dev/livebook:0.19.8@sha256:38eed8467d3df794dd36cbe722768e46d709b02e00368e0a06aa7508220a8763"
+  livebook_port                = 8080
+  livebook_backend_name        = "emisar-livebook-backend"
+  livebook_public_backend_name = "emisar-livebook-public-backend"
   livebook_database_user = var.livebook_enabled ? trimsuffix(
     google_service_account.livebook[0].email,
     ".gserviceaccount.com",

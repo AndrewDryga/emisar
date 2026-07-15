@@ -162,10 +162,40 @@ resource "google_compute_backend_service" "livebook" {
   }
 }
 
-resource "terraform_data" "livebook_backend_ready" {
+# Livebook widgets execute on livebookusercontent.com and load short-lived,
+# tokenized assets without the operator's IAP cookie. Only /public/* reaches
+# this backend; the host's default backend remains IAP-protected.
+resource "google_compute_backend_service" "livebook_public" {
   count = var.livebook_enabled ? 1 : 0
 
-  triggers_replace = [google_compute_backend_service.livebook[0].id]
+  name                            = local.livebook_public_backend_name
+  load_balancing_scheme           = "EXTERNAL_MANAGED"
+  protocol                        = "HTTP"
+  port_name                       = "livebook"
+  timeout_sec                     = var.backend_timeout_sec
+  connection_draining_timeout_sec = 120
+  health_checks                   = [google_compute_health_check.livebook[0].id]
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
+
+  backend {
+    group           = google_compute_instance_group.livebook[0].id
+    balancing_mode  = "UTILIZATION"
+    capacity_scaler = 1.0
+  }
+}
+
+resource "terraform_data" "livebook_backend_ready" {
+  count = var.livebook_enabled ? 2 : 0
+
+  triggers_replace = [
+    count.index == 0 ?
+    google_compute_backend_service.livebook[0].id :
+    google_compute_backend_service.livebook_public[0].id
+  ]
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
@@ -198,7 +228,7 @@ resource "terraform_data" "livebook_backend_ready" {
 
     environment = {
       ACCESS_TOKEN    = ephemeral.google_client_config.current.access_token
-      BACKEND_SERVICE = google_compute_backend_service.livebook[0].name
+      BACKEND_SERVICE = count.index == 0 ? google_compute_backend_service.livebook[0].name : google_compute_backend_service.livebook_public[0].name
       INSTANCE_GROUP  = google_compute_instance_group.livebook[0].id
       PROJECT_ID      = var.project_id
     }
@@ -382,6 +412,31 @@ resource "google_compute_url_map" "https" {
     content {
       name            = "livebook"
       default_service = path_matcher.value.id
+
+      path_rule {
+        paths   = ["/public/*"]
+        service = google_compute_backend_service.livebook_public[0].id
+      }
+    }
+  }
+
+  dynamic "test" {
+    for_each = google_compute_backend_service.livebook_public
+    content {
+      description = "Livebook public widget assets bypass IAP"
+      host        = "livebook.${var.domain}"
+      path        = "/public/sessions/example/assets/example/main.js"
+      service     = test.value.id
+    }
+  }
+
+  dynamic "test" {
+    for_each = google_compute_backend_service.livebook
+    content {
+      description = "Livebook operator routes remain behind IAP"
+      host        = "livebook.${var.domain}"
+      path        = "/sessions/example"
+      service     = test.value.id
     }
   }
 }
