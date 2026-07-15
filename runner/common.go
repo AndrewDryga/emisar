@@ -19,11 +19,25 @@ import (
 
 // runtime is the live in-memory wiring of one emisar process.
 type runtime struct {
-	cfg       *config.Config
-	journal   *audit.Journal
-	cursor    *audit.Cursor
-	engine    *engine.Engine
-	admission *admission.Policy
+	cfg        *config.Config
+	externalID string
+	journal    *audit.Journal
+	cursor     *audit.Cursor
+	engine     *engine.Engine
+	admission  *admission.Policy
+}
+
+func (r *runtime) ensureExternalID() (string, error) {
+	if r.externalID != "" {
+		return r.externalID, nil
+	}
+	id, err := resolveExternalID(r.cfg.Runner.ID, r.cfg.Paths.DataDir)
+	if err != nil {
+		return "", err
+	}
+	r.externalID = id
+	r.journal.SetAgentID(id)
+	return id, nil
 }
 
 // registry returns the current pack registry from the engine. After a
@@ -135,11 +149,12 @@ func boot() (*runtime, error) {
 	})
 
 	return &runtime{
-		cfg:       cfg,
-		journal:   journal,
-		cursor:    cursor,
-		engine:    eng,
-		admission: admit,
+		cfg:        cfg,
+		externalID: cfg.Runner.ID,
+		journal:    journal,
+		cursor:     cursor,
+		engine:     eng,
+		admission:  admit,
 	}, nil
 }
 

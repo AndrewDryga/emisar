@@ -35,6 +35,14 @@ func New(defaults Defaults, sinks ...Sink) *Journal {
 	return &Journal{sinks: sinks, defaults: defaults}
 }
 
+// SetAgentID updates the runner identity stamped onto subsequent events.
+// Execution surfaces call this after resolving the installation's durable ID.
+func (j *Journal) SetAgentID(id string) {
+	j.mu.Lock()
+	j.defaults.AgentID = id
+	j.mu.Unlock()
+}
+
 // Record writes the event to every configured sink, stamping default
 // fields and assigning an EventID if empty.
 func (j *Journal) Record(ctx context.Context, ev Event) (Event, error) {

@@ -79,6 +79,20 @@ func TestJournal_AssignsPrefixedEventID(t *testing.T) {
 	}
 }
 
+func TestJournal_SetAgentIDUpdatesSubsequentEvents(t *testing.T) {
+	sink := &memSink{}
+	j := New(Defaults{AgentID: "config-only"}, sink)
+	j.SetAgentID("durable-runner-id")
+
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted}); err != nil {
+		t.Fatal(err)
+	}
+	got := sink.recorded()
+	if len(got) != 1 || got[0].AgentID != "durable-runner-id" {
+		t.Fatalf("recorded events = %+v, want durable runner id", got)
+	}
+}
+
 // TestJournal_FansOutToEverySink — one Record reaches every
 // configured sink, each carrying the same stamped event.
 func TestJournal_FansOutToEverySink(t *testing.T) {

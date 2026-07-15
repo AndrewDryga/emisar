@@ -524,6 +524,14 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	if !bytes.Contains(data, []byte(`"action_id":"linux.ping"`)) || !bytes.Contains(data, []byte(`"reason":"local-bypass"`)) {
 		t.Errorf("a local run must journal a real event with the reason:\n%s", data)
 	}
+	runnerID, err := os.ReadFile(filepath.Join(dir, "data", "runner_id"))
+	if err != nil {
+		t.Fatalf("read durable runner id: %v", err)
+	}
+	wantID := `"runner_id":"` + strings.TrimSpace(string(runnerID)) + `"`
+	if !bytes.Contains(data, []byte(wantID)) {
+		t.Errorf("local event must carry durable runner identity %s:\n%s", wantID, data)
+	}
 }
 
 // --- RUN-027 — `audit verify` chain-break exit-1 path ----------------------

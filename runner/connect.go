@@ -80,7 +80,7 @@ env var can be unset after the first successful connect.`,
 			// The nonce journal lock is also the process-lifetime data-directory
 			// lock. Resolve identity only after acquiring it, so two first boots
 			// cannot mint different ids for one installation.
-			externalID, err := resolveExternalID(rt.cfg.Runner.ID, rt.cfg.Paths.DataDir)
+			externalID, err := rt.ensureExternalID()
 			if err != nil {
 				return fmt.Errorf("resolve runner id: %w", err)
 			}
@@ -210,6 +210,14 @@ func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.No
 	if cfg.Signing.EnforceSignatures && !nonceStore.Durable() {
 		return nil, fmt.Errorf("signing: enforcement requires durable replay state")
 	}
+	return newVerifier(cfg, externalID, nonceStore)
+}
+
+func buildStateVerifier(cfg *config.Config, externalID string) (*signing.Verifier, error) {
+	return newVerifier(cfg, externalID, signing.NewMemoryNonceStore())
+}
+
+func newVerifier(cfg *config.Config, externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
 	portalOrigin := ""
 	if cfg.Signing.EnforceSignatures {
 		var err error

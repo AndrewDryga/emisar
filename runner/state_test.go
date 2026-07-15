@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -89,16 +91,17 @@ func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
 	}
 }
 
-// The documented divergence (Gaps #1): `state` advertises runner_id from
-// cfg.Runner.ID directly (NOT the resolved/minted external id that `connect`
-// uses) and never wires GetVerifier, so even with enforcing signing in config
-// the printed state OMITS the enforcement fields. This pins that `state` is a
-// config-only preview, not a faithful mirror of what `connect` sends.
-func TestStateCmd_DivergesConfigOnlyIDNoVerifier(t *testing.T) {
+func TestStateCmd_UsesDurableIDAndSigningPolicy(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	packs := writePack(t, dir+"/packs", "linux")
 	flagConfig = writeMinimalConfig(t, dir, packs)
+	extra := "cloud:\n  url: wss://portal.example/socket\n  auth_key_env: EMISAR_AUTH_KEY\n" +
+		"signing:\n  enforce_signatures: true\n  trusted_cas:\n" +
+		"    - ca_id: k1\n      public_key: " + strings.Repeat("ab", 32) + "\n"
+	if err := appendToFile(t, flagConfig, extra); err != nil {
+		t.Fatal(err)
+	}
 
 	var execErr error
 	out := captureStdout(t, func() {
@@ -114,17 +117,22 @@ func TestStateCmd_DivergesConfigOnlyIDNoVerifier(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &st); err != nil {
 		t.Fatalf("state output is not JSON: %v\n%s", err, out)
 	}
-	// The minimal config sets no runner.id, so state advertises the empty
-	// config value rather than minting/resolving one like connect does.
-	if st["runner_id"] != "" {
-		t.Fatalf("runner_id = %v, want \"\" (state uses cfg.Runner.ID, unset here)", st["runner_id"])
+	runnerID, ok := st["runner_id"].(string)
+	if !ok || runnerID == "" {
+		t.Fatalf("runner_id = %v, want resolved durable id", st["runner_id"])
 	}
-	// state never wires GetVerifier, so enforcement fields are omitted entirely
-	// (omitempty) even if signing were configured.
-	if _, present := st["enforce_signatures"]; present {
-		t.Fatalf("state must not advertise enforce_signatures (no verifier wired):\n%s", out)
+	persisted, err := os.ReadFile(filepath.Join(dir, "data", "runner_id"))
+	if err != nil {
+		t.Fatalf("read durable runner id: %v", err)
 	}
-	if _, present := st["signing_ca_ids"]; present {
-		t.Fatalf("state must not advertise signing_ca_ids (no verifier wired):\n%s", out)
+	if strings.TrimSpace(string(persisted)) != runnerID {
+		t.Fatalf("persisted runner id = %q, advertised %q", persisted, runnerID)
+	}
+	if st["enforce_signatures"] != true {
+		t.Fatalf("state must advertise configured signature enforcement:\n%s", out)
+	}
+	caIDs, _ := st["signing_ca_ids"].([]any)
+	if len(caIDs) != 1 || caIDs[0] != "k1" {
+		t.Fatalf("signing_ca_ids = %v, want [k1]", caIDs)
 	}
 }
