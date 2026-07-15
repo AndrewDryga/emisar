@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,16 +29,16 @@ queries use the cloud UI.`,
 	return cmd
 }
 
-func openJSONL() (*os.File, error) {
+func openJSONL() (*os.File, string, error) {
 	cfg, err := loadConfig()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	f, err := os.Open(cfg.Events.JSONLPath)
 	if err != nil {
-		return nil, fmt.Errorf("open jsonl: %w", err)
+		return nil, "", fmt.Errorf("open jsonl: %w", err)
 	}
-	return f, nil
+	return f, cfg.Events.JSONLPath, nil
 }
 
 func eventsTailCmd() *cobra.Command {
@@ -47,60 +48,26 @@ func eventsTailCmd() *cobra.Command {
 		Short: "Print the last N events; optionally follow new ones",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("lines")
-			f, err := openJSONL()
+			if n < 0 {
+				return fmt.Errorf("--lines must be non-negative")
+			}
+			f, path, err := openJSONL()
 			if err != nil {
 				return err
 			}
-			defer f.Close()
 			lines, err := lastNLines(f, n)
 			if err != nil {
+				_ = f.Close()
 				return err
 			}
 			for _, l := range lines {
 				fmt.Println(l)
 			}
 			if !follow {
+				_ = f.Close()
 				return nil
 			}
-			// Naive follow: re-stat and read new bytes every 500ms.
-			// On rotation/truncation (file size shrinks below our saved
-			// cursor), reset to the new file's start.
-			pos := int64(0)
-			if cur, err := f.Seek(0, io.SeekEnd); err == nil {
-				pos = cur
-			}
-			reader := bufio.NewReader(f)
-			for {
-				time.Sleep(500 * time.Millisecond)
-				stat, err := f.Stat()
-				if err != nil {
-					return err
-				}
-				switch {
-				case stat.Size() < pos:
-					// Truncation/rotation. Rewind to start; the older
-					// content is gone.
-					pos = 0
-				case stat.Size() == pos:
-					continue
-				}
-				if _, err := f.Seek(pos, io.SeekStart); err != nil {
-					return err
-				}
-				reader.Reset(f)
-				for {
-					line, err := reader.ReadString('\n')
-					if len(line) > 0 {
-						fmt.Print(line)
-					}
-					if err != nil {
-						break
-					}
-				}
-				if newPos, err := f.Seek(0, io.SeekCurrent); err == nil {
-					pos = newPos
-				}
-			}
+			return followJSONL(cmd.Context(), path, f, os.Stdout)
 		},
 	}
 	cmd.Flags().Int("lines", 50, "number of trailing events to print")
@@ -113,7 +80,7 @@ func eventsCatCmd() *cobra.Command {
 		Use:   "cat",
 		Short: "Print the entire JSONL log to stdout",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			f, err := openJSONL()
+			f, _, err := openJSONL()
 			if err != nil {
 				return err
 			}
@@ -134,7 +101,7 @@ func eventsGrepCmd() *cobra.Command {
 		Use:   "grep",
 		Short: "Filter the JSONL log by a few common fields",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			f, err := openJSONL()
+			f, _, err := openJSONL()
 			if err != nil {
 				return err
 			}
@@ -171,6 +138,12 @@ func eventsGrepCmd() *cobra.Command {
 // the end in 8 KiB chunks to avoid loading the whole file. Acceptable for
 // human-scale JSONL logs.
 func lastNLines(f *os.File, n int) ([]string, error) {
+	if n < 0 {
+		return nil, fmt.Errorf("line count must be non-negative")
+	}
+	if n == 0 {
+		return nil, nil
+	}
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -203,4 +176,80 @@ func lastNLines(f *os.File, n int) ([]string, error) {
 		lines = lines[len(lines)-n:]
 	}
 	return lines, nil
+}
+
+func followJSONL(ctx context.Context, path string, f *os.File, out io.Writer) error {
+	defer func() { _ = f.Close() }()
+	pos, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+
+		pathInfo, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		openInfo, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(pathInfo, openInfo) {
+			next, err := os.Open(path)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			_ = f.Close()
+			f = next
+			reader.Reset(f)
+			pos = 0
+			pathInfo, err = f.Stat()
+			if err != nil {
+				return err
+			}
+		}
+
+		switch {
+		case pathInfo.Size() < pos:
+			pos = 0
+		case pathInfo.Size() == pos:
+			continue
+		}
+		if _, err := f.Seek(pos, io.SeekStart); err != nil {
+			return err
+		}
+		reader.Reset(f)
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				if _, writeErr := io.WriteString(out, line); writeErr != nil {
+					return writeErr
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					return err
+				}
+				break
+			}
+		}
+		if newPos, err := f.Seek(0, io.SeekCurrent); err == nil {
+			pos = newPos
+		}
+	}
 }

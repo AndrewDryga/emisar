@@ -6,9 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 )
+
+type eventLineWriter chan string
+
+func (w eventLineWriter) Write(p []byte) (int, error) {
+	w <- string(p)
+	return len(p), nil
+}
 
 // appendLine appends raw bytes to an existing file (used to inject a corrupt
 // line into a chained JSONL log).
@@ -88,6 +96,58 @@ func TestEventsTailCmd_LastN(t *testing.T) {
 	}
 	if strings.Contains(out, "evt_a") || strings.Contains(out, "evt_b") {
 		t.Fatalf("tail --lines 1 should print ONLY the last event:\n%s", out)
+	}
+}
+
+func TestEventsTailCmd_NegativeLinesRejected(t *testing.T) {
+	cmd := eventsTailCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"--lines", "-1"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "non-negative") {
+		t.Fatalf("negative --lines error = %v", err)
+	}
+}
+
+func TestFollowJSONL_ReopensAfterRenameRotation(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(active, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	lines := make(eventLineWriter, 1)
+	go func() { done <- followJSONL(ctx, active, f, lines) }()
+
+	if err := os.Rename(active, active+".1"); err != nil {
+		t.Fatal(err)
+	}
+	const fresh = "{\"event_id\":\"evt_after_rotation\"}\n"
+	if err := os.WriteFile(active, []byte(fresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-lines:
+		if got != fresh {
+			t.Fatalf("followed line = %q, want %q", got, fresh)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("follow did not reopen the rotated active path")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("follow shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("follow ignored context cancellation")
 	}
 }
 
