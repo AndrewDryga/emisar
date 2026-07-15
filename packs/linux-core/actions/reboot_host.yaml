@@ -42,4 +42,4 @@ output:
 examples:
   - title: Reboot for kernel upgrade
     args:
-      note: "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"
+      note: "kernel upgrade to 5.15.140 - pending /var/run/reboot-required"

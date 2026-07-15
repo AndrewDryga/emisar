@@ -31636,13 +31636,13 @@
     {
       "id": "linux-core",
       "name": "Linux core operations pack",
-      "version": "0.3.16",
+      "version": "0.3.17",
       "description": "Read-only Linux diagnostics plus narrow service control. Disk, mem, uptime, journalctl, log grep + tail, users/auth introspection, cron audit, network state, kernel info, and systemctl control. The front-line pack every Linux host gets.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/linux-core",
-      "content_hash": "sha256:e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/linux-core/0.3.16/e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f/pack.tar.gz",
+      "content_hash": "sha256:cf7902250e86fb80408cbc3c60de911fbe99590680297aefd5823fcd90f3562d",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/linux-core/0.3.17/cf7902250e86fb80408cbc3c60de911fbe99590680297aefd5823fcd90f3562d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -32552,7 +32552,7 @@
             {
               "title": "Reboot for kernel upgrade",
               "args": {
-                "note": "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"
+                "note": "kernel upgrade to 5.15.140 - pending /var/run/reboot-required"
               }
             }
           ],
@@ -32984,6 +32984,1345 @@
               "who; echo; w"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.3.16",
+          "content_hash": "sha256:e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/linux-core/0.3.16/e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f/pack.tar.gz",
+          "actions": [
+            {
+              "id": "linux.arp_neighbors",
+              "title": "ARP / IPv6 neighbor table",
+              "summary": "`ip neigh show` — every known L2 neighbor with state (REACHABLE, STALE, FAILED). Useful for diagnosing intermittent L2 reachability problems. Read-only.",
+              "description": "`ip neigh show` — every known L2 neighbor with state (REACHABLE, STALE, FAILED). Useful for diagnosing intermittent L2 reachability problems. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One ip invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "ARP table",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "ip",
+                "argv": [
+                  "neigh",
+                  "show"
+                ]
+              }
+            },
+            {
+              "id": "linux.cpu_info",
+              "title": "CPU topology and features",
+              "summary": "`lscpu` output — sockets, cores per socket, threads per core, architecture, microarchitecture, MHz, cache sizes, vulnerabilities (Spectre/Meltdown mitigation state). Use to confirm a host's CPU matches what the workload assumes. Read-only.",
+              "description": "`lscpu` output — sockets, cores per socket, threads per core, architecture, microarchitecture, MHz, cache sizes, vulnerabilities (Spectre/Meltdown mitigation state). Use to confirm a host's CPU matches what the workload assumes. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One lscpu invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "CPU layout + features",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "lscpu",
+                "argv": []
+              }
+            },
+            {
+              "id": "linux.cron_recent",
+              "title": "Recent cron job execution log",
+              "summary": "Show last N journalctl entries matching CRON. Lets operators see \"did the backup job fire last night?\" without grepping syslog. Read-only.",
+              "description": "Show last N journalctl entries matching CRON. Lets operators see \"did the backup job fire last night?\" without grepping syslog. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One journalctl invocation.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "count",
+                  "type": "integer",
+                  "required": false,
+                  "default": 50,
+                  "description": "How many recent CRON entries to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 500
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 50 cron entries",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "journalctl -u cron -u crond _COMM=CRON --no-pager -n {{ args.count }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.crontab_all",
+              "title": "All user crontabs + system cron dirs",
+              "summary": "Dumps every per-user crontab AND the system cron dirs (/etc/crontab, /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to answer \"what's scheduled on this host?\" Read-only. Cron command lines routinely carry inline credentials (a `curl` bearer token, a `mysql -p<pw>`), so this can surface secrets. The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
+              "description": "Dumps every per-user crontab AND the system cron dirs (/etc/crontab, /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to answer \"what's scheduled on this host?\" Read-only. Cron command lines routinely carry inline credentials (a `curl` bearer token, a `mysql -p<pw>`), so this can surface secrets. The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Iterates user crontabs + reads /etc/cron.*.",
+                "Requires root; exposes cron command lines (may include inline secrets)."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Every scheduled job on this host",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "for u in $(getent passwd | awk -F: '$7 !~ /nologin|false/ {print $1}'); do echo \"--- crontab -u $u ---\"; crontab -l -u \"$u\" 2>/dev/null; done; echo '--- /etc/crontab ---'; cat /etc/crontab 2>/dev/null; echo '--- /etc/cron.d/ ---'; ls -la /etc/cron.d/ 2>/dev/null; for d in hourly daily weekly monthly; do echo \"--- /etc/cron.$d/ ---\"; ls -la \"/etc/cron.$d/\" 2>/dev/null; done"
+                ]
+              }
+            },
+            {
+              "id": "linux.disk_smart",
+              "title": "SMART health for one disk",
+              "summary": "Runs `smartctl -H -A` against a block device. Returns the overall PASS/FAIL plus the attribute table (reallocated sectors, pending, uncorrectable, temperature). Read-only on the disk; needs the `smartmontools` package and CAP_SYS_RAWIO (root) to access device registers. For a disk behind a RAID controller (Dell PERC, HP SmartArray), pass `device_type` (e.g. `megaraid,0`) — the bare block device isn't reachable through the controller without it.",
+              "description": "Runs `smartctl -H -A` against a block device. Returns the overall PASS/FAIL plus the attribute table (reallocated sectors, pending, uncorrectable, temperature). Read-only on the disk; needs the `smartmontools` package and CAP_SYS_RAWIO (root) to access device registers. For a disk behind a RAID controller (Dell PERC, HP SmartArray), pass `device_type` (e.g. `megaraid,0`) — the bare block device isn't reachable through the controller without it.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One smartctl invocation.",
+                "Reads SMART registers; no writes to the disk."
+              ],
+              "args": [
+                {
+                  "name": "device",
+                  "type": "string",
+                  "required": true,
+                  "description": "Block device under /dev (e.g. sda, nvme0n1).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9]{1,16}$"
+                  }
+                },
+                {
+                  "name": "device_type",
+                  "type": "string",
+                  "required": false,
+                  "default": "auto",
+                  "description": "smartctl device type (-d). \"auto\" (default) auto-detects direct ATA/SATA/NVMe disks; use \"megaraid,N\" or \"cciss,N\" for a disk behind a RAID controller, or \"sat\"/\"scsi\"/\"nvme\" to force a transport.",
+                  "validation": {
+                    "pattern": "^(auto|ata|sat|scsi|nvme|megaraid,[0-9]{1,3}|cciss,[0-9]{1,3}|aacraid,[0-9]{1,3},[0-9]{1,3},[0-9]{1,3})$",
+                    "max_length": 32
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "SMART for sda (direct)",
+                  "args": {
+                    "device": "sda"
+                  }
+                },
+                {
+                  "title": "SMART for a disk behind a PERC / megaraid controller",
+                  "args": {
+                    "device": "sda",
+                    "device_type": "megaraid,0"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "smartctl",
+                "argv": [
+                  "-d",
+                  "{{ args.device_type }}",
+                  "-H",
+                  "-A",
+                  "/dev/{{ args.device }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.disk_usage",
+              "title": "Filesystem disk usage",
+              "summary": "Reports filesystem usage for the supplied paths using df. Read-only. Use this to assess disk pressure before recommending cleanup, repair, compaction tuning, or adding disk. If a filesystem is >85% full, surface it but do not silently delete or truncate data — that's a separate, approval-gated action.",
+              "description": "Reports filesystem usage for the supplied paths using df. Read-only. Use this to assess disk pressure before recommending cleanup, repair, compaction tuning, or adding disk. If a filesystem is >85% full, surface it but do not silently delete or truncate data — that's a separate, approval-gated action.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads filesystem metadata via df.",
+                "Touches no files.",
+                "Does not mount, unmount, or modify anything."
+              ],
+              "args": [
+                {
+                  "name": "paths",
+                  "type": "string_array",
+                  "required": false,
+                  "default": [
+                    "/"
+                  ],
+                  "description": "One or more paths to inspect. Each path is passed to df -P -h.",
+                  "validation": {
+                    "allowed_prefixes": [
+                      "/",
+                      "/var",
+                      "/tmp",
+                      "/home",
+                      "/usr",
+                      "/opt"
+                    ],
+                    "max_items": 8
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Check root filesystem usage",
+                  "args": {}
+                },
+                {
+                  "title": "Check /var and /tmp",
+                  "args": {
+                    "paths": [
+                      "/var",
+                      "/tmp"
+                    ]
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "df",
+                "argv": [
+                  "-P",
+                  "-h",
+                  "{{ args.paths }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.failed_logins",
+              "title": "Recent failed login attempts",
+              "summary": "Recent failed authentication attempts from the systemd journal — sshd's \"Failed password\" / \"Invalid user\" plus pam_unix \"authentication failure\" from su/sudo/login. High-signal for \"is this host being brute-forced?\" Read-only, but flagged medium-risk: the source IPs and usernames are sensitive PII. A healthy host with no failed auth returns nothing (the journal query exits 1 on no match, which is treated as success).",
+              "description": "Recent failed authentication attempts from the systemd journal — sshd's \"Failed password\" / \"Invalid user\" plus pam_unix \"authentication failure\" from su/sudo/login. High-signal for \"is this host being brute-forced?\" Read-only, but flagged medium-risk: the source IPs and usernames are sensitive PII. A healthy host with no failed auth returns nothing (the journal query exits 1 on no match, which is treated as success).",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "One journalctl read of the auth/authpriv journal (root or the systemd-journal group).",
+                "Output includes source IPs and usernames (PII).",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "count",
+                  "type": "integer",
+                  "required": false,
+                  "default": 50,
+                  "description": "How many of the most recent failed attempts to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 500
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 50 failed login attempts",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "journalctl",
+                "argv": [
+                  "--facility=auth,authpriv",
+                  "--grep",
+                  "Failed password|Invalid user|Failed publickey|authentication failure|FAILED",
+                  "--no-pager",
+                  "-n",
+                  "{{ args.count }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.grep_log",
+              "title": "Grep a log file",
+              "summary": "Greps an extended regex (POSIX -E) against a log file under /var/log.",
+              "description": "Greps an extended regex (POSIX -E) against a log file under /var/log. Read-only. Returns matching lines with line numbers (-n) up to max_lines. Use to find recent occurrences of a specific identifier (request ID, user ID, IP) or to spot error patterns without dumping the whole file. Output is run through the runner's redactor before it leaves the host. On journald-only hosts (no rsyslog) the system log isn't a file under /var/log — use linux.journalctl for syslog/messages; this reads on-disk files (app, nginx, …).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads a log file under /var/log.",
+                "Output may contain operational secrets — redactor scrubs known patterns.",
+                "Does not modify anything."
+              ],
+              "args": [
+                {
+                  "name": "file",
+                  "type": "path",
+                  "required": true,
+                  "description": "Absolute path to the log file. Must be under /var/log/.",
+                  "validation": {
+                    "allowed_prefixes": [
+                      "/var/log/"
+                    ]
+                  }
+                },
+                {
+                  "name": "pattern",
+                  "type": "string",
+                  "required": true,
+                  "description": "Extended regex (POSIX ERE) pattern. Passed to grep -E.",
+                  "validation": {
+                    "pattern": "^.{1,512}$"
+                  }
+                },
+                {
+                  "name": "max_lines",
+                  "type": "integer",
+                  "required": false,
+                  "default": 200,
+                  "description": "Cap on returned matching lines (grep -m).",
+                  "validation": {
+                    "min": 1,
+                    "max": 2000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recent 5xx in nginx access log",
+                  "args": {
+                    "file": "/var/log/nginx/access.log",
+                    "max_lines": 100,
+                    "pattern": " 5[0-9][0-9] "
+                  }
+                },
+                {
+                  "title": "Find a request id",
+                  "args": {
+                    "file": "/var/log/app/server.log",
+                    "pattern": "req_abc123"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "grep",
+                "argv": [
+                  "-E",
+                  "-n",
+                  "-m",
+                  "{{ args.max_lines }}",
+                  "-e",
+                  "{{ args.pattern }}",
+                  "--",
+                  "{{ args.file }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.hardware_summary",
+              "title": "Hardware + BIOS summary via dmidecode",
+              "summary": "`dmidecode` system + bios + chassis sections. Vendor, model, serial, BIOS version, manufacturing date. Required root (read-only on SMBIOS). Useful when correlating hardware-class to OS-class incidents. dmidecode reads SMBIOS — absent on containers and many cloud VMs, where this fails command-not-found; expect it on bare metal or VMs with SMBIOS passthrough.",
+              "description": "`dmidecode` system + bios + chassis sections. Vendor, model, serial, BIOS version, manufacturing date. Required root (read-only on SMBIOS). Useful when correlating hardware-class to OS-class incidents. dmidecode reads SMBIOS — absent on containers and many cloud VMs, where this fails command-not-found; expect it on bare metal or VMs with SMBIOS passthrough.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One dmidecode invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "System + BIOS + chassis",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "dmidecode",
+                "argv": [
+                  "-t",
+                  "system",
+                  "-t",
+                  "bios",
+                  "-t",
+                  "chassis"
+                ]
+              }
+            },
+            {
+              "id": "linux.inode_usage",
+              "title": "Inode usage per filesystem",
+              "summary": "Shows inode usage per filesystem (`df -i`). A \"disk full\" report that doesn't match `df -h` is almost always inode exhaustion — this surfaces it directly. Read-only.",
+              "description": "Shows inode usage per filesystem (`df -i`). A \"disk full\" report that doesn't match `df -h` is almost always inode exhaustion — this surfaces it directly. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One df invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Inode usage snapshot",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "df",
+                "argv": [
+                  "-i",
+                  "-h"
+                ]
+              }
+            },
+            {
+              "id": "linux.journalctl",
+              "title": "Recent systemd journal entries",
+              "summary": "Reads recent systemd journal entries for a named unit, filtered by priority and a time window. Use to triage service errors. Logs may reveal sensitive identifiers, IPs, hostnames, or PII; treat output as confidential. Do not echo verbatim to end users without consideration.",
+              "description": "Reads recent systemd journal entries for a named unit, filtered by priority and a time window. Use to triage service errors. Logs may reveal sensitive identifiers, IPs, hostnames, or PII; treat output as confidential. Do not echo verbatim to end users without consideration.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Reads service logs which may contain operational secrets.",
+                "Output is run through the runner's redactor before leaving the host.",
+                "Does not modify anything."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name to inspect (e.g. nginx, nomad, consul.service, foo@bar.service).",
+                  "validation": {
+                    "pattern": "^[A-Za-z0-9@._:-]{1,128}$",
+                    "max_length": 128
+                  }
+                },
+                {
+                  "name": "since",
+                  "type": "duration",
+                  "required": false,
+                  "default": "2h",
+                  "description": "Look back at most this far.",
+                  "validation": {
+                    "max_duration": "24h0m0s"
+                  }
+                },
+                {
+                  "name": "priority",
+                  "type": "string",
+                  "required": false,
+                  "default": "warning",
+                  "description": "Minimum priority level for entries.",
+                  "validation": {
+                    "enum": [
+                      "debug",
+                      "info",
+                      "notice",
+                      "warning",
+                      "err",
+                      "crit",
+                      "alert",
+                      "emerg"
+                    ]
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recent Cassandra warnings",
+                  "args": {
+                    "priority": "warning",
+                    "since": "1h",
+                    "unit": "cassandra"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "journalctl",
+                "argv": [
+                  "-u",
+                  "{{ args.unit }}",
+                  "--since",
+                  "{{ args.since }} ago",
+                  "-p",
+                  "{{ args.priority }}",
+                  "--no-pager"
+                ]
+              }
+            },
+            {
+              "id": "linux.journalctl_grep",
+              "title": "Grep recent systemd journal entries",
+              "summary": "Like linux.journalctl, but filters entries to those matching a regex (via journalctl --grep). Read-only. Use when you already know the rough identifier or substring you're looking for (request ID, hostname, IP, error string) and don't want to download a large unfiltered journal slice. Output is run through the runner's redactor before leaving the host.",
+              "description": "Like linux.journalctl, but filters entries to those matching a regex (via journalctl --grep). Read-only. Use when you already know the rough identifier or substring you're looking for (request ID, hostname, IP, error string) and don't want to download a large unfiltered journal slice. Output is run through the runner's redactor before leaving the host.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Reads service logs which may contain operational secrets.",
+                "Output is run through the runner's redactor before egress.",
+                "Does not modify anything."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name to inspect (e.g. nginx, nomad, consul.service, foo@bar.service).",
+                  "validation": {
+                    "pattern": "^[A-Za-z0-9@._:-]{1,128}$",
+                    "max_length": 128
+                  }
+                },
+                {
+                  "name": "grep",
+                  "type": "string",
+                  "required": true,
+                  "description": "Regex pattern passed to journalctl --grep.",
+                  "validation": {
+                    "pattern": "^.{1,512}$"
+                  }
+                },
+                {
+                  "name": "since",
+                  "type": "duration",
+                  "required": false,
+                  "default": "2h",
+                  "description": "Look back at most this far.",
+                  "validation": {
+                    "max_duration": "24h0m0s"
+                  }
+                },
+                {
+                  "name": "priority",
+                  "type": "string",
+                  "required": false,
+                  "default": "warning",
+                  "description": "Minimum priority level for entries.",
+                  "validation": {
+                    "enum": [
+                      "debug",
+                      "info",
+                      "notice",
+                      "warning",
+                      "err",
+                      "crit",
+                      "alert",
+                      "emerg"
+                    ]
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Cassandra journal entries mentioning compaction",
+                  "args": {
+                    "grep": "compact",
+                    "since": "6h",
+                    "unit": "cassandra"
+                  }
+                },
+                {
+                  "title": "Nginx 5xx in journal",
+                  "args": {
+                    "grep": " (5[0-9][0-9]) ",
+                    "priority": "notice",
+                    "unit": "nginx"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "journalctl",
+                "argv": [
+                  "-u",
+                  "{{ args.unit }}",
+                  "--since",
+                  "{{ args.since }} ago",
+                  "-p",
+                  "{{ args.priority }}",
+                  "--grep",
+                  "{{ args.grep }}",
+                  "--no-pager"
+                ]
+              }
+            },
+            {
+              "id": "linux.kernel_modules",
+              "title": "Loaded kernel modules sorted by size",
+              "summary": "`lsmod` sorted by size, top 30. Useful to spot unexpected modules loaded on a production host (rootkits, debug tooling, vendor drivers). Read-only.",
+              "description": "`lsmod` sorted by size, top 30. Useful to spot unexpected modules loaded on a production host (rootkits, debug tooling, vendor drivers). Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One lsmod invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Largest loaded modules",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "lsmod | sort -k 3 -n -r | head -30"
+                ]
+              }
+            },
+            {
+              "id": "linux.last_logins",
+              "title": "Recent successful logins",
+              "summary": "Show last N successful logins from /var/log/wtmp via `last`. Shows user, terminal, source IP, duration. Read-only.",
+              "description": "Show last N successful logins from /var/log/wtmp via `last`. Shows user, terminal, source IP, duration. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One last invocation.",
+                "Reads /var/log/wtmp."
+              ],
+              "args": [
+                {
+                  "name": "count",
+                  "type": "integer",
+                  "required": false,
+                  "default": 50,
+                  "description": "How many recent logins to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 500
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 50 successful logins",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "last",
+                "argv": [
+                  "-F",
+                  "-n",
+                  "{{ args.count }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.lvm_status",
+              "title": "LVM volume / group / PV summary",
+              "summary": "Runs `lvs && vgs && pvs` for a one-shot LVM topology snapshot. Logical volumes, volume groups, physical volumes — sizes, free space, attributes. Read-only. Needs LVM tools installed.",
+              "description": "Runs `lvs && vgs && pvs` for a one-shot LVM topology snapshot. Logical volumes, volume groups, physical volumes — sizes, free space, attributes. Read-only. Needs LVM tools installed.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Three LVM CLI invocations.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "LVM snapshot",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "lvs; echo; vgs; echo; pvs"
+                ]
+              }
+            },
+            {
+              "id": "linux.mdadm_status",
+              "title": "mdadm RAID array status",
+              "summary": "Reads /proc/mdstat plus `mdadm --detail` for every active array. Surfaces array state, devices, sync progress, faults. Read-only. Returns \"no arrays\" cleanly when there's no mdadm RAID configured.",
+              "description": "Reads /proc/mdstat plus `mdadm --detail` for every active array. Surfaces array state, devices, sync progress, faults. Read-only. Returns \"no arrays\" cleanly when there's no mdadm RAID configured.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One cat + one mdadm --detail per array.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Array health snapshot",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cat /proc/mdstat; for md in /dev/md[0-9]*; do [ -e \"$md\" ] || continue; echo; mdadm --detail \"$md\"; done"
+                ]
+              }
+            },
+            {
+              "id": "linux.memory",
+              "title": "System memory snapshot",
+              "summary": "Reports memory and swap usage via free -m. Read-only, single sample. Memory state fluctuates between consecutive calls; take two samples a few seconds apart before drawing conclusions about pressure.",
+              "description": "Reports memory and swap usage via free -m. Read-only, single sample. Memory state fluctuates between consecutive calls; take two samples a few seconds apart before drawing conclusions about pressure.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads /proc/meminfo via the free utility.",
+                "Touches no files."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Snapshot memory",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "free",
+                "argv": [
+                  "-m"
+                ]
+              }
+            },
+            {
+              "id": "linux.memory_detailed",
+              "title": "Full /proc/meminfo",
+              "summary": "Dump full /proc/meminfo. More detail than the `linux.memory` action — surfaces hugepages, slab, dirty/writeback, page tables, KSM, cgroup memcg. Read-only.",
+              "description": "Dump full /proc/meminfo. More detail than the `linux.memory` action — surfaces hugepages, slab, dirty/writeback, page tables, KSM, cgroup memcg. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read of /proc/meminfo.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Full memory accounting",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "cat",
+                "argv": [
+                  "/proc/meminfo"
+                ]
+              }
+            },
+            {
+              "id": "linux.mount_status",
+              "title": "Mounted filesystems",
+              "summary": "Lists every mounted filesystem with type, source device, mountpoint, and mount options. Read-only. Use to confirm a service has the right disk attached or to find a stuck/duplicate mount.",
+              "description": "Lists every mounted filesystem with type, source device, mountpoint, and mount options. Read-only. Use to confirm a service has the right disk attached or to find a stuck/duplicate mount.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One findmnt invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All mounted filesystems",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "findmnt -A"
+                ]
+              }
+            },
+            {
+              "id": "linux.network_interfaces",
+              "title": "Network interfaces",
+              "summary": "`ip -j addr show` JSON. Returns every interface with its addresses, state, MAC, MTU. Use to confirm an interface is up with the right IP. Read-only.",
+              "description": "`ip -j addr show` JSON. Returns every interface with its addresses, state, MAC, MTU. Use to confirm an interface is up with the right IP. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One ip invocation.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All interfaces (JSON)",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "ip",
+                "argv": [
+                  "-j",
+                  "addr",
+                  "show"
+                ]
+              }
+            },
+            {
+              "id": "linux.network_routes",
+              "title": "Routing table + policy rules",
+              "summary": "`ip route show && ip rule show && ip -6 route show`. Use to debug \"why does traffic go via X instead of Y?\" — surfaces every route and policy-based routing rule. Read-only.",
+              "description": "`ip route show && ip rule show && ip -6 route show`. Use to debug \"why does traffic go via X instead of Y?\" — surfaces every route and policy-based routing rule. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Three ip invocations.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All routes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "ip route show; echo; ip rule show; echo; ip -6 route show"
+                ]
+              }
+            },
+            {
+              "id": "linux.os_release",
+              "title": "Distro + kernel identity",
+              "summary": "Returns /etc/os-release plus `uname -a`. Identifies the distribution, version, codename, and kernel. Use as a first sanity check before recommending distro-specific commands. Read-only.",
+              "description": "Returns /etc/os-release plus `uname -a`. Identifies the distribution, version, codename, and kernel. Use as a first sanity check before recommending distro-specific commands. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Two file/utility reads.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Distro + kernel",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cat /etc/os-release; echo; uname -a"
+                ]
+              }
+            },
+            {
+              "id": "linux.reboot_host",
+              "title": "Schedule a host reboot",
+              "summary": "Schedules a reboot via `shutdown -r +1` — one-minute warning to give in-flight connections a chance to drain. Sends a wall message with the operator-supplied reason. Cannot be undone except by `shutdown -c` BEFORE the minute elapses; once the kernel begins shutdown the host is going down regardless.",
+              "description": "Schedules a reboot via `shutdown -r +1` — one-minute warning to give in-flight connections a chance to drain. Sends a wall message with the operator-supplied reason. Cannot be undone except by `shutdown -c` BEFORE the minute elapses; once the kernel begins shutdown the host is going down regardless.",
+              "kind": "exec",
+              "risk": "critical",
+              "side_effects": [
+                "Wall message broadcast to all logged-in users.",
+                "One-minute timer set; kernel shutdown begins after.",
+                "Every running service stops; all open connections drop."
+              ],
+              "args": [
+                {
+                  "name": "note",
+                  "type": "string",
+                  "required": true,
+                  "description": "Message broadcast to logged-in users in the reboot warning.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9 .,_:;/\\-]{4,200}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Reboot for kernel upgrade",
+                  "args": {
+                    "note": "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "shutdown",
+                "argv": [
+                  "-r",
+                  "+1",
+                  "emisar-initiated reboot: {{ args.note }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.sudoers_dump",
+              "title": "sudoers configuration audit",
+              "summary": "Dumps /etc/sudoers and the index of /etc/sudoers.d/. Use for an audit pass — \"who can sudo to what?\". Sensitive content; output goes through redaction. Read-only.",
+              "description": "Dumps /etc/sudoers and the index of /etc/sudoers.d/. Use for an audit pass — \"who can sudo to what?\". Sensitive content; output goes through redaction. Read-only.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Reads /etc/sudoers and ls of /etc/sudoers.d/.",
+                "Requires root or sudo-readable perms."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Sudoers audit",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cat /etc/sudoers 2>/dev/null; echo; ls -la /etc/sudoers.d/ 2>/dev/null"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_disable",
+              "title": "Disable a systemd unit at boot",
+              "summary": "`systemctl disable <unit>`. Removes the boot symlinks. Does NOT stop the unit now — pair with `linux.systemctl_stop` for that. Persistent change across reboots.",
+              "description": "`systemctl disable <unit>`. Removes the boot symlinks. Does NOT stop the unit now — pair with `linux.systemctl_stop` for that. Persistent change across reboots.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Removes symlinks under /etc/systemd/system/.",
+                "Idempotent."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Disable nginx at boot",
+                  "args": {
+                    "unit": "nginx.service"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "disable",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_enable",
+              "title": "Enable a systemd unit at boot",
+              "summary": "`systemctl enable <unit>`. Creates the symlinks so the unit starts at boot. Does NOT start it now — pair with `linux.systemctl_start` for that. Persistent change across reboots.",
+              "description": "`systemctl enable <unit>`. Creates the symlinks so the unit starts at boot. Does NOT start it now — pair with `linux.systemctl_start` for that. Persistent change across reboots.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Creates symlinks under /etc/systemd/system/.",
+                "Idempotent — re-running on an already-enabled unit is a no-op."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Enable nginx at boot",
+                  "args": {
+                    "unit": "nginx.service"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "enable",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_reload",
+              "title": "Reload a systemd unit's config",
+              "summary": "`systemctl reload <unit>`. The unit re-reads its config without restarting (works only for units declaring an ExecReload). Use after editing nginx.conf / postgresql.conf / etc. The reload is graceful by definition — no requests dropped.",
+              "description": "`systemctl reload <unit>`. The unit re-reads its config without restarting (works only for units declaring an ExecReload). Use after editing nginx.conf / postgresql.conf / etc. The reload is graceful by definition — no requests dropped.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Sends SIGHUP (or the configured reload signal) to the unit.",
+                "Unit re-reads its config; existing workers continue."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Reload nginx",
+                  "args": {
+                    "unit": "nginx.service"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "reload",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_restart",
+              "title": "Restart a systemd unit",
+              "summary": "Restarts a named systemd unit.",
+              "description": "Restarts a named systemd unit. Clients will see an outage of seconds-to-minutes depending on the unit. Treat as a last-resort action: prefer diagnosis (logs, status, disk, memory) first. Never restart a database under load without confirming there is no in-flight repair, compaction, or similar background operation. WHICH units this runner may restart is an operator policy decision (high-risk → require_approval by default), not a fixed list; the unit is bounded to a valid systemd unit name so it can't carry shell metacharacters.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Stops the named unit, then starts it.",
+                "Disconnects existing clients of the unit.",
+                "May trigger downstream alerts if the unit takes time to recover.",
+                "Does not modify configuration or on-disk state."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit to restart (e.g. nginx, nomad, consul.service, foo@bar.service).",
+                  "validation": {
+                    "pattern": "^[A-Za-z0-9@._:-]{1,128}$",
+                    "max_length": 128
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Restart nginx after a config reload check",
+                  "args": {
+                    "unit": "nginx"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "restart",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_start",
+              "title": "Start a systemd unit",
+              "summary": "`systemctl start <unit>`. Brings a unit up. The unit name is pattern-restricted to safe systemd unit naming. Combine with `linux.systemctl_status` afterward to confirm the unit reached active state.",
+              "description": "`systemctl start <unit>`. Brings a unit up. The unit name is pattern-restricted to safe systemd unit naming. Combine with `linux.systemctl_status` afterward to confirm the unit reached active state.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Starts the unit (and any required dependencies).",
+                "Triggers ExecStartPre/Post hooks declared in the unit."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name (e.g. nginx.service).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Start nginx",
+                  "args": {
+                    "unit": "nginx.service"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "start",
+                  "--no-block",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_status",
+              "title": "Systemd unit status",
+              "summary": "Reports the current systemd unit status for a named service. Read-only. Use to confirm whether a service is active before recommending diagnostic or remediation actions.",
+              "description": "Reports the current systemd unit status for a named service. Read-only. Use to confirm whether a service is active before recommending diagnostic or remediation actions.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads systemd state.",
+                "Touches no files."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit to query.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@._-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Check Cassandra status",
+                  "args": {
+                    "unit": "cassandra"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "status",
+                  "{{ args.unit }}",
+                  "--no-pager"
+                ]
+              }
+            },
+            {
+              "id": "linux.systemctl_stop",
+              "title": "Stop a systemd unit",
+              "summary": "`systemctl stop <unit>`. Brings a unit down. Sends SIGTERM, waits for TimeoutStopSec, then SIGKILL. In-flight requests on the service are dropped unless the unit handles graceful drain.",
+              "description": "`systemctl stop <unit>`. Brings a unit down. Sends SIGTERM, waits for TimeoutStopSec, then SIGKILL. In-flight requests on the service are dropped unless the unit handles graceful drain.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "SIGTERMs (then SIGKILLs) the unit's processes.",
+                "Triggers ExecStop/ExecStopPost hooks."
+              ],
+              "args": [
+                {
+                  "name": "unit",
+                  "type": "string",
+                  "required": true,
+                  "description": "Systemd unit name (e.g. nginx.service).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Stop nginx",
+                  "args": {
+                    "unit": "nginx.service"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "systemctl",
+                "argv": [
+                  "stop",
+                  "--no-block",
+                  "{{ args.unit }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.tail_log",
+              "title": "Tail a log file",
+              "summary": "Reads the last N lines of a log file under /var/log. Read-only. Use to glance at the most recent activity for a service when triaging an alert, before deciding whether to grep deeper or pull more context. Output is run through the runner's redactor before it leaves the host. On journald-only hosts (no rsyslog) the system log isn't a file under /var/log — use linux.journalctl for syslog/messages; this reads on-disk files (app, nginx, …).",
+              "description": "Reads the last N lines of a log file under /var/log. Read-only. Use to glance at the most recent activity for a service when triaging an alert, before deciding whether to grep deeper or pull more context. Output is run through the runner's redactor before it leaves the host. On journald-only hosts (no rsyslog) the system log isn't a file under /var/log — use linux.journalctl for syslog/messages; this reads on-disk files (app, nginx, …).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads a log file under /var/log.",
+                "Output may contain operational secrets — redactor scrubs known patterns.",
+                "Does not modify anything."
+              ],
+              "args": [
+                {
+                  "name": "file",
+                  "type": "path",
+                  "required": true,
+                  "description": "Absolute path to the log file. Must be under /var/log/.",
+                  "validation": {
+                    "allowed_prefixes": [
+                      "/var/log/"
+                    ]
+                  }
+                },
+                {
+                  "name": "lines",
+                  "type": "integer",
+                  "required": false,
+                  "default": 200,
+                  "description": "Number of trailing lines to return (tail -n).",
+                  "validation": {
+                    "min": 1,
+                    "max": 5000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 100 lines of nginx error log",
+                  "args": {
+                    "file": "/var/log/nginx/error.log",
+                    "lines": 100
+                  }
+                },
+                {
+                  "title": "Last 500 lines of an app log",
+                  "args": {
+                    "file": "/var/log/app/server.log",
+                    "lines": 500
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "tail",
+                "argv": [
+                  "-n",
+                  "{{ args.lines }}",
+                  "{{ args.file }}"
+                ]
+              }
+            },
+            {
+              "id": "linux.uptime",
+              "title": "System uptime and load average",
+              "summary": "Reports system uptime and 1/5/15-minute load averages. Load averages are dimensionless and machine-dependent; compare against CPU count before interpreting them as \"high\".",
+              "description": "Reports system uptime and 1/5/15-minute load averages. Load averages are dimensionless and machine-dependent; compare against CPU count before interpreting them as \"high\".",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads /proc/loadavg and /proc/uptime via the uptime utility.",
+                "Touches no files."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Get uptime and load",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "uptime",
+                "argv": []
+              }
+            },
+            {
+              "id": "linux.who_now",
+              "title": "Currently logged-in users",
+              "summary": "`who` + `w` — usernames, terminals, login times, source IPs, and what each session is currently running. Use to confirm whether a human is on the box during an incident. Read-only.",
+              "description": "`who` + `w` — usernames, terminals, login times, source IPs, and what each session is currently running. Use to confirm whether a human is on the box during an incident. Read-only.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Two utility invocations.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Current logins",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "who; echo; w"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -64875,13 +66214,13 @@
     {
       "id": "wireguard",
       "name": "WireGuard VPN",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "WireGuard state — interfaces, peers, transfer counts, last handshakes — plus operator actions: bring iface up/down via wg-quick, remove a peer from a live iface. Use to debug connectivity or evict a compromised peer.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/wireguard",
-      "content_hash": "sha256:8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/wireguard/0.1.5/8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a/pack.tar.gz",
+      "content_hash": "sha256:7d472efec6bbbe4c5e7bc7a7d7ae5dd1a542720b4006d030136b3876962c9e70",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/wireguard/0.1.6/7d472efec6bbbe4c5e7bc7a7d7ae5dd1a542720b4006d030136b3876962c9e70/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -65015,7 +66354,7 @@
               "title": "Kick a peer",
               "args": {
                 "iface": "wg0",
-                "pubkey": "abcDEF1234567890abcDEF1234567890abcDEF1234="
+                "pubkey": "abcDEF1234567890abcDEF1234567890abcDEF12345="
               }
             }
           ],
@@ -65180,6 +66519,298 @@
               "{{ args.interface }}"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.5",
+          "content_hash": "sha256:8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/wireguard/0.1.5/8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a/pack.tar.gz",
+          "actions": [
+            {
+              "id": "wg.quick_down",
+              "title": "wg-quick down <iface>",
+              "summary": "Tear down a WireGuard interface. All active sessions through it drop. PostDown rules run (typically cleaning up routes/firewall).",
+              "description": "Tear down a WireGuard interface. All active sessions through it drop. PostDown rules run (typically cleaning up routes/firewall).",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Interface destroyed.",
+                "All tunnel sessions terminated.",
+                "Routing + firewall rules cleaned up by PostDown."
+              ],
+              "args": [
+                {
+                  "name": "iface",
+                  "type": "string",
+                  "required": true,
+                  "description": "Interface name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,15}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Tear down wg0",
+                  "args": {
+                    "iface": "wg0"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg-quick",
+                "argv": [
+                  "down",
+                  "{{ args.iface }}"
+                ]
+              }
+            },
+            {
+              "id": "wg.quick_up",
+              "title": "wg-quick up <iface>",
+              "summary": "Bring up a WireGuard interface defined in /etc/wireguard/<iface>.conf. Applies the address, peers, and PostUp rules.",
+              "description": "Bring up a WireGuard interface defined in /etc/wireguard/<iface>.conf. Applies the address, peers, and PostUp rules.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Interface comes up with the configured peers.",
+                "Routing table changes.",
+                "PostUp scripts (if any) run."
+              ],
+              "args": [
+                {
+                  "name": "iface",
+                  "type": "string",
+                  "required": true,
+                  "description": "Interface name (matches /etc/wireguard/<iface>.conf).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,15}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Bring up wg0",
+                  "args": {
+                    "iface": "wg0"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg-quick",
+                "argv": [
+                  "up",
+                  "{{ args.iface }}"
+                ]
+              }
+            },
+            {
+              "id": "wg.set_peer_remove",
+              "title": "wg set <iface> peer <pubkey> remove",
+              "summary": "Remove one peer from a running WireGuard interface. Its tunnel sessions drop. The peer can no longer connect until added back (or the config file is reloaded).",
+              "description": "Remove one peer from a running WireGuard interface. Its tunnel sessions drop. The peer can no longer connect until added back (or the config file is reloaded).",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Peer removed from runtime state.",
+                "That peer's traffic stops flowing.",
+                "Change is runtime-only; iface config file unchanged."
+              ],
+              "args": [
+                {
+                  "name": "iface",
+                  "type": "string",
+                  "required": true,
+                  "description": "Interface name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,15}$"
+                  }
+                },
+                {
+                  "name": "pubkey",
+                  "type": "string",
+                  "required": true,
+                  "description": "Peer's base64 public key.",
+                  "validation": {
+                    "pattern": "^[A-Za-z0-9+/]{43}=$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Kick a peer",
+                  "args": {
+                    "iface": "wg0",
+                    "pubkey": "abcDEF1234567890abcDEF1234567890abcDEF1234="
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "set",
+                  "{{ args.iface }}",
+                  "peer",
+                  "{{ args.pubkey }}",
+                  "remove"
+                ]
+              }
+            },
+            {
+              "id": "wg.show",
+              "title": "wg show",
+              "summary": "List all interfaces with peers + endpoints + last-handshake.",
+              "description": "List all interfaces with peers + endpoints + last-handshake.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One netlink query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All interfaces",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "show"
+                ]
+              }
+            },
+            {
+              "id": "wg.show_endpoints",
+              "title": "wg show all endpoints",
+              "summary": "Show per-peer remote endpoint (last known).",
+              "description": "Show per-peer remote endpoint (last known).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One netlink query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Endpoints",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "show",
+                  "all",
+                  "endpoints"
+                ]
+              }
+            },
+            {
+              "id": "wg.show_latest_handshakes",
+              "title": "wg show all latest-handshakes",
+              "summary": "Show per-peer epoch of last handshake. 0 means never seen.",
+              "description": "Show per-peer epoch of last handshake. 0 means never seen.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One netlink query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Handshakes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "show",
+                  "all",
+                  "latest-handshakes"
+                ]
+              }
+            },
+            {
+              "id": "wg.show_transfer",
+              "title": "wg show all transfer",
+              "summary": "Show per-peer cumulative bytes rx/tx. Use to confirm \"is the tunnel actually carrying traffic?\".",
+              "description": "Show per-peer cumulative bytes rx/tx. Use to confirm \"is the tunnel actually carrying traffic?\".",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One netlink query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Transfer counts",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "show",
+                  "all",
+                  "transfer"
+                ]
+              }
+            },
+            {
+              "id": "wg.showconf",
+              "title": "wg showconf <iface>",
+              "summary": "Show the effective config for one WireGuard interface (`[Interface]`/`[Peer]` sections, peer pubkeys, allowed-ips, endpoints). PrivateKey and PresharedKey lines are masked at the source.",
+              "description": "Show the effective config for one WireGuard interface (`[Interface]`/`[Peer]` sections, peer pubkeys, allowed-ips, endpoints). PrivateKey and PresharedKey lines are masked at the source.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One netlink query.",
+                "Read-only.",
+                "`wg showconf` emits the interface PrivateKey and per-peer PresharedKey; the action masks both at the source before any output leaves the host."
+              ],
+              "args": [
+                {
+                  "name": "interface",
+                  "type": "string",
+                  "required": true,
+                  "description": "Interface name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,15}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "wg0 config",
+                  "args": {
+                    "interface": "wg0"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "wg",
+                "argv": [
+                  "showconf",
+                  "{{ args.interface }}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

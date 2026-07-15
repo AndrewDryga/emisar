@@ -37,4 +37,4 @@ examples:
   - title: Kick a peer
     args:
       iface: "wg0"
-      pubkey: "abcDEF1234567890abcDEF1234567890abcDEF1234="
+      pubkey: "abcDEF1234567890abcDEF1234567890abcDEF12345="
