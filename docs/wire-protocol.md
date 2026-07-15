@@ -187,7 +187,8 @@ keeps later chunks even when an earlier one was lost, and persists
 the runner reports no local drops.
 
 Stable result statuses are `success`, `failed`, `error`, `validation_failed`,
-`unknown_action`, `pack_hash_mismatch`, and `signature_invalid`.
+`unknown_action`, `timed_out`, `blocked_by_admission`, `cancelled`,
+`pack_hash_mismatch`, and `signature_invalid`.
 
 Results are authenticated by the runner websocket, not end-to-end signed. The
 portal must not describe them as CA-verified runner receipts.
@@ -213,8 +214,9 @@ nonces are durable and bounded. Only one runner process may own a replay/nonce
 store at a time.
 
 If a host crashes after process start but before a terminal result is durable,
-the runner reports `outcome_unknown` after restart and never executes that tuple
-again automatically. This is the honest boundary for external side effects.
+the runner reports status `failed` with reason `execution_outcome_unknown` after
+restart and never executes that tuple again automatically. This is the honest
+boundary for external side effects.
 
 Malformed or oversized messages, invalid signatures, pack mismatches, replay
 conflicts, and admission failures execute nothing and produce bounded errors
