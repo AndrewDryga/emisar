@@ -124,6 +124,10 @@ the recovery source for the canonical dashboards. Adding a new canonical file
 seeds it on the next data-preparation run; changing an existing canonical file
 does not overwrite the saved copy. The container runs as an unprivileged user
 with a read-only root filesystem and an independently pinned image.
+Mix and Hex build artifacts live in an executable, bounded
+`/home/livebook` tmpfs because `Mix.install/1` runs downloaded build tools;
+that dependency cache is intentionally discarded on service restart. Only
+notebooks and Livebook configuration persist on `/data`.
 `/public/health` remains available to Google health checks; every operator route
 requires a valid IAP assertion.
 

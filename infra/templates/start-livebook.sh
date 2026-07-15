@@ -100,11 +100,13 @@ done
 } >> "$ENV_FILE"
 
 docker rm -f emisar-livebook 2>/dev/null || true
+# Mix.install executes build tools from HOME. Docker tmpfs mounts default to
+# noexec, so the isolated notebook workspace must opt into execution explicitly.
 exec docker run --rm --name emisar-livebook --network host --stop-timeout 120 \
   --user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:rw,nosuid,nodev,size=512m \
   --tmpfs /app/tmp:rw,nosuid,nodev,size=64m \
-  --tmpfs /home/livebook:rw,nosuid,nodev,size=64m \
+  --tmpfs /home/livebook:rw,exec,nosuid,nodev,size=512m \
   --mount type=bind,src=/mnt/disks/emisar-livebook,dst=/data \
   --mount type=bind,src=/var/lib/emisar-livebook/tools,dst=/opt/emisar,readonly \
   --env-file "$ENV_FILE" \

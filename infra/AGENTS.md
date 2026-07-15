@@ -84,6 +84,11 @@ the separate, creds-gated deploy step.
    Auth Proxy and future host-level helpers as separately pinned, cloud-init-managed
    containers. The portal Dockerfile contains the application release only; never
    bake a VM sidecar binary into it or couple application rollback to that binary.
+12. **Validate notebook runtimes in their real writable paths.** Livebook's
+   `Mix.install/1` executes downloaded build tools from `HOME`, so its bounded,
+   ephemeral home tmpfs must opt into `exec` while retaining `nosuid` and `nodev`.
+   Behavior-probe the rendered mount with the pinned runtime image; a test-only
+   cache or environment override is not proof that a real notebook session works.
 
 ## House style
 

@@ -113,6 +113,7 @@ grep -Fq '/data/notebooks/Emisar Product Analytics' "${infra_dir}/README.md"
 grep -Fq 'product_analytics.exs' "$livebook_rendered"
 grep -Fq -- '--user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-privileges' "$livebook_rendered"
 grep -Fq -- '--tmpfs /app/tmp:rw,nosuid,nodev,size=64m' "$livebook_rendered"
+grep -Fq -- '--tmpfs /home/livebook:rw,exec,nosuid,nodev,size=512m' "$livebook_rendered"
 grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$livebook_rendered"
 grep -Fq '/public/health' "${infra_dir}/lb.tf"
 grep -Fq 'System.cmd("/bin/bash", ["/opt/emisar/list-portal-nodes"])' "${infra_dir}/README.md"
@@ -124,6 +125,17 @@ if grep -Fq 'LIVEBOOK_CLUSTER=' "$livebook_rendered"; then
   echo "Livebook must not auto-join the production portal cluster" >&2
   exit 1
 fi
+
+livebook_home_probe=$(docker run --rm --read-only --user 1000:1000 \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  --tmpfs /home/livebook:rw,exec,nosuid,nodev,size=512m \
+  --entrypoint /bin/sh "$livebook_image" -c '
+    probe=/home/livebook/mix-install-exec-probe
+    printf "#!/bin/sh\nprintf livebook-home-exec-ok\n" > "$probe"
+    chmod 0700 "$probe"
+    exec "$probe"
+  ')
+[ "$livebook_home_probe" = 'livebook-home-exec-ok' ]
 
 for script in "$tmp"/*.sh "$livebook_scripts"/*; do
   bash -n "$script"
