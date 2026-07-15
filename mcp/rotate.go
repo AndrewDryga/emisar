@@ -58,14 +58,24 @@ type credentialStore struct {
 	ops             credentialFileOps
 }
 
+// credentialWriteAccessError marks failures that occur before the credential
+// state callback can mutate the state file. Only this phase is eligible for a
+// read-only sandbox fallback; persistence failures may have crossed rename.
+type credentialWriteAccessError struct {
+	err error
+}
+
+func (err *credentialWriteAccessError) Error() string { return err.err.Error() }
+func (err *credentialWriteAccessError) Unwrap() error { return err.err }
+
 func (store *credentialStore) withLock(fun func() error) error {
 	dir := filepath.Dir(store.path)
 	if err := store.secureDirectory(dir); err != nil {
-		return err
+		return &credentialWriteAccessError{err: err}
 	}
 	unlock, err := lockCredentialFile(store.path + ".lock")
 	if err != nil {
-		return fmt.Errorf("lock credential state: %w", err)
+		return &credentialWriteAccessError{err: fmt.Errorf("lock credential state: %w", err)}
 	}
 	defer unlock()
 	return fun()
@@ -328,6 +338,31 @@ func rotationHash(key string) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// initializeCredentialState prefers the locked, durable rotation path. Some
+// MCP clients sandbox their server processes away from the user's config
+// directory. A write denial before the state callback runs may safely fall back
+// to validated reads. Any persistence failure remains fatal because rename may
+// already have happened without a durable directory sync.
+func (b *bridge) initializeCredentialState() (bool, error) {
+	err := b.refreshCredentialState()
+	if err == nil || b.credentialStore == nil {
+		return false, err
+	}
+	var accessErr *credentialWriteAccessError
+	if !errors.As(err, &accessErr) || !isCredentialWriteUnavailable(accessErr) {
+		return false, err
+	}
+
+	b.stateMu.Lock()
+	b.credentialReadOnly = true
+	b.pendingKey = ""
+	b.stateMu.Unlock()
+	if readErr := b.refreshCredentialState(); readErr != nil {
+		return false, fmt.Errorf("writable state unavailable (%v); read-only state: %w", err, readErr)
+	}
+	return true, nil
+}
+
 // refreshCredentialState adopts a peer process's durable transition before the
 // next HTTP request. Re-persisting changed state proves the observed rename and
 // its parent-directory entry durable before a proposal depends on its pending
@@ -339,6 +374,14 @@ func (b *bridge) refreshCredentialState() error {
 
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
+	if b.credentialReadOnly {
+		_, err := b.credentialStore.load(b.apiKey)
+		if err != nil {
+			return err
+		}
+		b.pendingKey = ""
+		return nil
+	}
 	return b.credentialStore.withLock(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
@@ -355,6 +398,39 @@ func (b *bridge) refreshCredentialState() error {
 	})
 }
 
+// readOnlyRecoveryKey returns a validated alternate only after the portal has
+// rejected the active key. Observing a renamed state file alone is insufficient:
+// a writable peer may not yet have synced that rename. A pending successor was
+// persisted before it was proposed, while a different current key was activated
+// by a peer that uses it only after successful persistence.
+func (b *bridge) readOnlyRecoveryKey() (string, error) {
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	if !b.credentialReadOnly || b.credentialStore == nil {
+		return "", nil
+	}
+	state, err := b.credentialStore.load(b.apiKey)
+	if err != nil {
+		return "", err
+	}
+	if state.Current != b.apiKey {
+		return state.Current, nil
+	}
+	if state.Pending != "" && state.Pending != b.apiKey {
+		return state.Pending, nil
+	}
+	return "", nil
+}
+
+func (b *bridge) adoptReadOnlyRecoveryKey(key string) {
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	if b.credentialReadOnly {
+		b.apiKey = key
+		b.pendingKey = ""
+	}
+}
+
 func (b *bridge) rotationProposal(method string) (prefix, hash string) {
 	if method != "initialize" || b.credentialStore == nil {
 		return "", ""
@@ -362,6 +438,9 @@ func (b *bridge) rotationProposal(method string) (prefix, hash string) {
 
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
+	if b.credentialReadOnly {
+		return "", ""
+	}
 	activatedDurably := false
 	err := b.credentialStore.withLock(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
@@ -411,7 +490,7 @@ func (b *bridge) rotationProposal(method string) (prefix, hash string) {
 func (b *bridge) acknowledgeRotation(ack string) {
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
-	if b.credentialStore == nil || b.pendingKey == "" || len(ack) != sha256.Size*2 {
+	if b.credentialStore == nil || b.credentialReadOnly || b.pendingKey == "" || len(ack) != sha256.Size*2 {
 		return
 	}
 	expected := rotationHash(b.pendingKey)

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -600,6 +601,166 @@ func TestForward_PeerPromotionRefreshesLiveBridge(t *testing.T) {
 	}
 	if live.apiKey != peer.apiKey || live.pendingKey != "" {
 		t.Fatal("live bridge did not adopt the peer-promoted credential state")
+	}
+}
+
+func TestInitializeCredentialState_ReadOnlyFallbackWaitsForAuthFailure(t *testing.T) {
+	configDir := t.TempDir()
+	current := testAPIKey(31)
+	pending := testAPIKey(32)
+	successor := testAPIKey(33)
+	store := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	if err := store.persist(testCredentialState(current, pending)); err != nil {
+		t.Fatal(err)
+	}
+	store.ops.chmod = func(string, os.FileMode) error { return os.ErrPermission }
+
+	b := newRotationTestBridge(store, current)
+	readOnly, err := b.initializeCredentialState()
+	if err != nil {
+		t.Fatalf("initialize read-only credential state: %v", err)
+	}
+	if !readOnly || !b.credentialReadOnly {
+		t.Fatal("permission denial did not enable read-only credential state")
+	}
+	if b.apiKey != current || b.pendingKey != "" {
+		t.Fatalf("read-only initial state = %q/%q, want configured current and no pending", b.apiKey, b.pendingKey)
+	}
+	if prefix, hash := b.rotationProposal("initialize"); prefix != "" || hash != "" {
+		t.Fatalf("read-only bridge proposed a rotation: prefix=%q hash=%q", prefix, hash)
+	}
+
+	peerStore := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	promoted := testCredentialState(current, "")
+	promoted.Current = successor
+	if err := peerStore.persist(promoted); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.refreshCredentialState(); err != nil {
+		t.Fatalf("refresh read-only state: %v", err)
+	}
+	if b.apiKey != current || b.pendingKey != "" {
+		t.Fatalf("read-only bridge adopted an unproven peer successor: current=%q pending=%q", b.apiKey, b.pendingKey)
+	}
+	recovery, err := b.readOnlyRecoveryKey()
+	if err != nil || recovery != successor {
+		t.Fatalf("read-only recovery key = %q, err=%v, want peer successor", recovery, err)
+	}
+}
+
+func TestForward_ReadOnlyCredentialRetriesSuccessorAfterUnauthorized(t *testing.T) {
+	current := testAPIKey(38)
+	successor := testAPIKey(39)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	state := testCredentialState(current, successor)
+	if err := store.persist(state); err != nil {
+		t.Fatal(err)
+	}
+	store.ops.chmod = func(string, os.FileMode) error { return os.ErrPermission }
+
+	b := newRotationTestBridge(store, current)
+	if readOnly, err := b.initializeCredentialState(); err != nil || !readOnly {
+		t.Fatalf("initialize read-only state: readOnly=%t err=%v", readOnly, err)
+	}
+	var authorizations, idempotencyKeys []string
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorizations = append(authorizations, req.Header.Get("Authorization"))
+		idempotencyKeys = append(idempotencyKeys, req.Header.Get("Idempotency-Key"))
+		if req.Header.Get("Authorization") == "Bearer "+current {
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"unauthorized"}}`,
+				)),
+			}, nil
+		}
+		return jsonRPCResponse(""), nil
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil {
+		t.Fatalf("forward with read-only recovery: %v", err)
+	}
+	wantAuth := []string{"Bearer " + current, "Bearer " + successor}
+	if !slices.Equal(authorizations, wantAuth) {
+		t.Fatalf("authorization attempts = %#v, want %#v", authorizations, wantAuth)
+	}
+	if len(idempotencyKeys) != 2 || idempotencyKeys[0] == "" || idempotencyKeys[0] != idempotencyKeys[1] {
+		t.Fatalf("retry changed idempotency identity: %#v", idempotencyKeys)
+	}
+	if b.apiKey != successor || b.pendingKey != "" {
+		t.Fatalf("successful recovery was not adopted: current=%q pending=%q", b.apiKey, b.pendingKey)
+	}
+}
+
+func TestForward_ReadOnlyCredentialDoesNotRaceVisiblePeerPromotion(t *testing.T) {
+	current := testAPIKey(40)
+	successor := testAPIKey(41)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	promoted := testCredentialState(current, "")
+	promoted.Current = successor
+	if err := store.persist(promoted); err != nil {
+		t.Fatal(err)
+	}
+	store.ops.chmod = func(string, os.FileMode) error { return os.ErrPermission }
+
+	b := newRotationTestBridge(store, current)
+	if readOnly, err := b.initializeCredentialState(); err != nil || !readOnly {
+		t.Fatalf("initialize read-only state: readOnly=%t err=%v", readOnly, err)
+	}
+	var authorization string
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorization = req.Header.Get("Authorization")
+		return jsonRPCResponse(""), nil
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "Bearer "+current || b.apiKey != current {
+		t.Fatalf("visible peer rename was activated before auth failure: authorization=%q current=%q", authorization, b.apiKey)
+	}
+}
+
+func TestInitializeCredentialState_ReadOnlyFallbackStillRejectsCorruptState(t *testing.T) {
+	current := testAPIKey(34)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.path, []byte(`{"version":2,"current":"corrupt"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store.ops.chmod = func(string, os.FileMode) error { return os.ErrPermission }
+
+	b := newRotationTestBridge(store, current)
+	if readOnly, err := b.initializeCredentialState(); err == nil || readOnly {
+		t.Fatalf("corrupt state enabled read-only fallback: readOnly=%t err=%v", readOnly, err)
+	}
+}
+
+func TestInitializeCredentialState_PostRenameFailureStaysFatal(t *testing.T) {
+	current := testAPIKey(35)
+	successor := testAPIKey(36)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	if err := store.persist(testCredentialState(current, "")); err != nil {
+		t.Fatal(err)
+	}
+
+	promoted := testCredentialState(current, "")
+	promoted.Current = successor
+	store.ops.syncDir = func(string) error { return os.ErrPermission }
+	if err := store.persist(promoted); err == nil {
+		t.Fatal("simulated peer promotion unexpectedly synced")
+	}
+
+	b := newRotationTestBridge(store, current)
+	readOnly, err := b.initializeCredentialState()
+	if err == nil || readOnly || b.credentialReadOnly {
+		t.Fatalf("post-rename failure enabled read-only activation: readOnly=%t err=%v", readOnly, err)
+	}
+	if b.apiKey != current || b.pendingKey != "" {
+		t.Fatal("post-rename failure activated an unproven successor")
 	}
 }
 

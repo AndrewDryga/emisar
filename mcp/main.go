@@ -309,8 +309,12 @@ func main() {
 		clientMetadata:  clientMetadata,
 		credentialStore: credentialStore,
 	}
-	if err := b.refreshCredentialState(); err != nil {
+	readOnlyCredentials, err := b.initializeCredentialState()
+	if err != nil {
 		fatalln("credential state:", err)
+	}
+	if readOnlyCredentials {
+		fmt.Fprintln(os.Stderr, "emisar-mcp: credential state is read-only; automatic key rotation disabled")
 	}
 
 	if err := b.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
@@ -341,9 +345,10 @@ type bridge struct {
 	clientMetadata string
 	// protocolVersion is the version negotiated by initialize. Streamable HTTP
 	// requires clients to echo it on subsequent requests, but not on initialize.
-	protocolVersion string
-	credentialStore *credentialStore
-	pendingKey      string
+	protocolVersion    string
+	credentialStore    *credentialStore
+	credentialReadOnly bool
+	pendingKey         string
 }
 
 // serve has one scheduling goroutine and one stdout owner. HTTP work may finish
@@ -971,6 +976,27 @@ func (b *bridge) forwardRequestContext(
 	resp, err := b.client.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		recoveryKey, recoveryErr := b.readOnlyRecoveryKey()
+		if recoveryErr != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("recover read-only credential state: %w", recoveryErr)
+		}
+		if recoveryKey != "" && recoveryKey != apiKey {
+			_ = resp.Body.Close()
+			retry := req.Clone(ctx)
+			retry.Body = io.NopCloser(bytes.NewReader(frame))
+			retry.Header.Set("Authorization", "Bearer "+recoveryKey)
+			resp, err = b.client.Do(retry)
+			if err != nil {
+				return nil, err
+			}
+			if (resp.StatusCode >= 200 && resp.StatusCode < 500) &&
+				resp.StatusCode != http.StatusUnauthorized {
+				b.adoptReadOnlyRecoveryKey(recoveryKey)
+			}
+		}
 	}
 	defer resp.Body.Close()
 
