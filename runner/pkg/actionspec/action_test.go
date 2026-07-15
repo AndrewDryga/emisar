@@ -360,27 +360,6 @@ func TestAction_Validate(t *testing.T) {
 				{Name: "x", Type: ArgString},
 			}
 		}, "duplicate"},
-		{"reserved arg reason", func(a *Action) {
-			a.Args = []Arg{{Name: "reason", Type: ArgString}}
-		}, "reserved control-plane field"},
-		{"reserved arg runner", func(a *Action) {
-			a.Args = []Arg{{Name: "runner", Type: ArgString}}
-		}, "reserved control-plane field"},
-		{"reserved arg runners", func(a *Action) {
-			a.Args = []Arg{{Name: "runners", Type: ArgStringArray}}
-		}, "reserved control-plane field"},
-		{"reserved arg idempotency_key", func(a *Action) {
-			a.Args = []Arg{{Name: "idempotency_key", Type: ArgString}}
-		}, "reserved control-plane field"},
-		{"reserved arg wait", func(a *Action) {
-			a.Args = []Arg{{Name: "wait", Type: ArgString}}
-		}, "reserved control-plane field"},
-		{"reserved arg action_id", func(a *Action) {
-			a.Args = []Arg{{Name: "action_id", Type: ArgString}}
-		}, "reserved control-plane field"},
-		{"reserved arg attestation", func(a *Action) {
-			a.Args = []Arg{{Name: "attestation", Type: ArgString}}
-		}, "reserved control-plane field"},
 		{"bad redaction rule", func(a *Action) {
 			a.Output.Redact = []RedactionRule{{Name: "r", Type: "nope"}}
 		}, "redaction"},
@@ -411,13 +390,17 @@ func TestAction_Validate(t *testing.T) {
 		})
 	}
 
-	// A normal arg name — including `note`, the rename target packs use in
-	// place of a colliding `reason` — must still validate.
-	t.Run("non-reserved arg allowed", func(t *testing.T) {
-		a := good()
-		a.Args = []Arg{{Name: "note", Type: ArgString}}
-		if err := a.Validate(); err != nil {
-			t.Fatalf("non-reserved arg should validate, got %v", err)
+	// MCP control fields live outside the nested action args object, so their
+	// names are valid pack arguments and reach the runner without ambiguity.
+	t.Run("MCP control names are valid nested args", func(t *testing.T) {
+		for _, name := range []string{"action_id", "reason", "runner", "runners", "wait", "idempotency_key", "attestation"} {
+			t.Run(name, func(t *testing.T) {
+				a := good()
+				a.Args = []Arg{{Name: name, Type: ArgString}}
+				if err := a.Validate(); err != nil {
+					t.Fatalf("arg should validate: %v", err)
+				}
+			})
 		}
 	})
 

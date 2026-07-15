@@ -7,8 +7,6 @@ defmodule EmisarWeb.MCP.ToolSchema do
   primitives while retaining declared constraints.
   """
 
-  @reserved_arg_names ~w(action_id runner runners reason wait idempotency_key attestation)
-
   @doc "Builds the action-only JSON Schema exposed by `get_action`."
   @spec action_args_schema(map()) :: map()
   def action_args_schema(action) do
@@ -39,8 +37,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp action_args(_), do: []
 
-  defp valid_arg?(%{"name" => name}) when is_binary(name) and name != "",
-    do: name not in @reserved_arg_names
+  defp valid_arg?(%{"name" => name}) when is_binary(name) and name != "", do: true
 
   defp valid_arg?(_), do: false
 

@@ -74,7 +74,7 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert schema.properties["tags"].maxItems == 4
     end
 
-    test "drops malformed arguments, empty constraints, and reserved control names" do
+    test "drops malformed arguments and empty constraints without reserving nested names" do
       schema =
         ToolSchema.action_args_schema(
           action([
@@ -90,10 +90,20 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
           ])
         )
 
-      assert Map.keys(schema.properties) == ["good"]
+      assert MapSet.new(Map.keys(schema.properties)) ==
+               MapSet.new(~w(attestation good idempotency_key reason runner runners wait))
+
       refute Map.has_key?(schema.properties["good"], :description)
       refute Map.has_key?(schema.properties["good"], :enum)
-      assert schema.required == []
+
+      assert schema.required == [
+               "reason",
+               "runner",
+               "runners",
+               "wait",
+               "idempotency_key",
+               "attestation"
+             ]
     end
 
     test "returns a closed JSON Schema object for absent or malformed args" do

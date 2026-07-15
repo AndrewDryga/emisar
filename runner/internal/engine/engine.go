@@ -935,7 +935,7 @@ func truncatePreview(s string, max int) string {
 }
 
 // hashArgs returns SHA-256 hex of args encoded as canonical JSON (sorted
-// keys). Used for audit + control-plane idempotency matching.
+// keys) for the local audit event.
 func hashArgs(args map[string]any) string {
 	canon := canonicalize(args)
 	b, err := json.Marshal(canon)
