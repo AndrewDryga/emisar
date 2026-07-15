@@ -89,7 +89,7 @@ against the root demo stack. Two profile-gated `test` services in
   CA-vouched attestation. Group `signed-iad`, matching the cert's scope.
 - **`e2e/`** drives the real MCP bridge to prove the property end to end — a
   **signed** dispatch runs, the **same** dispatch **unsigned** is refused with
-  `runner_requires_attestation` (the portal won't relay an unsigned call to an
+  `signature_required` (the portal won't relay an unsigned call to an
   enforcing runner):
 
 ```sh
@@ -97,6 +97,6 @@ docker compose up -d         # the base stack
 ./dev/signing/e2e/run.sh     # builds current runner/mcp images, then asserts
 ```
 
-`run.sh` is host-side (stdlib Go, via `tools/cmd/signing-e2e`) — it reaches the
-portal over the published `localhost:4010` and the bridge over the in-network
-`portal:4000`, so signing happens in the bridge exactly as on a real client.
+`run.sh` is host-side (stdlib Go, via `tools/cmd/signing-e2e`) and drives every
+discovery and dispatch call through the bridge over the in-network
+`portal:4000`, so signing happens exactly as on a real stdio client.

@@ -23,8 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -71,84 +69,65 @@ func compose(stdin string, args ...string) (string, string, int) {
 	return out.String(), errBuf.String(), code
 }
 
-// findRunner recursively finds a connected-runner object in the given group
-// anywhere in the decoded JSON.
-func findRunner(v any, group string) map[string]any {
-	switch node := v.(type) {
-	case map[string]any:
-		if node["group"] == group {
-			if name, _ := node["name"].(string); name != "" {
-				return node
-			}
-		}
-		for _, child := range node {
-			if found := findRunner(child, group); found != nil {
-				return found
-			}
-		}
-	case []any:
-		for _, child := range node {
-			if found := findRunner(child, group); found != nil {
-				return found
-			}
+type runnerTarget struct {
+	name      string
+	runnerRef string
+	packRef   string
+}
+
+type runnerList struct {
+	Runners []struct {
+		Name      string `json:"name"`
+		Group     string `json:"group"`
+		Status    string `json:"status"`
+		RunnerRef string `json:"runner_ref"`
+	} `json:"runners"`
+}
+
+func selectConnectedRunner(structured []byte, group string) (runnerTarget, error) {
+	var listed runnerList
+	if err := json.Unmarshal(structured, &listed); err != nil {
+		return runnerTarget{}, fmt.Errorf("decode list_runners structuredContent: %w", err)
+	}
+	for _, candidate := range listed.Runners {
+		if candidate.Group == group && candidate.Status == "connected" &&
+			candidate.Name != "" && candidate.RunnerRef != "" {
+			return runnerTarget{name: candidate.Name, runnerRef: candidate.RunnerRef}, nil
 		}
 	}
-	return nil
+	return runnerTarget{}, fmt.Errorf("no connected runner in exact group %q", group)
 }
 
-type runnerTarget struct {
-	name       string
-	externalID string
-	runnerRef  string
-	packRef    string
-}
-
-// waitForEnforcingRunner polls the MCP runners list until the enforcing
-// runner is connected, returning both its display name and durable identity.
-func waitForEnforcingRunner(portalURL, mcpKey, group string, deadline time.Time) runnerTarget {
-	client := &http.Client{Timeout: 10 * time.Second}
+// waitForEnforcingRunner polls through the real bridge until canonical MCP
+// discovery returns a connected runner in the exact signing-test group.
+func waitForEnforcingRunner(group string, deadline time.Time) runnerTarget {
 	last := ""
+	attempt := 0
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequest(http.MethodGet, portalURL+"/api/mcp/runners", nil)
+		attempt++
+		output := runBridge(
+			toolFrame(
+				"list_runners",
+				map[string]any{
+					"query":    group,
+					"statuses": []string{"connected"},
+					"limit":    50,
+				},
+				fmt.Sprintf("discover-runner-%d", attempt),
+			),
+			nil,
+		)
+		result, err := decodeBridgeResult(output)
 		if err != nil {
-			fail("building runners request: %v", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+mcpKey)
-		resp, err := client.Do(req)
-		if err != nil {
-			last = fmt.Sprintf("runners query error: %v", err)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		raw, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			last = fmt.Sprintf("runners read error: %v", err)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		var body any
-		if err := json.Unmarshal(raw, &body); err != nil {
-			last = fmt.Sprintf("runners decode error: %v", err)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		if runner := findRunner(body, group); runner != nil {
-			name, _ := runner["name"].(string)
-			externalID, _ := runner["id"].(string)
-			status := strings.ToLower(fmt.Sprintf("%v", runner["status"]))
-			if status == "<nil>" {
-				status = ""
-			}
-			if name == "" || externalID == "" {
-				last = fmt.Sprintf("runner in group %s has no name or durable id", group)
-			} else if strings.Contains(status, "connect") || status == "online" || status == "up" || status == "" {
-				return runnerTarget{name: name, externalID: externalID}
-			} else {
-				last = fmt.Sprintf("runner %s present but status=%q", name, status)
-			}
+			last = err.Error()
+		} else if result.isError {
+			last = "list_runners tool error: " + head(result.text, 300)
 		} else {
-			last = fmt.Sprintf("no runner in group %s yet", group)
+			runner, err := selectConnectedRunner(result.structured, group)
+			if err == nil {
+				return runner
+			}
+			last = err.Error()
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -278,37 +257,6 @@ func callBridgeTool(tool string, arguments map[string]any, requestID string, sig
 }
 
 func discoverFixedContract(runner runnerTarget, action string) runnerTarget {
-	listed := callBridgeTool(
-		"list_runners",
-		map[string]any{"query": runner.name, "statuses": []string{"connected"}, "limit": 15},
-		"discover-runner",
-		nil,
-	)
-	if listed.isError {
-		fail("list_runners returned a tool error:\n%s", head(listed.text, 600))
-	}
-
-	var runnerList struct {
-		Runners []struct {
-			Name      string `json:"name"`
-			Group     string `json:"group"`
-			Status    string `json:"status"`
-			RunnerRef string `json:"runner_ref"`
-		} `json:"runners"`
-	}
-	if err := json.Unmarshal(listed.structured, &runnerList); err != nil {
-		fail("decode list_runners structuredContent: %v", err)
-	}
-	for _, candidate := range runnerList.Runners {
-		if candidate.Name == runner.name && candidate.Status == "connected" {
-			runner.runnerRef = candidate.RunnerRef
-			break
-		}
-	}
-	if runner.runnerRef == "" {
-		fail("list_runners did not return connected runner %s", runner.name)
-	}
-
 	found := callBridgeTool(
 		"find_actions",
 		map[string]any{"action_id": action, "runner_refs": []string{runner.runnerRef}, "limit": 15},
@@ -366,8 +314,6 @@ func structuredErrorCode(result bridgeResult) string {
 }
 
 func main() {
-	portalURL := envOr("PORTAL_URL", "http://localhost:4010")
-	mcpKey := envOr("MCP_KEY", "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	group := envOr("SIGNED_GROUP", "signed-iad")
 	action := envOr("SIGNED_ACTION", "linux.uptime")
 	timeout := 120 * time.Second
@@ -379,8 +325,8 @@ func main() {
 	deadline := time.Now().Add(timeout)
 
 	logf("waiting for an enforcing runner in group %s...", group)
-	runner := waitForEnforcingRunner(portalURL, mcpKey, group, deadline)
-	logf("enforcing runner connected: %s (%s)", runner.name, runner.externalID)
+	runner := waitForEnforcingRunner(group, deadline)
+	logf("enforcing runner connected: %s (%s)", runner.name, runner.runnerRef)
 	runner = discoverFixedContract(runner, action)
 	logf("fixed contract discovered: runner_ref=%s pack_ref=%s", runner.runnerRef, runner.packRef)
 

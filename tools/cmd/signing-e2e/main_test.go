@@ -23,9 +23,9 @@ func TestDecodeBridgeResult(t *testing.T) {
 		},
 		{
 			name:     "tool error",
-			response: `{"jsonrpc":"2.0","id":"req","result":{"content":[{"type":"text","text":"runner_requires_attestation"}],"isError":true}}`,
+			response: `{"jsonrpc":"2.0","id":"req","result":{"content":[{"type":"text","text":"signature_required"}],"isError":true}}`,
 			wantTool: true,
-			wantText: "runner_requires_attestation",
+			wantText: "signature_required",
 		},
 		{
 			name:      "JSON-RPC error",
@@ -104,5 +104,26 @@ func TestDispatchFrameUsesDurableTargetAndUniqueRequestID(t *testing.T) {
 	reason, _ := request.Params.Arguments["reason"].(string)
 	if !strings.Contains(reason, request.ID) {
 		t.Errorf("reason = %q, want request id %q for audit correlation", reason, request.ID)
+	}
+}
+
+func TestSelectConnectedRunnerRequiresExactGroupAndStatus(t *testing.T) {
+	t.Parallel()
+
+	structured := []byte(`{"runners":[` +
+		`{"name":"wrong-group","group":"signed-iad-extra","status":"connected","runner_ref":"wrong-group~00000000000000000000000000000000"},` +
+		`{"name":"offline","group":"signed-iad","status":"disconnected","runner_ref":"offline~11111111111111111111111111111111"},` +
+		`{"name":"signed-iad-01","group":"signed-iad","status":"connected","runner_ref":"signed-iad-01~22222222222222222222222222222222"}` +
+		`]}`)
+
+	got, err := selectConnectedRunner(structured, "signed-iad")
+	if err != nil {
+		t.Fatalf("selectConnectedRunner() error = %v", err)
+	}
+	if got.name != "signed-iad-01" {
+		t.Errorf("name = %q, want signed-iad-01", got.name)
+	}
+	if got.runnerRef != "signed-iad-01~22222222222222222222222222222222" {
+		t.Errorf("runnerRef = %q", got.runnerRef)
 	}
 }

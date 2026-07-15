@@ -10,9 +10,8 @@
 #
 # The signing material is generated at stack-up by `signing-init` into a docker
 # volume — no CA or leaf private key is committed. `docker compose down -v`
-# rotates it. The driver reaches the portal over the published localhost:4010 and
-# the bridge over the in-network portal:4000 (so signing happens in the bridge,
-# exactly as on a real client).
+# rotates it. Every discovery and dispatch call goes through the bridge over the
+# in-network portal:4000 endpoint, exactly as on a real stdio client.
 set -euo pipefail
 cd "$(dirname "$0")/../../.." # repo root, so `docker compose` finds the stack
 
@@ -35,6 +34,4 @@ echo "[signed-dispatch-e2e] bringing up portal + signing-init + runner-signed (p
 docker compose --profile test up -d portal
 docker compose --profile test up -d --force-recreate signing-init runner-signed
 
-PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
-  MCP_KEY="${MCP_KEY:-emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}" \
-  exec go run ./tools/cmd/signing-e2e
+exec go run ./tools/cmd/signing-e2e
