@@ -36,7 +36,8 @@ defmodule EmisarProductAnalytics do
 
   def table(rows), do: Kino.DataTable.new(rows)
 
-  def scalar([row | _], key, default \\ 0), do: Map.get(row, key, default)
+  def scalar(rows, key, default \\ 0)
+  def scalar([row | _], key, default), do: Map.get(row, key, default)
   def scalar([], _key, default), do: default
 
   def percent(_numerator, denominator) when denominator in [0, nil], do: "0.0%"
