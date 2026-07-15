@@ -266,6 +266,11 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     replay = raw_action(conn, body, operation_id, header)
     assert get_in(replay, ["runs", Access.at(0), "run_id"]) == run_id
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+    observe!(runner, %{}, [])
+    drifted_replay = raw_action(conn, body, operation_id)
+    assert get_in(drifted_replay, ["runs", Access.at(0), "run_id"]) == run_id
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
 
   test "native HTTP run_action derives one stable operation without a private header", %{
@@ -358,11 +363,19 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     stale_runner_ref = "missing~" <> String.duplicate("0", 32)
     stale_body = run_action_body(pack_ref, stale_runner_ref, changed_args, reason)
+    stale_operation_id = "op_524NN9NMDZ1T76NARWCKM5A0D6"
 
     stale_header =
-      attestation_header(conn, pack_ref, stale_runner_ref, operation_id, changed_args, reason)
+      attestation_header(
+        conn,
+        pack_ref,
+        stale_runner_ref,
+        stale_operation_id,
+        changed_args,
+        reason
+      )
 
-    stale = raw_action(conn, stale_body, operation_id, stale_header)
+    stale = raw_action(conn, stale_body, stale_operation_id, stale_header)
     assert stale["error"]["code"] == "target_contract_changed"
     assert stale["error"]["next"]["tool"] == "get_action"
   end

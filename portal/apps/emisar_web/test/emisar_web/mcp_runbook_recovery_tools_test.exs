@@ -73,8 +73,18 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     draft = call(conn, "create_runbook_draft", draft_args)
     draft_operation = draft["operation_id"]
+
+    observe_catalog!(runner, %{}, [])
     replayed_draft = call(conn, "create_runbook_draft", draft_args)
     assert replayed_draft == draft
+
+    observe_catalog!(
+      runner,
+      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action()]
+    )
+
+    trust_all!(subject)
 
     recovered_draft = call(conn, "get_operation", %{"operation_id" => draft_operation})
     assert recovered_draft["operation"]["draft_id"] == draft["draft_id"]
@@ -98,6 +108,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              execution["execution"]["steps"]
 
     assert Enum.sum(Map.values(status_counts)) == 1
+
+    assert {:ok, _deleted} = Runbooks.delete_runbook(runbook, subject)
 
     replayed_execution =
       call(
@@ -530,13 +542,24 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         enforce_signatures: Keyword.get(opts, :enforce_signatures, false)
       )
 
+    observe_catalog!(
+      runner,
+      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action()]
+    )
+
+    trust_all!(subject)
+    runner
+  end
+
+  defp observe_catalog!(runner, packs, actions) do
     payload = %{
       "hostname" => runner.hostname,
       "version" => runner.runner_version,
       "labels" => runner.labels,
       "enforce_signatures" => runner.enforce_signatures,
-      "packs" => %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
-      "actions" => [action()]
+      "packs" => packs,
+      "actions" => actions
     }
 
     payload =
@@ -545,9 +568,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         else: payload
 
     assert {:ok, _runner} = Catalog.observe_state(runner, payload)
-
-    trust_all!(subject)
-    runner
   end
 
   defp trust_all!(subject) do

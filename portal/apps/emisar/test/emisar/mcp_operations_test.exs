@@ -171,6 +171,39 @@ defmodule Emisar.MCPOperationsTest do
     end
   end
 
+  describe "fetch_matching_replay/2" do
+    test "distinguishes an exact replay, a conflict, and a new operation", %{
+      key_subject: key_subject
+    } do
+      operation = reserve!(action_operation_attrs(), key_subject)
+
+      assert {:ok, replay} =
+               MCPOperations.fetch_matching_replay(action_operation_attrs(), key_subject)
+
+      assert replay.id == operation.id
+
+      changed = Map.put(action_operation_attrs(), :fingerprint, String.duplicate("c", 64))
+
+      assert {:error, :operation_conflict} =
+               MCPOperations.fetch_matching_replay(changed, key_subject)
+
+      absent = Map.put(action_operation_attrs(), :operation_id, "op_624NN9NMDZ1T76NARWCKM5A0D6")
+      assert {:error, :not_found} = MCPOperations.fetch_matching_replay(absent, key_subject)
+    end
+
+    test "hides another credential lineage", %{
+      key_subject: key_subject,
+      owner_subject: owner_subject
+    } do
+      reserve!(action_operation_attrs(), key_subject)
+      {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "Other MCP"}, owner_subject)
+      other_subject = Auth.Subject.for_api_key(other_key, owner_subject.account)
+
+      assert {:error, :not_found} =
+               MCPOperations.fetch_matching_replay(action_operation_attrs(), other_subject)
+    end
+  end
+
   describe "resource_id/3" do
     test "is stable within one lineage and distinct across tools and lineages", %{
       account: account,

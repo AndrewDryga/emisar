@@ -440,14 +440,7 @@ defmodule EmisarWeb.MCP.Service do
   def dispatch_fixed_action(conn, targets, intent, wait_ms) do
     api_key = conn.assigns.api_key
     subject = conn.assigns.current_subject
-
-    operation_attrs = %{
-      operation_id: intent.operation_id,
-      tool: :run_action,
-      fingerprint: intent.fingerprint,
-      action_id: intent.action_id,
-      pack_ref: intent.pack_ref
-    }
+    operation_attrs = intent.operation_attrs
 
     target_attrs =
       Enum.map(targets, fn target ->
@@ -461,8 +454,8 @@ defmodule EmisarWeb.MCP.Service do
           api_key_id: api_key.id,
           client_info: api_key.last_client_info || %{},
           attestation: intent.attestation,
-          idempotency_key: Idempotency.per_runner(intent.operation_id, target.id),
-          operation_id: intent.operation_id,
+          idempotency_key: Idempotency.per_runner(operation_attrs.operation_id, target.id),
+          operation_id: operation_attrs.operation_id,
           pack_ref: intent.pack_ref,
           requested_by_membership_id: api_key.created_by_membership_id
         }
@@ -486,6 +479,35 @@ defmodule EmisarWeb.MCP.Service do
       false -> {:error, :operation_incomplete}
       other -> other
     end
+  end
+
+  @doc "Returns one committed fixed action operation without consulting current catalog state."
+  def replay_fixed_action(conn, operation, wait_ms) do
+    subject = conn.assigns.current_subject
+
+    with {:ok, runs} <- Runs.list_runs_by_mcp_operation(operation.id, subject),
+         false <- runs == [],
+         :ok <-
+           maybe_poll_to_terminal(
+             subject,
+             fixed_replay_results(runs),
+             wait_ms,
+             Cancellation.topic(conn)
+           ),
+         {:ok, runs} <- Runs.list_runs_by_mcp_operation(operation.id, subject),
+         false <- runs == [] do
+      {:ok, fixed_run_summaries(runs, subject)}
+    else
+      :cancelled -> {:error, :cancelled}
+      true -> {:error, :operation_incomplete}
+      other -> other
+    end
+  end
+
+  defp fixed_replay_results(runs) do
+    Enum.map(runs, fn run ->
+      {run.runner_ref, fixed_dispatch_result(run), nil}
+    end)
   end
 
   defp fixed_dispatch_results(runs, targets) do

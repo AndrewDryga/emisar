@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   persistence authority.
   """
 
-  alias Emisar.{Catalog, Crypto, Runners}
+  alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
   alias EmisarWeb.MCP.{Attestation, Service}
 
   @required ~w(action_id pack_ref runner_refs args reason)
@@ -22,24 +22,18 @@ defmodule EmisarWeb.MCP.ActionTools do
           {:ok, map()} | {:error, map()} | :cancelled
   def call(conn, args, args_raw, operation_id, attestation_headers) do
     with {:ok, input} <- validate(args, args_raw, operation_id),
-         {:ok, targets} <- resolve_targets(conn, input),
-         facts <- attestation_facts(conn, input, args_raw, operation_id),
-         {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
-         :ok <- require_attestation_for_enforcing(targets, attestation),
          {:ok, wait_ms} <- parse_wait(input.wait),
          fingerprint <- operation_fingerprint(input, args_raw),
-         intent <- %{
-           action_id: input.action_id,
-           pack_ref: input.pack_ref,
-           args: input.args,
-           args_raw: args_raw,
-           reason: input.reason,
-           operation_id: operation_id,
-           fingerprint: fingerprint,
-           attestation: attestation
-         },
+         operation_attrs <- operation_attrs(input, operation_id, fingerprint),
          result <-
-           Service.dispatch_fixed_action(conn, targets, intent, wait_ms) do
+           run_or_replay(
+             conn,
+             input,
+             args_raw,
+             operation_attrs,
+             wait_ms,
+             attestation_headers
+           ) do
       case result do
         {:ok, runs} ->
           {:ok,
@@ -77,6 +71,20 @@ defmodule EmisarWeb.MCP.ActionTools do
              "The signed action is outside its runner freshness or certificate window."
            )}
 
+        {:error, :invalid_attestation} ->
+          {:error,
+           error(
+             "invalid_attestation",
+             "The signed action header is invalid or does not match this call."
+           )}
+
+        {:error, :signature_required} ->
+          {:error,
+           error(
+             "signature_required",
+             "At least one selected runner requires a signed action call."
+           )}
+
         {:error, reason}
         when reason in [
                :runner_not_found,
@@ -97,6 +105,9 @@ defmodule EmisarWeb.MCP.ActionTools do
              fields: changeset_errors(changeset)
            })}
 
+        {:error, %{} = payload} ->
+          {:error, payload}
+
         {:error, _reason} ->
           {:error,
            error(
@@ -108,23 +119,54 @@ defmodule EmisarWeb.MCP.ActionTools do
       {:error, %{} = payload} ->
         {:error, payload}
 
-      {:error, :invalid_attestation} ->
-        {:error,
-         error(
-           "invalid_attestation",
-           "The signed action header is invalid or does not match this call."
-         )}
-
-      {:error, :signature_required} ->
-        {:error,
-         error(
-           "signature_required",
-           "At least one selected runner requires a signed action call."
-         )}
-
       {:error, :invalid_wait} ->
         {:error, error("invalid_args", "wait must be 0 or a duration no longer than 60s.")}
     end
+  end
+
+  defp run_or_replay(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
+    case MCPOperations.fetch_matching_replay(
+           operation_attrs,
+           conn.assigns.current_subject
+         ) do
+      {:ok, operation} ->
+        Service.replay_fixed_action(conn, operation, wait_ms)
+
+      {:error, :not_found} ->
+        dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers)
+
+      other ->
+        other
+    end
+  end
+
+  defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
+    with {:ok, targets} <- resolve_targets(conn, input),
+         facts <- attestation_facts(conn, input, args_raw, operation_attrs.operation_id),
+         {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
+         :ok <- require_attestation_for_enforcing(targets, attestation) do
+      intent = %{
+        action_id: input.action_id,
+        pack_ref: input.pack_ref,
+        args: input.args,
+        args_raw: args_raw,
+        reason: input.reason,
+        operation_attrs: operation_attrs,
+        attestation: attestation
+      }
+
+      Service.dispatch_fixed_action(conn, targets, intent, wait_ms)
+    end
+  end
+
+  defp operation_attrs(input, operation_id, fingerprint) do
+    %{
+      operation_id: operation_id,
+      tool: :run_action,
+      fingerprint: fingerprint,
+      action_id: input.action_id,
+      pack_ref: input.pack_ref
+    }
   end
 
   defp validate(args, args_raw, operation_id) when is_map(args) and is_binary(args_raw) do

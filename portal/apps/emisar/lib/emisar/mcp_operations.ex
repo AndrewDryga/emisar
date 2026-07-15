@@ -101,6 +101,24 @@ defmodule Emisar.MCPOperations do
   def fetch_recovery(_operation_id, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
+  Fetches an exact committed mutation for replay.
+
+  `:not_found` means the caller may proceed with current preflight and an atomic
+  reservation. Reusing an existing identity with different immutable facts is
+  always an operation conflict, even if mutable catalog state has since changed.
+  """
+  def fetch_matching_replay(%{operation_id: operation_id} = expected, %Subject{} = subject)
+      when is_binary(operation_id) do
+    with {:ok, operation} <- fetch_recovery(operation_id, subject) do
+      if same_facts?(operation, expected),
+        do: {:ok, operation},
+        else: {:error, :operation_conflict}
+    end
+  end
+
+  def fetch_matching_replay(_expected, %Subject{}), do: {:error, :not_found}
+
+  @doc """
   Derives the stable UUID owned by one lineage-local resource operation.
 
   The operation registry and resource insert share this identity, so concurrent

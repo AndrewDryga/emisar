@@ -6,7 +6,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   immutable versions, authorization, frozen work lists, wave dispatch, and audit.
   """
 
-  alias Emisar.{Catalog, Crypto, Runbooks, Runners, Runs, Slug}
+  alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runners, Runs, Slug}
   alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract}
 
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
@@ -76,17 +76,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp create_draft(conn, args, operation_id) do
     with true <- valid_operation_id?(operation_id),
          {:ok, input} <- validate_draft(args),
-         {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, steps} <- normalize_draft_steps(input.steps, snapshot),
-         attrs <- draft_attrs(input, steps),
-         fingerprint <- mutation_fingerprint("create_runbook_draft", attrs),
-         result <-
-           Runbooks.create_mcp_draft(
-             attrs,
-             operation_id,
-             fingerprint,
-             conn.assigns.current_subject
-           ) do
+         fingerprint <- mutation_fingerprint("create_runbook_draft", draft_facts(input)),
+         operation_attrs <- draft_operation_attrs(input, operation_id, fingerprint, conn),
+         result <- create_or_replay_draft(conn, input, operation_attrs) do
       case result do
         {:ok, _kind, runbook} ->
           {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
@@ -94,6 +86,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
         {:error, :operation_conflict} ->
           {:error,
            error("operation_conflict", "This operation_id already belongs to another mutation.")}
+
+        {:error, :operation_incomplete} ->
+          {:error,
+           error(
+             "operation_incomplete",
+             "The operation committed without its draft resource.",
+             true,
+             %{operation_id: operation_id}
+           )}
 
         {:error, %Ecto.Changeset{} = changeset} ->
           {:error,
@@ -103,6 +104,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
         {:error, :unauthorized} ->
           {:error, error("not_allowed", "This key cannot create runbook drafts.")}
+
+        {:error, %{} = payload} ->
+          {:error, payload}
       end
     else
       false ->
@@ -110,34 +114,48 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, %{} = payload} ->
         {:error, payload}
+    end
+  end
 
-      {:error, :unauthorized} ->
-        {:error, error("not_allowed", "This key cannot create runbook drafts.")}
+  defp create_or_replay_draft(conn, input, operation_attrs) do
+    subject = conn.assigns.current_subject
+
+    case MCPOperations.fetch_matching_replay(operation_attrs, subject) do
+      {:ok, _operation} ->
+        case Runbooks.fetch_mcp_draft_by_operation(operation_attrs.operation_id, subject) do
+          {:ok, runbook} -> {:ok, :replay, runbook}
+          {:error, :not_found} -> {:error, :operation_incomplete}
+          other -> other
+        end
+
+      {:error, :not_found} ->
+        with {:ok, snapshot} <- catalog_snapshot(conn),
+             {:ok, steps} <- normalize_draft_steps(input.steps, snapshot) do
+          attrs = draft_attrs(input, steps)
+
+          Runbooks.create_mcp_draft(
+            attrs,
+            operation_attrs.operation_id,
+            operation_attrs.fingerprint,
+            subject
+          )
+        end
+
+      other ->
+        other
     end
   end
 
   defp execute_runbook(conn, args, operation_id) do
     with true <- valid_operation_id?(operation_id),
          {:ok, input} <- validate_execute(args),
-         {:ok, {slug, version}} <- parse_runbook_ref(input.runbook_ref),
-         {:ok, runbook} <-
-           Runbooks.fetch_published_runbook_version(slug, version, conn.assigns.current_subject),
          fingerprint <-
            mutation_fingerprint("execute_runbook", %{
              "runbook_ref" => input.runbook_ref,
              "reason" => input.reason
            }),
-         :ok <- preflight_runbook(conn, runbook),
-         {:ok, result} <-
-           Runbooks.dispatch_runbook(runbook, input.reason, conn.assigns.current_subject,
-             operation_id: operation_id,
-             operation_fingerprint: fingerprint,
-             operation_ref: input.runbook_ref,
-             max_runners_per_step: 16,
-             max_fan_out: 256
-           ),
-         {:ok, execution} <-
-           Runbooks.fetch_execution_by_id(result.execution_id, conn.assigns.current_subject),
+         operation_attrs <- execution_operation_attrs(input, operation_id, fingerprint, conn),
+         {:ok, execution, runbook} <- execute_or_replay(conn, input, operation_attrs),
          {:ok, payload} <- execution_payload(conn, execution, runbook) do
       {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
     else
@@ -147,6 +165,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, :operation_conflict} ->
         {:error,
          error("operation_conflict", "This operation_id already belongs to another mutation.")}
+
+      {:error, :operation_incomplete} ->
+        {:error,
+         error(
+           "operation_incomplete",
+           "The operation committed without its execution resource.",
+           true,
+           %{operation_id: operation_id}
+         )}
 
       {:error, :signed_runbook_unsupported} ->
         {:error,
@@ -172,6 +199,49 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, reason} ->
         {:error, error("execution_failed", execution_error(reason))}
+    end
+  end
+
+  defp execute_or_replay(conn, input, operation_attrs) do
+    subject = conn.assigns.current_subject
+
+    case MCPOperations.fetch_matching_replay(operation_attrs, subject) do
+      {:ok, _operation} ->
+        fetch_committed_execution(operation_attrs.operation_id, subject)
+
+      {:error, :not_found} ->
+        execute_new(conn, input, operation_attrs)
+
+      other ->
+        other
+    end
+  end
+
+  defp execute_new(conn, input, operation_attrs) do
+    subject = conn.assigns.current_subject
+
+    with {:ok, {slug, version}} <- parse_runbook_ref(input.runbook_ref),
+         {:ok, runbook} <- Runbooks.fetch_published_runbook_version(slug, version, subject),
+         :ok <- preflight_runbook(conn, runbook),
+         {:ok, _result} <-
+           Runbooks.dispatch_runbook(runbook, input.reason, subject,
+             operation_id: operation_attrs.operation_id,
+             operation_fingerprint: operation_attrs.fingerprint,
+             operation_ref: input.runbook_ref,
+             max_runners_per_step: 16,
+             max_fan_out: 256
+           ) do
+      fetch_committed_execution(operation_attrs.operation_id, subject)
+    end
+  end
+
+  defp fetch_committed_execution(operation_id, subject) do
+    with {:ok, execution} <- Runbooks.fetch_execution_by_operation(operation_id, subject),
+         {:ok, runbook} <- Runbooks.fetch_runbook_for_execution(execution, subject) do
+      {:ok, execution, runbook}
+    else
+      {:error, :not_found} -> {:error, :operation_incomplete}
+      other -> other
     end
   end
 
@@ -385,7 +455,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp normalize_selector(_selector, _snapshot, _action), do: {:error, :invalid_selector}
 
   defp draft_attrs(input, steps) do
-    slug = input.slug || Slug.slugify(input.title, max_length: 79)
+    slug = draft_slug(input)
 
     %{
       "title" => input.title,
@@ -395,6 +465,41 @@ defmodule EmisarWeb.MCP.RunbookTools do
       "definition" => %{"steps" => steps}
     }
   end
+
+  defp draft_facts(input) do
+    %{
+      "title" => input.title,
+      "slug" => draft_slug(input),
+      "description" => input.description,
+      "steps" => input.steps
+    }
+  end
+
+  defp draft_operation_attrs(input, operation_id, fingerprint, conn) do
+    subject = conn.assigns.current_subject
+
+    %{
+      operation_id: operation_id,
+      tool: :create_runbook_draft,
+      fingerprint: fingerprint,
+      resource_id: MCPOperations.resource_id(operation_id, :create_runbook_draft, subject),
+      resource_ref: draft_slug(input)
+    }
+  end
+
+  defp execution_operation_attrs(input, operation_id, fingerprint, conn) do
+    subject = conn.assigns.current_subject
+
+    %{
+      operation_id: operation_id,
+      tool: :execute_runbook,
+      fingerprint: fingerprint,
+      resource_id: MCPOperations.resource_id(operation_id, :execute_runbook, subject),
+      resource_ref: input.runbook_ref
+    }
+  end
+
+  defp draft_slug(input), do: input.slug || Slug.slugify(input.title, max_length: 79)
 
   defp draft_payload(runbook, operation_id, subject) do
     %{
