@@ -134,13 +134,10 @@ type Admission struct {
 	MaxRisk actionspec.Risk `yaml:"max_risk,omitempty"`
 }
 
-// Events configures the local JSONL journal and ack cursor.
+// Events configures the local JSONL journal.
 type Events struct {
 	JSONLPath       string `yaml:"jsonl_path"`
 	MaxPreviewBytes int    `yaml:"max_preview_bytes,omitempty"`
-	// CursorPath is the sidecar file recording which event IDs the
-	// cloud has acknowledged. Defaults to "<JSONLPath>.cursor" if empty.
-	CursorPath string `yaml:"cursor_path,omitempty"`
 	// MaxSizeBytes triggers JSONL rotation when the active file
 	// reaches this size. Zero disables rotation. Default 100 MiB.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
@@ -221,9 +218,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Events.MaxPreviewBytes <= 0 {
 		c.Events.MaxPreviewBytes = 4096
-	}
-	if c.Events.CursorPath == "" {
-		c.Events.CursorPath = c.Events.JSONLPath + ".cursor"
 	}
 	if c.Events.MaxSizeBytes == 0 {
 		c.Events.MaxSizeBytes = 100 * 1024 * 1024 // 100 MiB

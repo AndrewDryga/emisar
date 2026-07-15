@@ -66,10 +66,6 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Events.MaxBackups != 5 {
 		t.Errorf("max_backups default: %d", cfg.Events.MaxBackups)
 	}
-	// CursorPath should default to <jsonl_path>.cursor
-	if !strings.HasSuffix(cfg.Events.CursorPath, ".jsonl.cursor") {
-		t.Errorf("cursor_path default: %s", cfg.Events.CursorPath)
-	}
 }
 
 func TestLoad_RejectsUnknownFieldsAndTrailingDocuments(t *testing.T) {

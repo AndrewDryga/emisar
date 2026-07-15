@@ -1319,7 +1319,7 @@ do_uninstall() {
 
 Kept (use --purge to remove):
   ${ETC_DIR}  (config + secrets)
-  ${DATA_DIR} (state + outbox + cursor)
+  ${DATA_DIR} (identity + dispatch log + signing nonces)
   ${LOG_DIR}  (security log)
 EOF
   fi

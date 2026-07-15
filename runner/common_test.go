@@ -124,7 +124,7 @@ func TestParseArgFlag_RequiresKeyEquals(t *testing.T) {
 }
 
 // writeMinimalConfig writes the smallest valid config (no cloud.url, so no
-// auth-key requirement) wiring journal/cursor under dir and pointing packs at
+// auth-key requirement) wiring the journal under dir and pointing packs at
 // packDir. Returns the config path.
 func writeMinimalConfig(t *testing.T, dir, packDir string) string {
 	t.Helper()

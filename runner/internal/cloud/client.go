@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -42,7 +41,6 @@ type Dialer interface {
 type Options struct {
 	StateBuilder   *StateBuilder
 	Engine         *engine.Engine
-	Cursor         *audit.Cursor // optional; ack_result marks event IDs here
 	Logger         *slog.Logger
 	HeartbeatEvery time.Duration
 	ReconnectMin   time.Duration
@@ -1107,13 +1105,6 @@ func (c *Client) consumePreCancelLocked(requestID string) bool {
 }
 
 // ackRun is called when cloud confirms receipt of an action_result.
-// Two effects:
-//
-//  1. If the runState is still finished+drained, remove it from
-//     the in-flight map.
-//  2. Record the underlying JSONL event_id in the cursor file so a
-//     future cleanup pass can prune up to that point.
-//
 // The cached result stays in the dedup ring in the acknowledged state, in case
 // cloud retries the request_id. Only acknowledged entries may roll out later.
 func (c *Client) ackRun(requestID string) {
@@ -1134,26 +1125,12 @@ func (c *Client) ackRun(requestID string) {
 			return
 		}
 	}
-	cached, cachedOK := c.dedup.lookup(requestID)
 	if err := c.dedup.acknowledge(requestID); err != nil {
 		c.opts.Logger.Error("cloud.dedup_ack_failed", "request_id", requestID, "error", err)
 		return
 	}
 	if ok {
 		c.removeRun(requestID)
-	}
-	// Record on the cursor regardless of whether the in-flight state was
-	// still around — cloud might be acking something we already evicted
-	// from runs (legitimate during reconnect dances).
-	if c.opts.Cursor != nil {
-		if cachedOK && cached.EventID != "" {
-			if err := c.opts.Cursor.MarkAcked(cached.EventID); err != nil {
-				c.opts.Logger.Warn("cloud.cursor_write_failed",
-					"event_id", cached.EventID,
-					"error", err,
-				)
-			}
-		}
 	}
 }
 

@@ -199,9 +199,9 @@ with the configured grace period and still emits one terminal result. A cancel
 that loses the race with completion is a no-op.
 
 `ack_result` confirms durable portal receipt of an `action_result`. The runner
-records the acknowledgement in its cursor sidecar so it need not resend that
-result after reconnect. A lost acknowledgement can cause a duplicate result;
-the portal reapplies neither output nor terminal state.
+records the acknowledgement in its durable dispatch log so it need not resend
+that result after reconnect. A lost acknowledgement can cause a duplicate
+result; the portal reapplies neither output nor terminal state.
 
 ## Replay and failure behavior
 

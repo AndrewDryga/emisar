@@ -76,7 +76,7 @@ func runCLI(t *testing.T, args []string, env map[string]string) (stdout, stderr 
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-// writeRunnableConfig writes a minimal valid config wiring journal/cursor under
+// writeRunnableConfig writes a minimal valid config wiring the journal under
 // dir and a one-action pack (id "<pack>", action "<pack>.ping" running
 // echo) the deny list can target. Returns the config path. denyPing adds an
 // admission denylist entry for the ping action.

@@ -34,7 +34,7 @@ Top-level files are the cobra CLI commands: `connect` (the long-running daemon),
 | `internal/validation/` | argument coercion + schema enforcement; path & duration validation |
 | `internal/admission/` | the local allow/deny glob + risk-ceiling gate, compiled once at boot |
 | `internal/redact/` | streaming output redaction (regex + named rules) |
-| `internal/audit/` | append-only JSONL journal + cursor sidecar |
+| `internal/audit/` | append-only JSONL security journal |
 | `internal/config`, `internal/expressions`, `internal/hostscan` | config load; `{{ args.x }}` text substitution; host service detection |
 | `pkg/actionspec`, `pkg/packspec` | pure shared types — no logic, importable by anything |
 

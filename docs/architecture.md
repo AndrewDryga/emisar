@@ -85,6 +85,6 @@ reviews and applies that plan. See [`.github/DEPLOYMENT.md`](../.github/DEPLOYME
 and [`infra/README.md`](../infra/README.md).
 
 The runner exposes no inbound network listener. Its durable local state is the
-per-runner credential, delivery cursor/dedup state, installed packs, and the
+per-runner credential, dispatch log, installed packs, signing nonces, and the
 JSONL journal. The MCP bridge is a local child process of the MCP client and
 persists only rotated API-key successors in the user's config directory.

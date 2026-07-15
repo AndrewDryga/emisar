@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/andrewdryga/emisar/runner/internal/audit"
 )
 
 // This file closes the PHASE-3 "gap" rows on the connect runtime loop that the
@@ -74,46 +71,6 @@ func TestClient_AckRun_PrematureAckIgnored(t *testing.T) {
 			t.Fatal("ack before the result drained must not evict the run (the result still needs sending)")
 		}
 	})
-}
-
-// An ack for a run that has ALREADY been evicted from the in-flight map (the
-// legitimate reconnect dance: the result was delivered + acked, the run
-// removed, then a duplicate ack lands) must still advance the audit cursor and
-// never error/panic on the missing run. The event_id is recovered from the
-// dedup ring (which outlives the in-flight state) and marked acked so a later
-// prune pass knows it is safe to drop.
-func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
-	cursorPath := t.TempDir() + "/ack.json"
-	cursor, err := audit.OpenCursor(cursorPath, 16)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}}, func(o *Options) {
-		o.Cursor = cursor
-	})
-
-	// The run is gone from c.runs (already removed after its result drained),
-	// but its completed result — carrying the JSONL event_id — is still in the
-	// dedup ring, exactly as it would be during a reconnect-driven re-ack.
-	digest := testDispatchDigest("req_evicted")
-	reserveAndComplete(t, cli.dedup, "req_evicted", digest, ActionResultMsg{EventID: "evt_evicted", Status: "success"})
-
-	// Must not panic on the absent run, and must record the event on the cursor.
-	cli.ackRun("req_evicted")
-
-	contents, err := os.ReadFile(cursorPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var persisted struct {
-		AckedEventIDs []string `json:"acked_event_ids"`
-	}
-	if err := json.Unmarshal(contents, &persisted); err != nil {
-		t.Fatal(err)
-	}
-	if len(persisted.AckedEventIDs) != 1 || persisted.AckedEventIDs[0] != "evt_evicted" {
-		t.Fatal("ack of an evicted run must still mark its event_id on the cursor")
-	}
 }
 
 func TestClient_ReconnectRequeuesCompletedResultUntilAcknowledged(t *testing.T) {

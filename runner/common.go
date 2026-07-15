@@ -22,7 +22,6 @@ type runtime struct {
 	cfg        *config.Config
 	externalID string
 	journal    *audit.Journal
-	cursor     *audit.Cursor
 	engine     *engine.Engine
 	admission  *admission.Policy
 }
@@ -116,11 +115,6 @@ func boot() (*runtime, error) {
 		AgentID: cfg.Runner.ID,
 		Group:   cfg.Runner.Group,
 	}, jsonlSink)
-	cursor, err := audit.OpenCursor(cfg.Events.CursorPath, 4096)
-	if err != nil {
-		return nil, err
-	}
-
 	globalRules, err := redact.CompileAll(redact.DefaultRules(), cfg.Redaction.Rules)
 	if err != nil {
 		return nil, err
@@ -152,7 +146,6 @@ func boot() (*runtime, error) {
 		cfg:        cfg,
 		externalID: cfg.Runner.ID,
 		journal:    journal,
-		cursor:     cursor,
 		engine:     eng,
 		admission:  admit,
 	}, nil

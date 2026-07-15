@@ -371,7 +371,7 @@ func writeShPack(t *testing.T, root, id string) string {
 
 // writeDoctorConfig writes a full config the doctor command can run every
 // check against: a packs dir, a cloud URL, a token-path credential, and the
-// journal/cursor under dir.
+// journal under dir.
 func writeDoctorConfig(t *testing.T, dir, packDir, cloudURL, tokenPath string) string {
 	t.Helper()
 	cfgPath := filepath.Join(dir, "config.yaml")

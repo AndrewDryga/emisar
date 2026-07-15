@@ -41,7 +41,6 @@ func Load(path string) (*Config, error) {
 	cfg.Paths.WorkDir = relocate(cfg.Paths.WorkDir, base)
 	cfg.Cloud.TokenPath = relocate(cfg.Cloud.TokenPath, base)
 	cfg.Events.JSONLPath = relocate(cfg.Events.JSONLPath, base)
-	cfg.Events.CursorPath = relocate(cfg.Events.CursorPath, base)
 
 	// Env overrides. install.sh sets EMISAR_URL so the same baked-in
 	// config can target dev / prod control planes without re-templating.
