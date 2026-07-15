@@ -17,6 +17,7 @@
 package expressions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -298,6 +299,8 @@ func formatScalar(v any) (string, error) {
 		return strconv.FormatInt(t, 10), nil
 	case float64:
 		return strconv.FormatFloat(t, 'f', -1, 64), nil
+	case json.Number:
+		return t.String(), nil
 	case time.Duration:
 		// Render as Go-style duration ("5m", "1h30m") so downstream
 		// binaries that accept either Go-style or "5 minutes" can parse

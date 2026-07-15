@@ -1,9 +1,13 @@
 package expressions
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/validation"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 func args() map[string]any {
@@ -99,6 +103,30 @@ func TestRenderArgv_TextSubstitution(t *testing.T) {
 	}
 	if out[0] != "--port=7199" {
 		t.Fatalf("got %q", out[0])
+	}
+}
+
+func TestRenderArgv_PreservesJSONNumber(t *testing.T) {
+	const number = "891234567890123456.5"
+	args, err := validation.Validate(
+		[]actionspec.Arg{{Name: "ratio", Type: actionspec.ArgNumber, Required: true}},
+		map[string]any{"ratio": json.Number(number)},
+	)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	out, err := RenderArgv(
+		[]string{"--ratio={{ args.ratio }}", "{{ args.ratio }}"},
+		args,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--ratio=" + number, number}
+	for i := range want {
+		if out[i] != want[i] {
+			t.Fatalf("argv[%d] = %q, want %q", i, out[i], want[i])
+		}
 	}
 }
 
