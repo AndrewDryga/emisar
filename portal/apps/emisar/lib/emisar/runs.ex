@@ -1521,7 +1521,7 @@ defmodule Emisar.Runs do
   """
   def list_running_runs do
     ActionRun.Query.all()
-    |> ActionRun.Query.status_in([:running])
+    |> ActionRun.Query.status_in([:running, :cancelling])
     |> Repo.all()
   end
 
@@ -1770,43 +1770,21 @@ defmodule Emisar.Runs do
     end
   end
 
-  # A run still awaiting approval was never sent to a runner, so there's no
-  # runner to tell — but its approval request is still `:pending`. Cancel the
-  # run AND its request in ONE transaction, so a stale approve can't later
-  # resurrect + dispatch the run (it now finds a `:cancelled` request).
-  defp cancel_run_for_status(%ActionRun{status: :pending_approval} = run, subject, reason) do
+  defp cancel_run_for_status(%ActionRun{} = run, subject, reason) do
     reason = reason || "operator cancelled"
 
     Multi.new()
-    |> cancel_run_in_multi(run.id, reason)
+    |> request_run_cancellation_in_multi(run.id, reason)
     |> add_cancel_requested_audit(subject, reason)
     |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
     |> Repo.commit_multi(
       after_commit: fn changes ->
-        broadcast_cancelled_run(changes.run_cancel)
+        deliver_cancel_to_runner(changes.run_cancel, reason)
+        broadcast_cancellation(changes.run_cancel)
         Emisar.Approvals.broadcast_request_cancelled(changes.request_cancel)
       end
     )
-    |> cancel_run_result()
-  end
-
-  defp cancel_run_for_status(%ActionRun{status: status} = run, subject, reason) do
-    if ActionRun.terminal?(status) do
-      {:ok, run}
-    else
-      reason = reason || "operator cancelled"
-
-      Multi.new()
-      |> cancel_run_in_multi(run.id, reason)
-      |> add_cancel_requested_audit(subject, reason)
-      |> Repo.commit_multi(
-        after_commit: fn %{run_cancel: run_cancel} ->
-          deliver_cancel_to_runner(run_cancel, reason)
-          broadcast_cancelled_run(run_cancel)
-        end
-      )
-      |> cancel_run_result()
-    end
+    |> cancellation_request_result()
   end
 
   # -- State transitions ----------------------------------------------
@@ -1822,23 +1800,32 @@ defmodule Emisar.Runs do
     transition(run, :running, %{started_at: DateTime.utc_now()})
   end
 
-  def mark_cancelled(%ActionRun{} = run, reason \\ nil),
-    do: transition(run, :cancelled, cancelled_attrs(reason))
-
   @doc """
-  Internal — append the run-cancel steps (locked re-read, terminal-guard,
-  update to `:cancelled`, and the `run.cancelled` audit insert) to `multi`, for
-  a caller composing the cancel into its OWN transaction (Approvals deny +
-  expiry). The result lands in changes as `:run_cancel`: `{:cancelled, run}`
-  when this call transitioned it, `{:noop, run}` when it was already terminal,
-  or `:no_run` if the row is gone. Fires NO broadcast — a run broadcast or audit
-  fan-out here would escape the enclosing transaction before it commits; the
-  caller hoists `broadcast_cancelled_run/1` to its `commit_multi(after_commit:)`
-  and the outer commit's fan_out delivers the audit event.
+  Internal — terminally cancel an unsent `:pending`/`:pending_approval` run in
+  a caller-owned transaction (Approvals deny + expiry). A run already sent to
+  the runner returns `:run_already_dispatched`; its real outcome must remain
+  runner-authoritative. The result lands in changes as `:run_cancel`:
+  `{:cancelled, run}` when this call transitioned it, `{:noop, run}` when it was
+  already terminal, or `:no_run` if the row is gone. Fires NO broadcast — a
+  run broadcast or audit fan-out here would escape the enclosing transaction
+  before it commits; the caller hoists `broadcast_cancelled_run/1` to its
+  `commit_multi(after_commit:)` and the outer commit's fan_out delivers the
+  audit event.
   """
   def cancel_run_in_multi(multi, run_id, reason \\ nil) when is_binary(run_id) do
     multi
     |> Multi.run(:run_cancel, fn repo, _changes -> cancel_run_locked(repo, run_id, reason) end)
+    |> Multi.run(:run_cancel_audit, fn
+      repo, %{run_cancel: {:cancelled, run}} -> repo.insert(Audit.run_event_changeset(run))
+      _repo, %{run_cancel: _} -> {:ok, nil}
+    end)
+  end
+
+  defp request_run_cancellation_in_multi(multi, run_id, reason) do
+    multi
+    |> Multi.run(:run_cancel, fn repo, _changes ->
+      request_run_cancellation_locked(repo, run_id, reason)
+    end)
     |> Multi.run(:run_cancel_audit, fn
       repo, %{run_cancel: {:cancelled, run}} -> repo.insert(Audit.run_event_changeset(run))
       _repo, %{run_cancel: _} -> {:ok, nil}
@@ -1850,25 +1837,26 @@ defmodule Emisar.Runs do
   # no-op rather than a second cancellation request.
   defp add_cancel_requested_audit(multi, %Subject{} = subject, reason) do
     Multi.run(multi, :cancel_requested_audit, fn
-      repo, %{run_cancel: {:cancelled, cancelled}} ->
-        repo.insert(Audit.Events.run_cancel_requested(subject, cancelled, reason))
+      repo, %{run_cancel: {status, run}} when status in [:cancelled, :cancelling] ->
+        repo.insert(Audit.Events.run_cancel_requested(subject, run, reason))
 
       _repo, %{run_cancel: _} ->
         {:ok, nil}
     end)
   end
 
-  defp cancel_run_result({:ok, %{run_cancel: {:cancelled, cancelled}}}), do: {:ok, cancelled}
-  defp cancel_run_result({:ok, %{run_cancel: {:noop, unchanged}}}), do: {:ok, unchanged}
-  defp cancel_run_result({:ok, %{run_cancel: :no_run}}), do: {:error, :not_found}
-  defp cancel_run_result({:error, reason}), do: {:error, reason}
+  defp cancellation_request_result({:ok, %{run_cancel: {_outcome, run}}}), do: {:ok, run}
+  defp cancellation_request_result({:ok, %{run_cancel: :no_run}}), do: {:error, :not_found}
+  defp cancellation_request_result({:error, reason}), do: {:error, reason}
 
   # Publish a cancellation only after its state + audit record committed. A
   # dispatch that starts afterward then observes `:cancelled` and refuses to
   # publish an action instead of receiving this cancel before the action exists.
-  defp deliver_cancel_to_runner({:cancelled, %ActionRun{} = run}, reason) do
+  defp deliver_cancel_to_runner({outcome, %ActionRun{} = run}, reason)
+       when outcome in [:cancelling, :retry] do
     with {:ok, generation} <-
-           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id) do
+           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id),
+         true <- generation == run.runner_connection_generation do
       Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
         "type" => "cancel",
         "request_id" => run.request_id,
@@ -1879,6 +1867,42 @@ defmodule Emisar.Runs do
 
   defp deliver_cancel_to_runner(_, _reason), do: :ok
 
+  defp broadcast_cancellation({outcome, %ActionRun{} = run})
+       when outcome in [:cancelled, :cancelling],
+       do: broadcast_run(run)
+
+  defp broadcast_cancellation(_), do: :ok
+
+  defp request_run_cancellation_locked(repo, run_id, reason) do
+    loaded_run =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.lock_for_update()
+      |> repo.one()
+
+    case loaded_run do
+      nil ->
+        {:ok, :no_run}
+
+      %ActionRun{status: status} = run when status in [:pending, :pending_approval] ->
+        cancel_loaded_run(repo, run, reason)
+
+      %ActionRun{status: status} = run when status in [:sent, :running] ->
+        with {:ok, cancelling} <-
+               repo.update(
+                 ActionRun.Changeset.transition(run, :cancelling, %{reason_text: reason})
+               ) do
+          {:ok, {:cancelling, cancelling}}
+        end
+
+      %ActionRun{status: :cancelling} = run ->
+        {:ok, {:retry, run}}
+
+      %ActionRun{} = run ->
+        {:ok, {:noop, run}}
+    end
+  end
+
   defp cancel_run_locked(repo, run_id, reason) do
     loaded_run =
       ActionRun.Query.all()
@@ -1887,9 +1911,17 @@ defmodule Emisar.Runs do
       |> repo.one()
 
     cond do
-      is_nil(loaded_run) -> {:ok, :no_run}
-      ActionRun.terminal?(loaded_run.status) -> {:ok, {:noop, loaded_run}}
-      true -> cancel_loaded_run(repo, loaded_run, reason)
+      is_nil(loaded_run) ->
+        {:ok, :no_run}
+
+      ActionRun.terminal?(loaded_run.status) ->
+        {:ok, {:noop, loaded_run}}
+
+      loaded_run.status in [:pending, :pending_approval] ->
+        cancel_loaded_run(repo, loaded_run, reason)
+
+      true ->
+        {:error, :run_already_dispatched}
     end
   end
 
@@ -1971,6 +2003,7 @@ defmodule Emisar.Runs do
 
     %{
       finished_at: DateTime.utc_now(),
+      cancelled_at: cancelled_at(payload),
       exit_code: payload["exit_code"],
       duration_ms: payload["duration_ms"],
       timed_out: payload["timed_out"] || false,
@@ -1993,6 +2026,9 @@ defmodule Emisar.Runs do
       error_message: payload["error"] || payload["reason"]
     }
   end
+
+  defp cancelled_at(%{"status" => "cancelled"}), do: DateTime.utc_now()
+  defp cancelled_at(_payload), do: nil
 
   defp output_complete?(%ActionRun{} = run, payload) do
     payload["dropped_progress_chunks"] in [nil, 0] and

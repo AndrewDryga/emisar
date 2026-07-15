@@ -364,7 +364,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     html = render_click(lv, "cancel", %{})
-    assert html =~ "Cancel sent to runner."
+    assert html =~ "Cancellation accepted."
+    assert html =~ "Cancellation requested"
+    assert Repo.reload!(run).status == :cancelling
   end
 
   # when cancel_run returns a non-:ok (here the run row

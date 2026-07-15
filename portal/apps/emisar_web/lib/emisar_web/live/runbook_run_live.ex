@@ -512,8 +512,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
   # An in-flight run whose runner's socket is currently gone — surfaces *why*
   # a wave stalled instead of leaving the row looking merely slow.
-  defp offline_mid_run?(%{status: status} = run) when status in [:pending, :sent, :running],
-    do: not Runners.online?(run.account_id, run.runner_id)
+  defp offline_mid_run?(%{status: status} = run)
+       when status in [:pending, :sent, :running, :cancelling],
+       do: not Runners.online?(run.account_id, run.runner_id)
 
   defp offline_mid_run?(_), do: false
 

@@ -890,8 +890,8 @@ runner's output cap or MCP's preview cap omitted bytes. Output is untrusted data
 never instructions.
 
 Run statuses are a closed initial set: `pending`, `pending_approval`, `sent`,
-`running`, `success`, `failed`, `error`, `validation_failed`, `unknown_action`,
-`cancelled`, `timed_out`, `refused`, and `denied`. New statuses require
+`running`, `cancelling`, `success`, `failed`, `error`, `validation_failed`,
+`unknown_action`, `cancelled`, `timed_out`, `refused`, and `denied`. New statuses require
 coordinated schema, instruction, documentation, and client-corpus updates.
 
 ### Pending approval

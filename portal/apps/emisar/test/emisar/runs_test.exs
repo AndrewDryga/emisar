@@ -2713,7 +2713,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, ^finished} = Runs.cancel_run(finished, subject, "no need")
     end
 
-    test "cancelling a running run transitions to :cancelled + broadcasts", %{
+    test "cancelling a running run waits for its runner-authoritative result", %{
       account: account,
       runner: runner
     } do
@@ -2733,10 +2733,18 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
+      {:ok, run} = Runs.mark_running(run)
+
       Emisar.Runs.subscribe_account_runs(account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
 
-      assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
+      assert {:ok,
+              %ActionRun{
+                status: :cancelling,
+                cancelled_at: nil,
+                finished_at: nil,
+                reason_text: "user pressed stop"
+              }} =
                Runs.cancel_run(run, subject, "user pressed stop")
 
       assert_receive {:cloud_to_runner, _generation,
@@ -2748,14 +2756,64 @@ defmodule Emisar.RunsTest do
                      500
 
       assert request_id == run.request_id
-      assert Runs.peek_run_by_id(run.id).status == :cancelled
+      assert Runs.peek_run_by_id(run.id).status == :cancelling
 
       # Payload contract: runner is preloaded so subscribers (e.g.
       # RunDetailLive's meta strip) can render `runner.name` without
       # tripping over `%Ecto.Association.NotLoaded{}`.
       assert_receive {:run_updated,
-                      %ActionRun{status: :cancelled, runner: %Emisar.Runners.Runner{}}},
+                      %ActionRun{status: :cancelling, runner: %Emisar.Runners.Runner{}}},
                      500
+
+      assert {:ok, %ActionRun{status: :success}} =
+               Runs.finalize_from_result(runner.id, %{
+                 "request_id" => run.request_id,
+                 "status" => "success",
+                 "exit_code" => 0
+               })
+
+      assert Runs.peek_run_by_id(run.id).status == :success
+    end
+
+    test "repeating an in-flight cancellation retries delivery without another transition", %{
+      account: account,
+      runner: runner
+    } do
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, run} = Runs.mark_sent(run)
+
+      run =
+        run
+        |> Ecto.Changeset.change(runner_connection_generation: runner.connection_generation)
+        |> Repo.update!()
+
+      assert {:ok, %ActionRun{status: :cancelling} = cancelling} =
+               Runs.cancel_run(run, subject, "stop")
+
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "cancel"}}, 500
+
+      assert {:ok, %ActionRun{status: :cancelling}} =
+               Runs.cancel_run(cancelling, subject, "stop")
+
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "cancel"}}, 500
+
+      assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
+               Runs.finalize_from_result(runner.id, %{
+                 "request_id" => run.request_id,
+                 "status" => "cancelled"
+               })
     end
 
     test "cancelling a :denied run is a no-op — it never reached a runner", %{
@@ -2943,46 +3001,11 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "mark_cancelled/2" do
-    test "moves a non-terminal run → :cancelled, stamping cancelled_at + reason_text" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
-
-      assert {:ok,
-              %ActionRun{
-                status: :cancelled,
-                cancelled_at: %DateTime{},
-                finished_at: %DateTime{},
-                reason_text: "operator cancelled"
-              }} = Runs.mark_cancelled(sent, "operator cancelled")
-    end
-
-    test "a late result holding a stale struct can't overwrite the cancelled status" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
-
-      # An operator cancel lands while the runner's result is in flight…
-      {:ok, cancelled} = Runs.mark_cancelled(sent, "operator cancelled")
-      assert cancelled.status == :cancelled
-
-      # …and the late result arrives still holding the PRE-cancel struct.
-      # The locked re-read must keep the run final instead of letting the
-      # stale writer flip cancelled → success.
-      assert {:ok, _} = Runs.mark_finished(sent, %{"status" => "success"})
-      assert Runs.peek_run_by_id(run.id).status == :cancelled
-    end
-  end
-
   describe "cancel_run_in_multi/3" do
     test "composes the cancel into a caller's transaction, landing {:cancelled, run} in changes" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, _sent} = Runs.mark_sent(run)
 
       assert {:ok, %{run_cancel: {:cancelled, %ActionRun{status: :cancelled} = cancelled}}} =
                Ecto.Multi.new()
@@ -2992,6 +3015,20 @@ defmodule Emisar.RunsTest do
       assert cancelled.id == run.id
       assert cancelled.reason_text == "composed cancel"
       assert Runs.peek_run_by_id(run.id).status == :cancelled
+    end
+
+    test "refuses to terminally cancel work already dispatched to a runner" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, sent} = Runs.mark_sent(run)
+
+      assert {:error, :run_already_dispatched} =
+               Ecto.Multi.new()
+               |> Runs.cancel_run_in_multi(sent.id, "too late")
+               |> Repo.commit_multi()
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
     end
 
     test "an already-terminal run yields {:noop, run} — no transition, no audit row" do

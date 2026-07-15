@@ -131,6 +131,23 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert reloaded.error_message =~ "disconnected while this run was in flight"
   end
 
+  test "a cancelling run without a runner result resolves as outcome unknown" do
+    runner = Fixtures.Runners.create_runner(connected?: false)
+    runner = backdate_disconnect!(runner, 10 * 60)
+
+    run =
+      runner
+      |> running_run_for()
+      |> Ecto.Changeset.change(status: :cancelling, reason_text: "operator requested stop")
+      |> Repo.update!()
+
+    assert :ok = DispatchTimeout.execute([])
+
+    reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :error
+    assert reloaded.error_message =~ "result never arrived"
+  end
+
   test "a running run on a CONNECTED runner is left alone" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = running_run_for(runner)

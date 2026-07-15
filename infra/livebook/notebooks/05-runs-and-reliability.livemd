@@ -100,7 +100,7 @@ runners =
   Analytics.query(db, """
   SELECT a.name AS account, r.name AS runner,
     count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days') AS runs_30d,
-    count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days' AND ar.status <> 'success' AND ar.status NOT IN ('pending', 'pending_approval', 'sent', 'running')) AS unsuccessful_30d,
+    count(ar.id) FILTER (WHERE ar.inserted_at >= now() - interval '30 days' AND ar.status <> 'success' AND ar.status NOT IN ('pending', 'pending_approval', 'sent', 'running', 'cancelling')) AS unsuccessful_30d,
     max(ar.inserted_at) AS last_run_at,
     r.last_connected_at,
     r.last_disconnected_at

@@ -1080,10 +1080,14 @@ if existing_runs == [] do
   append_chunks.(cancelled, systemd_restart_output)
 
   {:ok, cancelled} =
-    Runs.mark_cancelled(cancelled, "operator cancelled - rollback already completed")
+    Runs.mark_finished(cancelled, %{"status" => "cancelled"})
 
   cancelled
-  |> Ecto.Changeset.change(finished_at: cancelled_at, cancelled_at: cancelled_at)
+  |> Ecto.Changeset.change(
+    finished_at: cancelled_at,
+    cancelled_at: cancelled_at,
+    reason_text: "operator cancelled - rollback already completed"
+  )
   |> Repo.update!()
 
   IO.puts(

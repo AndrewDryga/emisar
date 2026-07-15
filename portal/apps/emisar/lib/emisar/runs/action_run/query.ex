@@ -245,6 +245,7 @@ defmodule Emisar.Runs.ActionRun.Query do
           {"denied", "Denied"},
           {"sent", "Sent"},
           {"running", "Running"},
+          {"cancelling", "Cancelling"},
           {"success", "Success"},
           {"failed", "Failed"},
           {"error", "Error"},

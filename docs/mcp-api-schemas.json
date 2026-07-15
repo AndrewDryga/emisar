@@ -346,6 +346,7 @@
         "pending_approval",
         "sent",
         "running",
+        "cancelling",
         "success",
         "failed",
         "error",
@@ -396,7 +397,7 @@
           ]
         },
         {
-          "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running"]}}},
+          "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}},
           "then": {"required": ["next"]},
           "else": {"not": {"required": ["next"]}}
         },

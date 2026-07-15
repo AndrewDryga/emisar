@@ -912,7 +912,6 @@ defmodule Emisar.Audit.Events do
           payload: %{
             action: run.action_id,
             run_id: run.id,
-            from_status: run.status,
             reason: reason
           }
         ]

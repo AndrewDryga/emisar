@@ -39,7 +39,7 @@ defmodule Emisar.Runs.ActionRunTest do
       :refused,
       :denied
     ]
-    @non_terminal [:pending, :pending_approval, :sent, :running]
+    @non_terminal [:pending, :pending_approval, :sent, :running, :cancelling]
 
     test "settled statuses are terminal (incl. :denied + :refused)" do
       for s <- @terminal do

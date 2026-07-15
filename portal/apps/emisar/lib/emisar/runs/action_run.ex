@@ -2,9 +2,12 @@ defmodule Emisar.Runs.ActionRun do
   @moduledoc """
   A single action invocation against a runner. State machine:
 
-      pending -> sent -> running -> {success, failed, error,
-                                     validation_failed, unknown_action,
-                                     cancelled, timed_out, refused}
+      pending -> sent -> [running] -> terminal outcome
+                            |
+                            +-> cancelling -> terminal outcome
+
+  Terminal outcomes are `success`, `failed`, `error`, `validation_failed`,
+  `unknown_action`, `cancelled`, `timed_out`, and `refused`.
 
   Or:    pending -> pending_approval -> sent -> ...
 
@@ -89,6 +92,7 @@ defmodule Emisar.Runs.ActionRun do
         :denied,
         :sent,
         :running,
+        :cancelling,
         :success,
         :failed,
         :error,

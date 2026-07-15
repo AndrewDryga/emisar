@@ -118,7 +118,7 @@ defmodule EmisarWeb.RunDetailLive do
                "operator cancelled"
              ) do
           {:ok, run} ->
-            {:noreply, socket |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
+            {:noreply, socket |> assign(:run, run) |> put_flash(:info, "Cancellation accepted.")}
 
           _ ->
             {:noreply, put_flash(socket, :error, "Unable to cancel.")}
@@ -191,7 +191,13 @@ defmodule EmisarWeb.RunDetailLive do
           confirm_label="Cancel run"
           on_confirm={JS.push("cancel")}
         >
-          <:body>The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.</:body>
+          <:body>
+            <%= if @run.status == :pending do %>
+              This queued run has not reached the runner and will be cancelled immediately.
+            <% else %>
+              The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.
+            <% end %>
+          </:body>
           Cancel run
         </.confirm_button>
       </:actions>
@@ -310,6 +316,17 @@ defmodule EmisarWeb.RunDetailLive do
               </div>
             </.event_block>
 
+            <.event_block
+              :if={@run.status == :cancelling}
+              icon="hero-stop-circle"
+              tone={:amber}
+              title="Cancellation requested"
+            >
+              <:body>
+                Waiting for the runner to stop and report the final outcome.
+              </:body>
+            </.event_block>
+
             <%!-- Error — only when terminal-failed and we got a message back. --%>
             <.event_block
               :if={@run.error_message}
@@ -324,7 +341,7 @@ defmodule EmisarWeb.RunDetailLive do
                gone. Don't fake a terminal status; flag that output may be
                incomplete until it reconnects (or the timeout sweep errors it). --%>
             <.event_block
-              :if={@run.status in [:sent, :running] and @runner_connection == :offline}
+              :if={@run.status in [:sent, :running, :cancelling] and @runner_connection == :offline}
               icon="hero-bolt-slash"
               title="Runner disconnected"
             >
@@ -440,7 +457,7 @@ defmodule EmisarWeb.RunDetailLive do
                    in flight, so an idle terminal reads as "more is coming",
                    not "this is the final output". Gone once terminal. --%>
               <span
-                :if={@run.status in [:sent, :running]}
+                :if={@run.status in [:sent, :running, :cancelling]}
                 class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30"
               >
                 <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
@@ -465,7 +482,7 @@ defmodule EmisarWeb.RunDetailLive do
                of a 24rem black void (the in-flight min-height stays — more may
                be coming). --%>
           <p
-            :if={not @output_present? and @run.status not in [:sent, :running]}
+            :if={not @output_present? and @run.status not in [:sent, :running, :cancelling]}
             class="bg-black/60 p-4 font-mono text-xs text-zinc-600"
           >
             No output captured.
@@ -474,13 +491,13 @@ defmodule EmisarWeb.RunDetailLive do
                a terminal run's panel hugs its real output instead of padding a
                two-line result with a 24rem void. --%>
           <pre
-            :if={@output_present? or @run.status in [:sent, :running]}
+            :if={@output_present? or @run.status in [:sent, :running, :cancelling]}
             id="run-output"
             phx-update="stream"
             class={[
               "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4",
               "font-mono text-xs leading-normal text-zinc-300",
-              @run.status in [:sent, :running] && "min-h-[24rem]"
+              @run.status in [:sent, :running, :cancelling] && "min-h-[24rem]"
             ]}
           ><span
               :for={{id, event} <- @streams.events}
@@ -498,8 +515,9 @@ defmodule EmisarWeb.RunDetailLive do
   defp attention?(run, approval_request, runner_connection) do
     (run.status == :pending_approval and approval_request != nil) or
       (run.status == :cancelled and run.reason_text not in [nil, ""]) or
+      run.status == :cancelling or
       run.error_message != nil or
-      (run.status in [:sent, :running, :pending] and runner_connection == :offline)
+      (run.status in [:sent, :running, :cancelling, :pending] and runner_connection == :offline)
   end
 
   # Only ever called with an integer exit code — the nil case renders `<.blank>`.

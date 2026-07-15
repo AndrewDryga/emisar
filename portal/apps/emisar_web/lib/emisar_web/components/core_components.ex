@@ -2382,7 +2382,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   def status_tone(status) do
     case to_string(status) do
-      s when s in ~w[success connected approved published running sent] ->
+      s when s in ~w[success connected approved published running sent cancelling] ->
         :pass
 
       s when s in ~w[pending_approval refused] ->
@@ -2403,7 +2403,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec(s) when s in ~w[success connected approved published trusted enabled],
     do: {:brand, false}
 
-  defp status_dot_spec(s) when s in ~w[running sent], do: {:brand, true}
+  defp status_dot_spec(s) when s in ~w[running sent cancelling], do: {:brand, true}
   defp status_dot_spec("pending_approval"), do: {:amber, true}
   defp status_dot_spec("refused"), do: {:amber, false}
   defp status_dot_spec("offline"), do: {:amber, false}
