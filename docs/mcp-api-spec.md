@@ -1112,9 +1112,10 @@ continuation lives inside that object and is not duplicated at the tool-result
 level. Lightweight runs nested in a runbook step omit continuations; callers
 wait on the execution or use the individual run ID.
 
-The bridge HTTP deadline is at least 330 seconds. It reads subsequent stdio
-frames concurrently and uses one serialized stdout writer, so a wait cannot
-block ping, cancellation, or unrelated calls or interleave response frames.
+The bridge HTTP deadline is 90 seconds, above the portal's 60-second maximum
+wait. It reads subsequent stdio frames concurrently and uses one serialized
+stdout writer, so a wait cannot block ping, cancellation, or unrelated calls
+or interleave response frames.
 
 ### `recent_runs`
 

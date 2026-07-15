@@ -14,8 +14,8 @@ defmodule Emisar.Auth.Subject do
       :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
       Authorizers build entries via `build/2`
-    * `context` — the request's `%RequestContext{}` (ip / user_agent /
-      request_id / mcp_session). Filled in by the boundary; the
+    * `context` — the request's `%RequestContext{}` (IP address, user agent,
+      request ID, and MCP client metadata). Filled in by the boundary; the
       `Audit.Events` builders read it off the subject and stamp it onto
       every event the caller produces.
     * `auth_method` — how this session was authenticated (`:magic_link |
