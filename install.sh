@@ -666,23 +666,36 @@ ensure_user_macos() {
 
 ensure_dirs() {
   local owner="${SERVICE_USER}:${SERVICE_GROUP}"
+  local etc_owner="root:${SERVICE_GROUP}"
   if [ "${OS}" = "darwin" ]; then
     owner="root:wheel"
+    etc_owner="root:wheel"
   fi
   # --no-service skipped user creation, so SERVICE_USER doesn't exist
   # as an account. Fall back to root:root — the operator will be running
   # the binary by hand anyway and can chown later if needed.
   if [ "${INIT}" = "none" ] && [ "${OS}" = "linux" ]; then
     owner="root:root"
+    etc_owner="root:root"
   fi
-  for d in "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${DATA_DIR}/work"; do
+  if [ ! -d "${ETC_DIR}" ]; then
+    log "mkdir ${ETC_DIR}"
+    mkdir -p "${ETC_DIR}"
+  fi
+  # Configuration and credentials stay root-owned across upgrades. Recursively
+  # handing ETC_DIR to the service account would let a compromised runner
+  # rewrite its own admission, signing, and control-plane settings.
+  chown "${etc_owner}" "${ETC_DIR}"
+  chmod 750 "${ETC_DIR}"
+
+  for d in "${DATA_DIR}" "${LOG_DIR}" "${DATA_DIR}/work"; do
     if [ ! -d "$d" ]; then
       log "mkdir $d"
       mkdir -p "$d"
     fi
     chown -R "${owner}" "$d"
   done
-  chmod 750 "${ETC_DIR}" "${DATA_DIR}"
+  chmod 750 "${DATA_DIR}"
   chmod 755 "${LOG_DIR}"
 }
 
@@ -727,6 +740,8 @@ drop_config_skeleton() {
     fi
     NEEDS_CONFIGURATION=0
   fi
+  chmod 640 "${cfg}"
+  chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown root:root "${cfg}"
 
   local env="${ETC_DIR}/runner.env"
   if [ ! -f "${env}" ]; then
@@ -737,9 +752,9 @@ drop_config_skeleton() {
     ( umask 077 && runner_env_skeleton > "${env}" )
     # Belt-and-suspenders in case a restrictive umask wasn't honoured.
     chmod 600 "${env}"
-    chown "${SERVICE_USER}:${SERVICE_GROUP}" "${env}" 2>/dev/null || \
-      chown root:root "${env}"
   fi
+  chmod 600 "${env}"
+  chown "root:${SERVICE_GROUP}" "${env}" 2>/dev/null || chown root:root "${env}"
 }
 
 STAGED_BINARY=""

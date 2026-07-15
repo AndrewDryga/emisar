@@ -23,7 +23,7 @@ hex plug 1.20.3 GHSA-j43x-5hjq-rgxf and GHSA-95qv-c9g9-rm63 security fixes block
 hex postgrex 0.22.3 GHSA-4mw9-4qgj-m97w security fix blocks the release
 hex phoenix 1.8.9 GHSA-6983-jfq8-485w and GHSA-63mc-hw7g-86rr security fixes block the release
 hex db_connection 2.10.2 transitive requirement of the Postgrex security update
-hex mint 1.9.1 GHSA-c59h-fq4p-r36r security fix blocks the release
+hex mint 1.9.2 CVE-2026-58229 and CVE-2026-59246 security fixes block the release
 hex hpax 1.0.4 GHSA-jj2p-32j7-whj2 security fix blocks the release
 hex cowboy 2.17.0 transitive requirement of the Phoenix and Plug security updates
 hex cowlib 2.18.0 transitive requirement of the security updates; no fixed Cowlib release exists yet

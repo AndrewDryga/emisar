@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-mcp.sh — Drop the emisar-mcp stdio bridge into /usr/local/bin.
+# install-mcp.sh — Install or upgrade the emisar-mcp stdio bridge.
 #
 # The bridge is a single self-contained Go binary that an MCP-aware
 # client (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI,
@@ -25,7 +25,9 @@
 set -Eeuo pipefail
 
 REPO="${EMISAR_REPO:-andrewdryga/emisar}"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-}"
+INSTALL_DIR_EXPLICIT=0
+[ -n "${INSTALL_DIR}" ] && INSTALL_DIR_EXPLICIT=1
 VERSION="${VERSION:-}"     # empty → latest mcp-v* tag
 
 usage() {
@@ -38,8 +40,9 @@ Flags:
   --version TAG       Install a specific MCP release. Accepts
                       `mcp-vX.Y.Z`, `vX.Y.Z`, or bare `X.Y.Z`
                       (auto-prefixed with `mcp-v`). Default: latest.
-  --install-dir DIR   Where to place the `emisar-mcp` binary
-                      (default /usr/local/bin).
+  --install-dir DIR   Where to place the `emisar-mcp` binary. By default,
+                      existing user-local and system installs are upgraded;
+                      a fresh install uses /usr/local/bin.
   --yes               Skip the confirmation prompt.
   --help              This message.
 
@@ -77,6 +80,7 @@ while [ $# -gt 0 ]; do
     --install-dir)
       require_value "$@"
       INSTALL_DIR="$2"
+      INSTALL_DIR_EXPLICIT=1
       shift 2
       ;;
     --yes|-y)      ASSUME_YES=1; shift;;
@@ -143,7 +147,57 @@ case "$(uname -m)" in
   *) die "unsupported arch: $(uname -m) (amd64 + arm64 only)";;
 esac
 
-log "install target: ${OS}/${ARCH} → ${INSTALL_DIR}/emisar-mcp"
+invoking_user_home() {
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    if command -v getent >/dev/null 2>&1; then
+      getent passwd "${SUDO_USER}" | cut -d: -f6
+      return
+    fi
+    if command -v dscl >/dev/null 2>&1; then
+      dscl . -read "/Users/${SUDO_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}'
+      return
+    fi
+    case "${OS}" in
+      darwin) printf '/Users/%s\n' "${SUDO_USER}" ;;
+      *) printf '/home/%s\n' "${SUDO_USER}" ;;
+    esac
+    return
+  fi
+  printf '%s\n' "${HOME}"
+}
+
+# A prior no-sudo install is common, while the portal's one-line upgrade uses
+# sudo. Upgrade every conventional location that already contains the bridge
+# so an LLM client cannot keep launching a stale copy after a successful run.
+resolve_install_dirs() {
+  local user_home="$1"
+  local system_dir="${2:-/usr/local/bin}"
+  local dirs=""
+  local candidate
+
+  for candidate in "${user_home}/.local/bin" "${system_dir}"; do
+    if [ -x "${candidate}/emisar-mcp" ]; then
+      dirs="${dirs}${dirs:+
+}${candidate}"
+    fi
+  done
+  if [ -z "${dirs}" ]; then
+    dirs="${system_dir}"
+  fi
+  printf '%s\n' "${dirs}"
+}
+
+if [ "${INSTALL_DIR_EXPLICIT}" = "0" ]; then
+  user_home=$(invoking_user_home)
+  install_dirs=$(resolve_install_dirs "${user_home}")
+else
+  install_dirs="${INSTALL_DIR}"
+fi
+
+log "install target: ${OS}/${ARCH}"
+while IFS= read -r dir; do
+  log "  → ${dir}/emisar-mcp"
+done <<<"${install_dirs}"
 
 # ---------------------------------------------------------------------
 # Resolve version
@@ -172,7 +226,7 @@ TAR_NAME="emisar-mcp-${VERSION_NUM}-${OS}-${ARCH}"
 TARBALL="${TAR_NAME}.tar.gz"
 BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
-if ! confirm "install emisar-mcp ${VERSION} → ${INSTALL_DIR}/emisar-mcp?"; then
+if ! confirm "install emisar-mcp ${VERSION} to the listed target(s)?"; then
   die "aborted by user"
 fi
 
@@ -181,7 +235,16 @@ fi
 # ---------------------------------------------------------------------
 
 tmp="$(mktemp -d -t emisar-mcp-install.XXXXXX)"
-trap 'rm -rf "${tmp}"; [ -z "${bin_staged:-}" ] || rm -f "${bin_staged}"' EXIT
+staged_paths=""
+cleanup() {
+  if [ -n "${staged_paths}" ]; then
+    while IFS= read -r path; do
+      [ -z "${path}" ] || rm -f -- "${path}"
+    done <<<"${staged_paths}"
+  fi
+  rm -rf -- "${tmp}"
+}
+trap cleanup EXIT
 
 log "downloading ${TARBALL}"
 curl -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
@@ -194,8 +257,10 @@ curl -fsSL -o "${tmp}/SHA256SUMS-MCP" "${BASE_URL}/SHA256SUMS-MCP" \
 log "verifying checksum"
 if command -v sha256sum >/dev/null 2>&1; then
   sha_check() { sha256sum -c -; }
+  sha_value() { sha256sum "$1" | awk '{print $1}'; }
 elif command -v shasum >/dev/null 2>&1; then
   sha_check() { shasum -a 256 -c -; }
+  sha_value() { shasum -a 256 "$1" | awk '{print $1}'; }
 else
   die "neither sha256sum nor shasum found — cannot verify download"
 fi
@@ -212,48 +277,71 @@ tar -C "${tmp}" -xzf "${tmp}/${TARBALL}"
 # Install
 # ---------------------------------------------------------------------
 
-if [ ! -d "${INSTALL_DIR}" ]; then
-  mkdir -p "${INSTALL_DIR}" 2>/dev/null || \
-    die "could not create ${INSTALL_DIR} (re-run with sudo, or set --install-dir to a writable path)"
-fi
-
-if [ ! -w "${INSTALL_DIR}" ]; then
-  die "${INSTALL_DIR} is not writable (re-run with sudo, or set --install-dir)"
-fi
-
 bin_src="${tmp}/${TAR_NAME}/emisar-mcp"
-bin_dst="${INSTALL_DIR}/emisar-mcp"
-bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
-
 if [ ! -x "${bin_src}" ]; then
   die "expected ${bin_src} inside tarball but it was missing"
 fi
-
-log "staging → ${bin_staged}"
-install -m 0755 "${bin_src}" "${bin_staged}"
-
-staged_version=$("${bin_staged}" --version) || die "staged binary did not respond to --version"
 expected_version="emisar-mcp ${VERSION_NUM}"
-[ "${staged_version}" = "${expected_version}" ] || \
-  die "staged binary reported '${staged_version}', expected '${expected_version}'"
+source_version=$("${bin_src}" --version) || die "downloaded binary did not respond to --version"
+[ "${source_version}" = "${expected_version}" ] || \
+  die "downloaded binary reported '${source_version}', expected '${expected_version}'"
+source_sha=$(sha_value "${bin_src}")
 
-# The staged file is already on the destination filesystem, so this is one
-# atomic rename: interruption leaves either the complete old or complete new
-# executable at bin_dst, never a missing active path.
-if ! mv -f "${bin_staged}" "${bin_dst}"; then
-  die "could not atomically activate the new binary; the previous installation is unchanged"
-fi
-bin_staged=""
+# Preflight every target before changing any active binary. The installer may
+# run as root while one target is user-writable, so it executes only bin_src in
+# the root-owned temporary directory; destination files are verified by digest.
+while IFS= read -r INSTALL_DIR; do
+  case "${INSTALL_DIR}" in
+    *$'\n'*|"") die "invalid empty or multiline install directory" ;;
+  esac
+  if [ ! -d "${INSTALL_DIR}" ]; then
+    mkdir -p "${INSTALL_DIR}" 2>/dev/null || \
+      die "could not create ${INSTALL_DIR} (re-run with sudo, or set --install-dir to a writable path)"
+  fi
+  if [ ! -w "${INSTALL_DIR}" ]; then
+    die "${INSTALL_DIR} is not writable (re-run with sudo, or set --install-dir)"
+  fi
+done <<<"${install_dirs}"
+
+while IFS= read -r INSTALL_DIR; do
+  bin_dst="${INSTALL_DIR}/emisar-mcp"
+  bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
+  log "staging → ${bin_staged}"
+  install -m 0755 "${bin_src}" "${bin_staged}"
+
+  staged_paths="${staged_paths}${staged_paths:+
+}${bin_staged}"
+  staged_sha=$(sha_value "${bin_staged}")
+  [ "${staged_sha}" = "${source_sha}" ] || \
+    die "staged binary checksum changed at ${bin_staged}; no installation was activated"
+done <<<"${install_dirs}"
+
+installed_paths=""
+while IFS= read -r INSTALL_DIR; do
+  bin_dst="${INSTALL_DIR}/emisar-mcp"
+  bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
+  # Staging on the destination filesystem makes activation one atomic rename.
+  if ! mv -f "${bin_staged}" "${bin_dst}"; then
+    die "could not atomically activate ${bin_dst}; its previous installation is unchanged"
+  fi
+  installed_paths="${installed_paths}${installed_paths:+
+}${bin_dst}"
+done <<<"${install_dirs}"
+staged_paths=""
 
 # ---------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------
 
 log "installed:"
-installed_version=$("${bin_dst}" --version) || die "installed binary did not respond to --version"
-[ "${installed_version}" = "${expected_version}" ] || \
-  die "installed binary reported '${installed_version}', expected '${expected_version}'"
-log "${installed_version}"
+while IFS= read -r bin_dst; do
+  installed_sha=$(sha_value "${bin_dst}")
+  [ "${installed_sha}" = "${source_sha}" ] || \
+    die "installed binary checksum changed at ${bin_dst}"
+  log "${bin_dst}: ${expected_version}"
+done <<<"${installed_paths}"
+
+first_bin=${installed_paths%%$'\n'*}
 
 cat <<NEXT
 
@@ -263,8 +351,8 @@ Next steps:
     snippet (path + env vars) to paste into the client launcher.
 
 Verify install:
-  ${bin_dst} --help
+  ${first_bin} --help
 
 Uninstall:
-  rm ${bin_dst}
+$(while IFS= read -r path; do printf '  rm %s\n' "${path}"; done <<<"${installed_paths}")
 NEXT

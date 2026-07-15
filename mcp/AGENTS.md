@@ -16,7 +16,7 @@ Run from `mcp/`:
 ```
 gofmt -l -s .                                       # zero output
 go vet ./...
-go mod tidy && git diff --exit-code -- go.mod go.sum
+go mod tidy && test ! -e go.sum && git diff --exit-code -- go.mod
 go test -race -count=1 ./...
 ```
 

@@ -1,5 +1,6 @@
 defmodule EmisarWeb.RunnersLiveTest do
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.Runners
 
   describe "GET /app/runners" do
     test "redirects anonymous users to /sign_in", %{conn: conn} do
@@ -405,6 +406,26 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "outdated"
       refute html =~ "/install.sh | sudo bash"
       refute has_element?(lv, "#fleet-attention")
+    end
+
+    test "the same runner clears its upgrade prompt after reconnecting on the current binary",
+         %{conn: conn, account: account} do
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "upgrading",
+          runner_version: "0.0.0"
+        )
+
+      {:ok, _lv, stale_html} = live(conn, ~p"/app/#{account}/runners")
+      assert stale_html =~ "Runner update required"
+
+      assert {:ok, _runner} = Runners.apply_state(runner, %{"version" => "1.0.0"})
+
+      {:ok, _lv, current_html} = live(conn, ~p"/app/#{account}/runners")
+      refute current_html =~ "Runner update required"
+      refute current_html =~ "outdated"
+      refute current_html =~ "unsupported"
     end
   end
 

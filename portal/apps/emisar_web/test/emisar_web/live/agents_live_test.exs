@@ -99,6 +99,27 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "/install-mcp.sh | sudo bash"
     end
 
+    test "the same client clears its upgrade prompt after reconnecting on the current bridge",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
+
+      {:ok, key} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "0.0.0"})
+
+      {:ok, _lv, stale_html} = live(conn, ~p"/app/#{account}/agents")
+      assert stale_html =~ "MCP bridge update required"
+
+      {:ok, _key} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "1.0.0"})
+
+      {:ok, _lv, current_html} = live(conn, ~p"/app/#{account}/agents")
+      refute current_html =~ "MCP bridge update required"
+      refute current_html =~ "outdated"
+      refute current_html =~ "unsupported"
+    end
+
     test "a revoked client does not prompt the operator to upgrade its old bridge", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

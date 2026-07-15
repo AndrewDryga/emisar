@@ -27,5 +27,5 @@ docker compose --profile test up -d portal
 docker compose --profile test up -d --force-recreate signing-init runner-signed
 
 PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
-  MCP_KEY="${MCP_KEY:-emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD}" \
+  MCP_KEY="${MCP_KEY:-emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}" \
   exec go run ./tools/cmd/signing-e2e

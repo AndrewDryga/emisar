@@ -367,7 +367,7 @@ func structuredErrorCode(result bridgeResult) string {
 
 func main() {
 	portalURL := envOr("PORTAL_URL", "http://localhost:4010")
-	mcpKey := envOr("MCP_KEY", "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD")
+	mcpKey := envOr("MCP_KEY", "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	group := envOr("SIGNED_GROUP", "signed-iad")
 	action := envOr("SIGNED_ACTION", "linux.uptime")
 	timeout := 120 * time.Second
