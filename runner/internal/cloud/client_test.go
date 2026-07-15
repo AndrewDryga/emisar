@@ -38,6 +38,19 @@ type fakeConn struct {
 	failResults atomic.Bool
 }
 
+type blockingAuditSink struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingAuditSink) Write(context.Context, audit.Event) error {
+	close(s.started)
+	<-s.release
+	return nil
+}
+
+func (*blockingAuditSink) Close() error { return nil }
+
 // blockedOutboundConn models a portal that keeps dispatching but stops reading
 // after registration. Session cancellation must unblock Send as Conn promises.
 type blockedOutboundConn struct{ *fakeConn }
@@ -870,6 +883,53 @@ func TestClient_ConcurrencyCap(t *testing.T) {
 			t.Fatalf("timed out waiting for two responses; results=%v errs=%v",
 				len(results), len(errs))
 		}
+	}
+}
+
+func TestClient_AuditWriteDoesNotHoldClientMutex(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{})
+	cli.opts.MaxConcurrentRuns = 1
+	sink := &blockingAuditSink{started: make(chan struct{}), release: make(chan struct{})}
+	cli.opts.Engine.Journal = audit.New(audit.Defaults{}, sink)
+
+	cli.mu.Lock()
+	cli.runs["already-running"] = &runState{requestID: "already-running"}
+	cli.mu.Unlock()
+
+	m := RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "over-cap"},
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "x"},
+		Reason:   "test lock isolation",
+	}
+	done := make(chan error, 1)
+	go func() { done <- cli.startRun(context.Background(), m) }()
+
+	select {
+	case <-sink.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatch did not reach blocking audit sink")
+	}
+	lockAcquired := make(chan bool, 1)
+	go func() {
+		cli.mu.Lock()
+		_, activeExists := cli.runs["already-running"]
+		_, responseExists := cli.runs[m.RequestID]
+		cli.mu.Unlock()
+		lockAcquired <- activeExists && responseExists
+	}()
+	select {
+	case stateReadable := <-lockAcquired:
+		if !stateReadable {
+			t.Fatal("expected active run and queued refusal while audit was blocked")
+		}
+	case <-time.After(500 * time.Millisecond):
+		close(sink.release)
+		t.Fatal("client mutex remained held during audit fsync")
+	}
+	close(sink.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

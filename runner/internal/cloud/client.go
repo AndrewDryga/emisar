@@ -408,12 +408,11 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		}
 		return nil
 	}
-	if handled, enqueued := c.handleReservationDecision(parent, m, digest, decision, cached); handled {
+	if decision != reservationNew {
 		c.mu.Unlock()
-		if !enqueued {
+		if !c.handleReservationDecision(parent, m, digest, decision, cached) {
 			return errResponseBacklogFull
 		}
-		c.signalSend()
 		return nil
 	}
 	preCanceled := c.consumePreCancelLocked(m.RequestID)
@@ -422,13 +421,13 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 			"request_id", m.RequestID,
 			"cap", c.opts.MaxConcurrentRuns,
 		)
-		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "concurrency cap reached")
 		enqueued := c.enqueueTransientLocked(m.RequestID, ErrorMsg{
 			Envelope: Envelope{Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 			Code:     "concurrency_cap_reached",
 			Message:  fmt.Sprintf("runner at concurrency cap (%d in flight)", c.opts.MaxConcurrentRuns),
 		})
 		c.mu.Unlock()
+		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "concurrency cap reached")
 		if !enqueued {
 			return errResponseBacklogFull
 		}
@@ -443,15 +442,15 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		}
 		return nil
 	}
-	if handled, enqueued := c.handleReservationDecision(parent, m, digest, decision, cached); handled {
+	if decision != reservationNew {
 		c.mu.Unlock()
-		if !enqueued {
+		if !c.handleReservationDecision(parent, m, digest, decision, cached) {
 			return errResponseBacklogFull
 		}
-		c.signalSend()
 		return nil
 	}
 	if preCanceled {
+		c.mu.Unlock()
 		result := ActionResultMsg{
 			Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 			Status:   "cancelled",
@@ -462,18 +461,14 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 			),
 		}
 		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
-			c.mu.Unlock()
 			if !c.dispatchReservationFailed(parent, m, err) {
 				return errResponseBacklogFull
 			}
 			return nil
 		}
-		enqueued := c.enqueueTransientLocked(m.RequestID, result)
-		c.mu.Unlock()
-		if !enqueued {
+		if !c.enqueueTransient(m.RequestID, result) {
 			return errResponseBacklogFull
 		}
-		c.signalSend()
 		return nil
 	}
 	if len(c.runs) >= c.maxRunStates() {
@@ -501,11 +496,11 @@ func (c *Client) handleReservationDecision(
 	digest string,
 	decision reservationDecision,
 	cached ActionResultMsg,
-) (handled, enqueued bool) {
+) bool {
 	switch decision {
 	case reservationReplay:
 		c.opts.Logger.Info("cloud.dedup_replay", "request_id", m.RequestID)
-		return true, c.enqueueTransientLocked(m.RequestID, cached)
+		return c.enqueueTransient(m.RequestID, cached)
 	case reservationPending:
 		result := c.refusedDispatchResult(
 			ctx,
@@ -516,17 +511,17 @@ func (c *Client) handleReservationDecision(
 		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
 			c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", m.RequestID, "error", err)
 		}
-		return true, c.enqueueTransientLocked(m.RequestID, result)
+		return c.enqueueTransient(m.RequestID, result)
 	case reservationConflict:
 		c.opts.Logger.Warn("cloud.dispatch_id_conflict", "request_id", m.RequestID)
-		return true, c.enqueueTransientLocked(m.RequestID, c.refusedDispatchResult(
+		return c.enqueueTransient(m.RequestID, c.refusedDispatchResult(
 			ctx,
 			m,
 			"dispatch_id_conflict",
 			"request_id was already bound to different execution facts; action was not executed",
 		))
 	default:
-		return false, false
+		return false
 	}
 }
 
