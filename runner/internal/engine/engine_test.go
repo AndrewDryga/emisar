@@ -800,8 +800,11 @@ func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
 	if terminal == nil || terminal.Execution == nil {
 		t.Fatalf("terminal event %q missing execution metadata", res.EventID)
 	}
-	if terminal.Execution.StdoutBytes <= 512 {
-		t.Fatalf("local raw stdout bytes=%d, want proof that executor truncation metadata remains local", terminal.Execution.StdoutBytes)
+	if terminal.Execution.StdoutBytes != len(res.Stdout) {
+		t.Fatalf("local stdout bytes=%d, want redacted bytes=%d", terminal.Execution.StdoutBytes, len(res.Stdout))
+	}
+	if terminal.Execution.StdoutSHA256 != res.StdoutSHA256 {
+		t.Fatalf("local stdout hash=%q, want redacted digest %q", terminal.Execution.StdoutSHA256, res.StdoutSHA256)
 	}
 }
 

@@ -2,7 +2,6 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,9 +10,8 @@ import (
 )
 
 // This file closes the PHASE-2 "gap" rows for RSEC-012 that concern the Event
-// payload and the on-disk file/dir permissions — the secrets-in-argv trade-off
-// (event.go:54-73) and the "audit log must never become world-readable, even
-// across rotation" invariant (jsonl.go:48-55,229-244).
+// payload and the "audit log must never become world-readable, even across
+// rotation" invariant (jsonl.go:48-55,229-244).
 
 // TestJSONLSink_PermsNeverDowngraded — the directory is created
 // 0o750 and the file 0o600; rotation must reopen the active file at 0o600 and
@@ -115,55 +113,5 @@ func TestEvent_AllTypesSerializeAndVerify(t *testing.T) {
 	wantWire := `"event_type":"action_blocked_by_admission"`
 	if got := string(body); !strings.Contains(got, wantWire) {
 		t.Fatalf("expected an event carrying %s, file:\n%s", wantWire, got)
-	}
-}
-
-// TestEvent_RawSecretInArgvButMaskedCommand —
-// documented trade-off: Execution.Argv keeps the RAW argv (including secret
-// values) for on-host forensics, while ExecutedCommand is the masked
-// human-readable form. Confidentiality of the raw bytes rests only on the
-// 0o600 file perm, not on redaction. This asserts the contract as-is.
-func TestEvent_RawSecretInArgvButMaskedCommand(t *testing.T) {
-	const secret = "emk-supersecrettoken"
-
-	ev := Event{
-		Type:     EventExecutionCompleted,
-		ActionID: "db.connect",
-		Execution: &ExecutionInfo{
-			Binary:          "psql",
-			Argv:            []string{"psql", "--password", secret},
-			ExecutedCommand: "psql --password [REDACTED]",
-		},
-	}
-
-	// Round-trip through the wire form the sink uses.
-	b, err := json.Marshal(ev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got Event
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Execution == nil {
-		t.Fatal("execution dropped on round-trip")
-	}
-
-	// Raw secret IS preserved in Argv (forensics trade-off).
-	foundRaw := false
-	for _, a := range got.Execution.Argv {
-		if a == secret {
-			foundRaw = true
-		}
-	}
-	if !foundRaw {
-		t.Fatalf("Argv must retain the raw secret for forensics, got %v", got.Execution.Argv)
-	}
-	// ...but the human-readable command must NOT contain it.
-	if strings.Contains(got.Execution.ExecutedCommand, secret) {
-		t.Fatalf("ExecutedCommand must be masked, leaked secret: %q", got.Execution.ExecutedCommand)
-	}
-	if got.Execution.ExecutedCommand != "psql --password [REDACTED]" {
-		t.Fatalf("ExecutedCommand = %q, want the masked form", got.Execution.ExecutedCommand)
 	}
 }

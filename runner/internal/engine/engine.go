@@ -389,7 +389,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		plan.CancelGrace = e.CancelGrace
 	}
 
-	combinedRedactor := e.combinedRedactor(act)
+	combinedRedactor := e.combinedRedactor(act, cleanArgs)
 
 	// When the caller wants streaming, redact each chunk before it leaves the
 	// runner and accumulate the redacted bytes locally so the post-run code
@@ -437,8 +437,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	started.ActionID = act.ID
 	started.Metadata = metaFor(act)
 	started.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
-	started.Execution = executionStartInfo(plan, scriptSHA)
-	started.Execution.ExecutedCommand = redactedCommand(plan.Binary, plan.Argv, cleanArgs, act.Args)
+	startArgv, startCommand := redactedInvocation(plan.Binary, plan.Argv, cleanArgs, act.Args)
+	started.Execution = executionStartInfo(plan, scriptSHA, startArgv)
+	started.Execution.ExecutedCommand = startCommand
 	if _, err := e.recordJournal(ctx, started); err != nil {
 		return &Result{
 			Status:   StatusError,
@@ -495,17 +496,17 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		status = StatusFailed
 	}
 
-	// The exact command that ran, with sensitive arg values masked. The
-	// raw argv stays in execution.argv (local audit only); only this
-	// redacted form is forwarded to the cloud.
-	executedCommand := redactedCommand(execRes.Binary, execRes.Argv, cleanArgs, act.Args)
+	// The exact command that ran, with sensitive arg values masked for every
+	// durable or remote representation. Raw argv exists only inside the live
+	// executor result and is discarded after this method returns.
+	auditArgv, executedCommand := redactedInvocation(execRes.Binary, execRes.Argv, cleanArgs, act.Args)
 
 	ev := e.baseEvent(req, evType, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
 	ev.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
-	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan)
+	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan, auditArgv)
 	ev.Execution.ExecutedCommand = executedCommand
 	ev.Redactions = toAuditRedactions(hits)
 	journaled := e.journal(ctx, ev)
@@ -611,9 +612,13 @@ func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 // copy-pasteable, shell-quoted string with any `sensitive: true` arg value
 // masked. It masks secret substrings out of the *actual* argv (rather than
 // re-deriving), so a secret embedded inside a larger flag — e.g.
-// `--url=user:pw@host` — is masked too. The raw argv still lives in
-// execution.argv for local forensics; only this redacted form leaves the host.
+// `--url=user:pw@host` — is masked too.
 func redactedCommand(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) string {
+	_, command := redactedInvocation(binary, argv, cleanArgs, schema)
+	return command
+}
+
+func redactedInvocation(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) ([]string, string) {
 	secrets := sensitiveValues(cleanArgs, schema)
 
 	mask := func(s string) string {
@@ -623,12 +628,14 @@ func redactedCommand(binary string, argv []string, cleanArgs map[string]any, sch
 		return s
 	}
 
+	redactedArgv := make([]string, len(argv))
 	parts := make([]string, 0, len(argv)+1)
 	parts = append(parts, shellQuote(mask(binary)))
-	for _, a := range argv {
-		parts = append(parts, shellQuote(mask(a)))
+	for i, arg := range argv {
+		redactedArgv[i] = mask(arg)
+		parts = append(parts, shellQuote(redactedArgv[i]))
 	}
-	return strings.Join(parts, " ")
+	return redactedArgv, strings.Join(parts, " ")
 }
 
 // sensitiveValues returns the string forms of every arg the schema marks
@@ -718,15 +725,27 @@ func verifyScriptSHA(si packs.ScriptInfo) error {
 	return nil
 }
 
-// combinedRedactor merges the action's redaction rules into the global ones.
-func (e *Engine) combinedRedactor(act *actionspec.Action) *redact.Engine {
-	if len(act.Output.Redact) == 0 {
+// combinedRedactor masks validated sensitive argument values before applying
+// the action and global rules. Sensitive values may be echoed by a child
+// process, so argv masking alone is not a complete confidentiality boundary.
+func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]any) *redact.Engine {
+	localRules := make([]actionspec.RedactionRule, 0, len(act.Output.Redact)+len(act.Args))
+	for index, value := range sensitiveValues(cleanArgs, act.Args) {
+		localRules = append(localRules, actionspec.RedactionRule{
+			Name:        fmt.Sprintf("sensitive-arg-%d", index+1),
+			Type:        "literal",
+			Literal:     value,
+			Replacement: "[REDACTED]",
+		})
+	}
+	localRules = append(localRules, act.Output.Redact...)
+	if len(localRules) == 0 {
 		if e.Redactor == nil {
 			return redact.Empty()
 		}
 		return e.Redactor
 	}
-	rules, err := redact.CompileAll(act.Output.Redact)
+	rules, err := redact.CompileAll(localRules)
 	if err != nil {
 		if e.Redactor == nil {
 			return redact.Empty()
@@ -736,45 +755,48 @@ func (e *Engine) combinedRedactor(act *actionspec.Action) *redact.Engine {
 	return e.Redactor.Extend(rules)
 }
 
-func (e *Engine) executionInfo(r *executor.Result, redactedStdout, redactedStderr, scriptSHA string, plan executor.Plan) *audit.ExecutionInfo {
+func (e *Engine) executionInfo(r *executor.Result, redactedStdout, redactedStderr, scriptSHA string, plan executor.Plan, auditArgv []string) *audit.ExecutionInfo {
 	return &audit.ExecutionInfo{
 		Binary:        r.Binary,
-		Argv:          r.Argv,
-		ArgvSHA256:    r.ArgvSHA256,
+		Argv:          append([]string(nil), auditArgv...),
+		ArgvSHA256:    argvSHA256(r.Binary, auditArgv),
 		CWD:           r.CWD,
 		EnvKeys:       r.EnvKeys,
 		Timeout:       plan.Limits.Timeout.String(),
 		ExitCode:      r.ExitCode,
 		DurationMS:    r.DurationMS,
 		TimedOut:      r.TimedOut,
-		StdoutSHA256:  r.StdoutSHA256,
-		StderrSHA256:  r.StderrSHA256,
-		StdoutBytes:   r.StdoutBytes,
-		StderrBytes:   r.StderrBytes,
+		StdoutSHA256:  hashOutput(redactedStdout),
+		StderrSHA256:  hashOutput(redactedStderr),
+		StdoutBytes:   len(redactedStdout),
+		StderrBytes:   len(redactedStderr),
 		StdoutPreview: truncatePreview(redactedStdout, e.PreviewBytes),
 		StderrPreview: truncatePreview(redactedStderr, e.PreviewBytes),
 		ScriptSHA256:  scriptSHA,
 	}
 }
 
-func executionStartInfo(plan executor.Plan, scriptSHA string) *audit.ExecutionInfo {
+func executionStartInfo(plan executor.Plan, scriptSHA string, auditArgv []string) *audit.ExecutionInfo {
 	envKeys := make([]string, 0, len(plan.Env))
 	for key := range plan.Env {
 		envKeys = append(envKeys, key)
 	}
 	sort.Strings(envKeys)
-	argv := append([]string(nil), plan.Argv...)
-	joined := strings.Join(append([]string{plan.Binary}, argv...), "\x00")
-	argvHash := sha256.Sum256([]byte(joined))
 	return &audit.ExecutionInfo{
 		Binary:       plan.Binary,
-		Argv:         argv,
-		ArgvSHA256:   hex.EncodeToString(argvHash[:]),
+		Argv:         append([]string(nil), auditArgv...),
+		ArgvSHA256:   argvSHA256(plan.Binary, auditArgv),
 		CWD:          plan.CWD,
 		EnvKeys:      envKeys,
 		Timeout:      plan.Limits.Timeout.String(),
 		ScriptSHA256: scriptSHA,
 	}
+}
+
+func argvSHA256(binary string, argv []string) string {
+	joined := strings.Join(append([]string{binary}, argv...), "\x00")
+	digest := sha256.Sum256([]byte(joined))
+	return hex.EncodeToString(digest[:])
 }
 
 // clampLimits resolves the actual per-call limits. For each field the

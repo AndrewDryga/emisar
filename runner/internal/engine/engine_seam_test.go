@@ -76,6 +76,95 @@ func TestEngine_ExecutionStartPrecedesTerminalEvent(t *testing.T) {
 	}
 }
 
+const sensitiveAuditAction = `
+schema_version: 1
+id: t.sensitive_audit
+title: Sensitive audit
+kind: exec
+risk: low
+description: test
+side_effects: [none]
+args:
+  - name: password
+    type: string
+    required: true
+    sensitive: true
+execution:
+  command:
+    binary: echo
+    argv: ["{{ args.password }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+func TestEngine_SensitiveArgsNeverReachDurableAudit(t *testing.T) {
+	e, journal, root := setupEngineExtra(t, map[string]string{
+		"sensitive_audit.yaml": sensitiveAuditAction,
+	})
+	defer journal.Close()
+
+	const secret = "overlap-secret-123"
+	var progress strings.Builder
+	result, err := e.Run(context.Background(), Request{
+		ActionID: "t.sensitive_audit",
+		Args:     map[string]any{"password": secret},
+		Reason:   "verify audit confidentiality",
+		OnProgress: func(stream executor.Stream, chunk []byte) {
+			if stream == executor.StreamStdout {
+				progress.Write(chunk)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%q", result.Status, result.Reason)
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), secret) {
+		t.Fatalf("audit journal leaked sensitive argument:\n%s", body)
+	}
+	if strings.Contains(result.Stdout, secret) || !strings.Contains(result.Stdout, "[REDACTED]") {
+		t.Fatalf("result stdout was not redacted: %q", result.Stdout)
+	}
+	if progress.String() != result.Stdout {
+		t.Fatalf("progress=%q, want exact redacted result stdout %q", progress.String(), result.Stdout)
+	}
+
+	wantArgv := []string{"[REDACTED]"}
+	wantHash := argvSHA256("echo", wantArgv)
+	events := readJournalEvents(t, root)
+	if len(events) != 2 {
+		t.Fatalf("events=%d, want start and terminal audit records", len(events))
+	}
+	for _, event := range events {
+		if event.Execution == nil {
+			t.Fatalf("%s has no execution audit", event.Type)
+		}
+		if got := strings.Join(event.Execution.Argv, "\x00"); got != wantArgv[0] {
+			t.Errorf("%s argv=%q, want redacted argv", event.Type, event.Execution.Argv)
+		}
+		if event.Execution.ArgvSHA256 != wantHash {
+			t.Errorf("%s argv hash=%q, want redacted hash %q", event.Type, event.Execution.ArgvSHA256, wantHash)
+		}
+		if event.Type != audit.EventExecutionStarted &&
+			event.Execution.StdoutSHA256 != hashOutput(result.Stdout) {
+			t.Errorf("%s stdout hash covers pre-redaction bytes", event.Type)
+		}
+		if event.Execution.ExecutedCommand != "echo '[REDACTED]'" {
+			t.Errorf("%s command=%q", event.Type, event.Execution.ExecutedCommand)
+		}
+	}
+}
+
 func TestEngine_AuditStartFailurePreventsExecution(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "must-not-exist")
 	action := fmt.Sprintf(`

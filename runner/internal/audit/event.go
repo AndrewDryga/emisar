@@ -49,8 +49,8 @@ type MetadataInfo struct {
 }
 
 // ExecutionInfo captures everything the runner knows about the process
-// invocation. Stdout/stderr previews are bounded; the full hashes are
-// recorded for after-the-fact integrity checks.
+// invocation. Stdout/stderr previews are bounded; hashes and byte counts cover
+// the complete redacted output, never the pre-redaction secret-bearing bytes.
 type ExecutionInfo struct {
 	Binary        string   `json:"binary,omitempty"`
 	Argv          []string `json:"argv,omitempty"`
@@ -69,8 +69,8 @@ type ExecutionInfo struct {
 	StderrBytes   int      `json:"stderr_bytes"`
 	ScriptSHA256  string   `json:"script_sha256,omitempty"`
 	// ExecutedCommand is argv rendered as a shell-quoted string with
-	// sensitive arg values masked — the human-readable redacted record.
-	// The raw bytes stay in Argv above for local forensics.
+	// sensitive arg values masked. Argv and its digest use the same redacted
+	// values; raw sensitive arguments are never durable audit data.
 	ExecutedCommand string `json:"executed_command,omitempty"`
 }
 
