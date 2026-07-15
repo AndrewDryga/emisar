@@ -113,7 +113,7 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	tctx, cancel := context.WithTimeout(ctx, p.Limits.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(tctx, p.Binary, p.Argv...)
+	cmd := exec.Command(p.Binary, p.Argv...)
 	cmd.Dir = p.CWD
 	cmd.Env = e.buildEnv(p.Env)
 	applyProcAttr(cmd)
@@ -123,32 +123,19 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		}
 	}
 
-	// Graceful cancellation: SIGTERM the whole process group first; if
-	// the process is still alive after CancelGrace, exec.Cmd's WaitDelay
-	// machinery escalates to the default kill (SIGKILL via os.Process.Kill).
+	// Graceful cancellation: SIGTERM the whole process group first, then
+	// SIGKILL that same group after CancelGrace. WaitDelay separately bounds
+	// descendants that outlive the leader while retaining its output pipes.
 	grace := p.CancelGrace
 	if grace <= 0 {
 		grace = DefaultCancelGrace
 	}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		// killGroup signals the entire process group on Linux (catches
-		// grandchildren spawned by wrapper scripts). Other platforms
-		// terminate only the direct child with their available primitive.
-		return killGroup(cmd.Process.Pid, syscall.SIGTERM)
-	}
 	cmd.WaitDelay = grace
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("executor: stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("executor: stderr pipe: %w", err)
-	}
+	stdoutPipe, stdoutRelay := io.Pipe()
+	stderrPipe, stderrRelay := io.Pipe()
+	cmd.Stdout = stdoutRelay
+	cmd.Stderr = stderrRelay
 
 	res := &Result{
 		Binary:       p.Binary,
@@ -160,6 +147,10 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
+		_ = stdoutRelay.Close()
+		_ = stderrRelay.Close()
+		_ = stdoutPipe.Close()
+		_ = stderrPipe.Close()
 		res.Status = StatusFailed
 		res.ExitCode = -1
 		res.StartError = err.Error()
@@ -167,6 +158,13 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		res.ArgvSHA256 = sha256Hex(strings.Join(append([]string{p.Binary}, p.Argv...), "\x00"))
 		return res, nil
 	}
+	lifecycle := &processLifecycle{pid: cmd.Process.Pid}
+	processFinished := make(chan struct{})
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		lifecycle.watch(tctx, grace, processFinished)
+	}()
 
 	var (
 		wg                   sync.WaitGroup
@@ -176,20 +174,27 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		defer stdoutPipe.Close()
 		outResult, outErr = streamPipe(stdoutPipe, p.Limits.MaxStdoutBytes, StreamStdout, p.OnChunk)
 	}()
 	go func() {
 		defer wg.Done()
+		defer stderrPipe.Close()
 		errResult, errErr = streamPipe(stderrPipe, p.Limits.MaxStderrBytes, StreamStderr, p.OnChunk)
 	}()
 
-	// Readers must finish BEFORE cmd.Wait — the Go runtime closes the
-	// pipe FDs from Wait, and any Read still in flight on those FDs
-	// returns "file already closed". The process exiting closes the
-	// write side of the pipes (so readers naturally hit EOF) BEFORE
-	// Wait observes the exit, so this ordering doesn't deadlock.
-	wg.Wait()
 	runErr := cmd.Wait()
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		// The leader exited but a descendant retained an output descriptor.
+		// WaitDelay closed the Cmd-owned pipe; remove the surviving group too.
+		lifecycle.signal(syscall.SIGKILL)
+	}
+	lifecycle.finish()
+	close(processFinished)
+	<-watcherDone
+	_ = stdoutRelay.Close()
+	_ = stderrRelay.Close()
+	wg.Wait()
 	elapsed := time.Since(start)
 
 	timedOut := errors.Is(tctx.Err(), context.DeadlineExceeded)
