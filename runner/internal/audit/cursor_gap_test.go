@@ -10,7 +10,7 @@ import (
 )
 
 // This file closes the PHASE-2 "gap" rows for RSEC-014 (audit ack cursor):
-// idempotent MarkAcked, atomic write-then-rename, disk-failure-advances-memory,
+// idempotent MarkAcked, atomic write-then-rename, disk-failure retry,
 // corrupt-file parse error, max<=0 default, perms, and sorted snapshot
 // (cursor.go).
 
@@ -66,12 +66,11 @@ func TestCursor_AtomicWriteThenRename(t *testing.T) {
 	}
 }
 
-// TestCursor_DiskFailureAdvancesMemory — when persist fails,
-// MarkAcked returns the error BUT the in-memory state has already advanced, so
-// the in-memory record still contains the id. The cursor opens cleanly; the write is then
+// TestCursor_DiskFailureRemainsRetryable — when persist fails,
+// MarkAcked returns the error and leaves memory unchanged. The cursor opens cleanly; the write is then
 // failed by stripping write permission from the parent dir so the .tmp staging
 // write is denied.
-func TestCursor_DiskFailureAdvancesMemory(t *testing.T) {
+func TestCursor_DiskFailureRemainsRetryable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("directory write-permission bits don't gate writes on windows")
 	}
@@ -90,15 +89,23 @@ func TestCursor_DiskFailureAdvancesMemory(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // let t.TempDir clean up
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
 	err = c.MarkAcked("evt_1")
 	if err == nil {
 		t.Fatal("expected persist to fail when the directory is not writable")
 	}
-	// In-memory state advanced despite the disk error.
+	if cursorContains(c, "evt_1") {
+		t.Fatal("failed persistence must not publish the acknowledgement in memory")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MarkAcked("evt_1"); err != nil {
+		t.Fatalf("retry after storage recovery: %v", err)
+	}
 	if !cursorContains(c, "evt_1") {
-		t.Fatal("in-memory ack should hold even when persist failed")
+		t.Fatal("successful retry did not publish the acknowledgement")
 	}
 }
 

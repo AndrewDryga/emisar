@@ -72,23 +72,34 @@ func OpenCursor(path string, max int) (*Cursor, error) {
 	return c, nil
 }
 
-// MarkAcked records that eventID has been acked. Persists atomically.
-// Returns the underlying write error if the disk update fails — the
-// in-memory state is still updated so a later successful persistence includes
-// the acknowledgement even if this write is unavailable.
+// MarkAcked records that eventID has been acked. Persistence precedes the
+// in-memory update so a failed write leaves the acknowledgement retryable.
 func (c *Cursor) MarkAcked(eventID string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if _, exists := c.acked[eventID]; exists {
-		c.mu.Unlock()
 		return nil
 	}
-	c.acked[eventID] = struct{}{}
-	c.order = append(c.order, eventID)
-	c.trim()
-	c.updated = time.Now().UTC()
-	state := c.snapshot()
-	c.mu.Unlock()
-	return c.persist(state)
+
+	order := append(append([]string(nil), c.order...), eventID)
+	if len(order) > c.max {
+		order = order[len(order)-c.max:]
+	}
+	updated := time.Now().UTC()
+	state := cursorState{AckedEventIDs: append([]string(nil), order...), UpdatedAt: updated}
+	sort.Strings(state.AckedEventIDs)
+	if err := c.persist(state); err != nil {
+		return err
+	}
+
+	acked := make(map[string]struct{}, len(order))
+	for _, id := range order {
+		acked[id] = struct{}{}
+	}
+	c.acked = acked
+	c.order = order
+	c.updated = updated
+	return nil
 }
 
 func (c *Cursor) trim() {
@@ -97,15 +108,6 @@ func (c *Cursor) trim() {
 		c.order = c.order[1:]
 		delete(c.acked, oldest)
 	}
-}
-
-func (c *Cursor) snapshot() cursorState {
-	out := cursorState{
-		AckedEventIDs: append([]string(nil), c.order...),
-		UpdatedAt:     c.updated,
-	}
-	sort.Strings(out.AckedEventIDs)
-	return out
 }
 
 func (c *Cursor) persist(state cursorState) error {
