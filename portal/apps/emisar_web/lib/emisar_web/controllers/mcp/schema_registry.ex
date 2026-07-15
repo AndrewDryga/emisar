@@ -4,6 +4,9 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
   @descriptor_fields ~w(annotations description inputSchema outputSchema title)
 
   @spec compile!(Path.t(), [String.t()]) :: [map()]
+  # The production caller passes the compile-known @schema_path derived from
+  # __DIR__; no request input reaches this file read.
+  # sobelow_skip ["Traversal.FileModule"]
   def compile!(path, expected_names) do
     registry = path |> File.read!() |> Jason.decode!()
 
