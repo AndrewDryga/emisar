@@ -413,6 +413,12 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
     -e EMISAR_CLIENT=grok \
     -- /usr/local/bin/emisar-mcp</pre>
             </div>
+            <p class="mt-3 text-sm text-zinc-400">
+              To stop Grok's per-tool prompts for emisar only, add
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
+              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
+              in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.grok/config.toml</code>.
+            </p>
           </section>
         </div>
 

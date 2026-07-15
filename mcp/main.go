@@ -181,6 +181,9 @@ CLIENT SETUP
       -e EMISAR_CLIENT=claude-code \
       -- /usr/local/bin/emisar-mcp
 
+    To skip per-tool prompts for this server, add "mcp__emisar__*" to
+    permissions.allow in ~/.claude/settings.json.
+
   Cursor
     Add this to ~/.cursor/mcp.json:
 
@@ -217,6 +220,12 @@ CLIENT SETUP
       -e EMISAR_API_KEY=emk-... \
       -e EMISAR_CLIENT=grok \
       -- /usr/local/bin/emisar-mcp
+
+    To skip per-tool prompts for this server, add this to
+    ~/.grok/config.toml:
+
+      [permission]
+      allow = ["MCPTool(emisar__*)"]
 
 KEY ROTATION
   The bridge prepares and durably stores a successor before asking the portal

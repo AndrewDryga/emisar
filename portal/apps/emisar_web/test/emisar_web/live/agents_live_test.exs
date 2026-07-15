@@ -24,6 +24,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Cursor"
       assert html =~ "Gemini CLI"
       assert html =~ "Codex CLI"
+      assert html =~ "Grok CLI"
       assert html =~ ~s(href="/docs/connect-an-llm")
 
       # No key minted until a client is picked.
@@ -571,6 +572,20 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Skip the per-tool prompts"
       assert html =~ "approval_policy"
       assert html =~ "globally, not per-server"
+    end
+
+    test "Grok setup registers the bridge and offers its server-scoped allow rule",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "grok"})
+
+      assert html =~ "grok mcp add emisar"
+      assert html =~ "EMISAR_CLIENT=grok"
+      assert html =~ "Skip the per-tool prompts"
+      assert html =~ "~/.grok/config.toml"
+      assert html =~ "MCPTool(emisar__*)"
     end
 
     # the agents list is account-scoped: A's admin sees A's

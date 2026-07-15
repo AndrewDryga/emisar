@@ -233,6 +233,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "never bypasses emisar"
     # The verified Claude Code rule, server-rendered for the SEO surface.
     assert html =~ "mcp__emisar__*"
+    assert html =~ "MCPTool(emisar__*)"
   end
 
   test "docs states the supported deployment boundary", %{conn: conn} do
@@ -661,6 +662,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "grok mcp add emisar"
       assert html =~ "EMISAR_CLIENT=claude-code"
       assert html =~ "EMISAR_CLIENT=grok"
+      assert html =~ "MCPTool(emisar__*)"
       assert html =~ ~s("EMISAR_CLIENT": "claude-desktop")
       assert html =~ ~s("EMISAR_CLIENT": "cursor")
       assert html =~ ~s(EMISAR_CLIENT = "codex")

@@ -474,7 +474,7 @@ defmodule EmisarWeb.AgentsLive do
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor gemini codex custom)
+  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor gemini codex grok custom)
   @client_labels %{
     "claude_web" => "Claude.ai",
     "chatgpt" => "ChatGPT",
@@ -483,6 +483,7 @@ defmodule EmisarWeb.AgentsLive do
     "cursor" => "Cursor",
     "gemini" => "Gemini CLI",
     "codex" => "Codex CLI",
+    "grok" => "Grok CLI",
     "custom" => "Custom"
   }
 
@@ -623,6 +624,28 @@ defmodule EmisarWeb.AgentsLive do
         pointer:
           "Codex controls this globally, not per-server: set approval_policy in ~/.codex/config.toml (e.g. \"on-request\"/\"never\"). There's no per-MCP-server allowlist key.",
         doc_url: "https://developers.openai.com/codex/config-basic"
+      }
+    }
+  end
+
+  defp client_config("grok", url, key) do
+    %{
+      kind: :local,
+      location: nil,
+      body: """
+      grok mcp add emisar \\
+          -e EMISAR_URL=#{url} \\
+          -e EMISAR_API_KEY=#{key} \\
+          -e EMISAR_CLIENT=grok \\
+          -- /usr/local/bin/emisar-mcp\
+      """,
+      # Grok's native permission rules accept a server-scoped MCPTool wildcard.
+      # This drops only Grok's prompt; emisar policy and approvals still apply.
+      auto_permit: %{
+        location: "~/.grok/config.toml — add to the existing [permission] section",
+        body: """
+        allow = ["MCPTool(emisar__*)"]\
+        """
       }
     }
   end

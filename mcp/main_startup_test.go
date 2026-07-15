@@ -179,6 +179,8 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		"codex mcp add emisar",
 		"gemini mcp add --scope user --trust",
 		"grok mcp add emisar",
+		`"mcp__emisar__*"`,
+		`"MCPTool(emisar__*)"`,
 		`"EMISAR_CLIENT": "claude-desktop"`,
 		"EMISAR_CLIENT=claude-code",
 		`"EMISAR_CLIENT": "cursor"`,
