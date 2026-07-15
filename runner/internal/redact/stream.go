@@ -6,11 +6,9 @@ import (
 )
 
 // defaultStreamHold is how many trailing raw bytes a StreamRedactor keeps
-// buffered before committing earlier bytes. It bounds the longest multi-line
-// secret that streaming redaction is guaranteed to catch: any rule match no
-// longer than this is always fully present in the buffer before the lines it
-// spans become eligible to emit. 16 KiB comfortably covers PEM/PGP private-key
-// blocks (a few KiB even at RSA-4096) with room to spare.
+// buffered before committing earlier bytes. It bounds generic multi-line regex
+// matches. Built-in private-key blocks use a delimiter state machine instead,
+// so their bodies remain masked regardless of size or a missing END marker.
 const defaultStreamHold = 16 << 10
 
 // StreamRedactor applies an Engine's rules to output delivered in arbitrary
@@ -26,10 +24,9 @@ const defaultStreamHold = 16 << 10
 //
 // StreamRedactor holds back a bounded tail and only commits a prefix once
 // redacting that prefix standalone yields a stable prefix of redacting the
-// whole buffer — so a multi-line match is never split across the emit
-// boundary. Matches longer than the hold window can still leak on the live
-// stream; that bound is deliberate (unbounded buffering is the only
-// alternative) and sized so realistic key material is always covered.
+// whole buffer. Generic matches longer than the hold window can still span the
+// emit boundary. The built-in PEM and PGP private-key rules are handled before
+// this buffer and mask through their closing delimiter or EOF.
 //
 // A StreamRedactor is not safe for concurrent use; callers that redact stdout
 // and stderr from separate goroutines must use one instance per stream (or
@@ -39,12 +36,13 @@ type StreamRedactor struct {
 	pending []byte
 	hold    int
 	hits    []Hit
+	keys    privateKeyStreamMasker
 }
 
 // StreamRedactor returns a stateful redactor over e's rules. Feed it raw
 // chunks with Write and drain the tail with Flush at end of stream.
 func (e *Engine) StreamRedactor() *StreamRedactor {
-	return &StreamRedactor{eng: e, hold: defaultStreamHold}
+	return &StreamRedactor{eng: e, hold: defaultStreamHold, keys: newPrivateKeyStreamMasker(e)}
 }
 
 // Write feeds the next raw chunk and returns the bytes that are now safe to
@@ -52,14 +50,17 @@ func (e *Engine) StreamRedactor() *StreamRedactor {
 // multi-line match are retained until a later Write or Flush. The returned
 // slice is freshly allocated and owned by the caller.
 func (s *StreamRedactor) Write(p []byte) []byte {
-	s.pending = append(s.pending, p...)
+	s.pending = append(s.pending, s.keys.Write(p)...)
 	return s.commit(false)
 }
 
 // Flush redacts and returns everything still buffered. Call exactly once at
 // end of stream; do not Write afterwards.
 func (s *StreamRedactor) Flush() []byte {
-	return s.commit(true)
+	s.pending = append(s.pending, s.keys.Flush()...)
+	out := s.commit(true)
+	s.hits = MergeHits(s.hits, s.keys.Hits())
+	return out
 }
 
 // Hits reports the cumulative per-rule hit counts across every committed

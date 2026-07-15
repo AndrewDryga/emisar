@@ -79,45 +79,68 @@ func TestStreamRedactor_CutsOnlyOnNewlineBoundary(t *testing.T) {
 	}
 }
 
-// accepted limitation: a single match longer than the 16 KiB
-// hold can leak onto the live stream. The redactor commits the safe prefix
-// before the match closes, so the opening bytes of an oversized PEM block are
-// emitted unredacted. This is deliberate (unbounded buffering is the only
-// alternative) and sized so realistic key material is always covered; this test
-// pins the bound as intended behavior, not a bug.
-func TestStreamRedactor_OversizedMatchLeaksOnLiveStream(t *testing.T) {
+// Private-key delimiters are handled independently of the generic regex hold
+// window, so even an unusually large key body is suppressed incrementally.
+func TestStreamRedactor_OversizedPrivateKeyNeverLeaks(t *testing.T) {
 	eng := defaultEngine(t)
-
-	// A PEM block whose body alone exceeds the production 16 KiB hold.
 	body := strings.Repeat("LEAKYKEYBODY0123456789ABCDEF\n", 1024) // ~28 KiB > 16 KiB hold
-	pem := "-----BEGIN RSA PRIVATE KEY-----\n" + body + "-----END RSA PRIVATE KEY-----\n"
-	if len(pem) <= defaultStreamHold {
-		t.Fatalf("test PEM (%d B) must exceed the default hold (%d B) to exercise the bound", len(pem), defaultStreamHold)
+	for _, tc := range []struct {
+		name  string
+		begin string
+		end   string
+	}{
+		{name: "pem", begin: "-----BEGIN RSA PRIVATE KEY-----\n", end: "-----END RSA PRIVATE KEY-----\n"},
+		{name: "pgp", begin: "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", end: "-----END PGP PRIVATE KEY BLOCK-----\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "before\n" + tc.begin + body + tc.end + "after\n"
+			if len(input) <= defaultStreamHold {
+				t.Fatalf("test block (%d B) must exceed the default hold (%d B)", len(input), defaultStreamHold)
+			}
+			out := streamAll(eng.StreamRedactor(), input, 4096)
+			if strings.Contains(out, "LEAKYKEYBODY") {
+				t.Fatalf("oversized private-key body leaked: %q", out)
+			}
+			if !strings.Contains(out, "before\n[REDACTED_PRIVATE_KEY]\nafter") {
+				t.Fatalf("unexpected redacted output: %q", out)
+			}
+		})
 	}
+}
 
-	sr := eng.StreamRedactor() // production-sized hold
+// Executor output limits can cut a key block before its END marker. Flush must
+// keep suppressing that open block rather than release the buffered body.
+func TestStreamRedactor_UnterminatedPrivateKeyMasksThroughEOF(t *testing.T) {
+	eng := defaultEngine(t)
+	sr := eng.StreamRedactor()
+	input := "before\n-----BEGIN RSA PRIVATE KEY-----\n" +
+		strings.Repeat("TRUNCATEDKEYBODY0123456789\n", 2048)
 	var emitted strings.Builder
-	b := []byte(pem)
-	for i := 0; i < len(b); i += 4096 {
-		end := i + 4096
-		if end > len(b) {
-			end = len(b)
+	for i := 0; i < len(input); i += 1024 {
+		end := i + 1024
+		if end > len(input) {
+			end = len(input)
 		}
-		emitted.WriteString(string(sr.Write(b[i:end])))
+		emitted.Write(sr.Write([]byte(input[i:end])))
 	}
-	preFlush := emitted.String()
-
-	// The documented limitation: opening key bytes escape before the block
-	// closes, because the match is longer than the hold window.
-	if !strings.Contains(preFlush, "LEAKYKEYBODY") {
-		t.Fatalf("expected the oversized-match bound: key body should leak on the live stream before close, but nothing leaked")
+	emitted.Write(sr.Flush())
+	out := emitted.String()
+	if strings.Contains(out, "TRUNCATEDKEYBODY") {
+		t.Fatalf("unterminated private-key body leaked at EOF: %q", out)
 	}
+	if out != "before\n[REDACTED_PRIVATE_KEY]" {
+		t.Fatalf("unexpected redacted output: %q", out)
+	}
+	if len(sr.keys.pending) > len("-----END RSA PRIVATE KEY-----") {
+		t.Fatalf("delimiter scanner retained %d bytes of a truncated body", len(sr.keys.pending))
+	}
+}
 
-	// Whole-buffer redaction (no streaming bound) still fully masks it — proving
-	// the leak is a property of the bounded *stream*, not of the rule set.
-	whole, _ := eng.Apply(pem)
-	if strings.Contains(whole, "LEAKYKEYBODY") {
-		t.Fatalf("whole-buffer Apply should fully mask the PEM regardless of size: %q", whole[:64])
+func TestStreamRedactor_NonPrivatePEMBlockPassesThrough(t *testing.T) {
+	eng := defaultEngine(t)
+	certificate := "-----BEGIN CERTIFICATE-----\nPUBLICBODY\n-----END CERTIFICATE-----\n"
+	if got := streamAll(eng.StreamRedactor(), certificate, 1); got != certificate {
+		t.Fatalf("non-private PEM block changed: %q", got)
 	}
 }
 

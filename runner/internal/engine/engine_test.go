@@ -642,6 +642,83 @@ func TestEngine_StreamingRedactsMultiLineSecret(t *testing.T) {
 	}
 }
 
+const truncatedPrivateKeyAction = `
+schema_version: 1
+id: t.truncated_private_key
+title: Emit a private key beyond the output limit
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        printf 'before\n-----BEGIN RSA PRIVATE KEY-----\n'
+        i=0
+        while [ "$i" -lt 200 ]; do
+          printf 'TRUNCATEDKEYBODY0123456789\n'
+          i=$((i + 1))
+        done
+        printf '%s\n' '-----END RSA PRIVATE KEY-----'
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 512
+  max_stderr_bytes: 1024
+`
+
+// The executor truncates raw output before the engine flushes its streaming
+// redactor. A complete BEGIN marker followed by a body but no delivered END
+// marker must remain masked in both progress and the durable result.
+func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"truncated_private_key.yaml": truncatedPrivateKeyAction})
+	defer j.Close()
+	rules, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Redactor = redact.New(rules)
+
+	var (
+		mu       sync.Mutex
+		streamed strings.Builder
+	)
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.truncated_private_key",
+		Reason:   "truncation redaction probe",
+		OnProgress: func(_ executor.Stream, b []byte) {
+			mu.Lock()
+			defer mu.Unlock()
+			streamed.Write(b)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%q", res.Status, res.Reason)
+	}
+	mu.Lock()
+	stream := streamed.String()
+	mu.Unlock()
+
+	for label, body := range map[string]string{"streamed chunks": stream, "result stdout": res.Stdout} {
+		if strings.Contains(body, "TRUNCATEDKEYBODY") {
+			t.Fatalf("truncated private key leaked in %s: %q", label, body)
+		}
+		if body != "before\n[REDACTED_PRIVATE_KEY]" {
+			t.Fatalf("unexpected %s: %q", label, body)
+		}
+	}
+	if res.StdoutBytes <= 512 {
+		t.Fatalf("raw stdout bytes=%d, want proof that executor truncation occurred", res.StdoutBytes)
+	}
+}
+
 const scriptRunAction = `
 schema_version: 1
 id: t.run

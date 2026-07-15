@@ -11,6 +11,11 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
+const (
+	privateKeyBlockPattern    = `-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`
+	pgpPrivateKeyBlockPattern = `-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----`
+)
+
 // Rule is a compiled redaction directive.
 type Rule struct {
 	Name        string
@@ -156,13 +161,13 @@ func DefaultRules() []actionspec.RedactionRule {
 		{
 			Name:        "private-key-block",
 			Type:        "regex",
-			Pattern:     `-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`,
+			Pattern:     privateKeyBlockPattern,
 			Replacement: "[REDACTED_PRIVATE_KEY]",
 		},
 		{
 			Name:        "pgp-private-key-block",
 			Type:        "regex",
-			Pattern:     `-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----`,
+			Pattern:     pgpPrivateKeyBlockPattern,
 			Replacement: "[REDACTED_PRIVATE_KEY]",
 		},
 		{
