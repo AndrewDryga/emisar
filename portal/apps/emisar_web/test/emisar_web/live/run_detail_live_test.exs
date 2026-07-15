@@ -47,6 +47,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # (transitions + grant use + cancel), not a target filter.
     assert html =~ "View activity"
     assert html =~ ~s(request_id=#{run.request_id})
+    refute html =~ "target_kind=action_run"
+    refute html =~ "target_id=#{run.id}"
   end
 
   test "the policy panel carries the WHY, not a verdict chip (told once by status)",

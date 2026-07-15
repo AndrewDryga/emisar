@@ -169,9 +169,9 @@ defmodule EmisarWeb.RunDetailLive do
         </.button>
         <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
              groups the run's transitions, its grant use, and its cancel request
-             (run events target the RUNNER, so the old target filter would only
-             find this run's pre-rename rows). Subject-scoped by the audit page
-             itself, so the link just pre-filters — it can't widen access. --%>
+             (run events target the RUNNER, so a target filter would miss them).
+             Subject-scoped by the audit page itself, so the link just
+             pre-filters — it can't widen access. --%>
         <%!-- A BUTTON like its neighbors — a bare text link sandwiched between
              the Copy-id and Cancel buttons read as a third grammar in one row. --%>
         <.button
@@ -558,10 +558,7 @@ defmodule EmisarWeb.RunDetailLive do
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"
   defp matched_rules_label(rules) when is_list(rules), do: Enum.join(rules, ", ")
-  # Legacy runs written before request_id stamping fall back to the old
-  # target-filter shape (which is exactly what their rows carry).
-  defp run_trail_query(%{request_id: rid}) when is_binary(rid) and rid != "",
-    do: [request_id: rid]
 
-  defp run_trail_query(run), do: [target_kind: "action_run", target_id: run.id]
+  defp run_trail_query(%Runs.ActionRun{request_id: request_id}),
+    do: [request_id: request_id]
 end
