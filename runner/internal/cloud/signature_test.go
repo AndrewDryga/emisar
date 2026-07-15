@@ -121,11 +121,15 @@ func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.Priv
 }
 
 func sendRunActionWithAttestation(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any, att *Attestation) {
+	sendRunActionWithAttestationAndOpts(t, c, cli, requestID, actionID, args, nil, att)
+}
+
+func sendRunActionWithAttestationAndOpts(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any, opts *RunOpts, att *Attestation) {
 	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 		ActionID: actionID, ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
-		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
+		Opts: opts, Reason: att.Reason, OperationID: att.OperationID, Attestation: att,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +160,27 @@ func TestClient_SignatureGate_PassesWhenSigned(t *testing.T) {
 	res := waitForResult(t, conn, "req_signed", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
+	}
+}
+
+func TestClient_SignatureGate_RefusesUnsignedExecutionOverrides(t *testing.T) {
+	conn, cli, priv := runEnforcingClient(t)
+	args := map[string]any{"msg": "ok"}
+	att := attestationFor(t, cli, priv, "t.echo", args)
+
+	sendRunActionWithAttestationAndOpts(t, conn, cli, "req_opts", "t.echo", args, &RunOpts{
+		MaxStdoutBytes: 1,
+	}, att)
+	res := waitForResult(t, conn, "req_opts", 3*time.Second)
+	if res["status"] != "signature_invalid" || res["reason"] != "intent_mismatch" {
+		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
+	}
+
+	// Rejecting unsigned execution facts must not consume the valid nonce.
+	sendRunActionWithAttestationAndOpts(t, conn, cli, "req_empty_opts", "t.echo", args, &RunOpts{}, att)
+	res = waitForResult(t, conn, "req_empty_opts", 3*time.Second)
+	if res["status"] != "success" {
+		t.Fatalf("empty opts retry: status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
 	}
 }
 

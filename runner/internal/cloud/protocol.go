@@ -431,6 +431,10 @@ type RunOpts struct {
 	MaxStderrBytes int                 `json:"max_stderr_bytes,omitempty"`
 }
 
+func (o *RunOpts) hasOverrides() bool {
+	return o != nil && (o.Timeout != 0 || o.MaxStdoutBytes != 0 || o.MaxStderrBytes != 0)
+}
+
 // CancelMsg asks the runner to terminate a running action. The runner
 // SIGTERMs, then SIGKILLs after a grace window; a final ActionResultMsg
 // still goes out with status="cancelled".

@@ -110,7 +110,6 @@ that runner/action from execution.
   "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
   "args": {"host": 9007199254740993},
   "reason": "Confirm ring health before rerolling the canary.",
-  "opts": {"timeout": "60s"},
   "attestation": {
     "version": "emisar-attestation-v4",
     "tool": "run_action",

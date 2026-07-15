@@ -768,6 +768,12 @@ func (c *Client) passesSignatureGate(ctx context.Context, s *runState, m RunActi
 	if m.Attestation != nil {
 		att = m.Attestation
 	}
+	if att != nil && m.Opts.hasOverrides() {
+		return c.refuseSignature(ctx, s, m, signing.Decision{
+			Code:   "intent_mismatch",
+			Detail: "signed MCP dispatches cannot override action execution limits",
+		})
+	}
 
 	dec := verifier.Check(signing.Dispatch{
 		ActionID: m.ActionID, PackRef: m.PackRef, ArgsRaw: m.ArgsRaw,
@@ -776,7 +782,10 @@ func (c *Client) passesSignatureGate(ctx context.Context, s *runState, m RunActi
 	if dec.Allowed {
 		return true
 	}
+	return c.refuseSignature(ctx, s, m, dec)
+}
 
+func (c *Client) refuseSignature(ctx context.Context, s *runState, m RunActionMsg, dec signing.Decision) bool {
 	c.opts.Logger.Warn("cloud.signature_refused",
 		"request_id", m.RequestID,
 		"action_id", m.ActionID,
