@@ -29,7 +29,16 @@ defmodule Emisar.Fixtures.ApiKeys do
       |> Repo.fetch!(Account.Query)
 
     {:ok, user} = Users.fetch_user_by_id(user_id)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+    membership =
+      Fixtures.Memberships.fetch_membership(account.id, user.id) ||
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+    subject = Fixtures.Subjects.membership_subject(membership)
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
     {raw, key}
   end
@@ -41,5 +50,10 @@ defmodule Emisar.Fixtures.ApiKeys do
   """
   def force_replaces(%ApiKeys.ApiKey{} = key, replaced_id) do
     key |> Ecto.Changeset.change(replaces_id: replaced_id) |> Repo.update!()
+  end
+
+  @doc "Forges an unbound row so auth tests cover fail-closed legacy data."
+  def force_membership_unbound(%ApiKeys.ApiKey{} = key) do
+    key |> Ecto.Changeset.change(created_by_membership_id: nil) |> Repo.update!()
   end
 end

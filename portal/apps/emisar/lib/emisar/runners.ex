@@ -90,12 +90,12 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Every non-deleted runner for the subject's account — the COMPLETE
-  set, deliberately un-paginated, presence-decorated.
+  Every non-deleted runner visible to the subject's membership — the COMPLETE
+  scoped set, deliberately un-paginated and presence-decorated.
 
   The MCP path: `tools/list`, dispatch resolution, and runner
-  inventory must see every runner (no status/group/membership
-  filter), not a page. The UI uses the paginated
+  inventory must see every accessible runner (no status/group filter), not a
+  page. The UI uses the paginated
   `list_runners_for_account/2`. Returns `{:ok, runners}`.
   """
   def list_all_runners_for_account(%Subject{} = subject) do
@@ -107,6 +107,7 @@ defmodule Emisar.Runners do
       runners =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_group_name()
+        |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> decorate_connection()
@@ -117,9 +118,10 @@ defmodule Emisar.Runners do
 
   # Per-membership runner ACLs: restrict to the authenticated membership's
   # runners (empty scopes = all). Filters in the query — BEFORE pagination — so
-  # page contents and metadata counts agree. A subject with no membership (for
-  # example a legacy-unbound API key) has no per-membership restriction.
-  defp scope_to_subject_membership(query, %Subject{membership_id: nil}), do: query
+  # page contents and metadata counts agree. A subject without a membership has
+  # no runner authorization and therefore sees nothing.
+  defp scope_to_subject_membership(query, %Subject{membership_id: nil}),
+    do: Runner.Query.none(query)
 
   defp scope_to_subject_membership(query, %Subject{membership_id: membership_id}) do
     case runner_scopes_for_membership(membership_id) do
@@ -895,11 +897,9 @@ defmodule Emisar.Runners do
   Empty scope = all runners. Otherwise the runner's id OR its group
   must appear in at least one row.
 
-  A membership with no scopes always passes.
-  Pass `nil` membership for unauthenticated paths — returns true
-  there too; callers must do their own auth check.
+  A membership with no scopes always passes. A missing membership fails closed.
   """
-  def runner_in_scope?(_runner, nil), do: true
+  def runner_in_scope?(_runner, nil), do: false
 
   def runner_in_scope?(runner, %Accounts.Membership{} = membership),
     do: runner_in_scope?(runner, runner_scopes_for_membership(membership.id))

@@ -267,9 +267,9 @@ defmodule Emisar.RunnerScopesTest do
   end
 
   describe "runner_in_scope?/2 (the per-user runner ACL check)" do
-    test "nil or empty scopes mean unrestricted (all runners in scope)" do
+    test "nil fails closed while empty scopes mean unrestricted" do
       runner = %{id: "runner-1", group: "db"}
-      assert Runners.runner_in_scope?(runner, nil)
+      refute Runners.runner_in_scope?(runner, nil)
       assert Runners.runner_in_scope?(runner, [])
     end
 

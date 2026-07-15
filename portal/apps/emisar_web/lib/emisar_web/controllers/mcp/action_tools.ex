@@ -309,12 +309,10 @@ defmodule EmisarWeb.MCP.ActionTools do
     |> Crypto.hash_hex()
   end
 
-  defp membership_scopes(%{created_by_membership_id: nil}), do: []
-
-  defp membership_scopes(%{created_by_membership_id: id}),
+  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
     do: Runners.runner_scopes_for_membership(id)
 
-  defp membership_scopes(_api_key), do: []
+  defp membership_scopes(_api_key), do: nil
 
   defp error(code, message, dispatch_started \\ false, details \\ nil) do
     error = %{code: code, message: message, retryable: false}

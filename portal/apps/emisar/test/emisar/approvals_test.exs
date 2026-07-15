@@ -1066,15 +1066,9 @@ defmodule Emisar.ApprovalsTest do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      subject = Fixtures.Subjects.membership_subject(membership)
       %{account: account, user: user, subject: subject, key: key}
     end
 
@@ -2268,15 +2262,9 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "revoked grant is filtered out", %{account: account, user: user} do
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
       {:ok, _} = Approvals.revoke_grant(grant, subject)
@@ -2695,14 +2683,8 @@ defmodule Emisar.ApprovalsTest do
       # The audit log used to live in the LV handler. Moving it into the
       # context means the row lands on every code path (LV, future
       # scripts, tasks) — pin it with a context-level test.
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       assert {:ok, _} = Approvals.revoke_grant(grant, subject)
 
@@ -2728,14 +2710,8 @@ defmodule Emisar.ApprovalsTest do
       user: user,
       grant: grant
     } do
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       assert {:ok, %Grant{revoked_at: first}} = Approvals.revoke_grant(grant, subject)
       assert %DateTime{} = first

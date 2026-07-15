@@ -140,7 +140,7 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "list_all_runners_for_account/1" do
-    test "returns every runner — no pagination cap — decorated + account-scoped" do
+    test "returns every scoped runner — no pagination cap — decorated + account-scoped" do
       {account, _user, subject} = account_with_owner_subject()
 
       # 40 runners — past the paginator's 35-row default page.
@@ -159,6 +159,15 @@ defmodule Emisar.RunnersTest do
       # Another account sees none of them.
       {_other, _u, other_subject} = account_with_owner_subject()
       assert {:ok, []} = Runners.list_all_runners_for_account(other_subject)
+    end
+
+    test "a subject without a membership sees no runners" do
+      {account, _user, subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      subject = %{subject | membership_id: nil}
+
+      assert {:ok, []} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, [], _metadata} = Runners.list_runners_for_account(subject)
     end
 
     test "a viewer subject (no view_runners) is unauthorized" do
@@ -1462,9 +1471,9 @@ defmodule Emisar.RunnersTest do
       assert Runners.runner_in_scope?(runner, [])
     end
 
-    test "a nil membership is always in scope (callers do their own auth)" do
+    test "a nil membership is never in scope" do
       runner = Fixtures.Runners.create_runner(connected?: false)
-      assert Runners.runner_in_scope?(runner, nil)
+      refute Runners.runner_in_scope?(runner, nil)
     end
 
     test "matches on the runner's id OR its group; otherwise false" do

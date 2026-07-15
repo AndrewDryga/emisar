@@ -991,12 +991,10 @@ defmodule EmisarWeb.MCP.Service do
   # their `UserRunnerScope` (`membership_scopes`), resolved at call time. The
   # key carries no per-key runner filter of its own.
 
-  defp membership_scopes(%{created_by_membership_id: nil}), do: []
-
-  defp membership_scopes(%{created_by_membership_id: id}),
+  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
     do: Runners.runner_scopes_for_membership(id)
 
-  defp membership_scopes(_), do: []
+  defp membership_scopes(_), do: nil
 
   defp action_in_membership_scope?(_action, _runners_by_id, []), do: true
 

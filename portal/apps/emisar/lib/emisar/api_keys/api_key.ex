@@ -58,18 +58,31 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :replaces, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
     # Membership of the user who minted this key. MCP dispatch resolves
     # this membership's per-user runner scope at call-time so revoking
-    # the operator's scope shrinks every key they ever issued. Nilable —
-    # the FK is `on_delete: :nilify_all` so a removed-and-rejoined
-    # operator's old keys outlive the membership row.
+    # the operator's scope shrinks every key they ever issued. Historical
+    # rows may be nil because the FK uses `on_delete: :nilify_all`, but an
+    # unbound key is never usable.
     belongs_to :created_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
 
     timestamps()
   end
 
-  def usable?(%__MODULE__{revoked_at: nil, deleted_at: nil, expires_at: nil}), do: true
+  def usable?(%__MODULE__{
+        created_by_membership_id: membership_id,
+        revoked_at: nil,
+        deleted_at: nil,
+        expires_at: nil
+      })
+      when is_binary(membership_id),
+      do: true
 
-  def usable?(%__MODULE__{revoked_at: nil, deleted_at: nil, expires_at: exp}),
-    do: DateTime.compare(DateTime.utc_now(), exp) == :lt
+  def usable?(%__MODULE__{
+        created_by_membership_id: membership_id,
+        revoked_at: nil,
+        deleted_at: nil,
+        expires_at: exp
+      })
+      when is_binary(membership_id),
+      do: DateTime.compare(DateTime.utc_now(), exp) == :lt
 
   def usable?(_), do: false
 

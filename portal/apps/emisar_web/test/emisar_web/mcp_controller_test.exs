@@ -127,15 +127,20 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   defp make_api_key!(account, user, opts \\ []) do
+    {raw, _key} = make_api_key_record!(account, user, opts)
+    raw
+  end
+
+  defp make_api_key_record!(account, user, opts \\ []) do
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    {:ok, raw, _key} =
+    {:ok, raw, key} =
       ApiKeys.create_key(
         %{name: "key-#{unique()}", kind: opts[:kind] || :mcp},
         subject
       )
 
-    raw
+    {raw, key}
   end
 
   setup do
@@ -179,6 +184,16 @@ defmodule EmisarWeb.MCPControllerTest do
     test "401 without a Bearer token", %{conn: conn} do
       assert conn |> get(~p"/api/mcp/runners") |> json_response(401) ==
                %{"error" => "unauthorized"}
+    end
+
+    test "401 for a membership-unbound key", %{conn: conn, account: account, user: user} do
+      {raw, key} = make_api_key_record!(account, user)
+      force_membership_unbound!(key)
+
+      assert conn
+             |> put_req_header("authorization", "Bearer " <> raw)
+             |> get(~p"/api/mcp/runners")
+             |> json_response(401) == %{"error" => "unauthorized"}
     end
   end
 
@@ -1805,6 +1820,10 @@ defmodule EmisarWeb.MCPControllerTest do
     membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     {:ok, :ok} = Runners.replace_runner_scopes(membership, scopes, subject)
     :ok
+  end
+
+  defp force_membership_unbound!(key) do
+    key |> Ecto.Changeset.change(created_by_membership_id: nil) |> Repo.update!()
   end
 
   # Recursively walks a JSON-decoded structure and asserts no nil

@@ -888,6 +888,14 @@ defmodule Emisar.ApiKeysTest do
       refute ApiKeys.peek_api_key_by_secret(raw)
     end
 
+    test "returns nil for a membership-unbound key without recording usage" do
+      {raw, key} = Fixtures.ApiKeys.create_api_key()
+      key = Fixtures.ApiKeys.force_membership_unbound(key)
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      refute Repo.reload!(key).last_used_at
+    end
+
     test "resolves a reissued live key when a soft-deleted key shares its prefix" do
       {raw, stale} = Fixtures.ApiKeys.create_api_key()
 
@@ -1087,6 +1095,13 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
       refute ApiKeys.peek_api_key_by_id(key.id)
       refute ApiKeys.peek_api_key_by_id(Ecto.UUID.generate())
+    end
+
+    test "returns nil for a membership-unbound OAuth backing key" do
+      {_raw, key} = Fixtures.ApiKeys.create_api_key()
+      key = Fixtures.ApiKeys.force_membership_unbound(key)
+
+      refute ApiKeys.peek_api_key_by_id(key.id)
     end
   end
 

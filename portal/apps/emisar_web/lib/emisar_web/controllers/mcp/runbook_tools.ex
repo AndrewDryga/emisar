@@ -648,12 +648,10 @@ defmodule EmisarWeb.MCP.RunbookTools do
     Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> conn.assigns.api_key.id)
   end
 
-  defp membership_scopes(%{created_by_membership_id: nil}), do: []
-
-  defp membership_scopes(%{created_by_membership_id: id}),
+  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
     do: Runners.runner_scopes_for_membership(id)
 
-  defp membership_scopes(_api_key), do: []
+  defp membership_scopes(_api_key), do: nil
 
   defp changeset_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
