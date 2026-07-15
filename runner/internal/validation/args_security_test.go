@@ -63,3 +63,32 @@ func TestValidate_RejectsUnsignedIntegerOverflow(t *testing.T) {
 		t.Fatal("uint64 above MaxInt64 accepted as an integer")
 	}
 }
+
+func TestValidate_RejectsNonFiniteNumbers(t *testing.T) {
+	min, max := 0.0, 1.0
+	schema := []actionspec.Arg{{
+		Name: "value",
+		Type: actionspec.ArgNumber,
+		Validation: &actionspec.Validation{
+			Min: &min,
+			Max: &max,
+		},
+	}}
+
+	for name, value := range map[string]any{
+		"nan string":          "NaN",
+		"positive inf string": "+Inf",
+		"negative inf string": "-Inf",
+		"nan float":           math.NaN(),
+		"positive inf float":  math.Inf(1),
+		"negative inf float":  math.Inf(-1),
+		"float32 inf":         float32(math.Inf(1)),
+		"json number nan":     json.Number("NaN"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Validate(schema, map[string]any{"value": value}); err == nil {
+				t.Fatalf("Validate accepted non-finite value %#v", value)
+			}
+		})
+	}
+}

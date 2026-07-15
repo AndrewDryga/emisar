@@ -544,21 +544,25 @@ func toFloat(v any) (float64, bool) {
 	case int64:
 		return float64(n), true
 	case float32:
-		return float64(n), true
+		return finiteFloat(float64(n))
 	case float64:
-		return n, true
+		return finiteFloat(n)
 	case json.Number:
 		f, err := n.Float64()
-		if err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
-			return f, true
+		if err == nil {
+			return finiteFloat(f)
 		}
 	case string:
 		f, err := strconv.ParseFloat(n, 64)
 		if err == nil {
-			return f, true
+			return finiteFloat(f)
 		}
 	}
 	return 0, false
+}
+
+func finiteFloat(n float64) (float64, bool) {
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
 // exactJSONInteger accepts every JSON spelling whose mathematical value is an
