@@ -144,7 +144,7 @@ explicit. Discover current private node names from a notebook runtime, then
 connect only to the node being debugged:
 
 ```elixir
-{nodes, 0} = System.cmd("/opt/emisar/list-portal-nodes", [])
+{nodes, 0} = System.cmd("/bin/bash", ["/opt/emisar/list-portal-nodes"])
 nodes
 # => "emisar@10.x.x.x\n..."
 
