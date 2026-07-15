@@ -17,6 +17,9 @@ defmodule Emisar.Runners.Runner do
     field :last_connected_at, :utc_datetime_usec
     field :last_disconnected_at, :utc_datetime_usec
     field :last_disconnect_reason, :string
+    field :connection_generation, :integer, default: 0
+    field :connection_lease_id, Ecto.UUID
+    field :connection_lease_expires_at, :utc_datetime_usec
     field :packs, :map, default: %{}
 
     # Runner-advertised: the runner verifies a client signature on every

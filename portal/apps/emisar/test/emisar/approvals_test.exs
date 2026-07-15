@@ -1273,7 +1273,7 @@ defmodule Emisar.ApprovalsTest do
       assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
 
       # The run was NOT dispatched (the rollback aborted before dispatch).
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       # The approval.approved audit row was inside the rolled-back
       # transaction, so it never committed.
@@ -1466,7 +1466,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "lgtm-1")
 
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
       assert %ActionRun{status: status1} = Repo.reload!(run)
       refute status1 == :sent
       assert approved_count(request.id) == 1
@@ -1475,7 +1475,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "lgtm-2")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
       assert approved_count(request.id) == 2
     end
 
@@ -1486,7 +1486,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, operator, "ok")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
     test "ABUSE: a single operator approving twice counts once — second is :already_decided, not dispatched" do
@@ -1502,7 +1502,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert approved_count(request.id) == 1
       assert %Request{status: :pending} = Repo.reload!(request)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
   end
 
@@ -1555,7 +1555,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert %Request{status: :pending} = Repo.reload!(request)
       assert approved_count(request.id) == 0
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "a DIFFERENT operator can still approve when self-approval is forbidden" do
@@ -1569,7 +1569,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
     test "a permissive request lets its requester self-approve (self-approval allowed)", %{
@@ -1586,7 +1586,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, subject, "approving my own")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
     # a nil requester has no "self" to block (vacuous, not a
@@ -1620,14 +1620,14 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "lgtm-1")
 
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
       assert approved_count(request.id) == 1
 
       # Second distinct operator reaches the threshold.
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "lgtm-2")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
     # an MCP run's requested_by_id is nil, so
@@ -1675,7 +1675,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, owner_subject, "self via my key")
 
       assert %Request{status: :pending} = Repo.reload!(request)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       # A DIFFERENT operator can approve.
       other = distinct_operator(account)
@@ -1683,7 +1683,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
   end
 
@@ -1735,7 +1735,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:error, :pack_untrusted} = Approvals.approve_request(request, operator, "ok")
 
       # The run never reached the runner, and the request is left pending to retry.
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
       assert %Request{status: :pending} = Repo.reload!(request)
     end
 
@@ -1768,7 +1768,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "one")
 
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "two")
@@ -1838,7 +1838,7 @@ defmodule Emisar.ApprovalsTest do
                  "self, but snapshot allows it"
                )
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
   end
 
@@ -1987,7 +1987,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, subject, "retracting my own ask")
 
       # And the run never went anywhere.
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
     end
 
@@ -2040,7 +2040,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
                Approvals.deny_request(request, operator, "not shipping drifted bytes")
 
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
     end
 
@@ -2063,7 +2063,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert %Request{status: :denied} = Repo.reload!(request)
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "each vote logs approval.decision_recorded; only the release logs approval.approved" do
@@ -2123,7 +2123,7 @@ defmodule Emisar.ApprovalsTest do
 
       # The run stays cancelled and no envelope ever reached the runner.
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "is a no-op (:none) when the run has no pending request to cancel", %{
@@ -2471,12 +2471,12 @@ defmodule Emisar.ApprovalsTest do
           scope: :any_args
         )
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       assert {:ok, :running, run2} = Runs.dispatch_run(attrs, mcp_subject)
       assert run2.id != run1.id
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       [grant] = Fixtures.Approvals.grants_for_api_key(key.id)
       # Two executions under this grant: the approved first call (its

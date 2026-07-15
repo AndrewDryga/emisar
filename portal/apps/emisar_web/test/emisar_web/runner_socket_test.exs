@@ -1,8 +1,8 @@
 defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Fixtures, Repo, Runners, Runs}
+  alias Emisar.{Catalog, Fixtures, Repo, Runners, Runs}
   alias Emisar.RequestContext
-  alias Emisar.Runners.Presence
+  alias Emisar.Runners.{Presence, Runner}
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.RunnerSocket
 
@@ -235,7 +235,10 @@ defmodule EmisarWeb.RunnerSocketTest do
       {:ok, :running, run} =
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action", "request_id" => req_id}}, 1_000
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "run_action", "request_id" => req_id}},
+                     1_000
+
       assert req_id == run.request_id
 
       # The dispatch-timeout sweep must leave a *connected* runner's run
@@ -245,17 +248,18 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
 
-    test "a run is timed out only after its runner drops off presence",
+    test "a sent run fails closed after its runner disconnects",
          %{account: account, runner: runner, token: token, subject: subject} do
-      assert {:ok, _state} = RunnerSocket.init(%{token: token, runner: runner})
+      assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
 
       {:ok, :running, run} =
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
-      assert_receive {:cloud_to_runner, _}, 1_000
+      assert_receive {:cloud_to_runner, _generation, _}, 1_000
 
-      # Socket drops — presence clears, exactly as it does when the
-      # connection process dies (Phoenix.Presence auto-untracks).
+      # Socket drops — terminate releases the durable lease and Presence
+      # clears when the connection process dies.
+      assert :ok = RunnerSocket.terminate(:remote, state)
       :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
       refute Runners.online?(account.id, runner.id)
 
@@ -264,34 +268,55 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       timed_out = Repo.get!(ActionRun, run.id)
       assert timed_out.status == :error
-      assert timed_out.error_message =~ "offline"
+      assert timed_out.error_message =~ "disconnected after accepting this dispatch"
+      assert timed_out.error_message =~ "outcome is unknown"
+      assert timed_out.error_message =~ "did not execute it again"
     end
 
-    test "a reconnecting runner re-receives its in-flight runs (instant recovery)",
-         %{runner: runner, token: token} do
-      # A run the *previous* socket received but never acked — :sent in the DB.
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: runner.account_id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          args: %{},
-          reason: "test",
-          source: "operator"
-        })
+    test "a reconnect does not re-execute an unresolved dispatch",
+         %{account: account, runner: runner, token: token, subject: subject} do
+      assert {:ok, first_state} = RunnerSocket.init(%{token: token, runner: runner})
 
-      {:ok, run} = Runs.mark_sent(run)
+      {:ok, :running, run} =
+        Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
-      # Reconnect through the real init path: the test process becomes the
-      # socket (subscribed to the cloud→runner topic). init queues
-      # :redispatch_inflight to our mailbox; drive it the way the WebSock loop
-      # would, then assert the in-flight run is re-emitted to this live socket.
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "run_action", "request_id" => request_id}},
+                     1_000
+
+      assert request_id == run.request_id
+      assert :ok = RunnerSocket.terminate(:remote, first_state)
+      :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
+
+      assert {:ok, _second_state} = RunnerSocket.init(%{token: token, runner: runner})
+      refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 100
+    end
+
+    test "a first connection dispatches work that was queued while offline",
+         %{account: account, runner: runner, token: token, subject: subject} do
+      {:ok, :running, run} =
+        Runs.dispatch_run(dispatch_attrs(account, runner), subject)
+
+      assert Repo.get!(ActionRun, run.id).status == :pending
       assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
-      assert_receive :redispatch_inflight
-      assert {:ok, _state} = RunnerSocket.handle_info(:redispatch_inflight, state)
+      assert {:ok, ^state} = RunnerSocket.handle_info(:dispatch_queued, state)
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action", "request_id" => req_id}}, 1_000
-      assert req_id == run.request_id
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "run_action", "request_id" => request_id}},
+                     1_000
+
+      assert request_id == run.request_id
+      assert Repo.get!(ActionRun, run.id).status == :sent
+    end
+
+    test "a duplicate live runner identity is closed with an actionable reason",
+         %{runner: runner, token: token} do
+      assert {:ok, _state} = RunnerSocket.init(%{token: token, runner: runner})
+
+      assert {:stop, :normal, {1013, message}, %{rejected?: true}} =
+               RunnerSocket.init(%{token: token, runner: runner})
+
+      assert message =~ "cloned data directory"
     end
   end
 
@@ -461,13 +486,27 @@ defmodule EmisarWeb.RunnerSocketTest do
     test "cloud_to_runner is pushed with the protocol version stamped", %{state: state} do
       msg = %{"type" => "run_action", "request_id" => "req_push"}
 
-      assert {:push, frame, ^state} = RunnerSocket.handle_info({:cloud_to_runner, msg}, state)
+      assert {:push, frame, ^state} =
+               RunnerSocket.handle_info(
+                 {:cloud_to_runner, state.connection_generation, msg},
+                 state
+               )
 
       assert decode(frame) == %{
                "type" => "run_action",
                "request_id" => "req_push",
                "protocol_version" => 1
              }
+    end
+
+    test "cloud_to_runner for another connection generation is dropped", %{state: state} do
+      msg = %{"type" => "run_action", "request_id" => "req_wrong_generation"}
+
+      assert {:ok, ^state} =
+               RunnerSocket.handle_info(
+                 {:cloud_to_runner, state.connection_generation + 1, msg},
+                 state
+               )
     end
 
     test "drain pushes a shutdown envelope first, then stops", %{state: state} do
@@ -520,12 +559,47 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert reloaded.runner_version == "0.9.9"
     end
 
-    test "runner_state for a vanished runner answers runner_state_failed", %{state: state} do
+    test "a socket whose runner row vanished is fenced before state mutation", %{state: state} do
       gone = %{state | runner_id: Ecto.UUID.generate()}
       raw = Jason.encode!(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
 
-      assert {:push, frame, ^gone} = RunnerSocket.handle_in({raw, text()}, gone)
-      assert %{"code" => "runner_state_failed"} = decode(frame)
+      assert {:stop, :normal, {1008, "Runner connection ownership was superseded."}, ^gone} =
+               RunnerSocket.handle_in({raw, text()}, gone)
+    end
+
+    test "runner_state rechecks lease ownership inside its mutations", %{
+      state: state,
+      runner: runner
+    } do
+      Runner
+      |> Repo.get!(state.runner_id)
+      |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
+      |> Repo.update!()
+
+      assert {:error, :connection_superseded} =
+               Catalog.observe_state_from_connection(
+                 state.runner_id,
+                 %{"hostname" => "must-not-land", "packs" => %{}, "actions" => []},
+                 state.connection_generation,
+                 state.connection_lease_id
+               )
+
+      assert Repo.reload!(runner).hostname != "must-not-land"
+    end
+
+    test "a superseded socket is fenced before an outbound dispatch is written", %{state: state} do
+      Runner
+      |> Repo.get!(state.runner_id)
+      |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
+      |> Repo.update!()
+
+      msg = %{"type" => "run_action", "request_id" => "req_stale"}
+
+      assert {:stop, :normal, {1008, "Runner connection ownership was superseded."}, ^state} =
+               RunnerSocket.handle_info(
+                 {:cloud_to_runner, state.connection_generation, msg},
+                 state
+               )
     end
 
     test "error envelope is audited without dropping the socket", %{state: state} do
@@ -564,6 +638,39 @@ defmodule EmisarWeb.RunnerSocketTest do
       progress = Enum.find(events, &(&1.kind == :progress))
       assert progress.payload["chunk"] == "hello world\n"
       assert progress.payload["stream"] == "stdout"
+    end
+
+    test "progress and results recheck lease ownership in their transactions", %{
+      state: state,
+      run: run
+    } do
+      Runner
+      |> Repo.get!(state.runner_id)
+      |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
+      |> Repo.update!()
+
+      assert {:error, :connection_superseded} =
+               Runs.append_event_from_connection(
+                 run.id,
+                 %{kind: "progress", seq: 1, payload: %{"chunk" => "must-not-land"}},
+                 state.account_id,
+                 state.runner_id,
+                 state.connection_generation,
+                 state.connection_lease_id
+               )
+
+      assert {:error, :connection_superseded} =
+               Runs.finalize_from_connection(
+                 state.account_id,
+                 state.runner_id,
+                 state.connection_generation,
+                 state.connection_lease_id,
+                 %{"request_id" => run.request_id, "status" => "success"}
+               )
+
+      reloaded = Repo.get!(ActionRun, run.id)
+      assert reloaded.status == :sent
+      assert reloaded.progress_event_count == 0
     end
 
     test "progress for an unknown request_id is swallowed", %{state: state} do
@@ -630,11 +737,11 @@ defmodule EmisarWeb.RunnerSocketTest do
     # authenticated socket's runner_id, so B's frame finds no run and is dropped.
     test "runner B can't write progress against runner A's run", %{
       account: account,
-      state: state,
       run: run
     } do
       runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      state_b = %{state | runner_id: runner_b.id}
+      {_raw, token_b} = Runners.mint_runner_token(runner_b)
+      {:ok, state_b} = RunnerSocket.init(%{token: token_b, runner: runner_b})
 
       raw =
         Jason.encode!(%{
@@ -662,11 +769,11 @@ defmodule EmisarWeb.RunnerSocketTest do
     # un-finalized (still :sent).
     test "runner B finalizing runner A's run is treated as unknown (acked, A untouched)", %{
       account: account,
-      state: state,
       run: run
     } do
       runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      state_b = %{state | runner_id: runner_b.id}
+      {_raw, token_b} = Runners.mint_runner_token(runner_b)
+      {:ok, state_b} = RunnerSocket.init(%{token: token_b, runner: runner_b})
 
       frame_in = result_frame(run.request_id, "success", exit_code: 0)
       assert {:push, ack, state_b2} = RunnerSocket.handle_in({frame_in, text()}, state_b)
@@ -904,7 +1011,10 @@ defmodule EmisarWeb.RunnerSocketTest do
       refute Map.has_key?(context_msg, "protocol_version")
 
       assert {:push, frame, ^state} =
-               RunnerSocket.handle_info({:cloud_to_runner, context_msg}, state)
+               RunnerSocket.handle_info(
+                 {:cloud_to_runner, state.connection_generation, context_msg},
+                 state
+               )
 
       pushed = decode(frame)
       assert pushed["protocol_version"] == 1
@@ -984,7 +1094,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   # calls aren't confused by it. Leaves the run in "sent".
   defp dispatched_run(%{account: account, runner: runner, subject: subject}) do
     {:ok, :running, run} = Runs.dispatch_run(dispatch_attrs(account, runner), subject)
-    assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 1_000
+    assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
     %{run: run}
   end
 

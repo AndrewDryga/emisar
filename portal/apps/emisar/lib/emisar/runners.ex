@@ -3,10 +3,9 @@ defmodule Emisar.Runners do
   Runner lifecycle: registration, auth-key management, token mint/verify,
   state advertisement persistence, connection state.
 
-  Connection state lives in `Emisar.Runners.Presence`, not the database:
-  presence is the source of truth for "connected right now" and carries
-  the runner's ephemeral state (`action_load`, last heartbeat) in its
-  metadata. The DB keeps only durable, event-driven facts.
+  Presence carries the runner's live UI state (`action_load`, last heartbeat).
+  A short DB lease serializes transport ownership across portal nodes so two
+  processes presenting one runner identity cannot both execute dispatches.
 
   Reads/writes go through `Runner.Query` + `Runner.Changeset` (and
   similar per-entity modules under `Emisar.Runners.EnrollmentKey`,
@@ -34,6 +33,7 @@ defmodule Emisar.Runners do
   # oldest auto-unused entry is evicted (see `mint_install_key/2`).
   @install_ring_cap 42
   @install_eviction_grace_seconds 60
+  @connection_lease_seconds 120
 
   # -- Runners: reads --------------------------------------------------
 
@@ -350,6 +350,29 @@ defmodule Emisar.Runners do
     |> repo.fetch(Runner.Query)
   end
 
+  @doc """
+  Internal — locks and returns a runner only when the supplied socket still
+  owns its durable connection lease. Call inside the same transaction as an
+  inbound socket mutation so a successor claim cannot race the write.
+  """
+  def fetch_and_lock_connection_owner(
+        account_id,
+        runner_id,
+        generation,
+        lease_id,
+        opts \\ []
+      ) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_connection_lease(generation, lease_id)
+    |> Runner.Query.lock_for_update()
+    |> repo.fetch(Runner.Query)
+  end
+
   # -- Runners: mutations ----------------------------------------------
 
   def disable_runner(%Runner{} = runner, %Subject{} = subject) do
@@ -448,10 +471,37 @@ defmodule Emisar.Runners do
 
   @doc "Internal — persists a runner_state advertisement from the runner socket."
   def apply_state(%Runner{} = runner, %{} = payload) do
+    runner
+    |> active_runner_query()
+    |> update_runner_state(payload)
+  end
+
+  @doc """
+  Internal — applies a runner-state advertisement only while this socket owns
+  the matching generation and lease. The lease predicate is locked with the
+  update, closing the preflight-check handoff race.
+  """
+  def apply_state_from_connection(
+        %Runner{} = runner,
+        %{} = payload,
+        generation,
+        lease_id
+      ) do
+    runner
+    |> active_runner_query()
+    |> Runner.Query.by_connection_lease(generation, lease_id)
+    |> update_runner_state(payload)
+  end
+
+  defp active_runner_query(%Runner{} = runner) do
     Runner.Query.not_deleted()
     |> Runner.Query.not_disabled()
+    |> Runner.Query.by_account_id(runner.account_id)
     |> Runner.Query.by_id(runner.id)
-    |> Repo.fetch_and_update(Runner.Query,
+  end
+
+  defp update_runner_state(query, payload) do
+    Repo.fetch_and_update(query, Runner.Query,
       with: fn active_runner ->
         Runner.Changeset.apply_state(active_runner, %{
           hostname: payload["hostname"] || active_runner.hostname,
@@ -488,41 +538,93 @@ defmodule Emisar.Runners do
   `last_connected_at` for the durable "last seen" history.
   """
   def connect_runner(%Runner{} = runner) do
-    meta = %{
-      online_at: System.system_time(:second),
-      action_load: 0,
-      last_heartbeat_at: nil,
-      node: node()
-    }
+    now = DateTime.utc_now()
+    lease_id = Ecto.UUID.generate()
+    lease_expires_at = DateTime.add(now, @connection_lease_seconds, :second)
 
-    case Presence.track(self(), Presence.topic(runner.account_id), runner.id, meta) do
-      {:ok, _ref} ->
-        :ok
+    result =
+      Runner.Query.not_deleted()
+      |> Runner.Query.not_disabled()
+      |> Runner.Query.by_id(runner.id)
+      |> Runner.Query.by_account_id(runner.account_id)
+      |> Runner.Query.lease_available(now)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &Runner.Changeset.connected(&1, lease_id, lease_expires_at)
+      )
 
-      {:error, reason} ->
-        # Don't fail the connect over a tracker hiccup — the DB still stamps
-        # last_connected_at and the heartbeat-timeout watcher closes a
-        # genuinely dead socket. Surface it for diagnosis.
-        Logger.warning("presence track failed for runner #{runner.id}: #{inspect(reason)}")
+    with {:ok, claimed} <- normalize_connection_claim(result, runner) do
+      meta = %{
+        online_at: System.system_time(:second),
+        action_load: 0,
+        last_heartbeat_at: nil,
+        connection_generation: claimed.connection_generation,
+        connection_lease_id: claimed.connection_lease_id,
+        node: node()
+      }
+
+      # An expired owner may still be alive on a partitioned node. Fence it as
+      # soon as the durable claim changes; every inbound frame also verifies the
+      # lease before it may mutate state.
+      broadcast_runner_superseded(claimed)
+
+      case Presence.track(self(), Presence.topic(claimed.account_id), claimed.id, meta) do
+        {:ok, _ref} ->
+          {:ok, claimed}
+
+        {:error, reason} ->
+          Logger.warning("presence track failed for runner #{claimed.id}: #{inspect(reason)}")
+          _ = release_connection(claimed, "presence track failed")
+          {:error, {:presence, reason}}
+      end
     end
-
-    runner
-    |> Runner.Changeset.connected()
-    |> Repo.update()
   end
 
+  defp normalize_connection_claim({:error, :not_found}, runner) do
+    if runner_active_in_account?(runner.id, runner.account_id) do
+      {:error, :already_connected}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp normalize_connection_claim(result, _runner), do: result
+
   @doc """
-  Internal — called by the runner socket each heartbeat. Refreshes the
-  runner's ephemeral state in presence metadata; never touches the DB.
+  Internal — renews the socket's ownership lease and refreshes its Presence
+  metadata. A superseded socket gets `{:error, :not_found}` and must close.
   """
-  def record_heartbeat(account_id, runner_id, action_load) do
-    Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
-      %{
-        meta
-        | action_load: action_load || meta.action_load,
-          last_heartbeat_at: System.system_time(:second)
-      }
-    end)
+  def record_heartbeat(account_id, runner_id, generation, lease_id, action_load) do
+    lease_expires_at = DateTime.add(DateTime.utc_now(), @connection_lease_seconds, :second)
+
+    result =
+      Runner.Query.not_deleted()
+      |> Runner.Query.not_disabled()
+      |> Runner.Query.by_account_id(account_id)
+      |> Runner.Query.by_id(runner_id)
+      |> Runner.Query.by_connection_lease(generation, lease_id)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &Runner.Changeset.renew_connection(&1, lease_expires_at)
+      )
+
+    with {:ok, _runner} <- result do
+      Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
+        %{
+          meta
+          | action_load: action_load || meta.action_load,
+            last_heartbeat_at: System.system_time(:second)
+        }
+      end)
+    end
+  end
+
+  @doc "Internal — true only while the supplied socket still owns this runner identity."
+  def connection_owner?(account_id, runner_id, generation, lease_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_connection_lease(generation, lease_id)
+    |> Repo.exists?()
   end
 
   # Connection-lifecycle audit rows. The runner socket calls these (audit
@@ -548,20 +650,24 @@ defmodule Emisar.Runners do
   def audit_runner_version_rejected(%Runner{} = runner, minimum, %RequestContext{} = context),
     do: Audit.record(Audit.Events.runner_version_rejected(runner, minimum, context))
 
-  @doc "Internal — stamps disconnect history from the runner socket on close."
-  def mark_disconnected(runner_or_id, reason \\ nil)
-
-  def mark_disconnected(%Runner{} = runner, reason) do
-    runner
-    |> Runner.Changeset.disconnected(reason)
-    |> Repo.update()
+  @doc "Internal — disconnect a socket only if it still owns the active lease."
+  def mark_disconnected(runner_id, connection_generation, lease_id, reason)
+      when is_binary(runner_id) and is_integer(connection_generation) and is_binary(lease_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_connection_lease(connection_generation, lease_id)
+    |> Repo.fetch_and_update(Runner.Query,
+      with: &Runner.Changeset.disconnected(&1, reason)
+    )
   end
 
-  def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
-    case peek_runner_by_id(runner_id) do
-      %Runner{} = runner -> mark_disconnected(runner, reason)
-      nil -> {:error, :not_found}
-    end
+  defp release_connection(%Runner{} = runner, reason) do
+    mark_disconnected(
+      runner.id,
+      runner.connection_generation,
+      runner.connection_lease_id,
+      reason
+    )
   end
 
   # -- Connection state reads (Phoenix.Presence) -----------------------
@@ -901,10 +1007,16 @@ defmodule Emisar.Runners do
 
   @doc """
   Subscribe the caller to a runner's cloud→runner transport topic. Used
-  by the runner socket process; messages arrive as `{:cloud_to_runner, msg}`.
+  by the runner socket process; messages arrive as
+  `{:cloud_to_runner, generation, msg}`.
   """
-  def subscribe_runner_transport(%Runner{} = runner),
-    do: Emisar.PubSub.subscribe(runner_topic(runner.account_id, runner.id))
+  def subscribe_runner_transport(%Runner{} = runner) do
+    :ok = Emisar.PubSub.subscribe(runner_topic(runner.account_id, runner.id))
+
+    # Revocation is deliberately not generation-fenced: disabling/deleting a
+    # runner must close every stale clone, not only the latest dispatch owner.
+    Emisar.PubSub.subscribe(runner_control_topic(runner.account_id, runner.id))
+  end
 
   @doc """
   Internal — Runs dispatch/cancel: push an outbound envelope to the
@@ -914,8 +1026,50 @@ defmodule Emisar.Runners do
   # Directed (single-consumer) publish — the runner's socket process is the
   # topic's only subscriber, so this is a "deliver", not a broadcast_* event.
   # credo:disable-for-lines:3 Emisar.Checks.InlineBroadcast
-  def deliver_to_runner(account_id, runner_id, msg),
-    do: Emisar.PubSub.broadcast(runner_topic(account_id, runner_id), {:cloud_to_runner, msg})
+  def deliver_to_runner(account_id, runner_id, generation, msg) do
+    case current_connection_generation(account_id, runner_id) do
+      {:ok, ^generation} -> broadcast_to_runner(account_id, runner_id, generation, msg)
+      {:ok, _other_generation} -> {:error, :connection_changed}
+      {:error, :not_connected} -> {:error, :not_connected}
+    end
+  end
+
+  @doc "Internal — returns the generation currently authorized to receive dispatches."
+  def current_connection_generation(account_id, runner_id) do
+    runner =
+      Runner.Query.not_deleted()
+      |> Runner.Query.not_disabled()
+      |> Runner.Query.by_account_id(account_id)
+      |> Runner.Query.by_id(runner_id)
+      |> Repo.peek()
+
+    if active_connection_lease?(runner),
+      do: {:ok, runner.connection_generation},
+      else: {:error, :not_connected}
+  end
+
+  defp active_connection_lease?(%Runner{
+         connection_lease_id: lease_id,
+         connection_lease_expires_at: expires_at
+       })
+       when is_binary(lease_id) and is_struct(expires_at, DateTime),
+       do: DateTime.compare(expires_at, DateTime.utc_now()) == :gt
+
+  defp active_connection_lease?(_runner), do: false
+
+  defp broadcast_to_runner(account_id, runner_id, generation, msg) do
+    Emisar.PubSub.broadcast(
+      runner_topic(account_id, runner_id),
+      {:cloud_to_runner, generation, msg}
+    )
+  end
+
+  defp broadcast_runner_superseded(%Runner{} = runner) do
+    Emisar.PubSub.broadcast(
+      runner_control_topic(runner.account_id, runner.id),
+      {:runner_socket_superseded, runner.connection_lease_id}
+    )
+  end
 
   # Force any LIVE socket for this runner to disconnect after disable/delete. The
   # socket authenticates ONLY at connect, so an already-connected (now disabled/
@@ -924,10 +1078,17 @@ defmodule Emisar.Runners do
   # kill switch, not just a future-dispatch block. The socket stops on
   # `:runner_socket_revoked` (runner_socket.ex).
   defp broadcast_runner_revoked(%Runner{} = runner) do
-    Emisar.PubSub.broadcast(runner_topic(runner.account_id, runner.id), :runner_socket_revoked)
+    Emisar.PubSub.broadcast(
+      runner_control_topic(runner.account_id, runner.id),
+      :runner_socket_revoked
+    )
   end
 
-  defp runner_topic(account_id, runner_id), do: "account:#{account_id}:runner:#{runner_id}"
+  defp runner_topic(account_id, runner_id),
+    do: "account:#{account_id}:runner:#{runner_id}"
+
+  defp runner_control_topic(account_id, runner_id),
+    do: "account:#{account_id}:runner:#{runner_id}:control"
 
   @doc """
   Mints a fresh, single-use bootstrap auth key for the dashboard's

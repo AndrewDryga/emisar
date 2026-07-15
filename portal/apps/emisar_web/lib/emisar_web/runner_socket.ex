@@ -40,9 +40,37 @@ defmodule EmisarWeb.RunnerSocket do
     request_context =
       RequestContext.new(%{ip_address: upgrade[:ip_address], user_agent: upgrade[:user_agent]})
 
-    state = %{
+    case Runners.connect_runner(runner) do
+      {:ok, runner} ->
+        state = connected_state(runner, token, request_context)
+        Runners.subscribe_runner_transport(runner)
+        Emisar.PubSub.subscribe(EmisarWeb.RunnerSocketDrain.drain_topic())
+        Runners.audit_runner_connected(runner, token.id, request_context)
+        send(self(), :dispatch_queued)
+        {:ok, state}
+
+      {:error, :already_connected} ->
+        state = %{rejected?: true}
+
+        {:stop, :normal,
+         {1013,
+          "This runner identity already has a live connection. Check for a cloned data directory."},
+         state}
+
+      {:error, reason} ->
+        Logger.error("runner connection claim failed runner=#{runner.id}: #{inspect(reason)}")
+
+        {:stop, :normal, {1011, "Could not establish runner connection ownership."},
+         %{rejected?: true}}
+    end
+  end
+
+  defp connected_state(runner, token, request_context) do
+    %{
       account_id: runner.account_id,
       runner_id: runner.id,
+      connection_generation: runner.connection_generation,
+      connection_lease_id: runner.connection_lease_id,
       token_id: token.id,
       request_context: request_context,
       seen_request_ids: :queue.new(),
@@ -50,47 +78,28 @@ defmodule EmisarWeb.RunnerSocket do
       seen_request_count: 0,
       heartbeat_ref: schedule_heartbeat_timeout()
     }
-
-    Runners.subscribe_runner_transport(runner)
-
-    # Drain coordinator broadcasts here on SIGTERM so this process can
-    # gracefully push a shutdown envelope to the runner before the
-    # Endpoint tears the transport down.
-    Emisar.PubSub.subscribe(EmisarWeb.RunnerSocketDrain.drain_topic())
-
-    # Track this socket in presence (the live "online" signal) and stamp
-    # last_connected_at. Presence — not a DB status column — is the
-    # source of truth for "connected now"; it clears automatically when
-    # this process dies. Catalog observation stays a separate concern.
-    Runners.connect_runner(runner)
-    Runners.audit_runner_connected(runner, token.id, request_context)
-
-    # Recover any dispatch the *previous* socket dropped: this connection is now
-    # subscribed to the runner's transport, so re-emit the runner's in-flight
-    # runs and a lost run_action lands in ~instant instead of waiting for the
-    # RunDispatchTimeout sweep. Deferred to handle_info so it runs after init
-    # returns (off the connect path) and flows back through this live socket.
-    send(self(), :redispatch_inflight)
-
-    {:ok, state}
   end
 
   @impl true
   def handle_in({raw, [opcode: :text]}, state) do
-    case Jason.decode(raw) do
-      {:ok, %{"type" => type} = msg} ->
-        if Map.get(msg, "protocol_version") in [nil, @protocol_version] do
-          handle_envelope(type, msg, state)
-        else
-          {:push, error_frame(nil, "protocol_version_mismatch", "unsupported protocol_version"),
-           state}
-        end
+    if connection_owner?(state) do
+      case Jason.decode(raw) do
+        {:ok, %{"type" => type} = msg} ->
+          if Map.get(msg, "protocol_version") in [nil, @protocol_version] do
+            handle_envelope(type, msg, state)
+          else
+            {:push, error_frame(nil, "protocol_version_mismatch", "unsupported protocol_version"),
+             state}
+          end
 
-      {:ok, _} ->
-        {:push, error_frame(nil, "bad_envelope", "missing type field"), state}
+        {:ok, _} ->
+          {:push, error_frame(nil, "bad_envelope", "missing type field"), state}
 
-      {:error, _} ->
-        {:push, error_frame(nil, "bad_envelope", "malformed JSON"), state}
+        {:error, _} ->
+          {:push, error_frame(nil, "bad_envelope", "malformed JSON"), state}
+      end
+    else
+      {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
     end
   end
 
@@ -99,24 +108,27 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   @impl true
-  def handle_info({:cloud_to_runner, msg}, state) do
-    {:push, {:text, Jason.encode!(Map.put(msg, "protocol_version", @protocol_version))}, state}
+  def handle_info({:cloud_to_runner, expected_generation, msg}, state) do
+    cond do
+      expected_generation != state.connection_generation ->
+        {:ok, state}
+
+      connection_owner?(state) ->
+        {:push, {:text, Jason.encode!(Map.put(msg, "protocol_version", @protocol_version))},
+         state}
+
+      true ->
+        {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
+    end
   end
 
-  def handle_info(:redispatch_inflight, state) do
-    # Best-effort reconnect recovery — if it fails (e.g. a DB blip), log and
-    # carry on; the RunDispatchTimeout sweep still backstops the in-flight runs,
-    # so a recovery hiccup must not tear down an otherwise-healthy socket.
-    try do
-      Runs.redispatch_inflight_for_runner(state.runner_id)
-    rescue
-      error ->
-        Logger.warning(
-          "reconnect_redispatch failed runner=#{state.runner_id}: #{Exception.message(error)}"
-        )
+  def handle_info(:dispatch_queued, state) do
+    if connection_owner?(state) do
+      Runs.dispatch_queued_for_runner(state.runner_id)
+      {:ok, state}
+    else
+      {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
     end
-
-    {:ok, state}
   end
 
   def handle_info(:heartbeat_timeout, state) do
@@ -162,21 +174,39 @@ defmodule EmisarWeb.RunnerSocket do
     {:push, {:text, Jason.encode!(revoked)}, state}
   end
 
+  def handle_info({:runner_socket_superseded, lease_id}, state)
+      when lease_id != state.connection_lease_id do
+    {:stop, :normal, {1008, "Runner identity connected from another process."}, state}
+  end
+
+  def handle_info({:runner_socket_superseded, _own_lease_id}, state), do: {:ok, state}
+
   def handle_info(other, state) do
     Logger.debug("runner_socket #{state.runner_id} unhandled message: #{inspect(other)}")
     {:ok, state}
   end
 
   @impl true
-  def terminate(reason, state) do
-    Runners.mark_disconnected(state.runner_id, format_reason(reason))
+  def terminate(_reason, %{rejected?: true}), do: :ok
 
-    Runners.audit_runner_disconnected(
-      state.account_id,
-      state.runner_id,
-      format_reason(reason),
-      state.request_context
-    )
+  def terminate(reason, state) do
+    case Runners.mark_disconnected(
+           state.runner_id,
+           state.connection_generation,
+           state.connection_lease_id,
+           format_reason(reason)
+         ) do
+      {:ok, _runner} ->
+        Runners.audit_runner_disconnected(
+          state.account_id,
+          state.runner_id,
+          format_reason(reason),
+          state.request_context
+        )
+
+      {:error, :not_found} ->
+        :ok
+    end
 
     :ok
   end
@@ -211,7 +241,12 @@ defmodule EmisarWeb.RunnerSocket do
   # -- Envelope dispatch ----------------------------------------------
 
   defp handle_envelope("runner_state", msg, state) do
-    case Catalog.observe_state(state.runner_id, msg) do
+    case Catalog.observe_state_from_connection(
+           state.runner_id,
+           msg,
+           state.connection_generation,
+           state.connection_lease_id
+         ) do
       {:ok, runner} ->
         # connect_runner already fired at socket init; this just refreshes
         # the heartbeat-timeout watcher now that we have a catalog. The
@@ -236,12 +271,19 @@ defmodule EmisarWeb.RunnerSocket do
 
     with {:ok, run_id} <- fetch_run_id(msg["request_id"], state),
          {:ok, _event} <-
-           Runs.append_event(run_id, %{
-             kind: "progress",
-             seq: msg["seq"],
-             stream: msg["stream"],
-             payload: payload
-           }) do
+           Runs.append_event_from_connection(
+             run_id,
+             %{
+               kind: "progress",
+               seq: msg["seq"],
+               stream: msg["stream"],
+               payload: payload
+             },
+             state.account_id,
+             state.runner_id,
+             state.connection_generation,
+             state.connection_lease_id
+           ) do
       {:ok, state}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -265,11 +307,18 @@ defmodule EmisarWeb.RunnerSocket do
     if already_seen?(msg["request_id"], state) do
       {:push, ack_result_frame(msg["request_id"]), state}
     else
-      case Runs.finalize_from_result(state.runner_id, msg) do
+      case Runs.finalize_from_connection(
+             state.account_id,
+             state.runner_id,
+             state.connection_generation,
+             state.connection_lease_id,
+             msg
+           ) do
         {:ok, _run} ->
           # Remember only AFTER the result is durably persisted, so a transient
           # finalize failure (below) leaves the request un-acked and the
           # runner's retry re-finalizes instead of being silently deduped.
+          send(self(), :dispatch_queued)
           {:push, ack_result_frame(msg["request_id"]), remember_request(msg["request_id"], state)}
 
         {:error, :unknown_request_id} ->
@@ -289,8 +338,17 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("heartbeat", msg, state) do
-    Runners.record_heartbeat(state.account_id, state.runner_id, msg["action_load"])
-    {:ok, refresh_heartbeat(state)}
+    case Runners.record_heartbeat(
+           state.account_id,
+           state.runner_id,
+           state.connection_generation,
+           state.connection_lease_id,
+           msg["action_load"]
+         ) do
+      {:ok, _runner} -> {:ok, refresh_heartbeat(state)}
+      {:error, :not_found} -> {:stop, :normal, {1008, "Runner connection lease expired."}, state}
+      {:error, reason} -> {:stop, {:heartbeat_persist_failed, reason}, state}
+    end
   end
 
   defp handle_envelope("error", msg, state) do
@@ -342,6 +400,15 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   # -- Helpers --------------------------------------------------------
+
+  defp connection_owner?(state) do
+    Runners.connection_owner?(
+      state.account_id,
+      state.runner_id,
+      state.connection_generation,
+      state.connection_lease_id
+    )
+  end
 
   defp fetch_run_id(nil, _state), do: :error
 

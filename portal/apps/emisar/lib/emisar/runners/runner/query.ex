@@ -16,6 +16,26 @@ defmodule Emisar.Runners.Runner.Query do
   def by_id(queryable, id),
     do: where(queryable, [runners: r], r.id == ^id)
 
+  def by_connection_generation(queryable, generation),
+    do: where(queryable, [runners: r], r.connection_generation == ^generation)
+
+  def by_connection_lease(queryable, generation, lease_id) do
+    where(
+      queryable,
+      [runners: r],
+      r.connection_generation == ^generation and r.connection_lease_id == ^lease_id
+    )
+  end
+
+  def lease_available(queryable, now) do
+    where(
+      queryable,
+      [runners: r],
+      is_nil(r.connection_lease_id) or is_nil(r.connection_lease_expires_at) or
+        r.connection_lease_expires_at <= ^now
+    )
+  end
+
   def by_ids(queryable, ids),
     do: where(queryable, [runners: r], r.id in ^ids)
 

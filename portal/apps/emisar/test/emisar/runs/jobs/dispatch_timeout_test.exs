@@ -9,7 +9,8 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   """
   use Emisar.DataCase, async: true
   alias Emisar.Fixtures
-  alias Emisar.{Repo, Runs}
+  alias Emisar.{Repo, Runners, Runs}
+  alias Emisar.Runners.Presence
   alias Emisar.Runs.Jobs.DispatchTimeout
 
   defp running_run_for(runner) do
@@ -24,6 +25,12 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
       })
 
     {:ok, run} = Runs.mark_sent(run)
+
+    run =
+      run
+      |> Ecto.Changeset.change(runner_connection_generation: runner.connection_generation)
+      |> Repo.update!()
+
     {:ok, run} = Runs.mark_running(run)
     run
   end
@@ -54,7 +61,11 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
 
     run
-    |> Ecto.Changeset.change(queued_at: at, sent_at: at)
+    |> Ecto.Changeset.change(
+      queued_at: at,
+      sent_at: at,
+      runner_connection_generation: runner.connection_generation
+    )
     |> Repo.update!()
   end
 
@@ -78,7 +89,34 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
-    assert reloaded.error_message =~ "never acknowledged"
+    assert reloaded.error_message =~ "never produced a durable result"
+    assert reloaded.error_message =~ "outcome is unknown"
+    assert reloaded.error_message =~ "did not execute it again"
+  end
+
+  test "a stale dispatch is never replayed onto a successor connection" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    run = sent_run_for(runner, 5 * 60)
+
+    assert {:ok, _} =
+             Runners.mark_disconnected(
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               "reconnect"
+             )
+
+    :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+    assert {:ok, successor} = Runners.connect_runner(runner)
+    assert successor.connection_generation > runner.connection_generation
+
+    assert :ok = DispatchTimeout.execute([])
+
+    reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :error
+    assert reloaded.error_message =~ "reconnected"
+    assert reloaded.error_message =~ "outcome is unknown"
+    assert reloaded.error_message =~ "did not execute it again"
   end
 
   test "a running run whose runner has been offline past the grace goes terminal" do
@@ -128,11 +166,10 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert Runs.peek_run_by_id(run.id).status == :error
   end
 
-  # each terminal branch stamps its OWN error_message so
-  # the operator sees WHY a run died (offline-at-dispatch vs disabled vs wedged
-  # vs runner-removed), not a generic "errored". Here: an offline runner whose
-  # stale dispatch never reached it.
-  test "an offline runner's stale dispatch is errored with an 'offline ... never reached it' message" do
+  # A sent dispatch may already have produced side effects. If its runner
+  # disconnects, the operator must see that the outcome is unknown and that
+  # Emisar deliberately refused to execute it again.
+  test "a disconnected runner's stale sent dispatch reports an unknown outcome" do
     runner = Fixtures.Runners.create_runner(connected?: false)
     run = sent_run_for(runner, 5 * 60)
 
@@ -140,8 +177,9 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
-    assert reloaded.error_message =~ "offline"
-    assert reloaded.error_message =~ "never reached it"
+    assert reloaded.error_message =~ "disconnected after accepting this dispatch"
+    assert reloaded.error_message =~ "outcome is unknown"
+    assert reloaded.error_message =~ "did not execute it again"
   end
 
   # the disabled-runner branch names "disabled", distinct
@@ -171,6 +209,21 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
     assert reloaded.error_message =~ "removed while this run was in flight"
+  end
+
+  test "a sent run whose runner was deleted reports an unknown outcome" do
+    {account, _user, subject} = owner_with_subject()
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    run = sent_run_for(runner, 5 * 60)
+
+    {:ok, _} = Emisar.Runners.delete_runner(runner, subject)
+    assert :ok = DispatchTimeout.execute([])
+
+    reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :error
+    assert reloaded.error_message =~ "removed after accepting this dispatch"
+    assert reloaded.error_message =~ "outcome is unknown"
+    assert reloaded.error_message =~ "did not execute it again"
   end
 
   defp owner_with_subject do

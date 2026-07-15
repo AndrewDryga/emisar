@@ -223,6 +223,32 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "observe_state_from_connection/4" do
+    test "rejects a superseded connection before runner or catalog mutation" do
+      runner = Fixtures.Runners.create_runner(connected?: true)
+
+      assert {:ok, updated} =
+               Catalog.observe_state_from_connection(
+                 runner.id,
+                 state_payload(hostname: "owned"),
+                 runner.connection_generation,
+                 runner.connection_lease_id
+               )
+
+      assert updated.hostname == "owned"
+
+      assert {:error, :connection_superseded} =
+               Catalog.observe_state_from_connection(
+                 runner.id,
+                 state_payload(hostname: "stale"),
+                 runner.connection_generation,
+                 Ecto.UUID.generate()
+               )
+
+      assert Repo.reload!(runner).hostname == "owned"
+    end
+  end
+
   describe "observe_state/2 — trust pinning" do
     test "unknown pack first sight → pending, awaits operator approval" do
       runner = Fixtures.Runners.create_runner()

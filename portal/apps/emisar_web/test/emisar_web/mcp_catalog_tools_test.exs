@@ -204,7 +204,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert response["operation_id"] == operation_id
     assert [%{"run_id" => run_id, "runner_ref" => ^runner_ref}] = response["runs"]
 
-    assert_receive {:cloud_to_runner, payload}, 500
+    assert_receive {:cloud_to_runner, _generation, payload}, 500
     wire = payload |> Map.put("protocol_version", 1) |> Jason.encode!()
     assert wire =~ ~s("args":#{args_raw})
     assert payload["pack_ref"] == pack_ref
@@ -220,7 +220,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     replay = raw_action(conn, body, operation_id, header)
     assert get_in(replay, ["runs", Access.at(0), "run_id"]) == run_id
-    refute_receive {:cloud_to_runner, _payload}, 100
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
 
   test "run_action fails closed on signed-fact mismatch, unsigned enforcing targets, and operation reuse",
@@ -261,11 +261,11 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     invalid = raw_action(conn, body, operation_id, mismatched)
     assert invalid["error"]["code"] == "invalid_attestation"
-    refute_receive {:cloud_to_runner, _payload}, 100
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
     header = attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason)
     assert raw_action(conn, body, operation_id, header)["ok"]
-    assert_receive {:cloud_to_runner, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
     changed_args = ~s({"job_id":9007199254740994})
     changed_body = run_action_body(pack_ref, runner_ref, changed_args, reason)
@@ -275,7 +275,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     conflict = raw_action(conn, changed_body, operation_id, changed_header)
     assert conflict["error"]["code"] == "operation_conflict"
-    refute_receive {:cloud_to_runner, _payload}, 100
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
     stale_runner_ref = "missing~" <> String.duplicate("0", 32)
     stale_body = run_action_body(pack_ref, stale_runner_ref, changed_args, reason)

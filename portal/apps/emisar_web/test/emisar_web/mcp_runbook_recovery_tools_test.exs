@@ -93,7 +93,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         execute_operation
       )
 
-    assert_receive {:cloud_to_runner, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
     assert execution["execution"]["run_count"] == nil
     execution_id = execution["execution"]["runbook_execution_id"]
 
@@ -114,7 +114,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       )
 
     assert replayed_execution["execution"]["runbook_execution_id"] == execution_id
-    refute_receive {:cloud_to_runner, _payload}, 100
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
     recovered_execution = call(conn, "get_operation", %{"operation_id" => execute_operation})
     assert recovered_execution["operation"]["runbook_execution_id"] == execution_id
@@ -433,7 +433,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_524NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert_receive {:cloud_to_runner, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
     execution_id = execution["execution"]["runbook_execution_id"]
     {:ok, [run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
     test_pid = self()

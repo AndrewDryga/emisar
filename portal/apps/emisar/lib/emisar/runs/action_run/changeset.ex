@@ -12,7 +12,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   ]a
 
   @transition_fields ~w[
-    sent_at started_at finished_at cancelled_at
+    runner_connection_generation sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
     stdout_sha256 stderr_sha256 stdout_bytes stderr_bytes
     event_id reason_text error_message executed_command

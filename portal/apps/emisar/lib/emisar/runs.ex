@@ -436,6 +436,14 @@ defmodule Emisar.Runs do
     |> Repo.fetch(ActionRun.Query)
   end
 
+  defp fetch_run_by_request_id_for_runner_generation(request_id, runner_id, generation) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_runner_id(runner_id)
+    |> ActionRun.Query.by_runner_connection_generation(generation)
+    |> ActionRun.Query.by_request_id(request_id)
+    |> Repo.fetch(ActionRun.Query)
+  end
+
   # -- Creation ---------------------------------------------------------
 
   @doc """
@@ -1489,26 +1497,29 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — re-dispatch a runner's in-flight (`:pending`/`:sent`) runs the
-  moment its socket (re)connects, so a dispatch lost to the prior socket's drop
-  recovers in ~instant instead of waiting for the next `RunDispatchTimeout`
-  sweep (~1 min). Idempotent and safe to fire on every connect: `dispatch_to_runner`
-  re-emits and the runner dedupes by `request_id` (replays the cached result or
-  runs it once), and an empty in-flight set is a no-op. Called by
-  `EmisarWeb.RunnerSocket` after the socket has subscribed to the runner's
-  transport, so the re-emitted envelopes reach this live connection.
+  Internal — sends runs that have never left `:pending` when their runner
+  connects. `:sent` and `:running` runs are deliberately excluded: their prior
+  execution outcome may be unknown, so reconnect must never replay them.
   """
-  def redispatch_inflight_for_runner(runner_id) when is_binary(runner_id) do
-    runs =
-      ActionRun.Query.all()
-      |> ActionRun.Query.by_runner_id(runner_id)
-      |> ActionRun.Query.status_in([:pending, :sent])
-      |> Repo.all()
+  def dispatch_queued_for_runner(runner_id) when is_binary(runner_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_runner_id(runner_id)
+    |> ActionRun.Query.status_in([:pending])
+    |> ActionRun.Query.ordered_by_oldest()
+    |> ActionRun.Query.limit_to(1)
+    |> Repo.all()
+    |> Enum.each(fn run ->
+      case dispatch_to_runner(run) do
+        :ok ->
+          :ok
 
-    if runs != [] do
-      Logger.info("reconnect_redispatch runner=#{runner_id} runs=#{length(runs)}")
-      Enum.each(runs, &dispatch_to_runner/1)
-    end
+        {:error, :not_dispatchable} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
+      end
+    end)
 
     :ok
   end
@@ -1583,32 +1594,52 @@ defmodule Emisar.Runs do
   defp active_run_status?(status), do: not ActionRun.terminal?(status)
 
   @doc """
-  Re-emits the run_action envelope onto the runner's PubSub topic. Used for
-  fresh dispatches, the approve→send transition, and `RunDispatchTimeout`
-  re-sending a stale dispatch — the runner dedupes by `request_id`, so a
-  redelivery replays the cached result or runs it once (idempotent).
-  Internal — called from `dispatch_run/2`, `Approvals.approve_request/4`,
-  and `Emisar.Runs.Jobs.DispatchTimeout`.
+  Claims a never-sent `:pending` run and emits its run_action envelope onto the
+  runner's PubSub topic. If the runner is offline, the run remains pending and
+  returns `:ok`; the next owned connection calls `dispatch_queued_for_runner/1`.
+  The status claim is row-locked, so concurrent senders cannot both publish.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
-    # Independent send-time guard: re-read the CURRENT status and refuse to
-    # publish a run that's no longer dispatchable (cancelled / denied / terminal).
-    # The envelope goes onto the runner's topic BEFORE `mark_sent`, and
-    # `mark_sent`'s terminal guard only blocks the DB transition — not the
-    # already-delivered message — so a run cancelled between authorization and
-    # delivery (a stale approval racing a cancel) MUST be stopped here, before
-    # anything reaches the runner.
-    if dispatchable?(peek_run_by_id(run.id)) do
-      deliver_run_action(run)
-    else
-      {:error, :not_dispatchable}
+    case peek_run_by_id(run.id) do
+      %ActionRun{status: :pending} = current_run ->
+        case Emisar.Runners.current_connection_generation(
+               current_run.account_id,
+               current_run.runner_id
+             ) do
+          {:ok, generation} -> deliver_run_action(current_run, :pending, generation)
+          {:error, :not_connected} -> :ok
+        end
+
+      _ ->
+        {:error, :not_dispatchable}
     end
   end
 
-  defp dispatchable?(%ActionRun{status: status}) when status in [:pending, :sent], do: true
-  defp dispatchable?(_), do: false
+  @doc """
+  Internal — redelivers a `:sent` run only to the exact connection generation
+  that received the first attempt. A successor connection is never eligible.
+  """
+  def redeliver_to_runner(%ActionRun{} = run) do
+    case peek_run_by_id(run.id) do
+      %ActionRun{status: :sent} = current_run ->
+        with {:ok, generation} <-
+               Emisar.Runners.current_connection_generation(
+                 current_run.account_id,
+                 current_run.runner_id
+               ),
+             true <- generation == current_run.runner_connection_generation do
+          deliver_run_action(current_run, :sent, generation)
+        else
+          false -> {:error, :connection_changed}
+          {:error, _reason} = error -> error
+        end
 
-  defp deliver_run_action(%ActionRun{} = run) do
+      _ ->
+        {:error, :not_dispatchable}
+    end
+  end
+
+  defp deliver_run_action(%ActionRun{} = run, expected_status, generation) do
     payload = %{
       "type" => "run_action",
       "request_id" => run.request_id,
@@ -1630,23 +1661,23 @@ defmodule Emisar.Runs do
 
     case stamp_pack_hash(payload, run) do
       {:ok, envelope} ->
-        Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, envelope)
-
-        # The envelope is already on the runner's topic, so we can't un-send it
-        # if the DB write fails — but a dropped `mark_sent` leaves the runner
-        # executing while the row stays un-`sent`. Surface that mismatch instead
-        # of swallowing it (the run still shows un-sent until the runner reports
-        # progress, which flips it to :running).
-        case mark_sent(run) do
-          {:ok, _} ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning(
-              "mark_sent failed for run #{run.id} after envelope delivered: #{inspect(reason)}"
-            )
-
-            :ok
+        with {:ok, _sent} <-
+               transition_from(run, expected_status, :sent, %{
+                 sent_at: DateTime.utc_now(),
+                 runner_connection_generation: generation
+               }),
+             :ok <-
+               Emisar.Runners.deliver_to_runner(
+                 run.account_id,
+                 run.runner_id,
+                 generation,
+                 envelope
+               ) do
+          :ok
+        else
+          {:error, reason} = error ->
+            Logger.warning("dispatch delivery failed run=#{run.id}: #{inspect(reason)}")
+            error
         end
 
       :unavailable ->
@@ -1841,11 +1872,14 @@ defmodule Emisar.Runs do
   # dispatch that starts afterward then observes `:cancelled` and refuses to
   # publish an action instead of receiving this cancel before the action exists.
   defp deliver_cancel_to_runner({:cancelled, %ActionRun{} = run}, reason) do
-    Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
-      "type" => "cancel",
-      "request_id" => run.request_id,
-      "reason" => reason
-    })
+    with {:ok, generation} <-
+           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id) do
+      Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
+        "type" => "cancel",
+        "request_id" => run.request_id,
+        "reason" => reason
+      })
+    end
   end
 
   defp deliver_cancel_to_runner(_, _reason), do: :ok
@@ -1905,10 +1939,19 @@ defmodule Emisar.Runs do
     "pack_hash_mismatch" => :refused
   }
 
-  def mark_finished(%ActionRun{} = run, result_payload) do
+  def mark_finished(%ActionRun{} = run, result_payload),
+    do: mark_finished(run, result_payload, nil)
+
+  defp mark_finished(%ActionRun{} = run, result_payload, connection) do
     status = Map.get(@result_statuses, result_payload["status"], :failed)
 
-    case transition(run, status, result_attrs(result_payload)) do
+    case transition_from(
+           run,
+           :any_nonterminal,
+           status,
+           result_attrs(result_payload),
+           connection
+         ) do
       {:ok, finished} = ok ->
         # If this run was part of a runbook execution, let the engine
         # decide whether the next wave fires — it no-ops while wave
@@ -1949,14 +1992,20 @@ defmodule Emisar.Runs do
     }
   end
 
-  defp transition(%ActionRun{} = run, status, attrs) do
+  defp transition(%ActionRun{} = run, status, attrs),
+    do: transition_from(run, :any_nonterminal, status, attrs, nil)
+
+  defp transition_from(%ActionRun{} = run, expected_status, status, attrs),
+    do: transition_from(run, expected_status, status, attrs, nil)
+
+  defp transition_from(%ActionRun{} = run, expected_status, status, attrs, connection) do
     if ActionRun.terminal?(run.status) do
-      # Cheap idempotent guard on the caller's struct. The authoritative
-      # check is the locked re-read below — this just spares the round
-      # trip when the caller already sees a final run.
-      {:ok, run}
+      if expected_status == :any_nonterminal,
+        do: {:ok, run},
+        else: {:error, :not_dispatchable}
     else
       Multi.new()
+      |> put_connection_guard(connection)
       |> Multi.run(:run, fn repo, _changes ->
         # The caller's struct can be stale: a runner result, an operator
         # cancel, and the timeout sweep race on the same row, and a late
@@ -1970,9 +2019,23 @@ defmodule Emisar.Runs do
           |> repo.one()
 
         cond do
-          is_nil(loaded_run) -> {:error, :not_found}
-          ActionRun.terminal?(loaded_run.status) -> {:ok, :already_terminal}
-          true -> repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
+          is_nil(loaded_run) ->
+            {:error, :not_found}
+
+          ActionRun.terminal?(loaded_run.status) and expected_status == :any_nonterminal ->
+            {:ok, :already_terminal}
+
+          ActionRun.terminal?(loaded_run.status) ->
+            {:error, :not_dispatchable}
+
+          expected_status != :any_nonterminal and loaded_run.status != expected_status ->
+            {:error, :not_dispatchable}
+
+          connection_generation_changed?(loaded_run, connection) ->
+            {:error, :connection_superseded}
+
+          true ->
+            repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
         end
       end)
       |> put_run_audit_event()
@@ -1991,6 +2054,31 @@ defmodule Emisar.Runs do
       end
     end
   end
+
+  defp put_connection_guard(multi, nil), do: multi
+
+  defp put_connection_guard(
+         multi,
+         {account_id, runner_id, generation, lease_id}
+       ) do
+    Multi.run(multi, :runner_connection, fn repo, _changes ->
+      case Emisar.Runners.fetch_and_lock_connection_owner(
+             account_id,
+             runner_id,
+             generation,
+             lease_id,
+             repo: repo
+           ) do
+        {:ok, runner} -> {:ok, runner}
+        {:error, :not_found} -> {:error, :connection_superseded}
+      end
+    end)
+  end
+
+  defp connection_generation_changed?(_run, nil), do: false
+
+  defp connection_generation_changed?(run, {_account_id, _runner_id, generation, _lease_id}),
+    do: run.runner_connection_generation != generation
 
   # Post-commit side effects for a run transition: broadcast the new state,
   # and emit run-outcome telemetry once the run reaches a terminal status
@@ -2062,11 +2150,21 @@ defmodule Emisar.Runs do
   @max_progress_bytes_per_run 67_108_864
 
   @doc "Internal — runner socket: append a progress chunk to a dispatched, non-terminal run within its per-run budget (socket token is the gate, no web subject)."
-  def append_event(%ActionRun{} = run, attrs) do
+  def append_event(%ActionRun{} = run, attrs), do: append_event(run, attrs, nil)
+
+  def append_event(run_id, attrs) when is_binary(run_id) do
+    case peek_run_by_id(run_id) do
+      nil -> {:error, :unknown_run}
+      %ActionRun{} = run -> append_event(run, attrs)
+    end
+  end
+
+  defp append_event(%ActionRun{} = run, attrs, connection) do
     attrs = attrs |> Map.put(:run_id, run.id) |> Map.put(:account_id, run.account_id)
     event_bytes = progress_payload_bytes(attrs)
 
     Multi.new()
+    |> put_connection_guard(connection)
     |> Multi.run(:run, fn repo, _changes ->
       # Re-read under the row lock: the caller's struct can be stale, and the
       # terminal-guard + budget check must judge (and charge) the CURRENT row so
@@ -2081,6 +2179,9 @@ defmodule Emisar.Runs do
           cond do
             ActionRun.terminal?(loaded_run.status) ->
               {:error, :run_terminal}
+
+            connection_generation_changed?(loaded_run, connection) ->
+              {:error, :connection_superseded}
 
             progress_budget_exceeded?(loaded_run, event_bytes) ->
               {:error, :progress_budget_exceeded}
@@ -2104,7 +2205,16 @@ defmodule Emisar.Runs do
 
         # The first accepted chunk marks the run as :running (a separate locked
         # transition; idempotent server-side).
-        if loaded_run.status == :sent, do: mark_running(run)
+        if loaded_run.status == :sent do
+          transition_from(
+            run,
+            :sent,
+            :running,
+            %{started_at: DateTime.utc_now()},
+            connection
+          )
+        end
+
         {:ok, event}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -2122,10 +2232,25 @@ defmodule Emisar.Runs do
     end
   end
 
-  def append_event(run_id, attrs) when is_binary(run_id) do
+  @doc """
+  Internal — appends progress only while the emitting socket still owns the
+  exact connection generation that received this run.
+  """
+  def append_event_from_connection(
+        run_id,
+        attrs,
+        account_id,
+        runner_id,
+        generation,
+        lease_id
+      )
+      when is_binary(run_id) do
     case peek_run_by_id(run_id) do
-      nil -> {:error, :unknown_run}
-      %ActionRun{} = run -> append_event(run, attrs)
+      nil ->
+        {:error, :unknown_run}
+
+      %ActionRun{} = run ->
+        append_event(run, attrs, {account_id, runner_id, generation, lease_id})
     end
   end
 
@@ -2217,6 +2342,29 @@ defmodule Emisar.Runs do
   end
 
   def finalize_from_result(_runner_id, _msg),
+    do: {:error, :missing_request_id}
+
+  @doc """
+  Finalizes a result only while the emitting socket owns the generation that
+  received the run. Ownership and the terminal transition share one transaction.
+  """
+  def finalize_from_connection(
+        account_id,
+        runner_id,
+        generation,
+        lease_id,
+        %{"request_id" => request_id} = result
+      ) do
+    case fetch_run_by_request_id_for_runner_generation(request_id, runner_id, generation) do
+      {:error, :not_found} ->
+        {:error, :unknown_request_id}
+
+      {:ok, %ActionRun{} = run} ->
+        mark_finished(run, result, {account_id, runner_id, generation, lease_id})
+    end
+  end
+
+  def finalize_from_connection(_account_id, _runner_id, _generation, _lease_id, _msg),
     do: {:error, :missing_request_id}
 
   @doc """

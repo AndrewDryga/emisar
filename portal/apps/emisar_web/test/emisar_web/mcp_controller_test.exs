@@ -632,7 +632,13 @@ defmodule EmisarWeb.MCPControllerTest do
       runner = make_runner!(account, name: "offline-host", connected: false)
       advertise_action!(runner, action_id: "linux.uptime")
 
-      {:ok, _} = Runners.mark_disconnected(runner, "test-disconnect")
+      runner
+      |> Ecto.Changeset.change(
+        last_connected_at: DateTime.add(DateTime.utc_now(), -60, :second),
+        last_disconnected_at: DateTime.utc_now(),
+        last_disconnect_reason: "test-disconnect"
+      )
+      |> Repo.update!()
 
       raw = make_api_key!(account, user)
 

@@ -778,7 +778,8 @@ defmodule Emisar.RunsTest do
       assert run.account_id == account.id
 
       # Cloud-to-runner envelope was delivered.
-      assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}},
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "run_action", "action_id" => "linux.uptime"}},
                      500
     end
 
@@ -1025,7 +1026,7 @@ defmodule Emisar.RunsTest do
                  subject
                )
 
-      assert_receive {:cloud_to_runner, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
       assert payload["expected_pack_hash"] == "sha256:CLOUD_TRUSTED"
     end
 
@@ -1265,7 +1266,7 @@ defmodule Emisar.RunsTest do
 
       # Stored on the run row, and relayed verbatim — the portal only carries it.
       assert run.attestation == attestation
-      assert_receive {:cloud_to_runner, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
       assert payload["attestation"] == attestation
     end
 
@@ -1296,7 +1297,7 @@ defmodule Emisar.RunsTest do
       # Persisted args come back byte-equal after the jsonb round-trip…
       assert Repo.reload!(run).args == rich_args
       # …and the wire envelope carries them verbatim.
-      assert_receive {:cloud_to_runner, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
       assert payload["args"] == rich_args
     end
 
@@ -1310,7 +1311,7 @@ defmodule Emisar.RunsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok, :running, _run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
-      assert_receive {:cloud_to_runner, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
       refute Map.has_key?(payload, "attestation")
     end
 
@@ -1427,7 +1428,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, [_one], _} = Approvals.list_pending_approval_requests(operator_subject)
 
       # …and no second run_action envelope was ever pushed (it never dispatched).
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "rejects a missing action_id with :action_required" do
@@ -1493,7 +1494,7 @@ defmodule Emisar.RunsTest do
                changes[{:composed_run, :compose_contract, 0}]
 
       assert runner_id == runner.id
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "rejects an empty batch before adding it to the caller's transaction" do
@@ -1514,7 +1515,7 @@ defmodule Emisar.RunsTest do
       assert_receive {:run_updated, %ActionRun{runner_id: runner_id}}, 500
       assert runner_id == runner.id
 
-      assert_receive {:cloud_to_runner,
+      assert_receive {:cloud_to_runner, _generation,
                       %{
                         "type" => "run_action",
                         "pack_ref" => @mcp_pack_ref,
@@ -1540,13 +1541,13 @@ defmodule Emisar.RunsTest do
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
       assert Enum.all?(runs, &(&1.status == :sent))
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       original_ids = Enum.map(runs, & &1.id)
       assert {:ok, replayed} = Runs.dispatch_mcp_fanout(operation, targets, subject)
       assert Enum.map(replayed, & &1.id) == original_ids
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
       assert Repo.aggregate(ActionRun, :count) == 2
@@ -1578,9 +1579,9 @@ defmodule Emisar.RunsTest do
 
       assert target_sets |> Enum.uniq() |> length() == 1
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
-      refute_receive {:cloud_to_runner, _}, 100
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
       assert Repo.aggregate(ActionRun, :count) == 2
@@ -1605,7 +1606,7 @@ defmodule Emisar.RunsTest do
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "commits mixed allow and approval outcomes in one operation" do
@@ -1644,8 +1645,8 @@ defmodule Emisar.RunsTest do
       assert Enum.sort(Enum.map(runs, & &1.status)) == [:pending_approval, :sent]
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
-      refute_receive {:cloud_to_runner, _}, 100
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert {:ok, [request], _meta} =
                Approvals.list_pending_approval_requests(owner_subject)
@@ -1785,7 +1786,7 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run_for_account(base_attrs(account.id, runner.id), account.id)
 
       assert run.account_id == account.id
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
     test "still enforces the reason / action / runner gates", %{
@@ -2106,7 +2107,7 @@ defmodule Emisar.RunsTest do
       %{account: account, subject: subject}
     end
 
-    test "worker times out a stale run whose runner is offline", %{
+    test "worker fails closed when a sent run's runner disconnected", %{
       account: account,
       subject: subject
     } do
@@ -2128,7 +2129,9 @@ defmodule Emisar.RunsTest do
 
       reloaded = Repo.get!(ActionRun, run.id)
       assert reloaded.status == :error
-      assert reloaded.error_message =~ "offline"
+      assert reloaded.error_message =~ "disconnected after accepting this dispatch"
+      assert reloaded.error_message =~ "outcome is unknown"
+      assert reloaded.error_message =~ "did not execute it again"
     end
 
     test "worker leaves a stale run alone while its runner is online", %{
@@ -2154,32 +2157,38 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "redispatch_inflight_for_runner/1" do
+  describe "dispatch_queued_for_runner/1" do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
     end
 
-    test "re-dispatches the runner's in-flight :pending and :sent runs", %{
+    test "dispatches pending work without replaying a sent run", %{
       account: account,
       runner: runner
     } do
+      Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, sent} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, sent} = Runs.mark_sent(sent)
-      # Backdate sent_at so a re-dispatch's fresh mark_sent jumps it forward.
       past = DateTime.add(DateTime.utc_now(), -60, :second)
       sent = sent |> Ecto.Changeset.change(sent_at: past) |> Repo.update!()
 
       {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
       assert pending.status == :pending
+      {:ok, next_pending} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.redispatch_inflight_for_runner(runner.id)
+      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
 
-      resent = Runs.peek_run_by_id(sent.id)
-      assert resent.status == :sent
-      assert DateTime.compare(resent.sent_at, sent.sent_at) == :gt
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+      assert request_id == pending.request_id
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+
+      unchanged = Runs.peek_run_by_id(sent.id)
+      assert unchanged.status == :sent
+      assert DateTime.compare(unchanged.sent_at, sent.sent_at) == :eq
       assert Runs.peek_run_by_id(pending.id).status == :sent
+      assert Runs.peek_run_by_id(next_pending.id).status == :pending
     end
 
     test "leaves :running, terminal, and other-runner runs untouched (no double-exec)", %{
@@ -2195,9 +2204,9 @@ defmodule Emisar.RunsTest do
       {:ok, other_sent} = Runs.create_run(base_attrs(account.id, other.id))
       {:ok, other_sent} = Runs.mark_sent(other_sent)
 
-      assert :ok = Runs.redispatch_inflight_for_runner(runner.id)
+      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
 
-      # A :running run is excluded by the [:pending, :sent] filter — never re-sent.
+      # A :running run is excluded by the :pending filter — never re-sent.
       reloaded_running = Runs.peek_run_by_id(running.id)
       assert reloaded_running.status == :running
       assert DateTime.compare(reloaded_running.sent_at, running.sent_at) == :eq
@@ -2365,7 +2374,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       assert :ok = Runs.dispatch_to_runner(run)
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
 
@@ -2377,10 +2386,37 @@ defmodule Emisar.RunsTest do
       # The run reaches a terminal state (e.g. cancelled) before delivery.
       {:ok, _} = run |> Ecto.Changeset.change(status: :cancelled) |> Repo.update()
 
-      # The envelope is published BEFORE mark_sent, so the status guard must
-      # block it HERE — nothing should reach the runner.
+      # The row-locked claim must refuse it before anything reaches the runner.
       assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "leaves an offline run pending for the next connection", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, connected} =
+        Emisar.Runners.mark_disconnected(
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          "offline"
+        )
+
+      :ok =
+        Emisar.Runners.Presence.untrack(
+          self(),
+          Emisar.Runners.Presence.topic(account.id),
+          connected.id
+        )
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert :ok = Runs.dispatch_to_runner(run)
+      reloaded = Runs.peek_run_by_id(run.id)
+      assert reloaded.status == :pending
+      assert is_nil(reloaded.runner_connection_generation)
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "refuses to publish a run still waiting for approval", %{
@@ -2393,13 +2429,13 @@ defmodule Emisar.RunsTest do
         Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
 
       assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
+  end
 
-    test "a pack drifting to pending after authorization is refused at send, not shipped hash-less",
-         %{account: account} do
+  describe "redeliver_to_runner/1" do
+    test "a pack drifting to pending after authorization is refused at send, not shipped hash-less" do
       {_user, owner_account, subject} = Fixtures.Subjects.owner_subject()
-      _ = account
       _ = Fixtures.Policies.create_policy(account_id: owner_account.id)
       {runner, pack_version} = observe_pending_pack(owner_account, subject)
 
@@ -2436,7 +2472,7 @@ defmodule Emisar.RunsTest do
         })
 
       # Redelivery must NOT ship a hash-less envelope — it refuses the run.
-      assert {:error, :pack_untrusted} = Runs.dispatch_to_runner(run)
+      assert {:error, :pack_untrusted} = Runs.redeliver_to_runner(run)
       assert Runs.peek_run_by_id(run.id).status == :refused
     end
 
@@ -2457,7 +2493,9 @@ defmodule Emisar.RunsTest do
 
       # The trusted hash is snapshotted onto the run + shipped in the envelope.
       assert Runs.peek_run_by_id(run.id).expected_pack_hash == "sha256:NOPE"
-      assert_receive {:cloud_to_runner, %{"expected_pack_hash" => "sha256:NOPE"}}, 500
+
+      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => "sha256:NOPE"}},
+                     500
 
       # The pack drifts to a NEW hash AND is re-trusted (trusted hash now TAMPERED).
       {:ok, _} =
@@ -2484,8 +2522,10 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Emisar.Catalog.trust_pack_version(drifted.id, subject)
 
       # Redelivery ships the ORIGINAL snapshot (NOPE), never the new trusted hash.
-      assert :ok = Runs.dispatch_to_runner(run)
-      assert_receive {:cloud_to_runner, %{"expected_pack_hash" => "sha256:NOPE"}}, 500
+      assert :ok = Runs.redeliver_to_runner(run)
+
+      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => "sha256:NOPE"}},
+                     500
     end
 
     # Observe a custom (no-baseline) pack + its action; the version lands
@@ -2587,7 +2627,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
                Runs.cancel_run(run, subject, "user pressed stop")
 
-      assert_receive {:cloud_to_runner,
+      assert_receive {:cloud_to_runner, _generation,
                       %{
                         "type" => "cancel",
                         "request_id" => request_id,
@@ -3216,6 +3256,44 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "append_event_from_connection/6" do
+    test "accepts only the lease and generation that received the run" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, sent} =
+        run
+        |> Ecto.Changeset.change(
+          status: :sent,
+          runner_connection_generation: runner.connection_generation
+        )
+        |> Repo.update()
+
+      assert {:ok, %RunEvent{seq: 1}} =
+               Runs.append_event_from_connection(
+                 sent.id,
+                 %{seq: 1, kind: "progress", payload: %{"line" => "owned"}},
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id
+               )
+
+      assert {:error, :connection_superseded} =
+               Runs.append_event_from_connection(
+                 sent.id,
+                 %{seq: 2, kind: "progress", payload: %{"line" => "stale"}},
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 Ecto.UUID.generate()
+               )
+
+      assert Repo.reload!(sent).progress_event_count == 1
+    end
+  end
+
   describe "peek_run_by_id/1" do
     test "returns the run struct when it exists" do
       account = Fixtures.Accounts.create_account()
@@ -3450,6 +3528,33 @@ defmodule Emisar.RunsTest do
 
     test "with no request_id returns :missing_request_id" do
       assert {:error, :missing_request_id} = Runs.finalize_from_result("runner-123", %{})
+    end
+  end
+
+  describe "finalize_from_connection/5" do
+    test "rejects a result after the socket lease is superseded" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, sent} =
+        run
+        |> Ecto.Changeset.change(
+          status: :sent,
+          runner_connection_generation: runner.connection_generation
+        )
+        |> Repo.update()
+
+      assert {:error, :connection_superseded} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 Ecto.UUID.generate(),
+                 %{"request_id" => sent.request_id, "status" => "success"}
+               )
+
+      assert Repo.reload!(sent).status == :sent
     end
   end
 

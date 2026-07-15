@@ -1652,8 +1652,8 @@ defmodule Emisar.RunbooksTest do
       assert length(first.runs) == 2
       assert Enum.all?(first.runs, &(&1.status == :sent))
 
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
-      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       assert {:ok, execution} = Runbooks.fetch_execution_by_operation(operation_id, subject)
       assert execution.id == first.execution_id
@@ -1663,7 +1663,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, replay} = Runbooks.dispatch_runbook(runbook, "inspect fleet", subject, opts)
       assert replay.execution_id == first.execution_id
       assert replay.runs |> Enum.map(& &1.id) |> Enum.sort() == first_ids
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
       assert Repo.aggregate(RunbookExecution, :count) == 1
@@ -1713,7 +1713,7 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(RunbookExecution)
       refute Repo.exists?(Runs.ActionRun)
       assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_count
-      refute_receive {:cloud_to_runner, _}, 100
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "rejects operation reuse with different facts and preserves the original execution" do

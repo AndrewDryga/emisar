@@ -20,8 +20,20 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
     grace_cutoff = DateTime.add(now, -@dispatch_grace_secs, :second)
     redispatch_deadline = DateTime.add(now, -@redispatch_deadline_secs, :second)
 
-    Runs.list_stale_dispatches(grace_cutoff)
+    stale_dispatches = Runs.list_stale_dispatches(grace_cutoff)
+
+    stale_dispatches
+    |> Enum.filter(&(&1.status == :sent))
     |> Enum.each(&resolve_stale_dispatch(&1, redispatch_deadline))
+
+    stale_dispatches
+    |> Enum.filter(&(&1.status == :pending))
+    |> Enum.group_by(& &1.runner_id)
+    |> Enum.each(fn {_runner_id, runs} ->
+      runs
+      |> Enum.min_by(&DateTime.to_unix(&1.queued_at, :microsecond))
+      |> resolve_stale_dispatch(redispatch_deadline)
+    end)
 
     Runs.list_running_runs()
     |> Enum.each(&maybe_time_out_running(&1, grace_cutoff))
@@ -32,9 +44,29 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
   defp resolve_stale_dispatch(run, redispatch_deadline) do
     case Runners.peek_runner_by_id(run.runner_id) do
       %Runners.Runner{} = runner ->
+        resolve_stale_dispatch(run, runner, redispatch_deadline)
+
+      nil ->
+        Runs.mark_errored(run, removed_runner_reason(run))
+    end
+  end
+
+  defp resolve_stale_dispatch(%{status: :pending} = run, runner, _redispatch_deadline) do
+    case Runners.current_connection_generation(runner.account_id, runner.id) do
+      {:ok, _generation} -> Runs.dispatch_to_runner(run)
+      {:error, :not_connected} -> Runs.mark_errored(run, unreachable_reason(run, runner))
+    end
+  end
+
+  defp resolve_stale_dispatch(%{status: :sent} = run, runner, redispatch_deadline) do
+    case Runners.current_connection_generation(runner.account_id, runner.id) do
+      {:error, :not_connected} ->
+        Runs.mark_errored(run, unreachable_reason(run, runner))
+
+      {:ok, generation} ->
         cond do
-          not Runners.online?(runner.account_id, runner.id) ->
-            Runs.mark_errored(run, unreachable_reason(runner))
+          run.runner_connection_generation != generation ->
+            Runs.mark_errored(run, changed_connection_reason(runner))
 
           DateTime.compare(run.queued_at, redispatch_deadline) == :lt ->
             Runs.mark_errored(run, never_acknowledged_reason(runner))
@@ -45,30 +77,31 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
                 "request_id=#{run.request_id}"
             )
 
-            Runs.dispatch_to_runner(run)
+            Runs.redeliver_to_runner(run)
         end
-
-      nil ->
-        Runs.mark_errored(run, "Runner was removed before this run could be dispatched.")
     end
   end
 
   defp maybe_time_out_running(run, cutoff) do
     case Runners.peek_runner_by_id(run.runner_id) do
       %Runners.Runner{} = runner ->
-        cond do
-          Runners.online?(runner.account_id, runner.id) ->
+        case Runners.current_connection_generation(runner.account_id, runner.id) do
+          {:ok, generation} when generation == run.runner_connection_generation ->
             :noop
 
-          offline_past_grace?(runner, cutoff) ->
-            Runs.mark_errored(
-              run,
-              "Runner #{runner.name} disconnected while this run was in flight. " <>
-                "The result never arrived."
-            )
+          {:ok, _different_generation} ->
+            Runs.mark_errored(run, changed_connection_reason(runner))
 
-          true ->
-            :noop
+          {:error, :not_connected} ->
+            if offline_past_grace?(runner, cutoff) do
+              Runs.mark_errored(
+                run,
+                "Runner #{runner.name} disconnected while this run was in flight. " <>
+                  "The result never arrived."
+              )
+            else
+              :noop
+            end
         end
 
       nil ->
@@ -81,15 +114,35 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
   defp offline_past_grace?(%{last_disconnected_at: disconnected_at}, cutoff),
     do: DateTime.compare(disconnected_at, cutoff) == :lt
 
-  defp unreachable_reason(runner) do
+  defp unreachable_reason(%{status: :pending}, runner) do
     state = if runner.disabled_at, do: "disabled", else: "offline"
 
-    "Runner #{runner.name} was #{state} when the dispatch was sent. " <>
+    "Runner #{runner.name} was #{state} while the dispatch was queued. " <>
       "The action never reached it."
   end
 
+  defp unreachable_reason(%{status: :sent}, runner) do
+    state = if runner.disabled_at, do: "disabled", else: "disconnected"
+
+    "Runner #{runner.name} #{state} after accepting this dispatch. " <>
+      "Its execution outcome is unknown, so Emisar did not execute it again."
+  end
+
   defp never_acknowledged_reason(%{name: name}) do
-    "Runner #{name} stayed online but never acknowledged the dispatch. " <>
-      "The action was re-sent repeatedly and never started; giving up."
+    "Runner #{name} stayed online but never produced a durable result. " <>
+      "Its execution outcome is unknown, so Emisar did not execute it again."
+  end
+
+  defp changed_connection_reason(%{name: name}) do
+    "Runner #{name} reconnected before this dispatch produced a durable result. " <>
+      "The prior execution outcome is unknown, so Emisar did not execute it again."
+  end
+
+  defp removed_runner_reason(%{status: :pending}),
+    do: "Runner was removed before this run could be dispatched. The action never reached it."
+
+  defp removed_runner_reason(%{status: :sent}) do
+    "Runner was removed after accepting this dispatch. " <>
+      "Its execution outcome is unknown, so Emisar did not execute it again."
   end
 end

@@ -39,25 +39,7 @@ defmodule Emisar.Catalog do
   authenticated by the runner token. Not exposed to LV/MCP.
   """
   def observe_state(%Runners.Runner{} = runner, %{} = payload) do
-    case apply_runner_facts(runner, payload) do
-      {:error, :not_found} ->
-        {:error, :unknown_runner}
-
-      {:ok, updated_runner} ->
-        case sync_catalog(updated_runner, payload) do
-          {:ok, pending_changed?} ->
-            # Light up the pack-trust badge only when the pending set actually
-            # moved (drift / new custom pack), and only after the commit.
-            if pending_changed?, do: broadcast_pack_trust(updated_runner.account_id)
-
-          {:error, reason} ->
-            Logger.warning(
-              "catalog sync for runner #{updated_runner.id} failed: #{inspect(reason)}"
-            )
-        end
-
-        {:ok, updated_runner}
-    end
+    observe_state(runner, payload, nil)
   end
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
@@ -66,6 +48,58 @@ defmodule Emisar.Catalog do
       nil -> {:error, :unknown_runner}
     end
   end
+
+  @doc """
+  Ingests a runner-state envelope only while the socket still owns the supplied
+  connection generation and lease. Each durable mutation rechecks ownership
+  under the runner-row lock, so a successor claim fences an in-flight stale
+  socket rather than relying on a separate preflight read.
+  """
+  def observe_state_from_connection(
+        runner_id,
+        %{} = payload,
+        generation,
+        lease_id
+      )
+      when is_binary(runner_id) and is_integer(generation) and is_binary(lease_id) do
+    case Emisar.Runners.peek_runner_by_id(runner_id) do
+      %Runners.Runner{} = runner ->
+        observe_state(runner, payload, {generation, lease_id})
+
+      nil ->
+        {:error, :unknown_runner}
+    end
+  end
+
+  defp observe_state(runner, payload, connection) do
+    case apply_runner_facts(runner, payload, connection) do
+      {:error, :not_found} ->
+        connection_error(connection)
+
+      {:ok, updated_runner} ->
+        case sync_catalog(updated_runner, payload, connection) do
+          {:ok, pending_changed?} ->
+            # Light up the pack-trust badge only when the pending set actually
+            # moved (drift / new custom pack), and only after the commit.
+            if pending_changed?, do: broadcast_pack_trust(updated_runner.account_id)
+
+            {:ok, updated_runner}
+
+          {:error, :connection_superseded} ->
+            {:error, :connection_superseded}
+
+          {:error, reason} ->
+            Logger.warning(
+              "catalog sync for runner #{updated_runner.id} failed: #{inspect(reason)}"
+            )
+
+            {:ok, updated_runner}
+        end
+    end
+  end
+
+  defp connection_error(nil), do: {:error, :unknown_runner}
+  defp connection_error({_generation, _lease_id}), do: {:error, :connection_superseded}
 
   # Commit the runner-row facts (version, group, hostname, labels) FIRST,
   # in their own transaction. They must land on every reconnect even when
@@ -77,8 +111,17 @@ defmodule Emisar.Catalog do
   # or a bad/oversized field from untrusted runner JSON; keep the existing
   # struct on error (the next heartbeat re-syncs) rather than crashing the
   # socket.
-  defp apply_runner_facts(%Runners.Runner{} = runner, payload) do
-    case Emisar.Runners.apply_state(runner, payload) do
+  defp apply_runner_facts(%Runners.Runner{} = runner, payload, connection) do
+    result =
+      case connection do
+        nil ->
+          Emisar.Runners.apply_state(runner, payload)
+
+        {generation, lease_id} ->
+          Emisar.Runners.apply_state_from_connection(runner, payload, generation, lease_id)
+      end
+
+    case result do
       {:ok, updated} ->
         {:ok, updated}
 
@@ -99,13 +142,13 @@ defmodule Emisar.Catalog do
   # Best-effort by design: the catalog re-syncs on the next runner_state,
   # so a raise must never crash the runner socket (the durable runner-row
   # facts are already saved by then).
-  defp sync_catalog(%Runners.Runner{} = runner, payload) do
+  defp sync_catalog(%Runners.Runner{} = runner, payload, connection) do
     now = DateTime.utc_now()
     packs = payload["packs"] || %{}
     actions = payload["actions"] || []
 
     Repo.transaction(fn ->
-      case Runners.fetch_and_lock_active_runner(runner.id, runner.account_id, repo: Repo) do
+      case fetch_catalog_connection_owner(runner, connection) do
         {:ok, _active_runner} ->
           pending_changed? =
             packs
@@ -121,12 +164,29 @@ defmodule Emisar.Catalog do
           pending_changed?
 
         {:error, :not_found} ->
-          Repo.rollback(:unknown_runner)
+          Repo.rollback(connection_reason(connection))
       end
     end)
   rescue
     error -> {:error, error}
   end
+
+  defp fetch_catalog_connection_owner(runner, nil) do
+    Runners.fetch_and_lock_active_runner(runner.id, runner.account_id, repo: Repo)
+  end
+
+  defp fetch_catalog_connection_owner(runner, {generation, lease_id}) do
+    Runners.fetch_and_lock_connection_owner(
+      runner.account_id,
+      runner.id,
+      generation,
+      lease_id,
+      repo: Repo
+    )
+  end
+
+  defp connection_reason(nil), do: :unknown_runner
+  defp connection_reason({_generation, _lease_id}), do: :connection_superseded
 
   # -- Pack-version pinning --------------------------------------------
 

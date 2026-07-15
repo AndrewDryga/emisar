@@ -116,7 +116,15 @@ defmodule Emisar.RunnersTest do
     test "decorates online?, action_load + last heartbeat from presence" do
       {account, _user, subject} = account_with_owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-      {:ok, _ref} = Runners.record_heartbeat(account.id, runner.id, 5)
+
+      {:ok, _runner} =
+        Runners.record_heartbeat(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          5
+        )
 
       assert {:ok, [listed], _} = Runners.list_runners_for_account(subject)
       assert listed.online?
@@ -199,7 +207,15 @@ defmodule Emisar.RunnersTest do
       subject: subject
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-      {:ok, _ref} = Runners.record_heartbeat(account.id, runner.id, 5)
+
+      {:ok, _runner} =
+        Runners.record_heartbeat(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          5
+        )
 
       assert {:ok, fetched} = Runners.fetch_runner_by_id(runner.id, subject)
       assert fetched.id == runner.id
@@ -586,6 +602,36 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "fetch_and_lock_connection_owner/5" do
+    test "locks only the current connection lease" do
+      runner = Fixtures.Runners.create_runner(connected?: true)
+
+      assert {:ok, {:ok, %Runner{id: id}}} =
+               Repo.transaction(fn ->
+                 Runners.fetch_and_lock_connection_owner(
+                   runner.account_id,
+                   runner.id,
+                   runner.connection_generation,
+                   runner.connection_lease_id,
+                   repo: Repo
+                 )
+               end)
+
+      assert id == runner.id
+
+      assert {:ok, {:error, :not_found}} =
+               Repo.transaction(fn ->
+                 Runners.fetch_and_lock_connection_owner(
+                   runner.account_id,
+                   runner.id,
+                   runner.connection_generation,
+                   Ecto.UUID.generate(),
+                   repo: Repo
+                 )
+               end)
+    end
+  end
+
   describe "disable_runner/2" do
     setup do
       {account, _user, subject} = account_with_owner_subject()
@@ -788,6 +834,32 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "apply_state_from_connection/4" do
+    test "rejects a state update from a superseded lease" do
+      runner = Fixtures.Runners.create_runner(connected?: true)
+
+      assert {:ok, updated} =
+               Runners.apply_state_from_connection(
+                 runner,
+                 %{"hostname" => "owned"},
+                 runner.connection_generation,
+                 runner.connection_lease_id
+               )
+
+      assert updated.hostname == "owned"
+
+      assert {:error, :not_found} =
+               Runners.apply_state_from_connection(
+                 runner,
+                 %{"hostname" => "stale"},
+                 runner.connection_generation,
+                 Ecto.UUID.generate()
+               )
+
+      assert Repo.reload!(runner).hostname == "owned"
+    end
+  end
+
   describe "connect_runner/1" do
     test "tracks presence and stamps last_connected_at" do
       runner = Fixtures.Runners.create_runner(connected?: false)
@@ -796,20 +868,173 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{last_connected_at: %DateTime{}}} = Runners.connect_runner(runner)
       assert Runners.online?(runner.account_id, runner.id)
     end
+
+    test "refuses a second live holder of the same runner identity" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, first_claim} = Runners.connect_runner(runner)
+
+      assert {:error, :already_connected} = Runners.connect_runner(runner)
+
+      assert Runners.connection_owner?(
+               runner.account_id,
+               runner.id,
+               first_claim.connection_generation,
+               first_claim.connection_lease_id
+             )
+    end
+
+    test "an expired lease can be reclaimed even while stale Presence remains" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, first} = Runners.connect_runner(runner)
+      topic = Presence.topic(runner.account_id)
+
+      first
+      |> Ecto.Changeset.change(
+        connection_lease_expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
+      )
+      |> Repo.update!()
+
+      :ok = Presence.untrack(self(), topic, runner.id)
+
+      stale_pid =
+        spawn(fn ->
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      {:ok, _ref} =
+        Presence.track(stale_pid, topic, runner.id, %{
+          connection_generation: first.connection_generation,
+          connection_lease_id: first.connection_lease_id
+        })
+
+      assert Runners.online?(runner.account_id, runner.id)
+      assert {:ok, second} = Runners.connect_runner(runner)
+      assert second.connection_generation == first.connection_generation + 1
+      assert second.connection_lease_id != first.connection_lease_id
+
+      send(stale_pid, :stop)
+    end
+
+    test "reports an inactive runner separately from a duplicate live connection" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      runner |> Runner.Changeset.disable() |> Repo.update!()
+
+      assert {:error, :not_found} = Runners.connect_runner(runner)
+    end
   end
 
-  describe "record_heartbeat/3" do
-    test "refreshes action_load + last heartbeat in presence metadata, not the DB" do
+  describe "mark_disconnected/4" do
+    test "a released lease cannot stamp its successor disconnected" do
       runner = Fixtures.Runners.create_runner(connected?: false)
-      {:ok, _} = Runners.connect_runner(runner)
+      {:ok, first} = Runners.connect_runner(runner)
 
-      assert {:ok, _ref} = Runners.record_heartbeat(runner.account_id, runner.id, 7)
+      assert {:ok, _disconnected} =
+               Runners.mark_disconnected(
+                 first.id,
+                 first.connection_generation,
+                 first.connection_lease_id,
+                 "closed"
+               )
+
+      Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+      {:ok, second} = Runners.connect_runner(runner)
+
+      assert {:error, :not_found} =
+               Runners.mark_disconnected(
+                 first.id,
+                 first.connection_generation,
+                 first.connection_lease_id,
+                 "stale"
+               )
+
+      current = Repo.reload!(runner)
+      assert current.connection_lease_id == second.connection_lease_id
+      assert current.last_disconnect_reason == nil
+    end
+
+    test "stamps disconnect history and clears the matching lease" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, claimed} = Runners.connect_runner(runner)
+
+      assert {:ok,
+              %Runner{
+                last_disconnected_at: %DateTime{},
+                last_disconnect_reason: "shutdown",
+                connection_lease_id: nil,
+                connection_lease_expires_at: nil
+              }} =
+               Runners.mark_disconnected(
+                 claimed.id,
+                 claimed.connection_generation,
+                 claimed.connection_lease_id,
+                 "shutdown"
+               )
+    end
+
+    test "returns not_found for an unknown runner" do
+      assert {:error, :not_found} =
+               Runners.mark_disconnected(Ecto.UUID.generate(), 1, Ecto.UUID.generate(), "gone")
+    end
+  end
+
+  describe "record_heartbeat/5" do
+    test "renews the owner lease and refreshes action_load in presence" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, claimed} = Runners.connect_runner(runner)
+
+      assert {:ok, _presence_ref} =
+               Runners.record_heartbeat(
+                 runner.account_id,
+                 runner.id,
+                 claimed.connection_generation,
+                 claimed.connection_lease_id,
+                 7
+               )
+
+      renewed = Repo.reload!(claimed)
 
       assert %{metas: [meta | _]} =
                Runners.connection_metas(runner.account_id) |> Map.fetch!(runner.id)
 
       assert meta.action_load == 7
       assert is_integer(meta.last_heartbeat_at)
+
+      assert DateTime.compare(
+               renewed.connection_lease_expires_at,
+               claimed.connection_lease_expires_at
+             ) in [:eq, :gt]
+    end
+  end
+
+  describe "connection_owner?/4" do
+    test "rejects a stale lease id" do
+      runner = Fixtures.Runners.create_runner(connected?: true)
+
+      assert Runners.connection_owner?(
+               runner.account_id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id
+             )
+
+      refute Runners.connection_owner?(
+               runner.account_id,
+               runner.id,
+               runner.connection_generation,
+               Ecto.UUID.generate()
+             )
+    end
+  end
+
+  describe "current_connection_generation/2" do
+    test "returns only a live connection generation" do
+      runner = Fixtures.Runners.create_runner(connected?: true)
+      generation = runner.connection_generation
+
+      assert {:ok, ^generation} =
+               Runners.current_connection_generation(runner.account_id, runner.id)
     end
   end
 
@@ -886,26 +1111,6 @@ defmodule Emisar.RunnersTest do
       assert event.target_id == runner.id
       assert event.payload["runner_version"] == "0.0.0"
       assert event.payload["minimum"] == ">= 0.4.0"
-    end
-  end
-
-  describe "mark_disconnected/2" do
-    test "stamps last_disconnected_at + reason for a runner struct" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
-
-      assert {:ok, %Runner{last_disconnected_at: %DateTime{}, last_disconnect_reason: "shutdown"}} =
-               Runners.mark_disconnected(runner, "shutdown")
-    end
-
-    test "id-based variant stamps the disconnect for a live id" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
-
-      assert {:ok, %Runner{last_disconnected_at: %DateTime{}, last_disconnect_reason: "bye"}} =
-               Runners.mark_disconnected(runner.id, "bye")
-    end
-
-    test "id-based variant returns :not_found for an unknown id" do
-      assert {:error, :not_found} = Runners.mark_disconnected(Ecto.UUID.generate(), "gone")
     end
   end
 
@@ -1460,42 +1665,67 @@ defmodule Emisar.RunnersTest do
 
   describe "subscribe_runner_transport/1" do
     test "the subscriber receives this runner's cloud→runner deliveries" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
+      runner = Fixtures.Runners.create_runner(connected?: true)
       :ok = Runners.subscribe_runner_transport(runner)
 
-      Runners.deliver_to_runner(runner.account_id, runner.id, %{"hello" => "runner"})
-      assert_receive {:cloud_to_runner, %{"hello" => "runner"}}
+      Runners.deliver_to_runner(
+        runner.account_id,
+        runner.id,
+        runner.connection_generation,
+        %{"hello" => "runner"}
+      )
+
+      assert_receive {:cloud_to_runner, _generation, %{"hello" => "runner"}}
     end
 
     test "a subscriber to runner A does not receive runner B's deliveries" do
       account = Fixtures.Accounts.create_account()
       runner_a = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       :ok = Runners.subscribe_runner_transport(runner_a)
 
-      Runners.deliver_to_runner(account.id, runner_b.id, %{"only" => "b"})
-      refute_receive {:cloud_to_runner, _msg}
+      Runners.deliver_to_runner(
+        account.id,
+        runner_b.id,
+        runner_b.connection_generation,
+        %{"only" => "b"}
+      )
+
+      refute_receive {:cloud_to_runner, _generation, _msg}
     end
   end
 
-  describe "deliver_to_runner/3" do
+  describe "deliver_to_runner/4" do
     test "pushes an envelope onto the runner's transport topic" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
+      runner = Fixtures.Runners.create_runner(connected?: true)
       :ok = Runners.subscribe_runner_transport(runner)
 
-      assert :ok = Runners.deliver_to_runner(runner.account_id, runner.id, %{"cmd" => "dispatch"})
-      assert_receive {:cloud_to_runner, %{"cmd" => "dispatch"}}
+      assert :ok =
+               Runners.deliver_to_runner(
+                 runner.account_id,
+                 runner.id,
+                 runner.connection_generation,
+                 %{"cmd" => "dispatch"}
+               )
+
+      assert_receive {:cloud_to_runner, _generation, %{"cmd" => "dispatch"}}
     end
 
     test "the topic carries the account id — a wrong account never reaches the socket" do
       account = Fixtures.Accounts.create_account()
       other_account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       :ok = Runners.subscribe_runner_transport(runner)
 
       # Same runner id, wrong account → different topic → the subscriber hears nothing.
-      Runners.deliver_to_runner(other_account.id, runner.id, %{"cmd" => "x"})
-      refute_receive {:cloud_to_runner, _msg}
+      Runners.deliver_to_runner(
+        other_account.id,
+        runner.id,
+        runner.connection_generation,
+        %{"cmd" => "x"}
+      )
+
+      refute_receive {:cloud_to_runner, _generation, _msg}
     end
   end
 
