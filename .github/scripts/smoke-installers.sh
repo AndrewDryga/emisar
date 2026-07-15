@@ -200,6 +200,127 @@ HOSTILE_INSTALL
     test "$status" -ne 0
     test ! -e "$tmp/hostile-executed"
     grep -Fq "staged binary checksum changed" "$tmp/hostile-stage.log"
+
+    # A sudo invocation must ignore an inherited TMPDIR. The downloaded binary
+    # is executed for its version, so its parent must not be replaceable by the
+    # invoking user.
+    trusted_tmp_lib="$tmp/trusted-temp.sh"
+    extract_shell_function install-mcp.sh make_temp_dir >"$trusted_tmp_lib"
+    printf 'make_temp_dir\n' >>"$trusted_tmp_lib"
+    mkdir -p "$tmp/user-controlled-tmp"
+    if [ "$(id -u)" -eq 0 ]; then
+      trusted_tmp=$(TMPDIR="$tmp/user-controlled-tmp" bash "$trusted_tmp_lib")
+      case "$trusted_tmp" in
+        /tmp/emisar-mcp-install.*) ;;
+        *) echo "privileged temporary directory was not rooted in /tmp: $trusted_tmp" >&2; exit 1;;
+      esac
+      rm -rf "$trusted_tmp"
+    elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      trusted_tmp=$(sudo -n env TMPDIR="$tmp/user-controlled-tmp" bash "$trusted_tmp_lib")
+      case "$trusted_tmp" in
+        /tmp/emisar-mcp-install.*) ;;
+        *) echo "privileged temporary directory was not rooted in /tmp: $trusted_tmp" >&2; exit 1;;
+      esac
+      sudo -n rm -rf "$trusted_tmp"
+    fi
+
+    # Exercise the exact activation transaction with two client locations. A
+    # failure on the second rename must restore the first location too.
+    transaction_lib="$tmp/install-transaction.sh"
+    extract_shell_function install-mcp.sh rollback_installations >"$transaction_lib"
+    extract_shell_function install-mcp.sh activate_installations >>"$transaction_lib"
+    # shellcheck disable=SC1090
+    source "$transaction_lib"
+    warn() { printf '%s\n' "$*" >&2; }
+    sha_value() { sha256 "$1"; }
+
+    link_target="$tmp/link-target"
+    link_dir="$tmp/link-dir"
+    mkdir -p "$link_dir"
+    printf 'linked-old\n' >"$link_target"
+    ln -s "$link_target" "$link_dir/emisar-mcp"
+    printf 'new\n' >"$link_dir/.emisar-mcp.new.$$"
+    install_dirs="$link_dir"
+    staged_paths="$link_dir/.emisar-mcp.new.$$"
+    source_sha=$(sha256 "$link_dir/.emisar-mcp.new.$$")
+    backup_paths=""
+    activated_paths=""
+    installed_paths=""
+    transaction_active=0
+    export install_dirs staged_paths source_sha backup_paths activated_paths installed_paths transaction_active
+    if activate_installations 2>"$tmp/symlink-denial.log"; then
+      echo "symlink destination was unexpectedly replaced" >&2
+      exit 1
+    fi
+    test -L "$link_dir/emisar-mcp"
+    test "$(cat "$link_target")" = linked-old
+    grep -Fq "is not a regular file; refusing to replace it" "$tmp/symlink-denial.log"
+
+    tx_a="$tmp/tx-a"
+    tx_b="$tmp/tx-b"
+    mkdir -p "$tx_a" "$tx_b"
+    printf 'old-a\n' >"$tx_a/emisar-mcp"
+    printf 'old-b\n' >"$tx_b/emisar-mcp"
+    printf 'new\n' >"$tx_a/.emisar-mcp.new.$$"
+    printf 'new\n' >"$tx_b/.emisar-mcp.new.$$"
+    install_dirs=$(printf '%s\n%s\n' "$tx_a" "$tx_b")
+    staged_paths=$(printf '%s\n%s\n' \
+      "$tx_a/.emisar-mcp.new.$$" "$tx_b/.emisar-mcp.new.$$")
+    source_sha=$(sha256 "$tx_a/.emisar-mcp.new.$$")
+    backup_paths=""
+    activated_paths=""
+    installed_paths=""
+    transaction_active=0
+    export install_dirs staged_paths source_sha backup_paths activated_paths installed_paths transaction_active
+
+    mkdir -p "$tmp/failing-mv"
+    real_mv=$(command -v mv)
+    cat >"$tmp/failing-mv/mv" <<FAILING_MV
+#!/usr/bin/env bash
+set -e
+src="\${@: -2:1}"
+if [[ "\$src" == */.emisar-mcp.new.* ]]; then
+  count=0
+  test ! -e "$tmp/mv-count" || read -r count <"$tmp/mv-count"
+  count=\$((count + 1))
+  printf '%s\n' "\$count" >"$tmp/mv-count"
+  if [ "\$count" -eq 2 ]; then
+    exit 1
+  fi
+fi
+exec "$real_mv" "\$@"
+FAILING_MV
+    chmod +x "$tmp/failing-mv/mv"
+
+    if PATH="$tmp/failing-mv:$PATH" activate_installations 2>"$tmp/rollback.log"; then
+      echo "two-target failure injection unexpectedly succeeded" >&2
+      exit 1
+    fi
+    PATH="$tmp/failing-mv:$PATH" rollback_installations 2>>"$tmp/rollback.log"
+    test "$(cat "$tx_a/emisar-mcp")" = old-a
+    test "$(cat "$tx_b/emisar-mcp")" = old-b
+    test "$transaction_active" -eq 0
+    grep -Fq "could not atomically activate $tx_b/emisar-mcp" "$tmp/rollback.log"
+
+    while IFS= read -r path; do
+      test -z "$path" || rm -f "$path"
+    done <<<"$backup_paths"
+    rm -f "$tx_a/.emisar-mcp.new.$$" "$tx_b/.emisar-mcp.new.$$"
+    printf 'new\n' >"$tx_a/.emisar-mcp.new.$$"
+    printf 'new\n' >"$tx_b/.emisar-mcp.new.$$"
+    staged_paths=$(printf '%s\n%s\n' \
+      "$tx_a/.emisar-mcp.new.$$" "$tx_b/.emisar-mcp.new.$$")
+    source_sha=$(sha256 "$tx_a/.emisar-mcp.new.$$")
+    backup_paths=""
+    activated_paths=""
+    installed_paths=""
+    transaction_active=0
+    export install_dirs staged_paths source_sha backup_paths activated_paths installed_paths transaction_active
+    activate_installations
+    test "$(cat "$tx_a/emisar-mcp")" = new
+    test "$(cat "$tx_b/emisar-mcp")" = new
+    test "$installed_paths" = "$(printf '%s\n%s' "$tx_a/emisar-mcp" "$tx_b/emisar-mcp")"
+    test -z "$(find "$tx_a" "$tx_b" -name '.emisar-mcp.old.*' -print)"
     ;;
   *)
     echo "unknown installer module: $module" >&2

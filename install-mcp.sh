@@ -187,6 +187,17 @@ resolve_install_dirs() {
   printf '%s\n' "${dirs}"
 }
 
+make_temp_dir() {
+  local parent="${TMPDIR:-/tmp}"
+
+  # sudo commonly preserves TMPDIR. A root-owned child is still replaceable by
+  # the owner of a non-sticky parent, so privileged downloads always use /tmp.
+  if [ "$(id -u)" -eq 0 ]; then
+    parent=/tmp
+  fi
+  mktemp -d "${parent%/}/emisar-mcp-install.XXXXXX"
+}
+
 if [ "${INSTALL_DIR_EXPLICIT}" = "0" ]; then
   user_home=$(invoking_user_home)
   install_dirs=$(resolve_install_dirs "${user_home}")
@@ -234,17 +245,82 @@ fi
 # Download + verify
 # ---------------------------------------------------------------------
 
-tmp="$(mktemp -d -t emisar-mcp-install.XXXXXX)"
+tmp="$(make_temp_dir)" || die "could not create a private temporary directory"
+if [ ! -d "${tmp}" ] || [ -L "${tmp}" ] || [ ! -O "${tmp}" ] || ! chmod 0700 "${tmp}"; then
+  rm -rf -- "${tmp}"
+  die "temporary directory was not a private directory owned by the installer"
+fi
 staged_paths=""
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+
+rollback_installations() {
+  local bin_dst bin_backup path
+  local expected_backup
+  local failed=0
+
+  if [ -n "${activated_paths}" ]; then
+    while IFS= read -r bin_dst; do
+      [ -n "${bin_dst}" ] || continue
+      bin_backup="${bin_dst%/*}/.emisar-mcp.old.$$"
+      expected_backup=0
+      if [ -n "${backup_paths}" ]; then
+        while IFS= read -r path; do
+          if [ "${path}" = "${bin_backup}" ]; then
+            expected_backup=1
+            break
+          fi
+        done <<<"${backup_paths}"
+      fi
+      if [ -e "${bin_backup}" ]; then
+        if ! mv -f "${bin_backup}" "${bin_dst}"; then
+          warn "could not restore ${bin_dst} from ${bin_backup}"
+          failed=1
+        fi
+      elif [ "${expected_backup}" -eq 1 ]; then
+        warn "rollback link ${bin_backup} is missing; leaving ${bin_dst} unchanged"
+        failed=1
+      elif ! rm -f "${bin_dst}"; then
+        warn "could not remove newly installed ${bin_dst}"
+        failed=1
+      fi
+    done <<<"${activated_paths}"
+  fi
+
+  if [ "${failed}" -eq 0 ]; then
+    transaction_active=0
+    return 0
+  fi
+  return 1
+}
+
 cleanup() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+
+  if [ "${transaction_active}" -eq 1 ] && ! rollback_installations; then
+    warn "automatic rollback was incomplete; restore the .emisar-mcp.old.$$ files before retrying"
+    status=1
+  fi
   if [ -n "${staged_paths}" ]; then
     while IFS= read -r path; do
       [ -z "${path}" ] || rm -f -- "${path}"
     done <<<"${staged_paths}"
   fi
+  if [ "${transaction_active}" -eq 0 ] && [ -n "${backup_paths}" ]; then
+    while IFS= read -r path; do
+      [ -z "${path}" ] || rm -f -- "${path}"
+    done <<<"${backup_paths}"
+  fi
   rm -rf -- "${tmp}"
+  exit "${status}"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 log "downloading ${TARBALL}"
 curl -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
@@ -316,18 +392,71 @@ while IFS= read -r INSTALL_DIR; do
     die "staged binary checksum changed at ${bin_staged}; no installation was activated"
 done <<<"${install_dirs}"
 
-installed_paths=""
-while IFS= read -r INSTALL_DIR; do
-  bin_dst="${INSTALL_DIR}/emisar-mcp"
-  bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
-  # Staging on the destination filesystem makes activation one atomic rename.
-  if ! mv -f "${bin_staged}" "${bin_dst}"; then
-    die "could not atomically activate ${bin_dst}; its previous installation is unchanged"
-  fi
-  installed_paths="${installed_paths}${installed_paths:+
+activate_installations() {
+  local INSTALL_DIR bin_dst bin_staged bin_backup installed_sha path
+
+  # Link every old executable before changing any active path. Hard links keep
+  # the exact old bytes on the destination filesystem and make rollback an
+  # atomic rename too. Symlinks and special files are refused rather than
+  # silently changing their semantics.
+  while IFS= read -r INSTALL_DIR; do
+    bin_dst="${INSTALL_DIR}/emisar-mcp"
+    bin_backup="${INSTALL_DIR}/.emisar-mcp.old.$$"
+    if [ -L "${bin_dst}" ] || { [ -e "${bin_dst}" ] && [ ! -f "${bin_dst}" ]; }; then
+      warn "existing ${bin_dst} is not a regular file; refusing to replace it"
+      return 1
+    fi
+    if [ -f "${bin_dst}" ]; then
+      if ! ln "${bin_dst}" "${bin_backup}"; then
+        warn "could not create rollback link ${bin_backup}; no installation was activated"
+        return 1
+      fi
+      backup_paths="${backup_paths}${backup_paths:+
+}${bin_backup}"
+    fi
+  done <<<"${install_dirs}"
+
+  transaction_active=1
+  while IFS= read -r INSTALL_DIR; do
+    bin_dst="${INSTALL_DIR}/emisar-mcp"
+    bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
+    # Record the attempt first so a catchable signal after rename restores it.
+    activated_paths="${activated_paths}${activated_paths:+
 }${bin_dst}"
-done <<<"${install_dirs}"
-staged_paths=""
+    if ! mv -f "${bin_staged}" "${bin_dst}"; then
+      warn "could not atomically activate ${bin_dst}"
+      return 1
+    fi
+    installed_sha=$(sha_value "${bin_dst}")
+    if [ "${installed_sha}" != "${source_sha}" ]; then
+      warn "installed binary checksum changed at ${bin_dst}"
+      return 1
+    fi
+  done <<<"${install_dirs}"
+
+  # Commit only after the complete set still matches the verified source.
+  while IFS= read -r bin_dst; do
+    installed_sha=$(sha_value "${bin_dst}")
+    if [ "${installed_sha}" != "${source_sha}" ]; then
+      warn "installed binary checksum changed at ${bin_dst}"
+      return 1
+    fi
+  done <<<"${activated_paths}"
+
+  transaction_active=0
+  installed_paths="${activated_paths}"
+  staged_paths=""
+  if [ -n "${backup_paths}" ]; then
+    while IFS= read -r path; do
+      if [ -n "${path}" ] && ! rm -f -- "${path}"; then
+        warn "could not remove rollback link ${path}"
+      fi
+    done <<<"${backup_paths}"
+  fi
+  backup_paths=""
+}
+
+activate_installations || die "installation failed; rolling back previous installations"
 
 # ---------------------------------------------------------------------
 # Done
@@ -335,9 +464,6 @@ staged_paths=""
 
 log "installed:"
 while IFS= read -r bin_dst; do
-  installed_sha=$(sha_value "${bin_dst}")
-  [ "${installed_sha}" = "${source_sha}" ] || \
-    die "installed binary checksum changed at ${bin_dst}"
   log "${bin_dst}: ${expected_version}"
 done <<<"${installed_paths}"
 
