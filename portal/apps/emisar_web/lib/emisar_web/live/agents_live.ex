@@ -617,13 +617,10 @@ defmodule EmisarWeb.AgentsLive do
       command = "/usr/local/bin/emisar-mcp"
       env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
       """,
-      # Codex CLI has no per-server tool auto-approve key — approvals are a
-      # global `approval_policy` in config.toml (openai/codex#24135). Honest
-      # pointer rather than an invented per-server setting.
       auto_permit: %{
         pointer:
-          "Codex controls this globally, not per-server: set approval_policy in ~/.codex/config.toml (e.g. \"on-request\"/\"never\"). There's no per-MCP-server allowlist key.",
-        doc_url: "https://developers.openai.com/codex/config-basic"
+          "Add default_tools_approval_mode = \"approve\" below [mcp_servers.emisar] in ~/.codex/config.toml. This trusts only the emisar MCP server; emisar still applies its own policies and approvals.",
+        doc_url: "https://developers.openai.com/codex/mcp"
       }
     }
   end

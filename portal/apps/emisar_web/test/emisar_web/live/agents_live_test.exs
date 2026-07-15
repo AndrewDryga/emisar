@@ -560,18 +560,17 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "permissions"
     end
 
-    test "Codex setup gives an honest pointer, not an invented per-server key",
+    test "Codex setup uses the server-scoped MCP approval mode",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "codex"})
 
-      # No per-server allowlist exists for Codex — we point at its global
-      # approval_policy instead of fabricating a config key.
       assert html =~ "Skip the per-tool prompts"
-      assert html =~ "approval_policy"
-      assert html =~ "globally, not per-server"
+      assert html =~ "default_tools_approval_mode = &quot;approve&quot;"
+      assert html =~ "trusts only the emisar MCP server"
+      assert html =~ "emisar still applies its own policies and approvals"
     end
 
     test "Grok setup registers the bridge and offers its server-scoped allow rule",

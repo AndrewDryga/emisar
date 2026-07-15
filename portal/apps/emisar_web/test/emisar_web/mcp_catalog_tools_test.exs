@@ -136,6 +136,51 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
   end
 
+  test "get_action returns fifteen discovered runners or every explicit runner ref", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runners =
+      Enum.map(1..16, fn index ->
+        runner =
+          Fixtures.Runners.create_runner(
+            account_id: account.id,
+            name: "db-#{String.pad_leading(Integer.to_string(index), 2, "0")}"
+          )
+
+        observe!(runner, %{"demo" => %{"version" => "1.0.0", "hash" => @hash}}, [
+          action("demo.read", "demo")
+        ])
+
+        runner
+      end)
+
+    trust_all!(subject)
+
+    found = call(conn, "find_actions", %{"action_id" => "demo.read"})
+    pack_ref = hd(found["candidates"])["pack_ref"]
+    arguments = %{"action_id" => "demo.read", "pack_ref" => pack_ref}
+
+    discovered = call(conn, "get_action", arguments)
+    assert length(discovered["compatible_runners"]) == 15
+    assert discovered["more_compatible_runners"]
+    assert discovered["next"]["tool"] == "list_runners"
+
+    runner_refs =
+      Enum.map(runners, fn runner ->
+        runner.name <> "~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+      end)
+
+    exact = call(conn, "get_action", Map.put(arguments, "runner_refs", runner_refs))
+    assert length(exact["compatible_runners"]) == 16
+    refute exact["more_compatible_runners"]
+    assert exact["next"] == nil
+
+    invalid = call(conn, "get_action", Map.put(arguments, "runner_limit", 1))
+    assert invalid["error"]["code"] == "invalid_args"
+  end
+
   test "API-key runner scope and account boundary are applied before projection", %{
     conn: conn,
     account: account,

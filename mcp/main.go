@@ -207,6 +207,14 @@ CLIENT SETUP
       --env EMISAR_CLIENT=codex \
       -- /usr/local/bin/emisar-mcp
 
+    To let emisar calls run without Codex prompts, add this below
+    [mcp_servers.emisar] in ~/.codex/config.toml:
+
+      default_tools_approval_mode = "approve"
+
+    This trusts only the emisar MCP server. Emisar still applies its own
+    policies and approvals.
+
   Gemini
     gemini mcp add --scope user --trust \
       -e EMISAR_URL=https://emisar.dev \

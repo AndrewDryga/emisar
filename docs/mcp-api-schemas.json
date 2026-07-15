@@ -132,12 +132,10 @@
         "action_id": {"$ref": "#/$defs/action_id"},
         "pack_ref": {"$ref": "#/$defs/pack_ref"},
         "target": {"type": "string", "minLength": 1, "maxLength": 256},
-        "runner_refs": {"$ref": "#/$defs/runner_refs"},
-        "runner_limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15}
+        "runner_refs": {"$ref": "#/$defs/runner_refs"}
       },
       "allOf": [
-        {"not": {"required": ["target", "runner_refs"]}},
-        {"if": {"required": ["runner_refs"]}, "then": {"not": {"required": ["runner_limit"]}}}
+        {"not": {"required": ["target", "runner_refs"]}}
       ]
     },
     "get_operation_arguments": {

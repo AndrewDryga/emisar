@@ -395,6 +395,16 @@
 command = "/usr/local/bin/emisar-mcp"
 env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</pre>
             </div>
+            <p class="mt-3 text-sm text-zinc-400">
+              To let emisar calls run without Codex prompts, add
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                default_tools_approval_mode = "approve"
+              </code>
+              below
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
+              in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
+              This trusts only the emisar MCP server; emisar still applies its own policies and approvals.
+            </p>
           </section>
 
           <%!-- Grok CLI --%>

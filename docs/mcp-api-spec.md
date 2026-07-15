@@ -596,11 +596,10 @@ of compatible runners.
 ```
 
 `action_id` and `pack_ref` are required. `target` and `runner_refs` have the same
-meaning and mutual exclusion as `find_actions`. With `target` or neither,
-`runner_limit` is 1 through 15 and defaults to 15. With `runner_refs`,
-`runner_limit` is forbidden and all 1 through 16 supplied refs must be returned
-or the call fails with exact per-ref compatibility details. Unknown properties
-are rejected.
+meaning and mutual exclusion as `find_actions`. With `target` or neither, the
+response returns at most 15 compatible runners. With `runner_refs`, all 1 through
+16 supplied refs must be returned or the call fails with exact per-ref
+compatibility details. Unknown properties are rejected.
 
 ### Response
 

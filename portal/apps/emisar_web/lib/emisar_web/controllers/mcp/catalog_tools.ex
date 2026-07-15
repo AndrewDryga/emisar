@@ -119,7 +119,8 @@ defmodule EmisarWeb.MCP.CatalogTools do
     with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == args.pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == args.action_id)),
          runners when runners != [] <- compatible_runners(snapshot.runners, action, args) do
-      {runners, more?} = split_more(runners, args.runner_limit)
+      runner_limit = if args.runner_refs == [], do: @default_limit, else: length(args.runner_refs)
+      {runners, more?} = split_more(runners, runner_limit)
 
       {:ok,
        %{
@@ -541,24 +542,21 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   defp validate_get_action(args) do
-    allowed = ~w(action_id pack_ref target runner_refs runner_limit)
+    allowed = ~w(action_id pack_ref target runner_refs)
 
     with :ok <- allowed_keys(args, allowed),
          :ok <- required(args, ~w(action_id pack_ref)),
          :ok <- mutually_exclusive(args, "target", "runner_refs"),
-         :ok <- forbidden_with(args, "runner_refs", "runner_limit"),
          {:ok, action_id} <- optional_format(args["action_id"], @action_id_format, "action_id"),
          {:ok, pack_ref} <- optional_pack_ref(args["pack_ref"]),
          {:ok, target} <- optional_string(args["target"], 256, "target"),
-         {:ok, refs} <- runner_refs(args["runner_refs"]),
-         {:ok, runner_limit} <- get_action_runner_limit(args["runner_limit"], refs) do
+         {:ok, refs} <- runner_refs(args["runner_refs"]) do
       {:ok,
        struct!(__MODULE__.GetActionArgs,
          action_id: action_id,
          pack_ref: pack_ref,
          target: target,
-         runner_refs: refs,
-         runner_limit: runner_limit
+         runner_refs: refs
        )}
     end
   end
@@ -594,12 +592,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp require_with(args, key, required_key) do
     if Map.has_key?(args, key) and not Map.has_key?(args, required_key),
       do: {:error, error("invalid_args", "#{key} requires #{required_key}.")},
-      else: :ok
-  end
-
-  defp forbidden_with(args, key, forbidden_key) do
-    if Map.has_key?(args, key) and Map.has_key?(args, forbidden_key),
-      do: {:error, error("invalid_args", "#{forbidden_key} cannot be used with #{key}.")},
       else: :ok
   end
 
@@ -693,9 +685,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp limit(_value, max),
     do: {:error, error("invalid_args", "limit must be an integer from 1 to #{max}.")}
 
-  defp get_action_runner_limit(nil, refs) when refs != [], do: {:ok, length(refs)}
-  defp get_action_runner_limit(value, _refs), do: limit(value, @max_find_limit)
-
   defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
     do: Runners.runner_scopes_for_membership(id)
 
@@ -746,6 +735,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
 
   defmodule GetActionArgs do
     @moduledoc false
-    defstruct action_id: nil, pack_ref: nil, target: nil, runner_refs: [], runner_limit: 15
+    defstruct action_id: nil, pack_ref: nil, target: nil, runner_refs: []
   end
 end
