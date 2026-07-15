@@ -125,6 +125,86 @@ func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestDedupRing_MigratesAndReconcilesLegacyResults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	legacy := "" +
+		`{"request_id":"old-success","result":{"type":"action_result","request_id":"old-success","status":"success","event_id":"evt_old"}}` + "\n" +
+		`{"request_id":"old-refusal","result":{"type":"action_result","request_id":"old-refusal","status":"signature_invalid","reason":"cert_untrusted"}}` + "\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(2, path, nil)
+	if d.loadErr != nil {
+		t.Fatalf("legacy dispatch log did not migrate: %v", d.loadErr)
+	}
+	got := d.unacknowledgedResults()
+	if len(got) != 2 || got[0].RequestID != "old-success" || got[1].RequestID != "old-refusal" {
+		t.Fatalf("legacy results were not queued for portal reconciliation: %#v", got)
+	}
+	if decision, _, err := d.inspect("old-success", testDispatchDigest("new facts")); err != nil || decision != reservationConflict {
+		t.Fatalf("legacy request id was not retained as a fail-closed tombstone: decision=%v err=%v", decision, err)
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(contents)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("migrated dispatch log has %d lines, want 2", len(lines))
+	}
+	for index, line := range lines {
+		entry, legacy, err := decodeDedupEntry([]byte(line))
+		if err != nil || legacy || entry.State != dispatchCompleted || !validDispatchDigest(entry.DispatchSHA256) {
+			t.Fatalf("migrated line %d is invalid: entry=%+v legacy=%t err=%v", index+1, entry, legacy, err)
+		}
+	}
+
+	restarted := newDedupRing(2, path, nil)
+	if restarted.loadErr != nil {
+		t.Fatal(restarted.loadErr)
+	}
+	if _, _, err := restarted.reserve("new", testDispatchDigest("new")); err == nil {
+		t.Fatal("unacknowledged legacy results were evicted before portal reconciliation")
+	}
+	if err := restarted.acknowledge("old-success"); err != nil {
+		t.Fatal(err)
+	}
+	if decision, _, err := restarted.reserve("new", testDispatchDigest("new")); err != nil || decision != reservationNew {
+		t.Fatalf("acknowledged legacy result did not make room for a new reservation: decision=%v err=%v", decision, err)
+	}
+}
+
+func TestDedupRing_RejectsMalformedLegacyResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	malformed := `{"request_id":"old","result":{"type":"action_result","request_id":"different","status":"success"}}` + "\n"
+	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(2, path, nil)
+	if d.loadErr == nil {
+		t.Fatal("legacy result for a different request id did not fail closed")
+	}
+}
+
+func TestDedupRing_DoesNotTreatMalformedCurrentEntryAsLegacy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	malformed := `{"request_id":"current","state":"completed","result":{"status":"success"}}` + "\n"
+	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(2, path, nil)
+	if d.loadErr == nil {
+		t.Fatal("current-format entry without a dispatch digest must fail closed")
+	}
+	if _, _, err := d.reserve("new", testDispatchDigest("new")); err == nil {
+		t.Fatal("corrupt current-format log allowed a new execution")
+	}
+}
+
 func TestDedupRing_AcknowledgementSurvivesRestartAndEnablesEviction(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	firstDigest := testDispatchDigest("first")
