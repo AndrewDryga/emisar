@@ -84,6 +84,113 @@ func TestJSONLSink_RotatesAtThreshold(t *testing.T) {
 	}
 }
 
+func TestJSONLSink_BackupRotationFailureKeepsActiveChain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	s, err := OpenJSONL(path, JSONLOptions{MaxBackups: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := New(Defaults{AgentID: "a"}, s)
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.first"}); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".1", original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".2", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path+".2", "obstruction"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	chainHead := s.lastHash
+	s.maxSizeBytes = 1
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.blocked"}); err == nil {
+		t.Fatal("expected obstructed backup rotation to fail")
+	}
+	if s.f == nil {
+		t.Fatal("rotation failure must reopen the unchanged active log")
+	}
+	if s.lastHash != chainHead {
+		t.Fatalf("chain head changed after failed rotation: got %q, want %q", s.lastHash, chainHead)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatal("failed rotation modified the active log")
+	}
+
+	if err := os.RemoveAll(path + ".2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err != nil {
+		t.Fatalf("write after clearing obstruction: %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{path, path + ".1"} {
+		if err := VerifyChain(p); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+}
+
+func TestJSONLSink_ActiveRotationFailureKeepsActiveChain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	s, err := OpenJSONL(path, JSONLOptions{MaxBackups: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := New(Defaults{AgentID: "a"}, s)
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.first"}); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".1", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path+".1", "obstruction"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	chainHead := s.lastHash
+	s.maxSizeBytes = 1
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.blocked"}); err == nil {
+		t.Fatal("expected obstructed active rotation to fail")
+	}
+	if s.f == nil {
+		t.Fatal("rotation failure must reopen the unchanged active log")
+	}
+	if s.lastHash != chainHead {
+		t.Fatalf("chain head changed after failed rotation: got %q, want %q", s.lastHash, chainHead)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatal("failed rotation modified the active log")
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyChain(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestJournal_DefaultsStamped(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenJSONL(filepath.Join(dir, "e.jsonl"), JSONLOptions{})

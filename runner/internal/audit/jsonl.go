@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -212,21 +213,28 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 		return nil
 	}
 	if err := s.f.Close(); err != nil {
-		// Best-effort: log path failure but continue rotating.
 		s.f = nil
+		return s.reopenAfterRotationFailure(fmt.Errorf("audit: close jsonl for rotation: %w", err))
 	}
+	s.f = nil
 	// Shift .N-1 -> .N, .N-2 -> .N-1, ..., active -> .1.
 	// The oldest (.MaxBackups) is overwritten.
 	for i := s.maxBackups; i > 1; i-- {
 		from := fmt.Sprintf("%s.%d", s.path, i-1)
 		to := fmt.Sprintf("%s.%d", s.path, i)
-		_ = os.Rename(from, to)
+		if err := renameReplacingIfPresent(from, to); err != nil {
+			return s.reopenAfterRotationFailure(fmt.Errorf("audit: rotate backup %s to %s: %w", from, to, err))
+		}
 	}
 	if s.maxBackups >= 1 {
-		_ = os.Rename(s.path, s.path+".1")
+		if err := renameReplacing(s.path, s.path+".1"); err != nil {
+			return s.reopenAfterRotationFailure(fmt.Errorf("audit: rotate active jsonl: %w", err))
+		}
 	} else {
 		// No backups requested: just discard the old file.
-		_ = os.Remove(s.path)
+		if err := os.Remove(s.path); err != nil {
+			return s.reopenAfterRotationFailure(fmt.Errorf("audit: remove active jsonl for rotation: %w", err))
+		}
 	}
 	// Reopen a fresh active file. Mode matches the initial open at
 	// line 55 — 0o600 (owner-only). Don't downgrade to 0o644 on
@@ -234,7 +242,14 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	// metadata and must not become world-readable mid-life.
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("audit: reopen jsonl after rotation: %w", err)
+		openErr := fmt.Errorf("audit: open fresh jsonl after rotation: %w", err)
+		if s.maxBackups < 1 {
+			return openErr
+		}
+		if restoreErr := renameReplacing(s.path+".1", s.path); restoreErr != nil {
+			return errors.Join(openErr, fmt.Errorf("audit: restore active jsonl: %w", restoreErr))
+		}
+		return s.reopenAfterRotationFailure(openErr)
 	}
 	s.f = f
 	// A rotated file begins a fresh per-file hash chain: the next event
@@ -244,6 +259,32 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	// as a tamper break — false-alarming on every rotated log.
 	s.lastHash = ""
 	return nil
+}
+
+func (s *JSONLSink) reopenAfterRotationFailure(rotationErr error) error {
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return errors.Join(rotationErr, fmt.Errorf("audit: reopen unchanged jsonl: %w", err))
+	}
+	s.f = f
+	return rotationErr
+}
+
+func renameReplacingIfPresent(from, to string) error {
+	if _, err := os.Lstat(from); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return renameReplacing(from, to)
+}
+
+func renameReplacing(from, to string) error {
+	if err := os.Remove(to); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(from, to)
 }
 
 // VerifyError describes the first break in a JSONL audit chain.
