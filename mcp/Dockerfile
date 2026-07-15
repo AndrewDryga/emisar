@@ -38,8 +38,9 @@ COPY go.mod ./
 RUN go mod download
 
 COPY . ./
+ARG MCP_VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=dev" \
+    -ldflags="-s -w -X main.Version=${MCP_VERSION}" \
     -o /out/emisar-mcp \
     .
 

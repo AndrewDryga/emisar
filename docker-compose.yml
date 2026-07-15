@@ -195,7 +195,7 @@ services:
     user: "root"
     volumes:
       - ./dev/keycloak/certs/ca.crt:/usr/local/share/ca-certificates/keycloak-dev-ca.crt:ro
-    command: ["sh", "-c", "update-ca-certificates && /app/bin/migrate && /app/bin/server"]
+    command: ["sh", "-c", "update-ca-certificates && exec /app/bin/server"]
 
   # ----------------------------------------------------------------
   # Seeder — runs once, exits. Inserts the demo account, default
@@ -262,7 +262,7 @@ services:
       context: .
       dockerfile: runner/docker/Dockerfile
       args:
-        RUNNER_VERSION: "0.4.2"
+        RUNNER_VERSION: "0.10.0"
     image: emisar/runner:dev
     hostname: edge-fra-01.northstar.example
     depends_on:
@@ -319,6 +319,8 @@ services:
     build:
       context: ./mcp
       dockerfile: Dockerfile
+      args:
+        MCP_VERSION: "0.3.0"
     image: emisar/mcp:dev
     profiles: ["test"]
     depends_on:
@@ -330,6 +332,8 @@ services:
       # The bridge fails closed on cleartext http:// to a non-loopback host;
       # opt in for the in-network portal:4000 (same as the runners' allow_insecure).
       EMISAR_ALLOW_INSECURE: "1"
+    volumes:
+      - mcp_data:/config
 
   # ----------------------------------------------------------------
   # signing-init — mints the signed-dispatch e2e material at stack-up
@@ -397,6 +401,7 @@ volumes:
   runner_1_data:
   runner_2_data:
   runner_3_data:
+  mcp_data:
   # runner-signed's data dir + the generated signed-dispatch material (both
   # cleared by `docker compose down -v`, which rotates the e2e keys).
   runner_signed_data:
