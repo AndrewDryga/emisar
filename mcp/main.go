@@ -527,6 +527,9 @@ func (b *bridge) handleFrame(
 		b.handleCancellation(frame.line, meta, state, cancelResults)
 		return nil
 	}
+	if meta.notification() && !strings.HasPrefix(meta.method, "notifications/") {
+		return nil
+	}
 
 	idKey := requestIDKey(meta)
 	if idKey != "" {

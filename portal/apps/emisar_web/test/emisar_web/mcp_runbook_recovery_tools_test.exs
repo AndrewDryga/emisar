@@ -34,7 +34,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
      raw: raw}
   end
 
-  test "runbook reads, draft, execution, recovery, and immediate waits share one contract", %{
+  test "native runbook mutations, recovery, and immediate waits share one contract", %{
     conn: conn,
     account: account,
     subject: subject
@@ -58,8 +58,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     refute Map.has_key?(hd(fetched["runbook"]["steps"]), "depends_on")
 
-    draft_operation = "op_124NN9NMDZ1T76NARWCKM5A0D6"
-
     draft_args = %{
       "title" => "Check database fleet",
       "steps" => [
@@ -73,14 +71,13 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       ]
     }
 
-    draft = call(conn, "create_runbook_draft", draft_args, draft_operation)
-    replayed_draft = call(conn, "create_runbook_draft", draft_args, draft_operation)
+    draft = call(conn, "create_runbook_draft", draft_args)
+    draft_operation = draft["operation_id"]
+    replayed_draft = call(conn, "create_runbook_draft", draft_args)
     assert replayed_draft == draft
 
     recovered_draft = call(conn, "get_operation", %{"operation_id" => draft_operation})
     assert recovered_draft["operation"]["draft_id"] == draft["draft_id"]
-
-    execute_operation = "op_224NN9NMDZ1T76NARWCKM5A0D6"
 
     execution =
       call(
@@ -89,10 +86,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         %{
           "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
           "reason" => "Verify database health"
-        },
-        execute_operation
+        }
       )
 
+    execute_operation = execution["operation_id"]
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
     assert execution["execution"]["run_count"] == nil
     execution_id = execution["execution"]["runbook_execution_id"]
@@ -109,8 +106,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         %{
           "runbook_ref" => "database-health@1",
           "reason" => "Verify database health"
-        },
-        execute_operation
+        }
       )
 
     assert replayed_execution["execution"]["runbook_execution_id"] == execution_id

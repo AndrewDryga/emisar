@@ -1,15 +1,40 @@
 defmodule Emisar.MCPOperations do
   @moduledoc """
-  Authorization and persistence boundary for bridge mutation identities.
+  Authorization and persistence boundary for MCP mutation identities.
 
   An operation belongs to one account and API-key rotation lineage. The fixed
   recovery snapshot is deliberately independent of current runner scope: scope
   can revoke future work without hiding whether an earlier mutation committed.
   """
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Auth, Repo}
+  alias Emisar.{ApiKeys, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.MCPOperations.{Authorizer, Operation}
+
+  @crockford_alphabet "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+  @doc """
+  Derives the stable operation identity for a native MCP mutation request.
+
+  The exact request body is bound to the authenticated credential lineage. An
+  identical transport retry therefore reaches the same operation reservation,
+  while a changed request or another lineage cannot collide with it. The ID is
+  correlation metadata, not a capability.
+  """
+  def operation_id(request_body, %Subject{account: account, actor: %ApiKeys.ApiKey{} = key})
+      when is_binary(request_body) do
+    digest =
+      [
+        "emisar-native-mcp-operation-v1",
+        account.id,
+        key.credential_lineage_id,
+        request_body
+      ]
+      |> Enum.join("\0")
+      |> Crypto.hash()
+
+    "op_" <> encode_operation_digest(binary_part(digest, 0, 16))
+  end
 
   @doc """
   Adds an atomic operation reservation to `multi`.
@@ -106,6 +131,17 @@ defmodule Emisar.MCPOperations do
       "-8" <>
       String.slice(hex, 17, 3) <>
       "-" <> String.slice(hex, 20, 12)
+  end
+
+  defp encode_operation_digest(<<value::unsigned-big-integer-size(128)>>) do
+    {_remaining, encoded} =
+      Enum.reduce(1..26, {value, []}, fn _index, {remaining, encoded} ->
+        digit = rem(remaining, 32)
+        character = binary_part(@crockford_alphabet, digit, 1)
+        {div(remaining, 32), [character | encoded]}
+      end)
+
+    IO.iodata_to_binary(encoded)
   end
 
   defp reserve(repo, changeset, expected, id) do

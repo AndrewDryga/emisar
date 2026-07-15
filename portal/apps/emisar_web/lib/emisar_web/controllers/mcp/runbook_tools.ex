@@ -106,7 +106,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       end
     else
       false ->
-        {:error, error("invalid_operation", "One bridge operation id is required.")}
+        {:error, error("invalid_operation", "The operation identity is invalid.")}
 
       {:error, %{} = payload} ->
         {:error, payload}
@@ -142,7 +142,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
     else
       false ->
-        {:error, error("invalid_operation", "One bridge operation id is required.")}
+        {:error, error("invalid_operation", "The operation identity is invalid.")}
 
       {:error, :operation_conflict} ->
         {:error,

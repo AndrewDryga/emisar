@@ -37,7 +37,7 @@ defmodule EmisarWeb.MCPRpcController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{ApiKeys, Compat}
+  alias Emisar.{ApiKeys, Compat, MCPOperations}
   alias EmisarWeb.MCP.{ActionTools, Auth, BoundaryResponse, Cancellation}
   alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
   alias EmisarWeb.MCP.ClientMetadata
@@ -84,22 +84,33 @@ defmodule EmisarWeb.MCPRpcController do
     respond(conn, :request, id, {:error, -32601, "method not found", method})
   end
 
-  defp handle_message(conn, kind, method, raw_params, id) do
+  defp handle_message(conn, :notification, "notifications/" <> _ = method, raw_params, _id) do
+    case params_map(raw_params) do
+      {:ok, params} ->
+        result = Cancellation.track(conn, method, nil, &dispatch(&1, method, params))
+        respond(conn, :notification, nil, result)
+
+      :error ->
+        send_resp(conn, 202, "")
+    end
+  end
+
+  defp handle_message(conn, :notification, _method, _raw_params, _id),
+    do: send_resp(conn, 202, "")
+
+  defp handle_message(conn, :request, method, raw_params, id) do
     case params_map(raw_params) do
       {:ok, params} ->
         conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation(method)
         result = Cancellation.track(conn, method, id, &dispatch(&1, method, params))
-        respond(conn, kind, id, result)
+        respond(conn, :request, id, result)
 
-      :error when kind == :request ->
+      :error ->
         json(conn, %{
           jsonrpc: "2.0",
           id: id,
           error: %{code: -32602, message: "params must be an object"}
         })
-
-      :error ->
-        send_resp(conn, 202, "")
     end
   end
 
@@ -319,7 +330,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_run_action(conn, args) do
     with {:ok, %{name: "run_action", action_args: args_raw}} <-
            RawJSON.tool_call(conn.assigns.raw_body),
-         [operation_id] <- get_req_header(conn, "emisar-operation-id") do
+         operation_id when is_binary(operation_id) <- mutation_operation_id(conn) do
       case ActionTools.call(
              conn,
              args,
@@ -338,7 +349,7 @@ defmodule EmisarWeb.MCPRpcController do
             ok: false,
             error: %{
               code: "invalid_args",
-              message: "run_action requires exact args and one bridge operation id.",
+              message: "run_action requires exact arguments and one operation identity.",
               retryable: false
             },
             dispatch_started: false
@@ -350,8 +361,8 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp handle_runbook_tool(conn, name, args)
        when name in ~w(execute_runbook create_runbook_draft) do
-    case get_req_header(conn, "emisar-operation-id") do
-      [operation_id] ->
+    case mutation_operation_id(conn) do
+      operation_id when is_binary(operation_id) ->
         runbook_tool_result(conn, name, args, operation_id)
 
       _ ->
@@ -360,7 +371,7 @@ defmodule EmisarWeb.MCPRpcController do
             ok: false,
             error: %{
               code: "invalid_operation",
-              message: "This mutation requires one bridge operation id.",
+              message: "This mutation requires one operation identity.",
               retryable: false
             },
             dispatch_started: false
@@ -376,6 +387,19 @@ defmodule EmisarWeb.MCPRpcController do
     case RunbookTools.call(conn, name, args, operation_id) do
       {:ok, payload} -> fixed_tool_result(payload, false)
       {:error, payload} -> fixed_tool_result(payload, true)
+    end
+  end
+
+  defp mutation_operation_id(conn) do
+    case get_req_header(conn, "emisar-operation-id") do
+      [operation_id] ->
+        operation_id
+
+      [] ->
+        MCPOperations.operation_id(conn.assigns.raw_body, conn.assigns.current_subject)
+
+      _multiple ->
+        nil
     end
   end
 

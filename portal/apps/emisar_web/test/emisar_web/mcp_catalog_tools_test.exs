@@ -268,6 +268,40 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
 
+  test "native HTTP run_action derives one stable operation without a private header", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "native-http")
+    pack_ref = "database@1.0.0/#{@hash}"
+
+    observe!(
+      runner,
+      %{"database" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action("database.pause_job", "database", args: job_args())]
+    )
+
+    trust_all!(subject)
+    :ok = Runners.subscribe_runner_transport(runner)
+
+    runner_ref = "native-http~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+    body = run_action_body(pack_ref, runner_ref, ~s({"job_id":9007199254740993}), "Native call")
+
+    first = raw_action(conn, body)
+    assert first["ok"]
+    assert first["operation_id"] =~ ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    replay = raw_action(conn, body)
+    assert replay["operation_id"] == first["operation_id"]
+
+    assert get_in(replay, ["runs", Access.at(0), "run_id"]) ==
+             get_in(first, ["runs", Access.at(0), "run_id"])
+
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
+  end
+
   test "run_action fails closed on signed-fact mismatch, unsigned enforcing targets, and operation reuse",
        %{
          conn: conn,
@@ -351,11 +385,13 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert_valid_tool_result(name, result)
   end
 
-  defp raw_action(conn, body, operation_id, attestation \\ nil) do
+  defp raw_action(conn, body, operation_id \\ nil, attestation \\ nil) do
+    conn = put_req_header(conn, "content-type", "application/json")
+
     conn =
-      conn
-      |> put_req_header("content-type", "application/json")
-      |> put_req_header("emisar-operation-id", operation_id)
+      if operation_id,
+        do: put_req_header(conn, "emisar-operation-id", operation_id),
+        else: conn
 
     conn =
       if attestation,

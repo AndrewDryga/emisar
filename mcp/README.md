@@ -110,12 +110,13 @@ content tells the LLM to wait or escalate), or a refusal.
 For each mutation, the bridge derives a bounded operation ID from its random
 session and the JSON-RPC request ID's exact type and value. The portal reserves
 that ID under the API-key rotation lineage in the same transaction as the
-mutation. An identical retry returns the original resource; changed facts or a
-different mutation tool conflict. Numeric `7` and string `"7"`, and different
-bridge sessions, never alias. `get_operation` is the recovery path after an
-ambiguous transport failure: the bridge's correlated JSON-RPC error includes
-the operation ID and a typed `get_operation` continuation. Reads carry no
-operation header.
+mutation. Native HTTP clients do not need the private bridge header: the portal
+derives the same kind of identity from the exact request and credential lineage.
+An identical retry returns the original resource; changed facts or a different
+mutation tool conflict. Numeric `7` and string `"7"`, and different bridge
+sessions, never alias. `get_operation` is the recovery path after an ambiguous
+transport failure: the bridge's correlated JSON-RPC error includes the operation
+ID and a typed `get_operation` continuation. Reads carry no operation header.
 
 Request IDs are one-use within a bridge session. The bridge permits eight
 in-flight requests within a 1 MiB aggregate request budget, caps each request at

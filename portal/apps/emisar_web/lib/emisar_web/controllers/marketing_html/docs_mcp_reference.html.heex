@@ -142,10 +142,13 @@
 
         <h2>Operations and recovery</h2>
         <p>
-          The stdio bridge derives a private <code>operation_id</code>
-          for <code>run_action</code>, <code>execute_runbook</code>, and <code>create_runbook_draft</code>. The portal reserves it in the same transaction as the
-          mutation. Repeating the same operation and facts returns the original resource; changed
-          facts conflict. Models do not create operation or idempotency keys.
+          Every <code>run_action</code>, <code>execute_runbook</code>, and
+          <code>create_runbook_draft</code>
+          receives a private <code>operation_id</code>. The stdio bridge derives it from its session
+          and request ID; for native HTTP clients, the portal derives it from the exact request and
+          credential lineage. The portal reserves it in the same transaction as the mutation.
+          Repeating the same request and facts returns the original resource; changed facts
+          conflict. Models do not create operation or idempotency keys.
         </p>
         <p>
           A successful mutation returns its operation ID. If the bridge loses an HTTP response, its

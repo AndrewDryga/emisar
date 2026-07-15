@@ -1277,6 +1277,30 @@ func TestServe_MultipleFramesRemainWhole(t *testing.T) {
 	}
 }
 
+func TestServe_RequestMethodsSentAsNotificationsNeverReachPortal(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	input := strings.NewReader(
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"run_action"}}` + "\n" +
+			`{"jsonrpc":"2.0","method":"ping"}` + "\n",
+	)
+	var output bytes.Buffer
+	if err := newTestBridge(srv).serve(input, &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Errorf("portal requests = %d, want none", got)
+	}
+	if output.Len() != 0 {
+		t.Errorf("request notifications produced stdout %q", output.String())
+	}
+}
+
 func TestServe_PingCompletesWhileAnotherRequestIsHeld(t *testing.T) {
 	heldStarted := make(chan struct{})
 	releaseHeld := make(chan struct{})

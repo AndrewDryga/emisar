@@ -86,6 +86,44 @@ defmodule Emisar.MCPOperationsTest do
     end
   end
 
+  describe "operation_id/2" do
+    test "is stable across retries and key rotation but isolated by request and lineage", %{
+      account: account,
+      key_subject: key_subject,
+      owner_subject: owner_subject
+    } do
+      request = ~s({"jsonrpc":"2.0","id":7,"method":"tools/call"})
+      operation_id = MCPOperations.operation_id(request, key_subject)
+
+      assert operation_id =~ ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
+      assert MCPOperations.operation_id(request, key_subject) == operation_id
+      refute MCPOperations.operation_id(request <> " ", key_subject) == operation_id
+
+      {:ok, _raw, successor} = ApiKeys.rotate_api_key(key_subject.actor, owner_subject)
+      successor_subject = Auth.Subject.for_api_key(successor, account)
+      assert MCPOperations.operation_id(request, successor_subject) == operation_id
+
+      {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "Other MCP"}, owner_subject)
+      other_subject = Auth.Subject.for_api_key(other_key, account)
+      refute MCPOperations.operation_id(request, other_subject) == operation_id
+
+      foreign_user = Fixtures.Users.create_user()
+      foreign_account = Fixtures.Accounts.create_account()
+
+      foreign_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: foreign_account.id,
+          user_id: foreign_user.id,
+          role: "owner"
+        )
+
+      foreign_owner = Auth.Subject.for_user(foreign_user, foreign_account, foreign_membership)
+      {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, foreign_owner)
+      foreign_subject = Auth.Subject.for_api_key(foreign_key, foreign_account)
+      refute MCPOperations.operation_id(request, foreign_subject) == operation_id
+    end
+  end
+
   describe "fetch_recovery/2" do
     test "survives key rotation but hides other lineages and accounts", %{
       account: account,

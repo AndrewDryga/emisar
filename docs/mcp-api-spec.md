@@ -679,7 +679,7 @@ never relies on pagination or truncation.
 Bare durations, minutes, negative values, and values above 60 seconds are
 rejected rather than clamped. A whitespace-only `reason`, including Unicode
 space characters, is invalid. Callers cannot supply `attestation`,
-`operation_id`, exact argument bytes, or an idempotency key; the bridge owns
+`operation_id`, exact argument bytes, or an idempotency key. The transport owns
 them.
 
 ### Exact argument-byte contract
@@ -695,7 +695,9 @@ validation can treat them as the same mathematical value.
 
 The bridge forwards the public JSON-RPC body unchanged. HTTP already supplies
 the message boundary. The private `Emisar-Operation-Id` header carries the
-bridge-generated retry identity for mutations. For `run_action`, the private
+bridge-generated retry identity for mutations. When a native HTTP client omits
+that private header, the portal deterministically derives the identity from the
+exact request body and authenticated credential lineage. For `run_action`, the private
 `Emisar-Attestation` header additionally carries the bounded client-signed
 execution claim that the portal relays to the runner. The operation ID is
 authenticated by HTTPS and the API key for ordinary mutations and is also bound
@@ -1410,7 +1412,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `invalid_args` | Arguments fail exact schema validation. | Correct returned paths. |
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
 | `invalid_cursor` | Cursor expired, mismatched, or scope changed. | Restart the same read. |
-| `invalid_operation` | A bridge mutation omitted or malformed its private operation ID. | Fix bridge transport; do not invent an ID. |
+| `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |
 | `invalid_runbook` | A draft does not form a valid current action plan. | Correct the returned fields. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |
 | `operation_conflict` | Reused operation ID has different facts. | Security error; do not retry. |
