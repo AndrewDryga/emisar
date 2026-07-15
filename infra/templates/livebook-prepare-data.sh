@@ -29,3 +29,4 @@ fi
 
 chown 1000:1000 "$mountpoint"
 chmod 0750 "$mountpoint"
+install -d -o 1000 -g 1000 -m 0750 "$mountpoint/.livebook"
