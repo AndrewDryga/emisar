@@ -62,9 +62,8 @@ type Validation struct {
 	DeniedPrefixes  []string `yaml:"denied_prefixes,omitempty" json:"denied_prefixes,omitempty"`
 	MaxItems        *int     `yaml:"max_items,omitempty" json:"max_items,omitempty"`
 	// MaxLength caps a string/path value (or each element of a string_array)
-	// at this many BYTES. Unset = unbounded (other than OS ARG_MAX), so an
-	// action taking free-form LLM input should set it to bound argv size and
-	// the abuse surface.
+	// at this many BYTES. Unset uses the runner's conservative 32 KiB per-value
+	// default; actions should set a smaller domain-specific limit where useful.
 	MaxLength   *int      `yaml:"max_length,omitempty" json:"max_length,omitempty"`
 	MinDuration *Duration `yaml:"min_duration,omitempty" json:"min_duration,omitempty"`
 	MaxDuration *Duration `yaml:"max_duration,omitempty" json:"max_duration,omitempty"`

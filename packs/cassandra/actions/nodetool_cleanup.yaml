@@ -23,7 +23,7 @@ execution:
       - "-c"
       - "if [ -n '{{ args.keyspace }}' ]; then nodetool cleanup {{ args.keyspace }}; else nodetool cleanup; fi"
   timeout: 12h
-cancel_grace: 5m
+  cancel_grace: 5m
 output:
   parser: text
   max_stdout_bytes: 65536

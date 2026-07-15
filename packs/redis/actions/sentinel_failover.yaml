@@ -28,7 +28,7 @@ execution:
     binary: redis-cli
     argv: ["-p", "26379", "SENTINEL", "FAILOVER", "{{ args.master_name }}"]
   timeout: 30s
-cancel_grace: 15s
+  cancel_grace: 15s
 output:
   parser: text
   max_stdout_bytes: 4096

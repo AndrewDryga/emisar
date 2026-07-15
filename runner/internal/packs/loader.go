@@ -13,10 +13,12 @@
 package packs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -113,7 +115,7 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) error {
 		return fmt.Errorf("packs: read %s: %w", manifestPath, err)
 	}
 	var pack packspec.Pack
-	if err := yaml.Unmarshal(data, &pack); err != nil {
+	if err := decodeYAMLDocument(data, &pack); err != nil {
 		return fmt.Errorf("packs: parse %s: %w", manifestPath, err)
 	}
 	pack.Root = absRoot
@@ -201,7 +203,7 @@ func loadActionFile(packRoot, rel, packID string, allowSymlinks bool) (*actionsp
 		return nil, nil, fmt.Errorf("packs: read action %s: %w", src, err)
 	}
 	var action actionspec.Action
-	if err := yaml.Unmarshal(data, &action); err != nil {
+	if err := decodeYAMLDocument(data, &action); err != nil {
 		return nil, nil, fmt.Errorf("packs: parse action %s: %w", src, err)
 	}
 	action.PackID = packID
@@ -211,6 +213,21 @@ func loadActionFile(packRoot, rel, packID string, allowSymlinks bool) (*actionsp
 		return nil, nil, err
 	}
 	return &action, data, nil
+}
+
+func decodeYAMLDocument(data []byte, destination any) error {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&yaml.Node{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple YAML documents are not allowed")
+		}
+		return err
+	}
+	return nil
 }
 
 // resolveInsidePack joins rel under packRoot and verifies the result is

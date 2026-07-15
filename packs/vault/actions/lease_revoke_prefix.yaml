@@ -23,7 +23,7 @@ execution:
     binary: vault
     argv: ["lease", "revoke", "-prefix", "{{ args.prefix }}"]
   timeout: 120s
-cancel_grace: 30s
+  cancel_grace: 30s
 output:
   parser: text
   max_stdout_bytes: 8192

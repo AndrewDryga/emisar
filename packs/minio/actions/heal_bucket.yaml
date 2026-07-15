@@ -29,7 +29,7 @@ execution:
     binary: mc
     argv: ["admin", "heal", "-r", "{{ args.alias }}/{{ args.bucket }}"]
   timeout: 3600s
-cancel_grace: 60s
+  cancel_grace: 60s
 output:
   parser: text
   max_stdout_bytes: 65536

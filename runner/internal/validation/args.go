@@ -15,6 +15,8 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
+const defaultMaxStringBytes = 32 << 10
+
 // Validate normalizes raw against the arg schema. It returns a new map of
 // validated values (only declared args) or a *Error describing the first
 // failure. raw must not be mutated.
@@ -134,6 +136,9 @@ func coerce(a actionspec.Arg, v any) (any, error) {
 }
 
 func applyValidation(a actionspec.Arg, v any) error {
+	if err := applyStringByteLimit(a, v); err != nil {
+		return err
+	}
 	if a.Validation == nil {
 		return nil
 	}
@@ -172,6 +177,31 @@ func applyValidation(a actionspec.Arg, v any) error {
 	return applyPathValidation(a, val, v)
 }
 
+func applyStringByteLimit(a actionspec.Arg, v any) error {
+	if a.Type != actionspec.ArgString && a.Type != actionspec.ArgPath && a.Type != actionspec.ArgStringArray {
+		return nil
+	}
+	limit := defaultMaxStringBytes
+	if a.Validation != nil && a.Validation.MaxLength != nil {
+		limit = *a.Validation.MaxLength
+	}
+	values, err := stringsFor(a, v)
+	if err != nil {
+		return err
+	}
+	for i, value := range values {
+		if len(value) <= limit {
+			continue
+		}
+		err := newError(a.Name, "max_length", "must be at most %d bytes (got %d)", limit, len(value))
+		if a.Type == actionspec.ArgStringArray {
+			return wrapElementError(err, i)
+		}
+		return err
+	}
+	return nil
+}
+
 // applyScalarValidators runs validators that meaningfully apply to a
 // single value (enum, pattern, min/max, durations).
 func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) error {
@@ -183,15 +213,6 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 	if len(val.Allowed) > 0 {
 		if !inAnyList(v, val.Allowed) {
 			return newError(a.Name, "allowed", "value must be one of %v", val.Allowed)
-		}
-	}
-	if val.MaxLength != nil {
-		s, ok := v.(string)
-		if !ok {
-			return newError(a.Name, "max_length", "max_length requires string value")
-		}
-		if len(s) > *val.MaxLength {
-			return newError(a.Name, "max_length", "must be at most %d bytes (got %d)", *val.MaxLength, len(s))
 		}
 	}
 	if val.Pattern != "" {

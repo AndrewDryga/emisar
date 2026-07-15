@@ -17,7 +17,7 @@ execution:
     binary: redis-cli
     argv: ["MEMORY", "PURGE"]
   timeout: 60s
-cancel_grace: 10s
+  cancel_grace: 10s
 output:
   parser: text
   max_stdout_bytes: 4096

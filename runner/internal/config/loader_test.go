@@ -72,6 +72,27 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsUnknownFieldsAndTrailingDocuments(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "unknown field",
+			body: minimalConfig + "cloud_typo: true\n",
+		},
+		{name: "trailing document", body: minimalConfig + "---\nextra: true\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			writeYAML(t, path, tc.body)
+			if _, err := Load(path); err == nil {
+				t.Fatalf("Load accepted %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestLoad_ResolvesRelativePaths(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

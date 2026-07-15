@@ -19,7 +19,7 @@ execution:
     binary: cloud-init
     argv: ["modules", "--mode=final"]
   timeout: 600s
-cancel_grace: 60s
+  cancel_grace: 60s
 output:
   parser: text
   max_stdout_bytes: 524288

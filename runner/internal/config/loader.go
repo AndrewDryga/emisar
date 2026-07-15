@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,7 +22,15 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: read %s: %w", abs, err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("config: parse %s: %w", abs, err)
+	}
+	if err := decoder.Decode(&yaml.Node{}); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple YAML documents are not allowed")
+		}
 		return nil, fmt.Errorf("config: parse %s: %w", abs, err)
 	}
 	base := filepath.Dir(abs)

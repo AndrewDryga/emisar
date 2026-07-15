@@ -23,7 +23,7 @@ execution:
       - "-c"
       - "if [ -n '{{ args.source_dc }}' ]; then nodetool rebuild {{ args.source_dc }}; else nodetool rebuild; fi"
   timeout: 24h
-cancel_grace: 10m
+  cancel_grace: 10m
 output:
   parser: text
   max_stdout_bytes: 65536

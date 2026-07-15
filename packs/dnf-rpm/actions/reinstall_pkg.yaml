@@ -22,7 +22,7 @@ execution:
     binary: dnf
     argv: ["reinstall", "-y", "{{ args.pkg }}"]
   timeout: 600s
-cancel_grace: 60s
+  cancel_grace: 60s
 output:
   parser: text
   max_stdout_bytes: 131072

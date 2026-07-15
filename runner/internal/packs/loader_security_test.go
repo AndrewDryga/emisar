@@ -42,6 +42,49 @@ output:
   max_stderr_bytes: 1024
 `
 
+func TestLoad_StrictYAMLRejectsTyposAndTrailingDocuments(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		action   string
+	}{
+		{
+			name:     "manifest unknown field",
+			manifest: strings.Replace(packYAML("p"), "description: t\n", "description: t\nallow_symlniks: true\n", 1),
+			action:   actionYAML("p.a"),
+		},
+		{
+			name:     "nested action security field typo",
+			manifest: packYAML("p"),
+			action: strings.Replace(actionYAML("p.a"), "args: []\n", `args:
+  - name: secret
+    type: string
+    sensitve: true
+`, 1),
+		},
+		{
+			name:     "manifest trailing document",
+			manifest: packYAML("p") + "---\nextra: true\n",
+			action:   actionYAML("p.a"),
+		},
+		{
+			name:     "action trailing document",
+			manifest: packYAML("p"),
+			action:   actionYAML("p.a") + "---\nextra: true\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writePack(t, t.TempDir(), "p", map[string]string{
+				"pack.yaml":      tc.manifest,
+				"actions/a.yaml": tc.action,
+			})
+			if _, err := LoadOne(root, LoadOptions{}); err == nil {
+				t.Fatalf("LoadOne accepted %s", tc.name)
+			}
+		})
+	}
+}
+
 // an absolute or empty action `rel` is rejected up front by
 // resolveInsidePack, before any file read.
 func TestLoad_AbsoluteOrEmptyActionPathRejected(t *testing.T) {

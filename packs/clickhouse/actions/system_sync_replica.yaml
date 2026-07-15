@@ -26,7 +26,7 @@ execution:
   env:
     TBL: "{{ args.table }}"
   timeout: 600s
-cancel_grace: 30s
+  cancel_grace: 30s
 output:
   parser: text
   max_stdout_bytes: 4096

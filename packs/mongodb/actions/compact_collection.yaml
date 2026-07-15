@@ -32,7 +32,7 @@ execution:
       - "-c"
       - "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('{{ args.db_name }}').runCommand({compact: '{{ args.collection }}'})\""
   timeout: 1800s
-cancel_grace: 60s
+  cancel_grace: 60s
 output:
   parser: text
   max_stdout_bytes: 8192

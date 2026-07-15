@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // These tests pin the convention-vs-schema GAPS: house conventions the
@@ -52,19 +50,19 @@ func TestConventionGap_DescriptionWithoutVerbValidates(t *testing.T) {
 	}
 }
 
-// a free-form string arg with NO max_length (and no
-// pattern/enum) loads clean. An unbounded string is a DoS hole, but bounding
-// it is a convention, not a schema requirement.
-func TestConventionGap_UnboundedStringArgValidates(t *testing.T) {
+// max_length remains optional in pack schemas because runtime validation
+// supplies a conservative default. Packs add it only when a tighter or larger
+// domain-specific bound is needed.
+func TestSchema_StringArgMayUseRuntimeDefaultLimit(t *testing.T) {
 	a := goodGapAction()
 	a.Args = []Arg{{Name: "query", Type: ArgString}} // no Validation block at all
 	if err := a.Validate(); err != nil {
-		t.Fatalf("unbounded free-form string arg must still validate (max_length not mandatory), got: %v", err)
+		t.Fatalf("string arg should use the runtime default when max_length is absent: %v", err)
 	}
 	// And explicitly: an empty Validation block (no max_length) is equally fine.
 	a.Args = []Arg{{Name: "query", Type: ArgString, Validation: &Validation{}}}
 	if err := a.Validate(); err != nil {
-		t.Fatalf("string arg with empty validation must still validate, got: %v", err)
+		t.Fatalf("string arg with empty validation should use the runtime default: %v", err)
 	}
 }
 
@@ -99,11 +97,11 @@ func TestConventionGap_AbsoluteBinaryPathValidates(t *testing.T) {
 	}
 }
 
-// (part 1) — there is NO approval field on the Action
+// There is no approval field on the Action
 // schema. Approval is derived from risk × the portal policy; the struct has
 // no `approval`/`requires_approval`/`requires_approval`-shaped field, so a
-// manifest declaring one is just ignored YAML. Pin it by reflection so a
-// future field addition trips this guard.
+// strict pack loader rejects any manifest declaring one. Pin the schema by
+// reflection so a future field addition trips this guard.
 func TestSchema_NoApprovalField(t *testing.T) {
 	forbidden := []string{"approval", "requiresapproval", "requireapproval", "needsapproval"}
 	for _, st := range []reflect.Type{
@@ -122,45 +120,5 @@ func TestSchema_NoApprovalField(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-// (part 2) — a YAML action carrying an `approval` /
-// `requires_approval` key is ACCEPTED: the unknown field is silently
-// ignored by the lenient yaml.v3 decode the loader uses, and Validate()
-// passes. The key has no effect — it is not a real field — but it does not
-// fail the build either.
-func TestConventionGap_UnknownApprovalKeyIgnored(t *testing.T) {
-	const withApprovalKey = `
-schema_version: 1
-id: t.thing
-title: Thing
-kind: exec
-risk: high
-description: Show the thing
-side_effects: [reads state]
-approval: required
-requires_approval: true
-execution:
-  command:
-    binary: cat
-    argv: ["/etc/hostname"]
-  timeout: 5s
-output:
-  parser: text
-  max_stdout_bytes: 1024
-  max_stderr_bytes: 1024
-`
-	var a Action
-	if err := yaml.Unmarshal([]byte(withApprovalKey), &a); err != nil {
-		t.Fatalf("manifest with an unknown approval key should still parse (lenient YAML), got: %v", err)
-	}
-	if err := a.Validate(); err != nil {
-		t.Fatalf("manifest with an unknown approval key should still validate (unknown YAML ignored), got: %v", err)
-	}
-	// The unknown key set nothing — Risk came from the real `risk:` field, not
-	// the bogus approval keys.
-	if a.Risk != RiskHigh {
-		t.Fatalf("risk should come from the real risk field, got %q", a.Risk)
 	}
 }

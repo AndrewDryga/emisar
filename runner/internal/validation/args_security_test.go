@@ -3,6 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -24,6 +25,34 @@ func TestValidate_ExactJSONIntegerAboveFloatRange(t *testing.T) {
 		if _, err := Validate(schema, map[string]any{"job_id": value}); err == nil {
 			t.Fatalf("out-of-contract integer %q must be rejected", value)
 		}
+	}
+}
+
+func TestValidate_StringLikeValuesHaveDefaultByteLimit(t *testing.T) {
+	tooLong := strings.Repeat("x", defaultMaxStringBytes+1)
+	for _, tc := range []struct {
+		name  string
+		arg   actionspec.Arg
+		value any
+	}{
+		{name: "string", arg: actionspec.Arg{Name: "value", Type: actionspec.ArgString}, value: tooLong},
+		{name: "path", arg: actionspec.Arg{Name: "value", Type: actionspec.ArgPath}, value: "/" + tooLong},
+		{name: "string array", arg: actionspec.Arg{Name: "value", Type: actionspec.ArgStringArray}, value: []any{tooLong}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Validate([]actionspec.Arg{tc.arg}, map[string]any{"value": tc.value}); err == nil {
+				t.Fatalf("Validate accepted value above the %d-byte default", defaultMaxStringBytes)
+			}
+		})
+	}
+
+	override := defaultMaxStringBytes + 10
+	arg := actionspec.Arg{
+		Name: "value", Type: actionspec.ArgString,
+		Validation: &actionspec.Validation{MaxLength: &override},
+	}
+	if _, err := Validate([]actionspec.Arg{arg}, map[string]any{"value": tooLong}); err != nil {
+		t.Fatalf("explicit max_length should replace the default: %v", err)
 	}
 }
 

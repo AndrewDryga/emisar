@@ -24,7 +24,7 @@ execution:
     binary: iptables
     argv: ["-F", "{{ args.chain }}"]
   timeout: 15s
-cancel_grace: 5s
+  cancel_grace: 5s
 output:
   parser: text
   max_stdout_bytes: 4096

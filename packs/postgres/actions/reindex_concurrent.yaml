@@ -29,7 +29,7 @@ execution:
       - "-c"
       - "REINDEX INDEX CONCURRENTLY {{ args.schema }}.{{ args.index }};"
   timeout: 4h
-cancel_grace: 5m
+  cancel_grace: 5m
 output:
   parser: text
   max_stdout_bytes: 16384

@@ -30,7 +30,7 @@ execution:
     binary: rabbitmqctl
     argv: ["sync_queue", "--vhost", "{{ args.vhost }}", "{{ args.queue }}"]
   timeout: 300s
-cancel_grace: 30s
+  cancel_grace: 30s
 output:
   parser: text
   max_stdout_bytes: 4096

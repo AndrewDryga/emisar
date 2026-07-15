@@ -25,7 +25,7 @@ execution:
     binary: redis-cli
     argv: ["FLUSHALL", "{{ args.mode }}"]
   timeout: 60s
-cancel_grace: 10s
+  cancel_grace: 10s
 output:
   parser: text
   max_stdout_bytes: 4096

@@ -30,7 +30,7 @@ args:
 execution:
   command: {binary: consul, argv: ["snapshot", "restore", "{{ args.path }}"]}
   timeout: 30m
-cancel_grace: 5m
+  cancel_grace: 5m
 output:
   parser: text
   max_stdout_bytes: 16384

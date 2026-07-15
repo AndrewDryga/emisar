@@ -2,7 +2,7 @@ schema_version: 1
 
 id: caddy
 name: Caddy web server
-version: 0.1.9
+version: 0.1.10
 description: >
   Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI.
   Config dump, upstream health, PKI inventory, config validation, plus
