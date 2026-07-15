@@ -14,6 +14,8 @@ defmodule EmisarWeb.RunnerConnectController do
   alias Emisar.Runners
   alias EmisarWeb.{RequestContext, RunnerSocket}
 
+  @runner_frame_max_bytes 2 * 1_024 * 1_024
+
   # -- Token exchange -------------------------------------------------
 
   def register(conn, params) do
@@ -90,7 +92,7 @@ defmodule EmisarWeb.RunnerConnectController do
       conn
       |> WebSockAdapter.upgrade(RunnerSocket, state,
         timeout: 60_000,
-        max_frame_size: 1_048_576
+        max_frame_size: @runner_frame_max_bytes
       )
       |> halt()
     else
