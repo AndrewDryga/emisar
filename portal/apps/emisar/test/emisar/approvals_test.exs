@@ -172,8 +172,7 @@ defmodule Emisar.ApprovalsTest do
       args: %{},
       reason: "deploy",
       source: "mcp",
-      api_key_id: key.id,
-      idempotency_key: "idem-#{System.unique_integer([:positive])}"
+      api_key_id: key.id
     }
 
     %{attrs: attrs, mcp_subject: mcp_subject, operator_subject: operator_subject}
@@ -832,21 +831,6 @@ defmodule Emisar.ApprovalsTest do
                Approvals.list_pending_approval_requests(operator_subject)
 
       assert run_id == run.id
-    end
-
-    test "an idempotency-replayed require-approval dispatch files only ONE request" do
-      %{attrs: attrs, mcp_subject: mcp_subject} = approval_gated_mcp_dispatch_setup()
-
-      # Two calls with the same Idempotency-Key resolve to the SAME run; the
-      # request insert (composed into create_run's Multi, on_conflict :nothing)
-      # must not file a second request for it.
-      assert {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, mcp_subject)
-      assert {:ok, :pending_approval, run2} = Runs.dispatch_run(attrs, mcp_subject)
-      assert run1.id == run2.id
-
-      requests = Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.all()
-      assert length(requests) == 1
-      assert run1.status == :pending_approval
     end
 
     test "inserts the request step into a caller's Multi, reading the run from changes" do
@@ -2312,7 +2296,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "consume_grant_in_multi/4" do
+  describe "consume_grant_in_multi/3" do
     # A dispatch that matches a grant: an MCP api-key call + a require_approval
     # policy + a wildcard grant for the action. Returns subject/attrs/grant.
     defp grant_dispatch_setup(grant_opts) do
@@ -2382,16 +2366,6 @@ defmodule Emisar.ApprovalsTest do
       assert {:error, changeset} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
       assert "is too large (max 262144 bytes serialized)" in errors_on(changeset).args
       assert Repo.reload!(grant).uses_count == 0
-    end
-
-    test "an idempotency-replayed grant dispatch consumes the grant only ONCE" do
-      %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 5)
-      attrs = Map.put(attrs, :idempotency_key, "idem-#{System.unique_integer([:positive])}")
-
-      assert {:ok, :running, run1} = Runs.dispatch_run(attrs, subject)
-      assert {:ok, _status, run2} = Runs.dispatch_run(attrs, subject)
-      assert run1.id == run2.id
-      assert Repo.reload!(grant).uses_count == 1
     end
 
     test "an exhausted grant falls back to the approval path without over-consuming" do

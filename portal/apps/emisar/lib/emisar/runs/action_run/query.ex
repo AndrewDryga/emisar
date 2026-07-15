@@ -45,9 +45,6 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_api_key_id(queryable, api_key_id),
     do: where(queryable, [runs: r], r.api_key_id == ^api_key_id)
 
-  def by_idempotency_key(queryable, key),
-    do: where(queryable, [runs: r], r.idempotency_key == ^key)
-
   def by_operation_id(queryable, operation_id),
     do: where(queryable, [runs: r], r.operation_id == ^operation_id)
 

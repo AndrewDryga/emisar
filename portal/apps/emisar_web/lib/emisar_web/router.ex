@@ -385,16 +385,6 @@ defmodule EmisarWeb.Router do
   scope "/api", EmisarWeb do
     pipe_through :api
 
-    scope "/mcp" do
-      # REST routes — still in use by HTTP-only integrations (OpenAI
-      # function-calling shim, generic curl examples, etc.). The JSON-RPC
-      # endpoint above is the canonical MCP surface.
-      get "/runners", MCPController, :list_runners
-      get "/tools", MCPController, :list_tools
-      post "/tools/:action_id", MCPController, :run_tool
-      get "/runs/:id", MCPController, :get_run
-    end
-
     # SIEM-shaped audit export — cursor-paginated NDJSON over the same
     # API-key auth as MCP, but gated on the `:audit_export` key KIND so log
     # shipping is a separate credential from tool-execution rights.

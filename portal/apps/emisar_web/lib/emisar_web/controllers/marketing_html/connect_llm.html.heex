@@ -184,7 +184,7 @@
       </section>
 
       <%!-- ============================================================ --%>
-      <%!-- Step 2: API key (bridge + REST)                              --%>
+      <%!-- Step 2: API key (bridge + direct MCP)                        --%>
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
@@ -192,7 +192,7 @@
             2
           </span>
           <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Mint an API key (desktop, CLI &amp; HTTP)
+            Mint an API key (desktop, CLI &amp; direct MCP)
           </h2>
         </div>
 
@@ -442,14 +442,14 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
           (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
           to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
-          block — the bridge signs every call so an enforcing runner will run it. Keep both secret,
+          block — the bridge signs every action dispatch so an enforcing runner will run it. Keep both secret,
           never on the portal. The cloud connectors in step&nbsp;1 sign nothing, so they can't reach an
           enforcing runner.
         </p>
       </section>
 
       <%!-- ============================================================ --%>
-      <%!-- Step 4: REST endpoints                                        --%>
+      <%!-- Step 4: Direct Streamable HTTP MCP                            --%>
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
@@ -457,15 +457,15 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             4
           </span>
           <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Plain HTTP / your own agent
+            Direct MCP over HTTP
           </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Same auth, same data, REST-shaped. Use these when wiring a
-          custom agent (OpenAI tool calling, internal automation,
-          generic curl) with an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
-          key from step 2.
+          A custom MCP client can call the same Streamable HTTP endpoint with
+          an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+          key from step 2. Tool discovery, calls, retries, and recovery all use
+          the standard JSON-RPC MCP contract.
         </p>
 
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -479,41 +479,15 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
     -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></pre>
         </div>
 
-        <ul class="mt-6 space-y-2 text-sm text-zinc-300">
-          <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">GET /api/mcp/runners</code>
-            — runners + the actions each advertises.
-          </li>
-          <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">GET /api/mcp/tools</code>
-            — one entry per distinct action with full JSON Schema
-            input descriptor.
-          </li>
-          <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">
-              POST /api/mcp/tools/:action_id?wait=15s
-            </code>
-            — fire-and-forget or long-poll dispatch.
-          </li>
-          <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">
-              GET /api/mcp/runs/:id?wait=60s
-            </code>
-            — fetch result; long-poll for pending approvals.
-          </li>
-        </ul>
-
         <p class="mt-4 text-sm text-zinc-400">
-          For OpenAI tool calling: pull <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools</code>,
-          forward each entry's
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
-          as a function parameter schema, and POST the model's chosen
-          arguments back to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools/:name?wait=30s</code>.
-          Every dispatch must include a
+          Send <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
+          then use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>
+          and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>.
+          Every action dispatch must include a
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
-          — it's logged to the audit trail and shown to approvers — and an
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Idempotency-Key</code>
-          header makes a retry at-most-once.
+          — it's logged to the audit trail and shown to approvers. Mutation
+          retries are recovered through the operation ID returned by the MCP
+          contract; clients do not invent a second retry key.
         </p>
       </section>
     </div>

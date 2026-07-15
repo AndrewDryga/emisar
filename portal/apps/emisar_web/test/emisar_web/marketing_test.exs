@@ -732,16 +732,17 @@ defmodule EmisarWeb.MarketingTest do
     test "the connect-an-llm page renders the verbatim endpoint references", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
-      # The remote MCP endpoint + the bridge install command + the REST
-      # routes an operator copies verbatim. (The install URL is wrapped in a
+      # The remote MCP endpoint + bridge install command + direct JSON-RPC
+      # methods an operator copies verbatim. (The install URL is wrapped in a
       # syntax-highlight span, so assert the URL and the `| sudo bash` tail
       # as separate stable pieces rather than one contiguous literal.)
       assert html =~ "https://emisar.dev/api/mcp/rpc"
       assert html =~ "curl -sSL"
       assert html =~ "https://emisar.dev/install-mcp.sh"
       assert html =~ "| sudo bash"
-      assert html =~ "GET /api/mcp/runners"
-      assert html =~ "POST /api/mcp/tools/:action_id"
+      assert html =~ "tools/list"
+      assert html =~ "tools/call"
+      refute html =~ "GET /api/mcp/runners"
     end
 
     test "the quickstart renders the install command pinned to the TLS endpoint", %{conn: conn} do
@@ -1267,7 +1268,7 @@ defmodule EmisarWeb.MarketingTest do
       body = conn |> get(~p"/sitemap.xml") |> response(200)
 
       # The sitemap is the public, indexable surface only. A leaked /app,
-      # sign-in, SCIM, REST-API, or OAuth path would invite crawlers (and
+      # sign-in, SCIM, machine-API, or OAuth path would invite crawlers (and
       # scanners) at the authenticated control plane.
       for private <- ~w(/app /sign_in /scim /api /oauth) do
         refute body =~ "#{private}</loc>", "sitemap leaks a private route: #{private}"

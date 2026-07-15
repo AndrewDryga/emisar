@@ -453,12 +453,7 @@ defmodule Emisar.Runs do
   triggering the transport to deliver `run_action` once the row is
   persisted (see Emisar.Transport).
 
-  Returns `{:ok, run}` on a fresh insert, `{:replay, run}` when this
-  call lost the race to a concurrent caller that already inserted with
-  the same `(api_key_id, idempotency_key)` pair (the unique index is
-  the actual correctness guarantee — the pre-flight peek in
-  `dispatch_run/2` just spares us the work in the common case), or
-  `{:error, changeset}` for any other validation failure.
+  Returns `{:ok, run}` or `{:error, changeset}`.
 
   Tests can also call this directly to seed runs without exercising
   policy + dispatch.
@@ -470,19 +465,9 @@ defmodule Emisar.Runs do
 
     result =
       Multi.new()
-      # ON CONFLICT on the partial idempotency index turns a concurrent
-      # duplicate into RETURNING the winning row in the same statement —
-      # no constraint rescue, no re-fetch. Rows without an
-      # idempotency_key can't match the partial index and always insert;
-      # the touched updated_at is the price of DO UPDATE ... RETURNING.
-      |> Multi.insert(:run, ActionRun.Changeset.create(attrs),
-        on_conflict: [set: [updated_at: DateTime.utc_now()]],
-        conflict_target:
-          {:unsafe_fragment, "(api_key_id, idempotency_key) WHERE idempotency_key IS NOT NULL"},
-        returning: true
-      )
-      |> put_run_audit_event(request_id)
-      |> put_decision_audit(request_id, opts[:audit])
+      |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
+      |> put_run_audit_event()
+      |> put_decision_audit(opts[:audit])
       # `:compose` lets a caller append steps that read `:run` from changes and
       # commit ATOMICALLY with it — the approval path files its request here, so
       # a run + its request can never half-commit (MAJOR-2).
@@ -490,16 +475,10 @@ defmodule Emisar.Runs do
       |> Repo.commit_multi()
 
     case result do
-      # Fresh insert: RETURNING carries the request_id this call minted.
       {:ok, %{run: %ActionRun{request_id: ^request_id} = run} = changes} ->
         broadcast_run(run)
         run_on_create(opts[:on_create], changes)
         {:ok, run}
-
-      # Conflict path: the returned row is the earlier winner's — replay.
-      # No audit row, no broadcast, no on_create; the original insert did them.
-      {:ok, %{run: %ActionRun{} = run}} ->
-        {:replay, run}
 
       {:error, reason} ->
         {:error, reason}
@@ -815,7 +794,7 @@ defmodule Emisar.Runs do
     |> Multi.insert(run_key, ActionRun.Changeset.create(attrs))
     |> append_atomic_run_audit(run_key, attrs[:status], audit_suffix)
     |> append_mcp_approval(run_key, plan[:approval])
-    |> append_atomic_grant(run_key, request_id, plan[:grant], audit_suffix)
+    |> append_atomic_grant(run_key, plan[:grant], audit_suffix)
   end
 
   defp append_atomic_run_audit(multi, run_key, status, audit_suffix)
@@ -839,11 +818,11 @@ defmodule Emisar.Runs do
     )
   end
 
-  defp append_atomic_grant(multi, _run_key, _request_id, nil, _audit_suffix), do: multi
+  defp append_atomic_grant(multi, _run_key, nil, _audit_suffix), do: multi
 
-  defp append_atomic_grant(multi, run_key, request_id, {grant, policy}, audit_suffix) do
+  defp append_atomic_grant(multi, run_key, {grant, policy}, audit_suffix) do
     multi
-    |> Emisar.Approvals.consume_grant_in_multi(run_key, grant, request_id)
+    |> Emisar.Approvals.consume_grant_in_multi(run_key, grant)
     |> Multi.insert({:atomic_grant_audit, audit_suffix}, fn changes ->
       changes |> Map.fetch!(run_key) |> Audit.Events.grant_used(grant, policy)
     end)
@@ -983,8 +962,7 @@ defmodule Emisar.Runs do
     reason = attrs[:reason]
     membership_id = Map.get(attrs, :requested_by_membership_id)
 
-    with :none <- peek_idempotent_run(attrs),
-         :ok <- require_runner(runner_id),
+    with :ok <- require_runner(runner_id),
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
@@ -1003,9 +981,6 @@ defmodule Emisar.Runs do
       |> Map.put(:expected_pack_hash, pack_hash)
       |> Map.put(:requires_approval, false)
       |> evaluate_and_dispatch(account_id, action)
-    else
-      {:replay, run} -> replay_outcome(run)
-      other -> other
     end
   end
 
@@ -1098,45 +1073,6 @@ defmodule Emisar.Runs do
       _ -> {:error, :attestation_stale}
     end
   end
-
-  # If the caller supplied an Idempotency-Key on this api_key, an earlier
-  # call that won the unique-index race owns the run. We re-shape the
-  # cached row into the same `{:ok, status_atom, run}` tuple the live
-  # dispatch path would return, so MCP responses are byte-identical
-  # whether the caller retried or made a fresh call.
-  defp peek_idempotent_run(%{api_key_id: api_key_id, idempotency_key: key})
-       when is_binary(api_key_id) and is_binary(key) and key != "" do
-    query =
-      ActionRun.Query.all()
-      |> ActionRun.Query.by_api_key_id(api_key_id)
-      |> ActionRun.Query.by_idempotency_key(key)
-
-    case Repo.peek(query) do
-      nil -> :none
-      %ActionRun{} = run -> {:replay, run}
-    end
-  end
-
-  defp peek_idempotent_run(_attrs), do: :none
-
-  # Re-shapes a cached run into the same outcome tuple the original
-  # dispatch call returned, so a retried-after-the-fact request gets a
-  # byte-identical response. Cases:
-  #
-  #   * `denied` — policy already rejected; return the deny tuple so MCP
-  #     renders it as `denied_by_policy` rather than as a running run.
-  #   * `pending_approval` — blocks on a human approval; `wait_for_run` is
-  #     still the right tool.
-  #   * anything else (sent, running, terminal) — the run exists and the
-  #     LLM can long-poll via `/runs/:id?wait=…` for the final state.
-  defp replay_outcome(%ActionRun{status: :denied, policy_reason: reason}),
-    do: {:error, :denied_by_policy, reason || "policy denied this call"}
-
-  defp replay_outcome(%ActionRun{status: :pending_approval} = run),
-    do: {:ok, :pending_approval, run}
-
-  defp replay_outcome(%ActionRun{} = run),
-    do: {:ok, :running, run}
 
   # Per-user runner ACLs (v1). When the caller supplies a
   # `requested_by_membership_id`, the membership's runner scopes must
@@ -1320,11 +1256,6 @@ defmodule Emisar.Runs do
       {:ok, _denied} ->
         {:error, :denied_by_policy, reason}
 
-      {:replay, run} ->
-        # Concurrent retry under the same Idempotency-Key — the original
-        # already logged the deny; surface its outcome verbatim.
-        replay_outcome(run)
-
       {:error, changeset} ->
         {:error, changeset}
     end
@@ -1343,12 +1274,6 @@ defmodule Emisar.Runs do
         with :ok <- dispatch_to_runner(run) do
           {:ok, :running, run}
         end
-
-      {:replay, run} ->
-        # Original already pushed the run_action envelope to the runner;
-        # re-pushing would duplicate-execute, so skip dispatch + just
-        # echo the existing row's outcome.
-        replay_outcome(run)
 
       {:error, changeset} ->
         {:error, changeset}
@@ -1383,23 +1308,18 @@ defmodule Emisar.Runs do
   end
 
   # Dispatch as `:allow` against a matched grant. The grant is consumed INSIDE
-  # create_run's Multi (MAJOR-3) — one use is burned only when a fresh run row
-  # durably commits, never on a validation failure or an idempotency replay.
+  # create_run's Multi (MAJOR-3) — one use is burned only when the run row
+  # durably commits, never on a validation failure.
   defp dispatch_with_grant(attrs, policy, matched, grant) do
     attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
-    request_id = attrs[:request_id] || Crypto.run_request_id()
-    attrs = Map.put(attrs, :request_id, request_id)
     audit = &Audit.Events.grant_used(&1, grant, policy)
-    compose = &Emisar.Approvals.consume_grant_in_multi(&1, :run, grant, request_id)
+    compose = &Emisar.Approvals.consume_grant_in_multi(&1, :run, grant)
 
     case create_run(attrs, audit: audit, compose: compose) do
       {:ok, run} ->
         with :ok <- dispatch_to_runner(run) do
           {:ok, :running, run}
         end
-
-      {:replay, run} ->
-        replay_outcome(run)
 
       {:error, reason} ->
         {:error, reason}
@@ -1442,9 +1362,6 @@ defmodule Emisar.Runs do
          ) do
       {:ok, run} ->
         {:ok, :pending_approval, run}
-
-      {:replay, run} ->
-        replay_outcome(run)
 
       {:error, changeset} ->
         {:error, changeset}
@@ -2142,14 +2059,9 @@ defmodule Emisar.Runs do
   # for the skipped intermediate states (and the already-terminal no-op)
   # so the transaction still commits and `fan_out_audit_events/1` simply
   # finds no event to broadcast.
-  # With `fresh_request_id` (the create_run upsert), the audit row is
-  # skipped on an idempotency replay — the returned row carries the
-  # original request_id, and the original insert already audited it.
-  defp put_run_audit_event(multi, fresh_request_id \\ nil) do
+  defp put_run_audit_event(multi) do
     Multi.run(multi, :audit, fn repo, %{run: run} ->
-      fresh? = is_nil(fresh_request_id) or run.request_id == fresh_request_id
-
-      if is_struct(run, ActionRun) and fresh? and run.status in @audited_run_statuses do
+      if is_struct(run, ActionRun) and run.status in @audited_run_statuses do
         repo.insert(Audit.run_event_changeset(run))
       else
         {:ok, nil}
@@ -2161,17 +2073,13 @@ defmodule Emisar.Runs do
   # fast path), committed in the SAME transaction as the run row + its terminal
   # event so a grant-dispatched action can't end up with no record of the grant
   # that let it through. `audit_fn` takes the inserted run and returns the event
-  # changeset. Skipped on the idempotency-replay path (same `fresh?` guard as the
-  # run event) — the original insert already logged it. (The policy allow/deny/
-  # require_approval decisions no longer write a separate row — audit-logging
-  # diet — their facts live on the run row + its terminal event.)
-  defp put_decision_audit(multi, _fresh_request_id, nil), do: multi
+  # changeset. The policy allow/deny/require_approval decisions no longer write
+  # a separate row; their facts live on the run row and its terminal event.
+  defp put_decision_audit(multi, nil), do: multi
 
-  defp put_decision_audit(multi, fresh_request_id, audit_fn) when is_function(audit_fn, 1) do
+  defp put_decision_audit(multi, audit_fn) when is_function(audit_fn, 1) do
     Multi.run(multi, :decision_audit, fn repo, %{run: run} ->
-      fresh? = is_nil(fresh_request_id) or run.request_id == fresh_request_id
-
-      if is_struct(run, ActionRun) and fresh? do
+      if is_struct(run, ActionRun) do
         repo.insert(audit_fn.(run))
       else
         {:ok, nil}

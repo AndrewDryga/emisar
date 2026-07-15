@@ -460,15 +460,19 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert export.status == 200
       assert [_ | _] = export |> ndjson() |> parse_ndjson()
 
-      # The SAME key is refused on the MCP tool surface: those endpoints require a
-      # `kind: :mcp` key, and an audit-export token is the wrong kind — so a leaked
-      # SIEM key cannot read the catalog or execute an action.
-      tools = build_conn() |> bearer(raw) |> get(~p"/api/mcp/tools")
-      assert json_response(tools, 403)["error"] == "wrong_key_kind"
-      assert json_response(tools, 403)["required"] == "mcp"
+      # The same key is refused at the MCP tool boundary, so a leaked SIEM key
+      # cannot read the catalog or execute an action.
+      request = Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "tools/list"})
 
-      runners = build_conn() |> bearer(raw) |> get(~p"/api/mcp/runners")
-      assert json_response(runners, 403)["error"] == "wrong_key_kind"
+      body =
+        build_conn()
+        |> bearer(raw)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/mcp/rpc", request)
+        |> json_response(200)
+
+      assert body["error"]["code"] == -32_002
+      assert body["error"]["data"]["required"] == "mcp"
     end
   end
 

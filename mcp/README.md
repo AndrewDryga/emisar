@@ -5,16 +5,11 @@ Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI, Grok, …) so an LLM can
 run real infrastructure actions — gated by the same policy, approval,
 and audit machinery as a human operator.
 
-Two transports, one surface:
-
-- **stdio bridge** — `emisar-mcp`, a single self-contained Go binary
-  the client launches as a child process. It proxies JSON-RPC frames to
-  `POST /api/mcp/rpc`, validates correlated protocol responses, and writes
-  only valid MCP frames to stdout. Tool descriptors, content blocks, and
-  action semantics remain in the portal.
-- **REST** — `GET /api/mcp/runners`, `GET /api/mcp/tools`,
-  `POST /api/mcp/tools/:action_id`, `GET /api/mcp/runs/:id` for
-  integrations that prefer plain HTTP over JSON-RPC.
+The portal exposes one MCP surface at `POST /api/mcp/rpc`. `emisar-mcp` is a
+self-contained Go binary that lets stdio clients use it: the client launches
+the bridge as a child process, and the bridge proxies JSON-RPC frames, validates
+correlated protocol responses, and writes only valid MCP frames to stdout. Tool
+descriptors, content blocks, and action semantics remain in the portal.
 
 ## Bridge install + client config
 

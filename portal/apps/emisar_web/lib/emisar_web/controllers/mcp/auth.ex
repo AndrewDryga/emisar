@@ -1,7 +1,6 @@
 defmodule EmisarWeb.MCP.Auth do
   @moduledoc """
-  Shared bearer authentication for the MCP HTTP surfaces — the JSON-RPC
-  `/api/mcp/rpc` endpoint and the REST `/api/mcp/*` routes. Resolves a
+  Bearer authentication for the MCP Streamable HTTP endpoint. Resolves a
   presented bearer (a static `emk-` API key OR an `emo-` OAuth access
   token; both resolve to `api_keys` rows, so downstream scoping +
   attribution is identical) and, on failure, emits RFC 9728's
@@ -16,9 +15,8 @@ defmodule EmisarWeb.MCP.Auth do
   @doc """
   Resolves the request's bearer. On success assigns `:api_key` +
   `:current_subject` and returns `{:ok, conn}`. On failure sets the
-  `WWW-Authenticate` header and returns `{:error, conn}` — the caller
-  renders its own unauthorized body (the JSON-RPC and REST surfaces
-  shape the 401 differently).
+  `WWW-Authenticate` header and returns `{:error, conn}` so the JSON-RPC
+  boundary can render the correlated error.
   """
   def authenticate(conn) do
     case resolve_bearer(conn) do

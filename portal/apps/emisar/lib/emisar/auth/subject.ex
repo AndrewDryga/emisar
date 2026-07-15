@@ -153,9 +153,8 @@ defmodule Emisar.Auth.Subject do
 
   @doc """
   The acting API key's id, or `nil` when the actor isn't an API key (user /
-  runner / system). Scopes MCP idempotency to the credential — a retried call
-  from the SAME key collapses; the same key string from a different key does
-  not — mirroring the single-action `(api_key_id, idempotency_key)` shape.
+  runner / system). Used for API-key attribution and credential-bound domain
+  operations.
   """
   def api_key_id(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{id: id}}), do: id
   def api_key_id(%__MODULE__{}), do: nil

@@ -219,7 +219,7 @@ defmodule EmisarWeb.AuditExportController do
     |> Jason.encode!()
   end
 
-  # -- Auth (mirrors MCPController) -------------------------------------
+  # -- API-key bearer auth ----------------------------------------------
 
   defp authenticate(conn, _opts) do
     with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),

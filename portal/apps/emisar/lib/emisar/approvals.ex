@@ -303,9 +303,8 @@ defmodule Emisar.Approvals do
   (`Runs.create_run`'s `:compose` hook), so a gated run and its request commit
   ATOMICALLY: a failed request insert rolls the run back rather than leaving a
   permanent `:pending_approval` run with no request. Reads the run from
-  `changes[run_key]`; `on_conflict: :nothing` on the unique `run_id` makes an
-  idempotency-replay's duplicate a no-op. Broadcast + email are post-commit, via
-  `notify_request_created/1` on the fresh-insert path only.
+  `changes[run_key]`. Broadcast + email are post-commit through
+  `notify_request_created/1`.
   """
   def create_request_in_multi(multi, run_key, requested_by_id, reason, opts) do
     request_key = nested_multi_key(:approval_request, run_key)
@@ -313,10 +312,7 @@ defmodule Emisar.Approvals do
     Multi.insert(
       multi,
       request_key,
-      &request_changeset(Map.fetch!(&1, run_key), requested_by_id, reason, opts),
-      on_conflict: :nothing,
-      conflict_target: :run_id,
-      returning: true
+      &request_changeset(Map.fetch!(&1, run_key), requested_by_id, reason, opts)
     )
   end
 
@@ -922,28 +918,22 @@ defmodule Emisar.Approvals do
   @doc """
   Internal — compose a grant consumption into `Runs.create_run`'s Multi (the
   grant fast-path), so a grant use is burned ONLY when the run is durably
-  created in the same transaction — never on a validation failure or an
-  idempotency replay (MAJOR-3). Reads the run from `changes[run_key]` and
-  consumes exactly when its `request_id` matches `fresh_request_id` (a fresh
-  insert); a replay's returned earlier row doesn't match → no second consume.
+  created in the same transaction, never on a validation failure (MAJOR-3).
   Returns `{:error, :grant_unusable}` if the grant lapsed between the peek and
-  the commit, so the caller can fall back to the normal approval flow.
+  commit, so the caller can fall back to the normal approval flow.
   """
-  def consume_grant_in_multi(multi, run_key, %Grant{} = grant, fresh_request_id) do
+  def consume_grant_in_multi(multi, run_key, %Grant{} = grant) do
     grant_key = nested_multi_key(:grant_use, run_key)
 
-    Multi.run(multi, grant_key, fn repo, changes ->
-      consume_grant_if_fresh(repo, Map.fetch!(changes, run_key), grant, fresh_request_id)
+    Multi.run(multi, grant_key, fn repo, _changes ->
+      consume_grant(repo, grant)
     end)
   end
 
   defp nested_multi_key(key, :run), do: key
   defp nested_multi_key(key, run_key), do: {key, run_key}
 
-  # Fresh insert (the run carries the request_id we minted) → consume one use
-  # atomically; 0 rows means the grant expired/exhausted/was revoked since the
-  # peek, so fail the transaction and let the caller re-evaluate.
-  defp consume_grant_if_fresh(repo, %Runs.ActionRun{request_id: id}, %Grant{} = grant, id) do
+  defp consume_grant(repo, %Grant{} = grant) do
     now = DateTime.utc_now()
     query = Grant.Query.consumable_by_id(grant.id, now) |> Grant.Query.consume_one(now)
 
@@ -952,11 +942,6 @@ defmodule Emisar.Approvals do
       {0, _} -> {:error, :grant_unusable}
     end
   end
-
-  # Idempotency replay (the returned row is an earlier caller's) → the original
-  # dispatch already consumed the grant; never double-burn.
-  defp consume_grant_if_fresh(_repo, %Runs.ActionRun{}, %Grant{}, _fresh_request_id),
-    do: {:ok, :replayed}
 
   @doc """
   Internal — called from `approve_request/4` (already-authorized) inside

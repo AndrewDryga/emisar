@@ -5,7 +5,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
   @create_fields ~w[
     account_id runner_id request_id action_id args args_raw args_sha256 client_info mcp_client_metadata
-    ip_address user_agent opts attestation reason source requested_by_id api_key_id idempotency_key
+    ip_address user_agent opts attestation reason source requested_by_id api_key_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at
@@ -53,9 +53,6 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
     |> unique_constraint([:account_id, :request_id])
-    |> unique_constraint([:api_key_id, :idempotency_key],
-      name: :action_runs_api_key_idempotency_key_index
-    )
     |> unique_constraint([:mcp_operation_record_id, :runner_id],
       name: :action_runs_mcp_operation_runner_index
     )

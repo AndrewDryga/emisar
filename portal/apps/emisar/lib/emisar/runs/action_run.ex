@@ -27,11 +27,6 @@ defmodule Emisar.Runs.ActionRun do
     field :runbook_execution_id, Ecto.UUID
 
     field :api_key_id, Ecto.UUID
-    # MCP / API caller supplies `Idempotency-Key`; a duplicate
-    # `(api_key_id, idempotency_key)` returns the original run row
-    # instead of dispatching a fresh one. Nil when the caller didn't
-    # send the header (UI / runbook paths).
-    field :idempotency_key, :string
     # Stable bridge-owned identity for one public MCP mutation. Fan-out creates
     # one row per runner under the same operation id; retries reuse those rows.
     field :operation_id, :string

@@ -7,10 +7,6 @@ one-tool-per-action catalog. It is deliberately complete enough for the portal,
 bridge, runner, documentation, tests, and client certification to implement one
 contract without filling in security-sensitive gaps independently.
 
-The existing REST API is outside this proposal. The implementation may change
-its private bridge-to-portal request shape, but does not silently change public
-REST endpoints.
-
 ## Why this change
 
 An account can expose hundreds of actions. Publishing every action as an MCP

@@ -682,71 +682,6 @@ defmodule Emisar.RunsTest do
       assert Keyword.has_key?(changeset.errors, :args)
     end
 
-    test "second insert with same (api_key_id, idempotency_key) returns {:replay, original}", %{
-      account: account,
-      runner: runner
-    } do
-      # Closes the TOCTOU race in dispatch_run: the pre-flight peek is a
-      # best-effort optimization; the unique index `(api_key_id,
-      # idempotency_key)` is the actual correctness guarantee. When two
-      # racing callers both miss the peek and try to insert, one wins
-      # the index and the other gets back the winner's row instead of a
-      # confusing constraint changeset.
-      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-
-      attrs =
-        base_attrs(account.id, runner.id, %{
-          source: "mcp",
-          api_key_id: key.id,
-          idempotency_key: "idem-#{System.unique_integer([:positive])}"
-        })
-
-      assert {:ok, %ActionRun{} = original} = Runs.create_run(attrs)
-      assert {:replay, %ActionRun{id: replayed_id}} = Runs.create_run(attrs)
-
-      assert replayed_id == original.id
-    end
-
-    test "a different idempotency_key on the same api_key inserts a second row", %{
-      account: account,
-      runner: runner
-    } do
-      # Sanity-check the unique index isn't overreaching: same key, new
-      # idempotency_key → new row, not a replay.
-      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-
-      attrs1 =
-        base_attrs(account.id, runner.id, %{
-          source: "mcp",
-          api_key_id: key.id,
-          idempotency_key: "idem-a"
-        })
-
-      attrs2 = %{attrs1 | source: "mcp"} |> Map.put(:idempotency_key, "idem-b")
-
-      assert {:ok, %ActionRun{id: a_id}} = Runs.create_run(attrs1)
-      assert {:ok, %ActionRun{id: b_id}} = Runs.create_run(attrs2)
-
-      refute a_id == b_id
-    end
-
-    test "two calls with nil idempotency_key never replay (null != null in unique index)", %{
-      account: account,
-      runner: runner
-    } do
-      # Without an Idempotency-Key the unique constraint is partial
-      # (`where idempotency_key IS NOT NULL`), so two non-MCP calls don't
-      # accidentally collide. Run_id is the only uniqueness gate, and
-      # `Runs.generate_request_id/0` produces UUIDs so collisions are
-      # essentially impossible.
-      attrs = base_attrs(account.id, runner.id)
-
-      assert {:ok, %ActionRun{id: a_id}} = Runs.create_run(attrs)
-      assert {:ok, %ActionRun{id: b_id}} = Runs.create_run(attrs)
-
-      refute a_id == b_id
-    end
-
     test "broadcasts the new run on the account topic (fresh insert only)", %{
       account: account,
       runner: runner
@@ -1418,72 +1353,6 @@ defmodule Emisar.RunsTest do
       refute_receive {:run_updated, _}, 200
     end
 
-    test "a previously-denied dispatch replays to the same deny tuple, audited once" do
-      # An MCP-sourced dispatch carrying an api_key + idempotency_key replays the
-      # cached :denied row back into the deny tuple via replay_outcome, not a
-      # running run. The deny is logged exactly once (the replay path runs no audit).
-      deny_high = %{
-        "schema_version" => 2,
-        "defaults" => %{
-          "low" => "deny",
-          "medium" => "deny",
-          "high" => "deny",
-          "critical" => "deny"
-        },
-        "overrides" => [],
-        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
-      }
-
-      {subject, _operator_subject, attrs} = replayable_dispatch(deny_high)
-
-      assert {:error, :denied_by_policy, reason} = Runs.dispatch_run(attrs, subject)
-      assert {:error, :denied_by_policy, ^reason} = Runs.dispatch_run(attrs, subject)
-
-      # Exactly one denied run row and one action_run.denied audit row — the
-      # replay re-shaped the original, it didn't dispatch or re-audit. The
-      # audit-logging diet dropped the separate policy.evaluated row, so the
-      # action_run.denied terminal row IS the denial's audit trail (#2: a denial
-      # is always audited exactly once — never zero rows).
-      assert {:ok, [%ActionRun{status: :denied}], _} = Runs.list_recent_runs(subject, limit: 50)
-
-      denied =
-        Repo.all(Emisar.Audit.Event) |> Enum.filter(&(&1.event_type == "action_run.denied"))
-
-      assert length(denied) == 1
-    end
-
-    test "a previously-parked dispatch replays to the same pending_approval tuple" do
-      # Replaying a previously-PARKED dispatch re-shapes the cached
-      # :pending_approval row to the same {:ok, :pending_approval, run} (the
-      # request to long-poll), and never files a second request or pushes a
-      # second envelope.
-      approval_high = %{
-        "schema_version" => 2,
-        "defaults" => %{
-          "low" => "allow",
-          "medium" => "allow",
-          "high" => "require_approval",
-          "critical" => "deny"
-        },
-        "overrides" => [],
-        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
-      }
-
-      {subject, operator_subject, attrs} = replayable_dispatch(approval_high)
-
-      assert {:ok, :pending_approval, %ActionRun{id: id}} = Runs.dispatch_run(attrs, subject)
-      assert {:ok, :pending_approval, %ActionRun{id: ^id}} = Runs.dispatch_run(attrs, subject)
-
-      # One parked run, one pending request — the replay didn't re-file.
-      assert {:ok, [%ActionRun{status: :pending_approval}], _} =
-               Runs.list_recent_runs(subject, limit: 50)
-
-      assert {:ok, [_one], _} = Approvals.list_pending_approval_requests(operator_subject)
-
-      # …and no second run_action envelope was ever pushed (it never dispatched).
-      refute_receive {:cloud_to_runner, _generation, _}, 100
-    end
-
     test "rejects a missing action_id with :action_required" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1500,42 +1369,6 @@ defmodule Emisar.RunsTest do
 
       attrs = %{runner_id: runner.id, action_id: "linux.uptime", source: "operator", args: %{}}
       assert {:error, :reason_required} = Runs.dispatch_run(attrs, subject)
-    end
-
-    # An MCP-sourced dispatch carrying an api_key + idempotency_key, against an
-    # online runner that advertises the action under `policy`. Returns
-    # subject/attrs so a test can replay the same dispatch.
-    defp replayable_dispatch(policy_rules) do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      operator_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-
-      {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
-
-      mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
-
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
-      Emisar.Runners.subscribe_runner_transport(runner)
-      _ = Fixtures.Policies.create_policy(account_id: account.id, rules: policy_rules)
-
-      attrs =
-        base_attrs(account.id, runner.id, %{
-          source: "mcp",
-          api_key_id: key.id,
-          idempotency_key: "idem-#{System.unique_integer([:positive])}"
-        })
-
-      {mcp_subject, operator_subject, attrs}
     end
   end
 
@@ -2015,7 +1848,6 @@ defmodule Emisar.RunsTest do
       reason: "inspect uptime",
       source: "mcp",
       api_key_id: key.id,
-      idempotency_key: "#{operation_id}:#{runner.id}",
       operation_id: operation_id,
       pack_ref: @mcp_pack_ref
     }

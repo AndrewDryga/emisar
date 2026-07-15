@@ -1,8 +1,7 @@
 defmodule EmisarWeb.MCPRpcController do
   @moduledoc """
   MCP-over-HTTP — JSON-RPC 2.0 on a single POST endpoint at
-  `/api/mcp/rpc`. The canonical MCP server implementation. Same
-  Bearer-token auth as the REST routes under `/api/mcp/*`.
+  `/api/mcp/rpc`. The canonical MCP server implementation.
 
   ## Methods implemented
 

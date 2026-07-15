@@ -416,11 +416,7 @@ defmodule Emisar.Runbooks do
   between an earlier caller preflight and changing group membership.
 
   Requires `dispatch_run` permission; the runbook must be in the subject's
-  account. `opts[:idempotency_key]` (the MCP execute path threads the caller's
-  `Idempotency-Key`) makes a retried dispatch from the same API key resolve to
-  the ORIGINAL execution — its existing runs are returned and nothing new fires,
-  so the runbook can't double-run; a keyless (web) dispatch always runs fresh.
-  Returns
+  account. Returns
   `{:ok, %{execution_id: …, total: …, plan: […], runs: […], errors: […]}}`
   once at least one run row exists — `plan` is the full resolved work-list
   (`%{step_id, step_index, action_id, runner_id}` per step×runner the
@@ -434,7 +430,6 @@ defmodule Emisar.Runbooks do
   """
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject, opts \\ [])
       when is_binary(reason) do
-    idempotency_key = Keyword.get(opts, :idempotency_key)
     operation_id = Keyword.get(opts, :operation_id)
     operation_fingerprint = Keyword.get(opts, :operation_fingerprint)
     operation_ref = Keyword.get(opts, :operation_ref)
@@ -463,17 +458,14 @@ defmodule Emisar.Runbooks do
           true
         )
       else
-        dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key)
+        dispatch_first_wave(runbook, reason, subject, work_list)
       end
     end
   end
 
-  # Persist (or replay) the execution, then dispatch its first wave. A retried
-  # MCP execute — same `(api_key_id, idempotency_key)` — resolves to the
-  # existing execution: we return ITS already-dispatched runs and fire nothing,
-  # so the runbook can't double-run.
-  defp dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key) do
-    case create_execution(runbook, reason, subject, work_list, idempotency_key) do
+  # Persist the execution, then dispatch its first wave.
+  defp dispatch_first_wave(runbook, reason, subject, work_list) do
+    case create_execution(runbook, reason, subject, work_list) do
       {:ok, execution} ->
         outcomes =
           work_list
@@ -494,10 +486,6 @@ defmodule Emisar.Runbooks do
         else
           {:ok, execution_result(execution.id, work_list, runs, errors)}
         end
-
-      {:replay, execution} ->
-        runs = Emisar.Runs.list_runs_for_runbook_execution(runbook.account_id, execution.id)
-        {:ok, execution_result(execution.id, work_list, runs, [])}
 
       {:error, reason} ->
         {:error, reason}
@@ -969,8 +957,7 @@ defmodule Emisar.Runbooks do
          %Runbook{} = runbook,
          reason,
          %Subject{} = subject,
-         work_list,
-         key
+         work_list
        ) do
     id = Repo.generate_id()
 
@@ -981,47 +968,25 @@ defmodule Emisar.Runbooks do
       initiating_membership_id: subject.membership_id,
       requested_by_id: Subject.user_id(subject),
       api_key_id: Subject.api_key_id(subject),
-      idempotency_key: key,
       reason: reason,
       work_list: freeze_work_list(work_list)
     }
 
     Multi.new()
-    # ON CONFLICT on the partial (api_key_id, idempotency_key) index turns a
-    # retried execute into RETURNING the original execution row — no rescue, no
-    # re-fetch. A keyless dispatch (nil idempotency_key, the web path) can't
-    # match the partial index and always inserts fresh.
-    |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs),
-      on_conflict: [set: [updated_at: DateTime.utc_now()]],
-      conflict_target:
-        {:unsafe_fragment, "(api_key_id, idempotency_key) WHERE idempotency_key IS NOT NULL"},
-      returning: true
-    )
-    |> Multi.run(:audit, fn repo, %{execution: execution} ->
-      # Skip the audit row on a replay (the returned winner's id differs from
-      # the one THIS call minted) — the original insert already logged it.
-      if execution.id == id do
-        repo.insert(
-          Audit.Events.runbook_dispatched(
-            subject,
-            runbook,
-            execution,
-            length(work_list),
-            ceil(length(work_list) / @batch_size)
-          )
-        )
-      else
-        {:ok, nil}
-      end
+    |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs))
+    |> Multi.insert(:audit, fn %{execution: execution} ->
+      Audit.Events.runbook_dispatched(
+        subject,
+        runbook,
+        execution,
+        length(work_list),
+        ceil(length(work_list) / @batch_size)
+      )
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{execution: %RunbookExecution{id: ^id} = execution}} ->
-        {:ok, execution_descriptor(execution)}
-
-      # Conflict path: the returned row is the earlier winner's — replay.
       {:ok, %{execution: %RunbookExecution{} = execution}} ->
-        {:replay, execution_descriptor(execution)}
+        {:ok, execution_descriptor(execution)}
 
       {:error, reason} ->
         {:error, reason}

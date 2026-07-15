@@ -1137,10 +1137,10 @@ defmodule Emisar.Catalog do
   @doc """
   Return a complete trusted action manifest for static/MCP reads.
 
-  This is deliberately stricter than REST dispatch's hash gate: historical
-  trusted rows with null or sparse manifests keep their existing dispatch
-  semantics, but cannot supply model-facing prose or schemas until an operator
-  reviews a new hash. The caller must already hold an account-scoped row.
+  This is deliberately stricter than the execution trust gate: historical
+  trusted rows with null or sparse manifests keep their dispatch semantics, but
+  cannot supply model-facing prose or schemas until an operator reviews a new
+  hash. The caller must already hold an account-scoped row.
   """
   @spec trusted_manifest_for_static_reads(PackVersion.t()) ::
           {:ok, map()} | {:error, :pack_untrusted | :incomplete_manifest}
