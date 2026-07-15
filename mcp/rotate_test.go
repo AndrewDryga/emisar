@@ -670,9 +670,83 @@ func TestInitializeCredentialState_ReadOnlyFallbackWaitsForAuthFailure(t *testin
 	if b.apiKey != current || b.pendingKey != "" {
 		t.Fatalf("read-only bridge adopted an unproven peer successor: current=%q pending=%q", b.apiKey, b.pendingKey)
 	}
-	recovery, err := b.readOnlyRecoveryKey()
+	recovery, err := b.credentialRecoveryKey(current)
 	if err != nil || recovery != successor {
 		t.Fatalf("read-only recovery key = %q, err=%v, want peer successor", recovery, err)
+	}
+}
+
+func TestForward_WritableCredentialRecoversPeerPromotionAfterRetryUnauthorized(t *testing.T) {
+	current := testAPIKey(42)
+	configDir := t.TempDir()
+	storeA := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	peer := newRotationTestBridge(storeA, current)
+	live := newRotationTestBridge(storeB, current)
+	_, acknowledgement := peer.rotationProposal()
+
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_runbook_draft","arguments":{"name":"maintenance"}}}`)
+	var authorizations, operationIDs []string
+	live.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorizations = append(authorizations, req.Header.Get("Authorization"))
+		operationIDs = append(operationIDs, req.Header.Get(operationIDHeader))
+		switch len(authorizations) {
+		case 1:
+			peer.acknowledgeRotation(acknowledgement)
+			return nil, errors.New("response connection lost")
+		case 2:
+			return unauthorizedResponse(), nil
+		default:
+			return jsonRPCResponse(""), nil
+		}
+	})}
+
+	if _, err := live.forward(frame); err != nil {
+		t.Fatalf("forward after peer promotion: %v", err)
+	}
+	if len(authorizations) != 3 {
+		t.Fatalf("authorization attempts = %#v, want old/old/successor", authorizations)
+	}
+	if authorizations[0] != "Bearer "+current || authorizations[1] != authorizations[0] ||
+		authorizations[2] != "Bearer "+peer.apiKey {
+		t.Fatalf("authorization attempts = %#v, want old/old/peer successor", authorizations)
+	}
+	if operationIDs[0] == "" || !slices.Equal(operationIDs, []string{operationIDs[0], operationIDs[0], operationIDs[0]}) {
+		t.Fatalf("operation identity changed across credential recovery: %#v", operationIDs)
+	}
+	if live.apiKey != peer.apiKey || live.pendingKey != "" {
+		t.Fatalf("live credential state = %q/%q, want peer successor", live.apiKey, live.pendingKey)
+	}
+}
+
+func TestForward_WritableCredentialPromotesPendingAfterLostAcknowledgement(t *testing.T) {
+	current := testAPIKey(43)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	_, _ = b.rotationProposal()
+	pending := b.pendingKey
+
+	var authorizations []string
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorizations = append(authorizations, req.Header.Get("Authorization"))
+		if req.Header.Get("Authorization") == "Bearer "+current {
+			return unauthorizedResponse(), nil
+		}
+		return jsonRPCResponse(""), nil
+	})}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil {
+		t.Fatalf("forward after lost acknowledgement: %v", err)
+	}
+	if want := []string{"Bearer " + current, "Bearer " + pending}; !slices.Equal(authorizations, want) {
+		t.Fatalf("authorization attempts = %#v, want %#v", authorizations, want)
+	}
+	state, err := store.load(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != pending || state.Pending != "" || b.apiKey != pending || b.pendingKey != "" {
+		t.Fatalf("recovered state = %#v bridge=%q/%q, want promoted pending", state, b.apiKey, b.pendingKey)
 	}
 }
 
@@ -829,6 +903,16 @@ func testCredentialState(current, pending string) credentialState {
 		BootstrapPrefix: keyPrefix(current),
 		Current:         current,
 		Pending:         pending,
+	}
+}
+
+func unauthorizedResponse() *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"unauthorized"}}`,
+		)),
 	}
 }
 

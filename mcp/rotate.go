@@ -387,37 +387,94 @@ func (b *bridge) refreshCredentialState() error {
 	})
 }
 
-// readOnlyRecoveryKey returns a validated alternate only after the portal has
-// rejected the active key. Observing a renamed state file alone is insufficient:
-// a writable peer may not yet have synced that rename. A pending successor was
-// persisted before it was proposed, while a different current key was activated
-// by a peer that uses it only after successful persistence.
-func (b *bridge) readOnlyRecoveryKey() (string, error) {
+// credentialRecoveryKey returns a durable alternate only after the portal has
+// rejected the attempted key. A pending successor is not activated until the
+// portal accepts it; a peer-promoted current key is re-synced before use.
+func (b *bridge) credentialRecoveryKey(rejected string) (string, error) {
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
-	if !b.credentialReadOnly || b.credentialStore == nil {
+	if b.credentialStore == nil {
 		return "", nil
 	}
-	state, err := b.credentialStore.load(b.apiKey)
+
+	if b.credentialReadOnly {
+		state, err := b.credentialStore.load(rejected)
+		if err != nil {
+			return "", err
+		}
+		if state.Current != rejected {
+			return state.Current, nil
+		}
+		if state.Pending != "" && state.Pending != rejected {
+			return state.Pending, nil
+		}
+		return "", nil
+	}
+
+	var alternate string
+	err := b.credentialStore.withLock(func() error {
+		state, err := b.credentialStore.load(rejected)
+		if err != nil {
+			return err
+		}
+		if state.Current != b.apiKey || state.Pending != b.pendingKey {
+			if err := b.credentialStore.persist(state); err != nil {
+				return fmt.Errorf("confirm peer credential state: %w", err)
+			}
+		}
+		b.apiKey = state.Current
+		b.pendingKey = state.Pending
+		switch {
+		case state.Current != rejected:
+			alternate = state.Current
+		case state.Pending != "" && state.Pending != rejected:
+			alternate = state.Pending
+		}
+		return nil
+	})
 	if err != nil {
 		return "", err
 	}
-	if state.Current != b.apiKey {
-		return state.Current, nil
-	}
-	if state.Pending != "" && state.Pending != b.apiKey {
-		return state.Pending, nil
-	}
-	return "", nil
+	return alternate, nil
 }
 
-func (b *bridge) adoptReadOnlyRecoveryKey(key string) {
+// adoptRecoveryKey records an alternate only after the portal accepted it. A
+// writable pending successor may retire its predecessor on first use, so the
+// promotion must be durable before the successful response is released.
+func (b *bridge) adoptRecoveryKey(key string) error {
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
+	if b.credentialStore == nil {
+		return nil
+	}
 	if b.credentialReadOnly {
 		b.apiKey = key
 		b.pendingKey = ""
+		return nil
 	}
+
+	err := b.credentialStore.withLock(func() error {
+		state, err := b.credentialStore.load(b.apiKey)
+		if err != nil {
+			return err
+		}
+		switch {
+		case state.Current == key && state.Pending == "":
+			// Re-persist a peer promotion so this process has proved it durable.
+		case state.Pending == key:
+			state.Current = key
+			state.Pending = ""
+		default:
+			return errors.New("credential recovery key changed before adoption")
+		}
+		return b.credentialStore.persist(state)
+	})
+	if err != nil {
+		return err
+	}
+	b.apiKey = key
+	b.pendingKey = ""
+	return nil
 }
 
 func (b *bridge) rotationProposal() (prefix, hash string) {

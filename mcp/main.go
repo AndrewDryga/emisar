@@ -995,9 +995,9 @@ func (b *bridge) forwardRequestContext(
 		result, err = b.forwardAttempt(cloneRequestWithBody(req, ctx, frame), meta)
 	}
 	if result.status == http.StatusUnauthorized {
-		recoveryKey, recoveryErr := b.readOnlyRecoveryKey()
+		recoveryKey, recoveryErr := b.credentialRecoveryKey(apiKey)
 		if recoveryErr != nil {
-			return nil, fmt.Errorf("recover read-only credential state: %w", recoveryErr)
+			return nil, fmt.Errorf("recover credential state: %w", recoveryErr)
 		}
 		if recoveryKey != "" && recoveryKey != apiKey {
 			retry := cloneRequestWithBody(req, ctx, frame)
@@ -1005,7 +1005,9 @@ func (b *bridge) forwardRequestContext(
 			result, err = b.forwardAttempt(retry, meta)
 			if err == nil && (result.status >= 200 && result.status < 500) &&
 				result.status != http.StatusUnauthorized {
-				b.adoptReadOnlyRecoveryKey(recoveryKey)
+				if recoveryErr := b.adoptRecoveryKey(recoveryKey); recoveryErr != nil {
+					return nil, fmt.Errorf("persist recovered credential state: %w", recoveryErr)
+				}
 			}
 		}
 	}
