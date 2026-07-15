@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,32 +58,17 @@ func TestNonceJournalAppendsAndSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestNonceJournalMigratesLegacySnapshot(t *testing.T) {
+func TestNonceJournalRejectsLegacySnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonce-cache.json")
 	nonce := journalNonce("legacy")
 	issued := time.Now().UTC()
-	legacy, err := json.Marshal(map[string]string{nonce: issued.Format(time.RFC3339Nano)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	legacy := []byte(`{"` + nonce + `":"` + issued.Format(time.RFC3339Nano) + `"}`)
 	if err := os.WriteFile(path, legacy, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	store, err := OpenNonceStore(path, time.Hour)
-	if err != nil {
-		t.Fatalf("OpenNonceStore legacy: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	migrated, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.HasPrefix(migrated, []byte(`{"version":1,"retention_ns":`)) || !bytes.HasSuffix(migrated, []byte{'\n'}) {
-		t.Fatalf("legacy snapshot was not rewritten as a journal: %q", migrated)
-	}
-	if accepted, err := store.consume(nonce, issued, issued); err != nil || accepted {
-		t.Fatalf("migrated nonce was forgotten: accepted=%v err=%v", accepted, err)
+	if _, err := OpenNonceStore(path, time.Hour); err == nil {
+		t.Fatal("legacy nonce snapshot did not fail closed")
 	}
 }
 

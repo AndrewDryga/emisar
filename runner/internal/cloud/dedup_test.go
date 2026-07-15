@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,9 +24,17 @@ func reserveAndComplete(t *testing.T, d *dedupRing, requestID, digest string, re
 	if err != nil || decision != reservationNew {
 		t.Fatalf("reserve %s: decision=%v err=%v", requestID, decision, err)
 	}
-	if err := d.complete(requestID, digest, result); err != nil {
+	if err := d.complete(requestID, digest, testActionResult(requestID, result)); err != nil {
 		t.Fatalf("complete %s: %v", requestID, err)
 	}
+}
+
+func testActionResult(requestID string, result ActionResultMsg) ActionResultMsg {
+	result.Envelope = Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: requestID}
+	if result.Status == "" {
+		result.Status = "success"
+	}
+	return result
 }
 
 func reserveCompleteAndAcknowledge(t *testing.T, d *dedupRing, requestID, digest string, result ActionResultMsg) {
@@ -131,83 +140,100 @@ func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestDedupRing_MigratesAndReconcilesLegacyResults(t *testing.T) {
+func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
+	digest := testDispatchDigest("req")
+	result := `{"type":"action_result","protocol_version":1,"request_id":"req","status":"success","exit_code":0,"duration_ms":0,"stdout_bytes":0,"stderr_bytes":0,"event_id":"evt"}`
+	tests := map[string]string{
+		"legacy shape":           `{"request_id":"req","result":` + result + `}`,
+		"unknown field":          `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{},"extra":true}`,
+		"duplicate key":          `{"request_id":"req","request_id":"other","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}`,
+		"duplicate record":       `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}` + "\n" + `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}`,
+		"bad digest":             `{"request_id":"req","dispatch_sha256":"bad","state":"reserved","result":{}}`,
+		"unknown state":          `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"other","result":{}}`,
+		"reserved with result":   `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":` + result + `}`,
+		"completed without type": `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"completed","result":{"protocol_version":1,"request_id":"req","status":"success"}}`,
+		"wrong protocol":         `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"completed","result":{"type":"action_result","protocol_version":2,"request_id":"req","status":"success"}}`,
+		"wrong result request":   `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"completed","result":{"type":"action_result","protocol_version":1,"request_id":"other","status":"success"}}`,
+		"unknown result status":  `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"completed","result":{"type":"action_result","protocol_version":1,"request_id":"req","status":"other"}}`,
+	}
+
+	for name, contents := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "dedup.jsonl")
+			if err := os.WriteFile(path, []byte(contents+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			d := newDedupRing(2, path, nil)
+			if d.loadErr == nil {
+				t.Fatal("invalid dispatch record did not fail closed")
+			}
+			if _, _, err := d.reserve("new", testDispatchDigest("new")); err == nil {
+				t.Fatal("invalid dispatch log allowed a new execution")
+			}
+		})
+	}
+}
+
+func TestDedupRing_CompleteRejectsMalformedResultBeforePersistence(t *testing.T) {
+	valid := testActionResult("req", ActionResultMsg{EventID: "evt"})
+	tests := map[string]func(*ActionResultMsg){
+		"wrong type":     func(result *ActionResultMsg) { result.Type = MsgError },
+		"wrong protocol": func(result *ActionResultMsg) { result.ProtocolVersion++ },
+		"wrong request":  func(result *ActionResultMsg) { result.RequestID = "other" },
+		"unknown status": func(result *ActionResultMsg) { result.Status = "other" },
+	}
+
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "dedup.jsonl")
+			digest := testDispatchDigest(name)
+			d := newDedupRing(2, path, nil)
+			if decision, _, err := d.reserve("req", digest); err != nil || decision != reservationNew {
+				t.Fatalf("reserve: decision=%v err=%v", decision, err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := valid
+			mutate(&result)
+			if err := d.complete("req", digest, result); err == nil {
+				t.Fatal("malformed result completed a dispatch")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatal("malformed completion changed the durable reservation")
+			}
+		})
+	}
+}
+
+func TestDedupRing_CompletePersistenceFailureRestoresReservation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
-	legacy := "" +
-		`{"request_id":"old-success","result":{"type":"action_result","request_id":"old-success","status":"success","event_id":"evt_old"}}` + "\n" +
-		`{"request_id":"old-refusal","result":{"type":"action_result","request_id":"old-refusal","status":"signature_invalid","reason":"cert_untrusted"}}` + "\n"
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
+	digest := testDispatchDigest("req")
 	d := newDedupRing(2, path, nil)
-	if d.loadErr != nil {
-		t.Fatalf("legacy dispatch log did not migrate: %v", d.loadErr)
-	}
-	got := d.unacknowledgedResults()
-	if len(got) != 2 || got[0].RequestID != "old-success" || got[1].RequestID != "old-refusal" {
-		t.Fatalf("legacy results were not queued for portal reconciliation: %#v", got)
-	}
-	if decision, _, err := d.inspect("old-success", testDispatchDigest("new facts")); err != nil || decision != reservationConflict {
-		t.Fatalf("legacy request id was not retained as a fail-closed tombstone: decision=%v err=%v", decision, err)
+	if decision, _, err := d.reserve("req", digest); err != nil || decision != reservationNew {
+		t.Fatalf("reserve: decision=%v err=%v", decision, err)
 	}
 
-	contents, err := os.ReadFile(path)
-	if err != nil {
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(contents)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("migrated dispatch log has %d lines, want 2", len(lines))
+	d.storePath = filepath.Join(blocker, "dedup.jsonl")
+	if err := d.complete("req", digest, testActionResult("req", ActionResultMsg{EventID: "evt"})); err == nil {
+		t.Fatal("completion unexpectedly persisted through an invalid path")
 	}
-	for index, line := range lines {
-		entry, legacy, err := decodeDedupEntry([]byte(line))
-		if err != nil || legacy || entry.State != dispatchCompleted || !validDispatchDigest(entry.DispatchSHA256) {
-			t.Fatalf("migrated line %d is invalid: entry=%+v legacy=%t err=%v", index+1, entry, legacy, err)
-		}
+	if decision, _, err := d.inspect("req", digest); err != nil || decision != reservationPending {
+		t.Fatalf("failed completion did not restore reservation: decision=%v err=%v", decision, err)
 	}
 
 	restarted := newDedupRing(2, path, nil)
-	if restarted.loadErr != nil {
-		t.Fatal(restarted.loadErr)
-	}
-	if _, _, err := restarted.reserve("new", testDispatchDigest("new")); err == nil {
-		t.Fatal("unacknowledged legacy results were evicted before portal reconciliation")
-	}
-	if err := restarted.acknowledge("old-success"); err != nil {
-		t.Fatal(err)
-	}
-	if decision, _, err := restarted.reserve("new", testDispatchDigest("new")); err != nil || decision != reservationNew {
-		t.Fatalf("acknowledged legacy result did not make room for a new reservation: decision=%v err=%v", decision, err)
-	}
-}
-
-func TestDedupRing_RejectsMalformedLegacyResult(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "dedup.jsonl")
-	malformed := `{"request_id":"old","result":{"type":"action_result","request_id":"different","status":"success"}}` + "\n"
-	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	d := newDedupRing(2, path, nil)
-	if d.loadErr == nil {
-		t.Fatal("legacy result for a different request id did not fail closed")
-	}
-}
-
-func TestDedupRing_DoesNotTreatMalformedCurrentEntryAsLegacy(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "dedup.jsonl")
-	malformed := `{"request_id":"current","state":"completed","result":{"status":"success"}}` + "\n"
-	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	d := newDedupRing(2, path, nil)
-	if d.loadErr == nil {
-		t.Fatal("current-format entry without a dispatch digest must fail closed")
-	}
-	if _, _, err := d.reserve("new", testDispatchDigest("new")); err == nil {
-		t.Fatal("corrupt current-format log allowed a new execution")
+	if decision, _, err := restarted.inspect("req", digest); err != nil || decision != reservationPending {
+		t.Fatalf("durable reservation changed after failed completion: decision=%v err=%v", decision, err)
 	}
 }
 
@@ -284,7 +310,7 @@ func TestDedupRing_CorruptStoreFailsClosed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	good, err := json.Marshal(dedupEntry{
 		RequestID: "good", DispatchSHA256: testDispatchDigest("good"), State: dispatchCompleted,
-		Result: ActionResultMsg{EventID: "evt_good"},
+		Result: testActionResult("good", ActionResultMsg{EventID: "evt_good"}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -328,7 +354,7 @@ func TestDedupRing_ConcurrentReservations(t *testing.T) {
 				err = fmt.Errorf("reserve %s decision=%v", id, decision)
 			}
 			if err == nil {
-				err = d.complete(id, testDispatchDigest(id), ActionResultMsg{EventID: "evt"})
+				err = d.complete(id, testDispatchDigest(id), testActionResult(id, ActionResultMsg{EventID: "evt"}))
 			}
 			errs <- err
 		}(i)

@@ -83,8 +83,7 @@ type NonceStore struct {
 // OpenNonceStore opens or creates the durable replay journal. The retention
 // horizon is written once and may not later be widened: compaction is allowed to
 // discard anything older than that horizon, so widening it could make a pruned
-// attestation fresh again without its nonce record. The prior bounded JSON-map
-// format is migrated atomically while preserving every still-live nonce.
+// attestation fresh again without its nonce record.
 func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 	if path == "" {
 		return nil, fmt.Errorf("signing: nonce journal path is required")
@@ -136,8 +135,7 @@ func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 		return nil, fmt.Errorf("signing: read nonce journal %q: %w", path, err)
 	}
 
-	migrated, err := store.load(raw, time.Now())
-	if err != nil {
+	if err := store.loadJournal(raw, time.Now()); err != nil {
 		return nil, fmt.Errorf("signing: nonce journal %q is corrupt: %w", path, err)
 	}
 	if maxAge > store.retention {
@@ -148,7 +146,7 @@ func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 	}
 	store.fileSize = info.Size()
 	heap.Init(&store.expiry)
-	if migrated || store.obsolete > 0 {
+	if store.obsolete > 0 {
 		if err := store.rewriteLocked(); err != nil {
 			return nil, err
 		}
@@ -276,53 +274,6 @@ func (s *NonceStore) pruneLocked(cutoff time.Time) {
 
 func (s *NonceStore) shouldCompactLocked() bool {
 	return s.obsolete >= s.compactAfter && s.obsolete >= len(s.seen)
-}
-
-// load returns true for the legacy JSON-map format, which must be rewritten as
-// a journal before OpenNonceStore returns.
-func (s *NonceStore) load(raw []byte, now time.Time) (bool, error) {
-	if len(raw) == 0 {
-		return false, fmt.Errorf("empty file")
-	}
-	firstLine := raw
-	if newline := bytes.IndexByte(raw, '\n'); newline >= 0 {
-		firstLine = raw[:newline]
-	}
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(firstLine, &probe); err != nil {
-		return false, err
-	}
-	if _, journal := probe["version"]; !journal {
-		if err := s.loadLegacy(raw, now.Add(-s.retention)); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, s.loadJournal(raw, now)
-}
-
-func (s *NonceStore) loadLegacy(raw []byte, cutoff time.Time) error {
-	var stored map[string]string
-	if err := decodeStrict(raw, &stored); err != nil {
-		return err
-	}
-	if len(stored) > s.maxEntries {
-		return fmt.Errorf("legacy cache has %d entries, limit %d", len(stored), s.maxEntries)
-	}
-	for nonce, issuedText := range stored {
-		if !validNonce(nonce) {
-			return fmt.Errorf("legacy cache has invalid nonce %q", nonce)
-		}
-		issued, err := time.Parse(time.RFC3339Nano, issuedText)
-		if err != nil {
-			return fmt.Errorf("legacy cache has bad timestamp for %q: %w", nonce, err)
-		}
-		if issued.Before(cutoff) {
-			continue
-		}
-		s.addLoaded(nonce, issued)
-	}
-	return nil
 }
 
 func (s *NonceStore) loadJournal(raw []byte, now time.Time) error {

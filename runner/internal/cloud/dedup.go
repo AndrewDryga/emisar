@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
@@ -71,8 +73,8 @@ func newDedupRing(max int, storePath string, logger *slog.Logger) *dedupRing {
 	return d
 }
 
-// load keeps every complete line with a valid state and digest. A crash-torn
-// trailing line is skipped; the next successful mutation rewrites the file.
+// load accepts only records produced by the current runner. Corruption,
+// impossible state, and crash-torn trailing data all fail closed.
 func (d *dedupRing) load() {
 	if d.storePath == "" {
 		return
@@ -85,20 +87,14 @@ func (d *dedupRing) load() {
 		}
 		return
 	}
-	closed := false
-	defer func() {
-		if !closed {
-			_ = f.Close()
-		}
-	}()
+	defer f.Close()
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	lineNumber := 0
-	migrated := false
 	for sc.Scan() {
 		lineNumber++
-		e, legacy, err := decodeDedupEntry(sc.Bytes())
+		e, err := decodeDedupEntry(sc.Bytes())
 		if err != nil {
 			d.keys = nil
 			d.records = map[string]dedupEntry{}
@@ -106,11 +102,15 @@ func (d *dedupRing) load() {
 			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
 			return
 		}
-		if _, exists := d.records[e.RequestID]; !exists {
-			d.keys = append(d.keys, e.RequestID)
+		if _, exists := d.records[e.RequestID]; exists {
+			d.keys = nil
+			d.records = map[string]dedupEntry{}
+			d.loadErr = fmt.Errorf("duplicate dispatch log entry on line %d", lineNumber)
+			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
+			return
 		}
+		d.keys = append(d.keys, e.RequestID)
 		d.records[e.RequestID] = e
-		migrated = migrated || legacy
 	}
 	if err := sc.Err(); err != nil {
 		d.keys = nil
@@ -124,80 +124,19 @@ func (d *dedupRing) load() {
 			break
 		}
 	}
-	if migrated {
-		// Windows cannot replace an open file. Close the source before the
-		// atomic migration rewrite, and fail closed if the close itself fails.
-		if err := f.Close(); err != nil {
-			d.keys = nil
-			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("close legacy dispatch log: %w", err)
-			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
-			return
-		}
-		closed = true
-		if err := d.writeStore(); err != nil {
-			d.keys = nil
-			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
-			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
-			return
-		}
-		d.logger.Info("cloud.dedup_migrated", "path", d.storePath, "entries", len(d.keys))
-	}
 }
 
-func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
-		return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
+func decodeDedupEntry(line []byte) (dedupEntry, error) {
+	if err := validateUniqueJSON(line); err != nil {
+		return dedupEntry{}, fmt.Errorf("decode dispatch log entry: %w", err)
 	}
-	_, hasDigest := fields["dispatch_sha256"]
-	_, hasState := fields["state"]
-	if hasDigest || hasState {
-		var entry dedupEntry
-		if err := json.Unmarshal(line, &entry); err != nil || !validDedupEntry(entry) {
-			return dedupEntry{}, false, fmt.Errorf("decode current dispatch log entry")
-		}
-		return entry, false, nil
+	var entry dedupEntry
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&entry); err != nil || !validDedupEntry(entry) {
+		return dedupEntry{}, fmt.Errorf("decode dispatch log entry")
 	}
-
-	var legacy struct {
-		RequestID string          `json:"request_id"`
-		Result    ActionResultMsg `json:"result"`
-	}
-	if _, ok := fields["result"]; !ok {
-		return dedupEntry{}, false, fmt.Errorf("decode legacy dispatch log entry")
-	}
-	if err := json.Unmarshal(line, &legacy); err != nil || legacy.RequestID == "" {
-		return dedupEntry{}, false, fmt.Errorf("decode legacy dispatch log entry")
-	}
-	if !validLegacyActionResult(legacy.Result, legacy.RequestID) {
-		return dedupEntry{}, false, fmt.Errorf("decode legacy dispatch log result")
-	}
-	return dedupEntry{
-		RequestID:      legacy.RequestID,
-		DispatchSHA256: legacyDispatchDigest(legacy.RequestID),
-		State:          dispatchCompleted,
-		Result:         legacy.Result,
-	}, true, nil
-}
-
-func validLegacyActionResult(result ActionResultMsg, requestID string) bool {
-	if result.Type != MsgActionResult || result.RequestID != requestID {
-		return false
-	}
-	switch result.Status {
-	case "success", "failed", "error", "validation_failed", "unknown_action",
-		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":
-		return true
-	default:
-		return false
-	}
-}
-
-func legacyDispatchDigest(requestID string) string {
-	digest := sha256.Sum256([]byte("emisar-legacy-dispatch-v1\x00" + requestID))
-	return hex.EncodeToString(digest[:])
+	return entry, nil
 }
 
 func validDedupEntry(e dedupEntry) bool {
@@ -207,7 +146,27 @@ func validDedupEntry(e dedupEntry) bool {
 	if _, err := hex.DecodeString(e.DispatchSHA256); err != nil {
 		return false
 	}
-	return e.State == dispatchReserved || e.State == dispatchCompleted || e.State == dispatchAcknowledged
+	switch e.State {
+	case dispatchReserved:
+		return reflect.ValueOf(e.Result).IsZero()
+	case dispatchCompleted, dispatchAcknowledged:
+		return validActionResult(e.Result, e.RequestID)
+	default:
+		return false
+	}
+}
+
+func validActionResult(result ActionResultMsg, requestID string) bool {
+	if result.Type != MsgActionResult || result.ProtocolVersion != ProtocolVersion || result.RequestID != requestID {
+		return false
+	}
+	switch result.Status {
+	case "success", "failed", "error", "validation_failed", "unknown_action", "timed_out",
+		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":
+		return true
+	default:
+		return false
+	}
 }
 
 // reserve binds requestID to digest and persists the reservation before the
@@ -307,6 +266,9 @@ func cloneDedupRecords(records map[string]dedupEntry) map[string]dedupEntry {
 func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if !validActionResult(result, requestID) {
+		return fmt.Errorf("cloud: invalid terminal result for %q", requestID)
+	}
 
 	existing, ok := d.records[requestID]
 	if !ok {
@@ -316,12 +278,24 @@ func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) e
 		return fmt.Errorf("cloud: dispatch digest changed for %q", requestID)
 	}
 	if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
-		return nil
+		if reflect.DeepEqual(existing.Result, result) {
+			return nil
+		}
+		return fmt.Errorf("cloud: terminal result changed for %q", requestID)
+	}
+	if existing.State != dispatchReserved {
+		return fmt.Errorf("cloud: complete dispatch %q with invalid state %q", requestID, existing.State)
 	}
 	existing.State = dispatchCompleted
 	existing.Result = result
 	d.records[requestID] = existing
-	return d.writeStore()
+	if err := d.writeStore(); err != nil {
+		existing.State = dispatchReserved
+		existing.Result = ActionResultMsg{}
+		d.records[requestID] = existing
+		return err
+	}
+	return nil
 }
 
 // acknowledge records that the control plane durably received a terminal
