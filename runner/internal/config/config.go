@@ -160,9 +160,9 @@ func (c *Config) Validate() error {
 	if c.Runner.Group == "" {
 		return fmt.Errorf("config: runner.group required")
 	}
-	// runner.id is allowed to be empty at first start — cloud will assign one
-	// when the auth_key is exchanged. Operators who want a stable id can set
-	// it manually.
+	// runner.id may be empty at first start; connect persists a generated one
+	// before opening the cloud connection. Operators who want a stable id can
+	// set it manually.
 	//
 	// Mirror the pack-env posture (actionspec.validateExecutionEnv): the
 	// dynamic-linker (LD_*/DYLD_*) and shell-startup (BASH_ENV) hijack vectors

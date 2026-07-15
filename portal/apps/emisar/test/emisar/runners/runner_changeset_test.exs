@@ -1,5 +1,6 @@
 defmodule Emisar.Runners.Runner.ChangesetTest do
   use ExUnit.Case, async: true
+  import Emisar.DataCase, only: [errors_on: 1]
   alias Emisar.Runners.Runner
 
   describe "apply_state/2 size caps" do
@@ -94,11 +95,35 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
   end
 
   describe "register/1 size caps" do
+    test "requires a caller-supplied external ID" do
+      changeset =
+        Runner.Changeset.register(%{
+          account_id: Ecto.UUID.generate(),
+          name: "web-01",
+          group: "edge"
+        })
+
+      assert "can't be blank" in errors_on(changeset).external_id
+    end
+
+    test "rejects an oversized external ID" do
+      changeset =
+        Runner.Changeset.register(%{
+          account_id: Ecto.UUID.generate(),
+          name: "web-01",
+          external_id: String.duplicate("x", 256),
+          group: "edge"
+        })
+
+      assert "should be at most 255 character(s)" in errors_on(changeset).external_id
+    end
+
     test "rejects an oversized hostname at registration" do
       changeset =
         Runner.Changeset.register(%{
           account_id: Ecto.UUID.generate(),
           name: "web-01",
+          external_id: Ecto.UUID.generate(),
           group: "edge",
           hostname: String.duplicate("h", 300)
         })

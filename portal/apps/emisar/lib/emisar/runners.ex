@@ -1294,9 +1294,14 @@ defmodule Emisar.Runners do
   end
 
   def register_via_enrollment_key(%EnrollmentKey{} = key, attrs, context) do
+    with {:ok, external_id} <- registration_external_id(attrs) do
+      register_with_external_id(key, attrs, external_id, context)
+    end
+  end
+
+  defp register_with_external_id(key, attrs, external_id, context) do
     key = Repo.preload(key, :account)
     was_auto? = EnrollmentKey.auto_unused?(key)
-    external_id = registration_external_id(attrs)
 
     Multi.new()
     # Lock the account row FIRST so concurrent registrations for this account
@@ -1342,17 +1347,20 @@ defmodule Emisar.Runners do
     end
   end
 
-  # Identity is (account, external_id) — the stable id the runner persists
-  # and sends. Names are display-only and may repeat across runners, so
-  # external_id is the only uniqueness. A blank id (older runner that
-  # doesn't send one) gets a server-minted UUID, never treated as a shared
-  # empty-string key.
-  defp registration_external_id(attrs) do
-    case attrs[:external_id] do
-      id when is_binary(id) and id != "" -> id
-      _ -> Ecto.UUID.generate()
+  # Identity is (account, external_id) — the stable id the runner persists and
+  # sends. Validate before the registration transaction so a malformed client
+  # cannot consume its enrollment key and cannot acquire a different identity
+  # on every retry.
+  defp registration_external_id(%{external_id: external_id}) when is_binary(external_id) do
+    if external_id != "" and String.trim(external_id) == external_id and
+         String.length(external_id) <= 255 do
+      {:ok, external_id}
+    else
+      {:error, :invalid_external_id}
     end
   end
+
+  defp registration_external_id(_attrs), do: {:error, :invalid_external_id}
 
   defp maybe_audit_enrollment_key_bound(multi, _key, false), do: multi
 

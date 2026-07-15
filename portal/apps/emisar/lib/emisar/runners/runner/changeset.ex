@@ -16,6 +16,7 @@ defmodule Emisar.Runners.Runner.Changeset do
   # jsonb a real runner keeps to a handful of KB, so 64 KB serialized is well
   # above any honest advertisement while bounding the gross-abuse row.
   @max_hostname_length 255
+  @max_external_id_length 255
   @max_group_length 80
   @max_runner_version_length 255
   @max_json_bytes 65_536
@@ -25,7 +26,7 @@ defmodule Emisar.Runners.Runner.Changeset do
   @doc "Inserted by the runner socket on first auth-key registration."
   def register(attrs) do
     %Runner{}
-    |> cast(ensure_external_id(attrs), [
+    |> cast(attrs, [
       :account_id,
       :name,
       :external_id,
@@ -37,6 +38,7 @@ defmodule Emisar.Runners.Runner.Changeset do
     ])
     |> validate_required([:account_id, :name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
+    |> validate_length(:external_id, min: 1, max: @max_external_id_length)
     |> validate_length(:group, min: 1)
     |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
@@ -44,24 +46,6 @@ defmodule Emisar.Runners.Runner.Changeset do
       name: :runners_account_id_name_index,
       message: "is already used by another runner in this account"
     )
-  end
-
-  # Attribute-key-agnostic default: only fills `external_id` when the
-  # caller didn't pass one (string-key or atom-key). Idempotent.
-  defp ensure_external_id(attrs) do
-    cond do
-      is_binary(Map.get(attrs, :external_id)) and Map.get(attrs, :external_id) != "" ->
-        attrs
-
-      is_binary(Map.get(attrs, "external_id")) and Map.get(attrs, "external_id") != "" ->
-        attrs
-
-      true ->
-        key =
-          if Enum.any?(attrs, fn {k, _} -> is_atom(k) end), do: :external_id, else: "external_id"
-
-        Map.put(attrs, key, Ecto.UUID.generate())
-    end
   end
 
   # -- Lifecycle transitions ------------------------------------------

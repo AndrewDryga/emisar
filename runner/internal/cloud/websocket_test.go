@@ -103,12 +103,13 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 	tokenPath := filepath.Join(dir, "token.json")
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   fc.authKey,
-		TokenPath: tokenPath,
-		Hostname:  "test-host",
-		Group:     "default",
-		Version:   "0.test",
+		URL:        srv.URL,
+		AuthKey:    fc.authKey,
+		TokenPath:  tokenPath,
+		Hostname:   "test-host",
+		Group:      "default",
+		Version:    "0.test",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -182,35 +183,38 @@ func TestWebsocketDialerSendsExternalID(t *testing.T) {
 	srvConn.Close(websocket.StatusNormalClosure, "")
 }
 
-func TestWebsocketDialerOmitsBlankExternalID(t *testing.T) {
-	fc, srv := newFakeCloud(t)
+func TestWebsocketDialerRejectsInvalidExternalIDBeforeRegistration(t *testing.T) {
+	for name, externalID := range map[string]string{
+		"blank":               "",
+		"surrounding space":   " stable-id ",
+		"over 255 characters": strings.Repeat("x", 256),
+		"invalid UTF-8":       string([]byte{0xff}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			fc, srv := newFakeCloud(t)
 
-	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   fc.authKey,
-		TokenPath: filepath.Join(t.TempDir(), "token.json"),
-		Hostname:  "test-host",
-		Group:     "default",
-		Version:   "0.test",
-		// ExternalID intentionally empty — the cloud must not receive a
-		// blank key (it would collapse all id-less runners into one row).
+			d := &WebsocketDialer{
+				URL:        srv.URL,
+				AuthKey:    fc.authKey,
+				TokenPath:  filepath.Join(t.TempDir(), "token.json"),
+				Hostname:   "test-host",
+				Group:      "default",
+				Version:    "0.test",
+				ExternalID: externalID,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			conn, _, err := d.Dial(ctx)
+			if err == nil || !strings.Contains(err.Error(), "external id must be 1-255 characters") {
+				t.Fatalf("Dial() = %v, %v; want external-id error", conn, err)
+			}
+			if got := fc.registerSeen; got != 0 {
+				t.Fatalf("register requests = %d, want 0", got)
+			}
+		})
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, _, err := d.Dial(ctx)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
-	}
-	defer conn.Close()
-
-	if _, present := fc.lastRegister["external_id"]; present {
-		t.Errorf("blank external_id should be omitted, got %v", fc.lastRegister["external_id"])
-	}
-
-	srvConn := <-fc.wsAccepted
-	srvConn.Close(websocket.StatusNormalClosure, "")
 }
 
 func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
@@ -338,11 +342,12 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 	}
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   "should-not-be-used",
-		TokenPath: tokenPath,
-		Hostname:  "test-host",
-		Group:     "default",
+		URL:        srv.URL,
+		AuthKey:    "should-not-be-used",
+		TokenPath:  tokenPath,
+		Hostname:   "test-host",
+		Group:      "default",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -381,11 +386,12 @@ func TestWebsocketDialerReregistersWhenAuthKeyRotated(t *testing.T) {
 	}
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   fc.authKey, // the new account's key
-		TokenPath: tokenPath,
-		Hostname:  "test-host",
-		Group:     "default",
+		URL:        srv.URL,
+		AuthKey:    fc.authKey, // the new account's key
+		TokenPath:  tokenPath,
+		Hostname:   "test-host",
+		Group:      "default",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -438,11 +444,12 @@ func TestWebsocketDialerReusesTokenWhenAuthKeyUnchanged(t *testing.T) {
 	}
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   fc.authKey,
-		TokenPath: tokenPath,
-		Hostname:  "test-host",
-		Group:     "default",
+		URL:        srv.URL,
+		AuthKey:    fc.authKey,
+		TokenPath:  tokenPath,
+		Hostname:   "test-host",
+		Group:      "default",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -466,11 +473,12 @@ func TestWebsocketDialer401OnRegisterIsUnauthorized(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   "emkey-auth-WRONG",
-		TokenPath: filepath.Join(t.TempDir(), "token.json"),
-		Hostname:  "test-host",
-		Group:     "default",
+		URL:        srv.URL,
+		AuthKey:    "emkey-auth-WRONG",
+		TokenPath:  filepath.Join(t.TempDir(), "token.json"),
+		Hostname:   "test-host",
+		Group:      "default",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -500,11 +508,12 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	_ = os.WriteFile(tokenPath, cached, 0o600)
 
 	d := &WebsocketDialer{
-		URL:       srv.URL,
-		AuthKey:   "",
-		TokenPath: tokenPath,
-		Hostname:  "test-host",
-		Group:     "default",
+		URL:        srv.URL,
+		AuthKey:    "",
+		TokenPath:  tokenPath,
+		Hostname:   "test-host",
+		Group:      "default",
+		ExternalID: "stable-id-123",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

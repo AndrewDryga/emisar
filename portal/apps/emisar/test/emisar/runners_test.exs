@@ -2165,12 +2165,7 @@ defmodule Emisar.RunnersTest do
                Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
     end
 
-    test "registers without an external_id (no crash); re-registering conflicts on the name" do
-      # A legacy runner that doesn't send external_id: the server mints a
-      # fresh UUID, so the first register succeeds cleanly (no 500). A second
-      # register from the same host (same name, still no external_id) gets a
-      # fresh identity too — so the taken name is a clean conflict, not a
-      # silent takeover.
+    test "rejects an invalid external_id before consuming the enrollment key" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
@@ -2181,14 +2176,15 @@ defmodule Emisar.RunnersTest do
           reusable: true
         )
 
-      attrs = %{hostname: "no-id-host", group: "g"}
+      for external_id <- [nil, "", "  ", String.duplicate("x", 256)] do
+        attrs = %{hostname: "invalid-id-host", group: "g", external_id: external_id}
+        assert {:error, :invalid_external_id} = Runners.register_via_enrollment_key(raw, attrs)
+      end
 
-      assert {:ok, %Runner{id: first_id}, _, _} = Runners.register_via_enrollment_key(raw, attrs)
+      valid = %{hostname: "valid-id-host", group: "g", external_id: "durable-id"}
 
-      assert {:error, :runner_name_taken, "no-id-host"} =
-               Runners.register_via_enrollment_key(raw, attrs)
-
-      assert %Runner{} = Runners.peek_runner_by_id(first_id)
+      assert {:ok, %Runner{external_id: "durable-id"}, _, _} =
+               Runners.register_via_enrollment_key(raw, valid)
     end
 
     test "returns :over_limit when the plan cap is exceeded" do
@@ -2208,7 +2204,10 @@ defmodule Emisar.RunnersTest do
         )
 
       assert {:error, :over_limit, "free", 3} =
-               Runners.register_via_enrollment_key(raw, %{group: "demo"})
+               Runners.register_via_enrollment_key(raw, %{
+                 external_id: "ext-over-limit",
+                 group: "demo"
+               })
     end
 
     test "a reconnecting runner at the plan cap still registers (its seat is already counted)" do

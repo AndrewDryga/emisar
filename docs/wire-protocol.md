@@ -40,9 +40,12 @@ uses that bearer token. Revoking the key or token makes the next registration or
 upgrade fail.
 
 The runner generates and durably stores its UUID `external_id` before its first
-registration. Reconnects present the same value. MCP runner references derive
-their generation suffix as the first 32 lowercase hex characters of
-`sha256(external_id)`; the full external ID is never exposed to MCP.
+registration. `POST /runner/register` requires that nonblank, at-most-255-character
+value and returns `400 {"error":"invalid_external_id"}` without consuming the
+enrollment key when it is missing or invalid. Reconnects present the same value.
+MCP runner references derive their generation suffix as the first 32 lowercase
+hex characters of `sha256(external_id)`; the full external ID is never exposed
+to MCP.
 
 On disconnect the runner reconnects with bounded exponential backoff and sends a
 fresh `runner_state`. In-flight actions continue and queue progress/results for

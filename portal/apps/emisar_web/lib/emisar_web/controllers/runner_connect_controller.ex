@@ -45,6 +45,11 @@ defmodule EmisarWeb.RunnerConnectController do
         |> put_status(:bad_request)
         |> json(%{error: "register_failed"})
 
+      {:error, :invalid_external_id} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "invalid_external_id"})
+
       {:error, :over_limit, plan, limit} ->
         conn
         |> put_status(:payment_required)
@@ -131,14 +136,17 @@ defmodule EmisarWeb.RunnerConnectController do
       version: params["version"]
     }
 
-    if Enum.all?(
-         [attrs.external_id, attrs.hostname, attrs.group, attrs.version],
-         &optional_string?/1
-       ) and
-         is_map(labels) do
-      {:ok, attrs}
-    else
-      {:error, :invalid_registration}
+    case attrs.external_id do
+      external_id when is_binary(external_id) ->
+        if Enum.all?([attrs.hostname, attrs.group, attrs.version], &optional_string?/1) and
+             is_map(labels) do
+          {:ok, attrs}
+        else
+          {:error, :invalid_registration}
+        end
+
+      _ ->
+        {:error, :invalid_external_id}
     end
   end
 

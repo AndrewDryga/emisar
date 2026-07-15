@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/coder/websocket"
@@ -57,8 +58,8 @@ type WebsocketDialer struct {
 
 	// ExternalID is the runner's durable identity: persisted across
 	// boots and presented on every register so the cloud maps reconnects
-	// back to the same runner row. When empty, the cloud assigns a fresh
-	// id each register (older behavior — a new row per connect).
+	// back to the same runner row. Registration requires 1-255 characters
+	// without surrounding whitespace.
 	ExternalID string
 
 	// HTTPClient is used for /runner/register; defaults to a 10s-timeout
@@ -287,6 +288,12 @@ func serverErrorMessage(body io.Reader) string {
 }
 
 func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
+	externalID := strings.TrimSpace(d.ExternalID)
+	if externalID == "" || externalID != d.ExternalID || !utf8.ValidString(externalID) ||
+		utf8.RuneCountInString(externalID) > 255 {
+		return agentToken{}, errors.New("cloud: external id must be 1-255 characters without surrounding whitespace")
+	}
+
 	client := d.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -298,14 +305,10 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	}
 
 	payload := map[string]any{
-		"hostname": d.Hostname,
-		"group":    d.Group,
-		"version":  d.Version,
-	}
-	// Only send external_id when we have one — a blank value must not be
-	// sent (the cloud would otherwise have to special-case empty strings).
-	if d.ExternalID != "" {
-		payload["external_id"] = d.ExternalID
+		"external_id": externalID,
+		"hostname":    d.Hostname,
+		"group":       d.Group,
+		"version":     d.Version,
 	}
 
 	body, err := json.Marshal(payload)

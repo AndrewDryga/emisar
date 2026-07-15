@@ -33,6 +33,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         conn
         |> put_req_header("authorization", "Bearer " <> raw_key)
         |> post(~p"/runner/register", %{
+          "external_id" => Ecto.UUID.generate(),
           "hostname" => "ip-10-0-0-1",
           "group" => "default",
           "version" => "0.2.0"
@@ -51,7 +52,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       conn =
         conn
         |> put_req_header("authorization", "Bearer emkey-auth-NOTREAL")
-        |> post(~p"/runner/register", %{})
+        |> post(~p"/runner/register", %{"external_id" => "bogus-key-runner"})
 
       assert json_response(conn, 401) == %{"error" => "enrollment_key_invalid"}
     end
@@ -61,18 +62,31 @@ defmodule EmisarWeb.RunnerSocketTest do
       raw_key: raw_key
     } do
       for params <- [
-            %{"external_id" => %{"nested" => "value"}, "hostname" => "runner"},
-            %{"hostname" => %{"nested" => "value"}},
-            %{"group" => %{"nested" => "value"}},
-            %{"version" => %{"nested" => "value"}},
-            %{"labels" => "not-a-map"}
+            %{"external_id" => "malformed-hostname", "hostname" => %{"nested" => "value"}},
+            %{"external_id" => "malformed-group", "group" => %{"nested" => "value"}},
+            %{"external_id" => "malformed-version", "version" => %{"nested" => "value"}},
+            %{"external_id" => "malformed-labels", "labels" => "not-a-map"}
           ] do
         response = register(build_conn(), raw_key, params)
 
         assert json_response(response, 400) == %{"error" => "register_failed"}
       end
 
-      response = register(conn, raw_key, %{"hostname" => "runner"})
+      response = register(conn, raw_key, %{"external_id" => "valid-after-malformed"})
+      assert %{"runner_id" => _} = json_response(response, 201)
+    end
+
+    test "rejects invalid external IDs without consuming the enrollment key", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      for external_id <- [nil, "", "  ", %{"nested" => "value"}, String.duplicate("x", 256)] do
+        params = if is_nil(external_id), do: %{}, else: %{"external_id" => external_id}
+        response = register(build_conn(), raw_key, params)
+        assert json_response(response, 400) == %{"error" => "invalid_external_id"}
+      end
+
+      response = register(conn, raw_key, %{"external_id" => "valid-after-invalid"})
       assert %{"runner_id" => _} = json_response(response, 201)
     end
   end
