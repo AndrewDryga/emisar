@@ -1,6 +1,8 @@
 package cloud
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
@@ -8,6 +10,8 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
+
+const maxRunnerStateBytes = 2 << 20
 
 // StateBuilder constructs the RunnerStateMsg the runner ships on connect
 // and on SIGHUP-driven re-advertisement. GetRegistry and GetVerifier are
@@ -87,6 +91,20 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		msg.Actions = append(msg.Actions, descriptorFor(a))
 	}
 	return msg
+}
+
+func validateRunnerStateSize(msg RunnerStateMsg) error {
+	encoded, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("encode runner_state: %w", err)
+	}
+	if len(encoded) > maxRunnerStateBytes {
+		return fmt.Errorf(
+			"runner_state is %d bytes; maximum is %d bytes: reduce installed packs or narrow admission rules",
+			len(encoded), maxRunnerStateBytes,
+		)
+	}
+	return nil
 }
 
 func descriptorFor(a *actionspec.Action) ActionDescriptor {

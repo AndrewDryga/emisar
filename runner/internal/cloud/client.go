@@ -258,6 +258,9 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	defer sessionCancel()
 
 	state := c.opts.StateBuilder.Build()
+	if err := validateRunnerStateSize(state); err != nil {
+		return true, err
+	}
 	if err := conn.Send(sessionCtx, state); err != nil {
 		return true, fmt.Errorf("send state: %w", err)
 	}
@@ -1014,6 +1017,10 @@ func (c *Client) readvertiseLoop(ctx context.Context, sessionCancel context.Canc
 			return
 		case <-c.readvertise:
 			state := c.opts.StateBuilder.Build()
+			if err := validateRunnerStateSize(state); err != nil {
+				c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
+				return
+			}
 			if err := conn.Send(ctx, state); err != nil {
 				c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
 				return

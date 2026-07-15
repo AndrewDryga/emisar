@@ -55,9 +55,11 @@ the next connection. Heartbeats let the portal expire half-open sockets.
 
 ## `runner_state`
 
-Sent after every connection and pack reload. The bounded message contains the
-runner version, hostname, group, labels, complete pack/action advertisement,
-signature-enforcement state, trusted CA IDs, and maximum attestation age.
+Sent after every connection and pack reload. The complete encoded frame must not
+exceed 2 MiB (2,097,152 bytes); runners validate that before sending. The
+message contains the runner version, hostname, group, labels, complete
+pack/action advertisement, signature-enforcement state, trusted CA IDs, and
+maximum attestation age.
 
 ```json
 {

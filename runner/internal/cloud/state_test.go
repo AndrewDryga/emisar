@@ -316,6 +316,46 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 	}
 }
 
+func TestRunnerState_WireBudget(t *testing.T) {
+	t.Run("oversized state rejected", func(t *testing.T) {
+		msg := RunnerStateMsg{
+			Envelope: Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
+			Version:  "test",
+			Group:    "test",
+			Labels:   map[string]string{"oversized": strings.Repeat("x", maxRunnerStateBytes)},
+		}
+		if err := validateRunnerStateSize(msg); err == nil {
+			t.Fatal("oversized runner_state must be rejected before transport")
+		}
+	})
+
+	t.Run("checked-in catalog fits", func(t *testing.T) {
+		root, err := filepath.Abs(filepath.Join("..", "..", "..", "packs"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err != nil {
+			t.Skipf("checked-in pack catalog unavailable: %v", err)
+		}
+		reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
+		if err != nil {
+			t.Fatalf("load checked-in catalog: %v", err)
+		}
+		msg := (&StateBuilder{
+			Version:     "test",
+			Group:       "test",
+			GetRegistry: func() *packs.Registry { return reg },
+		}).Build()
+		encoded, err := json.Marshal(msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateRunnerStateSize(msg); err != nil {
+			t.Fatalf("checked-in catalog is %d bytes: %v", len(encoded), err)
+		}
+	})
+}
+
 // An empty or nil registry still advertises runtime metadata with zero actions
 // and no packs, so the cloud sees a connected-but-empty runner rather than a
 // malformed or dropped state. Covers both no-GetRegistry and GetRegistry→nil.
