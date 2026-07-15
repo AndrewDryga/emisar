@@ -78,7 +78,7 @@ func runCLI(t *testing.T, args []string, env map[string]string) (stdout, stderr 
 
 // writeRunnableConfig writes a minimal valid config wiring journal/cursor under
 // dir and a one-action pack (id "<pack>", action "<pack>.ping" running
-// /bin/echo) the deny list can target. Returns the config path. denyPing adds an
+// echo) the deny list can target. Returns the config path. denyPing adds an
 // admission denylist entry for the ping action.
 func writeRunnableConfig(t *testing.T, dir string, denyPing bool) string {
 	t.Helper()
@@ -89,7 +89,7 @@ func writeRunnableConfig(t *testing.T, dir string, denyPing bool) string {
 	}
 	manifest := "schema_version: 1\nid: linux\nname: linux\nversion: 0.0.1\ndescription: d\nactions:\n  - actions/ping.yaml\n"
 	action := "schema_version: 1\nid: linux.ping\ntitle: Ping\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\n" +
-		"execution:\n  command:\n    binary: /bin/echo\n    argv: [\"hi\"]\n  timeout: 5s\n  timeout_min: 1s\n  timeout_max: 30s\n" +
+		"execution:\n  command:\n    binary: echo\n    argv: [\"hi\"]\n  timeout: 5s\n  timeout_min: 1s\n  timeout_max: 30s\n" +
 		"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
 	if err := os.WriteFile(filepath.Join(packDir, "pack.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write pack.yaml: %v", err)
@@ -415,7 +415,7 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
 		}
-		for _, want := range []string{`"status": "success"`, `"action_id": "linux.ping"`, `"executed_command": "/bin/echo hi"`} {
+		for _, want := range []string{`"status": "success"`, `"action_id": "linux.ping"`, `"executed_command": "echo hi"`} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("Result JSON missing %q:\n%s", want, stdout)
 			}

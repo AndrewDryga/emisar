@@ -434,12 +434,6 @@ func (d *dedupRing) contains(requestID string) bool {
 	return ok
 }
 
-func (d *dedupRing) size() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return len(d.keys)
-}
-
 // dispatchDigest covers all facts that can change what the runner authorizes
 // or executes. ArgsRaw preserves large JSON numbers and exact scalar spellings.
 func dispatchDigest(m RunActionMsg) (string, error) {

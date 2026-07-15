@@ -37,7 +37,7 @@ func TestEngine_ScalarArgIsLiteralArgvNoShell(t *testing.T) {
 	if res.Status != StatusSuccess {
 		t.Fatalf("status=%s reason=%s", res.Status, res.Reason)
 	}
-	// /bin/echo prints its single argv element verbatim + a newline.
+	// echo prints its single argv element verbatim + a newline.
 	if got := strings.TrimRight(res.Stdout, "\n"); got != payload {
 		t.Fatalf("arg was not passed as one literal argv element:\n got=%q\nwant=%q", got, payload)
 	}
@@ -171,7 +171,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/true
+    binary: true
     argv: []
   timeout: 5s
   timeout_min: 1s
@@ -205,14 +205,14 @@ func TestEngine_SensitiveListRedactedPerElement(t *testing.T) {
 		t.Fatalf("RenderArgv: %v", err)
 	}
 
-	got := redactedCommand("wg", argv, args, schema)
+	_, got := redactedInvocation("wg", argv, args, schema)
 	for _, secret := range []string{"s3cr3t-alpha", "s3cr3t-beta"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("executed_command leaked list secret %q: %s", secret, got)
 		}
 	}
 	if want := `wg --iface wg0 '[REDACTED]' '[REDACTED]'`; got != want {
-		t.Fatalf("redactedCommand() = %q, want %q", got, want)
+		t.Fatalf("redactedInvocation() command = %q, want %q", got, want)
 	}
 }
 
@@ -223,11 +223,11 @@ func TestEngine_OverlappingSensitiveValuesRedactedLongestFirst(t *testing.T) {
 	}
 	args := map[string]any{"short": "abc", "long": "abc123"}
 
-	got := redactedCommand("tool", []string{"--token=abc123"}, args, schema)
+	_, got := redactedInvocation("tool", []string{"--token=abc123"}, args, schema)
 	if strings.Contains(got, "abc") || strings.Contains(got, "123") {
 		t.Fatalf("executed_command leaked an overlapping secret: %s", got)
 	}
 	if want := `tool '--token=[REDACTED]'`; got != want {
-		t.Fatalf("redactedCommand() = %q, want %q", got, want)
+		t.Fatalf("redactedInvocation() command = %q, want %q", got, want)
 	}
 }

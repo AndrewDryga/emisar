@@ -29,8 +29,8 @@ func TestCursor_MarkAckedIdempotent(t *testing.T) {
 	if err := c.MarkAcked("evt_a"); err != nil {
 		t.Fatalf("re-acking should be a no-op, got %v", err)
 	}
-	if c.Size() != 1 {
-		t.Fatalf("size after double-ack = %d, want 1", c.Size())
+	if cursorSize(c) != 1 {
+		t.Fatalf("size after double-ack = %d, want 1", cursorSize(c))
 	}
 }
 
@@ -56,7 +56,7 @@ func TestCursor_AtomicWriteThenRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var s CursorState
+	var s cursorState
 	if err := json.Unmarshal(data, &s); err != nil {
 		t.Fatalf("committed cursor file should be valid JSON: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCursor_AtomicWriteThenRename(t *testing.T) {
 
 // TestCursor_DiskFailureAdvancesMemory — when persist fails,
 // MarkAcked returns the error BUT the in-memory state has already advanced, so
-// IsAcked still reports true. The cursor opens cleanly; the write is then
+// the in-memory record still contains the id. The cursor opens cleanly; the write is then
 // failed by stripping write permission from the parent dir so the .tmp staging
 // write is denied.
 func TestCursor_DiskFailureAdvancesMemory(t *testing.T) {
@@ -97,7 +97,7 @@ func TestCursor_DiskFailureAdvancesMemory(t *testing.T) {
 		t.Fatal("expected persist to fail when the directory is not writable")
 	}
 	// In-memory state advanced despite the disk error.
-	if !c.IsAcked("evt_1") {
+	if !cursorContains(c, "evt_1") {
 		t.Fatal("in-memory ack should hold even when persist failed")
 	}
 }
@@ -128,8 +128,8 @@ func TestCursor_MaxDefaults(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if c.Size() != 3 {
-			t.Fatalf("max=%d should default to 4096 (no trim), size=%d", max, c.Size())
+		if cursorSize(c) != 3 {
+			t.Fatalf("max=%d should default to 4096 (no trim), size=%d", max, cursorSize(c))
 		}
 	}
 }
@@ -187,7 +187,7 @@ func TestCursor_SnapshotSortedOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var s CursorState
+	var s cursorState
 	if err := json.Unmarshal(data, &s); err != nil {
 		t.Fatal(err)
 	}

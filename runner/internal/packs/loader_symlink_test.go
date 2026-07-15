@@ -21,7 +21,7 @@ args:
     required: true
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ["{{ args.msg }}"]
   timeout: 5s
 output:

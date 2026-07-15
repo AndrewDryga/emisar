@@ -32,8 +32,7 @@ type Cursor struct {
 	updated time.Time
 }
 
-// CursorState is the on-disk shape of the cursor file.
-type CursorState struct {
+type cursorState struct {
 	AckedEventIDs []string  `json:"acked_event_ids"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
@@ -60,7 +59,7 @@ func OpenCursor(path string, max int) (*Cursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cursor: read %s: %w", path, err)
 	}
-	var s CursorState
+	var s cursorState
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("cursor: parse %s: %w", path, err)
 	}
@@ -75,8 +74,8 @@ func OpenCursor(path string, max int) (*Cursor, error) {
 
 // MarkAcked records that eventID has been acked. Persists atomically.
 // Returns the underlying write error if the disk update fails — the
-// in-memory state is still updated so subsequent IsAcked calls work
-// correctly even if the file is unavailable.
+// in-memory state is still updated so a later successful persistence includes
+// the acknowledgement even if this write is unavailable.
 func (c *Cursor) MarkAcked(eventID string) error {
 	c.mu.Lock()
 	if _, exists := c.acked[eventID]; exists {
@@ -92,21 +91,6 @@ func (c *Cursor) MarkAcked(eventID string) error {
 	return c.persist(state)
 }
 
-// IsAcked reports whether eventID has been acked.
-func (c *Cursor) IsAcked(eventID string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, ok := c.acked[eventID]
-	return ok
-}
-
-// Size returns the number of acked entries (test/metrics helper).
-func (c *Cursor) Size() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.order)
-}
-
 func (c *Cursor) trim() {
 	for len(c.order) > c.max {
 		oldest := c.order[0]
@@ -115,8 +99,8 @@ func (c *Cursor) trim() {
 	}
 }
 
-func (c *Cursor) snapshot() CursorState {
-	out := CursorState{
+func (c *Cursor) snapshot() cursorState {
+	out := cursorState{
 		AckedEventIDs: append([]string(nil), c.order...),
 		UpdatedAt:     c.updated,
 	}
@@ -124,7 +108,7 @@ func (c *Cursor) snapshot() CursorState {
 	return out
 }
 
-func (c *Cursor) persist(state CursorState) error {
+func (c *Cursor) persist(state cursorState) error {
 	if c.path == "" {
 		return nil
 	}

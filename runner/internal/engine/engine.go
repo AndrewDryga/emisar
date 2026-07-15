@@ -608,16 +608,6 @@ func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 	return out
 }
 
-// redactedCommand renders the exact command that ran (binary + argv) as a
-// copy-pasteable, shell-quoted string with any `sensitive: true` arg value
-// masked. It masks secret substrings out of the *actual* argv (rather than
-// re-deriving), so a secret embedded inside a larger flag — e.g.
-// `--url=user:pw@host` — is masked too.
-func redactedCommand(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) string {
-	_, command := redactedInvocation(binary, argv, cleanArgs, schema)
-	return command
-}
-
 func redactedInvocation(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) ([]string, string) {
 	secrets := sensitiveValues(cleanArgs, schema)
 

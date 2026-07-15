@@ -44,9 +44,9 @@ func TestRedactedCommand(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := redactedCommand(tc.binary, tc.argv, tc.args, schema)
+			_, got := redactedInvocation(tc.binary, tc.argv, tc.args, schema)
 			if got != tc.want {
-				t.Fatalf("redactedCommand() = %q, want %q", got, tc.want)
+				t.Fatalf("redactedInvocation() command = %q, want %q", got, tc.want)
 			}
 		})
 	}

@@ -2,14 +2,11 @@ package runnerref
 
 import "testing"
 
-func TestBuildAndMatch(t *testing.T) {
+func TestSuffixAndMatch(t *testing.T) {
 	const externalID = "4ce429f6-edde-4dc3-a9b6-89c69e8d8359"
-	ref, err := Build("postgres-primary", externalID)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
+	ref := testRef(t, "postgres-primary", externalID)
 	if ref != "postgres-primary~fe0b4e7554f1b421248475e734dc8f7b" {
-		t.Fatalf("Build = %q", ref)
+		t.Fatalf("reference = %q", ref)
 	}
 	if !Matches(ref, externalID) {
 		t.Fatal("built ref did not match its external id")
@@ -21,10 +18,7 @@ func TestBuildAndMatch(t *testing.T) {
 
 func TestMatchesRejectsMalformedOrDifferentGeneration(t *testing.T) {
 	const externalID = "runner-generation-a"
-	ref, err := Build("db-a", externalID)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
+	ref := testRef(t, "db-a", externalID)
 	for _, candidate := range []string{
 		"", "db-a", "~" + ref, "db-a~ABCDEF0123456789ABCDEF0123456789",
 		"db-a~0123456789abcdef0123456789abcde", "db-a~0123456789abcdef0123456789abcg",
@@ -40,18 +34,9 @@ func TestMatchesRejectsMalformedOrDifferentGeneration(t *testing.T) {
 
 func TestContainsLocalRequiresExactlyOneMatch(t *testing.T) {
 	const externalID = "runner-generation-a"
-	first, err := Build("db-a", externalID)
-	if err != nil {
-		t.Fatalf("Build first: %v", err)
-	}
-	alias, err := Build("db-renamed", externalID)
-	if err != nil {
-		t.Fatalf("Build alias: %v", err)
-	}
-	other, err := Build("db-b", "runner-generation-b")
-	if err != nil {
-		t.Fatalf("Build other: %v", err)
-	}
+	first := testRef(t, "db-a", externalID)
+	alias := testRef(t, "db-renamed", externalID)
+	other := testRef(t, "db-b", "runner-generation-b")
 
 	if !ContainsLocal([]string{other, first}, externalID) {
 		t.Fatal("one matching ref was rejected")
@@ -64,17 +49,11 @@ func TestContainsLocalRequiresExactlyOneMatch(t *testing.T) {
 	}
 }
 
-func TestBuildRejectsInvalidInputs(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		externalID string
-	}{
-		{"", "runner"},
-		{"bad~name", "runner"},
-		{"runner", ""},
-	} {
-		if _, err := Build(tc.name, tc.externalID); err == nil {
-			t.Fatalf("Build(%q, %q) unexpectedly succeeded", tc.name, tc.externalID)
-		}
+func testRef(t *testing.T, name, externalID string) string {
+	t.Helper()
+	suffix, err := Suffix(externalID)
+	if err != nil {
+		t.Fatalf("Suffix: %v", err)
 	}
+	return name + "~" + suffix
 }

@@ -288,7 +288,7 @@ func TestLoad_StructsValidatedAfterParse(t *testing.T) {
 
 	t.Run("action missing required field", func(t *testing.T) {
 		// An action with no title fails actionspec.Action.Validate().
-		bad := "schema_version: 1\nid: p.a\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\nexecution:\n  command:\n    binary: /bin/echo\n    argv: []\n  timeout: 5s\noutput:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
+		bad := "schema_version: 1\nid: p.a\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\nexecution:\n  command:\n    binary: echo\n    argv: []\n  timeout: 5s\noutput:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
 		root := writePack(t, t.TempDir(), "p", map[string]string{
 			"pack.yaml":      packYAML("p"),
 			"actions/a.yaml": bad,

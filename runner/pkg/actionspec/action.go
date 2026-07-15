@@ -242,6 +242,9 @@ func (a *Action) Validate() error {
 		if a.Execution.Command.Binary == "" {
 			return fmt.Errorf("action %s: execution.command.binary required", a.ID)
 		}
+		if binary := a.Execution.Command.Binary; binary != "/bin/sh" && strings.ContainsAny(binary, `/\`) {
+			return fmt.Errorf("action %s: execution.command.binary %q must be a bare executable name; only /bin/sh may be absolute", a.ID, binary)
+		}
 		if a.Execution.Script != nil {
 			return fmt.Errorf("action %s: exec kind must not set execution.script", a.ID)
 		}

@@ -139,7 +139,7 @@ func TestPackListCmd_MalformedPackErrors(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(packDir, "actions", "a.yaml"), []byte(
 		"schema_version: 1\nid: ping\ntitle: t\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\n"+
-			"execution:\n  command:\n    binary: /bin/echo\n    argv: []\n  timeout: 5s\n"+
+			"execution:\n  command:\n    binary: echo\n    argv: []\n  timeout: 5s\n"+
 			"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestPackInfoCmd_NoConfigSkipsInheritEnvCrossCheck(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(packDir, "actions", "a.yaml"), []byte(
 		"schema_version: 1\nid: withenv.a\ntitle: t\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\n"+
-			"execution:\n  command:\n    binary: /bin/echo\n    argv: [\"hi\"]\n  timeout: 5s\n"+
+			"execution:\n  command:\n    binary: echo\n    argv: [\"hi\"]\n  timeout: 5s\n"+
 			"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestPackValidateCmd_InvalidPackErrors(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "actions", "a.yaml"), []byte(
 		"schema_version: 1\nid: ping\ntitle: t\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\n"+
-			"execution:\n  command:\n    binary: /bin/echo\n    argv: []\n  timeout: 5s\n"+
+			"execution:\n  command:\n    binary: echo\n    argv: []\n  timeout: 5s\n"+
 			"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

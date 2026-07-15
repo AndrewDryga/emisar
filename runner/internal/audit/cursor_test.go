@@ -24,10 +24,10 @@ func TestCursor_PersistAcrossOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c2.IsAcked("evt_1") || !c2.IsAcked("evt_2") {
-		t.Fatalf("acks not persisted: %d entries", c2.Size())
+	if !cursorContains(c2, "evt_1") || !cursorContains(c2, "evt_2") {
+		t.Fatalf("acks not persisted: %d entries", cursorSize(c2))
 	}
-	if c2.IsAcked("evt_3") {
+	if cursorContains(c2, "evt_3") {
 		t.Fatal("evt_3 should not be acked")
 	}
 }
@@ -42,14 +42,14 @@ func TestCursor_TrimsToMax(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if c.Size() != 3 {
-		t.Fatalf("size=%d, want 3", c.Size())
+	if cursorSize(c) != 3 {
+		t.Fatalf("size=%d, want 3", cursorSize(c))
 	}
 	// Oldest two should be evicted.
-	if c.IsAcked("evt_0") || c.IsAcked("evt_1") {
+	if cursorContains(c, "evt_0") || cursorContains(c, "evt_1") {
 		t.Fatalf("oldest entries should be evicted")
 	}
-	if !c.IsAcked("evt_2") || !c.IsAcked("evt_3") || !c.IsAcked("evt_4") {
+	if !cursorContains(c, "evt_2") || !cursorContains(c, "evt_3") || !cursorContains(c, "evt_4") {
 		t.Fatalf("newest entries should remain")
 	}
 }
@@ -62,7 +62,7 @@ func TestCursor_NoPathSkipsPersist(t *testing.T) {
 	if err := c.MarkAcked("evt_x"); err != nil {
 		t.Fatalf("MarkAcked with empty path should succeed: %v", err)
 	}
-	if !c.IsAcked("evt_x") {
+	if !cursorContains(c, "evt_x") {
 		t.Fatal("in-memory state should still work")
 	}
 }
@@ -73,7 +73,7 @@ func TestCursor_FileMissingIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Size() != 0 {
+	if cursorSize(c) != 0 {
 		t.Fatalf("expected empty cursor")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -83,4 +83,17 @@ func TestCursor_FileMissingIsEmpty(t *testing.T) {
 
 func idForIter(i int) string {
 	return "evt_" + string(rune('0'+i))
+}
+
+func cursorContains(cursor *Cursor, eventID string) bool {
+	cursor.mu.Lock()
+	defer cursor.mu.Unlock()
+	_, ok := cursor.acked[eventID]
+	return ok
+}
+
+func cursorSize(cursor *Cursor) int {
+	cursor.mu.Lock()
+	defer cursor.mu.Unlock()
+	return len(cursor.order)
 }

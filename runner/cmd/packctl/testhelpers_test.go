@@ -77,7 +77,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ["hi"]
   timeout: 5s
 output:

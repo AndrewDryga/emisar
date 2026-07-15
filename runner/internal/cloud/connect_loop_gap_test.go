@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -81,7 +82,8 @@ func TestClient_AckRun_PrematureAckIgnored(t *testing.T) {
 // dedup ring (which outlives the in-flight state) and marked acked so a later
 // prune pass knows it is safe to drop.
 func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
-	cursor, err := audit.OpenCursor(t.TempDir()+"/ack.json", 16)
+	cursorPath := t.TempDir() + "/ack.json"
+	cursor, err := audit.OpenCursor(cursorPath, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,17 @@ func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
 	// Must not panic on the absent run, and must record the event on the cursor.
 	cli.ackRun("req_evicted")
 
-	if !cursor.IsAcked("evt_evicted") {
+	contents, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted struct {
+		AckedEventIDs []string `json:"acked_event_ids"`
+	}
+	if err := json.Unmarshal(contents, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted.AckedEventIDs) != 1 || persisted.AckedEventIDs[0] != "evt_evicted" {
 		t.Fatal("ack of an evicted run must still mark its event_id on the cursor")
 	}
 }

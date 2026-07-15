@@ -32,7 +32,7 @@ args:
     required: true
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv:
       - "{{ args.msg }}"
   timeout: 5s
@@ -424,7 +424,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ['{"name":"alice","ok":true}']
   timeout: 5s
 output:
@@ -444,7 +444,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ["not actually json"]
   timeout: 5s
 output:
@@ -518,7 +518,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ["not actually json"]
   timeout: 5s
 output:

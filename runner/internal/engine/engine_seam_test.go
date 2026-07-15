@@ -178,7 +178,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /usr/bin/touch
+    binary: touch
     argv: [%q]
   timeout: 5s
 output:

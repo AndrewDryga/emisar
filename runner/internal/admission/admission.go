@@ -99,12 +99,6 @@ func (p *Policy) AdmitRisk(risk actionspec.Risk) (bool, string) {
 	return true, ""
 }
 
-// Active reports whether any rule is configured. The state advertiser
-// uses this to decide whether to filter the catalog at all.
-func (p *Policy) Active() bool {
-	return p != nil && (len(p.allow) > 0 || len(p.deny) > 0 || p.maxRisk != "")
-}
-
 func matchAny(patterns []string, id string) bool {
 	for _, p := range patterns {
 		// filepath.Match only returns an error for malformed patterns,

@@ -17,8 +17,8 @@ func TestAdmit_EmptyPolicyAllowsAll(t *testing.T) {
 	if ok, _ := p.Admit("cassandra.nodetool_repair"); !ok {
 		t.Fatal("expected empty policy to allow")
 	}
-	if p.Active() {
-		t.Fatal("Active() should be false for empty policy")
+	if policyActive(p) {
+		t.Fatal("empty policy should be inactive")
 	}
 }
 
@@ -119,23 +119,27 @@ func TestNew_RejectsMalformedPattern(t *testing.T) {
 	}
 }
 
-func TestActive(t *testing.T) {
+func TestPolicyActive(t *testing.T) {
 	empty, _ := New(nil, nil, "")
-	if empty.Active() {
-		t.Fatal("empty policy should not be Active")
+	if policyActive(empty) {
+		t.Fatal("empty policy should be inactive")
 	}
 	allow, _ := New([]string{"linux.*"}, nil, "")
-	if !allow.Active() {
-		t.Fatal("allow-only policy should be Active")
+	if !policyActive(allow) {
+		t.Fatal("allow-only policy should be active")
 	}
 	deny, _ := New(nil, []string{"*.repair"}, "")
-	if !deny.Active() {
-		t.Fatal("deny-only policy should be Active")
+	if !policyActive(deny) {
+		t.Fatal("deny-only policy should be active")
 	}
 	risk, _ := New(nil, nil, actionspec.RiskMedium)
-	if !risk.Active() {
-		t.Fatal("risk-ceiling-only policy should be Active")
+	if !policyActive(risk) {
+		t.Fatal("risk-ceiling-only policy should be active")
 	}
+}
+
+func policyActive(policy *Policy) bool {
+	return policy != nil && (len(policy.allow) > 0 || len(policy.deny) > 0 || policy.maxRisk != "")
 }
 
 // TestAdmitRisk covers the risk ceiling: with no ceiling everything passes;

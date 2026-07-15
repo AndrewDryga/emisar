@@ -149,7 +149,7 @@ func writePack(t *testing.T, root, id string) string {
 	}
 	manifest := "schema_version: 1\nid: " + id + "\nname: " + id + "\nversion: 0.0.1\ndescription: d\nactions:\n  - actions/ping.yaml\n"
 	action := "schema_version: 1\nid: " + id + ".ping\ntitle: Ping\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\n" +
-		"execution:\n  command:\n    binary: /bin/true\n    argv: []\n  timeout: 5s\n  timeout_min: 1s\n  timeout_max: 30s\n" +
+		"execution:\n  command:\n    binary: true\n    argv: []\n  timeout: 5s\n  timeout_min: 1s\n  timeout_max: 30s\n" +
 		"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
 	if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write pack.yaml: %v", err)

@@ -34,7 +34,7 @@ args:
     description: Message to echo.
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv: ["{{ args.msg }}"]
   timeout: 5s
   timeout_min: 1s
@@ -248,7 +248,7 @@ side_effects: [none]
 args: []
 execution:
   command:
-    binary: /bin/true
+    binary: true
     argv: []
   timeout: 5s
   timeout_min: 1s

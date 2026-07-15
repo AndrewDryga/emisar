@@ -142,12 +142,16 @@ func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch,
 }
 
 func testRunnerRef(t testing.TB) string {
+	return runnerRefFor(t, "runner-test", testRunnerID)
+}
+
+func runnerRefFor(t testing.TB, name, externalID string) string {
 	t.Helper()
-	ref, err := runnerref.Build("runner-test", testRunnerID)
+	suffix, err := runnerref.Suffix(externalID)
 	if err != nil {
-		t.Fatalf("runnerref.Build: %v", err)
+		t.Fatalf("runnerref.Suffix: %v", err)
 	}
-	return ref
+	return name + "~" + suffix
 }
 
 func testDispatch(t testing.TB, actionID string, args map[string]any) Dispatch {
@@ -276,10 +280,7 @@ func TestCheckBindsExactTargetSet(t *testing.T) {
 	args := map[string]any{"container": "web"}
 
 	t.Run("local runner in fanout", func(t *testing.T) {
-		peerRef, err := runnerref.Build("runner-peer", "runner-peer-id")
-		if err != nil {
-			t.Fatalf("runnerref.Build: %v", err)
-		}
+		peerRef := runnerRefFor(t, "runner-peer", "runner-peer-id")
 		att := signForTargets(t, priv, "docker.restart", args, []string{peerRef, testRunnerRef(t)}, "fanout", fixedNow)
 		if d := v.Check(testDispatch(t, "docker.restart", args), att); !d.Allowed {
 			t.Fatalf("signed fanout containing this runner was refused: %+v", d)
@@ -287,10 +288,7 @@ func TestCheckBindsExactTargetSet(t *testing.T) {
 	})
 
 	t.Run("local runner absent", func(t *testing.T) {
-		peerRef, err := runnerref.Build("runner-peer", "runner-peer-id")
-		if err != nil {
-			t.Fatalf("runnerref.Build: %v", err)
-		}
+		peerRef := runnerRefFor(t, "runner-peer", "runner-peer-id")
 		att := signForTargets(t, priv, "docker.restart", args, []string{peerRef}, "redirect", fixedNow)
 		if d := v.Check(testDispatch(t, "docker.restart", args), att); d.Allowed || d.Code != "target_mismatch" {
 			t.Fatalf("dispatch redirected outside its signed targets must be refused, got %+v", d)
@@ -306,10 +304,7 @@ func TestCheckBindsExactTargetSet(t *testing.T) {
 	})
 
 	t.Run("noncanonical target order", func(t *testing.T) {
-		peerRef, err := runnerref.Build("a-peer", "runner-peer-id")
-		if err != nil {
-			t.Fatalf("runnerref.Build: %v", err)
-		}
+		peerRef := runnerRefFor(t, "a-peer", "runner-peer-id")
 		att := signForTargets(t, priv, "docker.restart", args, []string{peerRef, testRunnerRef(t)}, "reordered", fixedNow)
 		att.RunnerRefs[0], att.RunnerRefs[1] = att.RunnerRefs[1], att.RunnerRefs[0]
 		if d := v.Check(testDispatch(t, "docker.restart", args), att); d.Allowed || d.Code != "target_mismatch" {

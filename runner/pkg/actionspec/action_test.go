@@ -286,7 +286,7 @@ func TestAction_Validate(t *testing.T) {
 			Description:   "describes what this does",
 			SideEffects:   []string{"none"},
 			Execution: Execution{
-				Command: &Command{Binary: "/bin/echo", Argv: []string{"hi"}},
+				Command: &Command{Binary: "echo", Argv: []string{"hi"}},
 				Timeout: Duration(5 * time.Second),
 			},
 			Output: Output{
@@ -299,6 +299,11 @@ func TestAction_Validate(t *testing.T) {
 
 	if err := good().Validate(); err != nil {
 		t.Fatalf("good action should validate: %v", err)
+	}
+	shell := good()
+	shell.Execution.Command.Binary = "/bin/sh"
+	if err := shell.Validate(); err != nil {
+		t.Fatalf("/bin/sh should remain the sole absolute executable exception: %v", err)
 	}
 
 	cases := []struct {
@@ -339,6 +344,9 @@ func TestAction_Validate(t *testing.T) {
 		{"zero stderr limit", func(a *Action) { a.Output.MaxStderrBytes = 0 }, "max_stderr_bytes"},
 		{"exec missing command", func(a *Action) { a.Execution.Command = nil }, "execution.command"},
 		{"exec empty binary", func(a *Action) { a.Execution.Command.Binary = "" }, "binary"},
+		{"absolute executable", func(a *Action) { a.Execution.Command.Binary = "/usr/bin/psql" }, "bare executable"},
+		{"relative executable path", func(a *Action) { a.Execution.Command.Binary = "./tool" }, "bare executable"},
+		{"windows executable path", func(a *Action) { a.Execution.Command.Binary = `C:\tool.exe` }, "bare executable"},
 		{"exec with script set", func(a *Action) {
 			a.Execution.Script = &Script{Path: "x.sh", Interpreter: "/bin/sh"}
 		}, "must not set execution.script"},

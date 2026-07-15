@@ -36,6 +36,12 @@ func reserveCompleteAndAcknowledge(t *testing.T, d *dedupRing, requestID, digest
 	}
 }
 
+func dedupSize(d *dedupRing) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.keys)
+}
+
 func TestDedupRing_ReserveCompleteAndLookup(t *testing.T) {
 	d := newDedupRing(4, "", nil)
 	reserveAndComplete(t, d, "a", testDispatchDigest("a"), ActionResultMsg{EventID: "evt_a"})
@@ -57,8 +63,8 @@ func TestDedupRing_EvictsOldest(t *testing.T) {
 	if _, ok := d.lookup("a"); ok {
 		t.Fatal("a should have been evicted")
 	}
-	if _, ok := d.lookup("c"); !ok || d.size() != 2 {
-		t.Fatalf("recent entries missing or wrong size: %d", d.size())
+	if _, ok := d.lookup("c"); !ok || dedupSize(d) != 2 {
+		t.Fatalf("recent entries missing or wrong size: %d", dedupSize(d))
 	}
 }
 
@@ -269,8 +275,8 @@ func TestDedupRing_PersistedRingStaysBounded(t *testing.T) {
 	if _, ok := d2.lookup("a"); ok {
 		t.Fatal("evicted entry should not persist")
 	}
-	if _, ok := d2.lookup("c"); !ok || d2.size() != 2 {
-		t.Fatalf("reloaded ring is wrong: size=%d", d2.size())
+	if _, ok := d2.lookup("c"); !ok || dedupSize(d2) != 2 {
+		t.Fatalf("reloaded ring is wrong: size=%d", dedupSize(d2))
 	}
 }
 
@@ -302,8 +308,8 @@ func TestDedupRing_ReservationPersistenceFailureRollsBack(t *testing.T) {
 	if _, _, err := d.reserve("req", testDispatchDigest("req")); err == nil {
 		t.Fatal("reservation unexpectedly succeeded")
 	}
-	if d.size() != 0 {
-		t.Fatalf("failed reservation remained in memory: size=%d", d.size())
+	if dedupSize(d) != 0 {
+		t.Fatalf("failed reservation remained in memory: size=%d", dedupSize(d))
 	}
 }
 
@@ -334,8 +340,8 @@ func TestDedupRing_ConcurrentReservations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if d.size() != 50 {
-		t.Fatalf("size=%d, want 50", d.size())
+	if dedupSize(d) != 50 {
+		t.Fatalf("size=%d, want 50", dedupSize(d))
 	}
 }
 

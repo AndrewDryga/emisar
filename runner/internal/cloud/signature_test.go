@@ -90,10 +90,11 @@ func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.Priv
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	runnerRef, err := runnerref.Build("runner-cloud-test", sigTestRunnerID)
+	runnerSuffix, err := runnerref.Suffix(sigTestRunnerID)
 	if err != nil {
-		t.Fatalf("build runner ref: %v", err)
+		t.Fatalf("runner ref suffix: %v", err)
 	}
+	runnerRef := "runner-cloud-test~" + runnerSuffix
 	runnerRefs := []string{runnerRef}
 	reason := "test"
 	operationID := "op-" + nonce

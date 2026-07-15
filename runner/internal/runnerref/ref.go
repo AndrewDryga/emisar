@@ -24,19 +24,6 @@ func Suffix(externalID string) (string, error) {
 	return hex.EncodeToString(digest[:])[:suffixLength], nil
 }
 
-// Build combines one portal-visible name with the suffix derived from the
-// runner's durable external ID.
-func Build(name, externalID string) (string, error) {
-	if name == "" || strings.ContainsRune(name, '~') {
-		return "", fmt.Errorf("runnerref: name must be nonempty and contain no '~'")
-	}
-	suffix, err := Suffix(externalID)
-	if err != nil {
-		return "", err
-	}
-	return name + "~" + suffix, nil
-}
-
 // Matches reports whether ref has a well-formed public shape and its suffix is
 // derived from externalID. The display-name prefix is deliberately not checked:
 // the portal owns that operator-facing name, while the runner independently
