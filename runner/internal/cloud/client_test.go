@@ -299,7 +299,7 @@ func sendRunActionWithPackRef(t *testing.T, c *fakeConn, cli *Client, requestID,
 
 func sendRunActionWithPackContract(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash, packRef string) {
 	t.Helper()
-	raw, err := json.Marshal(RunActionMsg{
+	raw, err := marshalRunActionMsg(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 		ActionID: actionID, ExpectedPackHash: expectedPackHash, PackRef: packRef,
 		Args: args, Reason: "test",
@@ -748,7 +748,7 @@ func TestClientRejectsKnownMessagesWithIncompatibleProtocolVersion(t *testing.T)
 
 	for _, version := range []int{0, 999} {
 		t.Run(fmt.Sprintf("version_%d", version), func(t *testing.T) {
-			raw, err := json.Marshal(RunActionMsg{
+			raw, err := marshalRunActionMsg(RunActionMsg{
 				Envelope: Envelope{
 					Type:            MsgRunAction,
 					ProtocolVersion: version,

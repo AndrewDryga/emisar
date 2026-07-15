@@ -300,42 +300,24 @@ func TestLoad_StructsValidatedAfterParse(t *testing.T) {
 	})
 }
 
-// a script-kind action gets its script SHA256 stamped at load,
-// unless SkipScriptChecksum is set (used by tests where script bytes vary).
-func TestLoad_ScriptChecksumStampedUnlessSkipped(t *testing.T) {
+// A script-kind action always gets its script SHA256 stamped at load.
+func TestLoad_ScriptChecksumStamped(t *testing.T) {
 	files := map[string]string{
 		"pack.yaml":      packYAML("scr"),
 		"actions/a.yaml": strings.Replace(scriptActionYAML, "%s", "scr.run", 1),
 		"scripts/run.sh": "#!/bin/sh\necho hi\n",
 	}
 
-	t.Run("checksum stamped by default", func(t *testing.T) {
-		root := writePack(t, t.TempDir(), "p", files)
-		reg, err := LoadOne(root, LoadOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		si, ok := reg.ScriptInfo("scr.run")
-		if !ok {
-			t.Fatal("script info not registered")
-		}
-		if si.SHA256 == "" {
-			t.Fatal("expected a script SHA256 to be stamped at load")
-		}
-	})
-
-	t.Run("checksum skipped with the flag", func(t *testing.T) {
-		root := writePack(t, t.TempDir(), "p", files)
-		reg, err := LoadOne(root, LoadOptions{SkipScriptChecksum: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		si, ok := reg.ScriptInfo("scr.run")
-		if !ok {
-			t.Fatal("script info not registered")
-		}
-		if si.SHA256 != "" {
-			t.Fatalf("expected no SHA256 with SkipScriptChecksum, got %q", si.SHA256)
-		}
-	})
+	root := writePack(t, t.TempDir(), "p", files)
+	reg, err := LoadOne(root, LoadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	si, ok := reg.ScriptInfo("scr.run")
+	if !ok {
+		t.Fatal("script info not registered")
+	}
+	if si.SHA256 == "" {
+		t.Fatal("expected a script SHA256 to be stamped at load")
+	}
 }

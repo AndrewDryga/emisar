@@ -1,7 +1,6 @@
 package cloud
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 )
@@ -12,7 +11,7 @@ import (
 // (bad hash), so the result reveals which gate fired first.
 func sendRunActionUnsignedWithPackRef(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, packRef string) {
 	t.Helper()
-	raw, err := json.Marshal(RunActionMsg{
+	raw, err := marshalRunActionMsg(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 		ActionID: actionID, PackRef: packRef, Args: args, Reason: "test",
 	})

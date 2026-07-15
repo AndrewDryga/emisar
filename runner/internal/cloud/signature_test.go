@@ -126,7 +126,7 @@ func sendRunActionWithAttestation(t *testing.T, c *fakeConn, cli *Client, reques
 
 func sendRunActionWithAttestationAndOpts(t *testing.T, c *fakeConn, cli *Client, requestID, actionID string, args map[string]any, opts *RunOpts, att *Attestation) {
 	t.Helper()
-	raw, err := json.Marshal(RunActionMsg{
+	raw, err := marshalRunActionMsg(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 		ActionID: actionID, ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
 		Opts: opts, Reason: att.Reason, OperationID: att.OperationID, Attestation: att,

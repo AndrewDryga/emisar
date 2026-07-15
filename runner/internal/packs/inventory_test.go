@@ -24,12 +24,10 @@ func repoPacksDir(t *testing.T) string {
 	return dir
 }
 
-// loadRealLibrary loads the entire pack library through the production
-// loader. SkipScriptChecksum keeps it stable and fast; we only assert on
-// parsed metadata (ids, risk), not script hashes.
+// loadRealLibrary loads the entire pack library through the production loader.
 func loadRealLibrary(t *testing.T) *Registry {
 	t.Helper()
-	reg, err := LoadAll([]string{repoPacksDir(t)}, LoadOptions{SkipScriptChecksum: true})
+	reg, err := LoadAll([]string{repoPacksDir(t)}, LoadOptions{})
 	if err != nil {
 		t.Fatalf("the whole pack library must load clean through the production loader: %v", err)
 	}

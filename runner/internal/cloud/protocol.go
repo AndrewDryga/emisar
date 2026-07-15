@@ -99,32 +99,6 @@ type runActionMsgWire struct {
 	Attestation      *Attestation    `json:"attestation,omitempty"`
 }
 
-// MarshalJSON lets test and internal callers provide either the decoded Args map
-// or ArgsRaw. Production dispatches use UnmarshalJSON below; only that inbound
-// path is required to preserve the exact token for signature verification.
-func (m RunActionMsg) MarshalJSON() ([]byte, error) {
-	raw := m.ArgsRaw
-	if len(raw) == 0 {
-		var err error
-		raw, err = json.Marshal(m.Args)
-		if err != nil {
-			return nil, fmt.Errorf("cloud: marshal run_action args: %w", err)
-		}
-		if string(raw) == "null" {
-			raw = json.RawMessage(`{}`)
-		}
-	}
-	if _, err := decodeActionArgs(raw); err != nil {
-		return nil, err
-	}
-	return json.Marshal(runActionMsgWire{
-		Envelope: m.Envelope, ActionID: m.ActionID,
-		ExpectedPackHash: m.ExpectedPackHash, PackRef: m.PackRef,
-		Args: raw, Opts: m.Opts, Reason: m.Reason, OperationID: m.OperationID,
-		Attestation: m.Attestation,
-	})
-}
-
 // UnmarshalJSON captures the exact args token before decoding it with UseNumber
 // for the engine. The signature gate hashes ArgsRaw, never the decoded map.
 func (m *RunActionMsg) UnmarshalJSON(data []byte) error {

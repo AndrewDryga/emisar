@@ -35,9 +35,6 @@ import (
 // LoadOptions controls loader behaviour. The zero value works for the
 // common case.
 type LoadOptions struct {
-	// SkipScriptChecksum disables computing script SHA256s at load time.
-	// Useful for tests where the script content isn't stable.
-	SkipScriptChecksum bool
 	// Logger is the structured logger used for load-time events
 	// (duplicate IDs, etc.). Defaults to slog.Default.
 	Logger *slog.Logger
@@ -155,7 +152,7 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) error {
 				action.ID, existing.SourcePath, action.SourcePath)
 		}
 		if action.Kind == actionspec.KindScript {
-			si, scriptBytes, err := resolveScript(absRoot, action.Execution.Script.Path, action.ID, opts.SkipScriptChecksum, pack.AllowSymlinks)
+			si, scriptBytes, err := resolveScript(absRoot, action.Execution.Script.Path, action.ID, pack.AllowSymlinks)
 			if err != nil {
 				return err
 			}
@@ -328,7 +325,7 @@ func isUnder(root, candidate string) bool {
 	return true
 }
 
-func resolveScript(packRoot, rel, actionID string, skipChecksum, allowSymlinks bool) (ScriptInfo, []byte, error) {
+func resolveScript(packRoot, rel, actionID string, allowSymlinks bool) (ScriptInfo, []byte, error) {
 	full, err := resolveInsidePack(packRoot, rel, allowSymlinks)
 	if err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: script: %w", actionID, err)
@@ -341,9 +338,7 @@ func resolveScript(packRoot, rel, actionID string, skipChecksum, allowSymlinks b
 	if err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: read script: %w", actionID, err)
 	}
-	if !skipChecksum {
-		h := sha256.Sum256(data)
-		si.SHA256 = hex.EncodeToString(h[:])
-	}
+	h := sha256.Sum256(data)
+	si.SHA256 = hex.EncodeToString(h[:])
 	return si, data, nil
 }

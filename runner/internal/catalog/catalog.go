@@ -155,9 +155,7 @@ type BuildOptions struct {
 	Previous *Catalog
 }
 
-// Build turns a loaded pack registry into a Catalog. The registry must have
-// been loaded WITHOUT SkipScriptChecksum so the content hash matches what
-// the runner and portal compute.
+// Build turns a loaded pack registry into a Catalog.
 func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	if opts.BaseURL == "" {
 		return nil, fmt.Errorf("catalog: BaseURL is required")

@@ -114,10 +114,11 @@ func TestRunActionMsgRejectsInvalidArgumentShapeAndBudget(t *testing.T) {
 		}
 	}
 
-	oversized := json.RawMessage("{\"value\":\"" + strings.Repeat("x", maxActionArgsBytes) + "\"}")
-	if _, err := json.Marshal(RunActionMsg{ActionID: "a.b", ArgsRaw: oversized}); err == nil ||
-		!strings.Contains(err.Error(), "exceed") {
-		t.Fatalf("Marshal oversized args error = %v", err)
+	oversized := []byte("{\"type\":\"run_action\",\"request_id\":\"req_big\",\"action_id\":\"a.b\",\"args\":{\"value\":\"" +
+		strings.Repeat("x", maxActionArgsBytes) + "\"}}")
+	var oversizedArgs RunActionMsg
+	if err := json.Unmarshal(oversized, &oversizedArgs); err == nil || !strings.Contains(err.Error(), "exceed") {
+		t.Fatalf("Unmarshal oversized args error = %v", err)
 	}
 
 	message := []byte("{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"future\":\"" +

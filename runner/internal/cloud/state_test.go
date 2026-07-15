@@ -428,7 +428,7 @@ func TestPeekEnvelope(t *testing.T) {
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "r1"},
 		ActionID: "x.y",
 	}
-	raw, err := json.Marshal(m)
+	raw, err := marshalRunActionMsg(m)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -886,7 +886,7 @@ output:
 // payload lives at <root>/p/scripts/run.sh, and returns the engine and that
 // script's absolute path so a test can tamper with it on disk. opts controls
 // whether the loader records the script checksum.
-func setupScriptEngine(t *testing.T, opts packs.LoadOptions) (*Engine, *audit.Journal, string) {
+func setupScriptEngine(t *testing.T) (*Engine, *audit.Journal, string) {
 	t.Helper()
 	root := t.TempDir()
 	must := func(err error) {
@@ -908,7 +908,7 @@ actions:
 	scriptPath := filepath.Join(root, "p", "scripts", "run.sh")
 	must(os.WriteFile(scriptPath, []byte("#!/bin/sh\necho original\n"), 0o755))
 
-	reg, err := packs.LoadAll([]string{root}, opts)
+	reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
 	must(err)
 	sink, err := audit.OpenJSONL(filepath.Join(root, "events.jsonl"), audit.JSONLOptions{})
 	must(err)
@@ -928,7 +928,7 @@ actions:
 // disk after the pack was loaded/trusted must be refused at the next dispatch,
 // not executed. Guards the load-to-exec TOCTOU on script payloads.
 func TestEngine_ScriptTamperRefusedAtDispatch(t *testing.T) {
-	e, j, scriptPath := setupScriptEngine(t, packs.LoadOptions{})
+	e, j, scriptPath := setupScriptEngine(t)
 	defer j.Close()
 
 	// First dispatch runs the trusted bytes.
@@ -964,26 +964,13 @@ func TestEngine_ScriptTamperRefusedAtDispatch(t *testing.T) {
 	}
 }
 
-// TestEngine_ScriptChecksumSkipRunsAnyBytes — with checksums disabled at load
-// (an explicit operator opt-out), there is no recorded hash to verify against,
-// so a post-load edit runs. Confirms the opt-out path and that the verifier
-// no-ops on an empty recorded hash rather than failing closed and breaking
-// script execution entirely.
-func TestEngine_ScriptChecksumSkipRunsAnyBytes(t *testing.T) {
-	e, j, scriptPath := setupScriptEngine(t, packs.LoadOptions{SkipScriptChecksum: true})
-	defer j.Close()
-
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho EDITED\n"), 0o755); err != nil {
-		t.Fatal(err)
+func TestHashArgsCanonicalJSONContract(t *testing.T) {
+	args := map[string]any{
+		"b": []any{map[string]any{"c": 3}},
+		"a": map[string]any{"z": 1, "y": 2},
 	}
-	res, err := e.Run(context.Background(), Request{ActionID: "t.run", Reason: "test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Status != StatusSuccess {
-		t.Fatalf("with checksums disabled the script should run: status=%s reason=%s", res.Status, res.Reason)
-	}
-	if !strings.Contains(res.Stdout, "EDITED") {
-		t.Fatalf("expected the edited script to run, got %q", res.Stdout)
+	const want = "7bfa53f248cbf3eae425607a124111a545d3c2b4b99f85ed7bf185f88a481148"
+	if got := hashArgs(args); got != want {
+		t.Fatalf("hashArgs = %s, want %s", got, want)
 	}
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
-	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
 // readJournalEvents reads every event line from the engine's JSONL log at
@@ -326,7 +325,7 @@ func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 // mutation; this proves the positive holds dispatch after dispatch, so the
 // defense-in-depth check never spuriously starts refusing an unchanged script.
 func TestEngine_ScriptUnchangedRunsAcrossRedispatches(t *testing.T) {
-	e, j, scriptPath := setupScriptEngine(t, packs.LoadOptions{})
+	e, j, scriptPath := setupScriptEngine(t)
 	defer j.Close()
 
 	want, err := os.ReadFile(scriptPath)

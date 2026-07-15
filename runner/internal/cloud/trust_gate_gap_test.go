@@ -2,7 +2,6 @@ package cloud
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,7 +246,7 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	// the trusted key AND the runner's own matching pack hash. Both gates pass.
 	args := map[string]any{"msg": "ok"}
 	att := attestationFor(t, cli, priv, "t.echo", args)
-	raw, err := json.Marshal(RunActionMsg{
+	raw, err := marshalRunActionMsg(RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req_admit_deny"},
 		ActionID: "t.echo", ExpectedPackHash: currentPackHash(t, cli, "t"), PackRef: att.PackRef, Args: args,
 		Reason: att.Reason, OperationID: att.OperationID, Attestation: att,

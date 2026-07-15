@@ -937,8 +937,7 @@ func truncatePreview(s string, max int) string {
 // hashArgs returns SHA-256 hex of args encoded as canonical JSON (sorted
 // keys) for the local audit event.
 func hashArgs(args map[string]any) string {
-	canon := canonicalize(args)
-	b, err := json.Marshal(canon)
+	b, err := json.Marshal(args)
 	if err != nil {
 		return "unhashable"
 	}
@@ -949,27 +948,4 @@ func hashArgs(args map[string]any) string {
 func hashOutput(output string) string {
 	h := sha256.Sum256([]byte(output))
 	return hex.EncodeToString(h[:])
-}
-
-func canonicalize(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			out[k] = canonicalize(t[k])
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, x := range t {
-			out[i] = canonicalize(x)
-		}
-		return out
-	}
-	return v
 }
