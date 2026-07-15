@@ -195,6 +195,11 @@ func (e *Engine) Reload() error {
 // concern, but it shouldn't itself fail the action that was about to
 // be reported successful.
 func (e *Engine) journal(ctx context.Context, ev audit.Event) audit.Event {
+	rec, _ := e.recordJournal(ctx, ev)
+	return rec
+}
+
+func (e *Engine) recordJournal(ctx context.Context, ev audit.Event) (audit.Event, error) {
 	rec, err := e.Journal.Record(ctx, ev)
 	if err != nil {
 		e.Logger.Error("audit.write_failed",
@@ -203,7 +208,7 @@ func (e *Engine) journal(ctx context.Context, ev audit.Event) audit.Event {
 			"error", err,
 		)
 	}
-	return rec
+	return rec, err
 }
 
 // RecordDispatchRefusal records a cloud dispatch that was rejected before Run.
@@ -434,7 +439,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	started.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
 	started.Execution = executionStartInfo(plan, scriptSHA)
 	started.Execution.ExecutedCommand = redactedCommand(plan.Binary, plan.Argv, cleanArgs, act.Args)
-	e.journal(ctx, started)
+	if _, err := e.recordJournal(ctx, started); err != nil {
+		return &Result{
+			Status:   StatusError,
+			ActionID: act.ID,
+			Reason:   "local audit unavailable; action was not executed",
+		}, nil
+	}
 
 	execRes, execErr := e.Executor.Execute(ctx, plan)
 	if execErr != nil {

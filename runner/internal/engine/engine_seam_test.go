@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,50 @@ func TestEngine_ExecutionStartPrecedesTerminalEvent(t *testing.T) {
 	}
 	if events[1].EventID != res.EventID {
 		t.Fatalf("terminal event id=%q, result id=%q", events[1].EventID, res.EventID)
+	}
+}
+
+func TestEngine_AuditStartFailurePreventsExecution(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "must-not-exist")
+	action := fmt.Sprintf(`
+schema_version: 1
+id: t.audit_required
+title: Audit required
+kind: exec
+risk: low
+description: test
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /usr/bin/touch
+    argv: [%q]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`, marker)
+	e, journal, _ := setupEngineExtra(t, map[string]string{"audit_required.yaml": action})
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.audit_required",
+		Reason:   "prove fail closed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusError || res.Reason != "local audit unavailable; action was not executed" {
+		t.Fatalf("result=%+v", res)
+	}
+	if res.EventID != "" {
+		t.Fatalf("failed audit write claimed durable event id %q", res.EventID)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("action crossed process boundary despite failed start journal: %v", err)
 	}
 }
 
