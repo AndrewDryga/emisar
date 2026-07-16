@@ -190,7 +190,9 @@ counting, so every downstream representation uses one byte stream.
 `action_result` is emitted exactly once after the process exits or the runner
 refuses the call. It carries terminal status, exit code, duration, emitted
 stream hashes/counts, total and dropped progress-chunk counts, truncation flags,
-redaction counts, masked executed command, reason, and local audit event ID.
+redaction counts, masked executed command, reason, and the local audit event ID.
+If the terminal or refusal event could not be persisted, `event_id` is absent
+and `local_audit_failed` is true; the action's actual status does not change.
 The remote executed command is at most 16 KiB of valid UTF-8 and sets
 `executed_command_truncated` when shortened; the local runner audit keeps the
 full masked command.

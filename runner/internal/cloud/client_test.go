@@ -55,6 +55,21 @@ func (s *blockingAuditSink) Write(context.Context, audit.Event) error {
 
 func (*blockingAuditSink) Close() error { return nil }
 
+type failAfterAuditSink struct {
+	successes int
+	attempts  int
+}
+
+func (s *failAfterAuditSink) Write(context.Context, audit.Event) error {
+	s.attempts++
+	if s.attempts > s.successes {
+		return errors.New("forced audit failure")
+	}
+	return nil
+}
+
+func (*failAfterAuditSink) Close() error { return nil }
+
 // blockedOutboundConn models a portal that keeps dispatching but stops reading
 // after registration. Session cancellation must unblock Send as Conn promises.
 type blockedOutboundConn struct{ *fakeConn }
@@ -434,7 +449,10 @@ func TestClient_RequestIDFactConflictIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed := newDedupRing(4, path, nil)
-	reserveAndComplete(t, seed, original.RequestID, originalDigest, ActionResultMsg{Status: "success"})
+	reserveAndComplete(t, seed, original.RequestID, originalDigest, ActionResultMsg{
+		Status:  "success",
+		EventID: "evt_original",
+	})
 
 	changed := original
 	changed.Args = map[string]any{"msg": "different"}
@@ -563,6 +581,47 @@ func TestClient_DeliversResultsOnSingleConn(t *testing.T) {
 	res := waitForResult(t, conn, "req_a", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
+	}
+}
+
+func TestClient_ReportsTerminalAuditFailureWithoutChangingOutcome(t *testing.T) {
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+	cli.opts.Engine.Journal = audit.New(audit.Defaults{}, &failAfterAuditSink{successes: 1})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	sendRunAction(t, conn, cli, "req_audit_failure", "t.echo", map[string]any{"msg": "hello"})
+	result := waitForResult(t, conn, "req_audit_failure", 3*time.Second)
+	if result["status"] != "success" {
+		t.Fatalf("status=%v, want success", result["status"])
+	}
+	if _, ok := result["event_id"]; ok {
+		t.Fatalf("failed audit write exposed event_id=%v", result["event_id"])
+	}
+	if result["local_audit_failed"] != true {
+		t.Fatalf("local_audit_failed=%v, want true", result["local_audit_failed"])
+	}
+}
+
+func TestClient_ReportsRefusalAuditFailure(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{})
+	cli.opts.Engine.Journal = audit.New(audit.Defaults{}, &failAfterAuditSink{})
+	m := RunActionMsg{
+		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "req-refused"},
+		ActionID: "t.echo",
+		Reason:   "test refusal audit failure",
+	}
+
+	result := cli.refusedDispatchResult(context.Background(), m, "test_refusal", "refused for test")
+	if result.EventID != "" || !result.LocalAuditFailed {
+		t.Fatalf("result=%+v, want empty event id and local audit failure", result)
 	}
 }
 

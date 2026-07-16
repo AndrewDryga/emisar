@@ -201,11 +201,13 @@ defmodule Emisar.Runs.ActionRunTest do
           error_message: "exit status 1",
           executed_command: "uptime -p",
           event_id: "evt_123",
+          local_audit_failed: true,
           emitted_stdout_sha256: String.duplicate("a", 64),
           emitted_stderr_sha256: String.duplicate("b", 64)
         })
 
       assert changeset.valid?
+      assert Ecto.Changeset.get_change(changeset, :local_audit_failed)
     end
 
     test "rejects oversized runner result text fields" do

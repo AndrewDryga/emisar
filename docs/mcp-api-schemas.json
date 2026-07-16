@@ -382,6 +382,7 @@
         "emitted_stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stdout emitted within the runner's output cap."},
         "emitted_stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stderr emitted within the runner's output cap."},
         "output_complete": {"type": "boolean", "description": "True when every progress chunk the runner reports emitting was durably received; false means the previews may have gaps."},
+        "local_audit_failed": {"const": true, "description": "The runner could not persist the terminal or refusal event in its local audit journal. The action status remains authoritative."},
         "truncated_stdout": {"type": "boolean"},
         "truncated_stderr": {"type": "boolean"},
         "approval": {"$ref": "#/$defs/approval"},

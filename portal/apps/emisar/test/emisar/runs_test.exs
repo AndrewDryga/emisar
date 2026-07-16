@@ -3502,6 +3502,33 @@ defmodule Emisar.RunsTest do
                })
     end
 
+    test "persists local audit failure without changing the action outcome", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok,
+              %ActionRun{
+                status: :success,
+                event_id: nil,
+                local_audit_failed: true
+              }} =
+               Runs.finalize_from_result(runner.id, %{
+                 "request_id" => run.request_id,
+                 "status" => "success",
+                 "exit_code" => 0,
+                 "local_audit_failed" => true
+               })
+
+      event =
+        Emisar.Audit.Event
+        |> Repo.all()
+        |> Enum.find(&(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success"))
+
+      assert event.payload["local_audit_failed"]
+    end
+
     test "persists executed_command and carries it into the audit event", %{
       account: account,
       runner: runner

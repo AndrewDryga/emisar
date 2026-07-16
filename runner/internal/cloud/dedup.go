@@ -160,6 +160,9 @@ func validActionResult(result ActionResultMsg, requestID string) bool {
 	if result.Type != MsgActionResult || result.ProtocolVersion != ProtocolVersion || result.RequestID != requestID {
 		return false
 	}
+	if result.LocalAuditFailed != (result.EventID == "") {
+		return false
+	}
 	switch result.Status {
 	case "success", "failed", "error", "validation_failed", "unknown_action", "timed_out",
 		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":

@@ -82,26 +82,28 @@ type ProgressFunc func(stream executor.Stream, line []byte)
 
 // Result is the durable, redacted result of one action call.
 type Result struct {
-	Status       Status       `json:"status"`
-	EventID      string       `json:"event_id"`
-	ActionID     string       `json:"action_id"`
-	ExitCode     int          `json:"exit_code"`
-	Stdout       string       `json:"stdout,omitempty"`
-	Stderr       string       `json:"stderr,omitempty"`
-	Output       any          `json:"output,omitempty"`
-	ParserError  string       `json:"parser_error,omitempty"`
-	DurationMS   int64        `json:"duration_ms"`
-	Redactions   []redact.Hit `json:"redactions,omitempty"`
-	Reason       string       `json:"reason,omitempty"`
-	TimedOut     bool         `json:"timed_out,omitempty"`
-	StdoutSHA256 string       `json:"stdout_sha256,omitempty"`
-	StderrSHA256 string       `json:"stderr_sha256,omitempty"`
-	StdoutBytes  int          `json:"stdout_bytes,omitempty"`
-	StderrBytes  int          `json:"stderr_bytes,omitempty"`
-	TruncatedOut bool         `json:"truncated_stdout,omitempty"`
-	TruncatedErr bool         `json:"truncated_stderr,omitempty"`
+	Status           Status       `json:"status"`
+	EventID          string       `json:"event_id"`
+	LocalAuditFailed bool         `json:"local_audit_failed,omitempty"`
+	ActionID         string       `json:"action_id"`
+	ExitCode         int          `json:"exit_code"`
+	Stdout           string       `json:"stdout,omitempty"`
+	Stderr           string       `json:"stderr,omitempty"`
+	Output           any          `json:"output,omitempty"`
+	ParserError      string       `json:"parser_error,omitempty"`
+	DurationMS       int64        `json:"duration_ms"`
+	Redactions       []redact.Hit `json:"redactions,omitempty"`
+	Reason           string       `json:"reason,omitempty"`
+	TimedOut         bool         `json:"timed_out,omitempty"`
+	StdoutSHA256     string       `json:"stdout_sha256,omitempty"`
+	StderrSHA256     string       `json:"stderr_sha256,omitempty"`
+	StdoutBytes      int          `json:"stdout_bytes,omitempty"`
+	StderrBytes      int          `json:"stderr_bytes,omitempty"`
+	TruncatedOut     bool         `json:"truncated_stdout,omitempty"`
+	TruncatedErr     bool         `json:"truncated_stderr,omitempty"`
 	// ExecutedCommand is the exact command that ran, shell-quoted, with
-	// sensitive arg values masked. Forwarded to the cloud + local audit.
+	// sensitive arg values masked. The cloud transport bounds its remote copy;
+	// the local audit keeps this complete value.
 	ExecutedCommand string `json:"executed_command,omitempty"`
 }
 
@@ -194,7 +196,10 @@ func (e *Engine) Reload() error {
 // The execution_started event takes the strict recordJournal path below and
 // must be durable before the process is allowed to start.
 func (e *Engine) journal(ctx context.Context, ev audit.Event) audit.Event {
-	rec, _ := e.recordJournal(ctx, ev)
+	rec, err := e.recordJournal(ctx, ev)
+	if err != nil {
+		rec.EventID = ""
+	}
 	return rec
 }
 
@@ -260,10 +265,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Error = "reason required"
 		journaled := e.journal(ctx, ev)
 		return &Result{
-			Status:   StatusValidationFailed,
-			EventID:  journaled.EventID,
-			ActionID: req.ActionID,
-			Reason:   "reason required",
+			Status:           StatusValidationFailed,
+			EventID:          journaled.EventID,
+			LocalAuditFailed: journaled.EventID == "",
+			ActionID:         req.ActionID,
+			Reason:           "reason required",
 		}, nil
 	}
 
@@ -278,10 +284,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Error = reason
 		journaled := e.journal(ctx, ev)
 		return &Result{
-			Status:   StatusBlockedByAdmission,
-			EventID:  journaled.EventID,
-			ActionID: req.ActionID,
-			Reason:   reason,
+			Status:           StatusBlockedByAdmission,
+			EventID:          journaled.EventID,
+			LocalAuditFailed: journaled.EventID == "",
+			ActionID:         req.ActionID,
+			Reason:           reason,
 		}, nil
 	}
 
@@ -296,10 +303,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Error = "unknown action"
 		journaled := e.journal(ctx, ev)
 		return &Result{
-			Status:   StatusUnknownAction,
-			EventID:  journaled.EventID,
-			ActionID: req.ActionID,
-			Reason:   "unknown action",
+			Status:           StatusUnknownAction,
+			EventID:          journaled.EventID,
+			LocalAuditFailed: journaled.EventID == "",
+			ActionID:         req.ActionID,
+			Reason:           "unknown action",
 		}, nil
 	}
 
@@ -316,10 +324,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Error = reason
 		journaled := e.journal(ctx, ev)
 		return &Result{
-			Status:   StatusBlockedByAdmission,
-			EventID:  journaled.EventID,
-			ActionID: act.ID,
-			Reason:   reason,
+			Status:           StatusBlockedByAdmission,
+			EventID:          journaled.EventID,
+			LocalAuditFailed: journaled.EventID == "",
+			ActionID:         act.ID,
+			Reason:           reason,
 		}, nil
 	}
 
@@ -333,10 +342,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Error = err.Error()
 		journaled := e.journal(ctx, ev)
 		return &Result{
-			Status:   StatusValidationFailed,
-			EventID:  journaled.EventID,
-			ActionID: act.ID,
-			Reason:   err.Error(),
+			Status:           StatusValidationFailed,
+			EventID:          journaled.EventID,
+			LocalAuditFailed: journaled.EventID == "",
+			ActionID:         act.ID,
+			Reason:           err.Error(),
 		}, nil
 	}
 
@@ -442,9 +452,10 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	started.Execution.ExecutedCommand = startCommand
 	if _, err := e.recordJournal(ctx, started); err != nil {
 		return &Result{
-			Status:   StatusError,
-			ActionID: act.ID,
-			Reason:   "local audit unavailable; action was not executed",
+			Status:           StatusError,
+			LocalAuditFailed: true,
+			ActionID:         act.ID,
+			Reason:           "local audit unavailable; action was not executed",
 		}, nil
 	}
 
@@ -520,25 +531,26 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	}
 
 	return &Result{
-		Status:          status,
-		EventID:         journaled.EventID,
-		ActionID:        act.ID,
-		ExitCode:        execRes.ExitCode,
-		Stdout:          redactedStdout,
-		Stderr:          redactedStderr,
-		Output:          parsed,
-		ParserError:     parserError,
-		DurationMS:      execRes.DurationMS,
-		Redactions:      hits,
-		TimedOut:        execRes.TimedOut,
-		Reason:          reasonForStatus(status, execRes),
-		StdoutSHA256:    hashOutput(redactedStdout),
-		StderrSHA256:    hashOutput(redactedStderr),
-		StdoutBytes:     len(redactedStdout),
-		StderrBytes:     len(redactedStderr),
-		TruncatedOut:    execRes.Truncated.Stdout,
-		TruncatedErr:    execRes.Truncated.Stderr,
-		ExecutedCommand: executedCommand,
+		Status:           status,
+		EventID:          journaled.EventID,
+		LocalAuditFailed: journaled.EventID == "",
+		ActionID:         act.ID,
+		ExitCode:         execRes.ExitCode,
+		Stdout:           redactedStdout,
+		Stderr:           redactedStderr,
+		Output:           parsed,
+		ParserError:      parserError,
+		DurationMS:       execRes.DurationMS,
+		Redactions:       hits,
+		TimedOut:         execRes.TimedOut,
+		Reason:           reasonForStatus(status, execRes),
+		StdoutSHA256:     hashOutput(redactedStdout),
+		StderrSHA256:     hashOutput(redactedStderr),
+		StdoutBytes:      len(redactedStdout),
+		StderrBytes:      len(redactedStderr),
+		TruncatedOut:     execRes.Truncated.Stdout,
+		TruncatedErr:     execRes.Truncated.Stderr,
+		ExecutedCommand:  executedCommand,
 	}, nil
 }
 
@@ -566,10 +578,11 @@ func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec
 	ev.Error = err.Error()
 	journaled := e.journal(ctx, ev)
 	return &Result{
-		Status:   StatusError,
-		EventID:  journaled.EventID,
-		ActionID: act.ID,
-		Reason:   err.Error(),
+		Status:           StatusError,
+		EventID:          journaled.EventID,
+		LocalAuditFailed: journaled.EventID == "",
+		ActionID:         act.ID,
+		Reason:           err.Error(),
 	}, nil
 }
 

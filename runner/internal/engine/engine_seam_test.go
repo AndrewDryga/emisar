@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,21 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 )
+
+type failAfterAuditSink struct {
+	successes int
+	attempts  int
+}
+
+func (s *failAfterAuditSink) Write(context.Context, audit.Event) error {
+	s.attempts++
+	if s.attempts > s.successes {
+		return errors.New("forced audit failure")
+	}
+	return nil
+}
+
+func (*failAfterAuditSink) Close() error { return nil }
 
 // readJournalEvents reads every event line from the engine's JSONL log at
 // <root>/events.jsonl, where setupEngine writes it.
@@ -203,8 +219,56 @@ output:
 	if res.EventID != "" {
 		t.Fatalf("failed audit write claimed durable event id %q", res.EventID)
 	}
+	if !res.LocalAuditFailed {
+		t.Fatal("failed audit write was not reported")
+	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("action crossed process boundary despite failed start journal: %v", err)
+	}
+}
+
+func TestEngine_TerminalAuditFailurePreservesOutcomeWithoutEventID(t *testing.T) {
+	e, journal, _ := setupEngine(t)
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sink := &failAfterAuditSink{successes: 1}
+	e.Journal = audit.New(audit.Defaults{}, sink)
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "hello"},
+		Reason:   "prove honest terminal audit failure",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s, want success: %+v", res.Status, res)
+	}
+	if res.EventID != "" {
+		t.Fatalf("failed terminal audit write claimed event id %q", res.EventID)
+	}
+	if !res.LocalAuditFailed {
+		t.Fatal("failed terminal audit write was not reported")
+	}
+	if sink.attempts != 2 {
+		t.Fatalf("audit attempts=%d, want start plus terminal", sink.attempts)
+	}
+}
+
+func TestEngine_PreExecutionAuditFailureReturnsNoEventID(t *testing.T) {
+	e, journal, _ := setupEngine(t)
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	e.Journal = audit.New(audit.Defaults{}, &failAfterAuditSink{})
+
+	if eventID := e.RecordDispatchRefusal(context.Background(), Request{
+		ActionID: "t.echo",
+		Reason:   "prove honest refusal audit failure",
+	}, "signature required"); eventID != "" {
+		t.Fatalf("failed refusal audit write claimed event id %q", eventID)
 	}
 }
 

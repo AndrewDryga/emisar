@@ -127,6 +127,7 @@ defmodule Emisar.Runs.ActionRun do
     field :stdout_truncated, :boolean, default: false
     field :stderr_truncated, :boolean, default: false
     field :event_id, :string
+    field :local_audit_failed, :boolean, default: false
     field :reason_text, :string
     field :error_message, :string
     # The exact shell command the runner executed, with sensitive arg

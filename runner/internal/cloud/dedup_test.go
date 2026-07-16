@@ -150,6 +150,22 @@ func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestDedupRing_LocalAuditFailureSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dedup.jsonl")
+	digest := testDispatchDigest("audit-failed")
+	d1 := newDedupRing(4, path, nil)
+	reserveAndComplete(t, d1, "req-audit-failed", digest, ActionResultMsg{
+		LocalAuditFailed: true,
+		Status:           "success",
+	})
+
+	d2 := newDedupRing(4, path, nil)
+	decision, result, err := d2.reserve("req-audit-failed", digest)
+	if err != nil || decision != reservationReplay || result.EventID != "" || !result.LocalAuditFailed {
+		t.Fatalf("audit failure did not survive restart: decision=%v result=%+v err=%v", decision, result, err)
+	}
+}
+
 func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 	digest := testDispatchDigest("req")
 	result := `{"type":"action_result","protocol_version":1,"request_id":"req","status":"success","exit_code":0,"duration_ms":0,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,"event_id":"evt"}`
@@ -187,10 +203,12 @@ func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 func TestDedupRing_CompleteRejectsMalformedResultBeforePersistence(t *testing.T) {
 	valid := testActionResult("req", ActionResultMsg{EventID: "evt"})
 	tests := map[string]func(*ActionResultMsg){
-		"wrong type":     func(result *ActionResultMsg) { result.Type = MsgError },
-		"wrong protocol": func(result *ActionResultMsg) { result.ProtocolVersion++ },
-		"wrong request":  func(result *ActionResultMsg) { result.RequestID = "other" },
-		"unknown status": func(result *ActionResultMsg) { result.Status = "other" },
+		"wrong type":              func(result *ActionResultMsg) { result.Type = MsgError },
+		"wrong protocol":          func(result *ActionResultMsg) { result.ProtocolVersion++ },
+		"wrong request":           func(result *ActionResultMsg) { result.RequestID = "other" },
+		"unknown status":          func(result *ActionResultMsg) { result.Status = "other" },
+		"missing audit outcome":   func(result *ActionResultMsg) { result.EventID = "" },
+		"conflicting audit state": func(result *ActionResultMsg) { result.LocalAuditFailed = true },
 	}
 
 	for name, mutate := range tests {

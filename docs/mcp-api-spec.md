@@ -1115,6 +1115,11 @@ continuation lives inside that object and is not duplicated at the tool-result
 level. Lightweight runs nested in a runbook step omit continuations; callers
 wait on the execution or use the individual run ID.
 
+A terminal summary includes `local_audit_failed: true` only when the runner
+could not persist its terminal or refusal event locally. This warning does not
+rewrite the action status: a successful action remains successful, avoiding an
+unsafe retry after side effects may already have occurred.
+
 The bridge HTTP deadline is 90 seconds, above the portal's 60-second maximum
 wait. It reads subsequent stdio frames concurrently and uses one serialized
 stdout writer, so a wait cannot block ping, cancellation, or unrelated calls

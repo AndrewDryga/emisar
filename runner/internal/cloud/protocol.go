@@ -568,7 +568,8 @@ type ActionResultMsg struct {
 	Redactions            []RedactionSummary `json:"redactions,omitempty"`
 	Reason                string             `json:"reason,omitempty"`
 	Error                 string             `json:"error,omitempty"`
-	EventID               string             `json:"event_id"`
+	EventID               string             `json:"event_id,omitempty"`
+	LocalAuditFailed      bool               `json:"local_audit_failed,omitempty"`
 	// ExecutedCommand is the bounded command the runner ran, shell-quoted,
 	// with sensitive arg values masked runner-side. The local audit keeps the
 	// full masked command when this wire representation is truncated.

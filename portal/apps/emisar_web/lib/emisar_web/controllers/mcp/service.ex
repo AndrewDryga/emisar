@@ -140,6 +140,7 @@ defmodule EmisarWeb.MCP.Service do
       emitted_stdout_sha256: run.emitted_stdout_sha256,
       emitted_stderr_sha256: run.emitted_stderr_sha256,
       output_complete: terminal_output_complete(run),
+      local_audit_failed: if(run.local_audit_failed, do: true),
       truncated_stdout:
         output_truncated?(
           details.stdout,

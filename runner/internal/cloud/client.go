@@ -480,15 +480,14 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 	}
 	if preCanceled {
 		c.mu.Unlock()
-		result := ActionResultMsg{
+		result := withLocalAudit(ActionResultMsg{
 			Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 			Status:   "cancelled",
 			ExitCode: -1,
 			Reason:   "cancelled_before_start",
-			EventID: c.opts.Engine.RecordDispatchCancellation(
-				context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "cancelled before process start",
-			),
-		}
+		}, c.opts.Engine.RecordDispatchCancellation(
+			context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "cancelled before process start",
+		))
 		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
 			if !c.dispatchReservationFailed(parent, m, err) {
 				return errResponseBacklogFull
@@ -560,10 +559,9 @@ func (c *Client) dispatchReservationFailed(ctx context.Context, m RunActionMsg, 
 
 func (c *Client) refusedDispatchResult(ctx context.Context, m RunActionMsg, reason, detail string) ActionResultMsg {
 	result := failedDispatchResult(m.RequestID, reason, detail)
-	result.EventID = c.opts.Engine.RecordDispatchRefusal(
+	return withLocalAudit(result, c.opts.Engine.RecordDispatchRefusal(
 		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
-	)
-	return result
+	))
 }
 
 func failedDispatchResult(requestID, reason, detail string) ActionResultMsg {
@@ -571,6 +569,12 @@ func failedDispatchResult(requestID, reason, detail string) ActionResultMsg {
 		Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 		Status:   "failed", ExitCode: -1, Reason: reason, Error: detail,
 	}
+}
+
+func withLocalAudit(result ActionResultMsg, eventID string) ActionResultMsg {
+	result.EventID = eventID
+	result.LocalAuditFailed = eventID == ""
+	return result
 }
 
 // enqueueTransient creates a finished runState containing exactly one
@@ -643,9 +647,9 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 					"engine_panic",
 					"the runner hit an internal error handling this action",
 				)
-				result.EventID = c.opts.Engine.RecordExecutionFailure(
+				result = withLocalAudit(result, c.opts.Engine.RecordExecutionFailure(
 					context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "runner recovered an internal dispatch panic",
-				)
+				))
 				c.finishRun(s, m, result)
 			}
 		}
@@ -696,9 +700,9 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			"error", err.Error(),
 		)
 		result := failedDispatchResult(m.RequestID, "engine_error", err.Error())
-		result.EventID = c.opts.Engine.RecordExecutionFailure(
+		result = withLocalAudit(result, c.opts.Engine.RecordExecutionFailure(
 			context.WithoutCancel(ctx), req, "engine returned an internal error: "+err.Error(),
-		)
+		))
 		c.finishRun(s, m, result)
 	} else {
 		// One log line per completed run. Non-success statuses get Warn
@@ -734,6 +738,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			Redactions:               toProtocolRedactions(res.Redactions),
 			Reason:                   res.Reason,
 			EventID:                  res.EventID,
+			LocalAuditFailed:         res.LocalAuditFailed,
 			ExecutedCommand:          executedCommand,
 			ExecutedCommandTruncated: executedCommandTruncated,
 		}
@@ -793,17 +798,16 @@ func (c *Client) refuseSignature(ctx context.Context, s *runState, m RunActionMs
 		"action_id", m.ActionID,
 		"code", dec.Code,
 	)
-	result := ActionResultMsg{
+	result := withLocalAudit(ActionResultMsg{
 		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 		Status:     "signature_invalid",
 		ExitCode:   -1,
 		DurationMS: 0,
 		Error:      "refused: " + dec.Detail,
 		Reason:     dec.Code,
-		EventID: c.opts.Engine.RecordDispatchRefusal(
-			context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "signature refused: "+dec.Code,
-		),
-	}
+	}, c.opts.Engine.RecordDispatchRefusal(
+		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "signature refused: "+dec.Code,
+	))
 	c.finishRun(s, m, result)
 	return false
 }
@@ -885,17 +889,16 @@ func (c *Client) emitPackMismatch(ctx context.Context, s *runState, m RunActionM
 		"pack %q does not match the dispatch trust contract (expected %s, got %s); refused — operator must review the drift in /app/packs",
 		packID, expected, got,
 	)
-	result := ActionResultMsg{
+	result := withLocalAudit(ActionResultMsg{
 		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
 		Status:     "pack_hash_mismatch",
 		ExitCode:   -1,
 		DurationMS: 0,
 		Error:      detail,
 		Reason:     "pack_hash_mismatch",
-		EventID: c.opts.Engine.RecordDispatchRefusal(
-			context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
-		),
-	}
+	}, c.opts.Engine.RecordDispatchRefusal(
+		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
+	))
 	c.finishRun(s, m, result)
 }
 

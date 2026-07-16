@@ -495,6 +495,34 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert elapsed < 1_500
   end
 
+  test "run summaries expose local audit failure only when it occurred", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "audit-summary")
+    failed_audit_run = create_mcp_history_run!(account, runner, key, 1)
+    healthy_audit_run = create_mcp_history_run!(account, runner, key, 2)
+
+    assert {:ok, _finished} =
+             Runs.mark_finished(failed_audit_run, %{
+               "status" => "success",
+               "local_audit_failed" => true
+             })
+
+    assert {:ok, _finished} = Runs.mark_finished(healthy_audit_run, %{"status" => "success"})
+
+    failed_summary =
+      call(conn, "wait_for_run", %{"run_id" => failed_audit_run.id, "timeout" => "0"})
+
+    healthy_summary =
+      call(conn, "wait_for_run", %{"run_id" => healthy_audit_run.id, "timeout" => "0"})
+
+    assert failed_summary["run"]["local_audit_failed"]
+    refute Map.has_key?(healthy_summary["run"], "local_audit_failed")
+  end
+
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
     result =
       call(conn, "wait_for_run", %{

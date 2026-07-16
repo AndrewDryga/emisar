@@ -1948,6 +1948,7 @@ defmodule Emisar.Runs do
       stdout_truncated: payload["truncated_stdout"] || false,
       stderr_truncated: payload["truncated_stderr"] || false,
       event_id: payload["event_id"],
+      local_audit_failed: payload["local_audit_failed"] || false,
       # Exact shell command the runner ran, already redacted runner-side.
       executed_command: payload["executed_command"],
       executed_command_truncated: payload["executed_command_truncated"] || false,

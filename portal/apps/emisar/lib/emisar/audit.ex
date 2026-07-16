@@ -222,6 +222,7 @@ defmodule Emisar.Audit do
               duration_ms: run.duration_ms,
               executed_command: run.executed_command,
               executed_command_truncated: run.executed_command_truncated,
+              local_audit_failed: if(run.local_audit_failed, do: true),
               reason: run.reason_text,
               # Self-reported MCP client metadata snapshotted at dispatch, so a
               # terminal event logged long after (from the runner socket) still
