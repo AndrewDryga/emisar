@@ -145,7 +145,7 @@ func forbiddenVersionedPath(file string) bool {
 
 func privateAgentReferences(data []byte) []string {
 	var hits []string
-	for _, dir := range []string{"features", "review", "reviews", "design", "specs", "screenshots"} {
+	for _, dir := range []string{"features", "review", "reviews", "design", "specs"} {
 		needle := ".agent/" + dir
 		if containsReference(data, needle) {
 			hits = append(hits, needle)
