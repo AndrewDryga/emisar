@@ -76,6 +76,7 @@ defmodule EmisarWeb.Router do
     plug :accepts, ["html"]
     plug :put_root_layout, html: {EmisarWeb.Layouts, :root}
     plug :put_secure_browser_headers
+    plug EmisarWeb.Plugs.ContentSecurityPolicy
     plug :put_noindex
   end
 

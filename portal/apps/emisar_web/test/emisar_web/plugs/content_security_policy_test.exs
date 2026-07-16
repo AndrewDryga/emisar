@@ -1,5 +1,8 @@
 defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.{Crypto, Fixtures}
+
+  @error_content_security_policy "default-src 'self'; object-src 'none'; frame-ancestors 'none'"
 
   describe "Content-Security-Policy header" do
     test "is set on every HTML response served through the :browser pipeline", %{conn: conn} do
@@ -8,6 +11,17 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
 
       assert csp =~ "default-src 'self'"
       assert csp =~ "script-src 'self'"
+      assert csp =~ "frame-ancestors 'none'"
+      assert csp =~ "object-src 'none'"
+    end
+
+    test "is set on the unauthenticated unsubscribe pipeline", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+      conn = get(conn, ~p"/unsubscribe/monthly-report/#{token}")
+      [csp] = get_resp_header(conn, "content-security-policy")
+
+      assert csp =~ "default-src 'self'"
       assert csp =~ "frame-ancestors 'none'"
       assert csp =~ "object-src 'none'"
     end
@@ -127,6 +141,28 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
         [csp] = get_resp_header(response, "content-security-policy")
         assert csp =~ "frame-ancestors 'none'"
       end
+    end
+  end
+
+  describe "endpoint error responses" do
+    test "a 404 rendered outside a router pipeline gets a static CSP", %{conn: conn} do
+      conn = get(conn, "/no-such-route")
+
+      assert get_resp_header(conn, "content-security-policy") == [
+               @error_content_security_policy
+             ]
+    end
+
+    test "a 500 response gets the same static CSP", %{conn: conn} do
+      conn =
+        conn
+        |> Plug.Conn.resp(500, "internal error")
+        |> EmisarWeb.Plugs.ErrorContentSecurityPolicy.call([])
+        |> Plug.Conn.send_resp()
+
+      assert get_resp_header(conn, "content-security-policy") == [
+               @error_content_security_policy
+             ]
     end
   end
 end

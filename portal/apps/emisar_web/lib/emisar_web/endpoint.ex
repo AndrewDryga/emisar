@@ -1,6 +1,10 @@
 defmodule EmisarWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :emisar_web
 
+  # Endpoint-rendered errors bypass router pipelines, so register this before
+  # any request plug that could fail before the router runs.
+  plug EmisarWeb.Plugs.ErrorContentSecurityPolicy
+
   # Session cookie. Signed AND encrypted so the session token inside is
   # opaque to client-side JS and to anyone who only has the cookie
   # blob. The request-time session plug adds the `secure` flag from the
