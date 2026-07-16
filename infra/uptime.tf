@@ -94,6 +94,23 @@ resource "betteruptime_policy" "incident" {
   repeat_delay = 5 * 60
 }
 
+# ── GCP internal alarms → this same escalation (paid tier) ───────────────────
+# The severe, silent-failure GCP alerts (monitoring.tf) can deliver here so they
+# page the on-call exactly like the external monitors: a Cloud SQL transaction
+# wraparound climbing toward the write freeze, or NAT egress quietly failing,
+# should wake someone, not wait in an inbox. GCP posts to webhook_url;
+# recovery_period lets Better Stack resolve the incident once the alarm clears.
+# Gated off by default: Better Stack's Google Monitoring integration is a paid
+# feature (the free tier 403s on creation), so it stays absent until the account
+# is upgraded and var.betterstack_gcp_paging flips on.
+resource "betteruptime_google_monitoring_integration" "internal" {
+  count = var.betterstack_gcp_paging ? 1 : 0
+
+  name            = "Emisar: GCP Internal Alarms"
+  policy_id       = betteruptime_policy.incident.id
+  recovery_period = 300
+}
+
 # ── Monitors ──────────────────────────────────────────────────────────────────
 resource "betteruptime_monitor_group" "production" {
   name       = "Emisar Production"

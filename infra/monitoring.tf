@@ -1,6 +1,9 @@
 # ── Monitoring & alerting (SOC 2 CC7: detect availability + integrity issues) ─
-# A single email notification channel + a few high-signal alert policies. Add
-# more channels (PagerDuty, Slack) by extending var.alert_email into a list later.
+# Every alert emails the on-call address and, when configured, posts to a Slack
+# channel for at-a-glance visibility. The severe, silent-failure subset ALSO
+# pages the Better Stack on-call rotation via the Google Monitoring integration
+# (uptime.tf): those signals have no external symptom until they are already a
+# customer-visible outage, so an inbox is not enough.
 resource "google_monitoring_notification_channel" "email" {
   display_name = "Emisar: On-Call Email"
   type         = "email"
@@ -10,11 +13,42 @@ resource "google_monitoring_notification_channel" "email" {
   depends_on = [google_project_service.apis]
 }
 
-# Better Stack's Google Monitoring webhook requires a paid integration. Keep
-# native GCP alerts on the included email path; Better Stack still owns and
-# pages for its external portal and registry monitors in uptime.tf.
+# The webhook the Better Stack Google Monitoring integration (uptime.tf)
+# generates. Its URL embeds a secret token and is a computed attribute, so it
+# never lands in committed config. Gated with the integration on the paid tier
+# (var.betterstack_gcp_paging); GCP does not verify webhook reachability at apply
+# time — a bad token surfaces on a test notification, not the plan.
+resource "google_monitoring_notification_channel" "betterstack" {
+  count = var.betterstack_gcp_paging ? 1 : 0
+
+  display_name = "Emisar: Better Stack On-Call"
+  type         = "webhook_tokenauth"
+  labels = {
+    url = betteruptime_google_monitoring_integration.internal[0].webhook_url
+  }
+  depends_on = [google_project_service.apis]
+}
+
 locals {
-  alert_notification_channels = [google_monitoring_notification_channel.email.id]
+  # A Slack channel is created in the console (a GCP Slack channel holds an OAuth
+  # token Terraform can't round-trip) and referenced by ID; empty => email only.
+  slack_alert_channels = var.slack_alert_channel_id == "" ? [] : [var.slack_alert_channel_id]
+
+  # Every alert: email + optional Slack.
+  alert_notification_channels = concat(
+    [google_monitoring_notification_channel.email.id],
+    local.slack_alert_channels,
+  )
+
+  # The severe, silent-failure subset (Cloud SQL down / near-full / txid-
+  # wraparound, zero healthy backends, MIG below target, NAT allocation failure)
+  # also pages Better Stack — but only when the paid integration is enabled. The
+  # splat is [] while var.betterstack_gcp_paging is off, so these fall back to
+  # email + Slack and the config applies cleanly on the free tier.
+  paging_notification_channels = concat(
+    local.alert_notification_channels,
+    google_monitoring_notification_channel.betterstack[*].id,
+  )
 }
 
 # External readiness check proves the site and its database are serving.
@@ -172,7 +206,7 @@ resource "google_monitoring_alert_policy" "db_disk" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "db_memory" {
@@ -224,7 +258,7 @@ resource "google_monitoring_alert_policy" "db_down" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 # `google-monitoring-enabled` enables COS Node Problem Detector, whose guest
@@ -346,7 +380,7 @@ resource "google_monitoring_alert_policy" "db_txid" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 # Users seeing errors while the readiness check still passes — a sustained 5xx
@@ -410,7 +444,7 @@ resource "google_monitoring_alert_policy" "lb_no_healthy_backends" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 # The managed certs auto-renew, so a shrinking expiry window means renewal is
@@ -461,7 +495,7 @@ resource "google_monitoring_alert_policy" "mig_below_target" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 # NAT port exhaustion silently breaks all egress (GHCR pulls on boot, Postmark,
@@ -485,7 +519,7 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
     }
   }
 
-  notification_channels = local.alert_notification_channels
+  notification_channels = local.paging_notification_channels
 }
 
 resource "google_logging_metric" "recurrent_job_failures" {
