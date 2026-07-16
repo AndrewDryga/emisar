@@ -374,13 +374,56 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
-      # The reported client shows even though the key is named generically —
+      # The reported client shows because it ADDS to the generic key name —
       # it's the actual client. The human "title" is preferred over the
-      # machine "name", with the version appended.
+      # machine "name". The client's own version is detail material, not row meta.
       assert html =~ "Claude Code"
-      # The client VERSION is detail material, not row meta.
       refute html =~ "Claude Code 1.2.3"
       refute html =~ "claude-code 1.2.3"
+    end
+
+    test "the client seg is dropped when it just echoes the key name", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # A quick-mint names the key after the client it connects; the client that
+      # then reports in ("claude-code") only echoes the title, so the seg is
+      # suppressed — the name already says which client this is.
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Claude Code"}, subject)
+      {:ok, _} = ApiKeys.record_client_info(key, %{"name" => "claude-code"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "Claude Code"
+      refute html =~ "claude-code"
+    end
+
+    test "the emisar-mcp bridge version shows inline in the agent's title", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
+
+      # A supported bridge earns no staleness chip, but its version is still
+      # shown inline so bridges compare across agents (the runners v{version}
+      # grammar).
+      {:ok, _} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "1.0.0"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "v1.0.0"
+      refute html =~ "outdated"
+      refute html =~ "unsupported"
+    end
+
+    test "keys are grouped under the issuing human, off the per-row meta", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "Bot"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      # The owner heads their cluster once (an <h2> group header), instead of
+      # "owner Test User" repeated down every row.
+      assert has_element?(lv, "h2", user.full_name)
     end
 
     test "status badge derives from last_used_at", %{conn: conn} do

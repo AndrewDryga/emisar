@@ -340,8 +340,9 @@ defmodule EmisarWeb.AgentsLive do
   defp owner_label(%{created_by: %{} = user}), do: user.full_name || user.email
   defp owner_label(_), do: "Auto-minted"
 
-  # Rows sorted by owner so one person's keys cluster together (the row meta
-  # names the owner; within a cluster the context's recent-first order holds).
+  # Pre-sort by owner so each `group_by={&owner_label/1}` cluster is one
+  # contiguous run under a single header; within a cluster the context's
+  # recent-first order holds.
   defp sort_by_owner(keys), do: Enum.sort_by(keys, &owner_label/1)
 
   defp count_status(keys, status),
@@ -395,10 +396,11 @@ defmodule EmisarWeb.AgentsLive do
 
   defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-500"
 
-  # Rotation lineage. The swap is PENDING while the replaced key is still
-  # usable — this key's first authenticated use retires it. Successors inherit
-  # the name, so the replaced key is named by its distinguishing prefix; the
-  # id-slice fallback covers a hard-deleted (quick-ring-evicted) ancestor.
+  # Rotation lineage. The swap is PENDING while the replaced key is still usable
+  # — this key's first authenticated use retires it. The lineage seg renders only
+  # while pending, so the replaced row is always the preloaded, still-usable
+  # ancestor; successors inherit the name, so it's named by its distinguishing
+  # prefix.
   defp swap_pending?(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
     do: ApiKeys.ApiKey.usable?(replaced)
 
@@ -406,9 +408,6 @@ defmodule EmisarWeb.AgentsLive do
 
   defp replaced_key_label(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
     do: replaced.key_prefix <> "…"
-
-  defp replaced_key_label(%ApiKeys.ApiKey{replaces_id: id}) when is_binary(id),
-    do: String.slice(id, 0, 8) <> "…"
 
   # -- Status derivation ----------------------------------------------
 
@@ -425,16 +424,30 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  # The MCP client a key reported at `initialize` (clientInfo): prefer the
-  # human-readable "title" over the machine "name", with "version" appended
-  # when present. nil until a client has connected.
-  # Name only — the client VERSION is detail material, not row meta.
+  # The MCP client a key reported at `initialize` (clientInfo): the human-readable
+  # "title", else the machine "name". Name only — the client's own version is
+  # detail material, not row meta. nil until a client has connected.
   defp reported_client(%ApiKeys.ApiKey{last_client_info: %{} = info}) do
     label = info["title"] || info["name"]
     if is_binary(label) and label != "", do: label
   end
 
   defp reported_client(_), do: nil
+
+  # The connecting client only earns a meta seg when it ADDS to the row. A
+  # quick-mint names the key after the client it was minted for ("Claude Code"),
+  # so the client that then connects ("claude-code") just echoes the title and is
+  # dropped; a custom-named key ("prod-mcp") keeps it — the client is new info.
+  defp distinct_client(%ApiKeys.ApiKey{name: name} = key) do
+    case reported_client(key) do
+      nil -> nil
+      client -> if normalize_client(client) == normalize_client(name), do: nil, else: client
+    end
+  end
+
+  # Fold case + separators so "Claude Code" and "claude-code" compare equal.
+  defp normalize_client(value),
+    do: value |> String.downcase() |> String.replace(~r/[^a-z0-9]/, "")
 
   # The emisar-mcp bridge version this key last connected with (captured from
   # the UA at `initialize`), for the stale-version chip. nil for a remote
@@ -906,11 +919,29 @@ defmodule EmisarWeb.AgentsLive do
             filter_params={@filter_params}
             filters={@filters}
             wrapper_class="divide-y divide-zinc-800/70"
+            group_by={&owner_label/1}
           >
+            <%!-- The issuing human heads their run of keys ONCE (the runners
+                 group-by-group grammar), so the per-row meta stops repeating
+                 "owner Andrew Dryga" down the whole list. Rows are pre-sorted by
+                 owner so each header opens one contiguous cluster. --%>
+            <:group_header :let={owner}>
+              <.list_group_header label={owner} />
+            </:group_header>
             <:item :let={key}>
               <.list_row padding="py-4">
                 <:title>
                   <span class="truncate font-medium text-zinc-100">{key.name}</span>
+                  <%!-- The emisar-mcp bridge version this key last connected through —
+                     mono + muted in the identity line so bridges are comparable at a
+                     glance across agents, the same v{version} grammar the runners list
+                     uses. A remote connector reports no bridge → nothing here. --%>
+                  <span
+                    :if={mcp_bridge_version(key)}
+                    class="font-mono text-[11px] text-zinc-500"
+                  >
+                    v{mcp_bridge_version(key)}
+                  </span>
                   <.client_status_pill key={key} />
                   <.version_chip
                     kind={:mcp}
@@ -919,37 +950,29 @@ defmodule EmisarWeb.AgentsLive do
                   />
                 </:title>
                 <:meta>
-                  <%!-- Identity + liveness only. The OWNER leads — whose
-                     credential this is, the fact an operator audits by (the
-                     scopes are a fixed MCP shape nobody manages here, so they
-                     earned no chips). No key prefix: truncated it rendered the
-                     SAME shared literal on every row. --%>
+                  <%!-- Liveness + lifecycle only. The owner heads the group above,
+                     so it's off the row; the scopes are a fixed MCP shape nobody
+                     manages here, so they earn no chips. No key prefix: truncated
+                     it rendered the SAME shared literal on every row. --%>
                   <.meta_line class="text-[11px]">
-                    <:seg>
-                      owner <span class="text-zinc-300">{owner_label(key)}</span>
+                    <%!-- The client only earns a seg when it ADDS to the name —
+                       a quick-mint names the key after its client, so the seg
+                       would just echo the title; a custom-named key keeps it. --%>
+                    <:seg :if={distinct_client(key)}>
+                      client <span class="text-zinc-300">{distinct_client(key)}</span>
                     </:seg>
-                    <:seg :if={reported_client(key)}>
-                      client <span class="text-zinc-300">{reported_client(key)}</span>
-                    </:seg>
-                    <%!-- Rotation lineage — the successor names the key it
-                       replaces by prefix (successors inherit the NAME, so the
-                       prefix is the distinguisher). Amber while the old key is
-                       still live: the swap isn't proven until this key's first
-                       use auto-revokes it. --%>
-                    <:seg :if={key.replaces_id}>
+                    <%!-- Rotation lineage shows ONLY while the swap is unproven:
+                       the replaced key keeps working until this one's first use
+                       auto-revokes it, so "swap pending" is the actionable state.
+                       Once settled the lineage is forensic — the audit trail keeps
+                       it — not a per-row fact on every rotated key forever. --%>
+                    <:seg :if={swap_pending?(key)}>
                       <span
-                        :if={swap_pending?(key)}
                         class="text-amber-300/90"
                         title="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
                       >
                         replaces <span class="font-mono">{replaced_key_label(key)}</span>
                         · swap pending
-                      </span>
-                      <span
-                        :if={not swap_pending?(key)}
-                        title="Minted by rotation — the key it replaced has been revoked"
-                      >
-                        replaced <span class="font-mono">{replaced_key_label(key)}</span>
                       </span>
                     </:seg>
                     <:seg>

@@ -758,11 +758,199 @@ agent_key =
   end
   |> Ecto.Changeset.change(
     last_used_at: mins_ago.(9),
-    last_client_info: %{"name" => "Claude Code", "version" => "1.0.0"}
+    # What Claude Code actually reports at `initialize` (clientInfo) plus the
+    # emisar-mcp bridge version the portal reads off the UA — not a hand-faked
+    # label. name is the machine id, title the human one, version the client's
+    # own release, bridge_version the stdio bridge's.
+    last_client_info: %{
+      "name" => "claude-code",
+      "title" => "Claude Code",
+      "version" => "2.1.4",
+      "bridge_version" => "0.3.4"
+    }
   )
   |> Repo.update!()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.reset())
+
+# -- A realistic agent fleet ----------------------------------------
+#
+# More MCP keys so the agents page shows the spread operators really see:
+# different clients (each reports its own clientInfo at `initialize`),
+# different owners (the list groups by the issuing human), a range of
+# liveness states, a stale bridge that earns the upgrade prompt, and a
+# rotation still mid-swap. Built directly (§7 seed style) and idempotent by
+# (name, owner) so re-seeding converges the state instead of duplicating.
+#
+# Bridge-version policy in dev (config/config.exs): supported at >= 0.3.0,
+# below that unsupported. `current` reads clean; `stale` earns the
+# "unsupported" chip on its row and the fleet-wide upgrade notice.
+mcp_bridge_current = "0.3.4"
+mcp_bridge_stale = "0.2.7"
+
+jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
+days_out = &DateTime.add(now.(), &1 * 86_400, :second)
+
+# Build (or converge) one agent key directly under a given member. Idempotent
+# by (name, owner): a re-seed updates the liveness/client state rather than
+# minting a duplicate. `client_info` mirrors what that client's `initialize`
+# records; `used_at`/`expires_at` set the row's liveness the way real calls do.
+seed_agent_key = fn owner_user, owner_membership_id, name, client_info, used_at, expires_at ->
+  existing =
+    case ApiKeys.list_api_keys_for_account(owner_subject, page: [limit: 200]) do
+      {:ok, keys, _} ->
+        Enum.find(keys, &(&1.name == name and &1.created_by_id == owner_user.id))
+
+      _ ->
+        nil
+    end
+
+  key =
+    existing ||
+      (
+        {_raw, prefix, hash} = Emisar.Crypto.mint("emk-", 12)
+
+        {:ok, minted} =
+          ApiKeys.ApiKey.Changeset.create(
+            account.id,
+            owner_user.id,
+            owner_membership_id,
+            prefix,
+            hash,
+            %{name: name}
+          )
+          |> Repo.insert()
+
+        minted
+      )
+
+  key
+  |> Ecto.Changeset.change(
+    last_used_at: used_at,
+    last_client_info: client_info,
+    expires_at: expires_at,
+    revoked_at: nil
+  )
+  |> Repo.update!()
+end
+
+# {owner, membership_id, key name, client_info, last_used_at, expires_at}
+[
+  # A pure quick-mint: named after its client, so the list DROPS the redundant
+  # "client Claude Code" seg — the name already says which client it is.
+  {user, owner_membership.id, "Claude Code",
+   %{
+     "name" => "claude-code",
+     "title" => "Claude Code",
+     "version" => "2.1.4",
+     "bridge_version" => mcp_bridge_current
+   }, mins_ago.(3), days_out.(30)},
+  # Remote OAuth (ChatGPT): it initialized — so it reports a client — but no
+  # tracked call has landed yet → "never used". No bridge (remote), and OAuth
+  # owns its lifecycle so there is no static expiry.
+  {user, owner_membership.id, "ChatGPT", %{"name" => "openai-mcp (ChatGPT)"}, nil, nil},
+  # A second owner's key, so the list gains a second owner group. Codex reports
+  # a short "Codex" title that differs from the key name → the client seg stays.
+  {jordan, jordan_membership.id, "Codex CLI",
+   %{"name" => "Codex", "version" => "0.9.2", "bridge_version" => mcp_bridge_current},
+   mins_ago.(6), days_out.(30)},
+  # A stale bridge → the rose "unsupported" chip on the row AND the page-level
+  # "MCP bridge update" notice with the install command.
+  {jordan, jordan_membership.id, "Gemini CLI",
+   %{"name" => "gemini-cli-mcp-client", "bridge_version" => mcp_bridge_stale}, hours_ago.(1),
+   days_out.(29)},
+  # Drift: a key named for one client but actually driven by another (Claude
+  # Code), gone quiet for weeks → dormant. Here the client seg earns its place —
+  # the name alone would mislead.
+  {jordan, jordan_membership.id, "Claude Desktop",
+   %{"name" => "claude-code", "title" => "Claude Code", "bridge_version" => mcp_bridge_current},
+   days_ago.(17), days_out.(13)}
+]
+|> Enum.each(fn {owner_user, membership_id, name, client_info, used_at, expires_at} ->
+  seed_agent_key.(owner_user, membership_id, name, client_info, used_at, expires_at)
+end)
+
+# A rotation still mid-swap: the operator rotated "Cursor", so a successor
+# exists, but its first call hasn't landed — the predecessor keeps working until
+# it does. The list shows the successor's amber "replaces … · swap pending".
+cursor_keys =
+  case ApiKeys.list_api_keys_for_account(owner_subject, page: [limit: 200]) do
+    {:ok, keys, _} -> Enum.filter(keys, &(&1.name == "Cursor" and &1.created_by_id == user.id))
+    _ -> []
+  end
+
+cursor_client = %{"name" => "cursor", "bridge_version" => mcp_bridge_current}
+
+cursor_predecessor =
+  Enum.find(cursor_keys, &is_nil(&1.replaces_id)) ||
+    (
+      {_raw, prefix, hash} = Emisar.Crypto.mint("emk-", 12)
+
+      {:ok, minted} =
+        ApiKeys.ApiKey.Changeset.create(
+          account.id,
+          user.id,
+          owner_membership.id,
+          prefix,
+          hash,
+          %{name: "Cursor"}
+        )
+        |> Repo.insert()
+
+      minted
+    )
+
+cursor_predecessor =
+  cursor_predecessor
+  |> Ecto.Changeset.change(
+    last_used_at: days_ago.(2),
+    last_client_info: cursor_client,
+    expires_at: days_out.(20),
+    revoked_at: nil
+  )
+  |> Repo.update!()
+
+cursor_successor =
+  Enum.find(cursor_keys, &(not is_nil(&1.replaces_id))) ||
+    (
+      {_raw, prefix, hash} = Emisar.Crypto.mint("emk-", 12)
+
+      {:ok, minted} =
+        ApiKeys.ApiKey.Changeset.create(
+          account.id,
+          user.id,
+          owner_membership.id,
+          prefix,
+          hash,
+          %{name: "Cursor"},
+          replaces_id: cursor_predecessor.id,
+          credential_lineage_id: cursor_predecessor.credential_lineage_id
+        )
+        |> Repo.insert()
+
+      minted
+    )
+
+# Successor never used yet (nil last_used_at) → the swap stays pending; the
+# predecessor points at it so the pair reads as one in-flight rotation.
+cursor_successor
+|> Ecto.Changeset.change(
+  last_used_at: nil,
+  last_client_info: cursor_client,
+  expires_at: days_out.(30),
+  revoked_at: nil
+)
+|> Repo.update!()
+
+cursor_predecessor
+|> Ecto.Changeset.change(rotated_to_id: cursor_successor.id)
+|> Repo.update!()
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Seeded the agent fleet (multiple clients + owners, a stale bridge, a mid-swap rotation)" <>
+    IO.ANSI.reset()
+)
 
 # -- Audit-export key ------------------------------------------------
 #
