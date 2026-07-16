@@ -14,12 +14,11 @@
 
       <ul class="mt-4 list-disc space-y-2 pl-6 text-sm text-zinc-300">
         <li>
-          <strong>Remote MCP</strong>
-          (Claude.ai, ChatGPT Apps, recent IDE
-          clients) — paste one URL. emisar signs you in over OAuth; there
-          is no API key or header to manage. This is the <em>only</em>
-          way the cloud connectors work — their setup form has a URL field
-          and nothing else.
+          <strong>Remote MCP</strong> (Claude.ai, ChatGPT Apps, recent IDE
+          clients) — enter a display name and the emisar server URL. emisar
+          signs you in over OAuth; there is no API key or header to manage.
+          Leave optional OAuth client credentials empty so the connector can
+          register itself.
         </li>
         <li>
           <strong>Stdio bridge or static key</strong> (Claude Desktop,
@@ -32,7 +31,7 @@
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
           src="/images/screenshots/connect-llm-agents.webp"
-          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT Apps) and local/IDE clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, Grok CLI). Cloud setup shows the OAuth MCP server URL; local setup mints a bearer key and shows per-client setup steps."
+          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT Apps) and local or IDE clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, Grok CLI). Cloud setup shows copyable connector-name and OAuth MCP server URL fields; local setup mints a bearer key and shows per-client setup steps."
           loading="lazy"
           class="w-full"
         />
@@ -52,18 +51,28 @@
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Claude.ai and ChatGPT Apps only need a <strong>URL</strong> —
-          no header, no token field. emisar is a full OAuth&nbsp;2.1
-          authorization server, so the connector discovers it from that URL,
-          registers itself automatically, and sends you through a one-time
-          emisar sign-in. The single value to enter:
+          Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
+          — no header or API key. emisar is a full OAuth&nbsp;2.1 authorization
+          server, so the connector discovers it from that URL, registers itself
+          automatically, and sends you through a one-time emisar sign-in. Enter
+          these values:
         </p>
 
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-            remote MCP server URL
+          <div class="grid border-b border-zinc-900 sm:grid-cols-[10rem_1fr] sm:items-center">
+            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-500 sm:py-3">
+              connector name
+            </div>
+            <code class="break-all px-3 pb-3 text-xs text-zinc-300 sm:py-3">Emisar</code>
           </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span></pre>
+          <div class="grid sm:grid-cols-[10rem_1fr] sm:items-center">
+            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-500 sm:py-3">
+              remote MCP server URL
+            </div>
+            <code class="break-all px-3 pb-3 text-xs text-brand-300 sm:py-3">
+              https://emisar.dev/api/mcp/rpc
+            </code>
+          </div>
         </div>
 
         <div class="mt-8 space-y-10">
@@ -79,7 +88,10 @@
                 Click <strong>+</strong> → <strong>Add custom connector</strong>.
               </li>
               <li>
-                Paste the <strong>Remote MCP server URL</strong> above into the URL field.
+                Enter <strong>Emisar</strong>
+                as the <strong>Connector name</strong>, then paste the
+                <strong>Remote MCP server URL</strong>
+                above into the URL field.
               </li>
               <li>
                 Leave <strong>Advanced settings</strong>
@@ -91,6 +103,12 @@
               <li>
                 Claude opens an emisar tab. Sign in, review what the
                 connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
+              </li>
+              <li>
+                Optional: open <strong>Settings → Connectors → Emisar</strong>. Under <strong>Tool permissions</strong>, set both
+                <strong>Read-only tools</strong>
+                and <strong>Write/delete tools</strong>
+                to <strong>Always allow</strong>. This removes Claude's own per-tool prompts; emisar policy, approvals, and audit still apply.
               </li>
               <li>
                 Turn it on for a chat: the <strong>+</strong> button (lower-left of the composer)

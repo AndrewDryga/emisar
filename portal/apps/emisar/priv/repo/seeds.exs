@@ -374,7 +374,7 @@ runner_specs = [
     hostname: "edge-fra-01.northstar.example",
     labels: %{"env" => "prod", "region" => "eu-central", "role" => "edge"},
     state: :connected,
-    version: "0.4.2",
+    version: "0.10.0",
     last_seen_min: 2
   },
   %{
@@ -394,7 +394,7 @@ runner_specs = [
     hostname: "pg-primary-iad.northstar.example",
     labels: %{"env" => "prod", "region" => "us-east-1", "role" => "primary"},
     state: :connected,
-    version: "0.4.2",
+    version: "0.10.0",
     last_seen_min: 6
   },
   %{
@@ -405,7 +405,7 @@ runner_specs = [
     labels: %{"env" => "prod", "region" => "us-west-2", "role" => "edge"},
     state: :disconnected,
     disconnect_reason: "drained for kernel upgrade",
-    version: "0.4.2",
+    version: "0.10.0",
     last_seen_min: 140
   }
 ]

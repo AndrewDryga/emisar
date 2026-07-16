@@ -828,16 +828,22 @@ defmodule EmisarWeb.PoliciesLive do
             </div>
           </div>
 
-          <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
-            <.add_row
-              label="Add ruleset"
-              phx-click="add_ruleset"
-              disabled={not addable_any?(@runners, @groups, @rulesets)}
-              title={
-                if not addable_any?(@runners, @groups, @rulesets),
-                  do: "Every runner and group already has a ruleset (or none exist yet)"
-              }
-            />
+          <div
+            :if={@can_manage? and not @load_error?}
+            id="add-ruleset-row"
+            class={["grid grid-cols-1 gap-8 lg:grid-cols-4", @rulesets != [] && "mt-8"]}
+          >
+            <div id="add-ruleset-control" class="lg:col-span-3">
+              <.add_row
+                label="Add ruleset"
+                phx-click="add_ruleset"
+                disabled={not addable_any?(@runners, @groups, @rulesets)}
+                title={
+                  if not addable_any?(@runners, @groups, @rulesets),
+                    do: "Every runner and group already has a ruleset (or none exist yet)"
+                }
+              />
+            </div>
           </div>
         </section>
       </div>

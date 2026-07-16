@@ -197,9 +197,16 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Remote-MCP UI is shown:
       assert html =~ "/api/mcp/rpc"
+      assert has_element?(lv, "#connector-name-claude_web", "Emisar")
+      assert html =~ "Connector name"
+      assert html =~ "Copy name"
+      assert html =~ "Leave OAuth credentials empty"
+      assert html =~ "OAuth Client ID and OAuth Client Secret are optional"
       assert html =~ "Steps for Claude.ai"
-      assert html =~ "Choose OAuth"
       assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
+      assert html =~ "Read-only tools"
+      assert html =~ "Write/delete tools"
+      assert html =~ "Always allow"
 
       # The local-bridge snippet shape is NOT shown for this client.
       refute html =~ "EMISAR_API_KEY"
@@ -221,6 +228,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert Repo.all(ApiKey) == []
       assert html =~ "/api/mcp/rpc"
+      assert has_element?(lv, "#connector-name-chatgpt", "Emisar")
+      assert html =~ "App name"
       assert html =~ "Steps for ChatGPT"
       assert html =~ "Settings &rarr; Apps" or html =~ "Settings → Apps"
       assert html =~ "Create app"

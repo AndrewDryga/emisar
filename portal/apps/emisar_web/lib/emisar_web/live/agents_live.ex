@@ -513,24 +513,46 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("claude_web", url, _key) do
     %{
       kind: :remote,
+      setup_label: "custom connector form",
+      connector_name: "Emisar",
+      connector_name_label: "Connector name",
       rpc_url: "#{url}/api/mcp/rpc",
+      rpc_url_label: "Remote MCP server URL",
+      oauth_note: %{
+        title: "Leave OAuth credentials empty",
+        body:
+          "OAuth Client ID and OAuth Client Secret are optional. Claude.ai discovers Emisar's OAuth metadata and registers itself."
+      },
       steps: [
         "Open Settings → Connectors → Add custom connector in claude.ai.",
-        "Name it \"Emisar\" and paste the URL below into Remote MCP server URL.",
-        "Choose OAuth. Leave client ID and client secret empty so Claude can register dynamically.",
-        "Save, then complete the emisar sign-in and consent screen."
-      ]
+        "Paste the connector name and Remote MCP server URL shown above.",
+        "Select Add, then complete the emisar sign-in and consent screen."
+      ],
+      auto_permit: %{
+        pointer:
+          "After connecting, open Settings → Connectors → Emisar. Under Tool permissions, set Read-only tools and Write/delete tools to Always allow.",
+        doc_url: nil
+      }
     }
   end
 
   defp client_config("chatgpt", url, _key) do
     %{
       kind: :remote,
+      setup_label: "app form",
+      connector_name: "Emisar",
+      connector_name_label: "App name",
       rpc_url: "#{url}/api/mcp/rpc",
+      rpc_url_label: "MCP Server URL",
+      oauth_note: %{
+        title: "Use OAuth",
+        body:
+          "No API key is required. ChatGPT discovers Emisar's OAuth metadata from the server URL."
+      },
       steps: [
         "Open Settings → Apps → Advanced settings and turn on Developer mode.",
         "Open ChatGPT Apps settings and click Create app.",
-        "Name it \"Emisar\", paste the URL below as the MCP Server URL, and choose OAuth.",
+        "Paste the app name and MCP Server URL shown above, then choose OAuth.",
         "Create the app, then complete the emisar sign-in and consent screen.",
         "Use it from a conversation by choosing Developer mode and selecting Emisar."
       ]
@@ -1071,7 +1093,7 @@ defmodule EmisarWeb.AgentsLive do
             Each connection gets its own key, revocable in one click. A key reaches only the runners
             the operator who created it can reach — it never outgrows the person behind it, and
             narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
-            Claude.ai and ChatGPT connect with just a URL over OAuth — no token to manage.
+            Claude.ai and ChatGPT connect from the server URL over OAuth — no token to manage.
           </p>
         </.docs_rail>
       </section>
@@ -1214,8 +1236,14 @@ defmodule EmisarWeb.AgentsLive do
               <.remote_mcp_panel
                 client_id={@selected_client}
                 client_label={client_label(@selected_client)}
+                connector_name={@config.connector_name}
+                connector_name_label={@config.connector_name_label}
                 rpc_url={@config.rpc_url}
+                rpc_url_label={@config.rpc_url_label}
+                setup_label={@config.setup_label}
+                oauth_note={@config.oauth_note}
                 steps={@config.steps}
+                auto_permit={Map.get(@config, :auto_permit)}
               />
             </div>
           <% @config -> %>
@@ -1487,7 +1515,7 @@ defmodule EmisarWeb.AgentsLive do
       </:summary>
       <.auto_permit_why client_label={@client_label} />
       <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
-      <p class="mt-2 text-[11px] text-zinc-500">
+      <p :if={@auto_permit.doc_url} class="mt-2 text-[11px] text-zinc-500">
         <.link
           href={@auto_permit.doc_url}
           target="_blank"
@@ -1521,36 +1549,48 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :client_id, :string, required: true
   attr :client_label, :string, required: true
+  attr :connector_name, :string, required: true
+  attr :connector_name_label, :string, required: true
   attr :rpc_url, :string, required: true
+  attr :rpc_url_label, :string, required: true
+  attr :setup_label, :string, required: true
+  attr :oauth_note, :map, required: true
   attr :steps, :list, required: true
+  attr :auto_permit, :any, required: true
 
   defp remote_mcp_panel(assigns) do
     ~H"""
     <div class="space-y-8">
       <div>
         <.section_header title="Add the connector">
-          <:subtitle>Paste this URL into {@client_label}'s setup and choose OAuth.</:subtitle>
+          <:subtitle>
+            Copy these values into {@client_label}'s {@setup_label}.
+          </:subtitle>
         </.section_header>
-        <p class="mb-4 text-sm leading-relaxed text-zinc-400">
-          No API key is shown here. {@client_label} discovers emisar's OAuth metadata from this
-          endpoint, then the consent screen creates a revocable key behind the scenes.
-        </p>
-        <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned artifact frame (OAuth URL), pending code_panel migration --%>
-        <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
-          <div class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2.5">
-            <p class="font-mono text-[11px] text-zinc-500">OAuth MCP server URL</p>
-            <.copy_button
-              id={"copy-#{@client_id}-conn"}
-              text={@rpc_url}
-            >
-              Copy URL
-            </.copy_button>
-          </div>
-          <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
-            <span class="text-zinc-500">URL:</span>
-            <span id={"rpc-url-#{@client_id}"} class="break-all text-zinc-200">{@rpc_url}</span>
-          </div>
+        <div class="mt-5 space-y-4">
+          <.code_line
+            id={"connector-name-#{@client_id}"}
+            label={@connector_name_label}
+            value={@connector_name}
+            copy_label="Copy name"
+          />
+          <.code_line
+            id={"rpc-url-#{@client_id}"}
+            label={@rpc_url_label}
+            value={@rpc_url}
+            copy_label="Copy URL"
+            wrap
+            stack_on_mobile
+          />
         </div>
+        <.status_note
+          icon="hero-information-circle"
+          tone={:neutral}
+          title={@oauth_note.title}
+          class="mt-5"
+        >
+          {@oauth_note.body}
+        </.status_note>
       </div>
 
       <div>
@@ -1562,6 +1602,12 @@ defmodule EmisarWeb.AgentsLive do
           <:step :for={step <- @steps}>{step}</:step>
         </.steps>
       </div>
+
+      <.auto_permit_block
+        client_id={@client_id}
+        client_label={@client_label}
+        auto_permit={@auto_permit}
+      />
 
       <p class="text-xs text-zinc-500">
         Cloud LLM connectors need {@client_label} to be on a plan that

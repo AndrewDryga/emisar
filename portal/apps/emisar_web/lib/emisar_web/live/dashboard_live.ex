@@ -178,7 +178,6 @@ defmodule EmisarWeb.DashboardLive do
         can_view_runners?={@can_view_runners?}
         can_view_runs?={@can_view_runs?}
         can_view_agents?={@can_view_agents?}
-        approvals_decider?={Approvals.subject_can_decide_approval?(@current_subject)}
         show_setup?={@show_setup?}
         can_install_runners?={@can_install_runners?}
         can_issue_agent_key?={@can_issue_agent_key?}
@@ -218,7 +217,6 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_view_runners?, :boolean, default: true
   attr :can_view_runs?, :boolean, default: true
   attr :can_view_agents?, :boolean, default: true
-  attr :approvals_decider?, :boolean, default: false
   attr :show_setup?, :boolean, default: false
   attr :can_install_runners?, :boolean, default: false
   attr :can_issue_agent_key?, :boolean, default: false
@@ -291,10 +289,10 @@ defmodule EmisarWeb.DashboardLive do
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <div class="flex min-w-0 flex-wrap items-baseline gap-3">
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            {if @approvals_decider?, do: "Awaiting your approval", else: "Pending approvals"}
+            Awaiting review
           </h2>
           <span class="text-xs tabular-nums text-amber-300">
-            {@pending_approvals_count} {if @approvals_decider?, do: "waiting on you", else: "pending"}
+            {@pending_approvals_count} {pending_decision_label(@pending_approvals_count)}
           </span>
         </div>
         <.link
@@ -378,6 +376,9 @@ defmodule EmisarWeb.DashboardLive do
     </section>
     """
   end
+
+  defp pending_decision_label(1), do: "pending decision"
+  defp pending_decision_label(_count), do: "pending decisions"
 
   # Dashboard tiles want a plain list, not a paginator tuple — they
   # don't show Prev/Next. Treat any unauthorized / unexpected reply as

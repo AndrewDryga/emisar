@@ -191,6 +191,22 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "/sign_in/magic/tok-magic/ABC234"
         assert email.text_body =~ "ABC234"
         assert email.text_body =~ "15 minutes"
+        assert email.html_body =~ ~s(href="http://localhost/sign_in/magic/tok-magic/ABC234")
+        assert email.html_body =~ ~s(target="_top")
+        assert email.html_body =~ ">Sign in to emisar</a>"
+        true
+      end)
+    end
+
+    test "escapes request context in the HTML alternative" do
+      user = Fixtures.Users.create_user()
+      context = %RequestContext{ip_address: ~s|<script>alert("x")</script>|}
+
+      UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234", context)
+
+      assert_email_sent(fn email ->
+        assert email.html_body =~ "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+        refute email.html_body =~ "<script>"
         true
       end)
     end

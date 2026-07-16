@@ -22,7 +22,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
     * connect-src: same-origin only. CSP's `'self'` matching includes the
       page's secure WebSocket origin, so LiveView does not need a broad
       `ws:` or `wss:` scheme allowance.
-    * frame-ancestors: 'none' (we never embed in an iframe).
+    * frame-ancestors: 'none' (we never embed product pages in an iframe).
 
   Pages that need extra origins (the Paddle `/checkout` page) opt in by
   setting `conn.assigns[:csp_extra]` to a map of directive name → extra
@@ -57,9 +57,10 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
 
   defp put_csp_header(conn, nonce) do
     extra = conn.assigns[:csp_extra] || %{}
+    frame_ancestors = conn.assigns[:csp_frame_ancestors] || ["'none'"]
 
     policy =
-      directives(nonce)
+      directives(nonce, frame_ancestors)
       |> merge_extra_sources(extra)
       |> Enum.map_join("; ", fn {name, sources} -> name <> " " <> Enum.join(sources, " ") end)
 
@@ -70,7 +71,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
   # inline scripts we emit — the per-page JSON-LD in root.html.heex and the
   # checkout page's Paddle init — run without ever opening the door to
   # `'unsafe-inline'`.
-  defp directives(nonce) do
+  defp directives(nonce, frame_ancestors) do
     [
       {"default-src", ["'self'"]},
       {"script-src", ["'self'", "'nonce-#{nonce}'"]},
@@ -78,7 +79,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
       {"img-src", ["'self'", "data:", "https:"]},
       {"font-src", ["'self'"]},
       {"connect-src", ["'self'"]},
-      {"frame-ancestors", ["'none'"]},
+      {"frame-ancestors", frame_ancestors},
       {"base-uri", ["'self'"]},
       {"form-action", ["'self'"]},
       {"object-src", ["'none'"]}

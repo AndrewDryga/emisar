@@ -81,6 +81,33 @@ defmodule EmisarWeb.Components.TooltipTest do
       refute html =~ "bottom-full mb-2"
     end
 
+    test "alignment left opens the bubble inward from a left-edge trigger" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Minimum runner version" align={:left}>
+          <span>unsupported</span>
+        </CoreComponents.tooltip>
+        """)
+
+      assert html =~ "left-0"
+      refute html =~ "right-0"
+    end
+
+    test "responsive alignment follows a status chip that moves between layouts" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Minimum runner version" align={:responsive}>
+          <span>unsupported</span>
+        </CoreComponents.tooltip>
+        """)
+
+      assert html =~ "right-0 sm:left-0 sm:right-auto"
+    end
+
     test "escapes interpolated tip text (no raw HTML injection)" do
       assigns = %{evil: "<script>alert(1)</script>"}
 

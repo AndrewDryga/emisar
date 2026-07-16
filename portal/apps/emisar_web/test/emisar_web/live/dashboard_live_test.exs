@@ -128,6 +128,30 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Enable SSO"
     end
 
+    test "describes pending approvals as shared review work", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          args: %{},
+          reason: "dashboard copy test",
+          source: "operator"
+        })
+
+      {:ok, _request} = Emisar.Approvals.create_request(run, user.id, "confirm the change")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "Awaiting review"
+      assert html =~ "1 pending decision"
+      refute html =~ "waiting on you"
+      refute html =~ "your approval"
+    end
+
     test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

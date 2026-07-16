@@ -15,6 +15,10 @@ defmodule EmisarWeb.Router do
     plug EmisarWeb.Plugs.Analytics
   end
 
+  pipeline :mailbox_preview do
+    plug EmisarWeb.Plugs.MailboxPreviewCSP
+  end
+
   # `noindex` on every authenticated and auth-bound route. Indexable
   # marketing/docs pages skip this pipeline.
   pipeline :noindex do
@@ -424,11 +428,11 @@ defmodule EmisarWeb.Router do
 
   # -- OAuth 2.1 authorization server (remote MCP clients) ------------
   #
-  # Claude.ai / ChatGPT cloud connectors offer only a URL field, then
-  # drive the MCP OAuth flow themselves: discover this metadata,
-  # self-register (DCR), bounce the operator through the consent screen
-  # with PKCE, exchange the code for tokens, and present the resulting
-  # `emo-` access token to `/api/mcp/rpc`.
+  # Claude.ai / ChatGPT cloud connectors take a display name plus this server
+  # URL; their optional client credentials stay empty. They then drive the MCP
+  # OAuth flow themselves: discover this metadata, self-register (DCR), bounce
+  # the operator through the consent screen with PKCE, exchange the code for
+  # tokens, and present the resulting `emo-` access token to `/api/mcp/rpc`.
 
   scope "/", EmisarWeb do
     pipe_through :api
@@ -469,7 +473,7 @@ defmodule EmisarWeb.Router do
   # the optional `ecto_psql_extras` dep is installed; ignored otherwise.
   if Application.compile_env(:emisar_web, :dev_routes) do
     scope "/dev" do
-      pipe_through :browser
+      pipe_through [:browser, :mailbox_preview]
 
       live_dashboard "/dashboard",
         metrics: EmisarWeb.Telemetry,

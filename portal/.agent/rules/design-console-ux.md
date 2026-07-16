@@ -318,6 +318,31 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     element) before applying `space-y-*`. Raw HEEx text nodes do not match Tailwind's
     sibling selector, so a spacing class can exist while producing no visual space.
     Sweep: `space-y-*` containers with unwrapped text or slot output beside an artifact.
+23. **Third-party setup instructions mirror the form the operator actually sees.** Show
+    every required literal value as a separately labeled, copyable field; name optional
+    credential fields and say explicitly when they stay empty. Keep post-connect tuning
+    in a separate optional step with the exact settings path and control names. Never
+    collapse a name-plus-URL form into "paste one URL" or make the operator infer which
+    product field receives a value. Sweep: setup copy that says "URL only" or combines
+    multiple third-party fields behind one copy action.
+24. **Shared work queues describe the work, not an assumed viewer.** Approval, review,
+    and decision queues use role-neutral state copy unless an item is exclusively
+    assigned to one named person. Say "awaiting review" or "pending decision", not
+    "waiting on you", when any authorized reviewer can act. Sweep: viewer-relative
+    queue headings and counts derived only from broad role permission.
+25. **Tooltips open inward from the nearest canvas edge.** A trigger near the left edge
+    left-aligns its bubble so it grows right; a trigger near the right edge right-aligns
+    it so it grows left. Raising z-index cannot escape an ancestor's overflow boundary.
+    Sweep: edge-adjacent tooltips whose bubble points into clipped shell chrome.
+26. **A status marker carries status color; adjacent facts remain readable facts.** Keep
+    inline counts and ratios neutral when an adjacent dot or chip already signals
+    caution. Color a number only when the value itself crosses a meaningful threshold.
+    Sweep: conditional amber or rose number classes beside an existing status marker.
+27. **Actions for a railed editor stay on the editor track.** When a section reserves a
+    right rail for preview or supporting context, its empty-state composer and add row
+    occupy the same primary grid columns as saved editors. They do not stretch through
+    the rail merely because the rail is empty. Sweep: full-width add rows below 3+1
+    editor-and-rail grids.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

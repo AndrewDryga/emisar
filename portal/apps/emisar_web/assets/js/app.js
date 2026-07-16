@@ -439,26 +439,42 @@ const FlashAutoClose = {
   }
 }
 
-// Escape-to-dismiss for the shared <.tooltip> (WCAG 1.4.13 "Dismissable"). The
-// bubble reveals purely in CSS on :hover / :focus-within; this hook adds only the
-// Escape leg the CSS can't — it hides the bubble WITHOUT moving focus off the
-// trigger (so the operator keeps their place), then re-arms on the next hover or
-// focus so the tip can show again.
+// Escape-to-dismiss for the shared <.tooltip> (WCAG 1.4.13 "Dismissable"), plus
+// horizontal viewport clamping. CSS owns the reveal; the hook keeps a long bubble
+// inside the visible work canvas when its trigger sits near an edge.
 const Tooltip = {
   mounted() {
     this.bubble = this.el.querySelector("[data-tooltip-bubble]")
     if (!this.bubble) return
     this.onKey = (e) => { if (e.key === "Escape") this.bubble.classList.add("hidden") }
-    this.rearm = () => this.bubble.classList.remove("hidden")
+    this.position = () => {
+      this.bubble.style.transform = ""
+      const rect = this.bubble.getBoundingClientRect()
+      const canvas = this.el.closest("main")?.getBoundingClientRect()
+      const leftEdge = Math.max(8, (canvas?.left ?? 0) + 8)
+      const rightEdge = Math.min(window.innerWidth - 8, (canvas?.right ?? window.innerWidth) - 8)
+      const shift = rect.left < leftEdge
+        ? leftEdge - rect.left
+        : rect.right > rightEdge
+          ? rightEdge - rect.right
+          : 0
+      this.bubble.style.transform = `translateX(${shift}px)`
+    }
+    this.rearm = () => {
+      this.bubble.classList.remove("hidden")
+      requestAnimationFrame(this.position)
+    }
     this.el.addEventListener("keydown", this.onKey)
     this.el.addEventListener("mouseenter", this.rearm)
     this.el.addEventListener("focusin", this.rearm)
+    window.addEventListener("resize", this.position)
   },
   destroyed() {
     if (!this.bubble) return
     this.el.removeEventListener("keydown", this.onKey)
     this.el.removeEventListener("mouseenter", this.rearm)
     this.el.removeEventListener("focusin", this.rearm)
+    window.removeEventListener("resize", this.position)
   }
 }
 

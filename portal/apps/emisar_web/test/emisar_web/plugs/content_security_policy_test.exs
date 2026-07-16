@@ -100,5 +100,33 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
       refute csp =~ "paddle.com"
       assert String.ends_with?(csp, "object-src 'none'")
     end
+
+    test "the dev mailbox HTML document can be framed only by its same origin", %{conn: conn} do
+      conn =
+        conn
+        |> Map.put(:request_path, "/dev/mailbox/message-id/html")
+        |> EmisarWeb.Plugs.ContentSecurityPolicy.call([])
+        |> EmisarWeb.Plugs.MailboxPreviewCSP.call([])
+        |> Plug.Conn.send_resp(200, "email")
+
+      [csp] = get_resp_header(conn, "content-security-policy")
+
+      assert csp =~ "frame-ancestors 'self'"
+      refute csp =~ "frame-ancestors 'none'"
+    end
+
+    test "other mailbox and application pages remain unframeable", %{conn: conn} do
+      for path <- ["/dev/mailbox/message-id", "/app/demo"] do
+        response =
+          conn
+          |> Map.put(:request_path, path)
+          |> EmisarWeb.Plugs.ContentSecurityPolicy.call([])
+          |> EmisarWeb.Plugs.MailboxPreviewCSP.call([])
+          |> Plug.Conn.send_resp(200, "page")
+
+        [csp] = get_resp_header(response, "content-security-policy")
+        assert csp =~ "frame-ancestors 'none'"
+      end
+    end
   end
 end

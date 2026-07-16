@@ -18,7 +18,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
       assert html =~ "Per-action overrides"
@@ -34,6 +34,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the dashed composers ARE the empty states (no placeholder hints).
       assert html =~ "Add override"
       assert html =~ "Add ruleset"
+      assert lv |> element("#add-ruleset-row") |> render() =~ "lg:grid-cols-4"
+      assert lv |> element("#add-ruleset-control") |> render() =~ "lg:col-span-3"
     end
 
     test "a tier select disables decisions below its floor and pre-selects the current value", %{

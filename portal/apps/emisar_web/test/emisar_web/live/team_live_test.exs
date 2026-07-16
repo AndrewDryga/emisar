@@ -1065,6 +1065,15 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "2FA enrollment stat" do
+    test "keeps the zero count neutral while the status dot carries attention", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#mfa-enrolled-count.text-zinc-200", "0")
+      refute has_element?(lv, "#mfa-enrolled-count.text-amber-300")
+    end
+
     test "renders account-wide enrollment, not just the visible page", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 

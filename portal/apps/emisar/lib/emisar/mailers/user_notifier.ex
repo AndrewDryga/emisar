@@ -1,8 +1,9 @@
 defmodule Emisar.Mailers.UserNotifier do
   @moduledoc """
   Transactional emails for account lifecycle, sign-in, profile security,
-  invitations, and approvals. Plain-text templates -- the rendering engine is
-  intentionally not LiveView's heex.
+  invitations, and approvals. Templates are plain-text first; the magic-link
+  message also carries a minimal HTML alternative so its primary action is a
+  real link in mail clients and the development mailbox.
   """
   import Swoosh.Email
   alias Emisar.Crypto
@@ -52,7 +53,7 @@ defmodule Emisar.Mailers.UserNotifier do
       ) do
     url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}#{return_to_query(return_to)}")
 
-    deliver(user.email, "Your emisar sign-in code", """
+    body = """
     Your emisar sign-in code is:
 
         #{secret}
@@ -74,7 +75,33 @@ defmodule Emisar.Mailers.UserNotifier do
     emails you didn't ask for keep arriving, tell your administrator.
 
     — emisar
-    """)
+    """
+
+    deliver(user.email, "Your emisar sign-in code", body,
+      html_body: magic_link_html(secret, url, context)
+    )
+  end
+
+  defp magic_link_html(secret, url, context) do
+    """
+    <p>Your emisar sign-in code is:</p>
+    <p><strong>#{html_escape(secret)}</strong></p>
+    <p><a href="#{html_escape(url)}" target="_top">Sign in to emisar</a></p>
+    <p>This link only works in the browser where you requested it, works once, and expires in 15 minutes.</p>
+    <p>This sign-in was requested:</p>
+    <pre>#{html_escape(request_details(context))}</pre>
+    <p>Didn't ask to sign in? You can ignore this email.</p>
+    """
+  end
+
+  defp html_escape(value) do
+    value
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
   end
 
   # A small, human "who/when/where" block so the recipient can tell their own
@@ -325,6 +352,7 @@ defmodule Emisar.Mailers.UserNotifier do
       |> maybe_reply_to(Keyword.get(opts, :reply_to))
       |> subject(subject)
       |> text_body(body)
+      |> maybe_html_body(Keyword.get(opts, :html_body))
       |> put_extra_headers(Keyword.get(opts, :headers, []))
       |> Mailer.deliver()
     end
@@ -332,6 +360,9 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp maybe_reply_to(email, nil), do: email
   defp maybe_reply_to(email, address) when is_binary(address), do: reply_to(email, address)
+
+  defp maybe_html_body(email, nil), do: email
+  defp maybe_html_body(email, body) when is_binary(body), do: html_body(email, body)
 
   defp put_extra_headers(email, headers),
     do: Enum.reduce(headers, email, fn {key, value}, acc -> header(acc, key, value) end)

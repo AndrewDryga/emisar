@@ -2792,13 +2792,16 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   One code value with its copy button — a sign-in link, a callback URI, a
-  SCIM base URL, or a short command inside a callout. It stays on one scrollable
-  line by default; pass `wrap` when a narrow layout should wrap the value. The
-  framed multi-line snippet is `code_panel`; this is the compact value row.
+  SCIM base URL, or a short command inside a callout. Pass `label` when a setup
+  flow needs to map the value to a named field in another product. It stays on
+  one scrollable line by default; pass `wrap` when a narrow layout should wrap
+  the value. The framed multi-line snippet is `code_panel`; this is the compact
+  value row.
 
       <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
   """
   attr :id, :string, required: true
+  attr :label, :string, default: nil
   attr :value, :string, required: true
   attr :copy_label, :string, default: "Copy"
   attr :wrap, :boolean, default: false
@@ -2807,28 +2810,39 @@ defmodule EmisarWeb.CoreComponents do
 
   def code_line(assigns) do
     ~H"""
-    <div class={[
-      "flex gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
-      if(@stack_on_mobile,
-        do: "flex-col items-stretch sm:flex-row sm:items-center",
-        else: "items-center"
-      ),
-      @class
-    ]}>
-      <code
-        id={@id}
-        phx-no-format
-        class={[
-          "min-w-0 flex-1 font-mono text-xs text-zinc-300",
-          if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-x-auto whitespace-nowrap")
-        ]}
-      >{@value}</code>
-      <.copy_button
-        text={@value}
-        class={["shrink-0", @stack_on_mobile && "ml-auto"]}
+    <div class={@class}>
+      <p
+        :if={@label}
+        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
       >
-        {@copy_label}
-      </.copy_button>
+        {@label}
+      </p>
+      <div class={[
+        "flex gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
+        @label && "mt-2",
+        if(@stack_on_mobile,
+          do: "flex-col items-stretch sm:flex-row sm:items-center",
+          else: "items-center"
+        )
+      ]}>
+        <code
+          id={@id}
+          phx-no-format
+          class={[
+            "min-w-0 flex-1 font-mono text-xs text-zinc-300",
+            if(@wrap,
+              do: "whitespace-pre-wrap break-words",
+              else: "overflow-x-auto whitespace-nowrap"
+            )
+          ]}
+        >{@value}</code>
+        <.copy_button
+          text={@value}
+          class={["min-h-10 shrink-0", @stack_on_mobile && "ml-auto"]}
+        >
+          {@copy_label}
+        </.copy_button>
+      </div>
     </div>
     """
   end
@@ -3530,6 +3544,7 @@ defmodule EmisarWeb.CoreComponents do
       :if={@status in [:outdated, :unsupported]}
       id={@id}
       text={version_chip_title(@kind, @status)}
+      align={:responsive}
       class={@class}
     >
       <.chip tone={version_chip_tone(@status)} icon="hero-exclamation-triangle">
@@ -3740,6 +3755,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :text, :string, required: true
   attr :aria_label, :string, default: nil, doc: "accessible name for an icon-only trigger"
   attr :placement, :atom, default: :top, values: [:top, :bottom]
+  attr :align, :atom, default: :right, values: [:left, :right, :responsive]
   attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
@@ -3772,7 +3788,7 @@ defmodule EmisarWeb.CoreComponents do
         role="tooltip"
         data-tooltip-bubble
         class={[
-          "pointer-events-none absolute right-0 z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
+          "pointer-events-none absolute z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
           "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
           "transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           "group-hover/tooltip:pointer-events-auto group-focus-within/tooltip:pointer-events-auto",
@@ -3780,7 +3796,8 @@ defmodule EmisarWeb.CoreComponents do
           if(@placement == :bottom,
             do: "top-full mt-2 before:bottom-full",
             else: "bottom-full mb-2 before:top-full"
-          )
+          ),
+          tooltip_align(@align)
         ]}
       >
         {@text}
@@ -3788,6 +3805,10 @@ defmodule EmisarWeb.CoreComponents do
     </span>
     """
   end
+
+  defp tooltip_align(:left), do: "left-0"
+  defp tooltip_align(:right), do: "right-0"
+  defp tooltip_align(:responsive), do: "right-0 sm:left-0 sm:right-auto"
 
   @doc """
   Inline "back" breadcrumb for detail pages. Renders as a small label

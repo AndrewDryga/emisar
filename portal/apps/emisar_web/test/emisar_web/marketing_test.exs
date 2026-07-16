@@ -647,6 +647,11 @@ defmodule EmisarWeb.MarketingTest do
       # Current ChatGPT Apps setup path: OAuth, Developer mode, no static token.
       assert html =~ "Settings → Apps &amp; Connectors"
       assert html =~ "Settings → Connectors"
+      assert html =~ "Connector name"
+      assert html =~ "OAuth Client ID / Client Secret"
+      assert html =~ "Read-only tools"
+      assert html =~ "Write/delete tools"
+      assert html =~ "Always allow"
       assert html =~ "click <strong>Create</strong>"
       assert html =~ "choose <strong>OAuth</strong>"
       assert html =~ "Use it from a <strong>new chat</strong>"

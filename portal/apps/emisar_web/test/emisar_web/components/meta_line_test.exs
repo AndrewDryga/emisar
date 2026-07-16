@@ -71,6 +71,7 @@ defmodule EmisarWeb.Components.MetaLineTest do
         rendered_to_string(~H"""
         <CoreComponents.code_line
           id="upgrade-command"
+          label="Remote MCP server URL"
           value="curl https://emisar.dev/install.sh | sudo bash"
           copy_label="Copy command"
           wrap
@@ -78,8 +79,10 @@ defmodule EmisarWeb.Components.MetaLineTest do
         />
         """)
 
+      assert html =~ "Remote MCP server URL"
       assert html =~ "whitespace-pre-wrap break-words"
       assert html =~ "flex-col items-stretch sm:flex-row sm:items-center"
+      assert html =~ "min-h-10"
       assert html =~ "Copy command"
       assert html =~ ">curl https://emisar.dev/install.sh | sudo bash</code>"
       assert html =~ ~s(data-copy-text="curl https://emisar.dev/install.sh | sudo bash")

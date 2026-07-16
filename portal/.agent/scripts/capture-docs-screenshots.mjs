@@ -15,8 +15,10 @@ const CHROME =
   process.env.CHROME ??
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const OUT = "/tmp/docshots";
+const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-docshots-profile";
 const STATIC = resolve(import.meta.dirname, "../../apps/emisar_web/priv/static/images");
 mkdirSync(OUT, { recursive: true });
+mkdirSync(PROFILE, { recursive: true });
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const mailId = (m) => `${m.sent_at}|${m.subject}`;
 const mailbox = async () => (await (await fetch(`${BASE}/dev/mailbox/json`)).json()).data ?? [];
@@ -77,19 +79,45 @@ async function crop(page, target, name) {
   console.log(`  ✓ ${name}  ${Math.round(box.width)}x${Math.round(box.height)}  bg=${bgColors[name]}`);
 }
 
-const b = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--force-prefers-reduced-motion"] });
+const b = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: "new",
+  userDataDir: PROFILE,
+  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
+});
 const p = await b.newPage();
 await p.setViewport({ width: 1680, height: 2800, deviceScaleFactor: 2 });
 
 // --- login ---
-const seen = new Set((await mailbox()).map(mailId));
-await p.goto(`${BASE}/sign_in`, { waitUntil: "domcontentloaded" });
-await p.waitForSelector('input[type="email"]'); await p.type('input[type="email"]', EMAIL);
-await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}), p.keyboard.press("Enter")]);
-let link;
-for (let i = 0; i < 40; i++) { const f = (await mailbox()).find((m) => !seen.has(mailId(m)) && JSON.stringify(m.to ?? "").includes(EMAIL) && /sign_in\/magic\//.test(m.text_body ?? "")); if (f) { link = (f.text_body.match(/https?:\/\/[^\s"]*\/sign_in\/magic\/[^\s")]+/) || [])[0].replace(/^https?:\/\/[^/]+/, BASE); break; } await settle(500); }
-if (!link) throw new Error("no magic link found in mailbox");
-await p.goto(link, { waitUntil: "domcontentloaded" }); await p.waitForFunction(() => location.pathname.startsWith("/app/"));
+await p.goto(`${BASE}/app/demo`, { waitUntil: "domcontentloaded" });
+if (!new URL(p.url()).pathname.startsWith("/app/")) {
+  const seen = new Set((await mailbox()).map(mailId));
+  await p.goto(`${BASE}/sign_in`, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector('input[type="email"]');
+  await p.type('input[type="email"]', EMAIL);
+  await Promise.all([
+    p.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}),
+    p.keyboard.press("Enter"),
+  ]);
+  let link;
+  for (let i = 0; i < 40; i++) {
+    const fresh = (await mailbox()).find(
+      (m) =>
+        !seen.has(mailId(m)) &&
+        JSON.stringify(m.to ?? "").includes(EMAIL) &&
+        /sign_in\/magic\//.test(m.text_body ?? ""),
+    );
+    if (fresh) {
+      link = (fresh.text_body.match(/https?:\/\/[^\s"]*\/sign_in\/magic\/[^\s")]+/) || [])[0]
+        .replace(/^https?:\/\/[^/]+/, BASE);
+      break;
+    }
+    await settle(500);
+  }
+  if (!link) throw new Error("no magic link found in mailbox");
+  await p.goto(link, { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => location.pathname.startsWith("/app/"));
+}
 
 const go = async (path) => { await p.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" }); await settle(1100); };
 // CDP's Page.navigate rejects bracketed query params ([]); set location in-page
@@ -133,8 +161,8 @@ await settle(1400);
 await crop(p, { heading: "Directory sync (SCIM)", climb: "section" }, "sso-directory-sync");
 
 // LLM agents — the "Connect an agent" client picker (the /docs/connect-an-llm
-// hero): pick a client and it mints a pre-filled key + setup. Select one so the
-// per-client config shows beside the picker, not an empty prompt.
+// hero): select Claude.ai so its name, OAuth URL, and setup steps show beside
+// the picker instead of the empty prompt.
 await go("/app/demo/agents/connect");
 await p.evaluate(() => {
   const tab = [...document.querySelectorAll("button, a, [phx-click]")].find(
@@ -163,7 +191,7 @@ const SHOTS = [
   { name: "team-page", out: "screenshots/team-page.webp" },
   { name: "sso-add-connection", out: "docs/sso/sso-add-connection.webp", topCss: 850 },
   { name: "sso-directory-sync", out: "docs/sso/sso-directory-sync.webp" },
-  { name: "connect-llm-agents", out: "screenshots/connect-llm-agents.webp", topCss: 720 },
+  { name: "connect-llm-agents", out: "screenshots/connect-llm-agents.webp", topCss: 820 },
 ];
 for (const s of SHOTS) {
   const png = `${OUT}/${s.name}.png`;

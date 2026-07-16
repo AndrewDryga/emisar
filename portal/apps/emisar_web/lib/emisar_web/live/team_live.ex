@@ -1343,10 +1343,7 @@ defmodule EmisarWeb.TeamLive do
                 <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
                 <span class="text-zinc-400">
                   2FA enrolled:
-                  <span class={[
-                    "tabular-nums",
-                    (unenrolled > 0 && "font-medium text-amber-300") || "font-medium text-zinc-200"
-                  ]}>
+                  <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
                     {@mfa_stats.enrolled}
                   </span>
                   of <span class="font-medium tabular-nums text-zinc-200">{@mfa_stats.total}</span>
