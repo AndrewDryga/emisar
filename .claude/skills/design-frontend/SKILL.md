@@ -60,6 +60,16 @@ honest.
 - Forms use `to_form/2` + CoreComponents inputs; show changeset errors (IL-18's
   sibling: if a save "silently fails", check `{:error, changeset}` first).
 
+## Fixing a reported UI defect
+
+When the user points at something broken on a rendered surface, the fix ships
+with before/after screenshot proof — and the BEFORE shot comes before any edit
+(the broken state is unrecoverable once the fix deploys). Shoot the element from
+the :4010 stack with `portal/.agent/scripts/shot.mjs` (`--label before`), fix,
+rebuild the stack, re-shoot (`--label after`, full page + element crop), verify
+the pixels yourself, then hand the user both paths for review. Full workflow:
+`portal/.agent/rules/design-ui-fix-screenshot-proof.md`.
+
 ## Finish
 
 `cd portal && mix compile --warnings-as-errors && mix format`, click-test the happy

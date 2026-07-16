@@ -1,4 +1,25 @@
-# Docs screenshots
+# Screenshot tooling
+
+Three scripts against the seeded `:4010` compose stack:
+
+- `capture-docs-screenshots.mjs` — regenerates the cropped console screenshots
+  embedded in the `/docs` pages (see below).
+- `capture-console-audit.mjs` — walks every console page and writes full-page
+  desktop + mobile PNGs for a doctrine grading pass.
+- `shot.mjs` — one page, full-page PNG + an element crop; the before/after
+  proof loop for a user-requested UI fix
+  (`../rules/design-ui-fix-screenshot-proof.md`):
+
+  ```sh
+  node shot.mjs /app/demo/runners --label before --select '#runners'
+  # fix → rebuild the stack → same command with --label after
+  ```
+
+  Anchors: `--select CSS`, `--heading "exact text"` (+ `--climb section`), or
+  `--class-contains a,b`; `--width 390` for mobile. Output lands in
+  `test-results/ui-fix/` (repo root, gitignored).
+
+## Docs screenshots
 
 `capture-docs-screenshots.mjs` regenerates the cropped console screenshots
 embedded in the `/docs` pages under
