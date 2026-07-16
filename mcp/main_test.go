@@ -2298,6 +2298,8 @@ func TestParseClientMetadata_AcceptsAndCanonicalizes(t *testing.T) {
 		{"single string value", `{"asset_tag":"LT-4417"}`, `{"asset_tag":"LT-4417"}`},
 		{"keys canonicalized (sorted)", `{"b":"2","a":"1"}`, `{"a":"1","b":"2"}`},
 		{"integer value preserved", `{"port":8080}`, `{"port":8080}`},
+		{"finite float accepted", `{"ratio":1e308}`, `{"ratio":1e308}`},
+		{"float underflow matches portal", `{"ratio":1e-400}`, `{"ratio":1e-400}`},
 		{"reformatted to canonical", "{\n  \"asset_tag\" : \"x\"\n}", `{"asset_tag":"x"}`},
 		{"max keys allowed", tenKeyObject(), tenKeyObject()},
 		{"arbitrary key names allowed", `{"role":"admin","password":"x"}`, `{"password":"x","role":"admin"}`},
@@ -2337,6 +2339,7 @@ func TestParseClientMetadata_FailsClosed(t *testing.T) {
 		{"object value", `{"a":{"b":"c"}}`, "must be a string or number"},
 		{"bool value", `{"a":true}`, "must be a string or number"},
 		{"null value", `{"a":null}`, "must be a string or number"},
+		{"float overflow", `{"a":1e309}`, "numeric range"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

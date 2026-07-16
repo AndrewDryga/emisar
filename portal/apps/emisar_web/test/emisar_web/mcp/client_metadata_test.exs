@@ -24,6 +24,17 @@ defmodule EmisarWeb.MCP.ClientMetadataTest do
     test "accepts numeric values, storing their string representation" do
       assert ClientMetadata.parse(~s({"port":8080,"ratio":1.5})) ==
                {:ok, %{"port" => "8080", "ratio" => "1.5"}}
+
+      assert ClientMetadata.parse(~s({"ratio":1e308})) ==
+               {:ok, %{"ratio" => "1.0e308"}}
+
+      assert ClientMetadata.parse(~s({"ratio":1e-400})) ==
+               {:ok, %{"ratio" => "0.0"}}
+    end
+
+    test "rejects a floating-point value outside the decoder's range" do
+      assert ClientMetadata.parse(~s({"ratio":1e309})) ==
+               {:error, "client metadata is not valid JSON"}
     end
 
     test "allows arbitrary key names a stricter design would blacklist" do

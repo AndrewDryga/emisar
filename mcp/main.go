@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"mime"
 	"net"
@@ -1266,6 +1267,9 @@ func parseClientMetadata(raw string) (string, error) {
 			if utf8.RuneCountInString(v.String()) > maxClientMetadataValue {
 				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds %d characters", key, maxClientMetadataValue)
 			}
+			if strings.ContainsAny(v.String(), ".eE") && !portalCompatibleFloat(v.String()) {
+				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds the portal's numeric range", key)
+			}
 		default:
 			return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q must be a string or number", key)
 		}
@@ -1283,6 +1287,14 @@ func parseClientMetadata(raw string) (string, error) {
 		return "", fmt.Errorf("EMISAR_CLIENT_METADATA could not be encoded: %w", err)
 	}
 	return string(canonical), nil
+}
+
+func portalCompatibleFloat(value string) bool {
+	n, err := strconv.ParseFloat(value, 64)
+	// Jason accepts finite underflow as zero, while overflow is rejected. The
+	// JSON decoder has already checked syntax, so ErrRange is the only expected
+	// parse error here.
+	return (err == nil || errors.Is(err, strconv.ErrRange)) && !math.IsInf(n, 0)
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {
