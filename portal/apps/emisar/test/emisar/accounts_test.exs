@@ -266,6 +266,53 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_and_lock_membership/3" do
+    test "returns an active membership in its account" do
+      account = Fixtures.Accounts.create_account()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, %Membership{id: id}} =
+               Accounts.fetch_and_lock_membership(account.id, membership.id)
+
+      assert id == membership.id
+    end
+
+    test "returns :not_found for a suspended or removed membership" do
+      account = Fixtures.Accounts.create_account()
+      suspended = Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.suspend_membership(suspended)
+
+      assert Accounts.fetch_and_lock_membership(account.id, suspended.id) == {:error, :not_found}
+
+      removed = Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      assert Accounts.fetch_and_lock_membership(account.id, removed.id) == {:error, :not_found}
+    end
+
+    test "does not return a membership from another account" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      membership = Fixtures.Memberships.create_membership(account_id: other_account.id)
+
+      assert Accounts.fetch_and_lock_membership(account.id, membership.id) == {:error, :not_found}
+    end
+
+    test "accepts :repo as an option inside a transaction" do
+      account = Fixtures.Accounts.create_account()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, %{locked: %Membership{id: id}}} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.run(:locked, fn repo, _changes ->
+                 Accounts.fetch_and_lock_membership(account.id, membership.id, repo: repo)
+               end)
+               |> Repo.transaction()
+
+      assert id == membership.id
+    end
+  end
+
   describe "fetch_account_settings/1" do
     test "returns the account's embedded settings value" do
       account = Fixtures.Accounts.create_account()

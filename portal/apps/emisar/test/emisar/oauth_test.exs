@@ -5,9 +5,10 @@ defmodule Emisar.OAuthTest do
   API key. These are the paths the Claude.ai / ChatGPT connectors drive.
   """
   use Emisar.DataCase, async: true
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Fixtures
   alias Emisar.OAuth
-  alias Emisar.OAuth.{Client, Token}
+  alias Emisar.OAuth.{AuthorizationCode, Client, Token}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
   @resource Emisar.PublicUrl.url("/api/mcp/rpc")
@@ -158,6 +159,101 @@ defmodule Emisar.OAuthTest do
                  },
                  viewer
                )
+    end
+
+    test "a suspended membership cannot mint a backing key from a stale subject" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.suspend_membership(membership)
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert {:error, :not_found} =
+               OAuth.issue_code(
+                 client,
+                 %{
+                   "redirect_uri" => @redirect,
+                   "code_challenge" => challenge,
+                   "code_challenge_method" => "S256",
+                   "scope" => "mcp offline_access",
+                   "resource" => @resource
+                 },
+                 subject
+               )
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+      assert Repo.reload!(client).last_authorized_at == nil
+    end
+
+    test "a removed membership cannot mint a backing key from a stale subject" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert {:error, :not_found} =
+               OAuth.issue_code(
+                 client,
+                 %{
+                   "redirect_uri" => @redirect,
+                   "code_challenge" => challenge,
+                   "code_challenge_method" => "S256",
+                   "scope" => "mcp offline_access",
+                   "resource" => @resource
+                 },
+                 subject
+               )
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a fresh membership role must still have the key-issue permission" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_role(membership, "viewer")
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert {:error, :unauthorized} =
+               OAuth.issue_code(
+                 client,
+                 %{
+                   "redirect_uri" => @redirect,
+                   "code_challenge" => challenge,
+                   "code_challenge_method" => "S256",
+                   "scope" => "mcp offline_access",
+                   "resource" => @resource
+                 },
+                 subject
+               )
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "an active membership still mints a backing key" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert {:ok, _code} =
+               OAuth.issue_code(
+                 client,
+                 %{
+                   "redirect_uri" => @redirect,
+                   "code_challenge" => challenge,
+                   "code_challenge_method" => "S256",
+                   "scope" => "mcp offline_access",
+                   "resource" => @resource
+                 },
+                 subject
+               )
+
+      assert Repo.exists?(ApiKey.Query.all())
+      assert Repo.exists?(AuthorizationCode.Query.all())
     end
   end
 
@@ -650,6 +746,35 @@ defmodule Emisar.OAuthTest do
 
       # Idempotent — it's gone, a second sweep finds nothing.
       assert 0 = OAuth.delete_expired_authorization_codes(future)
+    end
+  end
+
+  describe "delete_expired_tokens/1" do
+    test "prunes fully expired grants but keeps a live refresh grant" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      past = DateTime.add(DateTime.utc_now(), -120, :second)
+
+      Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
+      assert 0 = OAuth.delete_expired_tokens()
+      assert Repo.reload(token)
+
+      Repo.update!(Ecto.Changeset.change(token, refresh_expires_at: past))
+      assert 1 = OAuth.delete_expired_tokens()
+      refute Repo.reload(token)
+      assert 0 = OAuth.delete_expired_tokens()
     end
   end
 
