@@ -52,7 +52,9 @@ fail-safe edits (re-read on collision — a parallel agent may be touching the s
   session → move it back to `00_todo/` (`coop tasks` / a folder move). Leave any
   `10_in_progress/` task that could be a live parallel claim (you run Claude + Codex at once);
   when unsure, don't touch it.
-- Leave `IDEAS.md` and `BACKLOG.md` alone — deliberate holding areas, not trash.
+- Leave the backlog drawer (`tasks/xx_backlog/`, via `coop backlog`) alone — a deliberate
+  holding area for the big/not-yet-ready (and founder-approval ideas), not trash. The sweep
+  works `00_todo/` only; only a human promotes drawer items.
 
 Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, anything surfaced.
 
@@ -86,7 +88,8 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
    violation is never a one-line fix: **sweep the diff for every sibling instance** and fix those
    too; if the review exposed a shape the KB doesn't yet name, record it via the taste pipeline
    (root `AGENTS.md`) in this same commit — a line in the `AGENTS.md` index (+ a `rules/<slug>.md`
-   when it needs worked code). Out-of-scope findings go to `BACKLOG.md`, not into this commit.
+   when it needs worked code). Out-of-scope findings go to the queue (`coop tasks add`) or the
+   backlog drawer (`coop backlog add`), not into this commit.
    **Commit only when you'd ship it from every hat and it breaks no house rule.**
 6. **Commit it on its own** — ONE focused commit for THIS item, explicit pathspec naming only
    the files it changed:
@@ -107,7 +110,7 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
    **Then** the next `00_todo/` task.
 
 - **Blocked?** `coop tasks block <id>` and fill its `decision.md` (decision · options · recommendation); move on.
-- **Spot a mess?** Small, safe cleanup → fix it in place (boy-scout rule, creed #7). Bigger or unrelated → `BACKLOG.md`; stay on the current task.
+- **Spot a mess?** Small, safe cleanup → fix it in place (boy-scout rule, creed #7). Bigger or unrelated → `coop tasks add` (simple and ready) or `coop backlog add` (big/unscoped); stay on the current task.
 - **Never** hold a `10_in_progress/` task you're not working — finish it, `coop tasks block` it, or move it back to `00_todo/`.
 
 ## 4. Finish
@@ -115,7 +118,7 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
   `git log` (one commit each) and that none shipped with an unaddressed review blocker or a
   house-rule violation.
 - **Disarm** — `rm -f .claude/.sweep-active` (and `/goal clear` if you set a run goal).
-- Report: tasks done (SHAs + what the review caught/fixed + any rule recorded), tasks blocked (+ why), `BACKLOG` adds.
+- Report: tasks done (task ids + what the review caught/fixed + any rule recorded), tasks blocked (+ why), queue/backlog adds.
 
 ## Aborting / resuming
 An interrupted sweep deliberately leaves the sentinel in place so the next session resumes the

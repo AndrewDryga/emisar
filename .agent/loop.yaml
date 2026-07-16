@@ -1,0 +1,83 @@
+# .agent/loop.yaml — configuration for `coop loop` (committed; edit to taste).
+# Every key is optional — omit it (or a whole section) to use coop's built-in default.
+# Models use coop's target grammar: provider[:model][/effort][@account].
+# Sections are in loop order: preflight (before) → work → between (after each task) → signoff (at the end).
+#
+# emisar runs the same two cross-vendor tiers as coop's dogfood loop: the FRONTIER pair
+# (Fable 5 ⇄ GPT-5.6 Sol) leads the work and the signoff; the FAST pair (GPT-5.6 Luna ⇄
+# Opus 4.8) audits each finished task between iterations. Grok 4.5 sits outside both as
+# the preset's critic — the second critical opinion.
+
+preflight:
+  # The one-shot pre-loop queue tidy: coop itself returns blocked tasks whose decision.md
+  # now has a Resolution to todo — host-side, no box, no model. Deliberately NO extra
+  # LLM prompt here: an LLM self-containment audit in this slot over-blocked healthy
+  # tasks when coop dogfooded it (it parked five self-contained tasks in one run).
+  enabled: true
+
+work:
+  # One rung: the frontier preset already carries the failover pair — Fable 5/xhigh
+  # leading with GPT-5.6 Sol/xhigh as the cross-vendor twin — plus thinker/critic/fast.
+  agent: [frontier]
+
+between:
+  # Audit after EACH completed task (may reopen it before the loop moves on).
+  enabled: true
+
+  # Review boxes write task queues only; the repository stays read-only.
+  writes: tasks
+
+  # The FAST pair: Luna and Opus 4.8 at xhigh, failing over to each other.
+  agent: [codex:gpt-5.6-luna/xhigh, claude:claude-opus-4-8/xhigh]
+
+  # coop prepends the just-finished task's id + folder, so "the task named above" is exact.
+  prompt: |
+    Audit ONLY the task named above — nothing else. Hold it against its own task.md,
+    trusting evidence over prose:
+    - Every acceptance criterion is demonstrably met — point at the commit, diff, or test
+      that proves it, not at a claim in log.md.
+    - The failure/denial path is tested, not just the happy path — this is a security
+      product; a new ingestion surface without an abuse-path test is a fail.
+    - The gate of EVERY project the diff touched ran green on the committed tree — the
+      exact command is in that project's AGENTS.md (portal/runner/mcp/packs/infra).
+    - The diff stays inside the task's named scope: no new dependency, on-disk format,
+      or rewrite the task didn't ask for. A fix that grew into a rewrite is a fail —
+      reopen with instructions to split.
+    - No committed DB migration was EDITED (they are frozen; only new migrations land).
+    - The commit says WHY and carries its `Coop-Task: <id>` trailer.
+    Verdict: pass → append one line to the task's log.md ("audit: pass — <evidence>").
+    Fail → move the folder back to 10_in_progress/ and append the concrete gap (what to
+    fix, where) to log.md. Never widen scope beyond the audited task.
+
+signoff:
+  # Signoff writes task queues only.
+  writes: tasks
+
+  # The FRONTIER pair reversed: Sol/xhigh reviews first — usually a different vendor
+  # than whoever led the work, so the lead's blind spots aren't the reviewer's — with
+  # Fable 5/xhigh picking it up when codex is limited.
+  agent: [codex:gpt-5.6-sol/xhigh, claude:claude-fable-5/xhigh]
+
+  # Extra checks APPENDED to coop's built-in senior review (goal, standards,
+  # failure-path tests, polish, the gate). The reviewer reopens a task that fails one.
+  prompt: |
+    - The gate of every project the batch touched is green (exact command in that
+      project's AGENTS.md); root-level agent-setup changes keep
+      `bash .agent/scripts/audit-llm-setup.sh` passing.
+    - No committed DB migration was edited — frozen; a violation reopens the task
+      regardless of anything else.
+    - Every new surface that ingests runner / LLM / operator input has its abuse case
+      tested (the denial path, not just the happy path).
+    - Scope discipline: each task's diff stays inside its named scope; a task that grew
+      a new dependency, a new on-disk format, or a rewrite it didn't name gets reopened
+      to split — even if the code is good.
+    - No new dependency without a one-line justification in the commit message.
+    - A correction from the human during the batch became a rule in the right
+      `.agent/rules/` (domain-prefixed filename) — flag any applied once and not recorded.
+    - The tree is clean after each commit (git status); nothing untracked smuggled in.
+    - A user-visible change updated the docs it invalidated (docs/, README, or the
+      affected project's docs).
+
+verify:
+  # Verify writes task queues only.
+  writes: tasks

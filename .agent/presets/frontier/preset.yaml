@@ -1,0 +1,46 @@
+# coop preset — an orchestration recipe: which agent LEADS a session, and which
+# ROLES it can route work to. Edit this file, then run or inspect it:
+#   Run:      coop frontier
+#             coop loop frontier
+#   Inspect:  coop presets frontier
+#   Format:   coop help presets
+# An explicit target on the command line (claude:opus@work) overrides the lead +
+# ladder. Model ids: coop models. Accounts (logins): coop credentials. A preset
+# names models and accounts, never the secrets themselves.
+
+# lead — the agent that fronts the session, as a fallback ladder: the two frontier
+# models at max effort, failing over to each other on a rate limit. Fable 5 (the
+# long-horizon agentic frontier) with GPT-5.6 Sol as the cross-vendor twin.
+lead:
+  agent: [claude:claude-fable-5/xhigh, codex:gpt-5.6-sol/xhigh]
+  prompt: roles/lead.md
+
+roles:
+  thinker:
+    # READ-ONLY deep-reasoning peer via coop-consult. Terra at xhigh: near-frontier
+    # thinking without burning the Sol/Fable quota the lead and signoff run on.
+    mode: consult
+    agent: codex:gpt-5.6-terra/xhigh
+    # emisar is a security product — the thinker's docket leans hard on the
+    # trust-boundary work: anything ingesting runner / LLM / operator input.
+    when: [architecture, debugging, security, code-review, before-commit]
+    prompt: roles/thinker.md
+
+  critic:
+    # READ-ONLY second opinion from OUTSIDE the claude+codex pair doing the work —
+    # a third vendor's blind spots, for one-way doors: committed DB migrations,
+    # wire/protocol formats, pack manifest semantics, billing/entitlements.
+    mode: consult
+    agent: grok:grok-4.5/high
+    when: [plan-review, tradeoffs, one-way-doors, security]
+    prompt: roles/critic.md
+
+  fast:
+    # WRITE-CAPABLE worker via coop-delegate: it may edit the worktree but never
+    # commits — the lead reviews the diff, runs the touched project's gate, commits.
+    mode: delegate
+    agent: codex:gpt-5.6-luna/xhigh
+    when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
+    commit: never
+    concurrent: never
+    prompt: roles/fast.md

@@ -102,6 +102,7 @@ check_task_dirs() {
       state="$(basename "$(dirname "$(dirname "$task")")")"
       case "$state" in
         00_todo | 10_in_progress | 50_blocked | 99_done) ;;
+        xx_backlog) ;; # the backlog DRAWER (coop backlog) — outside the lifecycle, valid
         *) fail "$task lives under unknown state $state" ;;
       esac
     done < <(find "$queue" -mindepth 3 -maxdepth 3 -name task.md | sort)

@@ -12,8 +12,9 @@ Context compaction drops everything except this file (re-injected from disk) and
 
 1. **This file** — the creed + the contract below.
 2. **The project's `AGENTS.md`, in full** — not a skim. The rules are non-negotiable and you *will* violate them from memory.
-3. **`<project>/.agent/LOG.md`** (if present) — your own recent chain-of-thought: what you were doing and *why*, and the next step you set yourself. This is how intent survives a compaction.
-4. **`<project>/.agent/tasks/`** — the work queue (run `coop tasks`; it reads `.agent/tasks/`). Resume the first todo or in_progress task.
+3. **`.agent/kb/README.md`'s index** — the descriptive knowledge base's routing table. Open a card only when your task touches its subsystem; never bulk-load the kb.
+4. **`<project>/.agent/LOG.md`** (if present) — your own recent chain-of-thought: what you were doing and *why*, and the next step you set yourself. This is how intent survives a compaction. (In a `coop loop`, the task's own `log.md`/`state.md` serve this role.)
+5. **`<project>/.agent/tasks/`** — the work queue (run `coop tasks`; it reads `.agent/tasks/`). Resume the first todo or in_progress task.
 
 Five top-level areas, each with its own `AGENTS.md`:
 
@@ -37,30 +38,32 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 4. **Done means verified, not done-once.** A change is done when it compiles clean, is formatted, passes its gate, is covered by tests (including the denial / abuse path where it applies), and is obvious — not when it ran once. Never say "should work"; show the gate output, or state plainly what you could not verify.
 5. **Verify APIs before you call them.** Never invoke a function / flag / option you are not sure exists with that signature. Check the repo, the dependency source, the docs — *first*. A hallucinated call costs far more than the 20-second check.
 6. **Greenfield. No legacy.** Pre-release MVP: edit the original, delete the dead, update every caller in the same change. No shims, flags, or "v2" for behavior nobody depends on yet. **The one exception is a committed DB migration — it has already run in prod and is FROZEN: never edit or delete it, add a new migration** (editing it diverges prod's schema and takes prod down; the commit-gate enforces this — see the project `AGENTS.md` §8).
-7. **Leave it cleaner than you found it — the boy-scout rule.** When you're already in a file and see a small, safe improvement — a misleading name, dead code, a missing *why* comment, a shape that's now obviously clumsy — fix it as you pass through; don't step over a mess. The limit is the *focused commit*: only when the cleanup is large, risky, or would sprawl the diff into a second story do you defer it — capture it as a task in `BACKLOG.md` and move on, never silently drop it. The test: would a reviewer thank you for the tidy, or wince at an unrelated refactor smuggled into the commit?
+7. **Leave it cleaner than you found it — the boy-scout rule.** When you're already in a file and see a small, safe improvement — a misleading name, dead code, a missing *why* comment, a shape that's now obviously clumsy — fix it as you pass through; don't step over a mess. The limit is the *focused commit*: only when the cleanup is large, risky, or would sprawl the diff into a second story do you defer it — capture it (simple and ready → `coop tasks add`; big or unscoped → `coop backlog add`) and move on, never silently drop it. The test: would a reviewer thank you for the tidy, or wince at an unrelated refactor smuggled into the commit?
 8. **CI validates; CD delivers.** `.github/workflows/ci.yml` runs on pull requests and as a reusable workflow. Main-only `.github/workflows/cd.yml` calls that exact file from the same commit, then publishes its tested artifacts and queues deployment. Write/OIDC permissions, environments, and deployment secrets belong only in CD — never in PR-triggered CI. A human release gate and its publisher are separate jobs: stale waiting approvals may be superseded, but an active publication is serialized and never canceled mid-write. Manual HCP applies use provisional configuration versions and saved plans; standard unconfirmed plans hold the workspace lock and do not belong in CD. CI checks real behavior, security boundaries, and plausible regression paths; never add a source grep solely to police an architectural placement rule.
 
 ---
 
 ## The `.agent/` working state (per project)
 
-Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **Only `rules/` (the shared taste KB) and `scripts/` (maintained dev tooling) are committed; everything else here is local working state and git-ignored** — the queue, log, ideas, backlog, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
+Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **The knowledge and config are committed — `rules/` (the taste KB), `kb/` (the descriptive KB), `presets/` (orchestration recipes), `scripts/` (maintained dev tooling), `project.yaml`, and `loop.yaml`; everything else is local working state and git-ignored** — the queue, backlog drawer, log, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
 
 - **`tasks/`** — the work queue: **a folder per task**, driven by `coop tasks`. A task's **state is its directory**, four states, nothing else, so skipped work has nowhere to hide:
   - `00_todo/` todo · `10_in_progress/` **claimed / in progress** · `50_blocked/` blocked · `99_done/` **done _and_ gated-green _and_ committed**. The numeric prefix just sorts `ls` in lifecycle order; a state change is a **folder move**, never a checkbox edit — always via `coop tasks`, never a manual `mv`.
   - Each task is `.agent/tasks/<state>/<id>/task.md` (+ optional `log.md`/`state.md`, and `decision.md` for a blocked task). `coop tasks ls` shows them by state; `coop tasks add "<title>"` queues one. A `50_blocked/` task **must** carry its own `decision.md` (`coop tasks block` writes the stub). `10_in_progress/` is a soft claim so two agents in parallel don't grab the same task (see the work loop). Every task is always exactly one of these four — you never silently drop or half-finish one.
-- **`BACKLOG.md`** — actionable work you *discover* outside the current task's scope and **too big to fix on the spot**: a bug, tech debt, a missing test, a refactor you shouldn't do right now. (A small, safe cleanup you *can* do as you pass through, you just do — boy-scout rule, creed #7 — no entry needed; `BACKLOG` is for what would derail the current task.) Capture it here the moment you see it — don't derail the current goal, don't lose the finding — then keep going. **Not auto-worked**, and **not scanned by the Stop hook**, so it never blocks a batch; a human (or a later, deliberate pass) promotes an item into `.agent/tasks/00_todo/`. (Distinct from `IDEAS.md` = product features needing approval, and a blocked task's `decision.md` = needs a human call.)
+- **`tasks/xx_backlog/`** — the backlog DRAWER (`coop backlog`): work you *discover* that is **big or not-yet-ready** — it needs a spec, a decision, or real scoping before anyone can work it. Capture it the moment you see it (`coop backlog add "<title>"`) and keep going — don't derail the current goal, don't lose the finding. A simple, ready fix you can state in a line goes straight to the queue (`coop tasks add`) instead — the backlog is not a dumping ground for small stuff. (A small, safe cleanup you *can* do as you pass through, you just do — boy-scout rule, creed #7 — no entry needed.) The drawer lives OUTSIDE the lifecycle: **never auto-worked**, not scanned by the Stop hook, ignored by every counter; `coop backlog promote <id>` moves an item into `00_todo/` once it's fleshed out. Product ideas that need founder review live here too — write the sketch in the idea's `task.md` and mark it as needing approval; only a human promotes those.
 - **`LOG.md`** — your chain-of-thought, so the *what + why* survives compaction. Append a short entry when you make a decision, finish a task, or set yourself a next step. Newest first under `## Recent`; when `## Recent` passes ~50 lines, move older entries to `LOG.archive.md`. **Not committed** — it is local working memory (git-ignored).
 - **A blocked task's `decision.md`** — **only a genuine _human call_**: a product decision, an ambiguous spec, an irreversible one-way-door migration. `coop tasks block <id>` moves the task to `50_blocked/` and writes the `decision.md` stub; fill it in — the decision needed · the options · your recommendation — then move on (`coop tasks decisions` lists the open ones). Never guess on an irreversible choice. **"Blocked on evidence / verification" is NOT a human call and must NEVER block a task** — needing to know an API's shape, a CLI verb's behaviour on recent versions, a live system's cert path, or whether something reproduces is *work you do*, not a decision someone else makes. **Gather the evidence yourself** — spawn a subagent, stand up a throwaway Docker SUT, query the live MCP fleet, or read a sibling repo (e.g. `../blitz/blitz-infra`) — then proceed. A blocked task whose blocker is "we don't know X yet" is a mis-file: go find out X.
-- **`IDEAS.md`** — product ideas as short implementation sketches. **Never auto-implemented.** A human details and approves an idea first; only then is it *promoted* into `.agent/tasks/00_todo/`. The work loop reads `.agent/tasks/` only — it never pulls work from `IDEAS.md`.
-- **`rules/`** — the taste knowledge base, **the one committed part of `.agent/`** (shared across the team and both tools; see *The taste pipeline* below).
+- **`rules/`** — the taste knowledge base, NORMATIVE ("do X, not Y"), committed (shared across the team and both tools; see *The taste pipeline* below).
+- **`kb/`** — the DESCRIPTIVE knowledge base, committed: subsystem maps, cross-cutting traps, gotchas the code doesn't obviously carry. A self-improving wiki you maintain directly — when a task teaches you something non-obvious about a subsystem, add or update its card **in the same commit as the work**. Read `kb/README.md` for the card format and reading protocol (index at boot; a card only when your task touches its subsystem).
+- **`presets/`** — orchestration recipes (committed): which agent leads and which roles it routes to. See *Orchestration* below.
+- **`loop.yaml`** — the `coop loop` configuration (committed): the work ladder, the per-task audit between iterations, and the final signoff.
 
 ### Definition of Done
 
 A task moves to `99_done/` (via `coop tasks done`) only when **all** of these hold:
 
 - the project gate ran **green** (exact command in the project `AGENTS.md`),
-- the change is **committed** — one focused commit per task,
+- the change is **committed** — one focused commit per task, carrying its `Coop-Task: <id>` trailer,
 - `LOG.md` has an entry.
 
 No changelog file — `git log` is the changelog.
@@ -72,16 +75,44 @@ Work the first todo task in `.agent/tasks/` (`coop tasks ls`), then the next, un
 1. **Claim** — `coop tasks claim <id>` (moves it `00_todo/` → `10_in_progress/`). A parallel agent skips `10_in_progress/`, so you won't both grab the same task.
 2. **Do it** — wear the hats; obey the project's `AGENTS.md`.
 3. **Gate** — run the project gate; fix until green.
-4. **Commit** — one focused commit for the task.
+4. **Commit** — one focused commit for the task, ending with a `Coop-Task: <id>` trailer (the id is the task's folder name). The trailer binds the commit to its task — it's how coop resumes correctly after an interruption between commit and folder-move, and reconciles the queue after a fork merge. (Never cite that commit by SHA in task notes — coop re-signs box commits on the host, which rewrites SHAs; cite the task id.)
 5. **Record** — append a *what + why* line to `LOG.md`, `coop tasks done <id>` (moves it to `99_done/`), and move to the next todo task.
 
 When the loop is interrupted:
 
 - **Blocked?** Only if it's a true **human call** (above): `coop tasks block <id>` + fill in its `decision.md`; move on (`coop tasks unblock <id>` returns it to `00_todo/` once decided; claim it again before work). If the blocker is *missing evidence* (a live check, an API shape, "does this verb still work"), it is **not** blocked — gather the evidence yourself (subagent / throwaway SUT / live fleet / sibling repo) and keep going.
 - **Abandoning a claim?** Move it back to `00_todo/` so it gets picked up.
-- **Spot something off** — a bug, debt, a missing test, a small mess? **Fix it in place when it's a small, safe cleanup** (boy-scout rule, creed #7); when it's bigger, risky, or would derail/sprawl the commit, jot it in `BACKLOG.md` and stay on the current task. Capture what you don't fix; never walk past a mess.
+- **Spot something off** — a bug, debt, a missing test, a small mess? **Fix it in place when it's a small, safe cleanup** (boy-scout rule, creed #7); when it's bigger, capture it — simple and ready → `coop tasks add`; big or needing a spec → `coop backlog add` — and stay on the current task. Capture what you don't fix; never walk past a mess.
 
 **Don't-stop contract:** never stop holding an in_progress task, and do not stop while an actionable todo remains (`10_in_progress/`/`99_done/`/`50_blocked/` don't block the Stop hook — an in_progress task is some agent's live claim). At the end of a batch, re-verify every `99_done/` task against `git log`, and reclaim any orphaned `10_in_progress/` task left by an interrupted session (move it back to `00_todo/`).
+
+---
+
+## Orchestration — spend the big model where it matters
+
+The repo's orchestration recipe is the **frontier preset** (`.agent/presets/frontier/preset.yaml`):
+a cross-vendor lead ladder (Fable 5 ⇄ GPT-5.6 Sol at max effort, failing over on rate limits) with
+three roles. Run it interactively (`coop frontier`) or unattended (`coop loop` — configured by
+`.agent/loop.yaml`: work under the preset, a fast-tier audit after each finished task, a cross-vendor
+signoff at the end). When you lead, you orchestrate: plan, decompose, synthesize, make the final
+calls, and keep your own context lean by routing:
+
+- **thinker** (consult, read-only — codex terra at xhigh) — architecture calls, intermittent bugs,
+  security, and a pre-commit review of trust-boundary changes. Self-contained prompt:
+  `coop-consult thinker --fresh "…"`; it returns a conclusion, you act on it.
+- **critic** (consult, read-only — grok, the third vendor) — plan review, tradeoffs, one-way doors:
+  frozen migrations, wire/protocol formats, pack manifest semantics, billing.
+  `coop-consult critic --fresh "…"`.
+- **fast** (delegate, write-capable — codex luna at xhigh) — mechanical, fully-specified work:
+  boilerplate, bulk edits, test scaffolding, repo surveys. `coop-delegate fast`; it never commits —
+  you review its diff, run the touched project's gate, and commit.
+- **High-stakes decisions:** task the thinker AND the critic in parallel with the same neutral
+  problem statement — never showing either the other's answer — then synthesize the best of both.
+
+Outside the preset (no `coop-consult`/`coop-delegate` on PATH), use your runtime's own subagents for
+the same split — reasoning vs mechanical — and skip peers. **Single-writer rule regardless:** advisors
+and peers think; exactly ONE agent edits this checkout, gates, and commits. Parallel implementation
+goes through `coop fork` (each fork is its own clone) — never two writers in one tree.
 
 ---
 

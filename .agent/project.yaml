@@ -1,14 +1,15 @@
-# Committed coop project configuration; the rest of .agent/ is local state.
+# Committed coop project configuration; see .gitignore for what else in .agent/ is committed.
 
 # Monorepo members: coop aggregates each one's .agent/tasks queue automatically,
 # so you never hand-maintain COOP_TASKS.
 subprojects:
+  - infra
   - mcp
   - packs
   - portal
   - runner
 
 # Ports a dev server in the box listens on — coop publishes each to a stable host
-# port so you can open it in your browser (bind the server to 0.0.0.0 in the box):
-# serve:
-#   ports: [5173]
+# port so you can open it in your browser (the portal already binds 0.0.0.0 in dev):
+serve:
+  ports: [4000]

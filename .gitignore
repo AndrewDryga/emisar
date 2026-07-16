@@ -43,15 +43,19 @@ erl_crash.dump
 # Repository documentation is always tracked. Working notes and agent history
 # belong under the ignored .agent/ state below, never as hidden files in docs/.
 
-# .agent/ is local working state — only rules/ (the shared taste KB), scripts/
-# (maintained dev tooling), and project.yaml (the committed per-project config:
-# monorepo members + serve ports) are committed. Tasks, backlog, ideas,
-# pending-decisions, log, archive all stay on the machine (no commit noise, no
-# cross-agent merge conflicts). See AGENTS.md.
+# .agent/ is local working state — only the KNOWLEDGE and CONFIG are committed:
+# rules/ (the shared taste KB), kb/ (the descriptive knowledge base), presets/
+# (orchestration recipes), scripts/ (maintained dev tooling), project.yaml
+# (monorepo members + serve ports), and loop.yaml (the unattended-loop config).
+# Tasks, the backlog drawer, pending decisions, log, archive all stay on the
+# machine (no commit noise, no cross-agent merge conflicts). See AGENTS.md.
 **/.agent/*
 !**/.agent/rules
 !**/.agent/scripts
+!**/.agent/kb
+!**/.agent/presets
 !.agent/project.yaml
+!.agent/loop.yaml
 .expert/*.log
 .claude/.sweep-active
 
