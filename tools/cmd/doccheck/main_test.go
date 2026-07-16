@@ -70,6 +70,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		"portal/.agent/rules/elixir-doc-contract.md":          false,
 		"portal/.agent/scripts/capture-console-audit.mjs":     false,
 		"portal/.agent/kb/runner-socket.md":                   false,
+		"portal/.agent/compose.yml":                           true,
 		"portal/.agent/loop.yaml":                             true,
 		"portal/.agent/project.yaml":                          true,
 		"portal/.agent/secrets/reviewer.env":                  true,
