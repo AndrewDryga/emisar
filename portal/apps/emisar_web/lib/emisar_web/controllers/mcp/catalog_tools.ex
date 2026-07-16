@@ -429,6 +429,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       name: runner.name,
       hostname: runner.hostname,
       group: runner.group,
+      enforce_signatures: runner.enforce_signatures,
       status: runner.status
     }
   end

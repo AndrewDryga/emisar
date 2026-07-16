@@ -156,7 +156,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert detail["action"]["args_schema"]["properties"]["dry_run"]["type"] == "boolean"
 
     expected_ref = "db-one~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
-    assert [%{"runner_ref" => ^expected_ref}] = detail["compatible_runners"]
+
+    assert [%{"runner_ref" => ^expected_ref, "enforce_signatures" => false}] =
+             detail["compatible_runners"]
 
     hostile =
       Enum.map(actions, fn descriptor ->
@@ -184,6 +186,40 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert unavailable_detail["error"]["code"] == "action_unavailable"
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
+  end
+
+  test "runner catalog results identify signature enforcement", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    unsigned = Fixtures.Runners.create_runner(account_id: account.id, name: "unsigned")
+
+    signed =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "signed",
+        enforce_signatures: true
+      )
+
+    for runner <- [unsigned, signed] do
+      observe!(runner, %{"demo" => %{"version" => "1.0.0", "hash" => @hash}}, [
+        action("demo.read", "demo")
+      ])
+    end
+
+    trust_all!(subject)
+
+    runners = call(conn, "list_runners", %{})["runners"]
+    enforcement_by_name = Map.new(runners, &{&1["name"], &1["enforce_signatures"]})
+    assert enforcement_by_name == %{"signed" => true, "unsigned" => false}
+
+    detail =
+      call(conn, "get_action", %{"action_id" => "demo.read", "pack_ref" => "demo@1.0.0/#{@hash}"})
+
+    compatible_by_name = Map.new(detail["compatible_runners"], &{&1["name"], &1})
+    assert compatible_by_name["signed"]["enforce_signatures"]
+    refute compatible_by_name["unsigned"]["enforce_signatures"]
   end
 
   test "find_actions recalls natural multi-term queries and ranks term coverage", %{
@@ -627,6 +663,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     unsigned = raw_action(conn, body, operation_id)
     assert unsigned["error"]["code"] == "signature_required"
+    assert unsigned["error"]["details"]["runner_refs"] == [runner_ref]
 
     mismatched =
       attestation_header(conn, pack_ref, runner_ref, operation_id, ~s({"job_id":1}), reason)

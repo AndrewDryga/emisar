@@ -78,11 +78,13 @@ defmodule EmisarWeb.MCP.ActionTools do
              "The signed action header is invalid or does not match this call."
            )}
 
-        {:error, :signature_required} ->
+        {:error, {:signature_required, runner_refs}} ->
           {:error,
            error(
              "signature_required",
-             "At least one selected runner requires a signed action call."
+             "At least one selected runner requires a signed action call.",
+             false,
+             %{runner_refs: runner_refs}
            )}
 
         {:error, reason}
@@ -319,9 +321,11 @@ defmodule EmisarWeb.MCP.ActionTools do
   end
 
   defp require_attestation_for_enforcing(targets, nil) do
-    if Enum.any?(targets, & &1.enforce_signatures),
-      do: {:error, :signature_required},
-      else: :ok
+    runner_refs = targets |> Enum.filter(& &1.enforce_signatures) |> Enum.map(& &1.runner_ref)
+
+    if runner_refs == [],
+      do: :ok,
+      else: {:error, {:signature_required, runner_refs}}
   end
 
   defp require_attestation_for_enforcing(_targets, _attestation), do: :ok
