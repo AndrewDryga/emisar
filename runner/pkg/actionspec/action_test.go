@@ -284,8 +284,7 @@ func TestArg_Validate_NumericBounds(t *testing.T) {
 		arg  Arg
 	}{
 		{name: "integer", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Min: ptr(-1), Max: ptr(1)}}},
-		{name: "integer array", arg: Arg{Name: "a", Type: ArgIntegerArray, Validation: &Validation{Max: ptr(1 << 53)}}},
-		{name: "max int64 rounded boundary", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Max: ptr(1 << 63)}}},
+		{name: "integer array", arg: Arg{Name: "a", Type: ArgIntegerArray, Validation: &Validation{Max: ptr((1 << 53) - 1)}}},
 		{name: "number", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Min: ptr(0.5)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -301,7 +300,8 @@ func TestArg_Validate_NumericBounds(t *testing.T) {
 	}{
 		{name: "wrong type", arg: Arg{Name: "a", Type: ArgString, Validation: &Validation{Min: ptr(1)}}},
 		{name: "fractional integer", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Max: ptr(1.5)}}},
-		{name: "minimum overflow", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Min: ptr(1 << 63)}}},
+		{name: "positive ambiguous boundary", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Max: ptr(1 << 53)}}},
+		{name: "negative ambiguous boundary", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Min: ptr(-(1 << 53))}}},
 		{name: "non-finite", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Max: ptr(math.Inf(1))}}},
 		{name: "reversed", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Min: ptr(2), Max: ptr(1)}}},
 	} {

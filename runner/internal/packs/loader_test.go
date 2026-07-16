@@ -110,6 +110,22 @@ func TestLoad_ValidPack(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsInexactIntegerBound(t *testing.T) {
+	action := strings.Replace(actionYAML("testpack.a"), "args: []", `args:
+  - name: value
+    type: integer
+    validation:
+      max: 891234567890123456`, 1)
+	root := writePack(t, t.TempDir(), "p", map[string]string{
+		"pack.yaml":      packYAML("testpack"),
+		"actions/a.yaml": action,
+	})
+
+	if _, err := LoadOne(root, LoadOptions{}); err == nil || !strings.Contains(err.Error(), "exactly represented integer") {
+		t.Fatalf("inexact integer bound should fail pack loading, got %v", err)
+	}
+}
+
 func TestLoad_DuplicateActionIDsAcrossPacks(t *testing.T) {
 	tmp := t.TempDir()
 	writePack(t, tmp, "one", map[string]string{

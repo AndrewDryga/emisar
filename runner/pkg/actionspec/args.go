@@ -115,12 +115,11 @@ func (a Arg) Validate() error {
 			return fmt.Errorf("arg %s: validation.min/max is only valid on numeric args, not %q", a.Name, a.Type)
 		}
 		for _, bound := range []struct {
-			name                  string
-			value                 *float64
-			allowMaxInt64Boundary bool
+			name  string
+			value *float64
 		}{
 			{name: "min", value: a.Validation.Min},
-			{name: "max", value: a.Validation.Max, allowMaxInt64Boundary: true},
+			{name: "max", value: a.Validation.Max},
 		} {
 			if bound.value == nil {
 				continue
@@ -128,9 +127,8 @@ func (a Arg) Validate() error {
 			if math.IsNaN(*bound.value) || math.IsInf(*bound.value, 0) {
 				return fmt.Errorf("arg %s: validation.%s must be finite", a.Name, bound.name)
 			}
-			if (a.Type == ArgInteger || a.Type == ArgIntegerArray) &&
-				!validIntegerBound(*bound.value, bound.allowMaxInt64Boundary) {
-				return fmt.Errorf("arg %s: validation.%s must be an int64", a.Name, bound.name)
+			if (a.Type == ArgInteger || a.Type == ArgIntegerArray) && !validIntegerBound(*bound.value) {
+				return fmt.Errorf("arg %s: validation.%s must be an exactly represented integer between -(2^53-1) and 2^53-1", a.Name, bound.name)
 			}
 		}
 		if a.Validation.Min != nil && a.Validation.Max != nil && *a.Validation.Min > *a.Validation.Max {
@@ -140,11 +138,10 @@ func (a Arg) Validate() error {
 	return nil
 }
 
-func validIntegerBound(bound float64, allowMaxInt64Boundary bool) bool {
-	const maxInt64Exclusive = float64(1 << 63)
+func validIntegerBound(bound float64) bool {
+	const ambiguousBoundary = float64(1 << 53)
 
-	return math.Trunc(bound) == bound && bound >= float64(math.MinInt64) &&
-		(bound < maxInt64Exclusive || allowMaxInt64Boundary && bound == maxInt64Exclusive)
+	return math.Trunc(bound) == bound && bound > -ambiguousBoundary && bound < ambiguousBoundary
 }
 
 // Duration is time.Duration with YAML string parsing ("30s", "5m", "24h").

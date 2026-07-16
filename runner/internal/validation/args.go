@@ -279,9 +279,6 @@ func belowNumericBound(argType actionspec.ArgType, value any, bound float64) (bo
 func aboveNumericBound(argType actionspec.ArgType, value any, bound float64) (bool, bool) {
 	if argType == actionspec.ArgInteger || argType == actionspec.ArgIntegerArray {
 		integer, ok := value.(int64)
-		if bound == float64(1<<63) {
-			return false, ok
-		}
 		return ok && integer > int64(bound), ok
 	}
 	valueFloat, ok := toFloat(value)
