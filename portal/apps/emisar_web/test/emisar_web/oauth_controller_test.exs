@@ -451,6 +451,82 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ "Stay connected"
     end
 
+    test "a single-account operator gets no picker; the account rides a hidden field", %{
+      conn: conn,
+      user: user,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "xyz",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      # The header still names the one account outright.
+      assert html =~ account.name
+      refute html =~ "<select"
+      assert html =~ ~s(type="hidden" name="account_id" value="#{account.id}")
+    end
+
+    test "a multi-account operator gets a picker preselecting the session account", %{
+      conn: conn,
+      user: user,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      second = Fixtures.Accounts.create_account(name: "Beta Workspace")
+
+      Fixtures.Memberships.create_membership(
+        account_id: second.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "xyz",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      assert html =~ "Grant access to"
+      assert html =~ ~s(name="account_id")
+      assert html =~ "Beta Workspace"
+      assert html =~ account.name
+
+      # The session-current account is preselected — with no explicit session
+      # hint that's the user's LATEST membership, i.e. the second account — and
+      # the account no longer rides a hidden field (the select carries it).
+      assert html =~
+               ~r/<option[^>]*(?:selected[^>]*value="#{second.id}"|value="#{second.id}"[^>]*selected)/
+
+      refute html =~ ~s(type="hidden" name="account_id")
+    end
+
     test "CSP form-action allows the registered OAuth callback origin only", %{
       conn: conn,
       user: user
@@ -967,6 +1043,120 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "claude.ai"
       assert location =~ "code="
       assert location =~ "state=xyz"
+    end
+
+    test "approve mints the key in the CHOSEN account, not the session default", %{
+      conn: conn,
+      user: user,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      # With no session hint the current account resolves to the user's LATEST
+      # membership — the second account — so choosing the FIRST proves the key
+      # landed there through the account_id param, not the session default.
+      _second_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: Fixtures.Accounts.create_account(name: "Beta Workspace").id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "decision" => "approve"
+        })
+
+      location = redirected_to(conn, 302)
+      assert location =~ "code="
+
+      key = Repo.one(Emisar.ApiKeys.ApiKey)
+      assert key.account_id == account.id
+
+      code = Repo.one(OAuth.AuthorizationCode)
+      assert code.account_id == account.id
+      assert code.api_key_id == key.id
+    end
+
+    test "approve with an account the operator doesn't belong to mints nothing", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      foreign = Fixtures.Accounts.create_account()
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => foreign.id,
+          "decision" => "approve"
+        })
+
+      # No code redirected to the client, no hint the account exists. (The
+      # apostrophe in "isn't" is HTML-escaped, so assert around it.)
+      assert html_response(conn, 400) =~ "available to your user"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+      refute Repo.one(OAuth.AuthorizationCode)
+    end
+
+    test "approve authorizes against the CHOSEN account's role", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      # Owner in the session account, viewer in the chosen one — the key-issue
+      # gate must run against the account receiving the grant.
+      second = Fixtures.Accounts.create_account(name: "Beta Workspace")
+
+      Fixtures.Memberships.create_membership(
+        account_id: second.id,
+        user_id: user.id,
+        role: "viewer"
+      )
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => second.id,
+          "decision" => "approve"
+        })
+
+      # The key-issue denial page (apostrophes are HTML-escaped, so assert the
+      # apostrophe-free sentence).
+      assert html_response(conn, 400) =~ "Connecting one mints an API key"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+      refute Repo.one(OAuth.AuthorizationCode)
     end
 
     test "approve rejects an unexpected protected resource without minting credentials", %{

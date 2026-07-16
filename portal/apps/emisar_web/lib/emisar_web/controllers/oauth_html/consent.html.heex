@@ -9,8 +9,14 @@
         <h1 class="text-lg font-semibold text-zinc-50">
           Authorize <span class="text-brand-400">{@client_name}</span>
         </h1>
-        <p class="mt-1 text-sm text-zinc-400">
+        <%!-- With one account the header names it outright; with several the
+             picker in the form below owns the choice — a static name here
+             would go stale the moment the operator picks another. --%>
+        <p :if={length(@accounts) == 1} class="mt-1 text-sm text-zinc-400">
           wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
+        </p>
+        <p :if={length(@accounts) > 1} class="mt-1 text-sm text-zinc-400">
+          wants to connect to one of your accounts
         </p>
         <p :if={@callback_origin} class="mt-2 text-xs text-zinc-500">
           Authorization codes go to
@@ -44,6 +50,29 @@
             type="hidden"
             name={key}
             value={value}
+          />
+
+          <%!-- Which account the grant lands in. A member of several accounts
+               picks at the point of decision (preselected to the session's
+               current one); a single-account member just carries it as a
+               hidden field — the POST validates the choice against their real
+               memberships either way. --%>
+          <div :if={length(@accounts) > 1} class="mb-5">
+            <.input
+              type="select"
+              id="consent-account"
+              name="account_id"
+              label="Grant access to"
+              label_variant={:eyebrow}
+              value={@selected_account_id}
+              options={Enum.map(@accounts, &{&1.name, &1.id})}
+            />
+          </div>
+          <input
+            :if={length(@accounts) == 1}
+            type="hidden"
+            name="account_id"
+            value={@selected_account_id}
           />
 
           <div class="flex flex-col gap-3">

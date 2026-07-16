@@ -192,6 +192,27 @@ defmodule EmisarWeb.UserAuth do
   defp resolve_membership_for_request(user, account_ref, _session_account_id),
     do: Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
 
+  @doc """
+  Builds a `%Subject{}` for the signed-in user against an explicit account ref
+  (id or slug), independent of the session's current account. The OAuth consent
+  screen lets the operator pick which account an MCP client is granted, so the
+  grant must be authorized against the CHOSEN account's membership — never the
+  session default the form rode in on. Resolves only the user's own
+  non-suspended memberships; anything else is `{:error, :not_found}`,
+  indistinguishable from a nonexistent tenant. Carries the same request context
+  and session auth provenance as `assign_current_account/1`.
+  """
+  def subject_for_account(conn, account_ref) do
+    user = conn.assigns.current_user
+
+    with {:ok, membership} <- Accounts.fetch_membership_by_account_id_or_slug(user, account_ref) do
+      context = RequestContext.from_conn(conn)
+
+      {:ok,
+       Subject.for_user(user, membership.account, membership, context, auth_opts(conn.assigns))}
+    end
+  end
+
   # Session provenance (auth_method / mfa / user_identity_id) for the Subject,
   # pulled off the `:current_auth` assign the boundary stashed (a `%UserToken{}`
   # or `@no_auth`). So every audit row the subject produces records how the

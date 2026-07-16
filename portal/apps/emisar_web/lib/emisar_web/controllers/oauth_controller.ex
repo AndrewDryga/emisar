@@ -19,8 +19,9 @@ defmodule EmisarWeb.OAuthController do
   errors).
   """
   use EmisarWeb, :controller
-  alias Emisar.OAuth
+  alias Emisar.{Accounts, OAuth}
   alias EmisarWeb.MCP.Auth, as: MCPAuth
+  alias EmisarWeb.UserAuth
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
   # Auth surface — keep it out of search indexes.
@@ -80,7 +81,6 @@ defmodule EmisarWeb.OAuthController do
 
   # POST /oauth/authorize — the operator approved or denied.
   def authorize_submit(conn, params) do
-    subject = conn.assigns.current_subject
     redirect_uri = params["redirect_uri"]
     state = params["state"]
 
@@ -89,19 +89,18 @@ defmodule EmisarWeb.OAuthController do
          :ok <- validate_request(params) do
       case params["decision"] do
         "approve" ->
-          case OAuth.issue_code(client, params, subject) do
-            {:ok, code} ->
-              redirect_back(conn, redirect_uri, %{code: code, state: state})
+          case consent_subject(conn, params) do
+            {:ok, subject} ->
+              approve_consent(conn, client, params, subject, redirect_uri, state)
 
-            {:error, :unauthorized} ->
+            # A tampered/blank form value or a membership revoked between render
+            # and submit — no code, no redirect to the client, and no hint the
+            # account exists.
+            {:error, :not_found} ->
               render_invalid(
                 conn,
-                "Your role can't connect an MCP client. Connecting one mints an API key, " <>
-                  "which requires key-issue permission — ask an account admin to connect it."
+                "That account isn't available to your user. Reload the page and try again."
               )
-
-            {:error, _reason} ->
-              redirect_error(conn, redirect_uri, "server_error", state)
           end
 
         _ ->
@@ -112,6 +111,34 @@ defmodule EmisarWeb.OAuthController do
       _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
     end
   end
+
+  defp approve_consent(conn, client, params, subject, redirect_uri, state) do
+    case OAuth.issue_code(client, params, subject) do
+      {:ok, code} ->
+        redirect_back(conn, redirect_uri, %{code: code, state: state})
+
+      {:error, :unauthorized} ->
+        render_invalid(
+          conn,
+          "Your role can't connect an MCP client. Connecting one mints an API key, " <>
+            "which requires key-issue permission — ask an account admin to connect it."
+        )
+
+      {:error, _reason} ->
+        redirect_error(conn, redirect_uri, "server_error", state)
+    end
+  end
+
+  # The consent form posts which account the operator chose to grant. The
+  # backing key is minted under a membership THEY hold in that account —
+  # resolved fresh against their non-suspended memberships, never trusted from
+  # the form. An absent param (a consent page rendered before the picker
+  # existed) falls back to the session's current account, the prior behavior.
+  defp consent_subject(conn, %{"account_id" => account_id})
+       when is_binary(account_id) and account_id != "",
+       do: UserAuth.subject_for_account(conn, account_id)
+
+  defp consent_subject(conn, _params), do: {:ok, conn.assigns.current_subject}
 
   # -- Token endpoint -------------------------------------------------
 
@@ -143,6 +170,12 @@ defmodule EmisarWeb.OAuthController do
       # a self-reported (spoofable) client name.
       callback_origin: form_action_origin(params["redirect_uri"]),
       account_name: account_label(conn),
+      # Which account the grant lands in: a picker when the operator belongs to
+      # several (the key used to silently ride the session default — an easy
+      # way to connect Claude.ai to the wrong, empty account), preselecting the
+      # session-current one.
+      accounts: consent_accounts(conn),
+      selected_account_id: conn.assigns.current_account.id,
       user_email: user_email(conn),
       scopes: requested,
       # Echoed back verbatim as hidden fields on the consent form.
@@ -306,6 +339,16 @@ defmodule EmisarWeb.OAuthController do
     case conn.assigns[:current_user] do
       %{email: email} when is_binary(email) -> email
       _ -> nil
+    end
+  end
+
+  # Every (non-suspended) account the operator belongs to — the consent
+  # picker's options. The read failing must never block consent, so it
+  # degrades to the session account (today's single-account behavior).
+  defp consent_accounts(conn) do
+    case Accounts.list_accounts_for_user(conn.assigns.current_subject, page_size: 100) do
+      {:ok, accounts, _meta} -> accounts
+      _ -> [conn.assigns.current_account]
     end
   end
 
