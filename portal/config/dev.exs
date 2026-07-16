@@ -1,10 +1,12 @@
 import Config
 
-# Configure your database
+# Configure your database. PGHOST covers the coop box, where the sibling
+# postgres is reachable by its compose service name (db) instead of localhost;
+# host dev and CI leave it unset.
 config :emisar, Emisar.Repo,
   username: "postgres",
   password: "postgres",
-  hostname: "localhost",
+  hostname: System.get_env("PGHOST", "localhost"),
   database: "emisar_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,

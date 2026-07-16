@@ -1,0 +1,56 @@
+# Toolchain driven by .tool-versions — asdf installs the exact versions your
+# project pins (elixir, erlang, go, nodejs, python, ...). Edit .tool-versions and
+# `coop build`, and the box follows. Node + the agent CLIs + ACP adapters are
+# added on top for coop / coop acp.
+FROM debian:bookworm-slim
+
+ARG ASDF_VERSION=0.19.0
+# Agent CLIs + ACP adapters as one ARG so the list lives in one place. The default mirrors
+# coop's own agent set (agents.Packages()); a scaffold test asserts they stay in sync, so
+# adding/removing an agent in coop can't silently leave this box behind. Override per build
+# with: docker build --build-arg AGENT_PACKAGES="…".
+ARG AGENT_PACKAGES="@anthropic-ai/claude-code@latest @agentclientprotocol/claude-agent-acp@latest @openai/codex@latest @agentclientprotocol/codex-acp@latest @google/gemini-cli@latest"
+
+# Build deps for asdf plugins (e.g. Erlang compiles from source via kerl), Node
+# for the agent CLIs, a Postgres client + inotify (Phoenix), and a UTF-8 locale.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential autoconf m4 libncurses-dev libssl-dev unzip \
+      curl git ca-certificates locales postgresql-client procps inotify-tools \
+ && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen \
+ && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g ${AGENT_PACKAGES} \
+ && curl -fsSL "https://github.com/asdf-vm/asdf/releases/download/v${ASDF_VERSION}/asdf-v${ASDF_VERSION}-linux-$(dpkg --print-architecture).tar.gz" \
+      | tar -C /usr/local/bin -xzf - asdf \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* \
+ && git config --system --add safe.directory '*' \
+ && useradd -m -u 1000 -s /bin/bash node \
+ && mkdir -p /home/node/.cache && chown node:node /home/node/.cache
+
+ENV ASDF_DATA_DIR=/home/node/.asdf \
+    PATH="/home/node/.asdf/shims:${PATH}" \
+    LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 \
+    KERL_BUILD_DOCS=no \
+    KERL_CONFIGURE_OPTIONS="--without-wx --without-observer --without-debugger --without-et --without-megaco --without-javac"
+
+# In a coop box the sibling postgres (.agent/compose.yml) is reachable by its
+# compose service name, not localhost — portal's dev/test config reads PGHOST
+# (default "localhost"), so host dev and CI stay untouched while every box
+# resolves the database automatically.
+ENV PGHOST=db
+
+USER node
+
+# Install whatever .tool-versions pins: an asdf plugin per listed tool, then
+# `asdf install`. (Erlang compiles here — slow once, then Docker-cached until
+# .tool-versions changes.) When Elixir is in the mix, seed hex + rebar so
+# `mix deps.get` doesn't stop to prompt for them in an autonomous run.
+COPY --chown=node:node .tool-versions /home/node/.tool-versions
+RUN cd /home/node \
+ && awk 'NF && $1 !~ /^#/ {print $1}' .tool-versions | while read -r tool; do asdf plugin add "$tool"; done \
+ && MAKEFLAGS="-j$(nproc)" asdf install \
+ && asdf reshim \
+ && { command -v mix >/dev/null 2>&1 && mix local.hex --force && mix local.rebar --force || true; }
+
+WORKDIR /workspace
