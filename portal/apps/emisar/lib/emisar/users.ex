@@ -413,4 +413,25 @@ defmodule Emisar.Users do
       audit: Keyword.fetch!(opts, :audit)
     )
   end
+
+  @doc """
+  Internal — hard-delete the user row for the Accounts erasure flow. This is
+  invoked from a console session; the user row's foreign keys cascade its
+  user-owned records in the caller's transaction.
+  """
+  def delete_by_id(user_id, opts \\ []) do
+    if Repo.valid_uuid?(user_id) do
+      repo = Keyword.get(opts, :repo, Repo)
+
+      User.Query.all()
+      |> User.Query.by_id(user_id)
+      |> repo.fetch(User.Query)
+      |> case do
+        {:ok, user} -> repo.delete(user)
+        {:error, :not_found} -> {:error, :not_found}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
 end

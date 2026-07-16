@@ -654,6 +654,29 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "delete_by_id/2" do
+    test "hard-deletes the user row and user-owned memberships" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      user_id = user.id
+
+      assert {:ok, %User{id: ^user_id}} = Users.delete_by_id(user_id, repo: Repo)
+
+      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
+
+      assert Repo.one(
+               Emisar.Accounts.Membership.Query.all()
+               |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
+             ) == nil
+    end
+
+    test "returns not_found for malformed or unknown ids" do
+      assert Users.delete_by_id("not-a-uuid", repo: Repo) == {:error, :not_found}
+      assert Users.delete_by_id(Ecto.UUID.generate(), repo: Repo) == {:error, :not_found}
+    end
+  end
+
   # An owner user with MFA enrolled (secret + enrolled-at), so the locked-row
   # MFA-enabled guard in put_user_mfa_recovery_codes / consume passes. Returns
   # the {user, account, subject} tuple owner_subject/0 yields.

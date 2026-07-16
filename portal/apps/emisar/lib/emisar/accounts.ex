@@ -112,6 +112,54 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — irreversible admin erasure, invoked from a console session.
+  Hard-deletes an account row and relies on the account foreign-key cascades
+  to remove the account's owned records. Tombstoned accounts are included so
+  a prior soft delete cannot leave data behind.
+  """
+  def delete_by_id(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.all()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch(Account.Query)
+      |> case do
+        {:ok, account} -> Repo.delete(account)
+        {:error, :not_found} -> {:error, :not_found}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Internal — irreversible admin erasure, invoked from a console session.
+  Deletes the user's sole-owner accounts, removes the user's memberships from
+  other accounts through the user foreign-key cascade, then hard-deletes the
+  user row. The whole operation is atomic.
+  """
+  def erase_user_and_owned_accounts(user_id) do
+    if Repo.valid_uuid?(user_id) do
+      Multi.new()
+      |> Multi.run(:memberships, fn repo, _changes ->
+        {:ok, active_memberships_for_user(repo, user_id)}
+      end)
+      |> Multi.run(:accounts, fn repo, %{memberships: memberships} ->
+        erase_sole_owner_accounts(repo, memberships)
+      end)
+      |> Multi.run(:user, fn repo, _changes ->
+        Users.delete_by_id(user_id, repo: repo)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: user}} -> {:ok, user}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
   Accounts the subject's user is a (non-suspended) member of,
   name-ordered. Returns `{:ok, [account], %Paginator.Metadata{}}`. Drives
   the account picker.
@@ -352,6 +400,39 @@ defmodule Emisar.Accounts do
       :user, queryable -> Membership.Query.with_preloaded_user(queryable)
     end)
   end
+
+  defp active_memberships_for_user(repo, user_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_user_id(user_id)
+    |> repo.all()
+  end
+
+  defp erase_sole_owner_accounts(repo, memberships) do
+    memberships
+    |> Enum.uniq_by(& &1.account_id)
+    |> Enum.sort_by(& &1.account_id)
+    |> Enum.reduce_while({:ok, []}, fn membership, {:ok, deleted_accounts} ->
+      if sole_owner?(repo, membership) do
+        case delete_by_id(membership.account_id) do
+          {:ok, account} -> {:cont, {:ok, [account | deleted_accounts]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      else
+        {:cont, {:ok, deleted_accounts}}
+      end
+    end)
+  end
+
+  defp sole_owner?(repo, %Membership{account_id: account_id, role: :owner}) do
+    owner_memberships =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_role(:owner)
+
+    repo.aggregate(owner_memberships, :count, :id) == 1
+  end
+
+  defp sole_owner?(_repo, %Membership{}), do: false
 
   @doc """
   Account-wide 2FA enrollment for the team security stat: total members

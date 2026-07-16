@@ -2,10 +2,15 @@ defmodule Emisar.AccountsTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
   alias Emisar.Accounts.{Account, Membership}
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Audit
+  alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Mail
+  alias Emisar.Policies.Policy
+  alias Emisar.Runbooks.Runbook
+  alias Emisar.Runs.ActionRun
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
   alias Emisar.Users
   alias Emisar.Users.User
@@ -34,6 +39,195 @@ defmodule Emisar.AccountsTest do
 
     test "a non-UUID id returns :not_found" do
       assert Accounts.fetch_account_by_id("not-a-uuid") == {:error, :not_found}
+    end
+  end
+
+  describe "delete_by_id/1" do
+    test "hard-deletes a tombstoned account and its owned records" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      runbook = Fixtures.Runbooks.create_runbook(account_id: account.id, created_by_id: owner.id)
+      action_run = Fixtures.Runs.create_run(account_id: account.id)
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      account = Fixtures.Accounts.mark_account_as_deleted(account)
+      account_id = account.id
+
+      assert {:ok, %Account{id: ^account_id}} = Accounts.delete_by_id(account_id)
+
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
+
+      assert Repo.one(Membership.Query.all() |> Membership.Query.by_account_id(account_id)) == nil
+
+      assert Repo.one(Policy.Query.all() |> Policy.Query.by_account_id(account_id)) == nil
+      assert Repo.one(Runbook.Query.all() |> Runbook.Query.by_id(runbook.id)) == nil
+      assert Repo.one(ActionRun.Query.all() |> ActionRun.Query.by_id(action_run.id)) == nil
+      assert Repo.one(ApiKey.Query.all() |> ApiKey.Query.by_id(api_key.id)) == nil
+      assert Repo.one(AuditEvent.Query.all() |> AuditEvent.Query.by_account_id(account_id)) == nil
+    end
+
+    test "returns not_found for malformed or unknown ids" do
+      assert Accounts.delete_by_id("not-a-uuid") == {:error, :not_found}
+      assert Accounts.delete_by_id(Ecto.UUID.generate()) == {:error, :not_found}
+    end
+  end
+
+  describe "erase_user_and_owned_accounts/1" do
+    test "deletes an account when the user is its sole live owner" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      user_id = user.id
+      account_id = account.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+
+      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_id, user_id)
+             ) == nil
+    end
+
+    test "keeps an account when another live owner exists and removes this membership" do
+      user = Fixtures.Users.create_user()
+      other_owner = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: other_owner.id,
+        role: "owner"
+      )
+
+      user_id = user.id
+      account_id = account.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+
+      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)).id == account_id
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_id, user_id)
+             ) == nil
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_id, other_owner.id)
+             ).user_id == other_owner.id
+    end
+
+    test "keeps an account when the user is a non-owner member and removes this membership" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+      user_id = user.id
+      account_id = account.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+
+      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)).id == account_id
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_id, user_id)
+             ) == nil
+    end
+
+    test "deletes the sole-owner account and keeps the co-owned account" do
+      user = Fixtures.Users.create_user()
+      other_owner = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account_a.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        user_id: other_owner.id,
+        role: "owner"
+      )
+
+      user_id = user.id
+      account_a_id = account_a.id
+      account_b_id = account_b.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_a_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_b_id)).id == account_b_id
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_b_id, user_id)
+             ) == nil
+
+      assert Repo.one(
+               Membership.Query.all()
+               |> Membership.Query.by_account_and_user(account_b_id, other_owner.id)
+             ).user_id == other_owner.id
+    end
+
+    test "counts only non-deleted owner memberships" do
+      user = Fixtures.Users.create_user()
+      former_owner = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      former_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: former_owner.id,
+          role: "owner"
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(former_membership)
+      user_id = user.id
+      account_id = account.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
+    end
+
+    test "returns not_found for malformed or unknown ids" do
+      assert Accounts.erase_user_and_owned_accounts("not-a-uuid") == {:error, :not_found}
+      assert Accounts.erase_user_and_owned_accounts(Ecto.UUID.generate()) == {:error, :not_found}
     end
   end
 

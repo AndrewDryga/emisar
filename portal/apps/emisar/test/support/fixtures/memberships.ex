@@ -58,6 +58,16 @@ defmodule Emisar.Fixtures.Memberships do
     suspended
   end
 
+  @doc "Soft-deletes a membership, returning the tombstoned row."
+  def mark_membership_as_deleted(%Membership{} = membership) do
+    {:ok, deleted} =
+      membership
+      |> Membership.Changeset.delete()
+      |> Repo.update()
+
+    deleted
+  end
+
   @doc "Marks a membership directory-managed (the SCIM synced-role lock), as a sync would."
   def mark_directory_managed(%Membership{} = membership) do
     {:ok, managed} =
