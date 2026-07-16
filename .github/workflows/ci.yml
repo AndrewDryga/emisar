@@ -628,7 +628,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      TERRAFORM_VERSION: 1.15.8
+      TERRAFORM_SHA256: d25ce7b6902013ad905db3d2eab0be4cd905887fe88b81a6171b8d5503c31f3d
       TFLINT_VERSION: v0.63.1
+      TFLINT_SHA256: 8441a7d97df20431f19c9b9d27ff4c63e308c964e86660bc7cc0cf7bbe0725e8
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -639,11 +642,14 @@ jobs:
         run: |
           ver="$(awk '/^terraform /{print $2}' .tool-versions)"
           test -n "$ver" || { echo "::error::no terraform pin in .tool-versions"; exit 1; }
+          test "$ver" = "$TERRAFORM_VERSION" || {
+            echo "::error::Terraform version in .tool-versions must match the workflow checksum pin"
+            exit 1
+          }
           tmp="$(mktemp -d)" && cd "$tmp"
           base="https://releases.hashicorp.com/terraform/${ver}"
           curl -fsSLO "${base}/terraform_${ver}_linux_amd64.zip"
-          curl -fsSLO "${base}/terraform_${ver}_SHA256SUMS"
-          grep " terraform_${ver}_linux_amd64.zip$" "terraform_${ver}_SHA256SUMS" | sha256sum -c -
+          printf '%s  %s\n' "$TERRAFORM_SHA256" "terraform_${ver}_linux_amd64.zip" | sha256sum --check --
           unzip -q "terraform_${ver}_linux_amd64.zip"
           sudo install -m 0755 terraform /usr/local/bin/terraform
           terraform version
@@ -653,8 +659,7 @@ jobs:
           tmp="$(mktemp -d)" && cd "$tmp"
           base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
           curl -fsSLO "${base}/tflint_linux_amd64.zip"
-          curl -fsSLO "${base}/checksums.txt"
-          grep " tflint_linux_amd64.zip$" checksums.txt | sha256sum -c -
+          printf '%s  %s\n' "$TFLINT_SHA256" tflint_linux_amd64.zip | sha256sum --check --
           unzip -q tflint_linux_amd64.zip
           sudo install -m 0755 tflint /usr/local/bin/tflint
           tflint --version
