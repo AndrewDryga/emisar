@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -76,6 +77,36 @@ func TestRunActionMsgUsesIntegerNanosecondOptions(t *testing.T) {
 	invalid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":\"5s\"}}")
 	if err := json.Unmarshal(invalid, &msg); err == nil {
 		t.Fatal("string timeout was accepted")
+	}
+}
+
+func TestRunActionMsgRejectsNonPositiveOptions(t *testing.T) {
+	requestID := testRequestID("req_bad_opts")
+	for _, option := range []string{"timeout", "max_stdout_bytes", "max_stderr_bytes"} {
+		for _, value := range []int{-1, 0} {
+			t.Run(fmt.Sprintf("%s_%d", option, value), func(t *testing.T) {
+				raw := fmt.Sprintf(
+					`{"type":"run_action","request_id":%q,"action_id":"a.b","args":{},"opts":{%q:%d}}`,
+					requestID, option, value,
+				)
+				var msg RunActionMsg
+				if err := json.Unmarshal([]byte(raw), &msg); err == nil || !strings.Contains(err.Error(), "must be positive") {
+					t.Fatalf("Unmarshal(%s) error = %v", raw, err)
+				}
+			})
+		}
+	}
+
+	var msg RunActionMsg
+	raw := fmt.Sprintf(
+		`{"type":"run_action","request_id":%q,"action_id":"a.b","args":{},"opts":{}}`,
+		requestID,
+	)
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatalf("empty opts rejected: %v", err)
+	}
+	if msg.Opts == nil || msg.Opts.hasOverrides() {
+		t.Fatalf("empty opts decoded as %+v", msg.Opts)
 	}
 }
 

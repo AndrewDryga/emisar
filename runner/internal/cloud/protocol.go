@@ -94,10 +94,42 @@ type runActionMsgWire struct {
 	ExpectedPackHash string          `json:"expected_pack_hash,omitempty"`
 	PackRef          string          `json:"pack_ref,omitempty"`
 	Args             json.RawMessage `json:"args,omitempty"`
-	Opts             *RunOpts        `json:"opts,omitempty"`
+	Opts             *runOptsWire    `json:"opts,omitempty"`
 	Reason           string          `json:"reason,omitempty"`
 	OperationID      string          `json:"operation_id,omitempty"`
 	Attestation      *Attestation    `json:"attestation,omitempty"`
+}
+
+type runOptsWire struct {
+	Timeout        *actionspec.Duration `json:"timeout,omitempty"`
+	MaxStdoutBytes *int                 `json:"max_stdout_bytes,omitempty"`
+	MaxStderrBytes *int                 `json:"max_stderr_bytes,omitempty"`
+}
+
+func (o *runOptsWire) value() (*RunOpts, error) {
+	if o == nil {
+		return nil, nil
+	}
+	result := &RunOpts{}
+	if o.Timeout != nil {
+		if *o.Timeout <= 0 {
+			return nil, fmt.Errorf("cloud: run_action opts.timeout must be positive")
+		}
+		result.Timeout = *o.Timeout
+	}
+	if o.MaxStdoutBytes != nil {
+		if *o.MaxStdoutBytes <= 0 {
+			return nil, fmt.Errorf("cloud: run_action opts.max_stdout_bytes must be positive")
+		}
+		result.MaxStdoutBytes = *o.MaxStdoutBytes
+	}
+	if o.MaxStderrBytes != nil {
+		if *o.MaxStderrBytes <= 0 {
+			return nil, fmt.Errorf("cloud: run_action opts.max_stderr_bytes must be positive")
+		}
+		result.MaxStderrBytes = *o.MaxStderrBytes
+	}
+	return result, nil
 }
 
 // UnmarshalJSON captures the exact args token before decoding it with UseNumber
@@ -116,6 +148,10 @@ func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
+	opts, err := wire.Opts.value()
+	if err != nil {
+		return err
+	}
 	if len(wire.Args) == 0 {
 		return fmt.Errorf("cloud: run_action args are required")
 	}
@@ -130,7 +166,7 @@ func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
 		Envelope: wire.Envelope, ActionID: wire.ActionID,
 		ExpectedPackHash: wire.ExpectedPackHash, PackRef: wire.PackRef,
 		Args: args, ArgsRaw: append(json.RawMessage(nil), normalizedArgsRaw(wire.Args)...),
-		Opts: wire.Opts, Reason: wire.Reason, OperationID: wire.OperationID,
+		Opts: opts, Reason: wire.Reason, OperationID: wire.OperationID,
 		Attestation: wire.Attestation,
 	}
 	return nil

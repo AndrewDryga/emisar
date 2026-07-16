@@ -20,7 +20,24 @@ func marshalRunActionMsg(m RunActionMsg) ([]byte, error) {
 	return json.Marshal(runActionMsgWire{
 		Envelope: m.Envelope, ActionID: m.ActionID,
 		ExpectedPackHash: m.ExpectedPackHash, PackRef: m.PackRef,
-		Args: raw, Opts: m.Opts, Reason: m.Reason, OperationID: m.OperationID,
+		Args: raw, Opts: runOptsForWire(m.Opts), Reason: m.Reason, OperationID: m.OperationID,
 		Attestation: m.Attestation,
 	})
+}
+
+func runOptsForWire(opts *RunOpts) *runOptsWire {
+	if opts == nil {
+		return nil
+	}
+	wire := &runOptsWire{}
+	if opts.Timeout != 0 {
+		wire.Timeout = &opts.Timeout
+	}
+	if opts.MaxStdoutBytes != 0 {
+		wire.MaxStdoutBytes = &opts.MaxStdoutBytes
+	}
+	if opts.MaxStderrBytes != 0 {
+		wire.MaxStderrBytes = &opts.MaxStderrBytes
+	}
+	return wire
 }
