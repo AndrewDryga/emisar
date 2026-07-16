@@ -559,6 +559,9 @@ func exactNumeric(value any) (*big.Rat, bool) {
 	default:
 		return nil, false
 	}
+	if !json.Valid([]byte(raw)) {
+		return nil, false
+	}
 	rational, ok := new(big.Rat).SetString(raw)
 	return rational, ok
 }

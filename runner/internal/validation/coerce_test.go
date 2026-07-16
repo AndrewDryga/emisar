@@ -130,6 +130,7 @@ func TestEqual(t *testing.T) {
 		{int64(5), int64(6)},
 		{int64(5), "abc"}, // uncoercible
 		{json.Number("1.2500000000000001"), 1.25},
+		{float64(0.5), "1/2"}, // big.Rat syntax is not JSON numeric syntax
 		{true, false},
 		{true, "true"}, // bool only equals bool
 	}
