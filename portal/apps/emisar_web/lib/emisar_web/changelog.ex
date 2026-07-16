@@ -11,6 +11,14 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-16],
+      slug: "stricter-runner-results-and-cleaner-settings",
+      title: "Stricter runner results and cleaner settings",
+      tag: "v0.25.4",
+      summary:
+        "The runner now rejects broken action contracts, invalid execution options, unchecked path targets, and out-of-range result metadata before those values cross the host boundary. Pack releases rebuild from the live registry history, the development box keeps Linux build artifacts away from the host, and account settings drop redundant state labels."
+    },
+    %{
       date: ~D[2026-07-15],
       slug: "versioned-registry-schemas-for-append-only-publishing",
       title: "Versioned registry schemas for append-only publishing",
