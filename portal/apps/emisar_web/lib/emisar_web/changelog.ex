@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-15],
+      slug: "versioned-registry-schemas-for-append-only-publishing",
+      title: "Versioned registry schemas for append-only publishing",
+      tag: "v0.25.3",
+      summary:
+        "Pack Registry schema publishing now versions immutable JSON schema filenames and identifiers, so a changed catalog or action schema appends new objects instead of colliding with a prior release. The publisher still creates every immutable object before moving catalog pointers, and tests tie each schema identifier to its public object path."
+    },
+    %{
+      date: ~D[2026-07-15],
       slug: "exact-action-validation-and-stronger-ui-proof",
       title: "Exact action validation and stronger UI proof",
       tag: "v0.25.2",
