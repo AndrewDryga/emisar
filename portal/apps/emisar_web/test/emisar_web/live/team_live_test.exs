@@ -1036,11 +1036,12 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an owner turns the report off and back on", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "h4 + span.text-zinc-500", "On")
+      refute has_element?(lv, "h4 + span")
+      assert has_element?(lv, ~s(button[role="switch"]), "Turn off")
 
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned off."
       assert Emisar.Repo.reload!(account).settings.monthly_report_opt_out
-      assert has_element?(lv, "h4 + span.text-zinc-500", "Off")
+      assert has_element?(lv, ~s(button[role="switch"]), "Turn back on")
 
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned back on"
       refute Emisar.Repo.reload!(account).settings.monthly_report_opt_out

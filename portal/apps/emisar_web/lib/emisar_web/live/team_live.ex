@@ -1539,12 +1539,7 @@ defmodule EmisarWeb.TeamLive do
           <%!-- ── Monthly report ── --%>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
-            <div class="flex items-center justify-between gap-3">
-              <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
-              <span class="text-[11px] font-medium text-zinc-500">
-                {if @current_account.settings.monthly_report_opt_out, do: "Off", else: "On"}
-              </span>
-            </div>
+            <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               A once-a-month email to the account owner summarizing what emisar did — runs executed,
               approvals that gated risky work, current posture. Sign-in and approval emails are
