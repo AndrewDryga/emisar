@@ -29,6 +29,12 @@ defmodule Emisar.Catalog do
   alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
   require Logger
 
+  # The 1.0 catalog contains 80 packs and 1,270 actions. These limits leave
+  # substantial growth headroom while bounding the per-advertisement DB work
+  # an authenticated but hostile runner can trigger.
+  @max_advertised_packs 128
+  @max_advertised_actions 2_048
+
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -72,12 +78,18 @@ defmodule Emisar.Catalog do
   end
 
   defp observe_state(runner, payload, connection) do
+    with {:ok, packs, actions} <- validate_catalog_payload(payload) do
+      observe_validated_state(runner, payload, packs, actions, connection)
+    end
+  end
+
+  defp observe_validated_state(runner, payload, packs, actions, connection) do
     case apply_runner_facts(runner, payload, connection) do
       {:error, :not_found} ->
         connection_error(connection)
 
       {:ok, updated_runner} ->
-        case sync_catalog(updated_runner, payload, connection) do
+        case sync_catalog(updated_runner, packs, actions, connection) do
           {:ok, pending_changed?} ->
             # Light up the pack-trust badge only when the pending set actually
             # moved (drift / new custom pack), and only after the commit.
@@ -142,10 +154,8 @@ defmodule Emisar.Catalog do
   # Best-effort by design: the catalog re-syncs on the next runner_state,
   # so a raise must never crash the runner socket (the durable runner-row
   # facts are already saved by then).
-  defp sync_catalog(%Runners.Runner{} = runner, payload, connection) do
+  defp sync_catalog(%Runners.Runner{} = runner, packs, actions, connection) do
     now = DateTime.utc_now()
-    packs = payload["packs"] || %{}
-    actions = payload["actions"] || []
 
     Repo.transaction(fn ->
       case fetch_catalog_connection_owner(runner, connection) do
@@ -160,7 +170,7 @@ defmodule Emisar.Catalog do
             |> Enum.map(&observe_action(runner, &1, packs, now))
             |> Enum.reject(&is_nil/1)
 
-          prune_missing_actions(runner.id, seen_ids)
+          _ = prune_missing_actions(runner.id, actions, seen_ids)
           pending_changed?
 
         {:error, :not_found} ->
@@ -170,6 +180,46 @@ defmodule Emisar.Catalog do
   rescue
     error -> {:error, error}
   end
+
+  defp validate_catalog_payload(payload) do
+    packs = payload["packs"]
+    actions = payload["actions"]
+
+    with :ok <- validate_advertised_packs(packs),
+         :ok <- validate_advertised_actions(actions) do
+      {:ok, packs, actions}
+    end
+  end
+
+  defp validate_advertised_packs(packs) when is_map(packs) do
+    count = map_size(packs)
+
+    if count <= @max_advertised_packs do
+      :ok
+    else
+      invalid_catalog("packs contains #{count} entries; maximum is #{@max_advertised_packs}")
+    end
+  end
+
+  defp validate_advertised_packs(_packs) do
+    invalid_catalog("packs must be an object with at most #{@max_advertised_packs} entries")
+  end
+
+  defp validate_advertised_actions(actions) when is_list(actions) do
+    count = length(actions)
+
+    if count <= @max_advertised_actions do
+      :ok
+    else
+      invalid_catalog("actions contains #{count} entries; maximum is #{@max_advertised_actions}")
+    end
+  end
+
+  defp validate_advertised_actions(_actions) do
+    invalid_catalog("actions must be an array with at most #{@max_advertised_actions} entries")
+  end
+
+  defp invalid_catalog(message), do: {:error, {:invalid_catalog, message}}
 
   defp fetch_catalog_connection_owner(runner, nil) do
     Runners.fetch_and_lock_active_runner(runner.id, runner.account_id, repo: Repo)
@@ -709,9 +759,15 @@ defmodule Emisar.Catalog do
   # abort the whole batch's action upsert.
   defp observe_action(_runner, _descriptor, _packs, _now), do: nil
 
-  defp prune_missing_actions(_runner_id, []), do: :ok
+  defp prune_missing_actions(runner_id, [], _seen_action_ids) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.by_runner_id(runner_id)
+    |> Repo.delete_all()
+  end
 
-  defp prune_missing_actions(runner_id, seen_action_ids) do
+  defp prune_missing_actions(_runner_id, _advertised_actions, []), do: :ok
+
+  defp prune_missing_actions(runner_id, _advertised_actions, seen_action_ids) do
     RunnerAction.Query.all()
     |> RunnerAction.Query.by_runner_id(runner_id)
     |> RunnerAction.Query.except_action_ids(seen_action_ids)

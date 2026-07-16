@@ -76,11 +76,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [_], _meta} = Catalog.list_pack_versions(subject)
     end
 
-    test "commits the runner-row facts even when the catalog sync raises", %{runner: runner} do
-      # A pack whose info is a string (not a map) makes the pack sync raise
-      # mid-transaction. The runner-row facts (version) are committed first
-      # in their own transaction, so they must persist anyway — and the
-      # socket must not crash (observe_state still returns {:ok, _}).
+    test "commits runner facts while ignoring a malformed pack descriptor", %{runner: runner} do
       payload = state_payload(version: "9.9.9", packs: %{"bad" => "not-a-map"})
 
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
@@ -93,13 +89,6 @@ defmodule Emisar.CatalogTest do
       runner: runner,
       subject: subject
     } do
-      # Regression: `apply_state` ends in `Repo.update` and can return
-      # `{:error, changeset}` from a bad field in untrusted runner JSON (here
-      # a string where `labels` expects a map → cast error). It used to be a
-      # hard `{:ok, _} = apply_state(...)` match above the try/rescue, so the
-      # MatchError killed the runner socket → reconnect loop → same crash.
-      # observe_state must keep the existing runner struct, NOT raise, and
-      # still upsert the packs/actions in the same advertisement.
       payload =
         state_payload(
           labels: "not-a-map",
@@ -109,9 +98,47 @@ defmodule Emisar.CatalogTest do
       assert {:ok, returned} = Catalog.observe_state(runner, payload)
       assert returned.id == runner.id
 
-      # The catalog sync below the failed row-update still ran.
       assert {:ok, [%RunnerAction{action_id: "linux.uptime"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "accepts the aggregate catalog limits", %{runner: runner} do
+      packs = Map.new(1..128, &{"pack-#{&1}", "malformed"})
+      actions = List.duplicate(nil, 2_048)
+      payload = state_payload(packs: packs, actions: actions)
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+    end
+
+    test "rejects a non-object packs field with a stable error", %{runner: runner} do
+      payload = state_payload(packs: [])
+
+      assert Catalog.observe_state(runner, payload) ==
+               {:error, {:invalid_catalog, "packs must be an object with at most 128 entries"}}
+    end
+
+    test "rejects more than 128 packs before catalog persistence", %{
+      runner: runner,
+      subject: subject
+    } do
+      packs =
+        Map.new(1..129, fn index ->
+          {"pack-#{index}", %{"version" => "1.0.0", "hash" => "sha256:#{index}"}}
+        end)
+
+      payload =
+        state_payload(
+          version: "rejected-version",
+          packs: packs,
+          actions: [action("overflow.run")]
+        )
+
+      assert Catalog.observe_state(runner, payload) ==
+               {:error, {:invalid_catalog, "packs contains 129 entries; maximum is 128"}}
+
+      assert Repo.reload!(runner).runner_version == runner.runner_version
+      assert {:ok, [], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, [], _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
     end
   end
 
@@ -149,7 +176,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "prunes actions no longer advertised", %{runner: runner, subject: subject} do
-      _ =
+      {:ok, _runner} =
         Catalog.observe_state(
           runner,
           state_payload(actions: [action("linux.a"), action("linux.b"), action("linux.c")])
@@ -162,6 +189,65 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [%RunnerAction{action_id: "linux.a"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "an empty actions list removes every previously advertised action", %{
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("linux.a"), action("linux.b")])
+        )
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, state_payload(actions: []))
+      assert {:ok, [], _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "a wholly malformed non-empty actions list preserves the last valid catalog", %{
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("linux.a"), action("linux.b")])
+        )
+
+      malformed = [nil, %{"id" => "not a valid action id"}]
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: malformed))
+
+      assert {:ok, actions, _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
+      assert Enum.map(actions, & &1.action_id) == ["linux.a", "linux.b"]
+    end
+
+    test "rejects a non-array actions field with a stable error", %{runner: runner} do
+      payload = state_payload(actions: %{})
+
+      assert Catalog.observe_state(runner, payload) ==
+               {:error, {:invalid_catalog, "actions must be an array with at most 2048 entries"}}
+    end
+
+    test "rejects more than 2048 actions before catalog persistence", %{
+      runner: runner,
+      subject: subject
+    } do
+      actions = List.duplicate(action("overflow.run"), 2_049)
+
+      payload =
+        state_payload(
+          packs: %{"new-pack" => %{"version" => "1.0.0", "hash" => "sha256:new"}},
+          actions: actions
+        )
+
+      assert Catalog.observe_state(runner, payload) ==
+               {:error, {:invalid_catalog, "actions contains 2049 entries; maximum is 2048"}}
+
+      assert {:ok, [], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, [], _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
     end
 
     test "updates the runner row's hostname/labels/version", %{runner: runner} do
