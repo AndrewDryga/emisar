@@ -45,6 +45,9 @@ defmodule Emisar.Runners.Runner do
     field :last_heartbeat_at, :utc_datetime_usec, virtual: true
 
     field :disabled_at, :utc_datetime_usec
+    # Runners are soft-deleted only: action_runs.runner_id is required and
+    # cascades on hard delete, which would erase run history, events, and
+    # approval records.
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]

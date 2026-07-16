@@ -230,6 +230,13 @@ service. A broken installed pack loads as degraded (`packs.degraded` log
 line, doctor failure naming the directory) while every healthy pack keeps
 serving.
 
+### Runner record retention
+
+Portal runner rows are soft-deleted, never hard-deleted. The required
+`action_runs.runner_id` foreign key cascades on a hard delete, which would
+remove the run history and its event and approval records; deletion therefore
+means tombstoning the runner row while preserving its historical references.
+
 ### Install scripts
 
 **What they are.** `install.sh` installs the runner and its service integration;
@@ -271,19 +278,19 @@ migration.
 
 **How it is versioned today.** The CDN's `/v1/` prefix, content addressing,
 append-only pack history, and written stability promise are the versioned
-part of the current publishing contract. The runner's facade is currently
-unversioned and hard-coded as the default registry base. It has no `/vN` room
-and no equivalent written stability promise.
+part of the current publishing contract. The runner's facade is intentionally
+unversioned and hard-coded as the default registry base. The exact facade
+paths listed above are frozen at 1.0; a future breaking registry shape must
+use an additive versioned path and keep these routes available.
 
 **What happens on skew.** A consumer using the CDN gets immutable objects and
 clear schema failures when the catalog format is not supported. A change to
 the facade path shape breaks deployed runners' `pack install` and `pack update`
 commands. There is no negotiation layer to save an old binary.
 
-The `/v1/` CDN is a 1.0 freeze candidate. The `emisar.dev/packs…` facade is an
-open item, not a frozen 1.0 guarantee: before 1.0 it must either gain a versioned
-prefix or be separately ratified and documented as a permanent compatibility
-path.
+The `/v1/` CDN and the `emisar.dev/packs…` facade are 1.0 compatibility
+surfaces. The facade remains unversioned by design; its paths and response
+semantics must not be silently edited after 1.0.
 
 ## Deprecating and removing a surface after 1.0
 
@@ -330,7 +337,7 @@ version when the shape is breaking, and use the deprecation path instead of
 silently editing the original.
 
 This policy records the boundary. It does not claim that every 1.0 safeguard is
-already implemented. The unversioned registry facade, the missing runner
-shutdown-reason handler, the lack of a mechanical wire-version bump guard, the
-unexercised retirement path, and the current absence of general CLI/MCP
-deprecation signaling remain explicit pre-1.0 work items.
+already implemented. The missing runner shutdown-reason handler, the lack of a
+mechanical wire-version bump guard, the unexercised retirement path, and the
+current absence of general CLI/MCP deprecation signaling remain explicit
+pre-1.0 work items.
