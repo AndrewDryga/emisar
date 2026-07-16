@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-15],
+      slug: "exact-action-validation-and-stronger-ui-proof",
+      title: "Exact action validation and stronger UI proof",
+      tag: "v0.25.2",
+      summary:
+        "Action arguments now keep numeric membership checks exact across the portal and runner, reject invalid allowed values before a pack or run proceeds, and validate the runner execution envelope instead of silently dropping malformed options. Contributor workflows also gain a frontier review preset, durable loop knowledge, a backlog drawer, and required before-and-after screenshot evidence for UI fixes."
+    },
+    %{
+      date: ~D[2026-07-15],
       slug: "cleaner-setup-and-reliable-release-publication",
       title: "Cleaner setup and reliable release publication",
       tag: "v0.25.1",
