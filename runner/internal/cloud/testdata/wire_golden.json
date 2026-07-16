@@ -1,0 +1,235 @@
+{
+  "protocol_version": 1,
+  "frames": {
+    "ack_result": {
+      "type": "ack_result",
+      "protocol_version": 1,
+      "request_id": "req_wire_ack"
+    },
+    "action_progress": {
+      "type": "action_progress",
+      "protocol_version": 1,
+      "request_id": "req_wire_progress",
+      "seq": 7,
+      "stream": "stderr",
+      "chunk": "warning: replica lag is 12s\n"
+    },
+    "action_result": {
+      "type": "action_result",
+      "protocol_version": 1,
+      "request_id": "req_wire_result",
+      "status": "failed",
+      "exit_code": 23,
+      "duration_ms": 12875,
+      "timed_out": true,
+      "emitted_stdout_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "emitted_stderr_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "emitted_stdout_bytes": 4096,
+      "emitted_stderr_bytes": 512,
+      "progress_chunks": 9,
+      "dropped_progress_chunks": 2,
+      "truncated_stdout": true,
+      "truncated_stderr": true,
+      "redactions": [
+        {
+          "name": "database-password",
+          "type": "named",
+          "count": 3
+        }
+      ],
+      "reason": "command returned a non-zero exit status",
+      "error": "replica is not ready",
+      "event_id": "evt_wire_result_0001",
+      "local_audit_failed": true,
+      "executed_command": "dbctl pause --job [REDACTED]",
+      "executed_command_truncated": true
+    },
+    "action_started": {
+      "type": "action_started",
+      "protocol_version": 1,
+      "request_id": "req_wire_started"
+    },
+    "cancel": {
+      "type": "cancel",
+      "protocol_version": 1,
+      "request_id": "req_wire_cancel"
+    },
+    "error": {
+      "type": "error",
+      "protocol_version": 1,
+      "request_id": "req_wire_error",
+      "code": "dispatch_backlog_full",
+      "message": "the runner cannot retain another pending result"
+    },
+    "heartbeat": {
+      "type": "heartbeat",
+      "protocol_version": 1,
+      "request_id": "req_wire_heartbeat",
+      "time": "2026-07-16T12:34:56Z",
+      "action_load": 4
+    },
+    "run_action": {
+      "type": "run_action",
+      "protocol_version": 1,
+      "request_id": "req_wire_run_action",
+      "action_id": "database.pause_job",
+      "expected_pack_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pack_ref": "database@1.2.3/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "args": {
+        "job_id": 891234567890123456,
+        "mode": "graceful"
+      },
+      "opts": {
+        "timeout": 45000000000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 16384
+      },
+      "reason": "planned maintenance",
+      "operation_id": "op_wire_golden_0001",
+      "attestation": {
+        "version": "emisar-attestation-v4",
+        "tool": "run_action",
+        "portal_origin": "https://emisar.example",
+        "action_id": "database.pause_job",
+        "pack_ref": "database@1.2.3/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "args_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "runner_refs": [
+          "runner-db-01~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "runner-db-02~bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "reason": "planned maintenance",
+        "operation_id": "op_wire_golden_0001",
+        "sig": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "nonce": "nonce_wire_golden_0001",
+        "issued_at": "2026-07-16T12:34:56Z",
+        "cert": {
+          "ca_id": "ca-production",
+          "key_id": "key-runner-db",
+          "public_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "valid_from": "2026-01-01T00:00:00Z",
+          "valid_until": "2027-01-01T00:00:00Z",
+          "scope": {
+            "group": "database",
+            "labels": {
+              "datacenter": "dc1"
+            }
+          },
+          "serial": "01JZWIREGOLDEN000000000000",
+          "sig": "22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    },
+    "runner_state": {
+      "type": "runner_state",
+      "protocol_version": 1,
+      "request_id": "req_wire_state",
+      "version": "0.12.0",
+      "hostname": "runner-db-01",
+      "group": "database",
+      "labels": {
+        "datacenter": "dc1",
+        "rack": "rack3"
+      },
+      "packs": {
+        "database": {
+          "version": "1.2.3",
+          "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "actions": [
+        {
+          "id": "database.pause_job",
+          "title": "Pause database job",
+          "summary": "Pause one database job safely.",
+          "description": "Pauses a database job and waits for the control plane to confirm the transition.",
+          "kind": "exec",
+          "risk": "high",
+          "side_effects": [
+            "pauses scheduled work",
+            "changes database state"
+          ],
+          "args": [
+            {
+              "name": "job_id",
+              "type": "integer",
+              "required": true,
+              "sensitive": true,
+              "default": 42,
+              "description": "The database job identifier.",
+              "validation": {
+                "enum": [
+                  42,
+                  43
+                ],
+                "pattern": "^[0-9]+$",
+                "min": 1.5,
+                "max": 9.5,
+                "allowed": [
+                  "42",
+                  "43"
+                ],
+                "allowed_paths": [
+                  "/srv/jobs"
+                ],
+                "denied_paths": [
+                  "/srv/jobs/private"
+                ],
+                "allowed_prefixes": [
+                  "job-"
+                ],
+                "denied_prefixes": [
+                  "tmp-"
+                ],
+                "max_items": 3,
+                "max_length": 128,
+                "min_duration": "5s",
+                "max_duration": "30s"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Pause nightly backup",
+              "args": {
+                "job_id": 42
+              }
+            }
+          ],
+          "search_terms": [
+            "pause",
+            "database",
+            "job"
+          ],
+          "pack_id": "database",
+          "limits": {
+            "default_timeout": 15000000000,
+            "timeout_min": 5000000000,
+            "timeout_max": 120000000000
+          },
+          "output": {
+            "parser": "json",
+            "max_stdout_bytes": 65536,
+            "max_stdout_bytes_min": 1024,
+            "max_stdout_bytes_max": 131072,
+            "max_stderr_bytes": 16384,
+            "max_stderr_bytes_min": 512,
+            "max_stderr_bytes_max": 32768
+          }
+        }
+      ],
+      "enforce_signatures": true,
+      "signing_ca_ids": [
+        "ca-production",
+        "ca-staging"
+      ],
+      "max_attestation_age_seconds": 86400
+    },
+    "shutdown": {
+      "type": "shutdown",
+      "protocol_version": 1,
+      "request_id": "req_wire_shutdown",
+      "reason": "cloud_shutdown",
+      "message": "The control plane is restarting; reconnect shortly."
+    }
+  }
+}
