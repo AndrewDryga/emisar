@@ -18,6 +18,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
+     |> assign(:session_count, 0)
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> assign_mfa_form()
@@ -34,8 +35,9 @@ defmodule EmisarWeb.ProfileLive do
       load_sessions(socket)
     else
       socket
-      |> assign(:sessions, [])
       |> assign(:current_session_digest, nil)
+      |> assign(:session_count, 0)
+      |> stream(:sessions, [])
     end
   end
 
@@ -47,10 +49,12 @@ defmodule EmisarWeb.ProfileLive do
       end
 
     current_digest = current_session_digest(socket.assigns.current_session_token)
-    # Pin the current device to the top so it's the anchor an operator reads
-    # from, not one row lost among the others.
-    sorted = Enum.sort_by(sessions, &(not current_session?(&1, current_digest)))
-    assign(socket, :sessions, sorted) |> assign(:current_session_digest, current_digest)
+    grouped = group_sessions(sessions, current_digest)
+
+    socket
+    |> assign(:current_session_digest, current_digest)
+    |> assign(:session_count, length(sessions))
+    |> stream(:sessions, grouped, reset: true)
   end
 
   defp current_session_digest(nil), do: nil
@@ -141,15 +145,12 @@ defmodule EmisarWeb.ProfileLive do
      |> reset_email_step()}
   end
 
-  def handle_event("revoke_session", %{"id" => id}, socket) do
-    case Auth.revoke_session(id, socket.assigns.current_subject) do
-      :ok ->
-        {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
-
-      {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "Session no longer exists.")}
-    end
+  def handle_event("revoke_session", %{"ids" => ids}, socket) when is_list(ids) do
+    revoke_sessions(socket, ids)
   end
+
+  def handle_event("revoke_session", %{"id" => id}, socket),
+    do: revoke_sessions(socket, [id])
 
   def handle_event("revoke_other_sessions", _params, socket) do
     keep = socket.assigns.current_session_token
@@ -695,7 +696,7 @@ defmodule EmisarWeb.ProfileLive do
             </:subtitle>
             <:actions>
               <.confirm_button
-                :if={length(@sessions) > 1}
+                :if={@session_count > 1}
                 id="signout-others"
                 title="Sign out of every other browser and device?"
                 confirm_label="Sign out everywhere else"
@@ -713,20 +714,28 @@ defmodule EmisarWeb.ProfileLive do
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
                sliver that read as a rendering bug; "Sign out everywhere else"
                is the long-list affordance. --%>
-          <ul class="divide-y divide-zinc-800/70 text-sm">
+          <ul
+            id="active-sessions"
+            phx-update="stream"
+            class="divide-y divide-zinc-800/70 text-sm"
+          >
             <.list_row
-              :for={session <- @sessions}
-              icon={session_device_icon(session)}
-              class={current_session?(session, @current_session_digest) && "bg-brand-500/[0.04]"}
+              :for={{dom_id, session} <- @streams.sessions}
+              id={dom_id}
+              icon={session.icon}
+              class={session.current? && "bg-brand-500/[0.04]"}
             >
               <:title>
                 <span class="truncate font-medium text-zinc-100">
-                  {session_device_label(session)}
+                  {session.device_label}
                 </span>
               </:title>
               <:chips>
-                <.chip :if={current_session?(session, @current_session_digest)} tone={:neutral}>
+                <.chip :if={session.current?} tone={:neutral}>
                   this device
+                </.chip>
+                <.chip :if={session.count > 1} tone={:neutral}>
+                  {session.count} sessions
                 </.chip>
               </:chips>
               <:meta>
@@ -735,17 +744,14 @@ defmodule EmisarWeb.ProfileLive do
                   id={"session-started-#{session.id}"}
                   value={session.inserted_at}
                   mode={:relative}
-                />
-                <%= if session_ip(session) do %>
-                  · <span class="font-mono">{session_ip(session)}</span>
-                <% end %>
+                /> · <span class="font-mono">{session.ip_address || "—"}</span>
               </:meta>
               <:actions>
                 <%!-- Neutral, not rose — a routine self-service sign-out shouldn't
                      read as dangerous as the account-wide "Sign out everywhere else"
                      (which keeps the danger tone). --%>
                 <.confirm_button
-                  :if={not current_session?(session, @current_session_digest)}
+                  :if={not session.current?}
                   id={"signout-session-#{session.id}"}
                   title="Sign out this session?"
                   confirm_label="Sign out"
@@ -753,14 +759,18 @@ defmodule EmisarWeb.ProfileLive do
                   tone={:neutral}
                   size={:sm}
                   class="shrink-0"
-                  on_confirm={JS.push("revoke_session", value: %{id: session.id})}
+                  on_confirm={JS.push("revoke_session", value: %{ids: session.session_ids})}
                 >
                   <:body>That browser or device will need to sign in again.</:body>
                   Sign out
                 </.confirm_button>
               </:actions>
             </.list_row>
-            <li :if={@sessions == []} class="py-6 text-xs text-zinc-500">
+            <li
+              :if={@session_count == 0}
+              id="active-sessions-empty"
+              class="py-6 text-xs text-zinc-500"
+            >
               No active sessions.
             </li>
           </ul>
@@ -774,4 +784,44 @@ defmodule EmisarWeb.ProfileLive do
   # makes the row visually scannable instead of "wall of identical text".
   defp session_device_icon(%{metadata: %{"user_agent" => ua}}), do: UserAgent.icon(ua)
   defp session_device_icon(_), do: "hero-globe-alt"
+
+  defp group_sessions(sessions, current_digest) do
+    sessions
+    |> Enum.group_by(&session_device_label/1)
+    |> Enum.map(fn {device_label, device_sessions} ->
+      representative = hd(device_sessions)
+
+      %{
+        id: representative.id,
+        session_ids: Enum.map(device_sessions, & &1.id),
+        device_label: device_label,
+        icon: session_device_icon(representative),
+        current?: Enum.any?(device_sessions, &current_session?(&1, current_digest)),
+        count: length(device_sessions),
+        inserted_at: representative.inserted_at,
+        ip_address: session_ip(representative)
+      }
+    end)
+    |> Enum.sort_by(fn session ->
+      {if(session.current?, do: 0, else: 1), -DateTime.to_unix(session.inserted_at, :microsecond)}
+    end)
+  end
+
+  defp revoke_sessions(socket, ids) do
+    subject = socket.assigns.current_subject
+
+    revoked_count =
+      Enum.count(ids, &(Auth.revoke_session(&1, subject) == :ok))
+
+    case revoked_count do
+      0 ->
+        {:noreply, put_flash(socket, :error, "Session no longer exists.")}
+
+      1 ->
+        {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
+
+      count ->
+        {:noreply, socket |> put_flash(:info, "#{count} sessions revoked.") |> load_sessions()}
+    end
+  end
 end

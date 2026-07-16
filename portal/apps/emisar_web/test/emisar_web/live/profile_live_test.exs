@@ -209,6 +209,41 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert length(sessions) == 2
     end
 
+    test "groups same-device sessions and signs out the whole group", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+
+      first =
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{"user_agent" => user_agent})
+
+      second =
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{"user_agent" => user_agent})
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert html =~ "2 sessions"
+      assert has_element?(lv, "#active-sessions li", "Chrome on Linux")
+
+      first_digest = Emisar.Crypto.hash(first)
+      second_digest = Emisar.Crypto.hash(second)
+      subject = Fixtures.Subjects.subject_for(user, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+
+      grouped_ids =
+        sessions
+        |> Enum.filter(&(&1.token in [first_digest, second_digest]))
+        |> Enum.map(& &1.id)
+
+      html = render_click(lv, "revoke_session", %{"ids" => grouped_ids})
+
+      assert html =~ "2 sessions revoked."
+      refute html =~ "Chrome on Linux"
+      assert {:ok, [_], _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+    end
+
     test "revoking one non-current session removes exactly that row", %{
       conn: conn,
       user: user,
@@ -216,7 +251,11 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       # A second device — the row we'll revoke. Its session is found by being the
       # one whose token-digest is NOT the current device's.
-      other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
+      other_raw =
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
+          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+        })
+
       other_digest = Emisar.Crypto.hash(other_raw)
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -241,7 +280,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Two devices: one current, one other. The other carries a sign-out control;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
-      other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
+      other_raw =
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
+          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+        })
+
       other_digest = Emisar.Crypto.hash(other_raw)
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -250,7 +293,6 @@ defmodule EmisarWeb.ProfileLiveTest do
       current = Enum.find(sessions, &(&1.token != other_digest))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
       assert has_element?(lv, "#signout-session-#{other.id}")
 
       refute has_element?(lv, "#signout-session-#{current.id}")

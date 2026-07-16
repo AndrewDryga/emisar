@@ -3402,6 +3402,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :icon, :string, default: nil
   attr :icon_tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
+  attr :id, :string, default: nil
   attr :class, :string, default: nil
   # Island rows keep the px-5 gutter; a CONTENT-ON-CANVAS list passes its own
   # (the run_row precedent) so rows align to the page rail instead.
@@ -3414,7 +3415,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def list_row(assigns) do
     ~H"""
-    <li class={["flex flex-wrap items-start gap-4 sm:flex-nowrap", @padding, @class]}>
+    <li id={@id} class={["flex flex-wrap items-start gap-4 sm:flex-nowrap", @padding, @class]}>
       <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
       <span
         :if={@leading == [] && @icon}
@@ -4276,7 +4277,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :size, :atom, default: :md
   attr :icon, :string, default: nil
   attr :class, :any, default: nil
-  attr :rest, :global, doc: "trigger passthrough — phx-disable-with, aria-label, disabled, :if"
+
+  attr :rest, :global,
+    include: ~w(disabled),
+    doc: "trigger passthrough — phx-disable-with, aria-label, disabled, :if"
+
   slot :body, required: true, doc: "the consequence copy, shown in the modal"
   slot :inner_block, required: true, doc: "the trigger label"
 
