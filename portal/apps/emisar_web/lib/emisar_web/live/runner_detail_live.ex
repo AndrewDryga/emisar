@@ -237,7 +237,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
               <span :if={!@runner.hostname} class="text-zinc-500">—</span>
             </.meta_field>
-            <.meta_field label="Version">
+            <.meta_field label="Version" wrap>
               <span class="inline-flex items-center gap-2">
                 <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
                 <.version_chip
@@ -266,14 +266,13 @@ defmodule EmisarWeb.RunnerDetailLive do
                it, NOT tucked beside the identity labels (labels say what the
                runner IS; this says why it dropped). Only while it's down — else
                it's stale noise from the last drop. --%>
+          <% disconnect_message = disconnect_message(@runner) %>
           <div
-            :if={disconnect_note?(@runner)}
+            :if={disconnect_message}
             class="mt-4 flex items-center gap-1.5 text-rose-300/90"
           >
             <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
-            <span class="text-xs">
-              Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
-            </span>
+            <span class="text-xs">{disconnect_message}</span>
           </div>
 
           <%!-- Labels on their own hairline row — identity metadata, not a
@@ -559,11 +558,19 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   defp runner_labels(_), do: []
 
-  # Show the last-disconnect reason note when the runner isn't online and
-  # we actually have a reason on file.
-  defp disconnect_note?(%{online?: true}), do: false
+  # Socket termination values are diagnostic data, not customer copy. Routine
+  # closes add nothing beyond the Offline badge; abnormal closes get one stable
+  # sentence while their raw reason remains available in logs and audit data.
+  defp disconnect_message(%{online?: true}), do: nil
 
-  defp disconnect_note?(%{last_disconnect_reason: r}) when is_binary(r) and r != "", do: true
+  defp disconnect_message(%{last_disconnect_reason: reason}) when is_binary(reason) do
+    case String.trim(reason) do
+      reason when reason in ["", "normal", "closed", "{:error, :closed}", "reconnect"] -> nil
+      "shutdown" -> "Runner service stopped."
+      "shutdown:" <> _reason -> "Runner service stopped."
+      _reason -> "Connection ended unexpectedly."
+    end
+  end
 
-  defp disconnect_note?(_), do: false
+  defp disconnect_message(_runner), do: nil
 end

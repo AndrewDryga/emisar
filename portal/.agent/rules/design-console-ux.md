@@ -343,6 +343,44 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     occupy the same primary grid columns as saved editors. They do not stretch through
     the rail merely because the rail is empty. Sweep: full-width add rows below 3+1
     editor-and-rail grids.
+28. **One-line copy values are compact controls, not code panels.** URLs, tokens, and
+    one-line commands use one short row without an internal scrollbar. Clip a long
+    preview and copy the complete literal; only genuinely multiline inspectable content
+    earns the taller framed panel. Sweep: one-line copy surfaces with forced button
+    height, generous block padding, scrollbars, or a separate panel header.
+29. **A settings card's state belongs in its title row.** Put `On`, `Off`, `Required`,
+    or an equivalent binary-state chip beside the title or at the right edge. Do not
+    render a separate status row between the description and the action. Sweep:
+    settings cards whose only post-description row is a state chip.
+30. **Copy actions do not repeat an obvious artifact noun.** A button inside a command
+    surface says `Copy`, not `Copy command`. Qualify the label only when adjacent copy
+    targets need distinction, such as `Copy name` and `Copy URL` in a third-party form.
+    Sweep: `Copy command` labels inside already-labeled command rows or panels.
+31. **Passive binary state in a settings title stays quiet.** When the adjacent action
+    already communicates enabled/disabled behavior, render `On` or `Off` as muted
+    title-row text rather than a saturated success chip. Reserve colored chips for
+    state that needs scanning or attention. Sweep: green binary-state chips above an
+    immediately adjacent toggle action.
+32. **An unlabeled dot represents only one unambiguous status.** Do not put an
+    enabled/disabled dot beside metadata that reports a different status such as sync
+    freshness. Leave the healthy default unmarked and name an exceptional state like
+    `Disabled` in text. Sweep: entity rows where a dot and adjacent status text describe
+    different dimensions.
+33. **Setup reassurance is short and operational.** Explain why a potentially
+    concerning setting is safe in one plain sentence, then say exactly where to change
+    it in one plain sentence. Do not repeat the security model, define product terms,
+    or add policy advice inside a mechanical setup step. Sweep: optional setup
+    disclosures with multiple paragraphs or more than two prose sentences before the
+    control.
+34. **Transport diagnostics never render as customer copy.** Hide routine close
+    reasons and map abnormal socket or process values to one stable sentence in the
+    operator's vocabulary. Keep tuples, atoms, and inspected exceptions in logs or
+    audit detail. Sweep: rendered `inspect` output, tuple syntax, and raw disconnect or
+    error fields.
+35. **Composite metadata values are never clipped by scalar truncation.** A value that
+    includes a badge, copy affordance, or other sibling control opts out of a metadata
+    field's single-text truncation and wraps as a complete unit. Sweep: `truncate`
+    parents around chips, tooltips, or buttons.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

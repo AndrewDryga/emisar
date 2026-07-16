@@ -32,8 +32,9 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       assert html =~ "space-y-4"
       assert html =~ "curl -sSL https://control.example/install.sh | sudo bash"
       assert html =~ ~s(data-copy-text="curl -sSL https://control.example/install.sh | sudo bash")
-      assert html =~ "whitespace-pre-wrap break-words"
-      assert html =~ "flex-col items-stretch sm:flex-row sm:items-center"
+      assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
+      assert html =~ "min-h-9"
+      refute html =~ "overflow-x-auto"
       refute html =~ "Upgrade command"
     end
 

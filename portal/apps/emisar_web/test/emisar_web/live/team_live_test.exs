@@ -77,12 +77,13 @@ defmodule EmisarWeb.TeamLiveTest do
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta prod")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       # The connection row links straight to its detail page; the branded sign-in
       # link shows once a connection exists.
       assert html =~ "Okta prod"
       assert html =~ ~p"/app/#{account}/settings/sso/#{provider.id}"
       assert html =~ "Team sign-in link"
+      refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]")
     end
 
     test "pending requests stay hidden without the SSO plan/permission", %{conn: conn} do
@@ -1035,8 +1036,11 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an owner turns the report off and back on", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
+      assert has_element?(lv, "h4 + span.text-zinc-500", "On")
+
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned off."
       assert Emisar.Repo.reload!(account).settings.monthly_report_opt_out
+      assert has_element?(lv, "h4 + span.text-zinc-500", "Off")
 
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned back on"
       refute Emisar.Repo.reload!(account).settings.monthly_report_opt_out

@@ -24,6 +24,39 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.hostname
   end
 
+  test "does not expose a routine socket-close tuple", %{conn: conn, account: account} do
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        connected?: false
+      )
+      |> Ecto.Changeset.change(last_disconnect_reason: "{:error, :closed}")
+      |> Emisar.Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    refute html =~ "Disconnect reason"
+    refute html =~ "{:error, :closed}"
+  end
+
+  test "replaces an abnormal socket reason with customer-facing copy", %{
+    conn: conn,
+    account: account
+  } do
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        connected?: false
+      )
+      |> Ecto.Changeset.change(last_disconnect_reason: "websocket dropped")
+      |> Emisar.Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "Connection ended unexpectedly."
+    refute html =~ "websocket dropped"
+  end
+
   # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
   test "a below-minimum runner shows an 'unsupported' version chip", %{
     conn: conn,
@@ -31,8 +64,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     runner = Fixtures.Runners.create_runner(account_id: account.id, runner_version: "0.0.0")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     assert html =~ "unsupported"
+    assert has_element?(lv, "#runner-version-#{runner.id}-tt", "unsupported")
+    assert html =~ "col-span-2 sm:col-span-1"
     assert html =~ "Runner update required"
     assert html =~ "/install.sh | sudo bash"
     assert html =~ "bg-amber-300/40"

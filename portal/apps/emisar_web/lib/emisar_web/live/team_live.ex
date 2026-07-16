@@ -1403,13 +1403,16 @@ defmodule EmisarWeb.TeamLive do
             <ul :if={@providers != []} class="mt-3 space-y-0.5">
               <li :for={provider <- @providers}>
                 <.link
+                  id={"sso-provider-#{provider.id}"}
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
                   class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition hover:bg-white/[0.04]"
                 >
-                  <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
                   <div class="min-w-0 flex-1">
-                    <span class="block truncate text-sm leading-tight text-zinc-200">
-                      {provider.name}
+                    <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
+                      <span class="truncate">{provider.name}</span>
+                      <span :if={not provider.enabled} class="shrink-0 text-[10px] text-zinc-500">
+                        Disabled
+                      </span>
                     </span>
                     <%!-- Directory-sync status, one quiet line pulled up snug under
                          the name: how much the sync has pulled in (users + distinct
@@ -1479,13 +1482,13 @@ defmodule EmisarWeb.TeamLive do
           <%!-- ── Require single sign-on (its own card + doc) ── --%>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
-            <h4 class="text-sm font-medium text-zinc-100">Require single sign-on</h4>
+            <div class="flex items-center justify-between gap-3">
+              <h4 class="text-sm font-medium text-zinc-100">Require single sign-on</h4>
+              <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
+            </div>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               When required, members sign in through this account's identity provider — magic-link
               sign-ins are bounced to SSO. Needs an enabled SSO connection.
-            </p>
-            <p :if={@current_account.settings.require_sso} class="mt-3">
-              <.chip tone={:brand}>Required</.chip>
             </p>
             <div class="mt-4">
               <%= cond do %>
@@ -1536,18 +1539,16 @@ defmodule EmisarWeb.TeamLive do
           <%!-- ── Monthly report ── --%>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
-            <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
+            <div class="flex items-center justify-between gap-3">
+              <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
+              <span class="text-[11px] font-medium text-zinc-500">
+                {if @current_account.settings.monthly_report_opt_out, do: "Off", else: "On"}
+              </span>
+            </div>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               A once-a-month email to the account owner summarizing what emisar did — runs executed,
               approvals that gated risky work, current posture. Sign-in and approval emails are
               separate and keep working either way.
-            </p>
-            <p class="mt-3">
-              <.chip tone={
-                if @current_account.settings.monthly_report_opt_out, do: :neutral, else: :brand
-              }>
-                {if @current_account.settings.monthly_report_opt_out, do: "Off", else: "On"}
-              </.chip>
             </p>
             <div class="mt-4">
               <.switch

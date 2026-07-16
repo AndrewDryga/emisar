@@ -2793,10 +2793,9 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   One code value with its copy button — a sign-in link, a callback URI, a
   SCIM base URL, or a short command inside a callout. Pass `label` when a setup
-  flow needs to map the value to a named field in another product. It stays on
-  one scrollable line by default; pass `wrap` when a narrow layout should wrap
-  the value. The framed multi-line snippet is `code_panel`; this is the compact
-  value row.
+  flow needs to map the value to a named field in another product. The preview
+  stays on one clipped line while Copy preserves the complete value. The framed
+  multi-line snippet is `code_panel`; this is the compact value row.
 
       <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
   """
@@ -2804,8 +2803,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :label, :string, default: nil
   attr :value, :string, required: true
   attr :copy_label, :string, default: "Copy"
-  attr :wrap, :boolean, default: false
-  attr :stack_on_mobile, :boolean, default: false
+  attr :prompt, :boolean, default: false
   attr :class, :any, default: nil
 
   def code_line(assigns) do
@@ -2818,28 +2816,16 @@ defmodule EmisarWeb.CoreComponents do
         {@label}
       </p>
       <div class={[
-        "flex gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
-        @label && "mt-2",
-        if(@stack_on_mobile,
-          do: "flex-col items-stretch sm:flex-row sm:items-center",
-          else: "items-center"
-        )
+        "flex min-h-9 items-center gap-2 rounded-lg bg-zinc-950/80 px-2.5 py-1 ring-1 ring-zinc-800",
+        @label && "mt-1.5"
       ]}>
+        <span :if={@prompt} class="select-none font-mono text-xs text-zinc-600">$</span>
         <code
           id={@id}
           phx-no-format
-          class={[
-            "min-w-0 flex-1 font-mono text-xs text-zinc-300",
-            if(@wrap,
-              do: "whitespace-pre-wrap break-words",
-              else: "overflow-x-auto whitespace-nowrap"
-            )
-          ]}
+          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs leading-5 text-zinc-300"
         >{@value}</code>
-        <.copy_button
-          text={@value}
-          class={["min-h-10 shrink-0", @stack_on_mobile && "ml-auto"]}
-        >
+        <.copy_button text={@value} class="shrink-0">
           {@copy_label}
         </.copy_button>
       </div>
@@ -3626,9 +3612,6 @@ defmodule EmisarWeb.CoreComponents do
         <.code_line
           id={"#{@id}-command"}
           value={@command}
-          copy_label="Copy command"
-          wrap
-          stack_on_mobile
         />
       </div>
     </.callout>
@@ -4410,31 +4393,14 @@ defmodule EmisarWeb.CoreComponents do
               <div class="space-y-8">
                 <section>
                   <.section_header title="Run this on the host" />
-                  <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads
-                       as corruption in the very command we're asking the
-                       operator to trust — scroll on narrow screens; Copy is
-                       the real path. --%>
-                  <%!-- Terminal-artifact styling (the code_panel edge — a solid
-                       ring + a hairline inset highlight, softer than a flat
-                       border) with a decorative "$" prompt. The $ is select-none
-                       and never copied; Copy hands over the literal command. --%>
-                  <div class="flex items-center gap-3 rounded-xl bg-zinc-900/60 p-4 font-mono text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800">
-                    <span class="select-none text-zinc-600">$</span>
-                    <%!-- Clip + ellipsis, NOT overflow-x-auto: a horizontal
-                         scrollbar adds height to this line, and items-center then
-                         drops the $ and Copy below the command's baseline. The
-                         full command rides on Copy; the box only previews it. --%>
-                    <pre class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-pre text-zinc-300">{@install_command}</pre>
-                    <%!-- Copy the literal string, not the rendered element's
-                           innerText: the leading space (HISTCONTROL=ignorespace)
-                           is significant and the selector path would strip it. --%>
-                    <.copy_button
-                      text={@install_command}
-                      class="shrink-0 bg-brand-500/20 px-2.5 text-brand-200 hover:bg-brand-500/30 font-semibold"
-                    >
-                      Copy
-                    </.copy_button>
-                  </div>
+                  <%!-- Copy carries the literal string, including its leading
+                       HISTCONTROL space; the compact preview deliberately clips. --%>
+                  <.code_line
+                    id="runner-install-command"
+                    value={@install_command}
+                    prompt
+                    class="mt-3"
+                  />
                   <%!-- Right where the odd first character raises the question. --%>
                   <p class="mt-2 text-xs text-zinc-600">
                     The leading space keeps the key out of your shell history.

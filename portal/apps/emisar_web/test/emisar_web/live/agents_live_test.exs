@@ -207,6 +207,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Read-only tools"
       assert html =~ "Write/delete tools"
       assert html =~ "Always allow"
+      assert html =~ "Emisar still enforces policy and asks for approval before risky actions"
+      refute html =~ "What counts as &quot;risky&quot;"
 
       # The local-bridge snippet shape is NOT shown for this client.
       refute html =~ "EMISAR_API_KEY"
@@ -560,10 +562,9 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
-      # The optional step is present, framed as safe BECAUSE emisar gates
-      # server-side (auto-permit only drops the client's own prompt).
+      # The optional step gives one direct safety sentence before the setting.
       assert html =~ "Skip the per-tool prompts"
-      assert html =~ "server-side"
+      assert html =~ "Emisar still enforces policy and asks for approval before risky actions"
       # The verified Claude Code rule — wildcard over the emisar MCP server.
       assert html =~ "mcp__emisar__*"
       assert html =~ "permissions"

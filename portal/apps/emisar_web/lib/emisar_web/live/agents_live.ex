@@ -530,7 +530,7 @@ defmodule EmisarWeb.AgentsLive do
       ],
       auto_permit: %{
         pointer:
-          "After connecting, open Settings → Connectors → Emisar. Under Tool permissions, set Read-only tools and Write/delete tools to Always allow.",
+          "After connecting, open Settings → Connectors → Emisar, then set Read-only tools and Write/delete tools to Always allow.",
         doc_url: nil
       }
     }
@@ -1529,20 +1529,14 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # The shared WHY — stated the same way for the snippet and pointer variants:
-  # safe BECAUSE emisar gates server-side; the client toggle only removes its
-  # own prompt.
+  # One direct safety sentence; the client-specific instruction follows it.
   attr :client_label, :string, required: true
 
   defp auto_permit_why(assigns) do
     ~H"""
     <p class="text-xs text-zinc-400">
-      emisar gates every action <strong class="text-zinc-200">server-side</strong>
-      — per-account policy, and human approval on risky ones — so {@client_label}'s
-      per-tool "allow this?" prompt is redundant for emisar's tools. Safe to silence:
-      this only drops {@client_label}'s prompt. A risky action still pauses for approval
-      at emisar, and an out-of-policy one is still denied. What counts as "risky" is your <strong class="text-zinc-200">Policy</strong>. Keep the tiers you don't want run
-      unattended on require-approval or deny.
+      Emisar still enforces policy and asks for approval before risky actions, so it is safe to
+      turn off {@client_label}'s extra prompts.
     </p>
     """
   end
@@ -1579,8 +1573,6 @@ defmodule EmisarWeb.AgentsLive do
             label={@rpc_url_label}
             value={@rpc_url}
             copy_label="Copy URL"
-            wrap
-            stack_on_mobile
           />
         </div>
         <.status_note

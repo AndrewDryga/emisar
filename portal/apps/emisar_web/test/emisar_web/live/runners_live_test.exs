@@ -16,6 +16,9 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Run this on the host"
       assert html =~ "curl -sSL"
       assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
+      assert has_element?(lv, "#runner-install-command")
+      assert html =~ "min-h-9"
+      refute html =~ "overflow-x-auto"
       # The redundant "Connect a runner" header button is dropped while the wizard shows.
       refute has_element?(lv, "a", "Connect a runner")
     end
@@ -376,7 +379,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "unsupported"
       assert html =~ "Runner update required"
       assert html =~ "/install.sh | sudo bash"
-      assert html =~ "Copy command"
+      assert has_element?(lv, "#runner-upgrade-command + button", "Copy")
       assert has_element?(lv, "#fleet-attention.mb-10.space-y-6")
       assert text_position(html, "Runner update required") < text_position(html, "1 connected")
     end

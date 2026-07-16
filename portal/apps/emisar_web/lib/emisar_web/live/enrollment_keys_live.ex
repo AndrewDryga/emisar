@@ -296,7 +296,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 annotation="contains your enrollment key"
                 prompt
                 copy
-                copy_label="Copy command"
                 code={"curl -sSL #{@base_url}/install.sh | sudo EMISAR_AUTH_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
                 class="mt-6"
               />
