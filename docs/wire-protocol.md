@@ -92,7 +92,7 @@ maximum attestation age.
       "description": "Runs nodetool status and returns the bounded result.",
       "side_effects": [],
       "args": [],
-      "limits": {"default_timeout": "60s"},
+      "limits": {"default_timeout": 60000000000},
       "output": {"parser": "text", "max_stdout_bytes": 16384, "max_stderr_bytes": 16384}
     }
   ]
@@ -101,7 +101,8 @@ maximum attestation age.
 
 Runner advertisements prove deployment only. MCP model-facing descriptors come
 from the operator-trusted manifest for the exact pack hash. A mismatch excludes
-that runner/action from execution.
+that runner/action from execution. Descriptor timeout fields are integer
+nanoseconds, matching Go's `time.Duration` wire representation.
 
 ## `run_action`
 

@@ -109,6 +109,13 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	if a.Limits.TimeoutMin.String() != "1s" || a.Limits.TimeoutMax.String() != "30s" {
 		t.Fatalf("timeout bounds: min=%s max=%s", a.Limits.TimeoutMin, a.Limits.TimeoutMax)
 	}
+	limitsJSON, err := json.Marshal(a.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(limitsJSON), `{"default_timeout":5000000000,"timeout_min":1000000000,"timeout_max":30000000000}`; got != want {
+		t.Fatalf("limits JSON = %s, want %s", got, want)
+	}
 	if pi, ok := msg.Packs["t"]; !ok || pi.Hash == "" {
 		t.Fatalf("pack info missing or no hash: %+v", msg.Packs)
 	}
