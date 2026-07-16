@@ -16,12 +16,11 @@
 import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:4010";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const CHROME =
-  process.env.CHROME ??
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = resolveChrome();
 const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-uifix-profile";
 
 const argv = process.argv.slice(2);
@@ -63,7 +62,7 @@ const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: "new",
   userDataDir: PROFILE,
-  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
+  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
 });
 
 try {

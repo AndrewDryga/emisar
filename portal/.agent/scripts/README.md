@@ -34,6 +34,31 @@ shipped WebP.
 - **Google Chrome** installed, and **ImageMagick** on `PATH`
   (`brew install imagemagick`).
 
+## With a coop box (serve in the box, capture on the host)
+
+Run portal **inside the box** so its live code is what you shoot, publish the port,
+and capture from the **host** (macOS Chrome + ImageMagick, the prereqs above):
+
+```sh
+# 1. in the box (coop shell), serve portal — PGHOST=db is baked, dev binds 0.0.0.0:4000:
+cd portal && mix ecto.setup && mix phx.server        # ecto.setup seeds demo@emisar.dev
+#    coop prints:  serving box :4000 at http://localhost:<PORT>   (a stable, distinct host
+#    port — never collides with your host's own :4000 dev or :4010 compose stack)
+
+# 2. on the host, shoot against that published port:
+cd portal/.agent/scripts
+BASE_URL=http://localhost:<PORT> node shot.mjs /pricing --label after --heading "Pricing"
+```
+
+`test-results/` is repo-mounted, so the PNGs land in your working tree either way.
+`resolve-chrome.mjs` finds the browser automatically (host Chrome, or `$CHROME`).
+
+> **Capturing from *inside* the box isn't wired up yet.** The scripts are
+> box-portable (browser resolver + container-safe Chrome flags), but Playwright's
+> Chromium currently SIGTRAPs in a coop box's mount composition (it launches fine in
+> a bare container with the same hardening) — tracked in coop's queue as
+> `box-chromium-sigtraps`. Until that lands, capture host-side as above.
+
 ## Run
 
 ```sh

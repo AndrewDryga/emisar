@@ -9,11 +9,10 @@ import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
+import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
 const BASE = process.env.BASE_URL ?? "http://localhost:4010";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const CHROME =
-  process.env.CHROME ??
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = resolveChrome();
 const OUT = "/tmp/docshots";
 const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-docshots-profile";
 const STATIC = resolve(import.meta.dirname, "../../apps/emisar_web/priv/static/images");
@@ -83,7 +82,7 @@ const b = await puppeteer.launch({
   executablePath: CHROME,
   headless: "new",
   userDataDir: PROFILE,
-  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
+  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
 });
 const p = await b.newPage();
 await p.setViewport({ width: 1680, height: 2800, deviceScaleFactor: 2 });

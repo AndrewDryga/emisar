@@ -15,13 +15,12 @@
 import puppeteer from "puppeteer-core";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:4010";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
 const SLUG = process.env.ACCOUNT_SLUG ?? "demo";
-const CHROME =
-  process.env.CHROME ??
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = resolveChrome();
 const OUT = process.env.OUT_DIR
   ? resolve(process.env.OUT_DIR)
   : resolve(import.meta.dirname, "../../../test-results/console-audit");
@@ -157,7 +156,7 @@ async function pollMagicLink(seenIds) {
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: "new",
-  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
+  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
 });
 
 try {

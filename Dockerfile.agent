@@ -64,11 +64,14 @@ RUN cd /home/node \
  && asdf reshim \
  && { command -v mix >/dev/null 2>&1 && mix local.hex --force && mix local.rebar --force || true; }
 
-# Login shells source /etc/profile, which RESETS PATH to the Debian default and
-# hides every asdf shim (go, elixir, …) — agents routinely shell out via
-# `bash -lc`. Mirror the ENV PATH in a profile.d drop-in, exactly as coop's base
-# image does (its box-toolchain-on-login-path rule). Kept at the end of the file
-# so editing it never invalidates the cached Erlang build layer above.
+# Login shells source /etc/profile, which RESETS PATH to the Debian default and hides
+# every asdf shim (go, elixir, …) — agents routinely shell out via `bash -lc`. Mirror the
+# ENV PATH in a profile.d drop-in (matches coop's base image, its box-toolchain-on-login-path
+# rule). Kept at the END so editing it never invalidates the cached Erlang layer above.
+# NOTE: in-box screenshot capture (Playwright Chromium) is NOT baked here — Chromium SIGTRAPs
+# in a coop box's mount composition (works in a bare container); tracked in coop's queue
+# (box-chromium-sigtraps). Until that's fixed, capture host-side against the box's published
+# port — see portal/.agent/scripts/README.md.
 USER root
 RUN printf 'export PATH="/home/node/.asdf/shims:$PATH"\n' > /etc/profile.d/asdf.sh
 USER node
