@@ -15,10 +15,13 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_uri, nil)
      |> assign(:mfa_qr_svg, nil)
      |> assign(:mfa_recovery_codes, nil)
+     |> assign(:mfa_disable_step, :idle)
+     |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> assign_mfa_form()
+     |> assign_mfa_disable_form()
      |> reset_email_step()
      |> maybe_load_sessions()}
   end
@@ -236,18 +239,60 @@ defmodule EmisarWeb.ProfileLive do
     {:noreply, assign(socket, :mfa_recovery_codes, nil)}
   end
 
+  def handle_event("start_disable_mfa", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:mfa_disable_step, :code)
+     |> assign(:mfa_disable_error, nil)
+     |> assign_mfa_disable_form()}
+  end
+
+  def handle_event("cancel_disable_mfa", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:mfa_disable_step, :idle)
+     |> assign(:mfa_disable_error, nil)
+     |> assign_mfa_disable_form()}
+  end
+
+  def handle_event("disable_mfa", %{"mfa_disable" => %{"code" => code}}, socket) do
+    submit_disable_mfa(socket, code)
+  end
+
   def handle_event("disable_mfa", _params, socket) do
-    case Auth.disable_mfa(socket.assigns.current_subject) do
+    submit_disable_mfa(socket, nil)
+  end
+
+  defp submit_disable_mfa(socket, code) do
+    case Auth.disable_mfa(code, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
          |> put_flash(:info, "2FA disabled.")
          |> assign(:current_user, updated)
          |> assign(:mfa_enabled?, false)
-         |> assign(:mfa_recovery_codes, nil)}
+         |> assign(:mfa_recovery_codes, nil)
+         |> assign(:mfa_disable_step, :idle)
+         |> assign(:mfa_disable_error, nil)
+         |> assign_mfa_disable_form()}
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not disable 2FA.")}
+      {:error, :invalid_code} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_disable_step, :code)
+         |> assign(:mfa_disable_error, "That code did not match. Try again.")}
+
+      {:error, :replay} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_disable_step, :code)
+         |> assign(:mfa_disable_error, "That authenticator code was already used. Try again.")}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_disable_step, :code)
+         |> assign(:mfa_disable_error, "Could not disable 2FA. Try again.")}
     end
   end
 
@@ -339,6 +384,10 @@ defmodule EmisarWeb.ProfileLive do
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
+  end
+
+  defp assign_mfa_disable_form(socket) do
+    assign(socket, :mfa_disable_form, to_form(%{"code" => ""}, as: "mfa_disable"))
   end
 
   defp current_session?(%{token: digest}, current_digest) when not is_nil(current_digest),
@@ -577,12 +626,41 @@ defmodule EmisarWeb.ProfileLive do
                   variant={:secondary}
                   tone={:rose}
                   size={:md}
-                  on_confirm={JS.push("disable_mfa")}
+                  on_confirm={JS.push("start_disable_mfa")}
                 >
                   <:body>A leaked sign-in link alone will then be enough to sign in.</:body>
                   Disable 2FA
                 </.confirm_button>
               </div>
+              <.simple_form
+                :if={@mfa_disable_step == :code}
+                for={@mfa_disable_form}
+                id="mfa_disable_form"
+                phx-submit="disable_mfa"
+                class="mt-5 max-w-md"
+              >
+                <p class="text-sm text-zinc-300">
+                  Enter your authenticator code or one of your recovery codes to confirm.
+                </p>
+                <.input
+                  field={@mfa_disable_form[:code]}
+                  type="text"
+                  label="Authenticator or recovery code"
+                  autocomplete="one-time-code"
+                  required
+                />
+                <.error :if={@mfa_disable_error}>{@mfa_disable_error}</.error>
+                <:actions>
+                  <.button phx-disable-with="Disabling...">Disable 2FA</.button>
+                  <.button
+                    variant={:ghost}
+                    type="button"
+                    phx-click="cancel_disable_mfa"
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
             <% @mfa_uri -> %>
               <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
                 <:instructions>

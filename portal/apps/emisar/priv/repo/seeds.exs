@@ -69,7 +69,8 @@ clear_seeded_mfa = fn
     user
 
   %User{} = user ->
-    {:ok, updated} = Auth.disable_mfa(%Subject{actor: user})
+    otp = NimbleTOTP.verification_code(user.mfa_secret)
+    {:ok, updated} = Auth.disable_mfa(otp, %Subject{actor: user})
     updated
 end
 

@@ -52,7 +52,7 @@ defmodule Emisar.AuthAuditTest do
     test "disable_mfa audits", %{account: account, secret: secret, subject: subject} do
       {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert {:ok, _} = Auth.disable_mfa(subject)
+      assert {:ok, _} = Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
       assert [event] = events_of(account, "user.mfa_disabled")
       assert event.actor_id == enabled.id
     end

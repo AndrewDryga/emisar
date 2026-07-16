@@ -762,11 +762,37 @@ defmodule Emisar.Auth do
     end
   end
 
-  @doc "Disable TOTP for the caller. Self-service — the user is the subject's own actor."
-  def disable_mfa(%Subject{actor: %Users.User{} = user} = subject) do
-    Users.update_user_mfa(user.id, nil, nil, [],
-      audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
-    )
+  @doc """
+  Disable TOTP for the caller after verifying a current TOTP or recovery code.
+  The user is re-fetched before the factor check, and both verification paths
+  validate against the current row under a lock. Returns {:ok, user} on
+  success, {:error, :invalid_code | :replay} when the factor is rejected, or
+  the underlying update error.
+  """
+  def disable_mfa(code, %Subject{actor: %Users.User{id: id}} = subject)
+      when is_binary(code) do
+    code = String.trim(code)
+
+    with {:ok, user} <- Users.fetch_user_by_id(id),
+         :ok <- verify_disable_mfa_factor(user, code, subject.context) do
+      Users.update_user_mfa(id, nil, nil, [],
+        audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
+      )
+    else
+      {:error, :invalid} -> {:error, :invalid_code}
+      {:error, :not_found} -> {:error, :invalid_code}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def disable_mfa(_, %Subject{}), do: {:error, :invalid_code}
+
+  defp verify_disable_mfa_factor(user, code, context) do
+    if Regex.match?(~r/\A\d{6}\z/, code) do
+      verify_mfa(user, code, context)
+    else
+      consume_mfa_recovery_code(user, code, context)
+    end
   end
 
   @doc """

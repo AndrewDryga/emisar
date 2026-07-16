@@ -806,17 +806,39 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "disable_mfa/1" do
+  describe "disable_mfa/2" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{subject: subject, secret: Auth.generate_mfa_secret()}
     end
 
-    test "clears the secret, enabled-at, and recovery codes", %{secret: secret, subject: subject} do
+    test "uses the fresh user row to clear MFA", %{secret: secret, subject: subject} do
       {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      refute subject.actor.mfa_enabled_at
 
       assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
-               Auth.disable_mfa(subject)
+               Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
+    end
+
+    test "accepts a valid recovery code", %{secret: secret, subject: subject} do
+      {_user, [code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
+               Auth.disable_mfa(code, subject)
+    end
+
+    test "rejects a wrong code and leaves MFA enabled", %{secret: secret, subject: subject} do
+      {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      assert {:error, :invalid_code} = Auth.disable_mfa("000000", subject)
+      assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
+    end
+
+    test "rejects a missing code and leaves MFA enabled", %{secret: secret, subject: subject} do
+      {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      assert {:error, :invalid_code} = Auth.disable_mfa(nil, subject)
+      assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
     end
   end
 
@@ -896,7 +918,7 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
       otp = NimbleTOTP.verification_code(secret)
 
-      {:ok, _} = Auth.disable_mfa(subject)
+      {:ok, _} = Auth.disable_mfa(otp, subject)
 
       # The old code validated against the stale struct's secret and would pass;
       # the locked verify reads the CURRENT row (MFA now disabled) and refuses.
@@ -909,7 +931,7 @@ defmodule Emisar.AuthTest do
       otp1 = NimbleTOTP.verification_code(secret1)
 
       # Rotate the secret out from under the in-flight verify (disable + re-enable).
-      {:ok, _} = Auth.disable_mfa(subject)
+      {:ok, _} = Auth.disable_mfa(otp1, subject)
       secret2 = Auth.generate_mfa_secret()
       {_user2, _codes} = Fixtures.Users.enable_mfa!(secret2, subject)
 

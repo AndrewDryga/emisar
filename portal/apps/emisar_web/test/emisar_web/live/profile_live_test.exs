@@ -532,27 +532,24 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Start the enable flow first."
     end
 
-    test "disabling MFA when it's already off is a graceful no-op, not an error", %{
+    test "disabling MFA without a code is rejected and MFA stays enabled", %{
       conn: conn,
       user: user,
       account: account
     } do
-      # The disable control is only rendered with MFA on, but a stale client could
-      # still push the event. Auth.disable_mfa writes nil/[] unconditionally on the
-      # locked row, so a no-MFA user gets the success path (no crash, no error
-      # flash) and stays cleanly disabled.
-      refute Emisar.Repo.reload!(user).mfa_enabled_at
+      secret = Auth.generate_mfa_secret()
+
+      {_user, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "disable_mfa", %{})
 
-      assert html =~ "2FA disabled."
-      refute html =~ "Could not disable MFA."
+      assert html =~ "Enter your authenticator code or one of your recovery codes"
+      assert html =~ "That code did not match. Try again."
       reloaded = Emisar.Repo.reload!(user)
-      assert is_nil(reloaded.mfa_enabled_at)
-      assert is_nil(reloaded.mfa_secret)
-      assert reloaded.mfa_recovery_codes == []
+      assert %DateTime{} = reloaded.mfa_enabled_at
     end
 
     test "regenerate + disable for an MFA-enabled user", %{
@@ -570,9 +567,32 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert render_click(lv, "regenerate_recovery_codes", %{}) =~
                "New recovery codes generated."
 
-      html = render_click(lv, "disable_mfa", %{})
+      render_click(lv, "start_disable_mfa", %{})
+      otp = NimbleTOTP.verification_code(secret)
+      html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => otp}})
+
       assert html =~ "2FA disabled."
       refute Emisar.Repo.reload!(user).mfa_enabled_at
+    end
+
+    test "a wrong code stays inline and leaves MFA enabled", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      {_user, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      render_click(lv, "start_disable_mfa", %{})
+      html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => "000000"}})
+
+      assert html =~ "That code did not match. Try again."
+      refute html =~ "Could not disable 2FA."
+      assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
   end
 
