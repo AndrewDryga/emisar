@@ -1,142 +1,136 @@
 ---
 name: content-director
-description: "Write and review top-tier marketing website content for emisar: positioning, page narrative, homepage and landing-page copy, proof sections, SEO intent, conversion flow, objection handling, and anti-AI voice. Use with design-creative-director when redesigning public marketing pages, and with content-seo when copy must rank, convert, and sound professionally written rather than generic, templated, overcomplicated, or AI-generated."
+description: "Write and edit clear, distinctive, human-quality content for emisar across marketing pages, product UI, documentation, blog posts, announcements, SEO pages, CTAs, and positioning. Use when copy sounds corporate, generated, vague, overcomplicated, over-marketed, tonally flat, or inconsistent; when a surface needs a confident, direct, friendly professional voice; or when approved writing samples should become a reusable brand voice."
 effort: high
-argument-hint: "[page or surface]"
+argument-hint: "[page, draft, or content surface]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
 # Content Director
 
-Own the words, argument, and reading experience of the marketing site.
+Own the words, argument, and reading experience. Write for one capable reader,
+not for a market segment in a slide deck.
 
-Use this skill when writing or rewriting homepage sections, landing pages,
-use-case pages, comparison pages, pricing copy, SEO pages, CTAs, proof blocks,
-FAQs, page titles, meta descriptions, or any marketing copy that must feel
-precise, credible, useful, and memorable.
+Aim for writing a strong human editor would publish: informed, specific,
+opinionated when the evidence supports it, and easy to read. Do not optimize for
+an AI-detector score or claim that authorship is undetectable. Detector results
+are not a quality test. Substance, judgment, voice, and editing are.
+
+## Read First
+
+- Read `references/tone-rules.md` before writing anything longer than a label.
+- Read `references/surface-modes.md` for the relevant website, product, docs,
+  blog, or release mode. Do not blend their conventions.
+- Read `references/voice-corpus.md` when approved samples, founder transcripts,
+  customer language, or repeated editorial feedback are available.
+- Read the current surface, nearby content, product docs, and source-of-truth
+  claims before writing. Reuse facts, not old phrasing by default.
 
 ## Coordinate The Hats
 
-- Use `design-creative-director` for creative territories, visual concept, page rhythm,
-  and art direction.
-- Use `content-seo` for search intent, crawlability, metadata, schema,
-  internal links, and sitemap impact.
+- Use `design-creative-director` for page concept, visual narrative, and rhythm.
+- Use `content-seo` for search intent, metadata, structured data, and links.
 - Use `security-engineer` for claims about trust, approvals, audit, runners,
   SSH, MCP, policies, secrets, and infrastructure access.
-- Use `design-review` after rendered implementation; copy quality is part of the
-  review, not a separate afterthought.
+- Use `design-review` after implementation. Copy quality is part of the page.
 
-## Standard
+## Writing Contract
 
-Write like a senior product marketer and editor working with a top product
-design agency: clear, concrete, restrained, specific, and persuasive without
-inflation.
-
-The copy should feel written by a person who understands the buyer, the product,
-and the market. It should not sound like a generated SaaS page.
-
-Never write filler to satisfy a layout. If a section has no real job, cut it or
-replace it with proof.
+- Lead with the reader's job, decision, or problem. Get to the point fast.
+- Prefer ordinary words, concrete nouns, and active verbs.
+- Put the mechanism or evidence next to the claim it supports.
+- Take a position the evidence can carry. Explain enough of the domain that the
+  reader can see why the position follows.
+- Sound confident when the facts are firm. Name the exact uncertainty when they
+  are not.
+- Be friendly through ease, respect, contractions, and useful context. Do not
+  force intimacy, slang, excitement, or jokes.
+- Use humor only when it sharpens the point and preserves trust.
+- Rewrite any claim or benefit sentence that could appear unchanged on a
+  competitor's website. Plain headings, labels, and step names are exempt.
+- Never invent a customer quote, anecdote, metric, limitation, capability, or
+  point of view to make the prose feel human.
 
 ## Workflow
 
-1. **Read before writing.**
-   Read the current page, nearby pages, product docs, README, approved creative
-   direction, and any existing buyer/use-case evidence. Capture real product
-   facts before changing words.
+1. **Choose the surface and the reader's next move.**
+   Name who is reading, what brought them here, what they already know, and what
+   they should understand, decide, or do next.
 
-2. **Name the reader.**
-   Identify the buyer, their current workaround, the risk they fear, the trigger
-   event, their objections, and the decision they need to make.
+2. **Build a fact sheet.**
+   Capture the reader's problem in their language, the product mechanism, proof,
+   examples, constraints, objections, honest comparison, and any house position
+   from `references/tone-rules.md` the piece can defend. Ask only for missing
+   information that blocks truthful writing. Otherwise, write the narrow claim
+   the evidence supports.
 
-3. **Find the page argument.**
-   Every strong page has a spine:
-   - what changed in the world
-   - what the reader currently does
-   - why that breaks
-   - what emisar does differently
-   - how it works
-   - what proves it
-   - what objection remains
-   - what action to take next
+   For positioning, separate the layers before drafting: the operator outcome,
+   the mechanism that produces it, the path to first value, the extensibility
+   story, and the supporting controls. The canonical order and claim boundaries
+   live in `.agent/rules/content-position-bounded-autonomy.md`. Do not promote a
+   familiar control such as approvals into the product's main promise.
 
-4. **Write from mechanism and proof.**
-   Prefer specific product behavior over adjectives:
-   - action contracts
-   - pack hashes
-   - policy decisions
-   - one-use approvals
-   - outbound runners
-   - redacted output
-   - searchable audit
-   - hash-chained host journal
+3. **Set the voice.**
+   Prefer approved samples and real customer or founder language. Extract
+   repeated patterns rather than copying memorable phrases. When no corpus
+   exists, use the house voice in `references/tone-rules.md`.
 
-5. **Make SEO serve the human.**
-   Target the searcher's problem, not a keyword list. Put the answer in the H1
-   and opening copy, then support it with mechanism, proof, comparison,
-   objections, FAQs, and internal links. Titles and meta descriptions should
-   read like sharp editorial headlines, not keyword stuffing.
+4. **State the argument in one sentence.**
+   Decide what the piece teaches or argues before writing headings or filling a
+   layout. If the argument needs a paragraph, it is not ready.
 
-6. **Control complexity.**
-   Use plain language for hard ideas. Do not dumb the product down; make the hard
-   thing legible. One unfamiliar concept per sentence. Define jargon through
-   context.
+5. **Draft from meaning.**
+   Write the shortest complete version first. Add detail only where it answers a
+   real question, proves a claim, prevents a mistake, or makes the piece worth
+   reading.
 
-7. **Edit for voice.**
-   Remove generic phrases, vague claims, inflated verbs, and symmetrical
-   template rhythms. If the copy could belong to any B2B SaaS company, rewrite
-   it. For examples, read `references/tone-rules.md`.
+6. **Edit in separate passes.**
+   - Truth: verify claims, examples, names, commands, numbers, and limitations.
+   - Structure: keep one job per section and put important information first.
+   - Water: replace praise and abstractions with a mechanism, consequence, or
+     proof; delete the sentence when none exists.
+   - Voice: remove canned transitions, generated cadence, forced symmetry, fake
+     enthusiasm, and words the reader would not use.
+   - Sound: read it aloud; fix breathless sentences, choppy fragments, repeated
+     openings, and unnatural formality.
+   - Compression: cut repetition, throat-clearing, needless headings, and any
+     closing paragraph that merely summarizes the page.
 
-8. **Review aloud.**
-   The final copy should survive being read aloud. Listen for mushy transitions,
-   fake urgency, repeated cadence, overloaded sentences, and claims without
-   evidence.
+7. **Apply the surface mode and ship the copy.**
+   Check the work against `references/surface-modes.md`, then present the final
+   text without narrating the writing process.
 
-## Non-Negotiables
+## Acceptance Tests
 
-- No vague transformation claims.
-- No fake urgency.
-- No inflated security guarantees.
-- No metaphor in place of explanation.
-- No polished paragraph that says nothing testable.
-- No SEO copy that makes the page worse for a human.
-- No generic "three benefits" unless each is tied to a real product behavior.
-- No claim about security, compliance, execution, or trust unless it is true in
-  the product and defensible from the source material.
-
-## Copy Tests
-
-Before accepting copy, answer:
-
-- Can a skeptical infrastructure operator understand the value in 10 seconds?
-- Does every important claim have a mechanism, example, or proof point nearby?
-- Does the copy say what emisar does that SSH, shell-over-MCP, or a custom MCP
-  server does not?
-- Is the page honest about limits and tradeoffs?
-- Would the copy still make sense without the design?
-- Does it sound like this product, or like any SaaS company?
+- **Proof test:** Mark every decision-changing claim. Each needs nearby evidence,
+  mechanism, example, or an honest limit.
+- **Spoken test:** Read it aloud at normal speed. Rewrite every place that sounds
+  like a brochure, a strategy deck, or a sentence nobody would actually say.
+- **Competitor-swap test:** Replace `emisar` with a competitor's name. Rewrite
+  any claim or benefit that still works unchanged. Exempt structural copy.
+- **Hierarchy test:** Does the piece lead with bounded agent autonomy, then earn
+  it with the action system, catalog, and controls? Rewrite any version that
+  makes a generic approval workflow the main product.
+- **Deletion test:** Remove the sentence, section, or joke. If the reader loses
+  no fact, logic, useful emphasis, or genuine delight, leave it out.
 
 ## Output
 
-For planning work, produce:
+For writing or implementation, provide the finished copy first. Do not include a
+strategy preamble, voice analysis, or a `Before/After/SEO/Risk` report unless the
+user asks for it. Mention unresolved factual issues briefly after the copy.
+
+For a review, lead with the highest-impact problems and show replacement copy.
+Do not stop at adjectives such as "generic" or "too AI"; identify the exact
+pattern and fix it.
+
+For requested strategy work, keep the brief compact:
 
 ```text
-Reader: <buyer, situation, risk, decision>
-Search intent: <query/problem and what the page must answer>
-Page argument: <the narrative spine>
-Core claim: <one sentence>
-Proof points: <mechanism, examples, receipts>
-Objections: <skeptical questions to answer>
-Section plan: <section-by-section copy job>
-SEO: <title, meta, H1, FAQ/schema candidates, internal links>
-Voice risks: <where the copy could become generic, inflated, or too complex>
-```
-
-For implementation work, edit the relevant page copy and report:
-
-```text
-Before: <what was generic, unclear, false, overcomplicated, or weak>
-After: <what changed and why>
-SEO: <title/meta/H1/internal-link changes, if any>
-Risk: <security/product claims that were checked or avoided>
+Reader: <who, situation, current alternative>
+Job: <what they need to understand, decide, or do>
+Claim: <the one-sentence argument>
+Proof: <mechanisms, examples, receipts>
+Objection: <the hardest honest concern>
+Next step: <the natural action>
 ```

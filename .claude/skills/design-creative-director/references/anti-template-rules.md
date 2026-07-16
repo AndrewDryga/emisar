@@ -19,19 +19,24 @@ accepting implementation.
 
 ## Strong Replacements
 
-- Show the mechanism: LLM request -> policy/approval -> runner action -> audit
-  receipt.
-- Build around a proprietary artifact: approval receipt, action manifest, run
-  timeline, policy gate, runner connection, audit journal.
+- Show the mechanism: agent finds a declared action -> policy allows, denies, or
+  asks for approval -> runner validates and executes -> result enters the audit
+  trail.
+- Build around a proprietary artifact: action catalog, suggested packs, action
+  manifest, run timeline, runner connection, policy decision, audit journal, or
+  approval receipt when the story actually concerns approval.
 - Use editorial composition: strong type hierarchy, asymmetric rhythm, meaningful
   whitespace, proof integrated into the layout.
 - Use product-specific diagrams or real UI fragments instead of decorative art.
-- Use comparison as visual structure: raw SSH chaos vs declared gated action.
+- Use comparison as visual structure: a human babysitting an agent with SSH vs an
+  agent completing bounded work through declared actions.
 - Let one distinctive visual device carry the page, then keep the rest restrained.
 
 ## Distinctive But Usable
 
 - First viewport must say what emisar is and why it matters.
+- Lead with the autonomy unlocked, then show the controls that make it believable.
+  Do not make an approval inbox the product's defining image.
 - Navigation, CTA, and page scan path must remain obvious.
 - Fancy interactions must have static meaning when motion is disabled.
 - Dense technical proof is allowed when hierarchy makes it scannable.
@@ -47,4 +52,4 @@ Ask:
 4. Would a platform/security buyer trust it after reading the claims?
 5. Can it be implemented well within the current codebase?
 
-If answers 1 is yes or 2 is no, reject the direction.
+If answer 1 is yes or answer 2 is no, reject the direction.

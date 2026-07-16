@@ -8,12 +8,31 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 
 # SEO / marketing hat
 
-Sell the wedge honestly and make it findable. emisar's positioning: **let LLMs and
-automation run real infrastructure actions safely — no raw shell or SSH, no inbound
-port, every action declared, approval-gated, and fully journaled.** It competes with
-"just give the agent SSH" and "shell-over-MCP". The marketing site already has
-home, pricing, security, use-cases (cassandra/postgres), `compare_raw_ssh`,
-`connect_llm`, docs, and packs pages, plus a `sitemap_controller`.
+Sell the wedge honestly and make it findable. emisar's positioning: **leave an
+MCP-capable agent working on infrastructure without supervising every step or
+giving it open-ended production authority.** It competes with "just give the agent
+SSH", shell-over-MCP, and a new one-off MCP server for every system. The marketing
+site already has home, pricing, security, use-cases (cassandra/postgres),
+`compare_raw_ssh`, `connect_llm`, docs, and packs pages, plus a
+`sitemap_controller`.
+
+## Positioning hierarchy
+
+The canonical order and claim boundaries live in
+`.agent/rules/content-position-bounded-autonomy.md`.
+
+1. **Outcome:** the agent can keep doing useful work inside explicit bounds.
+2. **Mechanism:** declared actions, policy, pack trust, and runner-side validation
+   replace ambient shell authority.
+3. **First value:** the prebuilt pack catalog and host-aware suggestions make
+   useful actions available without modeling every command from scratch.
+4. **Extensibility:** the MCP tool surface stays fixed while teams add packs and
+   wrap their own operational procedures as actions.
+5. **Supporting controls:** approvals when policy requires them, a searchable audit
+   trail, the host journal, and read-only SIEM export make the system governable.
+
+Do not lead with approvals. Approval workflows are expected infrastructure for
+this category; bounded autonomy is the product outcome they support.
 
 For full-page redesigns or launch-level creative work, pair this with
 `design-creative-director`. This hat owns the search intent, honesty, page argument,
@@ -48,18 +67,19 @@ server-rendered** — that's what crawlers and LLM bots get. Keep it that way:
 
 ## Honesty rule (this is a security product)
 
-**No overclaiming.** "Not a sandbox", "not a policy engine on the runner", "cloud is
-the system of record" — the README is precise; the marketing must not contradict it.
-Don't imply guarantees the trust model doesn't make. Credibility is the conversion
-lever for a security buyer; a single false claim costs more than it earns. Run
-security-sensitive copy past the `/security-engineer` hat.
+**No overclaiming.** The trust-model limits in the README and
+`docs/security-model.md` are the honesty baseline; marketing must not contradict
+them. Don't imply guarantees the trust model doesn't make. Credibility is the
+conversion lever for a security buyer; a single false claim costs more than it
+earns. Run security-sensitive copy past the `/security-engineer` hat.
 
 ## Keywords / intent to target
 
-Safe LLM infra access, AI agent infrastructure automation, MCP for ops/servers,
-approval-gated remote execution, alternative to giving AI SSH access, audited agent
-actions. Write for the operator/platform buyer evaluating "how do I let an agent do
-this without it going wrong".
+Autonomous AI infrastructure operations, safe LLM infra access, AI agent
+infrastructure automation, MCP for ops/servers, infrastructure action packs,
+alternative to giving AI SSH access, audited agent actions. Write for the
+operator/platform buyer evaluating "how do I let an agent keep working without
+giving it the keys to production".
 
 ## Output
 

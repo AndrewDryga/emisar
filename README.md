@@ -1,6 +1,6 @@
 # emisar
 
-**Approved infrastructure actions for AI tools, enforced on-host.**
+**Let AI agents run real infrastructure actions inside declared, enforced bounds.**
 
 emisar is a control plane, outbound-only runner, and MCP bridge for
 letting AI tools request a finite, declared set of operational actions

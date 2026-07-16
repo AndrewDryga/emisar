@@ -6,9 +6,14 @@ strategy document.
 ## Inputs To Gather
 
 - Audience: who is buying or evaluating, and what pressure are they under?
-- Job: what are they trying to let AI/automation do safely?
+- Job: what infrastructure work do they want an agent to continue without constant
+  supervision or open-ended production authority?
 - Category enemy: what bad alternative are we replacing?
 - Core claim: the one sentence the page must make believable.
+- Path to first value: which prebuilt or suggested actions make the first useful
+  result arrive quickly?
+- Extensibility: how does the fixed MCP surface absorb the team's next system or
+  procedure as an action instead of another server rollout?
 - Proof: product facts, screenshots, workflow details, numbers, customers, docs,
   demos, architecture, or security model evidence.
 - Objections: why would a serious buyer hesitate?
@@ -29,6 +34,8 @@ Audience:
 Job:
 Category enemy:
 Core claim:
+Path to first value:
+Extensibility:
 Proof:
 Objections:
 Conversion goal:

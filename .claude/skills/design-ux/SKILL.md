@@ -11,9 +11,10 @@ allowed-tools: Read, Grep, Glob, Bash
 Design the product app like a top-tier minimalist SaaS interface without losing
 the discipline of an ops/security console.
 
-emisar operators approve and run **real infra actions on real hosts**. The UX
-job is earned trust: the operator should always know what is about to happen,
-what just happened, what needs attention, and what is safe to do next.
+emisar operators govern agents that run **real infra actions on real hosts**. The
+UX job is earned trust without constant supervision: the operator should always
+know what is about to happen, what just happened, what needs attention, and what
+is safe to do next. Approval is one attention state, not the center of every run.
 
 Premium does not mean decorative. It means fewer decisions, sharper hierarchy,
 better defaults, complete states, calmer density, and a visual system that makes

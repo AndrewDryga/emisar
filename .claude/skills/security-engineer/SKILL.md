@@ -8,10 +8,12 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Security engineer hat
 
-emisar's whole value proposition is **letting an LLM run infra actions without
-giving it raw shell/SSH, without an inbound port, and with everything declared,
-validated, approval-gated, and journaled.** A security regression here isn't a
-bug — it's the product failing. Lead with the abuse case.
+emisar's security model exists to make **bounded agent autonomy** credible: an
+MCP-capable agent can keep doing infrastructure work without receiving raw
+shell/SSH authority or requiring a human to shadow every step. Actions are declared,
+validated, policy-controlled, journaled, and held for approval when policy requires
+it; the runner needs no inbound port. A security regression here isn't a bug — it's
+the product failing. Lead with the abuse case.
 
 ## The trust model (don't weaken it)
 

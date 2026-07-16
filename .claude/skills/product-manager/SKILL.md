@@ -19,11 +19,22 @@ declared, journaled set of ops actions; this portal is the cloud control plane �
 operator console + MCP API for LLMs + policy/approval/audit + billing. Stage: early
 product, with a solid runner and an evolving cloud control plane. Two users:
 - **Operators / platform & SRE teams** — want to let agents/LLMs touch infra without
-  handing over shell, with approvals and an audit trail.
+  handing over shell or supervising every step.
 - **LLMs** (via MCP) — call actions; must be constrained and legible.
 
-The wedge is **trust**: safer than raw SSH / shell-over-MCP, with a real approval
-and audit story. Protect that wedge; don't dilute it with breadth.
+The wedge is **bounded autonomy**: an agent keeps doing useful infrastructure work
+inside explicit authority instead of waiting for a human at every step or receiving
+an open shell. Declared actions, policy, pack trust, and runner validation create
+that boundary. Approvals, audit, and SIEM export support it; they are category
+requirements, not the centerpiece.
+
+The canonical positioning order and claim boundaries live in
+`.agent/rules/content-position-bounded-autonomy.md`.
+
+Two adoption advantages matter. The prebuilt pack catalog and host-aware suggestions
+shorten the path to a first useful run. The fixed MCP tool surface lets a team add
+capabilities as actions and packs instead of installing another one-off MCP server.
+Protect those advantages when scoping onboarding, catalog, and extensibility work.
 
 ## How to scope a request
 
@@ -45,6 +56,9 @@ and audit story. Protect that wedge; don't dilute it with breadth.
 - **Trust/safety regressions sold as features** — anything that lets more run with
   less oversight needs the `/security-engineer` hat and probably a policy/approval
   story, not just a happy path.
+- **Approval theater** — an approval queue does not by itself create safe autonomy.
+  Check the declared action, policy, validation, audit, and denial behavior around
+  it.
 - **Build-vs-config** — is this a feature, or should it be a policy/runbook/pack the
   user authors? Prefer giving users a declared mechanism over hardcoding behavior.
 - **Scope creep dressed as "while we're here".** Name it, park it.

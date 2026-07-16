@@ -35,9 +35,10 @@ lower confidence.
    one-note palette.
 
 2. **First-viewport test.**
-   In five seconds, can a buyer tell what emisar does, why it is safer than the
-   alternative, and what to do next? The first viewport must also feel specific to
-   this product.
+   In five seconds, can a buyer tell that emisar lets an infrastructure agent keep
+   working inside explicit bounds, why that is safer than the alternative, and what
+   to do next? The first viewport must also feel specific to this product. Treat
+   approvals and audit as proof of control, not the headline outcome.
 
 3. **Narrative and conversion test.**
    Check the page argument: claim, mechanism, proof, comparison, objections,
