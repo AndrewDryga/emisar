@@ -209,6 +209,9 @@ every action descriptor and schema. The runner already computes this identity
 from local bytes. Reusing a human version with different bytes produces a
 different ref and fails closed. Versions use the repository's dot-numeric
 grammar (`1`, `1.4`, `1.4.0`); pack ingestion rejects any other form.
+The canonical ref grammar is
+`^[a-z][a-z0-9_-]*@[0-9]+(?:\\.[0-9]+)*/sha256:[0-9a-f]{64}$`, and the ref is at
+most 255 UTF-8 bytes.
 
 An action is identified by `(pack_ref, action_id)`. There is intentionally no
 second `action_ref`: hashing an action contract already contained in the hashed
