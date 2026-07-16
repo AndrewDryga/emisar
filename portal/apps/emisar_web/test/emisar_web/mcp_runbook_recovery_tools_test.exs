@@ -523,6 +523,64 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(healthy_summary["run"], "local_audit_failed")
   end
 
+  test "recent history exposes a terminal failure cause only when recorded", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "failure-summary")
+    failed_run = create_mcp_history_run!(account, runner, key, 1)
+    successful_run = create_mcp_history_run!(account, runner, key, 2)
+    cause = "runner could not durably reserve this dispatch; action was not executed"
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(failed_run, %{
+               "status" => "failed",
+               "exit_code" => -1,
+               "duration_ms" => 0,
+               "error" => cause
+             })
+
+    assert {:ok, _finished} = Fixtures.Runs.finish(successful_run, %{"status" => "success"})
+
+    summaries = call(conn, "recent_runs", %{})["runs"]
+    failed_summary = Enum.find(summaries, &(&1["run_id"] == failed_run.id))
+    successful_summary = Enum.find(summaries, &(&1["run_id"] == successful_run.id))
+
+    assert failed_summary["error_message"] == cause
+    refute Map.has_key?(successful_summary, "error_message")
+  end
+
+  test "recent runs byte-bound terminal failure causes without breaking UTF-8", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "bounded-failure-summary")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    cause = String.duplicate("€", 600)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{
+               "status" => "failed",
+               "error" => cause
+             })
+
+    summary =
+      conn
+      |> call("recent_runs", %{})
+      |> Map.fetch!("runs")
+      |> Enum.find(&(&1["run_id"] == run.id))
+
+    preview = summary["error_message"]
+    assert byte_size(preview) <= 1_024
+    assert String.valid?(preview)
+    assert String.ends_with?(preview, "...")
+    refute preview == cause
+  end
+
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
     result =
       call(conn, "wait_for_run", %{

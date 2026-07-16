@@ -1149,6 +1149,10 @@ bypasses the caller's current runner scope.
 
 Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 `runner_ref`, `status`, and `created_at`; terminal rows may add `finished_at`.
+Failed, refused, or errored rows add `error_message` when the runner or control
+plane recorded a cause, so the caller does not have to infer one from empty
+output or a synthetic exit code. The summary keeps a UTF-8-safe prefix of at
+most 1,024 bytes; longer causes end in `...`.
 Runbook-created rows additionally carry both `runbook_execution_id` and
 `step_id`, or neither field appears. History therefore remains attributable
 after the original mutation response leaves model context without embedding the
@@ -1172,6 +1176,17 @@ runbook plan or relying on a separate lookup per row.
     }
   ],
   "next_cursor": null
+}
+```
+
+A terminal failure exposes the recorded cause directly:
+
+```json
+{
+  "status": "failed",
+  "exit_code": -1,
+  "duration_ms": 0,
+  "error_message": "runner could not durably reserve this dispatch; action was not executed"
 }
 ```
 

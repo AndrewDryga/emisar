@@ -375,6 +375,7 @@
         "finished_at": {"$ref": "#/$defs/timestamp"},
         "exit_code": {"type": ["integer", "null"]},
         "duration_ms": {"type": "integer", "minimum": 0},
+        "error_message": {"type": "string", "maxLength": 1024, "x-maxUtf8Bytes": 1024, "description": "Bounded persisted terminal failure or refusal cause, when one was recorded."},
         "stdout": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stdout."},
         "stderr": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stderr."},
         "emitted_stdout_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stdout bytes emitted within the runner's output cap."},

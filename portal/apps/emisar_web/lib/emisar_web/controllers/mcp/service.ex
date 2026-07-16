@@ -12,6 +12,7 @@ defmodule EmisarWeb.MCP.Service do
 
   @recheck_interval_ms 2_000
   @max_output_events 32
+  @max_error_message_bytes 1_024
 
   @doc "Dispatches a preflighted fixed-catalog action and returns current run summaries."
   def dispatch_fixed_action(conn, targets, intent, wait_ms) do
@@ -133,6 +134,7 @@ defmodule EmisarWeb.MCP.Service do
       finished_at: run.finished_at,
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
+      error_message: error_message_preview(run.error_message),
       stdout: output_preview.stdout,
       stderr: output_preview.stderr,
       emitted_stdout_bytes: run.emitted_stdout_bytes,
@@ -394,6 +396,32 @@ defmodule EmisarWeb.MCP.Service do
   end
 
   defp drop_incomplete_utf8_prefix(_value, _dropped), do: ""
+
+  defp error_message_preview(nil), do: nil
+
+  defp error_message_preview(message) when byte_size(message) <= @max_error_message_bytes,
+    do: message
+
+  defp error_message_preview(message) do
+    suffix = "..."
+    prefix_bytes = @max_error_message_bytes - byte_size(suffix)
+
+    prefix =
+      message
+      |> binary_part(0, prefix_bytes)
+      |> drop_incomplete_utf8_suffix(0)
+
+    prefix <> suffix
+  end
+
+  defp drop_incomplete_utf8_suffix(value, dropped) when dropped < 4 do
+    if String.valid?(value),
+      do: value,
+      else: drop_incomplete_utf8_suffix(init_binary(value), dropped + 1)
+  end
+
+  defp drop_incomplete_utf8_suffix(_value, _dropped), do: ""
   defp tl_binary(<<_byte, rest::binary>>), do: rest
   defp tl_binary(<<>>), do: <<>>
+  defp init_binary(value), do: binary_part(value, 0, byte_size(value) - 1)
 end
