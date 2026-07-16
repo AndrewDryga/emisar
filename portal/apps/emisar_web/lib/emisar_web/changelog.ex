@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-16],
+      slug: "leaner-mcp-results-and-hardened-pack-catalog",
+      title: "Leaner MCP results and a hardened pack catalog",
+      tag: "v0.29.0",
+      summary:
+        "MCP results now meet LLM clients where they are: canonical string forms of integers and booleans coerce instead of failing the call, every rejected argument names its field and the JSON type it was sent as, and run summaries omit what carries no signal — streams that produced no bytes, completeness flags that are simply true, and per-stream digests — so a typical summary shrinks by a third. The pack catalog closes two cross-pack gaps: secret-dense config and environment dumps now require approval, Redis ACL password hashes are redacted from low-risk reads, and exec-style arguments reject a leading dash so a hostile value cannot be read as a flag. Disabling two-factor authentication now demands a fresh step-up challenge, and production session cookies always carry the Secure flag."
+    },
+    %{
+      date: ~D[2026-07-16],
       slug: "upgrade-safe-runners-and-honest-fleet-alarms",
       title: "Upgrade-safe runners and honest fleet alarms",
       tag: "v0.28.0",

@@ -695,6 +695,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Reconnect-safe runs and a clearer agents list"
       assert html =~ "Reliable runner startup and clearer MCP failures"
       assert html =~ "Upgrade-safe runners and honest fleet alarms"
+      assert html =~ "Leaner MCP results and a hardened pack catalog"
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"
@@ -708,6 +709,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.26.0"
       assert html =~ "v0.27.0"
       assert html =~ "v0.28.0"
+      assert html =~ "v0.29.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
