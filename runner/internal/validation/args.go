@@ -291,24 +291,36 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 	// Resolve allow/deny lists too so an author writing /var/log on a
 	// host where /var → /private/var still gets a matching comparison
 	// against an input that resolves to /private/var/log/...
-	allowedPaths, err := resolveMany(val.AllowedPaths)
+	allowedPaths, err := resolveManyRules(val.AllowedPaths)
 	if err != nil {
 		return newError(a.Name, "path", "cannot safely resolve allowed_paths: %v", err)
 	}
-	deniedPaths, err := resolveMany(val.DeniedPaths)
+	deniedPaths, err := resolveManyRules(val.DeniedPaths)
 	if err != nil {
 		return newError(a.Name, "path", "cannot safely resolve denied_paths: %v", err)
 	}
-	allowedPrefixes, err := resolveMany(val.AllowedPrefixes)
+	allowedPrefixes, err := resolveManyRules(val.AllowedPrefixes)
 	if err != nil {
 		return newError(a.Name, "path", "cannot safely resolve allowed_prefixes: %v", err)
 	}
-	deniedPrefixes, err := resolveMany(val.DeniedPrefixes)
+	deniedPrefixes, err := resolveManyRules(val.DeniedPrefixes)
 	if err != nil {
 		return newError(a.Name, "path", "cannot safely resolve denied_prefixes: %v", err)
 	}
+	lexicalDeniedPaths := cleanMany(val.DeniedPaths)
+	lexicalDeniedPrefixes := cleanMany(val.DeniedPrefixes)
 
 	for _, s := range strs {
+		cleaned := filepath.Clean(s)
+		// Reject lexical deny matches before resolving the request. Protected
+		// trees such as /root/.ssh are deliberately unreadable to a non-root
+		// runner, but a direct or dot-dot path into them is still an exact deny.
+		if pathInList(cleaned, lexicalDeniedPaths) {
+			return newError(a.Name, "denied_paths", "path %s is denied", cleaned)
+		}
+		if prefixInList(cleaned, lexicalDeniedPrefixes) {
+			return newError(a.Name, "denied_prefixes", "path %s under denied prefix", cleaned)
+		}
 		resolved, err := resolveForCheck(s)
 		if err != nil {
 			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
@@ -337,19 +349,62 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 	return nil
 }
 
-func resolveMany(in []string) ([]string, error) {
+func cleanMany(in []string) []string {
+	out := make([]string, len(in))
+	for i, p := range in {
+		out[i] = filepath.Clean(p)
+	}
+	return out
+}
+
+func resolveManyRules(in []string) ([]string, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
 	out := make([]string, 0, len(in))
 	for _, p := range in {
-		resolved, err := resolveForCheck(p)
+		resolved, err := resolveRuleForCheck(p)
 		if err != nil {
 			return nil, fmt.Errorf("%q: %w", p, err)
 		}
 		out = append(out, resolved)
 	}
 	return out, nil
+}
+
+// resolveRuleForCheck canonicalizes every inspectable ancestor while allowing
+// an unreadable tail to stay lexical. Request paths still use resolveForCheck
+// and reject unreadable components, so this cannot turn an uninspectable input
+// into an executable path; it only keeps a protected rule from poisoning every
+// otherwise-benign action on a non-root runner.
+func resolveRuleForCheck(p string) (string, error) {
+	cleaned := filepath.Clean(p)
+	if !filepath.IsAbs(cleaned) {
+		return cleaned, nil
+	}
+	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
+		return resolved, nil
+	}
+
+	tail := ""
+	parent := cleaned
+	for {
+		if _, err := os.Lstat(parent); err == nil {
+			resolved, err := filepath.EvalSymlinks(parent)
+			if err != nil {
+				return "", fmt.Errorf("resolve existing component %q: %w", parent, err)
+			}
+			return filepath.Clean(filepath.Join(resolved, tail)), nil
+		} else if !os.IsNotExist(err) && !os.IsPermission(err) {
+			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
+		}
+		tail = filepath.Join(filepath.Base(parent), tail)
+		next := filepath.Dir(parent)
+		if next == parent {
+			return "", fmt.Errorf("path %q has no resolvable existing component", cleaned)
+		}
+		parent = next
+	}
 }
 
 // resolveForCheck cleans p and resolves symlinks, even when the leaf

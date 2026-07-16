@@ -205,15 +205,21 @@ if config_env() == :prod do
     config :emisar_web, status_page_url: url
   end
 
+  pack_catalog_url =
+    case System.get_env("EMISAR_PACK_CATALOG_URL") do
+      nil -> "https://registry.emisar.dev/v1/catalog.json"
+      "" -> nil
+      url -> url
+    end
+
   # The published pack catalog the registry refreshes from (the bundled
   # catalog.json is the boot fallback). Points at the immutable v1 pointer on
   # the vendor-neutral serving domain — the same base packctl bakes into
   # tarball_urls, so the tarball-base pin (Cache.pin_tarballs) agrees; override
   # for a mirror or a staging bucket (a self-host base still pins to itself).
-  config :emisar_web, EmisarWeb.PacksRegistry,
-    catalog_url:
-      System.get_env("EMISAR_PACK_CATALOG_URL") ||
-        "https://registry.emisar.dev/v1/catalog.json"
+  # An explicitly empty value disables remote refresh and serves the bundled
+  # catalog, which keeps image smoke tests and offline self-hosts deterministic.
+  config :emisar_web, EmisarWeb.PacksRegistry, catalog_url: pack_catalog_url
 
   # -- Mailer (Postmark by default; Mailgun and SMTP available as
   # fallbacks if you swap providers later) --------------------------

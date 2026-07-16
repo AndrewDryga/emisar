@@ -290,6 +290,9 @@ jobs:
           PHX_HOST: localhost
           PORT: "4000"
           EMISAR_DISABLE_BILLING: "1"
+          # Validate the catalog bundled in this image. The published pointer can
+          # still name the previous pack version until CD publishes this commit.
+          EMISAR_PACK_CATALOG_URL: ""
           FORCE_SSL: "false"
         run: |
           set -euo pipefail
@@ -299,12 +302,12 @@ jobs:
 
           docker run --rm --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
-            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
             emisar/portal:ci /app/bin/emisar eval 'Emisar.Release.migrate()'
 
           cid=$(docker run -d --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
-            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
             emisar/portal:ci)
 
           cleanup() {
