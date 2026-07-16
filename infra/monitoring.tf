@@ -196,6 +196,37 @@ resource "google_monitoring_alert_policy" "db_memory" {
   notification_channels = local.alert_notification_channels
 }
 
+resource "google_monitoring_alert_policy" "db_down" {
+  display_name = "Emisar: Cloud SQL Instance Down"
+  combiner     = "OR"
+
+  documentation {
+    content   = "The Emisar Cloud SQL instance is reporting that its server is not up. Inspect Cloud SQL operations, maintenance, and instance state before restarting or failing over the database."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "availability"
+  }
+
+  conditions {
+    display_name = "Cloud SQL Server Up Below 1 for 5 Minutes"
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.project_id = \"${var.project_id}\" AND resource.labels.database_id = \"${google_sql_database_instance.emisar.name}\" AND metric.type = \"cloudsql.googleapis.com/database/up\""
+      comparison      = "COMPARISON_LT"
+      threshold_value = 1
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
 # `google-monitoring-enabled` enables COS Node Problem Detector, whose guest
 # metrics are reported against each VM. The portal-only instance label keeps
 # these policies scoped to the MIG and excludes the optional Livebook VM.
@@ -340,6 +371,38 @@ resource "google_monitoring_alert_policy" "lb_5xx" {
         cross_series_reducer = "REDUCE_SUM"
       }
       denominator_aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_RATE"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "lb_no_healthy_backends" {
+  display_name = "Emisar: Load Balancer Zero Healthy Backends"
+  combiner     = "OR"
+
+  documentation {
+    content   = "The portal backend is returning HTTP 503 responses through the global external Application Load Balancer for five minutes. Google documents 503 as the response when all backends are unhealthy; this is the closest native metric signal because Cloud Monitoring does not expose a clean healthy-backend-count metric for this load balancer. Confirm the incident with load-balancer logs and statusDetails=failed_to_pick_backend, since a backend-generated 503 can produce the same metric."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "load-balancer"
+    signal    = "backend-health"
+  }
+
+  conditions {
+    display_name = "Portal Backend HTTP 503 for 5 Minutes"
+    condition_threshold {
+      filter          = "resource.type = \"https_lb_rule\" AND resource.labels.backend_target_name = \"${google_compute_backend_service.app.name}\" AND metric.type = \"loadbalancing.googleapis.com/https/request_count\" AND metric.labels.response_code = 503"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+      aggregations {
         alignment_period     = "300s"
         per_series_aligner   = "ALIGN_RATE"
         cross_series_reducer = "REDUCE_SUM"
