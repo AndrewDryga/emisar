@@ -13,9 +13,11 @@ defmodule Emisar.OAuth.Jobs.Cleanup do
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(_config) do
     codes = Emisar.OAuth.delete_expired_authorization_codes()
+    tokens = Emisar.OAuth.delete_expired_tokens()
     clients = Emisar.OAuth.delete_unused_clients()
 
     if codes > 0, do: Logger.info("oauth_cleanup.codes_swept", count: codes)
+    if tokens > 0, do: Logger.info("oauth_cleanup.tokens_swept", count: tokens)
     if clients > 0, do: Logger.info("oauth_cleanup.unused_clients_swept", count: clients)
 
     :ok
