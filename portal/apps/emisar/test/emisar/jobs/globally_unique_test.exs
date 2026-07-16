@@ -43,14 +43,9 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
   end
 
   test "an enabled leader executes its initial tick" do
-    {:ok, pid} =
-      GloballyUnique.start_link(
-        {ExecutingJob, :timer.hours(1), initial_delay: 0, test_pid: self()}
-      )
-
-    on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
-    end)
+    start_supervised!(
+      {GloballyUnique, {ExecutingJob, :timer.hours(1), initial_delay: 0, test_pid: self()}}
+    )
 
     assert_receive :executed, 500
   end
