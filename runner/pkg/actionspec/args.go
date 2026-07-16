@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -173,17 +174,22 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 // who need mixed durations can use stdlib units ("36h").
 func parseExtendedDuration(s string) (time.Duration, error) {
 	if n := len(s); n > 0 {
+		var unit time.Duration
 		switch s[n-1] {
 		case 'd':
-			days, err := parseLeadingInt(s[:n-1])
-			if err == nil {
-				return time.Duration(days) * 24 * time.Hour, nil
-			}
+			unit = 24 * time.Hour
 		case 'w':
-			weeks, err := parseLeadingInt(s[:n-1])
-			if err == nil {
-				return time.Duration(weeks) * 7 * 24 * time.Hour, nil
+			unit = 7 * 24 * time.Hour
+		}
+		if unit > 0 {
+			amount, err := parseLeadingInt(s[:n-1])
+			if err != nil {
+				return 0, err
 			}
+			if amount > math.MaxInt64/int64(unit) {
+				return 0, fmt.Errorf("duration exceeds maximum %s", time.Duration(math.MaxInt64))
+			}
+			return time.Duration(amount) * unit, nil
 		}
 	}
 	return time.ParseDuration(s)
@@ -193,14 +199,12 @@ func parseLeadingInt(s string) (int64, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty number")
 	}
-	var n int64
 	for _, r := range s {
 		if r < '0' || r > '9' {
 			return 0, fmt.Errorf("not an integer: %q", s)
 		}
-		n = n*10 + int64(r-'0')
 	}
-	return n, nil
+	return strconv.ParseInt(s, 10, 64)
 }
 
 // MarshalYAML emits the duration as a Go-style duration string.

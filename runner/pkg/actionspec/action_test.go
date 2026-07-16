@@ -172,6 +172,10 @@ func TestParseExtendedDuration(t *testing.T) {
 		{"2h", 2 * time.Hour, false},
 		{"7d", 7 * 24 * time.Hour, false},
 		{"2w", 14 * 24 * time.Hour, false},
+		{"106751d", 106751 * 24 * time.Hour, false},
+		{"106752d", 0, true},
+		{"15251w", 0, true},
+		{"9223372036854775809d", 0, true},
 		// Mixed like "1d12h" falls back to stdlib parser, which rejects.
 		{"1d12h", 0, true},
 		{"banana", 0, true},
