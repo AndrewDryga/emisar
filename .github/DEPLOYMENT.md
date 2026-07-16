@@ -29,14 +29,15 @@ Configure these environments with deployment branches restricted to `main`:
 
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
-| `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
-| `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
-| `pack-registry-production` | Required reviewer + protected `main`; the sole maintainer may approve their own deployment | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. A second approval is intentional: a rerun of an old publication job cannot mint fresh credentials from an approval granted to the original run. |
+| `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
+| `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
+| `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
 | `public-releases` | Required reviewer + `runner-v*` and `mcp-v*` policies | None | Signed runner and MCP bridge builds. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
 | `mcp-registry-publication` | Required reviewer + `v*` and `main` recovery policies | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. `main` is allowed only so the current hardened publisher can recover an existing product release. |
 
 Run `infra/scripts/verify-pack-environment.sh` and retain the green output before
-enabling pack publication or treating an old job rerun as safe.
+enabling pack publication — it confirms the publisher's WIF credentials stay bound
+to protected `main` with no admin bypass.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free

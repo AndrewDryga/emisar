@@ -157,9 +157,12 @@ jobs:
       group: packs-publish
       cancel-in-progress: false
     environment:
-      # This identity-bearing environment also requires a reviewer. A rerun of
-      # only this old job must not mint fresh production credentials merely
-      # because the original, separate release approval once succeeded.
+      # The release decision and its supersede semantics live on the
+      # pack-registry-approval gate above; this identity-bearing environment
+      # binds the short-lived GCP WIF credentials to protected main (no admin
+      # bypass) but does not re-prompt for a reviewer. A bare rerun of an old
+      # publication job is already refused by the "Refuse a superseded release"
+      # step below when a newer release has since published.
       name: pack-registry-production
     permissions:
       contents: read

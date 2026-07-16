@@ -8,12 +8,11 @@ payload=$(gh api "repos/${repo}/environments/${environment}")
 
 jq -e '
   .can_admins_bypass == false and
-  any(.protection_rules[]?; .type == "required_reviewers" and (.reviewers | length > 0)) and
   .deployment_branch_policy.protected_branches == true and
   .deployment_branch_policy.custom_branch_policies == false
 ' <<<"$payload" >/dev/null || {
-  echo "${environment} must require a reviewer, disable admin bypass, and allow only protected branches" >&2
+  echo "${environment} must disable admin bypass and allow only protected branches" >&2
   exit 1
 }
 
-echo "verified: ${repo}/${environment} protects the identity-bearing pack publisher"
+echo "verified: ${repo}/${environment} binds WIF credentials to protected main"
