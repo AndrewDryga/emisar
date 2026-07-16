@@ -334,19 +334,20 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 
 	cleanArgs, err := validation.Validate(act.Args, req.Args)
 	if err != nil {
+		detail := validationFailureDetail(err, req.Args, act.Args)
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)
 		ev.PackID = act.PackID
 		ev.ActionID = act.ID
 		ev.Metadata = metaFor(act)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
-		ev.Error = err.Error()
+		ev.Error = detail
 		journaled := e.journal(ctx, ev)
 		return &Result{
 			Status:           StatusValidationFailed,
 			EventID:          journaled.EventID,
 			LocalAuditFailed: journaled.EventID == "",
 			ActionID:         act.ID,
-			Reason:           err.Error(),
+			Reason:           detail,
 		}, nil
 	}
 
@@ -570,19 +571,20 @@ func normalizeUTF8String(value string) string {
 
 func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec.Action,
 	cleanArgs map[string]any, err error) (*Result, error) {
+	detail := redactSensitiveValues(err.Error(), cleanArgs, act.Args)
 	ev := e.baseEvent(req, audit.EventExecutionFailed, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
 	ev.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
-	ev.Error = err.Error()
+	ev.Error = detail
 	journaled := e.journal(ctx, ev)
 	return &Result{
 		Status:           StatusError,
 		EventID:          journaled.EventID,
 		LocalAuditFailed: journaled.EventID == "",
 		ActionID:         act.ID,
-		Reason:           err.Error(),
+		Reason:           detail,
 	}, nil
 }
 
@@ -640,23 +642,33 @@ func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 }
 
 func redactedInvocation(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) ([]string, string) {
-	secrets := sensitiveValues(cleanArgs, schema)
-
-	mask := func(s string) string {
-		for _, sec := range secrets {
-			s = strings.ReplaceAll(s, sec, "[REDACTED]")
-		}
-		return s
-	}
-
 	redactedArgv := make([]string, len(argv))
 	parts := make([]string, 0, len(argv)+1)
-	parts = append(parts, shellQuote(mask(binary)))
+	parts = append(parts, shellQuote(redactSensitiveValues(binary, cleanArgs, schema)))
 	for i, arg := range argv {
-		redactedArgv[i] = mask(arg)
+		redactedArgv[i] = redactSensitiveValues(arg, cleanArgs, schema)
 		parts = append(parts, shellQuote(redactedArgv[i]))
 	}
 	return redactedArgv, strings.Join(parts, " ")
+}
+
+func redactSensitiveValues(value string, args map[string]any, schema []actionspec.Arg) string {
+	for _, secret := range sensitiveValues(args, schema) {
+		value = strings.ReplaceAll(value, secret, "[REDACTED]")
+	}
+	return value
+}
+
+func validationFailureDetail(err error, args map[string]any, schema []actionspec.Arg) string {
+	if validationErr, ok := err.(*validation.Error); ok {
+		for _, arg := range schema {
+			_, provided := args[arg.Name]
+			if arg.Name == validationErr.Arg && arg.Sensitive && provided {
+				return fmt.Sprintf("argument %s: rejected sensitive value (%s)", validationErr.Arg, validationErr.Code)
+			}
+		}
+	}
+	return redactSensitiveValues(err.Error(), args, schema)
 }
 
 // sensitiveValues returns the string forms of every arg the schema marks

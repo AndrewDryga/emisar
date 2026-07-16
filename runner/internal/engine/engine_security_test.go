@@ -231,3 +231,118 @@ func TestEngine_OverlappingSensitiveValuesRedactedLongestFirst(t *testing.T) {
 		t.Fatalf("redactedInvocation() command = %q, want %q", got, want)
 	}
 }
+
+func TestEngine_SensitiveValidationFailureReasonRedacted(t *testing.T) {
+	const durationAction = `
+schema_version: 1
+id: t.sensitive_duration
+title: Sensitive duration
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args:
+  - name: api_token
+    type: duration
+    required: true
+    sensitive: true
+execution:
+  command:
+    binary: true
+    argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+	const pathAction = `
+schema_version: 1
+id: t.sensitive_path
+title: Sensitive path
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args:
+  - name: secret_path
+    type: path
+    required: true
+    sensitive: true
+    validation:
+      max_length: 1024
+      denied_paths: [/token]
+execution:
+  command:
+    binary: true
+    argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+	e, journal, root := setupEngineExtra(t, map[string]string{
+		"sensitive_duration.yaml": durationAction,
+		"sensitive_path.yaml":     pathAction,
+	})
+	defer journal.Close()
+
+	tests := []struct {
+		actionID string
+		arg      string
+		secret   string
+		leaks    []string
+		want     string
+	}{
+		{
+			actionID: "t.sensitive_duration",
+			arg:      "api_token",
+			secret:   "hunter2",
+			leaks:    []string{"hunter2"},
+			want:     "argument api_token: rejected sensitive value (type)",
+		},
+		{
+			actionID: "t.sensitive_path",
+			arg:      "secret_path",
+			secret:   "/secret/../token",
+			leaks:    []string{"/secret/../token", "/token"},
+			want:     "argument secret_path: rejected sensitive value (denied_paths)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.actionID, func(t *testing.T) {
+			result, err := e.Run(context.Background(), Request{
+				ActionID: test.actionID,
+				Args:     map[string]any{test.arg: test.secret},
+				Reason:   "test",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != StatusValidationFailed {
+				t.Fatalf("status=%s, want validation_failed", result.Status)
+			}
+			if result.Reason != test.want {
+				t.Fatalf("reason=%q, want %q", result.Reason, test.want)
+			}
+			for _, leak := range test.leaks {
+				if strings.Contains(result.Reason, leak) {
+					t.Fatalf("validation reason leaked sensitive value %q: %q", leak, result.Reason)
+				}
+			}
+		})
+	}
+
+	events, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"hunter2", "/secret/../token", `"/token"`} {
+		if strings.Contains(string(events), leak) {
+			t.Fatalf("audit journal leaked sensitive validation value %q:\n%s", leak, events)
+		}
+	}
+}
