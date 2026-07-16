@@ -146,6 +146,22 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	}
 
 	start := time.Now()
+	if contextErr := tctx.Err(); contextErr != nil {
+		_ = stdoutRelay.Close()
+		_ = stderrRelay.Close()
+		_ = stdoutPipe.Close()
+		_ = stderrPipe.Close()
+		res.ExitCode = -1
+		res.DurationMS = time.Since(start).Milliseconds()
+		res.TimedOut = errors.Is(contextErr, context.DeadlineExceeded)
+		res.ArgvSHA256 = sha256Hex(strings.Join(append([]string{p.Binary}, p.Argv...), "\x00"))
+		if res.TimedOut {
+			res.Status = StatusTimeout
+		} else {
+			res.Status = StatusCancelled
+		}
+		return res, nil
+	}
 	if err := cmd.Start(); err != nil {
 		_ = stdoutRelay.Close()
 		_ = stderrRelay.Close()

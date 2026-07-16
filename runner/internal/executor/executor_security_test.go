@@ -2,10 +2,65 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestExecutor_PreCancelledContextDoesNotSpawnProcess(t *testing.T) {
+	tests := []struct {
+		name     string
+		context  func(*testing.T) context.Context
+		status   Status
+		timedOut bool
+	}{
+		{
+			name: "cancelled",
+			context: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			status: StatusCancelled,
+		},
+		{
+			name: "deadline exceeded",
+			context: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+				t.Cleanup(cancel)
+				return ctx
+			},
+			status:   StatusTimeout,
+			timedOut: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sentinel := filepath.Join(t.TempDir(), "spawned")
+			res, err := New().Execute(tt.context(t), Plan{
+				Binary: "/bin/sh",
+				Argv:   []string{"-c", `printf spawned > "$1"`, "sh", sentinel},
+				Limits: Limits{Timeout: 5 * time.Second, MaxStdoutBytes: 1024, MaxStderrBytes: 1024},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Status != tt.status || res.TimedOut != tt.timedOut {
+				t.Fatalf("status = %s, timed_out = %t; want %s, %t", res.Status, res.TimedOut, tt.status, tt.timedOut)
+			}
+			if res.ExitCode != -1 {
+				t.Fatalf("exit code = %d, want -1 for an unstarted process", res.ExitCode)
+			}
+			if _, err := os.Stat(sentinel); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("pre-cancelled process created sentinel: %v", err)
+			}
+		})
+	}
+}
 
 // TestExecutor_StripsNonAllowlistedParentEnv: a parent environment variable
 // that is NOT in the inherit allowlist must not reach the child process.
