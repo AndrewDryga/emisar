@@ -60,7 +60,7 @@ publishable artifact tree to --out:
   v1/catalog.json                                  latest catalog (mutable pointer)
   v1/catalog/<sha256>.json                         immutable catalog snapshot
   v1/suggest.json                                  lean suggest index (mutable pointer)
-  v1/schemas/*.json                                catalog + authoring schemas
+  v1/schemas/*.vN.schema.json                      immutable versioned schemas
   v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball
   manifest.json                                    upload plan (not published)
 

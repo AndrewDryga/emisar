@@ -18,10 +18,11 @@ type Object struct {
 	// Path is the object path relative to the bucket root, e.g.
 	// v1/catalog.json or v1/packs/<id>/<version>/<hex>/pack.tar.gz.
 	Path string `json:"path"`
-	// Immutable objects are content-addressed and uploaded with an
-	// if-generation-match:0 precondition (never overwritten). Mutable
-	// pointers (the latest catalog.json/suggest.json) are overwritten,
-	// relying on bucket versioning to retain prior generations.
+	// Immutable objects use non-colliding paths: content hashes for pack and
+	// catalog artifacts, explicit suite versions for schemas. They upload with
+	// an if-generation-match:0 precondition (never overwritten). Mutable
+	// pointers (the latest catalog.json/suggest.json) are overwritten, relying
+	// on bucket versioning to retain prior generations.
 	Immutable   bool   `json:"immutable"`
 	ContentType string `json:"content_type"`
 	Size        int    `json:"size"`
@@ -83,7 +84,7 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		return nil, err
 	}
 
-	// Schemas — immutable (versioned by their $id / the v1 prefix).
+	// Schemas are immutable; their filename and $id carry the suite version.
 	for _, name := range sortedKeys(Schemas()) {
 		if err := add("v1/schemas/"+name, true, contentTypeJSON, Schemas()[name]); err != nil {
 			return nil, err

@@ -82,10 +82,11 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 		return nil, fmt.Errorf("catalog: parse manifest: %w", err)
 	}
 
-	// Upload immutable, content-addressed objects (tarballs, snapshots, schemas)
-	// BEFORE the mutable pointers (catalog.json / latest) that reference them, so
-	// a mid-publish failure never leaves the live pointer resolving to a 404
-	// tarball. Stable so objects of the same class keep their manifest order.
+	// Upload immutable objects (content-addressed tarballs/snapshots and
+	// explicitly versioned schemas) BEFORE the mutable pointers (catalog.json /
+	// latest) that reference them, so a mid-publish failure never leaves the live
+	// pointer resolving to a 404 tarball. Stable so objects of the same class keep
+	// their manifest order.
 	sort.SliceStable(m.Objects, func(i, j int) bool {
 		return m.Objects[i].Immutable && !m.Objects[j].Immutable
 	})

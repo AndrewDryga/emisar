@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://emisar.dev/v1/schemas/action.schema.json",
+  "$id": "https://emisar.dev/v1/schemas/action.v2.schema.json",
   "title": "emisar action definition (actions/*.yaml)",
   "description": "Authoring schema for a single action YAML. Documentation and editor validation only — the runner's loader (runner/pkg/actionspec) is the authoritative validator, and per-value argument validation happens at execution time.",
   "type": "object",

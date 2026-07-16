@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -120,10 +121,25 @@ func TestWrite_ObjectSetAndImmutability(t *testing.T) {
 	}
 
 	// Schemas immutable.
-	for _, name := range []string{"catalog.schema.json", "pack.schema.json", "action.schema.json"} {
-		o, ok := byPath["v1/schemas/"+name]
+	for _, name := range []string{
+		"catalog.v2.schema.json",
+		"pack.v2.schema.json",
+		"action.v2.schema.json",
+	} {
+		path := "v1/schemas/" + name
+		o, ok := byPath[path]
 		if !ok || !o.Immutable {
 			t.Errorf("schema %s missing or not immutable", name)
+		}
+
+		var schema struct {
+			ID string `json:"$id"`
+		}
+		if err := json.Unmarshal(Schemas()[name], &schema); err != nil {
+			t.Fatalf("parse schema %s: %v", name, err)
+		}
+		if want := "https://emisar.dev/" + path; schema.ID != want {
+			t.Errorf("schema %s $id = %q, want %q", name, schema.ID, want)
 		}
 	}
 

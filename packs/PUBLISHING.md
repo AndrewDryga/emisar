@@ -20,15 +20,17 @@ the host `emisar` binary, which ships operator verbs only.
 v1/catalog.json                                  latest catalog (mutable pointer)
 v1/catalog/<sha256>.json                         immutable catalog snapshot (content-addressed)
 v1/suggest.json                                  lean suggest index (mutable pointer)
-v1/schemas/{catalog,pack,action}.schema.json     immutable JSON schemas
+v1/schemas/{catalog,pack,action}.vN.schema.json  immutable versioned JSON schemas
 v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball (content-addressed)
 ```
 
 Immutability falls out of content-addressing: a tarball lives under its
 `content_hash`, so identical bytes always resolve to the same object and a byte
-change without a version bump lands at a different path. The two mutable
-pointers are overwritten each publish; the bucket's **object versioning** keeps
-every prior generation fetchable.
+change without a version bump lands at a different path. JSON schemas use an
+explicit suite version in both their filename and `$id`; changing any schema
+requires bumping `SchemaArtifactVersion`, so published schema bytes are never
+replaced. The two mutable pointers are overwritten each publish; the bucket's
+**object versioning** keeps every prior generation fetchable.
 
 `content_hash` is the runner's load-time hash (`emisar pack validate` prints the
 same value) — the single trust source. Install snippets pin `--hash sha256:…`

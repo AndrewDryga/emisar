@@ -92,13 +92,13 @@
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">packctl catalog build --packs ./packs --out ./dist \
   --base-url https://packs.acme.internal</pre>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            The output is the whole registry — immutable, content-addressed artifacts plus two
-            mutable pointers:
+            The output is the whole registry — immutable versioned or content-addressed artifacts,
+            plus two mutable pointers:
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">v1/catalog.json                                  latest catalog (mutable pointer)
 v1/catalog/&lt;sha256&gt;.json                         immutable catalog snapshot
 v1/suggest.json                                  lean suggest index (mutable pointer)
-v1/schemas/*.json                                catalog + authoring schemas
+v1/schemas/*.vN.schema.json                      immutable versioned schemas
 v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pack tarball</pre>
         </li>
 
