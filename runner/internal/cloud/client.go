@@ -67,6 +67,11 @@ type Options struct {
 	// action — double-running a mutating action.
 	DedupStorePath string
 
+	// DedupLegacyStorePath is the pre-v0.12 dispatch log location. When
+	// DedupStorePath does not exist yet, readable state found here is
+	// migrated forward on boot instead of being silently abandoned.
+	DedupLegacyStorePath string
+
 	// TerminalShutdownPath persists terminal cloud rejections so a later
 	// `emisar doctor` can explain why this runner stopped. Empty disables the
 	// optional diagnostic state, which is useful for in-memory test clients.
@@ -159,10 +164,11 @@ func NewClient(d Dialer, opts Options) *Client {
 		opts.DedupRingSize = 1024
 	}
 	c := &Client{
-		dialer:      d,
-		opts:        opts,
-		runs:        map[string]*runState{},
-		dedup:       newDedupRing(opts.DedupRingSize, opts.DedupStorePath, opts.Logger),
+		dialer: d,
+		opts:   opts,
+		runs:   map[string]*runState{},
+		dedup: newDedupRing(
+			opts.DedupRingSize, opts.DedupStorePath, opts.DedupLegacyStorePath, opts.Logger),
 		preCanceled: map[string]struct{}{},
 		readvertise: make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
@@ -207,7 +213,12 @@ func (c *Client) Readvertise() {
 // once the new session is established.
 func (c *Client) Run(ctx context.Context) error {
 	if c.dedup.loadErr != nil {
-		return fmt.Errorf("load durable dispatch state: %w", c.dedup.loadErr)
+		// Refusing to start over unreadable at-most-once state is deliberate
+		// (a fresh empty log could double-run a redelivered mutation) — but
+		// the refusal must hand the operator the remedy, not just the cause.
+		return fmt.Errorf(
+			"load durable dispatch state from %s: %w — quarantine the file (mv %s %s.corrupt) and restart to begin a clean dispatch log",
+			c.dedup.storePath, c.dedup.loadErr, c.dedup.storePath, c.dedup.storePath)
 	}
 
 	backoff := c.opts.ReconnectMin

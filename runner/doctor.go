@@ -86,6 +86,7 @@ func runDoctor(ctx context.Context) []checkResult {
 	}
 
 	results = append(results, checkCredential(cfg))
+	results = append(results, checkDispatchLog(cfg))
 
 	packDirs := cfg.Paths.Packs
 	if len(flagPacksDir) > 0 {
@@ -184,10 +185,42 @@ func checkPackDirs(dirs []string) checkResult {
 // unreadable dir, a malformed pack) fails the check with the underlying
 // reason. Trust is the cloud's call at dispatch — this only confirms the local
 // packs parse and what versions they are.
+// checkDispatchLog validates the durable dispatch log. A corrupt one makes
+// connect refuse to start (deliberately — a fresh empty log could double-run
+// a redelivered mutation), which is invisible from the host until you know
+// where to look; this check names the file and the remedy.
+func checkDispatchLog(cfg *config.Config) checkResult {
+	report := cloud.InspectDispatchLog(cfg.Paths.DataDir)
+	switch report.State {
+	case cloud.DispatchLogAbsent:
+		return checkResult{"dispatch log", checkOK, "none yet — the first connect creates it"}
+	case cloud.DispatchLogLegacy:
+		return checkResult{"dispatch log", checkOK,
+			fmt.Sprintf("%d entries at %s (pre-v0.12 state; connect migrates it forward)",
+				report.Entries, report.Path)}
+	case cloud.DispatchLogCorrupt:
+		return checkResult{"dispatch log", checkFail,
+			fmt.Sprintf("%s is unreadable (%v) — connect refuses to start over it; quarantine the file (mv %s %s.corrupt) to begin a clean dispatch log",
+				report.Path, report.Err, report.Path, report.Path)}
+	default:
+		return checkResult{"dispatch log", checkOK,
+			fmt.Sprintf("%d entries at %s", report.Entries, report.Path)}
+	}
+}
+
 func checkPacks(dirs []string) (*packs.Registry, checkResult) {
-	registry, err := packs.LoadAll(dirs, packs.LoadOptions{})
+	registry, err := packs.LoadAll(dirs, packs.LoadOptions{SkipBrokenPacks: true})
 	if err != nil {
 		return nil, checkResult{"packs", checkFail, err.Error()}
+	}
+	if degraded := registry.Degraded(); len(degraded) > 0 {
+		details := make([]string, len(degraded))
+		for i, d := range degraded {
+			details[i] = fmt.Sprintf("%s (%s)", d.Dir, d.Reason)
+		}
+		return registry, checkResult{"packs", checkFail,
+			fmt.Sprintf("%d loaded; %d broken and skipped: %s — reinstall each (emisar pack install <id>) or re-run the installer",
+				len(registry.Packs()), len(degraded), strings.Join(details, "; "))}
 	}
 	loaded := registry.Packs()
 	if len(loaded) == 0 {

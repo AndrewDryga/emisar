@@ -667,7 +667,7 @@ func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
 	client := NewClient(dialer, Options{DedupStorePath: storePath})
 
 	err := client.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "load durable dispatch state: invalid dispatch log entry on line 1") {
+	if err == nil || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
 		t.Fatalf("Run error = %v, want corrupt durable state", err)
 	}
 	if got := dialer.calls.Load(); got != 0 {

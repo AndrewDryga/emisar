@@ -157,7 +157,7 @@ audit verify
 doctor
 events tail|cat|grep
 signing init|new-ca|new-cert
-state
+state [check-dispatch-log]
 version
 completion
 help
@@ -201,6 +201,34 @@ loudly: Cobra reports an unknown flag and the runner's strict YAML loader
 rejects an unknown config key. There is no migration path in the current CLI.
 An old bridge may start, then be warned or rejected by the portal's bridge
 minimum; it must not be assumed compatible just because it can launch.
+
+### On-host runner state
+
+**What it is.** State the runner already wrote to customer hosts and reads
+back on its next boot: the durable dispatch log (`<data_dir>/dispatches.jsonl`,
+previously `<data_dir>/dedup.jsonl`), the persisted runner identity and token,
+the append-only events journal, signing/nonce state, and the installed pack
+trees under the configured pack directories.
+
+**Why it is a surface.** A new binary always boots against files an older
+binary wrote — this state is "deployed" the way a committed DB migration is,
+regardless of product version. Both halves were broken in one day pre-0.12:
+deleting the dispatch-log format migration made every host carrying v0.9
+history silently refuse all dispatches, and a stricter pack YAML parser made
+one already-installed pack file boot-fatal, crash-looping a production runner
+1,164 times. The rule since: a change to how this state is read either keeps
+reading the old form or migrates it forward on boot (the dispatch log now does
+both — legacy entries and the legacy path migrate with an audit-visible log
+line); a per-item fault (one pack, one file) degrades that item loudly and
+never the whole runner.
+
+**What happens on skew.** A dispatch log the runner cannot read refuses
+`connect` with the quarantine remedy in the error; `emisar doctor` and
+`emisar state check-dispatch-log` report the same verdict offline, and
+`install.sh` runs the check with the staged binary before touching a running
+service. A broken installed pack loads as degraded (`packs.degraded` log
+line, doctor failure naming the directory) while every healthy pack keeps
+serving.
 
 ### Install scripts
 

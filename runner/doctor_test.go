@@ -137,6 +137,69 @@ func TestCheckPacks_SampleCappedAtTwelve(t *testing.T) {
 	}
 }
 
+// A broken installed pack degrades (the daemon skips it and keeps serving the
+// rest) — doctor must FAIL the packs check naming the directory and remedy,
+// because the pack silently missing from the catalog is exactly what an
+// operator comes to doctor to explain.
+func TestCheckPacks_ReportsDegraded(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "healthy")
+	brokenDir := filepath.Join(root, "broken")
+	if err := os.MkdirAll(brokenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(brokenDir, "pack.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, got := checkPacks([]string{root})
+	if reg == nil {
+		t.Fatal("checkPacks should still return the healthy registry")
+	}
+	if got.status != checkFail {
+		t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+	}
+	if !strings.Contains(got.detail, brokenDir) || !strings.Contains(got.detail, "1 loaded") {
+		t.Fatalf("detail should name the broken dir and the healthy count: %q", got.detail)
+	}
+}
+
+func TestCheckDispatchLog(t *testing.T) {
+	t.Run("absent is ok", func(t *testing.T) {
+		got := checkDispatchLog(&config.Config{Paths: config.Paths{DataDir: t.TempDir()}})
+		if got.status != checkOK {
+			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
+		}
+	})
+
+	t.Run("corrupt fails with the quarantine remedy", func(t *testing.T) {
+		dataDir := t.TempDir()
+		logPath := filepath.Join(dataDir, "dispatches.jsonl")
+		if err := os.WriteFile(logPath, []byte("not-json\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := checkDispatchLog(&config.Config{Paths: config.Paths{DataDir: dataDir}})
+		if got.status != checkFail {
+			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+		}
+		if !strings.Contains(got.detail, logPath) || !strings.Contains(got.detail, ".corrupt") {
+			t.Fatalf("detail should name the file and the quarantine remedy: %q", got.detail)
+		}
+	})
+
+	t.Run("legacy state is ok pending migration", func(t *testing.T) {
+		dataDir := t.TempDir()
+		legacy := `{"request_id":"req","result":{"type":"action_result","protocol_version":1,"request_id":"req","status":"success"}}` + "\n"
+		if err := os.WriteFile(filepath.Join(dataDir, "dedup.jsonl"), []byte(legacy), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := checkDispatchLog(&config.Config{Paths: config.Paths{DataDir: dataDir}})
+		if got.status != checkOK || !strings.Contains(got.detail, "migrates") {
+			t.Fatalf("legacy state should be ok pending migration: %v (%s)", got.status, got.detail)
+		}
+	})
+}
+
 func TestActionBinary(t *testing.T) {
 	exec := &actionspec.Action{
 		Kind:      actionspec.KindExec,

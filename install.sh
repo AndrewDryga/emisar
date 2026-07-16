@@ -784,6 +784,35 @@ stage_binary() {
   log "verified: ${ver_output}"
 }
 
+# A corrupt durable dispatch log makes the upgraded runner refuse to start (by
+# design: it cannot prove at-most-once execution against unreadable state).
+# Catch it with the STAGED binary before the running service is touched, so an
+# upgrade never converts a working host into a crash-looping one. Readable
+# pre-v0.12 state is fine — the new runner migrates it forward on boot.
+check_dispatch_log() {
+  # Older binaries don't have the verb; nothing to check against.
+  "${STAGED_BINARY}" state check-dispatch-log --help >/dev/null 2>&1 || return 0
+  if "${STAGED_BINARY}" state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1; then
+    return 0
+  fi
+  local logfile="${DATA_DIR}/dispatches.jsonl"
+  [ -f "${logfile}" ] || logfile="${DATA_DIR}/dedup.jsonl"
+  if [ "${QUARANTINE_DISPATCH_LOG:-0}" = "1" ]; then
+    local quarantined
+    quarantined="${logfile}.corrupt-$(date +%Y%m%d%H%M%S)"
+    mv "${logfile}" "${quarantined}"
+    warn "dispatch log was unreadable; quarantined it at ${quarantined}"
+    warn "the runner starts a clean dispatch log on next boot"
+    return 0
+  fi
+  warn "the durable dispatch log at ${logfile} is unreadable; the upgraded runner would refuse to start over it"
+  warn "options:"
+  warn "  1) quarantine it and start clean:  sudo mv ${logfile} ${logfile}.corrupt"
+  warn "  2) re-run this installer with QUARANTINE_DISPATCH_LOG=1 to do that automatically"
+  warn "  3) investigate first — nothing changes while the current runner keeps running"
+  die "refusing to upgrade over unreadable dispatch state (the current install is untouched)"
+}
+
 activate_binary() {
   local target="${BIN_DIR}/emisar"
   if [ -e "${target}" ]; then
@@ -1156,6 +1185,7 @@ do_install() {
   # Download, stage, and execute the new binary before interrupting a running
   # service. Architecture/version failures leave the current runner untouched.
   stage_binary "${extracted}"
+  check_dispatch_log
   INSTALL_TRANSACTION=1
   stop_service_if_running
 

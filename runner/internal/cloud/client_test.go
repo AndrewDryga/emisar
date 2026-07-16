@@ -441,7 +441,7 @@ func TestClient_RestartedReservationFailsClosedWithoutExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed := newDedupRing(4, path, nil)
+	seed := newDedupRing(4, path, "", nil)
 	if decision, _, err := seed.reserve(msg.RequestID, digest); err != nil || decision != reservationNew {
 		t.Fatalf("seed reservation: decision=%v err=%v", decision, err)
 	}
@@ -470,7 +470,7 @@ func TestClient_RequestIDFactConflictIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed := newDedupRing(4, path, nil)
+	seed := newDedupRing(4, path, "", nil)
 	reserveAndComplete(t, seed, original.RequestID, originalDigest, ActionResultMsg{
 		Status:  "success",
 		EventID: "evt_original",

@@ -21,8 +21,6 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
-const dispatchLogFilename = "dispatches.jsonl"
-
 func connectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "connect",
@@ -100,6 +98,13 @@ env var can be unset after the first successful connect.`,
 
 			hostname, _ := os.Hostname()
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+			// A degraded pack is skipped, not fatal (see loadRegistry) — but it
+			// must be impossible to miss from the host: one line per pack, every
+			// boot, naming the file to fix.
+			for _, degraded := range rt.registry().Degraded() {
+				logger.Error("packs.degraded",
+					"pack_dir", degraded.Dir, "error", degraded.Reason)
+			}
 			dialer := &cloud.WebsocketDialer{
 				URL:        rt.cfg.Cloud.URL,
 				AuthKey:    authKey,
@@ -122,7 +127,8 @@ env var can be unset after the first successful connect.`,
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:         builder,
 				Engine:               rt.engine,
-				DedupStorePath:       dispatchLogPath(rt.cfg.Paths.DataDir),
+				DedupStorePath:       cloud.DispatchLogPath(rt.cfg.Paths.DataDir),
+				DedupLegacyStorePath: cloud.LegacyDispatchLogPath(rt.cfg.Paths.DataDir),
 				TerminalShutdownPath: cloud.TerminalShutdownStatePath(rt.cfg.Paths.DataDir),
 				Logger:               logger,
 				HeartbeatEvery:       rt.cfg.Cloud.HeartbeatEvery.Std(),
@@ -198,10 +204,6 @@ func validateConnectDataDir(dataDir string) error {
 		return fmt.Errorf("connect requires paths.data_dir for durable identity and dispatch reservations")
 	}
 	return nil
-}
-
-func dispatchLogPath(dataDir string) string {
-	return filepath.Join(dataDir, dispatchLogFilename)
 }
 
 func lockConnectDataDir(dataDir string) (*fsutil.FileLock, error) {

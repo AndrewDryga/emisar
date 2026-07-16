@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ func dedupSize(d *dedupRing) int {
 }
 
 func TestDedupRing_ReserveCompleteAndLookup(t *testing.T) {
-	d := newDedupRing(4, "", nil)
+	d := newDedupRing(4, "", "", nil)
 	reserveAndComplete(t, d, "a", testDispatchDigest("a"), ActionResultMsg{EventID: "evt_a"})
 	reserveAndComplete(t, d, "b", testDispatchDigest("b"), ActionResultMsg{EventID: "evt_b"})
 
@@ -75,7 +76,7 @@ func TestDedupRing_ReserveCompleteAndLookup(t *testing.T) {
 }
 
 func TestDedupRing_EvictsOldest(t *testing.T) {
-	d := newDedupRing(2, "", nil)
+	d := newDedupRing(2, "", "", nil)
 	for _, id := range []string{"a", "b", "c"} {
 		reserveCompleteAndAcknowledge(t, d, id, testDispatchDigest(id), ActionResultMsg{EventID: "evt_" + id})
 	}
@@ -88,7 +89,7 @@ func TestDedupRing_EvictsOldest(t *testing.T) {
 }
 
 func TestDedupRing_NeverEvictsAnActiveReservation(t *testing.T) {
-	d := newDedupRing(1, "", nil)
+	d := newDedupRing(1, "", "", nil)
 	firstDigest := testDispatchDigest("first")
 	if decision, _, err := d.reserve("first", firstDigest); err != nil || decision != reservationNew {
 		t.Fatalf("first reserve: decision=%v err=%v", decision, err)
@@ -102,7 +103,7 @@ func TestDedupRing_NeverEvictsAnActiveReservation(t *testing.T) {
 }
 
 func TestDedupRing_NeverEvictsAnUnacknowledgedCompletion(t *testing.T) {
-	d := newDedupRing(1, "", nil)
+	d := newDedupRing(1, "", "", nil)
 	firstDigest := testDispatchDigest("first")
 	reserveAndComplete(t, d, "first", firstDigest, ActionResultMsg{EventID: "evt_first"})
 
@@ -122,7 +123,7 @@ func TestDedupRing_NeverEvictsAnUnacknowledgedCompletion(t *testing.T) {
 }
 
 func TestDedupRing_ReplaysExactAndRefusesFactConflict(t *testing.T) {
-	d := newDedupRing(4, "", nil)
+	d := newDedupRing(4, "", "", nil)
 	digest := testDispatchDigest("a")
 	result := ActionResultMsg{EventID: "evt_first"}
 	reserveAndComplete(t, d, "a", digest, result)
@@ -140,10 +141,10 @@ func TestDedupRing_ReplaysExactAndRefusesFactConflict(t *testing.T) {
 func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	digest := testDispatchDigest("one")
-	d1 := newDedupRing(4, path, nil)
+	d1 := newDedupRing(4, path, "", nil)
 	reserveAndComplete(t, d1, "req-1", digest, ActionResultMsg{EventID: "evt_1", Status: "success"})
 
-	d2 := newDedupRing(4, path, nil)
+	d2 := newDedupRing(4, path, "", nil)
 	decision, result, err := d2.reserve("req-1", digest)
 	if err != nil || decision != reservationReplay || result.EventID != "evt_1" {
 		t.Fatalf("result did not survive restart: decision=%v result=%+v err=%v", decision, result, err)
@@ -153,13 +154,13 @@ func TestDedupRing_CompletedResultSurvivesRestart(t *testing.T) {
 func TestDedupRing_LocalAuditFailureSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	digest := testDispatchDigest("audit-failed")
-	d1 := newDedupRing(4, path, nil)
+	d1 := newDedupRing(4, path, "", nil)
 	reserveAndComplete(t, d1, "req-audit-failed", digest, ActionResultMsg{
 		LocalAuditFailed: true,
 		Status:           "success",
 	})
 
-	d2 := newDedupRing(4, path, nil)
+	d2 := newDedupRing(4, path, "", nil)
 	decision, result, err := d2.reserve("req-audit-failed", digest)
 	if err != nil || decision != reservationReplay || result.EventID != "" || !result.LocalAuditFailed {
 		t.Fatalf("audit failure did not survive restart: decision=%v result=%+v err=%v", decision, result, err)
@@ -170,7 +171,9 @@ func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 	digest := testDispatchDigest("req")
 	result := `{"type":"action_result","protocol_version":1,"request_id":"req","status":"success","exit_code":0,"duration_ms":0,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,"event_id":"evt"}`
 	tests := map[string]string{
-		"legacy shape":           `{"request_id":"req","result":` + result + `}`,
+		"legacy without result":  `{"request_id":"req","other":true}`,
+		"legacy bad result type": `{"request_id":"req","result":{"type":"error","request_id":"req","status":"success"}}`,
+		"legacy without id":      `{"result":` + result + `}`,
 		"unknown field":          `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{},"extra":true}`,
 		"duplicate key":          `{"request_id":"req","request_id":"other","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}`,
 		"duplicate record":       `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}` + "\n" + `{"request_id":"req","dispatch_sha256":"` + digest + `","state":"reserved","result":{}}`,
@@ -189,7 +192,7 @@ func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 			if err := os.WriteFile(path, []byte(contents+"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			d := newDedupRing(2, path, nil)
+			d := newDedupRing(2, path, "", nil)
 			if d.loadErr == nil {
 				t.Fatal("invalid dispatch record did not fail closed")
 			}
@@ -198,6 +201,213 @@ func TestDedupRing_RejectsNoncurrentAndMalformedEntries(t *testing.T) {
 			}
 		})
 	}
+}
+
+// legacyDispatchLine is a pre-v0.10 dispatch log entry exactly as those
+// runners persisted it: request_id + result, no state, no dispatch digest.
+func legacyDispatchLine(requestID string) string {
+	return `{"request_id":"` + requestID + `","result":{"type":"action_result","protocol_version":1,"request_id":"` + requestID + `","status":"success","exit_code":0,"event_id":"evt"}}`
+}
+
+// Deleting the v0.9 migration once bricked dispatch on every upgraded host
+// that carried history (loadErr → every reserve refused). Legacy entries
+// must load, normalize, and persist in the current format instead.
+func TestDedupRing_MigratesLegacyEntriesInPlace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatches.jsonl")
+	if err := os.WriteFile(path, []byte(legacyDispatchLine("req-legacy")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(4, path, "", nil)
+	if d.loadErr != nil {
+		t.Fatalf("legacy entry failed to load: %v", d.loadErr)
+	}
+	entry, ok := d.records["req-legacy"]
+	if !ok {
+		t.Fatal("legacy entry missing after load")
+	}
+	if entry.State != dispatchAcknowledged {
+		t.Fatalf("legacy entry state = %q, want acknowledged (delivered long ago; never resent)", entry.State)
+	}
+	if entry.DispatchSHA256 != legacyDispatchDigest("req-legacy") {
+		t.Fatalf("legacy entry digest = %q, want the deterministic sentinel", entry.DispatchSHA256)
+	}
+	// Envelope normalized to the current contract; the honest audit pairing
+	// for a run with no durable event id.
+	if entry.Result.ProtocolVersion != ProtocolVersion || entry.Result.EventID != "" || !entry.Result.LocalAuditFailed {
+		t.Fatalf("legacy result not normalized: %+v", entry.Result)
+	}
+
+	// The migration persisted immediately: the rewritten file is pure current
+	// format, so a restart loads it with zero legacy decoding.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"dispatch_sha256"`)) {
+		t.Fatalf("store not rewritten in current format: %s", data)
+	}
+	restarted := newDedupRing(4, path, "", nil)
+	if restarted.loadErr != nil {
+		t.Fatalf("migrated store failed to reload: %v", restarted.loadErr)
+	}
+
+	// A post-migration redelivery of the same request_id carries the REAL
+	// dispatch digest, mismatches the sentinel, and is refused — fail-safe:
+	// never a second execution under a recycled id.
+	decision, _, err := restarted.reserve("req-legacy", testDispatchDigest("req-legacy"))
+	if err != nil || decision != reservationConflict {
+		t.Fatalf("redelivery after migration: decision=%v err=%v, want conflict", decision, err)
+	}
+}
+
+// A host upgrading straight from ≤v0.11 has its dispatch log at the old
+// dedup.jsonl location. First boot without a current log adopts it — state is
+// migrated forward, never silently abandoned.
+func TestDedupRing_AdoptsLegacyStorePath(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "dispatches.jsonl")
+	legacyPath := filepath.Join(dir, "dedup.jsonl")
+	if err := os.WriteFile(legacyPath, []byte(legacyDispatchLine("req-old")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(4, storePath, legacyPath, nil)
+	if d.loadErr != nil {
+		t.Fatalf("legacy store adoption failed: %v", d.loadErr)
+	}
+	if _, ok := d.records["req-old"]; !ok {
+		t.Fatal("adopted entry missing")
+	}
+	if _, err := os.Stat(storePath); err != nil {
+		t.Fatalf("current store not written by adoption: %v", err)
+	}
+	if _, err := os.Stat(legacyPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy store still at old path after adoption: %v", err)
+	}
+	if _, err := os.Stat(legacyPath + ".migrated"); err != nil {
+		t.Fatalf("legacy store not preserved as .migrated: %v", err)
+	}
+
+	// The next boot finds the current store and never re-reads the old path.
+	restarted := newDedupRing(4, storePath, legacyPath, nil)
+	if restarted.loadErr != nil || len(restarted.records) != 1 {
+		t.Fatalf("post-adoption reload: err=%v records=%d", restarted.loadErr, len(restarted.records))
+	}
+}
+
+// An unreadable legacy store starts clean (that is what ignoring it already
+// did) but must never fail the boot — and must stay on disk for inspection.
+func TestDedupRing_UnreadableLegacyStoreStartsClean(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "dispatches.jsonl")
+	legacyPath := filepath.Join(dir, "dedup.jsonl")
+	if err := os.WriteFile(legacyPath, []byte("not-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(4, storePath, legacyPath, nil)
+	if d.loadErr != nil {
+		t.Fatalf("unreadable legacy store failed the boot: %v", d.loadErr)
+	}
+	if decision, _, err := d.reserve("req-new", testDispatchDigest("req-new")); err != nil || decision != reservationNew {
+		t.Fatalf("clean start could not reserve: decision=%v err=%v", decision, err)
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("unreadable legacy store was moved or removed: %v", err)
+	}
+}
+
+// A current store always wins: the legacy path is not even opened, so state
+// that already migrated (or was quarantined by hand) cannot resurrect.
+func TestDedupRing_CurrentStoreWinsOverLegacy(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "dispatches.jsonl")
+	legacyPath := filepath.Join(dir, "dedup.jsonl")
+
+	seed := newDedupRing(4, storePath, "", nil)
+	reserveCompleteAndAcknowledge(t, seed, "req-current", testDispatchDigest("req-current"), ActionResultMsg{EventID: "evt"})
+	if err := os.WriteFile(legacyPath, []byte(legacyDispatchLine("req-stale")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(4, storePath, legacyPath, nil)
+	if d.loadErr != nil {
+		t.Fatalf("load: %v", d.loadErr)
+	}
+	if _, ok := d.records["req-current"]; !ok {
+		t.Fatal("current entry missing")
+	}
+	if _, ok := d.records["req-stale"]; ok {
+		t.Fatal("legacy entry loaded despite a current store")
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("legacy store touched despite a current store: %v", err)
+	}
+}
+
+func TestInspectDispatchLog(t *testing.T) {
+	t.Run("absent", func(t *testing.T) {
+		report := InspectDispatchLog(t.TempDir())
+		if report.State != DispatchLogAbsent {
+			t.Fatalf("state = %q, want absent", report.State)
+		}
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		dir := t.TempDir()
+		d := newDedupRing(4, DispatchLogPath(dir), "", nil)
+		reserveCompleteAndAcknowledge(t, d, "req", testDispatchDigest("req"), ActionResultMsg{EventID: "evt"})
+
+		report := InspectDispatchLog(dir)
+		if report.State != DispatchLogOK || report.Entries != 1 {
+			t.Fatalf("report = %+v, want ok with 1 entry", report)
+		}
+	})
+
+	t.Run("legacy location", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(LegacyDispatchLogPath(dir), []byte(legacyDispatchLine("req")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		report := InspectDispatchLog(dir)
+		if report.State != DispatchLogLegacy || report.Entries != 1 {
+			t.Fatalf("report = %+v, want legacy with 1 entry", report)
+		}
+	})
+
+	t.Run("legacy format at current location", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(DispatchLogPath(dir), []byte(legacyDispatchLine("req")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		report := InspectDispatchLog(dir)
+		if report.State != DispatchLogLegacy {
+			t.Fatalf("report = %+v, want legacy", report)
+		}
+	})
+
+	t.Run("corrupt", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(DispatchLogPath(dir), []byte("not-json\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		report := InspectDispatchLog(dir)
+		if report.State != DispatchLogCorrupt || report.Err == nil {
+			t.Fatalf("report = %+v, want corrupt with error", report)
+		}
+	})
+
+	t.Run("corrupt legacy", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(LegacyDispatchLogPath(dir), []byte("not-json\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		report := InspectDispatchLog(dir)
+		if report.State != DispatchLogCorrupt || report.Err == nil {
+			t.Fatalf("report = %+v, want corrupt with error", report)
+		}
+	})
 }
 
 func TestDedupRing_CompleteRejectsMalformedResultBeforePersistence(t *testing.T) {
@@ -215,7 +425,7 @@ func TestDedupRing_CompleteRejectsMalformedResultBeforePersistence(t *testing.T)
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "dedup.jsonl")
 			digest := testDispatchDigest(name)
-			d := newDedupRing(2, path, nil)
+			d := newDedupRing(2, path, "", nil)
 			if decision, _, err := d.reserve("req", digest); err != nil || decision != reservationNew {
 				t.Fatalf("reserve: decision=%v err=%v", decision, err)
 			}
@@ -242,7 +452,7 @@ func TestDedupRing_CompleteRejectsMalformedResultBeforePersistence(t *testing.T)
 func TestDedupRing_CompletePersistenceFailureRestoresReservation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	digest := testDispatchDigest("req")
-	d := newDedupRing(2, path, nil)
+	d := newDedupRing(2, path, "", nil)
 	if decision, _, err := d.reserve("req", digest); err != nil || decision != reservationNew {
 		t.Fatalf("reserve: decision=%v err=%v", decision, err)
 	}
@@ -259,7 +469,7 @@ func TestDedupRing_CompletePersistenceFailureRestoresReservation(t *testing.T) {
 		t.Fatalf("failed completion did not restore reservation: decision=%v err=%v", decision, err)
 	}
 
-	restarted := newDedupRing(2, path, nil)
+	restarted := newDedupRing(2, path, "", nil)
 	if decision, _, err := restarted.inspect("req", digest); err != nil || decision != reservationPending {
 		t.Fatalf("durable reservation changed after failed completion: decision=%v err=%v", decision, err)
 	}
@@ -268,10 +478,10 @@ func TestDedupRing_CompletePersistenceFailureRestoresReservation(t *testing.T) {
 func TestDedupRing_AcknowledgementSurvivesRestartAndEnablesEviction(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	firstDigest := testDispatchDigest("first")
-	d1 := newDedupRing(1, path, nil)
+	d1 := newDedupRing(1, path, "", nil)
 	reserveAndComplete(t, d1, "first", firstDigest, ActionResultMsg{EventID: "evt_first"})
 
-	d2 := newDedupRing(1, path, nil)
+	d2 := newDedupRing(1, path, "", nil)
 	if _, _, err := d2.reserve("second", testDispatchDigest("second")); err == nil {
 		t.Fatal("restart made an unacknowledged result evictable")
 	}
@@ -279,14 +489,14 @@ func TestDedupRing_AcknowledgementSurvivesRestartAndEnablesEviction(t *testing.T
 		t.Fatal(err)
 	}
 
-	d3 := newDedupRing(1, path, nil)
+	d3 := newDedupRing(1, path, "", nil)
 	if decision, _, err := d3.reserve("second", testDispatchDigest("second")); err != nil || decision != reservationNew {
 		t.Fatalf("persisted acknowledgement did not enable eviction: decision=%v err=%v", decision, err)
 	}
 }
 
 func TestDedupRing_OnlyReturnsUnacknowledgedResultsForReconciliation(t *testing.T) {
-	d := newDedupRing(3, "", nil)
+	d := newDedupRing(3, "", "", nil)
 	reserveAndComplete(t, d, "pending-ack", testDispatchDigest("pending-ack"), ActionResultMsg{
 		Envelope: Envelope{RequestID: "pending-ack"}, EventID: "evt_pending",
 	})
@@ -306,13 +516,13 @@ func TestDedupRing_OnlyReturnsUnacknowledgedResultsForReconciliation(t *testing.
 func TestDedupRing_UnfinishedReservationSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
 	digest := testDispatchDigest("pending")
-	d1 := newDedupRing(4, path, nil)
+	d1 := newDedupRing(4, path, "", nil)
 	decision, _, err := d1.reserve("req-pending", digest)
 	if err != nil || decision != reservationNew {
 		t.Fatalf("initial reserve: decision=%v err=%v", decision, err)
 	}
 
-	d2 := newDedupRing(4, path, nil)
+	d2 := newDedupRing(4, path, "", nil)
 	decision, _, err = d2.reserve("req-pending", digest)
 	if err != nil || decision != reservationPending {
 		t.Fatalf("restart reserve: decision=%v err=%v", decision, err)
@@ -321,11 +531,11 @@ func TestDedupRing_UnfinishedReservationSurvivesRestart(t *testing.T) {
 
 func TestDedupRing_PersistedRingStaysBounded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
-	d1 := newDedupRing(2, path, nil)
+	d1 := newDedupRing(2, path, "", nil)
 	for _, id := range []string{"a", "b", "c"} {
 		reserveCompleteAndAcknowledge(t, d1, id, testDispatchDigest(id), ActionResultMsg{EventID: "evt_" + id})
 	}
-	d2 := newDedupRing(2, path, nil)
+	d2 := newDedupRing(2, path, "", nil)
 	if _, ok := d2.lookup("a"); ok {
 		t.Fatal("evicted entry should not persist")
 	}
@@ -347,7 +557,7 @@ func TestDedupRing_CorruptStoreFailsClosed(t *testing.T) {
 	if err := os.WriteFile(path, contents, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d := newDedupRing(4, path, nil)
+	d := newDedupRing(4, path, "", nil)
 	if _, _, err := d.reserve("new", testDispatchDigest("new")); err == nil {
 		t.Fatal("corrupt dispatch log must refuse new execution")
 	}
@@ -358,7 +568,7 @@ func TestDedupRing_ReservationPersistenceFailureRollsBack(t *testing.T) {
 	if err := os.WriteFile(parent, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d := newDedupRing(4, filepath.Join(parent, "dedup.jsonl"), nil)
+	d := newDedupRing(4, filepath.Join(parent, "dedup.jsonl"), "", nil)
 	if _, _, err := d.reserve("req", testDispatchDigest("req")); err == nil {
 		t.Fatal("reservation unexpectedly succeeded")
 	}
@@ -369,7 +579,7 @@ func TestDedupRing_ReservationPersistenceFailureRollsBack(t *testing.T) {
 
 func TestDedupRing_ConcurrentReservations(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dedup.jsonl")
-	d := newDedupRing(1000, path, nil)
+	d := newDedupRing(1000, path, "", nil)
 	var wg sync.WaitGroup
 	errs := make(chan error, 50)
 	for i := 0; i < 50; i++ {

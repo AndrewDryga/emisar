@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,26 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
+
+const (
+	dispatchLogFilename = "dispatches.jsonl"
+	// Pre-v0.12 runners kept the dispatch log at this name. The file is a
+	// deployed compatibility surface — hosts upgrading from any earlier
+	// release still carry it — so the ring adopts it on first boot instead
+	// of silently abandoning the at-most-once state it records.
+	legacyDispatchLogFilename = "dedup.jsonl"
+)
+
+// DispatchLogPath returns the durable dispatch log inside dataDir.
+func DispatchLogPath(dataDir string) string {
+	return filepath.Join(dataDir, dispatchLogFilename)
+}
+
+// LegacyDispatchLogPath returns the pre-v0.12 dispatch log location inside
+// dataDir, adopted (migrated forward) when no current log exists yet.
+func LegacyDispatchLogPath(dataDir string) string {
+	return filepath.Join(dataDir, legacyDispatchLogFilename)
+}
 
 // dedupRing is a bounded persistent dispatch log. A reservation is durably
 // written before execution begins, then replaced by the terminal result. This
@@ -28,13 +49,14 @@ import (
 // unrelated result. Persisted results contain hashes and byte counts, never raw
 // stdout/stderr or unmasked arguments, and the store is always mode 0600.
 type dedupRing struct {
-	mu        sync.Mutex
-	max       int
-	keys      []string // insertion order, oldest at index 0
-	records   map[string]dedupEntry
-	storePath string // "" = in-memory only
-	logger    *slog.Logger
-	loadErr   error
+	mu         sync.Mutex
+	max        int
+	keys       []string // insertion order, oldest at index 0
+	records    map[string]dedupEntry
+	storePath  string // "" = in-memory only
+	legacyPath string // pre-v0.12 store location, adopted when storePath is absent
+	logger     *slog.Logger
+	loadErr    error
 }
 
 type dispatchState string
@@ -61,64 +83,99 @@ const (
 	reservationConflict
 )
 
-func newDedupRing(max int, storePath string, logger *slog.Logger) *dedupRing {
+func newDedupRing(max int, storePath, legacyPath string, logger *slog.Logger) *dedupRing {
 	if max <= 0 {
 		max = 1024
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	d := &dedupRing{max: max, records: map[string]dedupEntry{}, storePath: storePath, logger: logger}
+	d := &dedupRing{
+		max:        max,
+		records:    map[string]dedupEntry{},
+		storePath:  storePath,
+		legacyPath: legacyPath,
+		logger:     logger,
+	}
 	d.load()
 	return d
 }
 
-// load accepts only records produced by the current runner. Corruption,
-// impossible state, and crash-torn trailing data all fail closed.
+// load accepts records produced by the current runner plus the pre-v0.10
+// legacy shape, which it migrates forward in place. Corruption, impossible
+// state, and crash-torn trailing data all fail closed.
 func (d *dedupRing) load() {
 	if d.storePath == "" {
 		return
 	}
-	f, err := os.Open(d.storePath)
+	entries, sawLegacy, err := readDispatchLog(d.storePath)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			d.loadErr = fmt.Errorf("open dispatch log: %w", err)
-			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
-		}
-		return
-	}
-	defer f.Close()
-
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	lineNumber := 0
-	for sc.Scan() {
-		lineNumber++
-		e, err := decodeDedupEntry(sc.Bytes())
-		if err != nil {
-			d.keys = nil
-			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("invalid dispatch log entry on line %d", lineNumber)
-			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
+		if errors.Is(err, os.ErrNotExist) {
+			d.adoptLegacyStore()
 			return
 		}
-		if _, exists := d.records[e.RequestID]; exists {
-			d.keys = nil
-			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("duplicate dispatch log entry on line %d", lineNumber)
-			d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
-			return
-		}
-		d.keys = append(d.keys, e.RequestID)
-		d.records[e.RequestID] = e
-	}
-	if err := sc.Err(); err != nil {
-		d.keys = nil
-		d.records = map[string]dedupEntry{}
-		d.loadErr = fmt.Errorf("read dispatch log: %w", err)
+		d.loadErr = err
 		d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
 		return
 	}
+	for _, e := range entries {
+		d.keys = append(d.keys, e.RequestID)
+		d.records[e.RequestID] = e
+	}
+	d.evictToMax()
+	if sawLegacy {
+		// Rewrite the whole store so legacy entries are persisted in the
+		// current format exactly once; read state we cannot re-persist is
+		// fail-closed (proceeding could double-run a dispatch).
+		if err := d.writeStore(); err != nil {
+			d.keys = nil
+			d.records = map[string]dedupEntry{}
+			d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
+			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
+			return
+		}
+		d.logger.Info("cloud.dedup_migrated", "path", d.storePath, "entries", len(d.keys))
+	}
+}
+
+// adoptLegacyStore migrates a pre-v0.12 dedup.jsonl (old location, possibly
+// pre-v0.10 format) into storePath the first time a runner boots without a
+// current dispatch log. An unreadable legacy file starts clean but loudly —
+// the pre-adoption behavior ignored it silently, and its at-most-once state
+// is unusable either way.
+func (d *dedupRing) adoptLegacyStore() {
+	if d.legacyPath == "" {
+		return
+	}
+	entries, _, err := readDispatchLog(d.legacyPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			d.logger.Error("cloud.dedup_legacy_unreadable", "error", err, "path", d.legacyPath,
+				"detail", "starting a clean dispatch log; quarantine the file (mv "+
+					d.legacyPath+" "+d.legacyPath+".corrupt) to keep it for inspection")
+		}
+		return
+	}
+	for _, e := range entries {
+		d.keys = append(d.keys, e.RequestID)
+		d.records[e.RequestID] = e
+	}
+	d.evictToMax()
+	if err := d.writeStore(); err != nil {
+		d.keys = nil
+		d.records = map[string]dedupEntry{}
+		d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
+		d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.legacyPath)
+		return
+	}
+	if err := os.Rename(d.legacyPath, d.legacyPath+".migrated"); err != nil {
+		d.logger.Warn("cloud.dedup_legacy_rename_failed", "error", err, "path", d.legacyPath)
+	}
+	d.logger.Info("cloud.dedup_migrated",
+		"from", d.legacyPath, "to", d.storePath, "entries", len(d.keys))
+}
+
+func (d *dedupRing) evictToMax() {
 	for len(d.keys) > d.max {
 		if !d.evictOldestAcknowledgedLocked() {
 			break
@@ -126,17 +183,185 @@ func (d *dedupRing) load() {
 	}
 }
 
-func decodeDedupEntry(line []byte) (dedupEntry, error) {
+// readDispatchLog decodes every entry of one dispatch log without mutating
+// it. sawLegacy reports whether any line used the pre-v0.10 shape (the caller
+// persists the migration). Open errors keep os.ErrNotExist reachable via
+// errors.Is.
+func readDispatchLog(path string) (entries []dedupEntry, sawLegacy bool, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("open dispatch log: %w", err)
+	}
+	defer f.Close()
+
+	seen := map[string]struct{}{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	lineNumber := 0
+	for sc.Scan() {
+		lineNumber++
+		e, legacy, err := decodeDedupEntry(sc.Bytes())
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid dispatch log entry on line %d", lineNumber)
+		}
+		if _, exists := seen[e.RequestID]; exists {
+			return nil, false, fmt.Errorf("duplicate dispatch log entry on line %d", lineNumber)
+		}
+		seen[e.RequestID] = struct{}{}
+		entries = append(entries, e)
+		sawLegacy = sawLegacy || legacy
+	}
+	if err := sc.Err(); err != nil {
+		return nil, false, fmt.Errorf("read dispatch log: %w", err)
+	}
+	return entries, sawLegacy, nil
+}
+
+// decodeDedupEntry decodes one dispatch log line: the current shape strictly,
+// or the pre-v0.10 legacy shape (reported via the second return) migrated to
+// a current entry.
+func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 	if err := validateUniqueJSON(line); err != nil {
-		return dedupEntry{}, fmt.Errorf("decode dispatch log entry: %w", err)
+		return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry: %w", err)
 	}
-	var entry dedupEntry
-	decoder := json.NewDecoder(bytes.NewReader(line))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&entry); err != nil || !validDedupEntry(entry) {
-		return dedupEntry{}, fmt.Errorf("decode dispatch log entry")
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
+		return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
 	}
-	return entry, nil
+	_, hasDigest := fields["dispatch_sha256"]
+	_, hasState := fields["state"]
+	if hasDigest || hasState {
+		var entry dedupEntry
+		decoder := json.NewDecoder(bytes.NewReader(line))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&entry); err != nil || !validDedupEntry(entry) {
+			return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
+		}
+		return entry, false, nil
+	}
+	entry, err := decodeLegacyDedupEntry(line, fields)
+	if err != nil {
+		return dedupEntry{}, false, err
+	}
+	return entry, true, nil
+}
+
+// decodeLegacyDedupEntry migrates one pre-v0.10 line — {"request_id", "result"}
+// with no state machine and no dispatch digest. Deleting the original
+// migration bricked dispatch on every upgraded host that carried v0.9 history
+// (the deployed-state break docs/COMPATIBILITY.md warns about), so it is
+// back: a legacy entry becomes an acknowledged terminal result under a
+// deterministic sentinel digest. A post-migration redelivery of that
+// request_id carries the real digest, mismatches the sentinel, and is refused
+// as a conflict — fail-safe: never a second execution.
+func decodeLegacyDedupEntry(line []byte, fields map[string]json.RawMessage) (dedupEntry, error) {
+	if _, ok := fields["result"]; !ok {
+		return dedupEntry{}, fmt.Errorf("decode legacy dispatch log entry")
+	}
+	var legacy struct {
+		RequestID string          `json:"request_id"`
+		Result    ActionResultMsg `json:"result"`
+	}
+	// Lenient decode on purpose: fields the result message has since dropped
+	// must not reject a line this loader immediately rewrites.
+	if err := json.Unmarshal(line, &legacy); err != nil || legacy.RequestID == "" {
+		return dedupEntry{}, fmt.Errorf("decode legacy dispatch log entry")
+	}
+	if !validLegacyActionResult(legacy.Result, legacy.RequestID) {
+		return dedupEntry{}, fmt.Errorf("decode legacy dispatch log result")
+	}
+	result := legacy.Result
+	// Normalize the envelope to the current contract so the migrated entry
+	// passes validActionResult on every future load. No durable audit event
+	// id exists for a legacy run, so the honest pairing is an empty EventID
+	// with LocalAuditFailed set.
+	result.Envelope = Envelope{
+		Type:            MsgActionResult,
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       legacy.RequestID,
+	}
+	result.EventID = ""
+	result.LocalAuditFailed = true
+	return dedupEntry{
+		RequestID:      legacy.RequestID,
+		DispatchSHA256: legacyDispatchDigest(legacy.RequestID),
+		// Acknowledged, not completed: v0.9 had no acknowledgement tracking
+		// and these results were delivered long ago — resending them on the
+		// next connect would burst ancient duplicates at the control plane.
+		State:  dispatchAcknowledged,
+		Result: result,
+	}, nil
+}
+
+func validLegacyActionResult(result ActionResultMsg, requestID string) bool {
+	if result.Type != MsgActionResult || result.RequestID != requestID {
+		return false
+	}
+	switch result.Status {
+	case "success", "failed", "error", "validation_failed", "unknown_action", "timed_out",
+		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":
+		return true
+	default:
+		return false
+	}
+}
+
+func legacyDispatchDigest(requestID string) string {
+	digest := sha256.Sum256([]byte("emisar-legacy-dispatch-v1\x00" + requestID))
+	return hex.EncodeToString(digest[:])
+}
+
+// DispatchLogState classifies a durable dispatch log for diagnostics.
+type DispatchLogState string
+
+const (
+	// DispatchLogAbsent — no log yet; the first connect creates it.
+	DispatchLogAbsent DispatchLogState = "absent"
+	// DispatchLogOK — the current log loads cleanly.
+	DispatchLogOK DispatchLogState = "ok"
+	// DispatchLogLegacy — readable pre-v0.12 state (old location or old
+	// format); the next connect migrates it forward.
+	DispatchLogLegacy DispatchLogState = "legacy"
+	// DispatchLogCorrupt — unreadable; connect refuses to start over it.
+	DispatchLogCorrupt DispatchLogState = "corrupt"
+)
+
+// DispatchLogReport is InspectDispatchLog's verdict on one data directory.
+type DispatchLogReport struct {
+	Path    string
+	State   DispatchLogState
+	Entries int
+	Err     error
+}
+
+// InspectDispatchLog reports the durable dispatch log's health without
+// touching it — the current store when present, otherwise the pre-v0.12
+// legacy location. Used by doctor and `emisar state check-dispatch-log` so
+// an unloadable log is diagnosable (and installer-checkable) before it makes
+// connect refuse to start.
+func InspectDispatchLog(dataDir string) DispatchLogReport {
+	path := DispatchLogPath(dataDir)
+	entries, sawLegacy, err := readDispatchLog(path)
+	switch {
+	case err == nil:
+		state := DispatchLogOK
+		if sawLegacy {
+			state = DispatchLogLegacy
+		}
+		return DispatchLogReport{Path: path, State: state, Entries: len(entries)}
+	case !errors.Is(err, os.ErrNotExist):
+		return DispatchLogReport{Path: path, State: DispatchLogCorrupt, Err: err}
+	}
+	legacyPath := LegacyDispatchLogPath(dataDir)
+	entries, _, err = readDispatchLog(legacyPath)
+	switch {
+	case err == nil:
+		return DispatchLogReport{Path: legacyPath, State: DispatchLogLegacy, Entries: len(entries)}
+	case errors.Is(err, os.ErrNotExist):
+		return DispatchLogReport{Path: path, State: DispatchLogAbsent}
+	default:
+		return DispatchLogReport{Path: legacyPath, State: DispatchLogCorrupt, Err: err}
+	}
 }
 
 func validDedupEntry(e dedupEntry) bool {

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/internal/cloud"
 )
 
 func TestReloadComponents_ReloadsSigningAfterPackFailure(t *testing.T) {
@@ -40,12 +42,15 @@ func TestConnectRequiresDurableDataDir(t *testing.T) {
 	}
 }
 
-func TestDispatchLogPath(t *testing.T) {
+func TestDispatchLogPaths(t *testing.T) {
 	dataDir := t.TempDir()
-	got := dispatchLogPath(dataDir)
-	want := filepath.Join(dataDir, "dispatches.jsonl")
-	if got != want {
-		t.Fatalf("dispatchLogPath = %q, want %q", got, want)
+	if got, want := cloud.DispatchLogPath(dataDir), filepath.Join(dataDir, "dispatches.jsonl"); got != want {
+		t.Fatalf("DispatchLogPath = %q, want %q", got, want)
+	}
+	// The pre-v0.12 location the daemon adopts on first boot without a
+	// current log.
+	if got, want := cloud.LegacyDispatchLogPath(dataDir), filepath.Join(dataDir, "dedup.jsonl"); got != want {
+		t.Fatalf("LegacyDispatchLogPath = %q, want %q", got, want)
 	}
 }
 
