@@ -82,9 +82,9 @@ FAKE_EMISAR
       # shellcheck disable=SC1090
       source "$repair_lib"
       # Called by the sourced installer functions.
-      # shellcheck disable=SC2329
+      # shellcheck disable=SC2317,SC2329
       warn() { :; }
-      # shellcheck disable=SC2329
+      # shellcheck disable=SC2317,SC2329
       die() { echo "$*" >&2; exit 1; }
       export EMISAR_REPAIR_MARKER="$tmp/repaired"
       BIN_DIR="$tmp/repair-bin" ETC_DIR="$tmp/repair-etc" \
@@ -113,7 +113,7 @@ FAKE_SYSTEMCTL
       # shellcheck disable=SC1090
       source "$systemd_lib"
       # Called by the sourced installer function.
-      # shellcheck disable=SC2329
+      # shellcheck disable=SC2317,SC2329
       die() { echo "$*" >&2; exit 1; }
       SERVICE_STARTED=0
       PATH="$tmp/fake-systemd-bin:$PATH" FAKE_SYSTEMD_STATE=activating \
@@ -126,7 +126,7 @@ FAKE_SYSTEMCTL
     (
       # shellcheck disable=SC1090
       source "$systemd_lib"
-      # shellcheck disable=SC2329
+      # shellcheck disable=SC2317,SC2329
       die() { echo "$*" >&2; exit 1; }
       SERVICE_STARTED=0
       PATH="$tmp/fake-systemd-bin:$PATH" FAKE_SYSTEMD_STATE=active \
