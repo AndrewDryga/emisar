@@ -972,6 +972,52 @@ func TestClient_RejectedDispatchStateIsBounded(t *testing.T) {
 	}
 }
 
+func TestClient_ResponseBacklogRejectionDoesNotReserveDispatch(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{}, func(opts *Options) {
+		opts.MaxConcurrentRuns = 1
+		opts.DedupRingSize = 2
+	})
+	cli.mu.Lock()
+	for index := 0; index < cli.maxRunStates(); index++ {
+		requestID := fmt.Sprintf("backlog-%d", index)
+		cli.runs[requestID] = &runState{requestID: requestID, finished: true}
+	}
+	cli.mu.Unlock()
+
+	requestID := testRequestID("capacity-retry")
+	msg := RunActionMsg{
+		Envelope:         Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		ActionID:         "t.echo",
+		ExpectedPackHash: currentPackHash(t, cli, "t"),
+		Args:             map[string]any{"msg": "after capacity"},
+		Reason:           "prove backlog admission precedes reservation",
+	}
+	digest, err := dispatchDigest(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.startRun(context.Background(), msg); !errors.Is(err, errResponseBacklogFull) {
+		t.Fatalf("startRun() error = %v, want response backlog full", err)
+	}
+	if decision, _, err := cli.dedup.inspect(requestID, digest); err != nil || decision != reservationNew {
+		t.Fatalf("backlog rejection left durable reservation: decision=%v err=%v", decision, err)
+	}
+
+	cli.mu.Lock()
+	delete(cli.runs, "backlog-0")
+	cli.mu.Unlock()
+	if err := cli.startRun(context.Background(), msg); err != nil {
+		t.Fatalf("retry after freeing capacity: %v", err)
+	}
+	waitUntil(t, 3*time.Second, func() bool {
+		result, ok := cli.dedup.lookup(requestID)
+		return ok && result.Status == "success"
+	})
+	if err := cli.shutdown(context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("shutdown error = %v", err)
+	}
+}
+
 func TestClient_RunWaitsForActionHandlersOnShutdown(t *testing.T) {
 	const readyPath = "/tmp/emisar-cloud-shutdown-ready"
 	_ = os.Remove(readyPath)

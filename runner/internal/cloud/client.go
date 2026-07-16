@@ -458,6 +458,11 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		c.signalSend()
 		return nil
 	}
+	if !preCanceled && len(c.runs) >= c.maxRunStates() {
+		c.mu.Unlock()
+		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "response backlog full")
+		return errResponseBacklogFull
+	}
 	decision, cached, err = c.dedup.reserve(m.RequestID, digest)
 	if err != nil {
 		c.mu.Unlock()
@@ -495,12 +500,6 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		}
 		return nil
 	}
-	if len(c.runs) >= c.maxRunStates() {
-		c.mu.Unlock()
-		c.opts.Engine.RecordDispatchRefusal(context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "response backlog full")
-		return errResponseBacklogFull
-	}
-
 	runCtx, cancel := context.WithCancel(parent)
 	s := &runState{requestID: m.RequestID, cancel: cancel, dispatchDigest: digest}
 	c.runs[m.RequestID] = s
