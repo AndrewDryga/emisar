@@ -43,6 +43,28 @@ func TestValidate_IntegerBoundsStayExactAboveFloatRange(t *testing.T) {
 	}
 }
 
+func TestValidate_JSONNumberMembership(t *testing.T) {
+	schema := []actionspec.Arg{{
+		Name: "ratio",
+		Type: actionspec.ArgNumber,
+		Validation: &actionspec.Validation{
+			Enum:    []any{1.25, 2.5},
+			Allowed: []any{1.25, 2.5},
+		},
+	}}
+
+	out, err := Validate(schema, map[string]any{"ratio": json.Number("1.25")})
+	if err != nil {
+		t.Fatalf("cloud JSON number in numeric membership should pass: %v", err)
+	}
+	if got := out["ratio"]; got != json.Number("1.25") {
+		t.Fatalf("ratio = %#v, want the exact cloud representation", got)
+	}
+	if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.5")}); err == nil {
+		t.Fatal("cloud JSON number outside numeric membership should fail")
+	}
+}
+
 func TestValidate_StringLikeValuesHaveDefaultByteLimit(t *testing.T) {
 	tooLong := strings.Repeat("x", defaultMaxStringBytes+1)
 	for _, tc := range []struct {

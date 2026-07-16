@@ -452,6 +452,13 @@ func equal(a, b any) bool {
 	case int64:
 		bn, ok := toInt(b)
 		return ok && av == bn
+	case json.Number:
+		an, ok := toFloat(av)
+		if !ok {
+			return false
+		}
+		bn, ok := toFloat(b)
+		return ok && an == bn
 	case float64:
 		bn, ok := toFloat(b)
 		return ok && av == bn
