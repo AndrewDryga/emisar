@@ -209,7 +209,7 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            20+ built-in patterns — AWS keys, common provider tokens (GitHub, Slack, Stripe,
+            20 built-in patterns — AWS keys, common provider tokens (GitHub, Slack, Stripe,
             OpenAI, …), JWTs, bearer and basic auth, private-key blocks, and secret assignments —
             plus your own per-action rules scrub stdout and stderr on the runner before anything is
             forwarded. The control plane receives only the redacted stream; per-rule hit counts are
@@ -268,11 +268,13 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
-          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Scoped LLM access</h3>
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Governed LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Each MCP key is scoped — read-only, execute, or audit-only — with its own user
-            attribution and runner filters. Keys are revocable and inherit their creator's runner
-            scope at call time — revoke the user and every key they minted shrinks with them.
+            There are two key kinds: an MCP key, whose access is governed by account policy and
+            approvals and whose runner reach follows the minting member's runner scope at call time;
+            and a read-only audit-export key, which can stream the audit log but never execute
+            actions. Both are user-attributed and revocable — revoke the member and every key they
+            minted shrinks with them.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -379,7 +381,7 @@
           <a href={EmisarWeb.MailTo.security()} class="text-brand-300 hover:text-brand-200">
             security@emisar.dev
           </a>
-          with a description and reproduction steps. We acknowledge within one business day
+          with a description and reproduction steps. We acknowledge reports within 72 hours
           and credit reporters in our security advisories.
         </p>
         <p class="mt-4 text-sm text-zinc-500">

@@ -73,7 +73,7 @@
         {"Audit trail?", "Whatever lands in .bash_history + Slack scrollback",
          "Hash-chained JSONL on host, mirrored to cloud"},
         {"Output redaction?", "None — passwords leak into chat logs",
-         "20+ patterns (bearer/JWT, AWS/GitHub/Slack keys, secret assignments) masked on the host before egress"},
+         "20 patterns (bearer/JWT, AWS/GitHub/Slack keys, secret assignments) masked on the host before egress"},
         {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",
          "Per-runner token + per-user runner scopes every API key inherits — revoke the user, every key they minted shrinks"},
         {"Recovery story?", "“Read the chat scrollback and the logs and hope”",

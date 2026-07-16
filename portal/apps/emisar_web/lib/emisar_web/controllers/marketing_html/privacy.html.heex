@@ -162,12 +162,14 @@
   </p>
   <p>
     To understand which features get used and how people find us, we record a small
-    set of marketing and account events — pageviews, sign-ups, sign-ins, and plan
-    changes — in <strong>Mixpanel</strong>, a product-analytics service, <em>server-side</em>. We never send the contents of your runs, action arguments,
-    or audit records. We count anonymous visitors <strong>without a cookie</strong>:
-    a salted hash of your IP address and browser that rotates every week, so it can't
-    follow you over time or identify you. Once you sign in, your activity is tied to
-    your account.
+    set of marketing and account events — pageviews, sign-ups, sign-ins, sign-outs
+    (<code>signed_out</code>), and plan changes — in <strong>Mixpanel</strong>, a product-analytics
+    service, <em>server-side</em>. When you are signed in, Mixpanel receives your email address,
+    name, and IP address with this product-analytics data so we can associate it with your account.
+    We never send the contents of your runs, action arguments, or audit records. Logged-out visitors
+    are counted <strong>without a cookie</strong>: their pageviews use a weekly-rotating salted hash
+    of IP address and browser instead of an account identity. Mixpanel still receives the request IP
+    for location enrichment. Once you sign in, your activity is tied to your account.
   </p>
 
   <h2 id="contact">8. Contact</h2>
