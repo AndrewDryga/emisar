@@ -14,6 +14,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
   @default_limit 15
   @max_list_limit 50
   @max_find_limit 15
+  @max_search_score 9_999
   @max_page_items_bytes 60_000
   @max_runner_refs 16
   @statuses ~w(connected disconnected pending disabled)
@@ -308,7 +309,8 @@ defmodule EmisarWeb.MCP.CatalogTools do
     title = String.downcase(action["title"])
     summary = String.downcase(action["summary"])
     terms = Enum.map(action["search_terms"], &String.downcase/1)
-    tokens = String.split(query)
+    tokens = query |> String.split() |> Enum.uniq()
+    {term_score, term_fields} = score_query_terms(tokens, id, title, summary, terms)
 
     {score, fields} =
       cond do
@@ -324,16 +326,20 @@ defmodule EmisarWeb.MCP.CatalogTools do
         query in terms ->
           {6_000, ["search_terms"]}
 
-        Enum.all?(tokens, &String.contains?(id, &1)) ->
+        length(tokens) == 1 and Enum.all?(tokens, &String.contains?(id, &1)) ->
           {5_000, ["action_id"]}
 
-        Enum.all?(tokens, &String.contains?(title, &1)) ->
+        length(tokens) == 1 and Enum.all?(tokens, &String.contains?(title, &1)) ->
           {4_000, ["title"]}
 
-        Enum.all?(tokens, fn token ->
-          String.contains?(summary, token) or Enum.any?(terms, &String.contains?(&1, token))
-        end) ->
+        length(tokens) == 1 and
+            Enum.all?(tokens, fn token ->
+              String.contains?(summary, token) or Enum.any?(terms, &String.contains?(&1, token))
+            end) ->
           {3_000, ["summary", "search_terms"]}
+
+        length(tokens) > 1 and term_score > 0 ->
+          {term_score, term_fields}
 
         String.jaro_distance(query, id) >= 0.88 ->
           {2_000, ["action_id"]}
@@ -346,6 +352,39 @@ defmodule EmisarWeb.MCP.CatalogTools do
       end
 
     if score > 0, do: Map.merge(candidate, %{score: score, matched_fields: fields})
+  end
+
+  defp score_query_terms(tokens, id, title, summary, terms) do
+    matched_fields_by_term = Enum.map(tokens, &matching_fields(&1, id, title, summary, terms))
+    matched_fields = Enum.reject(matched_fields_by_term, &(&1 == []))
+
+    if matched_fields == [] do
+      {0, []}
+    else
+      score =
+        min(
+          @max_search_score,
+          3_000 +
+            length(matched_fields) * 1_000 +
+            Enum.count(matched_fields, &("action_id" in &1)) * 300 +
+            Enum.count(matched_fields, &("title" in &1)) * 200 +
+            Enum.count(matched_fields, &("summary" in &1 or "search_terms" in &1)) * 100
+        )
+
+      fields = matched_fields_by_term |> List.flatten() |> Enum.uniq()
+      {score, fields}
+    end
+  end
+
+  defp matching_fields(token, id, title, summary, terms) do
+    [
+      {"action_id", String.contains?(id, token)},
+      {"title", String.contains?(title, token)},
+      {"summary", String.contains?(summary, token)},
+      {"search_terms", Enum.any?(terms, &String.contains?(&1, token))}
+    ]
+    |> Enum.filter(fn {_field, matched?} -> matched? end)
+    |> Enum.map(&elem(&1, 0))
   end
 
   defp candidate_result(candidate) do

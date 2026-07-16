@@ -152,6 +152,52 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
   end
 
+  test "find_actions recalls natural multi-term queries and ranks term coverage", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "catalog-search")
+
+    observe!(runner, %{"ops" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action(
+        "system.disk_usage",
+        "ops",
+        title: "Measure disk usage",
+        summary: "Reports the selected system metric.",
+        search_terms: ["uptime"]
+      ),
+      action("system.disk", "ops",
+        title: "Inspect disk",
+        summary: "Reports the selected system metric."
+      ),
+      action("system.reboot", "ops", title: "Reboot server"),
+      action(
+        "web.server_logs",
+        "ops",
+        title: "Collect web server logs",
+        summary: "Reports the selected service metric.",
+        search_terms: ["edge"]
+      ),
+      action("edge.proxy", "ops", title: "Inspect edge proxy")
+    ])
+
+    trust_all!(subject)
+
+    disk_usage = call(conn, "find_actions", %{"query" => "disk usage uptime"})
+    assert [%{"action_id" => "system.disk_usage"} | _] = disk_usage["candidates"]
+
+    reboot = call(conn, "find_actions", %{"query" => "reboot server"})
+    assert [%{"action_id" => "system.reboot"} | _] = reboot["candidates"]
+
+    web_logs = call(conn, "find_actions", %{"query" => "web server logs edge"})
+    assert [%{"action_id" => "web.server_logs"} | _] = web_logs["candidates"]
+
+    single_term = call(conn, "find_actions", %{"query" => "disk"})
+    assert [%{"action_id" => "system.disk"} | _] = single_term["candidates"]
+    assert Enum.any?(single_term["candidates"], &(&1["action_id"] == "system.disk_usage"))
+  end
+
   test "get_action returns fifteen discovered runners or every explicit runner ref", %{
     conn: conn,
     account: account,
@@ -661,7 +707,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       "title" => Keyword.get(opts, :title, id),
       "kind" => "exec",
       "risk" => "low",
-      "summary" => "Summary for #{id}",
+      "summary" => Keyword.get(opts, :summary, "Summary for #{id}"),
       "description" => "Description for #{id}",
       "side_effects" => [],
       "args" =>
