@@ -47,6 +47,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            "The operation exists, but its durable resource is unavailable."
          )}
 
+      {:error, {:invalid_field, message}} ->
+        {:error, error("invalid_args", message)}
+
       _ ->
         {:error, error("invalid_args", "get_operation requires one exact operation_id.")}
     end
@@ -120,6 +123,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            "This credential already has eight active waits. Retry after one finishes."
          )}
 
+      {:error, {:invalid_field, message}} ->
+        {:error, error("invalid_args", message)}
+
       {:error, :invalid_wait} ->
         {:error,
          error("invalid_args", "wait_for_run requires one id and a timeout no longer than 60s.")}
@@ -145,6 +151,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
       {:ok, target}
     else
+      {:error, {:invalid_field, _message} = fault} -> {:error, fault}
       _ -> {:error, :invalid_wait}
     end
   end
@@ -343,15 +350,15 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       ~w(operation_id runbook_execution_id step_id runner_ref action_id pack_ref scope limit cursor)
 
     with :ok <- exact_fields(args, [], allowed),
-         :ok <- optional_match(args["operation_id"], @operation_id),
-         :ok <- optional_uuid(args["runbook_execution_id"]),
-         :ok <- optional_match(args["step_id"], @step_id),
-         :ok <- optional_match(args["runner_ref"], @runner_ref),
-         :ok <- optional_match(args["action_id"], @action_id),
+         :ok <- optional_match(args["operation_id"], @operation_id, "operation_id"),
+         :ok <- optional_uuid(args["runbook_execution_id"], "runbook_execution_id"),
+         :ok <- optional_match(args["step_id"], @step_id, "step_id"),
+         :ok <- optional_match(args["runner_ref"], @runner_ref, "runner_ref"),
+         :ok <- optional_match(args["action_id"], @action_id, "action_id"),
          :ok <- optional_pack_ref(args["pack_ref"]),
-         scope when scope in ["own", "account"] <- args["scope"] || "own",
+         {:ok, scope} <- recent_scope(args["scope"]),
          {:ok, limit} <- ToolParams.limit(args["limit"], 15, 100),
-         cursor when is_nil(cursor) or is_binary(cursor) <- args["cursor"],
+         :ok <- recent_cursor(args["cursor"]),
          :ok <- valid_recent_combination(args) do
       {:ok,
        struct!(__MODULE__.RecentInput, %{
@@ -363,14 +370,28 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          pack_ref: args["pack_ref"],
          scope: if(scope == "own", do: :own, else: :account),
          limit: limit,
-         cursor: cursor
+         cursor: args["cursor"]
        })}
     else
-      # A limit fault names itself — the generic contract error below once
-      # sent a model hunting the wrong field entirely.
+      # Every fault names its field — the generic contract error below once
+      # sent a model hunting the wrong parameter entirely.
+      {:error, {:invalid_field, _message} = fault} -> {:error, fault}
       {:error, message} when is_binary(message) -> {:error, {:invalid_field, message}}
       _ -> {:error, :invalid_recent_runs}
     end
+  end
+
+  defp recent_scope(nil), do: {:ok, "own"}
+  defp recent_scope(scope) when scope in ["own", "account"], do: {:ok, scope}
+
+  defp recent_scope(_scope),
+    do: {:error, {:invalid_field, ~s(scope must be "own" or "account".)}}
+
+  defp recent_cursor(cursor) when is_nil(cursor) or is_binary(cursor), do: :ok
+
+  defp recent_cursor(_cursor) do
+    {:error,
+     {:invalid_field, "cursor must be the exact next_cursor string from the previous page."}}
   end
 
   defmodule RecentInput do
@@ -383,9 +404,16 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       Enum.any?(~w(runbook_execution_id step_id runner_ref action_id pack_ref), &args[&1])
 
     cond do
-      args["operation_id"] && other_identity? -> {:error, :invalid_combination}
-      args["step_id"] && is_nil(args["runbook_execution_id"]) -> {:error, :invalid_combination}
-      true -> :ok
+      args["operation_id"] && other_identity? ->
+        {:error,
+         {:invalid_field,
+          "operation_id cannot be combined with runbook_execution_id, step_id, runner_ref, action_id, or pack_ref."}}
+
+      args["step_id"] && is_nil(args["runbook_execution_id"]) ->
+        {:error, {:invalid_field, "step_id requires runbook_execution_id."}}
+
+      true ->
+        :ok
     end
   end
 
@@ -438,38 +466,70 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp valid_uuid_or_nil?(nil), do: true
   defp valid_uuid_or_nil?(value), do: is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value))
 
-  defp optional_match(nil, _regex), do: :ok
+  defp optional_match(nil, _regex, _name), do: :ok
 
-  defp optional_match(value, regex) do
-    if is_binary(value) and Regex.match?(regex, value),
-      do: :ok,
-      else: {:error, :invalid_value}
+  defp optional_match(value, regex, name) do
+    if is_binary(value) and Regex.match?(regex, value) do
+      :ok
+    else
+      {:error,
+       {:invalid_field, "#{name} is malformed — copy the exact value from a prior tool result."}}
+    end
   end
 
-  defp optional_uuid(nil), do: :ok
+  defp optional_uuid(nil, _name), do: :ok
 
-  defp optional_uuid(value) do
-    if is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value)),
-      do: :ok,
-      else: {:error, :invalid_value}
+  defp optional_uuid(value, name) do
+    if is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value)) do
+      :ok
+    else
+      {:error, {:invalid_field, "#{name} must be the UUID returned by the tool that created it."}}
+    end
   end
 
   defp optional_pack_ref(nil), do: :ok
 
   defp optional_pack_ref(value) do
     case Catalog.MCPProjection.parse_pack_ref(value) do
-      {:ok, _parts} -> :ok
-      _ -> {:error, :invalid_value}
+      {:ok, _parts} ->
+        :ok
+
+      _ ->
+        {:error,
+         {:invalid_field,
+          "pack_ref is malformed — copy the exact pack_ref from list_packs or get_action."}}
     end
   end
 
+  # Names the offending fields so a model can self-correct in one step — a
+  # generic contract error sent one hunting the wrong parameter entirely.
+  # Echoed keys are model-supplied text: cap the count and each key's length.
   defp exact_fields(map, required, allowed) when is_map(map) do
-    if Enum.all?(required, &Map.has_key?(map, &1)) and Enum.all?(Map.keys(map), &(&1 in allowed)),
-      do: :ok,
-      else: {:error, :invalid_fields}
+    missing = Enum.reject(required, &Map.has_key?(map, &1))
+    unknown = Map.keys(map) |> Enum.reject(&(&1 in allowed)) |> bounded_field_names()
+
+    cond do
+      missing != [] ->
+        {:error, {:invalid_field, "missing required argument(s): #{Enum.join(missing, ", ")}."}}
+
+      unknown != [] ->
+        {:error,
+         {:invalid_field,
+          "unknown argument(s): #{Enum.join(unknown, ", ")}. Allowed: #{Enum.join(allowed, ", ")}."}}
+
+      true ->
+        :ok
+    end
   end
 
-  defp exact_fields(_map, _required, _allowed), do: {:error, :invalid_fields}
+  defp exact_fields(_map, _required, _allowed),
+    do: {:error, {:invalid_field, "arguments must be a JSON object."}}
+
+  defp bounded_field_names(names) do
+    names
+    |> Enum.take(5)
+    |> Enum.map(&String.slice(&1, 0, 64))
+  end
 
   defp error(code, message) do
     %{

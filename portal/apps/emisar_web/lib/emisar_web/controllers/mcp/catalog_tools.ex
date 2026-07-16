@@ -700,24 +700,37 @@ defmodule EmisarWeb.MCP.CatalogTools do
 
   defp enums(nil, _allowed, _max, _name), do: {:ok, []}
 
+  # Listing the allowed values lets a model self-correct in one step instead
+  # of guessing which member of its array was wrong.
   defp enums(values, allowed, max, name) when is_list(values) do
     if length(values) in 1..max and Enum.uniq(values) == values and
          Enum.all?(values, &(&1 in allowed)) do
       {:ok, values}
     else
-      {:error, error("invalid_args", "#{name} contains unsupported or duplicate values.")}
+      {:error,
+       error(
+         "invalid_args",
+         "#{name} must be 1 to #{max} unique values from: #{Enum.join(allowed, ", ")}."
+       )}
     end
   end
 
-  defp enums(_values, _allowed, _max, name),
-    do: {:error, error("invalid_args", "#{name} must be a non-empty bounded array.")}
+  defp enums(_values, allowed, max, name) do
+    {:error,
+     error(
+       "invalid_args",
+       "#{name} must be an array of 1 to #{max} unique values from: #{Enum.join(allowed, ", ")}."
+     )}
+  end
 
   defp enum(nil, _allowed, default, _name), do: {:ok, default}
 
   defp enum(value, allowed, _default, name) do
-    if value in allowed,
-      do: {:ok, value},
-      else: {:error, error("invalid_args", "#{name} has an unsupported value.")}
+    if value in allowed do
+      {:ok, value}
+    else
+      {:error, error("invalid_args", "#{name} must be one of: #{Enum.join(allowed, ", ")}.")}
+    end
   end
 
   defp limit(value, max) do

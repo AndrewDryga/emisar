@@ -59,6 +59,35 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              "limit must be a JSON integer from 1 to 50; it was sent as a string."
   end
 
+  test "every recent_runs fault names its field instead of the generic contract error", %{
+    conn: conn
+  } do
+    unknown = call(conn, "recent_runs", %{"limits" => 10})
+
+    assert unknown["error"]["message"] ==
+             "unknown argument(s): limits. Allowed: operation_id, runbook_execution_id, step_id, runner_ref, action_id, pack_ref, scope, limit, cursor."
+
+    scope = call(conn, "recent_runs", %{"scope" => "all"})
+    assert scope["error"]["message"] == ~s(scope must be "own" or "account".)
+
+    ref = call(conn, "recent_runs", %{"runner_ref" => "not-a-ref"})
+
+    assert ref["error"]["message"] ==
+             "runner_ref is malformed — copy the exact value from a prior tool result."
+
+    orphan_step = call(conn, "recent_runs", %{"step_id" => "check"})
+    assert orphan_step["error"]["message"] == "step_id requires runbook_execution_id."
+
+    combined =
+      call(conn, "recent_runs", %{
+        "operation_id" => "op_324NN9NMDZ1T76NARWCKM5A0D6",
+        "runner_ref" => "db-primary~" <> String.duplicate("a", 32)
+      })
+
+    assert combined["error"]["message"] ==
+             "operation_id cannot be combined with runbook_execution_id, step_id, runner_ref, action_id, or pack_ref."
+  end
+
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
     conn: conn,
     account: account,

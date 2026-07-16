@@ -73,6 +73,17 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     out_of_range = call(conn, "list_runners", %{"limit" => 51})
     assert out_of_range["error"]["message"] == "limit must be a JSON integer from 1 to 50."
+
+    # Enum faults list the allowed values so the model self-corrects in one step.
+    statuses = call(conn, "list_runners", %{"statuses" => ["connected", "online"]})
+
+    assert statuses["error"]["message"] ==
+             "statuses must be 1 to 4 unique values from: connected, disconnected, pending, disabled."
+
+    availability = call(conn, "list_packs", %{"availability" => "everything"})
+
+    assert availability["error"]["message"] ==
+             "availability must be one of: executable, all."
   end
 
   test "run_action rejects wait values outside the public grammar", %{conn: conn} do
