@@ -31,7 +31,7 @@ docker compose --profile test run --rm --no-deps -T --user root \
   -c 'find /var/lib/emisar -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
 
 echo "[signed-dispatch-e2e] bringing up portal + signing-init + runner-signed (profile: test)..."
-docker compose --profile test up -d portal
+docker compose --profile test up -d --wait --wait-timeout 120 portal
 docker compose --profile test up -d --force-recreate signing-init runner-signed
 
 exec go run ./tools/cmd/signing-e2e
