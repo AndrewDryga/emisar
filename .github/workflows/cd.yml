@@ -309,10 +309,15 @@ jobs:
     timeout-minutes: 30
     concurrency:
       group: production-plan
-      # Saved plans do not lock HCP. Serialize their creation here so rapid
-      # pushes keep only the newest pending GitHub job without interrupting one
-      # that is already uploading a configuration.
-      cancel-in-progress: false
+      # A saved plan changes nothing — provisional configuration, no workspace
+      # lock, and the workspace's auto-apply stays disabled — so a newer main
+      # commit supersedes an older pending plan instead of queueing behind it.
+      cancel-in-progress: true
+    # Scopes the plan-only TFC token and restricts the job to main. Deliberately
+    # NO required reviewer: the plan is non-destructive (see the concurrency
+    # note) and the workspace's auto-apply is disabled, so the token cannot
+    # change infrastructure. TFC "Confirm & Apply" is the single human gate;
+    # gating the plan too only queued pushes behind a redundant approval.
     environment:
       name: portal-production-plan
     permissions:
