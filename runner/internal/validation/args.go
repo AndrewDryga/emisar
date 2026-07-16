@@ -50,10 +50,11 @@ func Validate(schema []actionspec.Arg, raw map[string]any) (map[string]any, erro
 		if err != nil {
 			return nil, err
 		}
-		if err := applyValidation(a, coerced); err != nil {
+		validated, err := applyValidation(a, coerced)
+		if err != nil {
 			return nil, err
 		}
-		out[a.Name] = coerced
+		out[a.Name] = validated
 	}
 	return out, nil
 }
@@ -135,12 +136,12 @@ func coerce(a actionspec.Arg, v any) (any, error) {
 	return nil, newError(a.Name, "type", "unsupported arg type %q", a.Type)
 }
 
-func applyValidation(a actionspec.Arg, v any) error {
+func applyValidation(a actionspec.Arg, v any) (any, error) {
 	if err := applyStringByteLimit(a, v); err != nil {
-		return err
+		return nil, err
 	}
 	if a.Validation == nil {
-		return nil
+		return v, nil
 	}
 	val := a.Validation
 
@@ -149,30 +150,30 @@ func applyValidation(a actionspec.Arg, v any) error {
 		if val.MaxItems != nil {
 			n, ok := arrayLen(v)
 			if !ok {
-				return newError(a.Name, "max_items", "requires array value")
+				return nil, newError(a.Name, "max_items", "requires array value")
 			}
 			if n > *val.MaxItems {
-				return newError(a.Name, "max_items", "too many items (max %d)", *val.MaxItems)
+				return nil, newError(a.Name, "max_items", "too many items (max %d)", *val.MaxItems)
 			}
 		}
 		elements, err := elementsOf(v)
 		if err != nil {
-			return newError(a.Name, "type", "%s", err.Error())
+			return nil, newError(a.Name, "type", "%s", err.Error())
 		}
 		for i, elem := range elements {
 			if err := applyScalarValidators(a, val, elem); err != nil {
-				return wrapElementError(err, i)
+				return nil, wrapElementError(err, i)
 			}
 		}
 		return applyPathValidation(a, val, v)
 	}
 
 	if err := applyScalarValidators(a, val, v); err != nil {
-		return err
+		return nil, err
 	}
 	if val.MaxItems != nil {
 		// max_items on a non-array arg: schema bug, but be explicit.
-		return newError(a.Name, "max_items", "requires array value")
+		return nil, newError(a.Name, "max_items", "requires array value")
 	}
 	return applyPathValidation(a, val, v)
 }
@@ -277,53 +278,54 @@ func aboveNumericBound(value any, bound float64) (bool, bool) {
 	return ok && comparison > 0, ok
 }
 
-// applyPathValidation runs path allow/deny rules. Works on string and
-// []string values via stringsFor.
-func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) error {
+// applyPathValidation runs path allow/deny rules and returns the canonical
+// target(s) that passed them. It accepts string and []string via stringsFor.
+func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (any, error) {
 	if len(val.AllowedPaths) == 0 && len(val.DeniedPaths) == 0 &&
 		len(val.AllowedPrefixes) == 0 && len(val.DeniedPrefixes) == 0 {
-		return nil
+		return v, nil
 	}
 	strs, err := stringsFor(a, v)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Resolve allow/deny lists too so an author writing /var/log on a
 	// host where /var → /private/var still gets a matching comparison
 	// against an input that resolves to /private/var/log/...
 	allowedPaths, err := resolveManyRules(val.AllowedPaths)
 	if err != nil {
-		return newError(a.Name, "path", "cannot safely resolve allowed_paths: %v", err)
+		return nil, newError(a.Name, "path", "cannot safely resolve allowed_paths: %v", err)
 	}
 	deniedPaths, err := resolveManyRules(val.DeniedPaths)
 	if err != nil {
-		return newError(a.Name, "path", "cannot safely resolve denied_paths: %v", err)
+		return nil, newError(a.Name, "path", "cannot safely resolve denied_paths: %v", err)
 	}
 	allowedPrefixes, err := resolveManyRules(val.AllowedPrefixes)
 	if err != nil {
-		return newError(a.Name, "path", "cannot safely resolve allowed_prefixes: %v", err)
+		return nil, newError(a.Name, "path", "cannot safely resolve allowed_prefixes: %v", err)
 	}
 	deniedPrefixes, err := resolveManyRules(val.DeniedPrefixes)
 	if err != nil {
-		return newError(a.Name, "path", "cannot safely resolve denied_prefixes: %v", err)
+		return nil, newError(a.Name, "path", "cannot safely resolve denied_prefixes: %v", err)
 	}
 	lexicalDeniedPaths := cleanMany(val.DeniedPaths)
 	lexicalDeniedPrefixes := cleanMany(val.DeniedPrefixes)
 
+	resolvedValues := make([]string, 0, len(strs))
 	for _, s := range strs {
 		cleaned := filepath.Clean(s)
 		// Reject lexical deny matches before resolving the request. Protected
 		// trees such as /root/.ssh are deliberately unreadable to a non-root
 		// runner, but a direct or dot-dot path into them is still an exact deny.
 		if pathInList(cleaned, lexicalDeniedPaths) {
-			return newError(a.Name, "denied_paths", "path %s is denied", cleaned)
+			return nil, newError(a.Name, "denied_paths", "path %s is denied", cleaned)
 		}
 		if prefixInList(cleaned, lexicalDeniedPrefixes) {
-			return newError(a.Name, "denied_prefixes", "path %s under denied prefix", cleaned)
+			return nil, newError(a.Name, "denied_prefixes", "path %s under denied prefix", cleaned)
 		}
 		resolved, err := resolveForCheck(s)
 		if err != nil {
-			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
+			return nil, newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
 		}
 		// A relative value never matches an absolute allow/deny list, so it
 		// would slip past the deny checks below and then be run by the
@@ -331,22 +333,26 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 		// rules only make sense against the absolute path the executor uses,
 		// so require one.
 		if !filepath.IsAbs(resolved) {
-			return newError(a.Name, "path", "path %s must be absolute", resolved)
+			return nil, newError(a.Name, "path", "path %s must be absolute", resolved)
 		}
 		if len(allowedPaths) > 0 && !pathInList(resolved, allowedPaths) {
-			return newError(a.Name, "allowed_paths", "path %s not in allowlist", resolved)
+			return nil, newError(a.Name, "allowed_paths", "path %s not in allowlist", resolved)
 		}
 		if pathInList(resolved, deniedPaths) {
-			return newError(a.Name, "denied_paths", "path %s is denied", resolved)
+			return nil, newError(a.Name, "denied_paths", "path %s is denied", resolved)
 		}
 		if len(allowedPrefixes) > 0 && !prefixInList(resolved, allowedPrefixes) {
-			return newError(a.Name, "allowed_prefixes", "path %s not in allowed prefixes", resolved)
+			return nil, newError(a.Name, "allowed_prefixes", "path %s not in allowed prefixes", resolved)
 		}
 		if prefixInList(resolved, deniedPrefixes) {
-			return newError(a.Name, "denied_prefixes", "path %s under denied prefix", resolved)
+			return nil, newError(a.Name, "denied_prefixes", "path %s under denied prefix", resolved)
 		}
+		resolvedValues = append(resolvedValues, resolved)
 	}
-	return nil
+	if _, ok := v.([]string); ok {
+		return resolvedValues, nil
+	}
+	return resolvedValues[0], nil
 }
 
 func cleanMany(in []string) []string {

@@ -91,6 +91,49 @@ func TestSymlink_UnresolvableExistingComponentRejected(t *testing.T) {
 	})
 }
 
+func TestPathValidation_ReturnsCanonicalCheckedTargets(t *testing.T) {
+	dir := t.TempDir()
+	actual := filepath.Join(dir, "actual")
+	if err := os.MkdirAll(actual, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(actual, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := []actionspec.Arg{
+		{
+			Name: "single", Type: actionspec.ArgPath, Required: true,
+			Validation: &actionspec.Validation{AllowedPrefixes: []string{dir}},
+		},
+		{
+			Name: "many", Type: actionspec.ArgStringArray, Required: true,
+			Validation: &actionspec.Validation{AllowedPrefixes: []string{dir}},
+		},
+	}
+	input := filepath.Join(alias, "future.log")
+	validated, err := Validate(schema, map[string]any{
+		"single": input,
+		"many":   []string{input},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedActual, err := filepath.EvalSymlinks(actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(resolvedActual, "future.log")
+	if got := validated["single"]; got != want {
+		t.Fatalf("single = %q, want canonical target %q", got, want)
+	}
+	gotMany, ok := validated["many"].([]string)
+	if !ok || len(gotMany) != 1 || gotMany[0] != want {
+		t.Fatalf("many = %#v, want []string{%q}", validated["many"], want)
+	}
+}
+
 // TestPath_RelativeValueRejectedUnderPathRules — a relative path value never
 // matches an absolute allow/deny list, so without this guard it slips past a
 // denied_prefixes rule and the executor runs it under its CWD, resolving to

@@ -18,7 +18,12 @@
    invocation. Callers cannot upload or replace script content at run time.
 4. **Schema-validated args.** Every action declares its arguments with
    types, defaults, enums, patterns, and path allow/deny. Unknown args
-   are rejected; missing required args are rejected; types are coerced.
+   are rejected; missing required args are rejected; types are coerced. Path
+   rules resolve symlinks, and execution receives the canonical target that
+   passed containment rather than the caller's lexical alias. Pathname APIs
+   cannot prevent an actor with write access to an ancestor from replacing it
+   between validation and the child opening the path; keep elevated actions
+   away from attacker-writable trees and run the runner least-privileged.
 5. **Double validation.** The control plane pre-validates every request and
    applies policy; the runner still re-checks every arg against the action's
    declared schema before executing.
