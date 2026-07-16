@@ -3,8 +3,8 @@ defmodule EmisarWeb.Endpoint do
 
   # Session cookie. Signed AND encrypted so the session token inside is
   # opaque to client-side JS and to anyone who only has the cookie
-  # blob. The `secure` flag is forced on in prod via runtime.exs; here
-  # it's off so dev http://localhost works.
+  # blob. The request-time session plug adds the `secure` flag from the
+  # runtime config; the LiveView connect_info path below only reads this base.
   @session_options [
     store: :cookie,
     key: "_emisar_web_key",
@@ -70,6 +70,16 @@ defmodule EmisarWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug :session
   plug EmisarWeb.Router
+
+  defp session(conn, _opts) do
+    session_config = Plug.Session.init(session_options())
+    Plug.Session.call(conn, session_config)
+  end
+
+  defp session_options do
+    secure? = Application.get_env(:emisar_web, :force_secure_cookies, false)
+    Keyword.put(@session_options, :secure, secure?)
+  end
 end

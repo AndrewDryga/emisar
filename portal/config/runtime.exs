@@ -171,10 +171,11 @@ if config_env() == :prod do
 
   config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
 
-  # Force `secure: true` on the recent-accounts cookie (`RecentAccounts.opts/0`).
-  # Combined with the compile-time `force_ssl` (prod.exs), browsers never send it
-  # over plain HTTP. Disabled when FORCE_SSL=false so local dev over
-  # http://localhost can still complete sign-in.
+  # Browser cookies read this shared runtime knob for their `secure` attribute:
+  # the session plug and `RecentAccounts.opts/0` use it. Combined with the
+  # compile-time `force_ssl` (prod.exs), browsers never send them over plain
+  # HTTP. Disabled when FORCE_SSL=false so local dev over http://localhost can
+  # still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
   # BEAM clustering on GCP MIGs. When EMISAR_CLUSTER_PROJECT is set (the instance
