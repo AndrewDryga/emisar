@@ -11,9 +11,11 @@ run-name: Release ${{ github.ref_name }}
 # A PR cannot reach this workflow:
 #
 #   * `on:` does not include `pull_request` or `pull_request_target`.
-#   * The build step gates on `environment: public-releases`, which the repo
-#     settings configure with required reviewers — at least one
-#     maintainer must approve before binaries are uploaded.
+#   * The build step gates on `environment: public-releases`, whose tag
+#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it. The
+#     signed annotated tag targeting current main IS the human release
+#     decision — the environment carries no required reviewer while the
+#     repository has a single maintainer (see DEPLOYMENT.md).
 #   * Default token permissions are read-only; the publish job is the
 #     only place that opts into `contents: write` (for the release
 #     itself) and `id-token: write` + `attestations: write` (for
@@ -86,88 +88,61 @@ jobs:
             echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
           fi
 
-      - name: Full runner release gate
+      - name: Require successful CI for tagged commit
+        # The release process tags only after the commit's Required - CI
+        # aggregate reports green; this enforces it. Content-stable checks
+        # (vet, staticcheck, race tests, pack validation, installer lint)
+        # were enforced by CI when this exact tree last changed — force
+        # pushes to main are disabled, so the history is append-only and a
+        # green check cannot be rewritten out from under the tag.
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1500))
+          while true; do
+            result=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+            IFS=$'\t' read -r status conclusion <<< "$result"
+
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success || {
+                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+                exit 1
+              }
+              break
+            fi
+
+            if ((SECONDS >= deadline)); then
+              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
+              exit 1
+            fi
+
+            echo "Required - CI is ${status}; checking again in 15 seconds"
+            sleep 15
+          done
+
+      - name: Scan current advisories
+        # The one release-time re-check: govulncheck consults today's
+        # vulnerability database, which moves independently of the source —
+        # a tag can land on a tree whose last Go change predates a fresh
+        # advisory. Everything content-stable already rode Required - CI.
         working-directory: runner
         run: |
-          set -euo pipefail
-          ../.github/scripts/check-attest-parity.sh
-          files=$(gofmt -l -s .)
-          test -z "$files" || { echo "::error::gofmt required for: $files"; exit 1; }
-          go vet ./...
-          go mod verify
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-          go install honnef.co/go/tools/cmd/staticcheck@2026.1
-          staticcheck ./...
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
-          go test -race -count=1 ./...
-
-      - name: Verify installer
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck install.sh
-          bash -n install.sh
-
-  validate-packs:
-    # Runs every shipped pack through `emisar pack validate` before
-    # we tag a binary. Without this, a malformed pack baked into the
-    # release tarball would only fail when an operator extracted it
-    # — packs-ci catches it on PR, but a force-push to main after the
-    # PR closed could slip a regression past that gate. Defense in depth.
-    name: Validate packs
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          ref: ${{ github.ref }}
-          persist-credentials: false
-
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: runner/go.mod
-          cache: true
-          cache-dependency-path: runner/go.sum
-
-      - name: Build emisar CLI
-        run: cd runner && go build -trimpath -o /tmp/emisar .
-
-      - name: Validate every shipped pack
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          packs=(packs/*/)
-          if [ ${#packs[@]} -lt 1 ]; then
-            echo "::error::no packs found — refusing to release"
-            exit 1
-          fi
-          failures=()
-          for pack in "${packs[@]}"; do
-            name="$(basename "${pack%/}")"
-            printf '\n==> %s\n' "$name"
-            /tmp/emisar pack validate "${pack%/}" || failures+=("$name")
-          done
-          if [ ${#failures[@]} -gt 0 ]; then
-            printf '\n✗ packs failed validation:\n'
-            printf '   - %s\n' "${failures[@]}"
-            exit 1
-          fi
-          printf '\n✓ all %d packs valid\n' "${#packs[@]}"
 
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [verify, validate-packs]
+    needs: [verify]
     # `public-releases` environment gate at BUILD (not just publish) so the
-    # Sigstore OIDC token used for attestation isn't minted until a
-    # maintainer approves. Without this, anyone who can push a tag
-    # (collaborators with write access) can mint an attested-by-our-
-    # workflow artefact — even if the publish step blocks them from
-    # uploading, the attestation itself carries a real signature.
+    # Sigstore OIDC token used for attestation is minted only for a ref the
+    # environment's tag patterns admit (`runner-v*`/`mcp-v*`) — an arbitrary
+    # branch can never produce an attested-by-our-workflow artefact. The
+    # human decision is the signed tag itself; re-add required reviewers
+    # here the moment a second collaborator gains write access.
     environment:
       name: public-releases
     strategy:
@@ -314,12 +289,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build]
-    # No `environment:` block here — the `build` job is already gated
-    # by `environment: public-releases`, and GitHub Actions prompts for an
-    # approval per env-gated job (not per env, per workflow run). One
-    # approval at build covers the whole release flow; double-gating
-    # publish would just mean clicking approve twice for no extra
-    # protection.
+    # No `environment:` block here — the ref restriction already applied at
+    # build, and publish only uploads what build attested. A second
+    # environment gate would add nothing.
     permissions:
       contents: write
     env:

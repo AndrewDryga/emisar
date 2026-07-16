@@ -8,9 +8,11 @@ run-name: Release ${{ github.ref_name }}
 # attempt requires current main; Actions UI reruns preserve the original
 # SHA/ref and require only that the signed tag remains on main.
 #
-# Same security posture as runner-release.yml: no PR triggers, all
-# write scopes confined to publish, `public-releases` requires
-# maintainer approval.
+# Same security posture as runner-release.yml: no PR triggers, all write
+# scopes confined to publish, and the `public-releases` environment's tag
+# patterns bound which refs may mint attestations. The signed annotated tag
+# targeting current main is the human release decision — no required
+# reviewer while the repository has a single maintainer (DEPLOYMENT.md).
 #
 # Asset naming:
 #
@@ -79,28 +81,49 @@ jobs:
             echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
           fi
 
-      - name: Full MCP release gate
-        working-directory: mcp
+      - name: Require successful CI for tagged commit
+        # The release process tags only after the commit's Required - CI
+        # aggregate reports green; this enforces it. Content-stable checks
+        # (vet, staticcheck, race tests, installer lint) were enforced by CI
+        # when this exact tree last changed — force pushes to main are
+        # disabled, so a green check cannot be rewritten out from under the
+        # tag.
         run: |
           set -euo pipefail
-          ../.github/scripts/check-attest-parity.sh
-          files=$(gofmt -l -s .)
-          test -z "$files" || { echo "::error::gofmt required for: $files"; exit 1; }
-          go vet ./...
-          go mod verify
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-          go install honnef.co/go/tools/cmd/staticcheck@2026.1
-          staticcheck ./...
+          deadline=$((SECONDS + 1500))
+          while true; do
+            result=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+            IFS=$'\t' read -r status conclusion <<< "$result"
+
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success || {
+                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+                exit 1
+              }
+              break
+            fi
+
+            if ((SECONDS >= deadline)); then
+              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
+              exit 1
+            fi
+
+            echo "Required - CI is ${status}; checking again in 15 seconds"
+            sleep 15
+          done
+
+      - name: Scan current advisories
+        # The one release-time re-check: govulncheck consults today's
+        # vulnerability database, which moves independently of the source —
+        # a tag can land on a tree whose last Go change predates a fresh
+        # advisory. Everything content-stable already rode Required - CI.
+        working-directory: mcp
+        run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
-          go test -race -count=1 ./...
-
-      - name: Verify installer
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck install-mcp.sh
-          bash -n install-mcp.sh
 
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}
@@ -108,10 +131,11 @@ jobs:
     timeout-minutes: 20
     needs: [verify]
     # `public-releases` environment gate at BUILD so the Sigstore OIDC token
-    # used to sign the attestation isn't minted until a maintainer
-    # approves. Defense in depth against tag-push from a compromised
-    # collaborator: even if publish blocks, an attested artefact with
-    # a real signature would otherwise be minted automatically.
+    # used to sign the attestation is minted only for a ref the environment's
+    # tag patterns admit — an arbitrary branch can never produce an
+    # attested-by-our-workflow artefact. The human decision is the signed
+    # tag; re-add required reviewers here the moment a second collaborator
+    # gains write access.
     environment:
       name: public-releases
     strategy:
@@ -247,8 +271,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build]
-    # Build is already env-gated; one approval covers the run, so
-    # don't add a second `environment:` here. See runner-release.yml.
+    # No `environment:` block here — the ref restriction already applied at
+    # build, and publish only uploads what build attested. See
+    # runner-release.yml.
     permissions:
       contents: write
     env:

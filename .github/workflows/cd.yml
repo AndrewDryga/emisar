@@ -190,7 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           getent ahosts registry.emisar.dev >/dev/null || {
-            echo "::error::registry.emisar.dev does not resolve; apply the Terraform plan and add the registrar records before approving pack publication"
+            echo "::error::registry.emisar.dev does not resolve; restore the registry serving domain (infra/lb.tf, infra/dns.tf) before publishing packs"
             exit 1
           }
           curl -fsS --retry 5 --retry-delay 2 \
