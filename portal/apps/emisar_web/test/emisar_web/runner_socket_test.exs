@@ -494,7 +494,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert finalized.exit_code == 0
 
       # A SECOND copy of the same request_id is short-circuited by the dedup
-      # ring: still acked, but `finalize_from_result` does NOT run again, so
+      # ring: still acked, but the terminal transition does NOT run again, so
       # the differing exit_code in this duplicate is ignored.
       dup = result_frame(run.request_id, "error", exit_code: 137)
       assert {:push, ack2, ^state} = RunnerSocket.handle_in({dup, text()}, state)
@@ -540,13 +540,13 @@ defmodule EmisarWeb.RunnerSocketTest do
     setup [:connected_socket, :dispatched_run]
 
     test "a late result for an ALREADY-terminal run can't overwrite it (transition guard)",
-         %{state: state, runner: runner, run: run} do
+         %{state: state, run: run} do
       # Finalize the run to success out-of-band, mimicking an operator cancel
       # or dispatch-timeout that already drove the run terminal. Crucially the
       # socket's dedup ring is still EMPTY, so the next frame is NOT deduped —
       # it exercises the `Runs.transition/3` terminal guard, not the ring.
       {:ok, _} =
-        Runs.finalize_from_result(runner.id, %{
+        Fixtures.Runs.finish(run, %{
           "request_id" => run.request_id,
           "status" => "success",
           "exit_code" => 0
@@ -565,9 +565,9 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "the run-detail timeline doesn't gain a second terminal event from the late result",
-         %{state: state, runner: runner, run: run, subject: subject} do
+         %{state: state, run: run, subject: subject} do
       {:ok, _} =
-        Runs.finalize_from_result(runner.id, %{
+        Fixtures.Runs.finish(run, %{
           "request_id" => run.request_id,
           "status" => "success"
         })
@@ -930,10 +930,9 @@ defmodule EmisarWeb.RunnerSocketTest do
       refute Enum.any?(events, &(&1.kind == :progress))
     end
 
-    # (same-account branch) — runner B can't
-    # finalize A's run: `finalize_from_result` is runner-scoped, so to B the
-    # request_id is unknown → acked + remembered (terminal), and A's run stays
-    # un-finalized (still :sent).
+    # (same-account branch) — runner B can't finalize A's run: result lookup is
+    # runner-scoped, so to B the request_id is unknown → acked + remembered
+    # (terminal), and A's run stays un-finalized (still :sent).
     test "runner B finalizing runner A's run is treated as unknown (acked, A untouched)", %{
       account: account,
       run: run

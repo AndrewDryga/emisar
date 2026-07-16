@@ -798,7 +798,7 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
-      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 6})
 
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])
@@ -840,7 +840,7 @@ defmodule Emisar.RunsTest do
       # The terminal transition is written from the runner-socket path (no inbound
       # request there) — it must still attribute the DISPATCHER's ip, never the
       # runner's connection (the regression guard for the old process-dict bleed).
-      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 6})
 
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
@@ -877,7 +877,7 @@ defmodule Emisar.RunsTest do
 
       # The terminal transition (written from the runner-socket path, long after
       # the request) still carries the metadata that was present at dispatch.
-      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 6})
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
       success =
@@ -899,7 +899,7 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
       assert run.mcp_client_metadata == %{}
 
-      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 6})
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
       success =
@@ -2137,7 +2137,7 @@ defmodule Emisar.RunsTest do
     } do
       Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, sent} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(sent)
+      sent = Fixtures.Runs.put_status(sent, :sent)
       past = DateTime.add(DateTime.utc_now(), -60, :second)
       sent = sent |> Ecto.Changeset.change(sent_at: past) |> Repo.update!()
 
@@ -2165,11 +2165,10 @@ defmodule Emisar.RunsTest do
       other = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, running} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, running} = Runs.mark_sent(running)
-      {:ok, running} = Runs.mark_running(running)
+      running = Fixtures.Runs.put_status(running, :running)
 
       {:ok, other_sent} = Runs.create_run(base_attrs(account.id, other.id))
-      {:ok, other_sent} = Runs.mark_sent(other_sent)
+      other_sent = Fixtures.Runs.put_status(other_sent, :sent)
 
       assert :ok = Runs.dispatch_queued_for_runner(runner.id)
 
@@ -2338,8 +2337,7 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, running} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, running} = Runs.mark_sent(running)
-      {:ok, running} = Runs.mark_running(running)
+      running = Fixtures.Runs.put_status(running, :running)
 
       ids = Runs.list_running_runs() |> Enum.map(& &1.id)
       assert running.id in ids
@@ -2493,7 +2491,7 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
 
-    test "refuses to publish a run that's no longer dispatchable (closes the publish-before-mark_sent hole)",
+    test "refuses to publish a run that's no longer dispatchable (closes the publish-before-claim hole)",
          %{account: account, runner: runner} do
       Emisar.Runners.subscribe_runner_transport(runner)
 
@@ -2706,10 +2704,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
-          "status" => "success"
-        })
+        Fixtures.Runs.finish(run, %{"status" => "success"})
 
       assert {:ok, ^finished} = Runs.cancel_run(finished, subject, "no need")
     end
@@ -2734,7 +2729,14 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
-      {:ok, run} = Runs.mark_running(run)
+      {:ok, run} =
+        Runs.mark_started_from_connection(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          run.request_id
+        )
 
       Emisar.Runs.subscribe_account_runs(account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
@@ -2767,11 +2769,13 @@ defmodule Emisar.RunsTest do
                      500
 
       assert {:ok, %ActionRun{status: :success}} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
-                 "status" => "success",
-                 "exit_code" => 0
-               })
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{"request_id" => run.request_id, "status" => "success", "exit_code" => 0}
+               )
 
       assert Runs.peek_run_by_id(run.id).status == :success
     end
@@ -2793,7 +2797,7 @@ defmodule Emisar.RunsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, run} = Runs.mark_sent(run)
+      run = Fixtures.Runs.put_status(run, :sent)
 
       run =
         run
@@ -2815,10 +2819,13 @@ defmodule Emisar.RunsTest do
       assert successor_generation == successor.connection_generation
 
       assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
-                 "status" => "cancelled"
-               })
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 successor.connection_generation,
+                 successor.connection_lease_id,
+                 %{"request_id" => run.request_id, "status" => "cancelled"}
+               )
     end
 
     test "cancelling a :denied run is a no-op — it never reached a runner", %{
@@ -2959,50 +2966,12 @@ defmodule Emisar.RunsTest do
       {:ok, run} =
         Runs.create_run(base_attrs(account.id, runner.id, %{reason: "operator why"}))
 
-      {:ok, run} = Runs.mark_sent(run)
+      run = Fixtures.Runs.put_status(run, :sent)
 
       assert {:ok, %ActionRun{} = cancelled} = Runs.cancel_run(run, subject, "user pressed stop")
       assert cancelled.reason_text == "user pressed stop"
       assert cancelled.reason == "operator why"
       assert is_nil(cancelled.error_message)
-    end
-  end
-
-  describe "mark_sent/1" do
-    test "moves :pending → :sent and stamps sent_at" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert run.status == :pending
-
-      assert {:ok, %ActionRun{status: :sent, sent_at: %DateTime{}}} = Runs.mark_sent(run)
-    end
-
-    test "is a no-op on an already-terminal run (never re-opens it)" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-
-      {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
-          "status" => "success"
-        })
-
-      assert {:ok, _} = Runs.mark_sent(finished)
-      assert Runs.peek_run_by_id(run.id).status == :success
-    end
-  end
-
-  describe "mark_running/1" do
-    test "moves :sent → :running and stamps started_at" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
-
-      assert {:ok, %ActionRun{status: :running, started_at: %DateTime{}}} =
-               Runs.mark_running(sent)
     end
   end
 
@@ -3026,7 +2995,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
+      sent = Fixtures.Runs.put_status(run, :sent)
 
       assert {:error, :run_already_dispatched} =
                Ecto.Multi.new()
@@ -3042,10 +3011,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
-          "status" => "success"
-        })
+        Fixtures.Runs.finish(run, %{"status" => "success"})
 
       assert {:ok, %{run_cancel: {:noop, %ActionRun{status: :success}}, run_cancel_audit: nil}} =
                Ecto.Multi.new()
@@ -3081,7 +3047,7 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "mark_finished/2" do
+  describe "runner-result finalization" do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -3092,22 +3058,32 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      # the valid forward path pending → sent → running → success, each
+      # The valid production path pending → sent → running → success, each
       # transition stamping its own timestamp. The terminal flip is the only
       # one that's final.
+      _ = Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert run.status == :pending
 
-      {:ok, sent} = Runs.mark_sent(run)
+      assert :ok = Runs.dispatch_to_runner(run)
+      sent = Repo.reload!(run)
       assert sent.status == :sent
       assert %DateTime{} = sent.sent_at
 
-      {:ok, running} = Runs.mark_running(sent)
+      {:ok, running} =
+        Runs.mark_started_from_connection(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          run.request_id
+        )
+
       assert running.status == :running
       assert %DateTime{} = running.started_at
 
       {:ok, finished} =
-        Runs.mark_finished(running, %{
+        Fixtures.Runs.finish(running, %{
           "status" => "success",
           "duration_ms" => 4,
           "truncated_stdout" => true,
@@ -3150,7 +3126,7 @@ defmodule Emisar.RunsTest do
         "emitted_stderr_bytes" => 0
       }
 
-      assert {:ok, %ActionRun{output_complete: true}} = Runs.mark_finished(run, payload)
+      assert {:ok, %ActionRun{output_complete: true}} = Fixtures.Runs.finish(run, payload)
     end
 
     test "keeps later output but marks it incomplete when progress was dropped", %{
@@ -3175,7 +3151,7 @@ defmodule Emisar.RunsTest do
         "emitted_stderr_bytes" => 0
       }
 
-      assert {:ok, %ActionRun{output_complete: false}} = Runs.mark_finished(run, payload)
+      assert {:ok, %ActionRun{output_complete: false}} = Fixtures.Runs.finish(run, payload)
     end
 
     test "a terminal run is final — later transitions no-op and never re-open it", %{
@@ -3188,18 +3164,12 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
-          "status" => "success"
-        })
+        Fixtures.Runs.finish(run, %{"status" => "success"})
 
       assert finished.status == :success
 
-      # A duplicate result, a stray mark_sent, and a stray mark_running are all
-      # idempotent no-ops — none re-advances a settled run.
-      assert {:ok, _} = Runs.mark_finished(finished, %{"status" => "failed"})
-      assert {:ok, _} = Runs.mark_sent(finished)
-      assert {:ok, _} = Runs.mark_running(finished)
+      # A duplicate terminal result is an idempotent no-op.
+      assert {:ok, _} = Fixtures.Runs.finish(finished, %{"status" => "failed"})
       assert Runs.peek_run_by_id(run.id).status == :success
     end
 
@@ -3212,10 +3182,7 @@ defmodule Emisar.RunsTest do
         {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
         {:ok, finished} =
-          Runs.finalize_from_result(runner.id, %{
-            "request_id" => run.request_id,
-            "status" => wire_status
-          })
+          Fixtures.Runs.finish(run, %{"status" => wire_status})
 
         assert finished.status == stored_status
       end
@@ -3229,8 +3196,7 @@ defmodule Emisar.RunsTest do
         Runs.create_run(base_attrs(account.id, runner.id, %{reason: "operator why"}))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
+        Fixtures.Runs.finish(run, %{
           "status" => "failed",
           "error" => "exit status 1"
         })
@@ -3295,7 +3261,7 @@ defmodule Emisar.RunsTest do
 
       # The wave finishes successfully → fires the (doomed) step 6 dispatch.
       Enum.each(wave1, fn run ->
-        {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+        {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
       end)
 
       {:ok, events, _} =
@@ -3351,7 +3317,7 @@ defmodule Emisar.RunsTest do
         Emisar.Runbooks.dispatch_runbook(runbook, "ship it", subject)
 
       Enum.each(runs, fn run ->
-        {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+        {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
       end)
 
       {:ok, events, _} =
@@ -3399,7 +3365,7 @@ defmodule Emisar.RunsTest do
       runner: runner
     } do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
+      sent = Fixtures.Runs.put_status(run, :sent)
 
       assert {:ok, %RunEvent{seq: 1}} =
                Runs.append_event(sent, %{seq: 1, kind: "progress", payload: %{"line" => "go"}})
@@ -3414,10 +3380,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
-          "status" => "success"
-        })
+        Fixtures.Runs.finish(run, %{"status" => "success"})
 
       assert finished.status == :success
 
@@ -3601,7 +3564,7 @@ defmodule Emisar.RunsTest do
 
     test "refuses a run that is no longer pending approval", %{account: account, runner: runner} do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, sent} = Runs.mark_sent(run)
+      sent = Fixtures.Runs.put_status(run, :sent)
 
       assert {:ok, %{locked: {:error, :run_not_pending_approval}}} =
                Ecto.Multi.new()
@@ -3646,23 +3609,11 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "finalize_from_result/2" do
+  describe "runner result payloads" do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
-    end
-
-    test "success result transitions the run", %{account: account, runner: runner} do
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-
-      assert {:ok, %ActionRun{status: :success}} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
-                 "status" => "success",
-                 "exit_code" => 0,
-                 "duration_ms" => 12
-               })
     end
 
     test "persists local audit failure without changing the action outcome", %{
@@ -3677,8 +3628,7 @@ defmodule Emisar.RunsTest do
                 event_id: nil,
                 local_audit_failed: true
               }} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
+               Fixtures.Runs.finish(run, %{
                  "status" => "success",
                  "exit_code" => 0,
                  "local_audit_failed" => true
@@ -3704,8 +3654,7 @@ defmodule Emisar.RunsTest do
                 executed_command: "uptime -p",
                 executed_command_truncated: true
               }} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
+               Fixtures.Runs.finish(run, %{
                  "status" => "success",
                  "exit_code" => 0,
                  "executed_command" => "uptime -p",
@@ -3731,8 +3680,7 @@ defmodule Emisar.RunsTest do
       # A signature/pack refusal carries both: a terse `reason` code and a human
       # `error` sentence. The operator must see the sentence.
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
+        Fixtures.Runs.finish(run, %{
           "status" => "signature_invalid",
           "reason" => "stale",
           "error" => "refused: issued_at is outside the freshness window"
@@ -3751,7 +3699,7 @@ defmodule Emisar.RunsTest do
         {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
         {:ok, finished} =
-          Runs.finalize_from_result(runner.id, %{"request_id" => run.request_id, "status" => wire})
+          Fixtures.Runs.finish(run, %{"status" => wire})
 
         assert finished.status == :refused
         assert Emisar.Runs.ActionRun.terminal?(:refused)
@@ -3769,33 +3717,12 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
-        Runs.finalize_from_result(runner.id, %{
-          "request_id" => run.request_id,
+        Fixtures.Runs.finish(run, %{
           "status" => "failed",
           "reason" => "exit status 1"
         })
 
       assert finished.error_message == "exit status 1"
-    end
-
-    test "unknown request_id returns {:error, :unknown_request_id}", %{runner: runner} do
-      assert {:error, :unknown_request_id} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => "req_does_not_exist",
-                 "status" => "success"
-               })
-    end
-
-    test "a runner cannot finalize another runner's run in the same account", %{account: account} do
-      runner_a = Fixtures.Runners.create_runner(account_id: account.id)
-      runner_b = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner_a.id))
-
-      assert {:error, :unknown_request_id} =
-               Runs.finalize_from_result(runner_b.id, %{
-                 "request_id" => run.request_id,
-                 "status" => "success"
-               })
     end
 
     test "an unrecognized result status defaults to :failed", %{account: account, runner: runner} do
@@ -3805,14 +3732,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       assert {:ok, %ActionRun{status: :failed}} =
-               Runs.finalize_from_result(runner.id, %{
-                 "request_id" => run.request_id,
-                 "status" => "totally-made-up-status"
-               })
-    end
-
-    test "with no request_id returns :missing_request_id" do
-      assert {:error, :missing_request_id} = Runs.finalize_from_result("runner-123", %{})
+               Fixtures.Runs.finish(run, %{"status" => "totally-made-up-status"})
     end
   end
 
@@ -3851,6 +3771,41 @@ defmodule Emisar.RunsTest do
                  successor.connection_lease_id,
                  %{"request_id" => sent.request_id, "status" => "success"}
                )
+    end
+
+    test "rejects an unknown request id" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:error, :unknown_request_id} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{"request_id" => "req_does_not_exist", "status" => "success"}
+               )
+    end
+
+    test "a runner cannot finalize another runner's run in the same account" do
+      account = Fixtures.Accounts.create_account()
+      runner_a = Fixtures.Runners.create_runner(account_id: account.id)
+      runner_b = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner_a.id))
+
+      assert {:error, :unknown_request_id} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner_b.id,
+                 runner_b.connection_generation,
+                 runner_b.connection_lease_id,
+                 %{"request_id" => run.request_id, "status" => "success"}
+               )
+    end
+
+    test "requires a request id" do
+      assert {:error, :missing_request_id} =
+               Runs.finalize_from_connection("account", "runner", 1, "lease", %{})
     end
   end
 
@@ -3953,6 +3908,7 @@ defmodule Emisar.RunsTest do
     test "the subscriber receives that run's transitions and progress chunks" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       assert :ok = Runs.subscribe_run(run.account_id, run.id)
@@ -3960,7 +3916,7 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "x"}})
       assert_receive {:run_event, %RunEvent{seq: 1}}, 500
 
-      {:ok, _} = Runs.mark_sent(run)
+      assert :ok = Runs.dispatch_to_runner(run)
       assert_receive {:run_updated, %ActionRun{status: :sent}}, 500
     end
 
@@ -3981,12 +3937,13 @@ defmodule Emisar.RunsTest do
     test "after unsubscribing, the caller stops receiving that run's updates" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       :ok = Runs.subscribe_run(run.account_id, run.id)
       assert :ok = Runs.unsubscribe_run(run.account_id, run.id)
 
-      {:ok, _} = Runs.mark_sent(run)
+      assert :ok = Runs.dispatch_to_runner(run)
       refute_receive {:run_updated, _}, 200
     end
   end

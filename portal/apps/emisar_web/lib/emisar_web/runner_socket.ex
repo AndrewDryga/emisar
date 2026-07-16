@@ -385,7 +385,7 @@ defmodule EmisarWeb.RunnerSocket do
 
         {:error, reason} ->
           # Transient persist failure — do NOT remember; the runner retries.
-          Logger.error("finalize_from_result failed: #{inspect(reason)}")
+          Logger.error("finalize_from_connection failed: #{inspect(reason)}")
           {:push, error_frame(request_id, "finalize_failed", inspect(reason)), state}
       end
     end

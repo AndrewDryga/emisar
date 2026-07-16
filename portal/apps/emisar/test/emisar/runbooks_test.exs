@@ -2,9 +2,8 @@ defmodule Emisar.RunbooksTest do
   @moduledoc """
   The runbook context: CRUD + the wave engine. `dispatch_runbook/4` expands
   each step against its own target runner(s) into an execution, releases work
-  in waves of five, and `dispatch_next_batch/1` (fired from
-  `Runs.mark_finished/2`) advances the waves — halting behind any failed or
-  denied run.
+  in waves of five, and `dispatch_next_batch/1` advances the waves after
+  runner-result finalization — halting behind any failed or denied run.
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Catalog, MCPOperations, Repo, Runbooks, Runners, Runs}
@@ -105,7 +104,7 @@ defmodule Emisar.RunbooksTest do
     Emisar.Auth.Subject.for_api_key(key, account)
   end
 
-  defp finish!(run), do: {:ok, _} = Runs.mark_finished(run, %{"status" => "success"})
+  defp finish!(run), do: {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success"})
 
   defp execution_runs(account, execution_id),
     do: Runs.list_runs_for_runbook_execution(account.id, execution_id)
@@ -1887,7 +1886,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, %{execution_id: execution_id, runs: [first | rest]}} =
                Runbooks.dispatch_runbook(runbook, "go", subject)
 
-      {:ok, _} = Runs.mark_finished(first, %{"status" => "failed", "exit_code" => 1})
+      {:ok, _} = Fixtures.Runs.finish(first, %{"status" => "failed", "exit_code" => 1})
       Enum.each(rest, &finish!/1)
 
       # Steps 6-7 never dispatch; the in-flight wave finished naturally.
@@ -2250,7 +2249,7 @@ defmodule Emisar.RunbooksTest do
     } do
       runbook = published_runbook!(subject, "done", uptime_steps(1, group_target(runner.group)))
       {:ok, %{runs: [run]}} = Runbooks.dispatch_runbook(runbook, "go", subject)
-      {:ok, _} = Emisar.Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
 
       assert {:error, :not_found} =
                Emisar.Runs.fetch_active_runbook_execution(runbook.id, subject)

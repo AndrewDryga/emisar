@@ -6,10 +6,10 @@ defmodule Emisar.Runs.Authorizer do
     * `cancel_run_permission` — allowed to cancel a queued/running run.
     * `view_runs_permission` — allowed to read run rows.
 
-  Runner-side progress event writes (`Runs.append_event/2`,
-  `Runs.finalize_from_result/2`) are internal helpers called from the
-  runner socket process; they don't subject-flow so there's no
-  dedicated permission for them.
+  Runner-side progress event writes (`Runs.append_event_from_connection/6`,
+  `Runs.finalize_from_connection/5`) are internal helpers called from the
+  runner socket process; they don't subject-flow so there's no dedicated
+  permission for them.
   """
   use Emisar.Auth.Authorizer
   alias Emisar.Runners

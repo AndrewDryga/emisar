@@ -140,7 +140,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       [failed | rest] = Enum.take(runs, 5)
 
       {:ok, _} =
-        Emisar.Runs.finalize_from_result(failed.runner_id, %{
+        Fixtures.Runs.finish(failed, %{
           "request_id" => failed.request_id,
           "status" => "failed",
           "exit_code" => 1
@@ -148,7 +148,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       for run <- rest do
         {:ok, _} =
-          Emisar.Runs.finalize_from_result(run.runner_id, %{
+          Fixtures.Runs.finish(run, %{
             "request_id" => run.request_id,
             "status" => "success",
             "exit_code" => 0
@@ -494,7 +494,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         })
 
       {:ok, _} =
-        Emisar.Runs.finalize_from_result(run.runner_id, %{
+        Fixtures.Runs.finish(run, %{
           "request_id" => run.request_id,
           "status" => "success",
           "exit_code" => 0
@@ -690,7 +690,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       [failed | _] = runs
 
       {:ok, _} =
-        Emisar.Runs.finalize_from_result(failed.runner_id, %{
+        Fixtures.Runs.finish(failed, %{
           "request_id" => failed.request_id,
           "status" => "failed",
           "exit_code" => 1
@@ -823,7 +823,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         })
 
       {:ok, _} =
-        Emisar.Runs.finalize_from_result(run.runner_id, %{
+        Fixtures.Runs.finish(run, %{
           "request_id" => run.request_id,
           "status" => "success",
           "exit_code" => 0

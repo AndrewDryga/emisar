@@ -660,7 +660,7 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
-  Called from `Runs.mark_finished` whenever a run reaches a terminal
+  Called from runner-result finalization whenever a run reaches a terminal
   state. When the finished run's whole wave is terminal and nothing in
   the execution failed, dispatches the next wave of `#{@batch_size}`
   work-list items; any failed/denied/cancelled run or row-less dispatch
@@ -692,7 +692,7 @@ defmodule Emisar.Runbooks do
 
   def dispatch_next_batch(_run), do: :noop
 
-  # The engine continues from the post-`mark_finished` callback, where no user
+  # The engine continues after the terminal runner result commits, where no user
   # is in scope. Rather than trust a nil membership (which would unscope every
   # later wave), it loads the durable execution record and REVALIDATES the
   # authorization anchor before dispatching: the initiating membership must

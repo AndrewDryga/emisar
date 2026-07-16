@@ -52,7 +52,7 @@ defmodule Emisar.RunsTelemetryTest do
       # The intermediate :running transition must NOT count an outcome.
       refute_received {:run_finished, _, _}
 
-      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 6})
 
       assert_receive {:run_finished, %{count: 1, duration_ms: 6}, %{status: :success}}
     end

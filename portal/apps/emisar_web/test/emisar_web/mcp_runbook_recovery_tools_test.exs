@@ -136,7 +136,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     {:ok, [stored_run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
 
     {:ok, _finished} =
-      Runs.mark_finished(stored_run, %{"status" => "success", "duration_ms" => 7})
+      Fixtures.Runs.finish(stored_run, %{"status" => "success", "duration_ms" => 7})
 
     waited_execution =
       call(conn, "wait_for_run", %{
@@ -484,7 +484,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
       # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
       Process.sleep(50)
-      {:ok, _finished} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+      {:ok, _finished} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
     end)
 
     started_at = System.monotonic_time(:millisecond)
@@ -506,12 +506,12 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     healthy_audit_run = create_mcp_history_run!(account, runner, key, 2)
 
     assert {:ok, _finished} =
-             Runs.mark_finished(failed_audit_run, %{
+             Fixtures.Runs.finish(failed_audit_run, %{
                "status" => "success",
                "local_audit_failed" => true
              })
 
-    assert {:ok, _finished} = Runs.mark_finished(healthy_audit_run, %{"status" => "success"})
+    assert {:ok, _finished} = Fixtures.Runs.finish(healthy_audit_run, %{"status" => "success"})
 
     failed_summary =
       call(conn, "wait_for_run", %{"run_id" => failed_audit_run.id, "timeout" => "0"})

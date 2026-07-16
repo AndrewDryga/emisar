@@ -23,6 +23,7 @@ alias Emisar.Runbooks
 alias Emisar.Runners
 alias Emisar.Runners.Runner
 alias Emisar.Runs
+alias Emisar.Runs.ActionRun
 alias Emisar.Users
 alias Emisar.Users.User
 # Approval emails go through Swoosh; in dev that's fine, but the seed
@@ -835,6 +836,21 @@ if existing_runs == [] do
     |> Repo.update!()
   end
 
+  persist_terminal_run = fn run, status, attrs ->
+    changeset =
+      ActionRun.Changeset.transition(run, status, Map.put(attrs, :finished_at, now.()))
+
+    {:ok, %{run: run}} =
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:run, changeset)
+      |> Ecto.Multi.run(:audit, fn repo, %{run: run} ->
+        repo.insert(Audit.run_event_changeset(run))
+      end)
+      |> Repo.commit_multi()
+
+    run
+  end
+
   backdate_request = fn request, requested_at ->
     request
     |> Ecto.Changeset.change(
@@ -865,17 +881,16 @@ if existing_runs == [] do
   finalize_success = fn run, finished_at, duration_ms, chunks ->
     append_chunks.(run, chunks)
 
-    {:ok, run} =
-      Runs.mark_finished(run, %{
-        "status" => "success",
-        "exit_code" => 0,
-        "duration_ms" => duration_ms,
-        "emitted_stdout_bytes" => chunks_bytes.(chunks, "stdout"),
-        "emitted_stderr_bytes" => chunks_bytes.(chunks, "stderr"),
-        "emitted_stdout_sha256" => chunks_sha.(chunks, "stdout"),
-        "emitted_stderr_sha256" => chunks_sha.(chunks, "stderr"),
-        "progress_chunks" => length(chunks),
-        "event_id" => "seed-" <> Ecto.UUID.generate()
+    run =
+      persist_terminal_run.(run, :success, %{
+        exit_code: 0,
+        duration_ms: duration_ms,
+        emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
+        emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
+        emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
+        emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
+        output_complete: true,
+        event_id: "seed-" <> Ecto.UUID.generate()
       })
 
     run
@@ -889,18 +904,17 @@ if existing_runs == [] do
   finalize_failure = fn run, finished_at, exit_code, reason, chunks ->
     append_chunks.(run, chunks)
 
-    {:ok, run} =
-      Runs.mark_finished(run, %{
-        "status" => "failed",
-        "exit_code" => exit_code,
-        "duration_ms" => 4500,
-        "reason" => reason,
-        "emitted_stdout_bytes" => chunks_bytes.(chunks, "stdout"),
-        "emitted_stderr_bytes" => chunks_bytes.(chunks, "stderr"),
-        "emitted_stdout_sha256" => chunks_sha.(chunks, "stdout"),
-        "emitted_stderr_sha256" => chunks_sha.(chunks, "stderr"),
-        "progress_chunks" => length(chunks),
-        "event_id" => "seed-" <> Ecto.UUID.generate()
+    run =
+      persist_terminal_run.(run, :failed, %{
+        exit_code: exit_code,
+        duration_ms: 4500,
+        error_message: reason,
+        emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
+        emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
+        emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
+        emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
+        output_complete: true,
+        event_id: "seed-" <> Ecto.UUID.generate()
       })
 
     run
@@ -1079,8 +1093,8 @@ if existing_runs == [] do
 
   append_chunks.(cancelled, systemd_restart_output)
 
-  {:ok, cancelled} =
-    Runs.mark_finished(cancelled, %{"status" => "cancelled"})
+  cancelled =
+    persist_terminal_run.(cancelled, :cancelled, %{cancelled_at: now.()})
 
   cancelled
   |> Ecto.Changeset.change(

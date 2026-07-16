@@ -1785,24 +1785,38 @@ defmodule Emisar.AuditTest do
     # pending/sent/running labels exist in the known list for the Type dropdown
     # only — they match no real audit row.
     test "pending → sent → running produces no audit_event rows" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      _ = Fixtures.Catalog.create_action(runner: runner)
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
 
       before = Repo.aggregate(Audit.Event, :count, :id)
 
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "operator",
-          args: %{}
-        })
+      assert {:ok, :running, sent} =
+               Runs.dispatch_run(
+                 %{
+                   account_id: account.id,
+                   runner_id: runner.id,
+                   action_id: "linux.uptime",
+                   source: "operator",
+                   reason: "audit lifecycle test",
+                   args: %{}
+                 },
+                 subject
+               )
 
-      assert run.status == :pending
-      {:ok, sent} = Runs.mark_sent(run)
+      sent = Repo.reload!(sent)
       assert sent.status == :sent
-      {:ok, running} = Runs.mark_running(sent)
+
+      assert {:ok, running} =
+               Runs.mark_started_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 sent.request_id
+               )
+
       assert running.status == :running
 
       assert Repo.aggregate(Audit.Event, :count, :id) == before

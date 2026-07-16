@@ -24,14 +24,12 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
         source: "operator"
       })
 
-    {:ok, run} = Runs.mark_sent(run)
-
     run =
       run
+      |> Fixtures.Runs.put_status(:running)
       |> Ecto.Changeset.change(runner_connection_generation: runner.connection_generation)
       |> Repo.update!()
 
-    {:ok, run} = Runs.mark_running(run)
     run
   end
 
@@ -45,7 +43,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
   # A run dispatched (`:sent`) but never acknowledged, queued `seconds_ago`.
   # Backdates `queued_at` (the sweep's staleness key) and `sent_at` (so a
-  # re-dispatch's fresh `mark_sent` is observable as a forward jump).
+  # re-dispatch's fresh sent timestamp is observable as a forward jump).
   defp sent_run_for(runner, seconds_ago) do
     {:ok, run} =
       Runs.create_run(%{
@@ -57,7 +55,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
         source: "operator"
       })
 
-    {:ok, run} = Runs.mark_sent(run)
+    run = Fixtures.Runs.put_status(run, :sent)
     at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
 
     run
@@ -77,7 +75,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :sent
-    # mark_sent re-stamped sent_at — proof the dispatch was re-sent, not no-op'd.
+    # The dispatch path re-stamped sent_at — proof it was re-sent, not no-op'd.
     assert DateTime.compare(reloaded.sent_at, run.sent_at) == :gt
   end
 

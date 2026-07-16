@@ -939,7 +939,7 @@ defmodule Emisar.Runs do
 
   @doc """
   Internal: dispatch a run for an explicit account with no `%Subject{}`.
-  Used by the runbook engine to continue a chain from the post-`mark_finished`
+  Used by the runbook engine to continue a chain after a terminal runner result
   callback, where no user is in scope. The originating dispatch already
   authorized the operator; the continuation re-validates by threading the
   initiating membership through `requested_by_membership_id`, so this path runs
@@ -1756,16 +1756,8 @@ defmodule Emisar.Runs do
 
   # -- State transitions ----------------------------------------------
   #
-  # These are called from inside `dispatch_run/2`, the runner socket
-  # process, and the runbook engine — all already-authorized paths.
-
-  def mark_sent(%ActionRun{} = run) do
-    transition(run, :sent, %{sent_at: DateTime.utc_now()})
-  end
-
-  def mark_running(%ActionRun{} = run) do
-    transition(run, :running, %{started_at: DateTime.utc_now()})
-  end
+  # These entry points are called only from already-authorized domain,
+  # runner-socket, and job paths.
 
   @doc """
   Internal — terminally cancel an unsent `:pending`/`:pending_approval` run in
@@ -1933,9 +1925,6 @@ defmodule Emisar.Runs do
     "signature_invalid" => :refused,
     "pack_hash_mismatch" => :refused
   }
-
-  def mark_finished(%ActionRun{} = run, result_payload),
-    do: mark_finished(run, result_payload, nil)
 
   defp mark_finished(%ActionRun{} = run, result_payload, connection) do
     status = Map.get(@result_statuses, result_payload["status"], :failed)
@@ -2345,24 +2334,6 @@ defmodule Emisar.Runs do
     repo = Keyword.get(opts, :repo, Repo)
     repo.update(ActionRun.Changeset.release_pending_approval(run))
   end
-
-  @doc """
-  Translates an inbound `action_result` envelope into a state transition
-  on the matching ActionRun. Scoped by runner_id so a runner can only
-  finalize runs that were dispatched to it. Returns
-  `{:error, :unknown_request_id}` if no matching run exists.
-
-  Internal — called from the runner socket.
-  """
-  def finalize_from_result(runner_id, %{"request_id" => request_id} = result) do
-    case fetch_run_by_request_id_for_runner(request_id, runner_id) do
-      {:error, :not_found} -> {:error, :unknown_request_id}
-      {:ok, %ActionRun{} = run} -> mark_finished(run, result)
-    end
-  end
-
-  def finalize_from_result(_runner_id, _msg),
-    do: {:error, :missing_request_id}
 
   @doc """
   Finalizes a result only while the emitting socket owns the runner. In-flight

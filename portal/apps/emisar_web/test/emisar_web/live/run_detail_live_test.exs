@@ -6,26 +6,27 @@ defmodule EmisarWeb.RunDetailLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Repo, Runs}
-  alias Emisar.Runners.Runner
   alias Emisar.Runs.RunEvent
 
   defp run_with(account, attrs) do
-    {:ok, runner} =
-      Runner.Changeset.register(%{
-        account_id: account.id,
-        name: "runner-1",
-        external_id: Ecto.UUID.generate(),
-        group: "default",
-        hostname: "10.0.5.12"
-      })
-      |> Repo.insert()
+    runner_id =
+      attrs[:runner_id] ||
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "runner-1",
+          group: "default",
+          hostname: "10.0.5.12",
+          connected?: Map.get(attrs, :runner_connected?, true)
+        ).id
+
+    attrs = Map.delete(attrs, :runner_connected?)
 
     {:ok, run} =
       Runs.create_run(
         Map.merge(
           %{
             account_id: account.id,
-            runner_id: runner.id,
+            runner_id: runner_id,
             action_id: "linux.uptime",
             source: "mcp",
             args: %{}
@@ -187,7 +188,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0,
@@ -206,7 +207,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0,
@@ -224,7 +225,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0,
@@ -243,7 +244,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0
@@ -504,7 +505,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "error",
         "error" => "runner disconnected, result never arrived"
@@ -529,7 +530,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       })
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "error",
         "error" => "boom"
@@ -548,7 +549,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     {:ok, updated} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0
@@ -566,7 +567,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "signature_invalid",
         "reason" => "bad_signature",
@@ -597,8 +598,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an in-flight run whose runner is offline shows the disconnected banner", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    # run_with's runner is registered but never tracked in presence → offline.
-    run = run_with(account, %{status: "running"})
+    run = run_with(account, %{status: "running", runner_connected?: false})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -607,8 +607,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a queued run whose runner is offline explains why it's stuck", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    # Offline runner (registered, never in presence) + a not-yet-dispatched run.
-    run = run_with(account, %{status: "pending"})
+    run = run_with(account, %{status: "pending", runner_connected?: false})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -635,7 +634,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "streaming"
 
     {:ok, finished} =
-      Runs.finalize_from_result(run.runner_id, %{
+      Fixtures.Runs.finish(run, %{
         "request_id" => run.request_id,
         "status" => "success",
         "exit_code" => 0
