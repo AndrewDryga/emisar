@@ -577,8 +577,10 @@ defmodule EmisarWeb.AgentsLive do
       kind: :local,
       # No `location`: the snippet is a command to RUN, not a file to edit.
       location: nil,
+      # Leading space (note the extra indent on the first line): a shell with
+      # `ignorespace`/`ignoreboth` keeps this key-bearing command out of history.
       body: """
-      claude mcp add emisar /usr/local/bin/emisar-mcp \\
+       claude mcp add emisar /usr/local/bin/emisar-mcp \\
           --scope user \\
           -e EMISAR_URL=#{url} \\
           -e EMISAR_API_KEY=#{key} \\
@@ -664,8 +666,10 @@ defmodule EmisarWeb.AgentsLive do
     %{
       kind: :local,
       location: nil,
+      # Leading space (extra indent on the first line): a shell with
+      # `ignorespace`/`ignoreboth` keeps this key-bearing command out of history.
       body: """
-      grok mcp add emisar \\
+       grok mcp add emisar \\
           -e EMISAR_URL=#{url} \\
           -e EMISAR_API_KEY=#{key} \\
           -e EMISAR_CLIENT=grok \\
