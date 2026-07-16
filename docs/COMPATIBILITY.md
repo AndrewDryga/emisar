@@ -16,8 +16,8 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.27.0`, runner
-`0.12.0`, and `emisar-mcp` `0.3.0`. Those component versions are release tips;
+components. The current release snapshot is product `v0.29.0`, runner
+`0.13.0`, and `emisar-mcp` `0.3.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -253,7 +253,7 @@ includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, and `--yes`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, and `ASSUME_YES`.
-The current release tags are `runner-v0.12.0` and `mcp-v0.3.0`. The bridge
+The current release tags are `runner-v0.13.0` and `mcp-v0.3.0`. The bridge
 installer also requires the selected GitHub release to be marked immutable.
 
 **What happens on skew.** A renamed installer flag or environment variable

@@ -207,7 +207,11 @@ counting, so every downstream representation uses one byte stream.
 
 `action_result` is emitted after the process exits or the runner refuses the
 call, and is replayed across reconnects until the portal returns `ack_result`.
-The portal finalizes it idempotently. It carries terminal status, exit code,
+If the portal's own persistence fails after it received the result, it sends a
+`finalize_failed` error frame (portal→runner) naming the `request_id`; the
+runner replays that one durable terminal result once on the same socket, so a
+transient persistence fault recovers without waiting for a reconnect. The
+reconnect replay remains the backstop. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
 truncation flags, redaction counts, masked executed command, reason, and the
 local audit event ID.
