@@ -82,7 +82,7 @@ defmodule EmisarWeb.MCP.ActionContract do
   end
 
   defp coerce(%{"name" => name, "type" => "number"}, value) do
-    case finite_float(value) do
+    case exact_number(value) do
       {:ok, number} -> {:ok, number}
       :error -> issue(name, "type", "expected number")
     end
@@ -195,10 +195,15 @@ defmodule EmisarWeb.MCP.ActionContract do
     end
   end
 
-  defp validate_membership(%{"name" => name}, value, validation, key) do
+  defp validate_membership(%{"name" => name, "type" => type}, value, validation, key) do
     case validation[key] do
       candidates when is_list(candidates) and candidates != [] ->
-        if Enum.any?(candidates, &(&1 == value)),
+        matches? =
+          if type in ["integer", "number", "integer_array"],
+            do: Enum.any?(candidates, &numeric_equal?(value, &1)),
+            else: Enum.any?(candidates, &(&1 == value))
+
+        if matches?,
           do: :ok,
           else: issue(name, key, "is not an allowed value")
 
@@ -207,12 +212,13 @@ defmodule EmisarWeb.MCP.ActionContract do
     end
   end
 
-  defp validate_numeric_bounds(%{"name" => name}, value, validation) when is_number(value) do
+  defp validate_numeric_bounds(%{"name" => name, "type" => type}, value, validation)
+       when type in ["integer", "number", "integer_array"] do
     cond do
-      is_number(validation["min"]) and value < validation["min"] ->
+      numeric_compare(value, validation["min"]) == :lt ->
         issue(name, "min", "is below the minimum")
 
-      is_number(validation["max"]) and value > validation["max"] ->
+      numeric_compare(value, validation["max"]) == :gt ->
         issue(name, "max", "is above the maximum")
 
       true ->
@@ -289,22 +295,43 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   defp exact_integer(_value), do: :error
 
-  defp finite_float(%Number{raw: raw}), do: finite_float(raw)
-
-  defp finite_float(value) when is_integer(value), do: finite_float(Integer.to_string(value))
-  defp finite_float(value) when is_float(value), do: {:ok, value}
-
-  defp finite_float(value) when is_binary(value) do
-    case Float.parse(value) do
-      {number, ""} ->
-        {:ok, number}
-
-      _ ->
-        :error
+  defp exact_number(%Number{raw: raw}) do
+    with {_float, ""} <- Float.parse(raw),
+         {decimal, ""} <- Decimal.parse(raw) do
+      {:ok, decimal}
+    else
+      _ -> :error
     end
   end
 
-  defp finite_float(_value), do: :error
+  defp exact_number(value) when is_integer(value), do: {:ok, Decimal.new(value)}
+  defp exact_number(value) when is_float(value), do: {:ok, Decimal.from_float(value)}
+  defp exact_number(_value), do: :error
+
+  defp numeric_equal?(left, right) do
+    with {:ok, left} <- exact_decimal(left),
+         {:ok, right} <- exact_decimal(right) do
+      Decimal.equal?(left, right)
+    else
+      _ -> false
+    end
+  end
+
+  defp numeric_compare(_value, nil), do: :not_numeric
+
+  defp numeric_compare(left, right) do
+    with {:ok, left} <- exact_decimal(left),
+         {:ok, right} <- exact_decimal(right) do
+      Decimal.compare(left, right)
+    else
+      _ -> :not_numeric
+    end
+  end
+
+  defp exact_decimal(%Decimal{} = value), do: {:ok, value}
+  defp exact_decimal(value) when is_integer(value), do: {:ok, Decimal.new(value)}
+  defp exact_decimal(value) when is_float(value), do: {:ok, Decimal.from_float(value)}
+  defp exact_decimal(_value), do: :error
 
   defp duration_nanoseconds(value) when is_binary(value) do
     if Regex.match?(@duration, value) do

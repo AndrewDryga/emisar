@@ -40,6 +40,66 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert_issue(%{"count" => 1, "mode" => "unsafe"}, action, "mode", "enum")
   end
 
+  test "matches exact runner number membership and bounds" do
+    exact =
+      action([
+        arg("ratio", "number", validation: %{"enum" => [1.25], "max" => 1.25}),
+        arg("large", "integer", validation: %{"allowed" => [9_007_199_254_740_993]}),
+        arg("tiny", "number", validation: %{"min" => 0})
+      ])
+
+    assert :ok =
+             validate_json(
+               ~s({"ratio":1.250,"large":9007199254740993,"tiny":1e-400}),
+               exact
+             )
+
+    assert_issue_json(
+      ~s({"ratio":1.2500000000000001,"large":9007199254740993,"tiny":1e-400}),
+      exact,
+      "ratio",
+      "enum"
+    )
+
+    assert_issue_json(
+      ~s({"ratio":1.25,"large":9007199254740992,"tiny":1e-400}),
+      exact,
+      "large",
+      "allowed"
+    )
+
+    assert_issue_json(
+      ~s({"ratio":1.25,"large":9007199254740993,"tiny":-1e-400}),
+      exact,
+      "tiny",
+      "min"
+    )
+
+    zero = action([arg("value", "number", validation: %{"enum" => [0]})])
+    assert :ok = validate_json(~s({"value":-0}), zero)
+    assert_issue_json(~s({"value":1e-400}), zero, "value", "enum")
+
+    decimal_max = action([arg("value", "number", validation: %{"max" => 1.25})])
+    assert_issue_json(~s({"value":1.2500000000000001}), decimal_max, "value", "max")
+
+    integer_max =
+      action([arg("value", "integer", validation: %{"max" => 9_007_199_254_740_992.0})])
+
+    assert_issue_json(~s({"value":9007199254740993}), integer_max, "value", "max")
+  end
+
+  test "matches runner float64 admissibility at the finite boundary" do
+    action = action([arg("value", "number")])
+
+    for raw <- ["2e-324", "3e-324", "1.797693134862315807e308"] do
+      assert :ok = validate_json(~s({"value":#{raw}}), action)
+    end
+
+    for raw <- ["1.797693134862315808e308", "1e309"] do
+      assert_issue_json(~s({"value":#{raw}}), action, "value", "type")
+    end
+  end
+
   test "applies byte, array element, duration, and portable path limits" do
     action =
       action([
@@ -124,6 +184,15 @@ defmodule EmisarWeb.MCP.ActionContractTest do
 
   defp assert_issue(args, action, arg, code) do
     assert {:error, %{arg: ^arg, code: ^code}} = ActionContract.validate(args, action)
+  end
+
+  defp assert_issue_json(json, action, arg, code) do
+    assert {:error, %{arg: ^arg, code: ^code}} = validate_json(json, action)
+  end
+
+  defp validate_json(json, action) do
+    {:ok, args} = RawJSON.decode_object(json)
+    ActionContract.validate(args, action)
   end
 
   defp action(args), do: %{args_schema: %{"args" => args}}
