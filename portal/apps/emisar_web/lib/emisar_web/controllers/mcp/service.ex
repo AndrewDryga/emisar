@@ -134,7 +134,7 @@ defmodule EmisarWeb.MCP.Service do
       finished_at: run.finished_at,
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
-      error_message: error_message_preview(run.error_message),
+      error_message: fixed_error_message(run),
       stdout: output_preview.stdout,
       stderr: output_preview.stderr,
       emitted_stdout_bytes: run.emitted_stdout_bytes,
@@ -200,6 +200,31 @@ defmodule EmisarWeb.MCP.Service do
   end
 
   defp fixed_approval(_run, _subject), do: {nil, nil}
+
+  # Policy and approval causes are control-plane facts. Do not substitute the
+  # operator's freeform run reason here: it is untrusted context and may carry
+  # action-specific secrets.
+  defp fixed_error_message(%{status: :denied} = run),
+    do: policy_denial_preview(run.policy_reason)
+
+  defp fixed_error_message(%{
+         status: :cancelled,
+         reason_text: <<"approval denied", _::binary>> = reason
+       }),
+       do: error_message_preview(reason)
+
+  defp fixed_error_message(%{error_message: message}), do: error_message_preview(message)
+
+  defp policy_denial_preview(reason) when is_binary(reason) do
+    if String.trim(reason) == "" do
+      "Denied by policy: no specific policy reason was recorded."
+    else
+      error_message_preview("Denied by policy: " <> reason)
+    end
+  end
+
+  defp policy_denial_preview(_reason),
+    do: "Denied by policy: no specific policy reason was recorded."
 
   # DispatchTimeout gives an acknowledged-or-terminal decision ten minutes
   # after queueing. Expose that durable deadline rather than inventing a wait

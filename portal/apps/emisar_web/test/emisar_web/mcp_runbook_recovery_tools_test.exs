@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   use EmisarWeb.ConnCase, async: true
   import EmisarWeb.MCPContractAssertions
-  alias Emisar.{ApiKeys, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
+  alias Emisar.{ApiKeys, Approvals, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
   alias Emisar.MCPOperations.Operation
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.MCP.ResponseBudget
@@ -674,6 +674,75 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute preview == cause
   end
 
+  test "recent history explains policy denials and approval rejections without operator input", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "denial-summary")
+    secret = "password=do-not-echo"
+
+    default_denied_run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :denied,
+        policy_decision: "deny",
+        policy_reason: "Default for critical-risk actions",
+        reason: secret
+      })
+
+    explicit_denied_run =
+      create_mcp_history_run!(account, runner, key, 2, %{
+        status: :denied,
+        policy_decision: "deny",
+        policy_reason: "Override: block-critical " <> String.duplicate("policy-rule-", 18),
+        matched_rules: ["block-critical"]
+      })
+
+    generic_denied_run =
+      create_mcp_history_run!(account, runner, key, 3, %{
+        status: :denied,
+        policy_decision: "deny",
+        policy_reason: nil
+      })
+
+    approval_run =
+      create_mcp_history_run!(account, runner, key, 4, %{
+        status: :pending_approval,
+        policy_decision: "require_approval",
+        policy_reason: "Default for high-risk actions"
+      })
+
+    {:ok, request} = Approvals.create_request(approval_run, user.id, "needs review")
+
+    assert {:ok, {%{status: :denied}, %{status: :cancelled}}} =
+             Approvals.deny_request(request, subject, "not during the change freeze")
+
+    summaries = call(conn, "recent_runs", %{})["runs"]
+    default_summary = Enum.find(summaries, &(&1["run_id"] == default_denied_run.id))
+    explicit_summary = Enum.find(summaries, &(&1["run_id"] == explicit_denied_run.id))
+    generic_summary = Enum.find(summaries, &(&1["run_id"] == generic_denied_run.id))
+    approval_summary = Enum.find(summaries, &(&1["run_id"] == approval_run.id))
+
+    assert default_summary["error_message"] ==
+             "Denied by policy: Default for critical-risk actions"
+
+    assert String.starts_with?(
+             explicit_summary["error_message"],
+             "Denied by policy: Override: block-critical"
+           )
+
+    assert generic_summary["error_message"] ==
+             "Denied by policy: no specific policy reason was recorded."
+
+    assert approval_summary["error_message"] == "approval denied: not during the change freeze"
+    refute Jason.encode!(summaries) =~ secret
+
+    assert byte_size(explicit_summary["error_message"]) <= 1_024
+    assert String.valid?(explicit_summary["error_message"])
+  end
+
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
     result =
       call(conn, "wait_for_run", %{
@@ -722,20 +791,24 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     |> post(~p"/api/mcp/rpc", Jason.encode!(body))
   end
 
-  defp create_mcp_history_run!(account, runner, key, index) do
-    attrs = %{
-      account_id: account.id,
-      runner_id: runner.id,
-      request_id: Emisar.Crypto.run_request_id(),
-      action_id: "operations.health",
-      source: :mcp,
-      status: :pending,
-      api_key_id: key.id,
-      operation_id: "op_024NN9NMDZ1T76NARWCKM5A0D6",
-      pack_ref: @pack_ref,
-      runner_ref: runner_ref(runner),
-      reason: "History budget #{index}"
-    }
+  defp create_mcp_history_run!(account, runner, key, index, overrides \\ %{}) do
+    attrs =
+      Map.merge(
+        %{
+          account_id: account.id,
+          runner_id: runner.id,
+          request_id: Emisar.Crypto.run_request_id(),
+          action_id: "operations.health",
+          source: :mcp,
+          status: :pending,
+          api_key_id: key.id,
+          operation_id: "op_024NN9NMDZ1T76NARWCKM5A0D6",
+          pack_ref: @pack_ref,
+          runner_ref: runner_ref(runner),
+          reason: "History budget #{index}"
+        },
+        Map.new(overrides)
+      )
 
     attrs |> ActionRun.Changeset.create() |> Repo.insert!()
   end
