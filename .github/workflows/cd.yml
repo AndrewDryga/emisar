@@ -389,7 +389,9 @@ jobs:
           echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
 
       - name: Require published pack catalog
-        if: steps.current.outputs.current == 'true'
+        # Only pack releases need the live registry equality check. Portal,
+        # infra, and docs-only plans must not depend on registry availability.
+        if: steps.current.outputs.current == 'true' && needs.ci.outputs.packs_release == 'true'
         run: |
           set -euo pipefail
           curl -fsS --retry 5 --retry-delay 2 \
