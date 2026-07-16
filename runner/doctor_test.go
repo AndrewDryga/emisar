@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
@@ -271,6 +273,86 @@ func TestCheckCloud(t *testing.T) {
 			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
 		}
 	})
+}
+
+func TestCheckCloudReportsRecentTerminalShutdown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	now := time.Now().UTC()
+	tests := []struct {
+		name       string
+		state      *cloud.TerminalShutdownState
+		wantStatus checkStatus
+		wantDetail []string
+	}{
+		{
+			name: "recent unsupported runner is actionable",
+			state: &cloud.TerminalShutdownState{
+				Reason:    "runner_version_unsupported",
+				Message:   "upgrade to 1.2.3",
+				Timestamp: now.Add(-time.Minute),
+			},
+			wantStatus: checkFail,
+			wantDetail: []string{"cloud rejected this runner", "runner_version_unsupported", "upgrade to 1.2.3", "upgrade the runner"},
+		},
+		{
+			name: "recent revoked runner is actionable",
+			state: &cloud.TerminalShutdownState{
+				Reason:    "runner_revoked",
+				Message:   "runner disabled",
+				Timestamp: now.Add(-time.Minute),
+			},
+			wantStatus: checkFail,
+			wantDetail: []string{"cloud rejected this runner", "runner_revoked", "runner disabled", "enable or re-register"},
+		},
+		{
+			name: "stale rejection falls back to reachability",
+			state: &cloud.TerminalShutdownState{
+				Reason:    "runner_revoked",
+				Message:   "old rejection",
+				Timestamp: now.Add(-cloud.TerminalShutdownFreshness - time.Minute),
+			},
+			wantStatus: checkOK,
+			wantDetail: []string{"reachable"},
+		},
+		{
+			name:       "missing rejection falls back to reachability",
+			wantStatus: checkOK,
+			wantDetail: []string{"reachable"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if test.state != nil {
+				body, err := json.Marshal(test.state)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(cloud.TerminalShutdownStatePath(dir), body, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			cfg := &config.Config{
+				Cloud: config.Cloud{URL: "ws://" + hostOf(srv.URL)},
+				Paths: config.Paths{DataDir: dir},
+			}
+			got := checkCloud(context.Background(), cfg, srv.Client())
+			if got.status != test.wantStatus {
+				t.Fatalf("status = %v, want %v (%s)", got.status, test.wantStatus, got.detail)
+			}
+			for _, want := range test.wantDetail {
+				if !strings.Contains(got.detail, want) {
+					t.Errorf("detail %q missing %q", got.detail, want)
+				}
+			}
+		})
+	}
 }
 
 func hostOf(rawURL string) string {

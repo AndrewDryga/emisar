@@ -120,14 +120,15 @@ env var can be unset after the first successful connect.`,
 				Admission:   rt.admission,
 			}
 			client := cloud.NewClient(dialer, cloud.Options{
-				StateBuilder:   builder,
-				Engine:         rt.engine,
-				DedupStorePath: dispatchLogPath(rt.cfg.Paths.DataDir),
-				Logger:         logger,
-				HeartbeatEvery: rt.cfg.Cloud.HeartbeatEvery.Std(),
-				ReconnectMin:   rt.cfg.Cloud.ReconnectMin.Std(),
-				ReconnectMax:   rt.cfg.Cloud.ReconnectMax.Std(),
-				Verifier:       verifier,
+				StateBuilder:         builder,
+				Engine:               rt.engine,
+				DedupStorePath:       dispatchLogPath(rt.cfg.Paths.DataDir),
+				TerminalShutdownPath: cloud.TerminalShutdownStatePath(rt.cfg.Paths.DataDir),
+				Logger:               logger,
+				HeartbeatEvery:       rt.cfg.Cloud.HeartbeatEvery.Std(),
+				ReconnectMin:         rt.cfg.Cloud.ReconnectMin.Std(),
+				ReconnectMax:         rt.cfg.Cloud.ReconnectMax.Std(),
+				Verifier:             verifier,
 			})
 			// Advertise the trusted key set live: the builder reads the client's
 			// verifier (like it reads the engine registry), so a SIGHUP key swap

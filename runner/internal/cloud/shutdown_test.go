@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -93,8 +95,10 @@ func TestClient_DispatchShutdownLogsAndClassifiesReason(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			capture := &shutdownLogHandler{}
+			statePath := filepath.Join(t.TempDir(), "state", "terminal_shutdown.json")
 			cli := buildClient(t, &queuedDialer{}, func(opts *Options) {
 				opts.Logger = slog.New(capture)
+				opts.TerminalShutdownPath = statePath
 			})
 
 			err := cli.dispatch(context.Background(), shutdownFrame(t, test.reason, test.message))
@@ -122,7 +126,48 @@ func TestClient_DispatchShutdownLogsAndClassifiesReason(t *testing.T) {
 			if shutdown.attrs["message"] != test.message {
 				t.Fatalf("shutdown message = %q, want %q", shutdown.attrs["message"], test.message)
 			}
+
+			state, stateErr := ReadRecentTerminalShutdown(statePath, time.Now().UTC())
+			if stateErr != nil {
+				t.Fatalf("read terminal shutdown state: %v", stateErr)
+			}
+			if test.terminal {
+				if state == nil {
+					t.Fatal("terminal shutdown did not persist state")
+				}
+				if state.Reason != test.reason || state.Message != test.message {
+					t.Fatalf("state = %+v, want reason=%q message=%q", state, test.reason, test.message)
+				}
+			} else if state != nil {
+				t.Fatalf("non-terminal shutdown persisted state: %+v", state)
+			}
 		})
+	}
+}
+
+func TestClient_ClearsTerminalShutdownStateAfterConnect(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state", "terminal_shutdown.json")
+	if err := WriteTerminalShutdown(statePath, "runner_revoked", "runner disabled"); err != nil {
+		t.Fatalf("seed terminal shutdown state: %v", err)
+	}
+
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}}, func(opts *Options) {
+		opts.TerminalShutdownPath = statePath
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	waitUntil(t, time.Second, func() bool {
+		return len(conn.sentByType(MsgRunnerState)) == 1
+	})
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("terminal shutdown state after successful connect: stat error=%v", err)
 	}
 }
 

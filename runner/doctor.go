@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -272,6 +273,9 @@ func binaryAvailable(bin string) bool {
 // proves reachability, an https probe proves TLS, and the Date header surfaces
 // a skewed host clock.
 func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) checkResult {
+	shutdown, shutdownErr := cloud.ReadRecentTerminalShutdown(
+		cloud.TerminalShutdownStatePath(cfg.Paths.DataDir), time.Now().UTC(),
+	)
 	probeURL, err := httpProbeURL(cfg.Cloud.URL)
 	if err != nil {
 		return checkResult{"cloud", checkFail, err.Error()}
@@ -282,6 +286,10 @@ func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) ch
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if shutdown != nil {
+			return checkResult{"cloud", checkFail, fmt.Sprintf(
+				"%s; %s unreachable: %v", terminalShutdownDetail(shutdown), cfg.Cloud.URL, err)}
+		}
 		return checkResult{"cloud", checkFail, fmt.Sprintf("%s unreachable: %v", cfg.Cloud.URL, err)}
 	}
 	_ = resp.Body.Close()
@@ -290,11 +298,33 @@ func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) ch
 	if strings.HasPrefix(probeURL, "https://") {
 		detail += " (TLS ok)"
 	}
+	if shutdown != nil {
+		return checkResult{"cloud", checkFail, terminalShutdownDetail(shutdown)}
+	}
+	if shutdownErr != nil {
+		return checkResult{"cloud", checkWarn, fmt.Sprintf(
+			"%s, but the terminal shutdown state could not be read: %v", detail, shutdownErr)}
+	}
 	if skew, ok := clockSkew(resp.Header.Get("Date")); ok && skew > clockSkewThreshold {
 		return checkResult{"cloud", checkWarn, fmt.Sprintf(
 			"%s, but the host clock is off by ~%s — fix NTP", detail, skew.Round(time.Second))}
 	}
 	return checkResult{"cloud", checkOK, detail}
+}
+
+func terminalShutdownDetail(shutdown *cloud.TerminalShutdownState) string {
+	detail := fmt.Sprintf("cloud rejected this runner: %s", shutdown.Reason)
+	if shutdown.Message != "" {
+		detail += " — " + shutdown.Message
+	}
+	switch shutdown.Reason {
+	case "runner_version_unsupported":
+		return detail + "; upgrade the runner and restart it"
+	case "runner_revoked":
+		return detail + "; enable or re-register the runner in the control plane and restart it"
+	default:
+		return detail + "; update the runner state in the control plane and restart it"
+	}
 }
 
 // httpProbeURL maps the websocket control-plane URL to the HTTP(S) origin to

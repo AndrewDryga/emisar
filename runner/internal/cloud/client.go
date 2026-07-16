@@ -67,6 +67,11 @@ type Options struct {
 	// action — double-running a mutating action.
 	DedupStorePath string
 
+	// TerminalShutdownPath persists terminal cloud rejections so a later
+	// `emisar doctor` can explain why this runner stopped. Empty disables the
+	// optional diagnostic state, which is useful for in-memory test clients.
+	TerminalShutdownPath string
+
 	// Verifier is the INITIAL signature verifier gating dispatches; SIGHUP
 	// swaps it live via Client.SetVerifier. Nil (or a non-enforcing verifier)
 	// means client-signature enforcement is disabled.
@@ -278,6 +283,9 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	if err := conn.Send(sessionCtx, state); err != nil {
 		return true, fmt.Errorf("send state: %w", err)
 	}
+	if err := ClearTerminalShutdown(c.opts.TerminalShutdownPath); err != nil {
+		c.opts.Logger.Warn("cloud.shutdown_state_clear_failed", "error", err)
+	}
 	requeuedResults := c.requeueUnacknowledgedResults()
 	requeuedStarts := c.requeueActiveStarts()
 	c.opts.Logger.Info("cloud.connected",
@@ -442,6 +450,11 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		}
 		c.opts.Logger.Warn("cloud.shutdown", "reason", m.Reason, "message", m.Message)
 		if terminalShutdownReason(m.Reason) {
+			if c.opts.TerminalShutdownPath != "" {
+				if err := WriteTerminalShutdown(c.opts.TerminalShutdownPath, m.Reason, m.Message); err != nil {
+					c.opts.Logger.Error("cloud.shutdown_state_write_failed", "reason", m.Reason, "error", err)
+				}
+			}
 			return fmt.Errorf("%w: reason=%s", errTerminalShutdown, m.Reason)
 		}
 	default:
