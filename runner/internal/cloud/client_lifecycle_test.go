@@ -64,6 +64,100 @@ func TestClient_AckRun_PrematureAckIgnored(t *testing.T) {
 	})
 }
 
+func TestClient_InFlightDuplicateDeliveryIsDropped(t *testing.T) {
+	tests := []struct {
+		name              string
+		duplicateActionID string
+		duplicateArgs     map[string]any
+		wantLog           string
+		wantLogLevel      slog.Level
+	}{
+		{
+			name:              "same dispatch",
+			duplicateActionID: "t.sleep",
+			wantLog:           "cloud.duplicate_in_flight",
+			wantLogLevel:      slog.LevelWarn,
+		},
+		{
+			name:              "same request with different facts",
+			duplicateActionID: "t.echo",
+			duplicateArgs:     map[string]any{"msg": "must not replace the active action"},
+			wantLog:           "cloud.duplicate_in_flight_conflict",
+			wantLogLevel:      slog.LevelError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := newFakeConn()
+			logs := &shutdownLogHandler{}
+			cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}}, func(opts *Options) {
+				opts.Logger = slog.New(logs)
+			})
+
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- cli.Run(ctx) }()
+			t.Cleanup(func() {
+				cancel()
+				<-done
+			})
+
+			requestID := testRequestID("req_duplicate_" + tc.name)
+			sendRunAction(t, conn, cli, requestID, "t.sleep", nil)
+			waitUntil(t, 3*time.Second, func() bool {
+				return cli.countInflight() == 1 && countMessagesForRequest(conn, MsgActionStarted, requestID) == 1
+			})
+
+			// The existing runState is the in-flight dedup key. A duplicate is
+			// dropped before it can reserve, queue, or spawn another handler.
+			sendRunActionWithPackContract(
+				t, conn, requestID, tc.duplicateActionID, tc.duplicateArgs,
+				currentPackHash(t, cli, "t"), "",
+			)
+
+			var duplicateLog shutdownLogEntry
+			waitUntil(t, 3*time.Second, func() bool {
+				for _, entry := range logs.entriesSnapshot() {
+					if entry.message == tc.wantLog && entry.attrs["request_id"] == requestID {
+						duplicateLog = entry
+						return true
+					}
+				}
+				return false
+			})
+			if duplicateLog.level != tc.wantLogLevel {
+				t.Fatalf("duplicate log level=%s, want %s", duplicateLog.level, tc.wantLogLevel)
+			}
+			if got := countMessagesForRequest(conn, MsgActionStarted, requestID); got != 1 {
+				t.Fatalf("action_started count before cancellation=%d, want 1", got)
+			}
+			if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != 0 {
+				t.Fatalf("duplicate produced %d result(s) while original was in flight", got)
+			}
+
+			raw, err := json.Marshal(CancelMsg{Envelope: Envelope{
+				Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: requestID,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.in <- raw
+			result := waitForResult(t, conn, requestID, 10*time.Second)
+			if result["status"] != "cancelled" {
+				t.Fatalf("status=%v, want cancelled", result["status"])
+			}
+			waitUntil(t, 3*time.Second, func() bool { return cli.countInflight() == 0 })
+			if got := countMessagesForRequest(conn, MsgActionStarted, requestID); got != 1 {
+				t.Fatalf("action_started count=%d, want exactly 1", got)
+			}
+			if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != 1 {
+				t.Fatalf("action_result count=%d, want exactly 1", got)
+			}
+		})
+	}
+}
+
 func TestClient_ReconnectRequeuesCompletedResultUntilAcknowledged(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
 	result := ActionResultMsg{
