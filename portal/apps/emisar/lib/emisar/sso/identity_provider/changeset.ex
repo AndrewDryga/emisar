@@ -39,7 +39,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
       scim_enabled: enabled
     )
     |> unique_constraint(:scim_token_prefix,
-      name: :identity_providers_scim_token_prefix_index
+      name: :sso_identity_providers_scim_token_prefix_index
     )
   end
 
@@ -62,10 +62,10 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     |> validate_issuer()
     |> normalize_allowed_email_domain()
     |> unique_constraint([:account_id, :kind],
-      name: :identity_providers_account_kind_enabled_index
+      name: :sso_identity_providers_account_kind_enabled_index
     )
     |> unique_constraint(:allowed_email_domain,
-      name: :identity_providers_allowed_email_domain_enabled_index
+      name: :sso_identity_providers_allowed_email_domain_enabled_index
     )
   end
 

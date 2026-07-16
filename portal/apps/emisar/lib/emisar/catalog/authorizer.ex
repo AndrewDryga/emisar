@@ -28,8 +28,8 @@ defmodule Emisar.Catalog.Authorizer do
   @impl Emisar.Auth.Authorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
-      :runner_actions -> RunnerAction.Query.by_account_id(queryable, account_id)
-      :pack_versions -> PackVersion.Query.by_account_id(queryable, account_id)
+      :catalog_runner_actions -> RunnerAction.Query.by_account_id(queryable, account_id)
+      :catalog_pack_versions -> PackVersion.Query.by_account_id(queryable, account_id)
       _ -> queryable
     end
   end

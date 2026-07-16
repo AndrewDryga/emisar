@@ -28,7 +28,7 @@ defmodule Emisar.Catalog.PackVersion do
   """
   use Emisar, :schema
 
-  schema "pack_versions" do
+  schema "catalog_pack_versions" do
     field :pack_id, :string
     field :version, :string
     field :hash, :string

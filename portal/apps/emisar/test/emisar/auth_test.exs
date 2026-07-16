@@ -110,7 +110,7 @@ defmodule Emisar.AuthTest do
       # that enum value. Written at the DB layer to bypass the enum cast —
       # exactly how it lands in a real DB after the enum narrows. Loading it
       # must resolve to :not_found, not raise ArgumentError and 500 the request.
-      Ecto.Adapters.SQL.query!(Repo, "UPDATE user_tokens SET auth_method = 'password'", [])
+      Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
 
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
     end

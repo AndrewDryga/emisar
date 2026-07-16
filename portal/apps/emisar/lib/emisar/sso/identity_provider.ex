@@ -11,7 +11,7 @@ defmodule Emisar.SSO.IdentityProvider do
   @kinds [:google_workspace, :okta, :jumpcloud, :keycloak, :openid_connect]
   @provisioners [:jit, :manual]
 
-  schema "identity_providers" do
+  schema "sso_identity_providers" do
     field :kind, Ecto.Enum, values: @kinds
     field :provisioner, Ecto.Enum, values: @provisioners, default: :jit
     field :name, :string

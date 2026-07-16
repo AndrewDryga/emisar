@@ -471,7 +471,7 @@ The rule needs no judgment call about whether prod ran it:
 - To change a committed schema, add a forward migration: `alter table` to add/drop a column, or `drop_if_exists index(...)` + `create unique_index(..., where: ...)` to swap an index in place (the column-derived default index name is stable, so changeset `unique_constraint/3` calls keep matching). For an upsert against a partial index, `conflict_target` must carry the predicate via `{:unsafe_fragment, "(cols) WHERE deleted_at IS NULL"}`.
 - Removing/renaming an `Ecto.Enum` value, or making a column `NOT NULL`, needs a **data migration in the SAME change** — backfill or clean the existing rows first, or one orphaned row crashes the read path on load.
 
-Worked example + the dev-DB rollback gotcha: `.agent/rules/elixir-migrations-frozen.md`.
+Worked example + the dev-DB rollback gotcha: `.agent/rules/elixir-migrations-frozen.md`. A table RENAME must sweep five surfaces in the same change (constraint/index renames, the schema string, explicit `name:` options, `for_subject` `query_source` atom clauses, raw-SQL strings) or IL-4 row scoping silently breaks: `.agent/rules/elixir-table-rename-sweep.md`.
 
 ---
 

@@ -211,7 +211,7 @@ defmodule Emisar.Billing do
   # Deliberately peek-then-insert/update rather than an `on_conflict` true-upsert:
   # webhook payloads carry PARTIAL attr sets (e.g. cancel carries only `status`),
   # so a replace-set upsert would null fields the event didn't mention. The INSERT
-  # race is closed by `unique_index(:subscriptions, [:account_id])` (a concurrent
+  # race is closed by `unique_index(:billing_subscriptions, [:account_id])` (a concurrent
   # first-insert loses with a constraint error; Paddle's redelivery then takes the
   # update branch); the UPDATE race is closed by the LOCKED re-read below
   # (`fetch_and_update` → FOR NO KEY UPDATE), so a concurrent webhook + hourly

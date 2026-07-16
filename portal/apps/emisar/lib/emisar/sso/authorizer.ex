@@ -18,16 +18,16 @@ defmodule Emisar.SSO.Authorizer do
   @impl Emisar.Auth.Authorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
-      :identity_providers ->
+      :sso_identity_providers ->
         IdentityProvider.Query.by_account_id(queryable, account_id)
 
-      :user_identities ->
+      :sso_user_identities ->
         UserIdentity.Query.by_account_id(queryable, account_id)
 
-      :directory_group_role_mappings ->
+      :sso_directory_group_role_mappings ->
         GroupRoleMapping.Query.by_account_id(queryable, account_id)
 
-      :directory_group_members ->
+      :sso_directory_group_members ->
         DirectoryGroupMember.Query.by_account_id(queryable, account_id)
 
       :sso_link_requests ->

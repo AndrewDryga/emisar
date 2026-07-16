@@ -8,7 +8,7 @@ defmodule Emisar.SSO.GroupRoleMapping do
   use Emisar, :schema
   alias Emisar.Auth
 
-  schema "directory_group_role_mappings" do
+  schema "sso_directory_group_role_mappings" do
     field :external_group_id, :string
     field :external_group_display, :string
     field :role, Ecto.Enum, values: Auth.Role.all()

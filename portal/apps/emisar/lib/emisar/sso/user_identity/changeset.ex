@@ -20,10 +20,10 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
       :provisioned_via
     ])
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
-      name: :user_identities_provider_identifier_index
+      name: :sso_user_identities_provider_identifier_index
     )
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
-      name: :user_identities_scim_external_id_index
+      name: :sso_user_identities_scim_external_id_index
     )
   end
 

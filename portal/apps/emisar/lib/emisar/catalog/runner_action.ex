@@ -6,7 +6,7 @@ defmodule Emisar.Catalog.RunnerAction do
   """
   use Emisar, :schema
 
-  schema "runner_actions" do
+  schema "catalog_runner_actions" do
     field :action_id, :string
     field :pack_id, :string
     field :pack_version, :string

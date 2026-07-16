@@ -8,7 +8,7 @@ defmodule Emisar.SSO.DirectoryGroupMember do
   """
   use Emisar, :schema
 
-  schema "directory_group_members" do
+  schema "sso_directory_group_members" do
     field :external_group_id, :string
 
     field :deleted_at, :utc_datetime_usec

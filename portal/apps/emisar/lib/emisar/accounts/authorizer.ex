@@ -60,7 +60,7 @@ defmodule Emisar.Accounts.Authorizer do
   def for_subject(queryable, %Subject{account: %Account{id: account_id}}) do
     case query_source(queryable) do
       :accounts -> Account.Query.by_id(queryable, account_id)
-      :memberships -> Membership.Query.by_account_id(queryable, account_id)
+      :account_memberships -> Membership.Query.by_account_id(queryable, account_id)
       :users -> queryable
       _ -> queryable
     end

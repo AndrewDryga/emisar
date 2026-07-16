@@ -18,7 +18,7 @@ defmodule Emisar.SSO.UserIdentity do
   @created_by [:provider, :admin]
   @provisioned_via [:oidc_jit, :scim, :manual]
 
-  schema "user_identities" do
+  schema "sso_user_identities" do
     field :provider_identifier, :string
     field :claims, :map, default: %{}
     field :created_by, Ecto.Enum, values: @created_by

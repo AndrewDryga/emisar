@@ -8,7 +8,7 @@ defmodule Emisar.Accounts.Membership do
 
   @roles Auth.Role.all()
 
-  schema "memberships" do
+  schema "account_memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator
     # True when a directory sync (SCIM group->role recompute) owns this role, so
     # the operator role-change path (`Accounts.update_membership_role`) rejects a

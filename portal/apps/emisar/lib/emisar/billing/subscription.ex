@@ -6,7 +6,7 @@ defmodule Emisar.Billing.Subscription do
   """
   use Emisar, :schema
 
-  schema "subscriptions" do
+  schema "billing_subscriptions" do
     field :paddle_subscription_id, :string
     field :paddle_price_id, :string
     # `plan` and `status` are deliberately :string, not Ecto.Enum: this row is
