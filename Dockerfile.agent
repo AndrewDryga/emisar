@@ -53,4 +53,13 @@ RUN cd /home/node \
  && asdf reshim \
  && { command -v mix >/dev/null 2>&1 && mix local.hex --force && mix local.rebar --force || true; }
 
+# Login shells source /etc/profile, which RESETS PATH to the Debian default and
+# hides every asdf shim (go, elixir, …) — agents routinely shell out via
+# `bash -lc`. Mirror the ENV PATH in a profile.d drop-in, exactly as coop's base
+# image does (its box-toolchain-on-login-path rule). Kept at the end of the file
+# so editing it never invalidates the cached Erlang build layer above.
+USER root
+RUN printf 'export PATH="/home/node/.asdf/shims:$PATH"\n' > /etc/profile.d/asdf.sh
+USER node
+
 WORKDIR /workspace
