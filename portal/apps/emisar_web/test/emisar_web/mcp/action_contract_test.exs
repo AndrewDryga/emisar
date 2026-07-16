@@ -165,16 +165,16 @@ defmodule EmisarWeb.MCP.ActionContractTest do
       |> Jason.decode!()
 
     for pack <- catalog["packs"], action <- pack["actions"] do
+      contract = %{args_schema: %{"args" => action["args"] || []}}
+
       for example <- action["examples"] || [] do
-        result = ActionContract.validate(example["args"], action)
+        result = ActionContract.validate(example["args"], contract)
         assert result == :ok, "#{pack["id"]}.#{action["id"]}: #{inspect(result)}"
       end
 
       for spec <- action["args"] || [], Map.has_key?(spec, "default") do
-        result =
-          ActionContract.validate(%{spec["name"] => spec["default"]}, %{
-            "args" => [spec]
-          })
+        default_contract = %{args_schema: %{"args" => [spec]}}
+        result = ActionContract.validate(%{spec["name"] => spec["default"]}, default_contract)
 
         assert result == :ok,
                "#{pack["id"]}.#{action["id"]}:#{spec["name"]}: #{inspect(result)}"

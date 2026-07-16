@@ -2,9 +2,10 @@ package actionspec
 
 import "strings"
 
-// ModelDescriptor is the canonical, reviewed action contract exposed to
-// operators and models. Registry publication and runner advertisements both use
-// this projection so trust comparisons cannot drift between two serializers.
+// ModelDescriptor is the canonical, reviewed action contract. Registry
+// publication stores it in the trusted manifest and runner advertisements use
+// the same projection as deployment evidence, so exact-hash comparisons cannot
+// drift between serializers.
 type ModelDescriptor struct {
 	ID          string         `json:"id"`
 	Title       string         `json:"title"`

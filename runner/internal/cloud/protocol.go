@@ -509,8 +509,9 @@ type PackInfo struct {
 	Hash    string `json:"hash,omitempty"`
 }
 
-// ActionDescriptor is the runner's self-described view of a single action.
-// Cloud uses this for runbook authoring + LLM tool advertising.
+// ActionDescriptor is deployment evidence for one locally loaded action. Cloud
+// compares it with the exact-hash trusted manifest; model-facing descriptors
+// and runbook authoring data come from that manifest, never this advertisement.
 type ActionDescriptor struct {
 	actionspec.ModelDescriptor
 	PackID string           `json:"pack_id,omitempty"`

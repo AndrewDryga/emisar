@@ -140,9 +140,9 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, p
 // cloud so it disables its own (operator/runbook) dispatch to this runner.
 func (v *Verifier) Enforces() bool { return v.enforce }
 
-// CAIDs returns the trusted CA ids in sorted order — advertised to the cloud so
-// an operator can confirm which CA(s) this runner accepts. Safe metadata: the
-// public-key bytes never leave the host, only their ids.
+// CAIDs returns the configured trusted-CA labels in sorted order. The runner
+// advertises only these labels so an operator can confirm which CA entries it
+// accepts; configured CA public keys remain local.
 func (v *Verifier) CAIDs() []string {
 	ids := make([]string, 0, len(v.cas))
 	for id := range v.cas {

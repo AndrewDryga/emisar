@@ -434,7 +434,6 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   defp action_args(%{args_schema: %{"args" => args}}) when is_list(args), do: args
   defp action_args(%{"args_schema" => %{"args" => args}}) when is_list(args), do: args
-  defp action_args(%{"args" => args}) when is_list(args), do: args
   defp action_args(_action), do: []
 
   defp issue(arg, code, message), do: {:error, %{arg: arg, code: code, message: message}}

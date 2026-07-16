@@ -113,8 +113,9 @@ nanoseconds, matching Go's `time.Duration` wire representation.
   "request_id": "req_0000000000000000000000",
   "operation_id": "op_724NN9NMDZ1T76NARWCKM5A0D6",
   "action_id": "cassandra.nodetool_status",
+  "expected_pack_hash": "sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
   "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
-  "args": {"host": 9007199254740993},
+  "args": {"host": "127.0.0.1", "port": 7199},
   "reason": "Confirm ring health before rerolling the canary.",
   "attestation": {
     "version": "emisar-attestation-v4",
