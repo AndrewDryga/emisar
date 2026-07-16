@@ -824,7 +824,9 @@ Before the operation transaction, the portal validates the whole fan-out:
 3. Every runner is connected, enabled, and advertises `(pack_ref, action_id)`.
 4. The complete descriptor matches the trusted pack manifest.
 5. Pack trust and retirement rules still allow dispatch.
-6. Exact argument bytes match the trusted schema.
+6. Exact argument bytes match the portable trusted-schema constraints. Action
+   regexes and host-dependent path constraints remain authoritative at the
+   runner and are rechecked before execution.
 7. When any selected runner enforces signed dispatch, an attestation is present,
    structurally valid, currently inside the runner-advertised freshness and
    certificate windows, and agrees with every preflight fact. The runner remains
@@ -1434,7 +1436,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
-| `invalid_args` | Arguments fail exact schema validation. | Correct returned paths. |
+| `invalid_args` | Arguments fail fixed input or portable action validation. | Correct returned paths. |
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
 | `invalid_cursor` | Cursor expired, mismatched, or scope changed. | Restart the same read. |
 | `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |

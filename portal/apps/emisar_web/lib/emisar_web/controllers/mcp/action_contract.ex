@@ -2,9 +2,10 @@ defmodule EmisarWeb.MCP.ActionContract do
   @moduledoc """
   Validates the portable part of a trusted runner action contract.
 
-  The runner remains authoritative for host-dependent path resolution and
-  execution-time state. This boundary rejects deterministic contract failures
-  before Emisar creates a run, approval, draft, or operation record.
+  The runner remains authoritative for action regexes, host-dependent path
+  resolution, and execution-time state. This boundary rejects portable,
+  deterministic contract failures before Emisar creates a run, approval,
+  draft, or operation record.
   """
 
   alias EmisarWeb.MCP.RawJSON.Number
@@ -22,8 +23,9 @@ defmodule EmisarWeb.MCP.ActionContract do
     "m" => 60_000_000_000,
     "h" => 3_600_000_000_000
   }
-  @min_duration_nanoseconds Decimal.new(-9_223_372_036_854_775_808)
-  @max_duration_nanoseconds Decimal.new(9_223_372_036_854_775_807)
+  @max_duration_magnitude 9_223_372_036_854_775_808
+  @max_duration_nanoseconds @max_duration_magnitude - 1
+  @max_float_scale_before_multiply 1.797_693_134_862_315_7e307
 
   @type issue :: %{arg: String.t(), code: String.t(), message: String.t()}
 
@@ -188,7 +190,6 @@ defmodule EmisarWeb.MCP.ActionContract do
   defp validate_scalar(spec, value, validation) do
     with :ok <- validate_membership(spec, value, validation, "enum"),
          :ok <- validate_membership(spec, value, validation, "allowed"),
-         :ok <- validate_pattern(spec, value, validation),
          :ok <- validate_numeric_bounds(spec, value, validation) do
       validate_duration_bounds(spec, value, validation)
     end
@@ -205,21 +206,6 @@ defmodule EmisarWeb.MCP.ActionContract do
         :ok
     end
   end
-
-  defp validate_pattern(%{"name" => name}, value, %{"pattern" => pattern})
-       when is_binary(pattern) and is_binary(value) do
-    case :re.compile(pattern, [:unicode, :dollar_endonly]) do
-      {:ok, regex} ->
-        if :re.run(value, regex, capture: :none) == :match,
-          do: :ok,
-          else: issue(name, "pattern", "does not match the required pattern")
-
-      {:error, _reason} ->
-        issue(name, "pattern", "trusted manifest contains an invalid pattern")
-    end
-  end
-
-  defp validate_pattern(_spec, _value, _validation), do: :ok
 
   defp validate_numeric_bounds(%{"name" => name}, value, validation) when is_number(value) do
     cond do
@@ -249,12 +235,12 @@ defmodule EmisarWeb.MCP.ActionContract do
   defp compare_duration(name, value, encoded, bound) do
     case duration_nanoseconds(encoded) do
       {:ok, limit} when bound == :min ->
-        if Decimal.compare(value, limit) == :lt,
+        if value < limit,
           do: issue(name, "min_duration", "is below the minimum duration"),
           else: :ok
 
       {:ok, limit} ->
-        if Decimal.compare(value, limit) == :gt,
+        if value > limit,
           do: issue(name, "max_duration", "is above the maximum duration"),
           else: :ok
 
@@ -327,26 +313,19 @@ defmodule EmisarWeb.MCP.ActionContract do
           do: {-1, String.trim_leading(value, "-")},
           else: {1, String.trim_leading(value, "+")}
 
-      total =
+      result =
         @duration_part
         |> Regex.scan(parts, capture: :all_but_first)
-        |> Enum.reduce(Decimal.new(0), fn [amount, unit], acc ->
-          nanoseconds =
-            amount
-            |> normalize_decimal()
-            |> Decimal.new()
-            |> Decimal.mult(Decimal.new(@duration_units[unit]))
-            |> Decimal.round(0, :down)
-
-          Decimal.add(acc, nanoseconds)
+        |> Enum.reduce_while({:ok, 0}, fn [amount, unit], {:ok, total} ->
+          with {:ok, nanoseconds} <- duration_part_nanoseconds(amount, @duration_units[unit]),
+               true <- total <= @max_duration_magnitude - nanoseconds do
+            {:cont, {:ok, total + nanoseconds}}
+          else
+            _ -> {:halt, :error}
+          end
         end)
 
-      signed = Decimal.mult(total, Decimal.new(sign))
-
-      if Decimal.compare(signed, @min_duration_nanoseconds) != :lt and
-           Decimal.compare(signed, @max_duration_nanoseconds) != :gt,
-         do: {:ok, signed},
-         else: :error
+      apply_duration_sign(result, sign)
     else
       :error
     end
@@ -354,8 +333,74 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   defp duration_nanoseconds(_value), do: :error
 
-  defp normalize_decimal("." <> rest), do: "0." <> rest
-  defp normalize_decimal(value), do: String.trim_trailing(value, ".")
+  defp duration_part_nanoseconds(amount, unit) do
+    {whole_digits, fraction_digits} = split_duration_amount(amount)
+
+    with {:ok, whole} <- duration_whole(whole_digits),
+         true <- whole <= div(@max_duration_magnitude, unit) do
+      {fraction, scale} = duration_fraction(fraction_digits, 0, 1.0)
+      nanoseconds = whole * unit + fractional_nanoseconds(fraction, scale, unit)
+
+      if nanoseconds <= @max_duration_magnitude, do: {:ok, nanoseconds}, else: :error
+    else
+      _ -> :error
+    end
+  end
+
+  defp split_duration_amount(amount) do
+    case String.split(amount, ".", parts: 2) do
+      [whole] -> {whole, ""}
+      [whole, fraction] -> {whole, fraction}
+    end
+  end
+
+  defp duration_whole(digits) do
+    significant = String.trim_leading(digits, "0")
+
+    cond do
+      significant == "" ->
+        {:ok, 0}
+
+      byte_size(significant) > 19 ->
+        :error
+
+      true ->
+        integer = String.to_integer(significant)
+        if integer <= @max_duration_magnitude, do: {:ok, integer}, else: :error
+    end
+  end
+
+  defp duration_fraction(<<>>, value, scale), do: {value, scale}
+
+  defp duration_fraction(<<digit, rest::binary>>, value, scale) do
+    if value > div(@max_duration_nanoseconds, 10) do
+      {value, scale}
+    else
+      next = value * 10 + digit - ?0
+
+      if next > @max_duration_magnitude,
+        do: {value, scale},
+        else: duration_fraction(rest, next, next_duration_scale(scale))
+    end
+  end
+
+  defp next_duration_scale(:too_small), do: :too_small
+
+  defp next_duration_scale(scale) when scale > @max_float_scale_before_multiply,
+    do: :too_small
+
+  defp next_duration_scale(scale), do: scale * 10.0
+
+  defp fractional_nanoseconds(_fraction, :too_small, _unit), do: 0
+  defp fractional_nanoseconds(fraction, scale, unit), do: trunc(fraction * (unit / scale))
+
+  defp apply_duration_sign(:error, _sign), do: :error
+  defp apply_duration_sign({:ok, total}, -1), do: {:ok, -total}
+
+  defp apply_duration_sign({:ok, total}, 1) when total <= @max_duration_nanoseconds,
+    do: {:ok, total}
+
+  defp apply_duration_sign({:ok, _total}, 1), do: :error
 
   defp validation(%{"validation" => %{} = validation}), do: validation
   defp validation(_spec), do: %{}

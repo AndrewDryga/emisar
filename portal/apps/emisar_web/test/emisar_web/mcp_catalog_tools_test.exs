@@ -304,6 +304,30 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert {:ok, [], _meta} = Runs.list_runs(subject)
   end
 
+  test "run_action accepts Go durations with long fractional precision", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "duration-runner")
+    pack_ref = "database@1.0.0/#{@hash}"
+
+    observe!(runner, %{"database" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("database.pause_job", "database", args: job_args())
+    ])
+
+    trust_all!(subject)
+    :ok = Runners.subscribe_runner_transport(runner)
+    runner_ref = "duration-runner~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+    duration = "1.0000000000000000000000000000000000000001ns"
+    body = run_action_body(pack_ref, runner_ref, ~s({"job_id":7,"delay":"#{duration}"}), "Run")
+
+    response = raw_action(conn, body)
+    assert response["ok"]
+    assert_receive {:cloud_to_runner, _generation, payload}, 500
+    assert Jason.encode!(payload) =~ ~s("delay":"#{duration}")
+  end
+
   test "native HTTP run_action derives one stable operation without a private header", %{
     conn: conn,
     account: account,
@@ -613,7 +637,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
   defp job_args do
     [
       %{"name" => "job_id", "type" => "integer", "required" => true},
-      %{"name" => "ratio", "type" => "number", "required" => false}
+      %{"name" => "ratio", "type" => "number", "required" => false},
+      %{"name" => "delay", "type" => "duration", "required" => false}
     ]
   end
 end

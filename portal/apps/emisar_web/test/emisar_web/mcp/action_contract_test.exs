@@ -43,9 +43,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
   test "applies byte, array element, duration, and portable path limits" do
     action =
       action([
-        arg("labels", "string_array",
-          validation: %{"max_items" => 2, "max_length" => 3, "pattern" => "^[a-z]+$"}
-        ),
+        arg("labels", "string_array", validation: %{"max_items" => 2, "max_length" => 3}),
         arg("delay", "duration",
           validation: %{"min_duration" => "1s", "max_duration" => "1h0m0s"}
         ),
@@ -54,24 +52,37 @@ defmodule EmisarWeb.MCP.ActionContractTest do
 
     assert_issue(%{"labels" => ["a", "b", "c"]}, action, "labels", "max_items")
     assert_issue(%{"labels" => ["abcd"]}, action, "labels", "max_length")
-    assert_issue(%{"labels" => ["A"]}, action, "labels", "pattern")
     assert_issue(%{"delay" => "500ms"}, action, "delay", "min_duration")
     assert_issue(%{"delay" => "2h"}, action, "delay", "max_duration")
     assert_issue(%{"file" => "relative.log"}, action, "file", "path")
     assert :ok = ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action)
   end
 
-  test "matches Go regex anchors and duration range semantics" do
+  test "defers patterns to the runner and matches Go duration range semantics" do
     action =
       action([
         arg("name", "string", validation: %{"pattern" => "^[a-z]+$"}),
         arg("delay", "duration", validation: %{"min_duration" => "1ns"})
       ])
 
-    assert_issue(%{"name" => "safe\n"}, action, "name", "pattern")
+    assert :ok = ActionContract.validate(%{"name" => "safe\n"}, action)
     assert_issue(%{"delay" => "0.6ns0.6ns"}, action, "delay", "min_duration")
     assert_issue(%{"delay" => "2562048h"}, action, "delay", "type")
     assert :ok = ActionContract.validate(%{"delay" => "0"}, action([arg("delay", "duration")]))
+
+    assert :ok =
+             ActionContract.validate(
+               %{"delay" => "1.0000000000000000000000000000000000000001ns"},
+               action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
+             )
+
+    tiny_fraction = "1." <> String.duplicate("0", 400) <> "1ns"
+
+    assert :ok =
+             ActionContract.validate(
+               %{"delay" => tiny_fraction},
+               action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
+             )
 
     assert :ok =
              ActionContract.validate(
