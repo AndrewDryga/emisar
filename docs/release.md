@@ -113,15 +113,16 @@ no inflated security claims.
 5. **Roll the BUSL Change Date** in `LICENSE.md` to the release date plus three
    years. Each released version carries its own conversion promise.
 6. **Update the marketing test** newest-entry assertions.
-7. **Gate** from `portal/`: `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh`. Green before committing. Never pipe the format/compile checks through `head`/`tail` (it masks the exit code).
-8. **Commit** the changelog, version, license date, and test — one focused commit
+7. **Reconcile the bundled pack catalog with production.** Fetch `https://registry.emisar.dev/v1/catalog.json`, build the current packs with that file as `packctl catalog build --previous`, and copy the result to `portal/apps/emisar/priv/packs/catalog.json`. This removes unpublished intermediate versions left by canceled releases and makes the later CD byte check deterministic. See `packs/PUBLISHING.md` for the exact commands.
+8. **Gate** from `portal/`: `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh`. Green before committing. Never pipe the format/compile checks through `head`/`tail` (it masks the exit code).
+9. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
-9. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
-10. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
-11. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
-12. **Write the release notes** (Markdown, via `/content-director`) and **create the
+10. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
+11. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
+12. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
+13. **Write the release notes** (Markdown, via `/content-director`) and **create the
     GitHub release**: `gh release create v0.25.0 --verify-tag --title "v0.25.0 — <title>" --notes-file <file>`. *Outward-facing — confirm first.*
-13. **Record** the completed release in `portal/.agent/LOG.md`.
+14. **Record** the completed release in `portal/.agent/LOG.md`.
 
 ## Verify
 

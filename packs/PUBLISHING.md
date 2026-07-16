@@ -53,6 +53,13 @@ packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.
 The build is deterministic: identical packs produce an identical catalog hash
 and byte-identical tarballs, so re-running it is safe.
 
+The downloaded live catalog is the only valid history source once the registry
+exists. Do not substitute the repository's bundled catalog: a canceled release
+can leave that file containing a pack version that was never published. After
+the build, copy `dist/v1/catalog.json` to
+`portal/apps/emisar/priv/packs/catalog.json` so the portal's compiled trust
+baseline and the next CD publication use the same bytes.
+
 ## Publish
 
 ```bash
