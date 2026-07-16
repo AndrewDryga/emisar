@@ -318,7 +318,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert timed_out.error_message =~ "did not execute it again"
     end
 
-    test "a reconnect does not re-execute an unresolved dispatch",
+    test "a reconnect resumes an unresolved dispatch without re-executing it",
          %{account: account, runner: runner, token: token, subject: subject} do
       assert {:ok, first_state} = RunnerSocket.init(%{token: token, runner: runner})
 
@@ -333,8 +333,30 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert :ok = RunnerSocket.terminate(:remote, first_state)
       :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
 
-      assert {:ok, _second_state} = RunnerSocket.init(%{token: token, runner: runner})
+      assert {:ok, second_state} = RunnerSocket.init(%{token: token, runner: runner})
       refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 100
+
+      progress =
+        runner_frame(%{
+          "type" => "action_progress",
+          "request_id" => run.request_id,
+          "seq" => 1,
+          "stream" => "stdout",
+          "chunk" => "resumed\n"
+        })
+
+      assert {:ok, ^second_state} = RunnerSocket.handle_in({progress, text()}, second_state)
+
+      result = result_frame(run.request_id, "success", exit_code: 0)
+
+      assert {:push, ack, _remembered_state} =
+               RunnerSocket.handle_in({result, text()}, second_state)
+
+      assert %{"type" => "ack_result", "request_id" => ^request_id} = decode(ack)
+
+      reloaded = Repo.get!(ActionRun, run.id)
+      assert reloaded.status == :success
+      assert reloaded.progress_event_count == 1
     end
 
     test "a first connection dispatches work that was queued while offline",

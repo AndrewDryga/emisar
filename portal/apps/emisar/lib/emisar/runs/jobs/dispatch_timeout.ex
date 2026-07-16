@@ -65,11 +65,11 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
 
       {:ok, generation} ->
         cond do
-          run.runner_connection_generation != generation ->
-            Runs.mark_errored(run, changed_connection_reason(runner))
-
           DateTime.compare(run.queued_at, redispatch_deadline) == :lt ->
             Runs.mark_errored(run, never_acknowledged_reason(runner))
+
+          run.runner_connection_generation != generation ->
+            :noop
 
           true ->
             Logger.info(
@@ -86,11 +86,8 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
     case Runners.peek_runner_by_id(run.runner_id) do
       %Runners.Runner{} = runner ->
         case Runners.current_connection_generation(runner.account_id, runner.id) do
-          {:ok, generation} when generation == run.runner_connection_generation ->
+          {:ok, _generation} ->
             :noop
-
-          {:ok, _different_generation} ->
-            Runs.mark_errored(run, changed_connection_reason(runner))
 
           {:error, :not_connected} ->
             if offline_past_grace?(runner, cutoff) do
@@ -131,11 +128,6 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
   defp never_acknowledged_reason(%{name: name}) do
     "Runner #{name} stayed online but never produced a durable result. " <>
       "Its execution outcome is unknown, so Emisar did not execute it again."
-  end
-
-  defp changed_connection_reason(%{name: name}) do
-    "Runner #{name} reconnected before this dispatch produced a durable result. " <>
-      "The prior execution outcome is unknown, so Emisar did not execute it again."
   end
 
   defp removed_runner_reason(%{status: :pending}),

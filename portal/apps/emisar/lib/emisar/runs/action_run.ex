@@ -107,9 +107,9 @@ defmodule Emisar.Runs.ActionRun do
       default: :pending
 
     field :queued_at, :utc_datetime_usec
-    # Connection owner that accepted the dispatch. A timeout may replay only
-    # while this generation still owns the runner identity; a different owner
-    # makes the prior execution outcome unknown rather than safe to repeat.
+    # Connection generation that accepted the dispatch. This is retained as an
+    # audit fact and fences same-session redelivery; the runner deliberately
+    # carries in-flight handlers and results across websocket reconnects.
     field :runner_connection_generation, :integer
     field :sent_at, :utc_datetime_usec
     field :started_at, :utc_datetime_usec

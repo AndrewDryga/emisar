@@ -94,7 +94,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert reloaded.error_message =~ "did not execute it again"
   end
 
-  test "a stale dispatch is never replayed onto a successor connection" do
+  test "a stale dispatch waits for a successor connection to replay its result" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)
 
@@ -113,10 +113,31 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :sent
+    refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 100
+  end
+
+  test "a successor result that never arrives still resolves as outcome unknown" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    run = sent_run_for(runner, 20 * 60)
+
+    assert {:ok, _} =
+             Runners.mark_disconnected(
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               "reconnect"
+             )
+
+    :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+    assert {:ok, _successor} = Runners.connect_runner(runner)
+
+    assert :ok = DispatchTimeout.execute([])
+
+    reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
-    assert reloaded.error_message =~ "reconnected"
+    assert reloaded.error_message =~ "never produced a durable result"
     assert reloaded.error_message =~ "outcome is unknown"
-    assert reloaded.error_message =~ "did not execute it again"
   end
 
   test "a running run whose runner has been offline past the grace goes terminal" do
@@ -151,6 +172,27 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   test "a running run on a CONNECTED runner is left alone" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = running_run_for(runner)
+
+    assert :ok = DispatchTimeout.execute([])
+
+    assert Runs.peek_run_by_id(run.id).status == :running
+  end
+
+  test "a running run is left active after its runner reconnects" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    run = running_run_for(runner)
+
+    assert {:ok, _} =
+             Runners.mark_disconnected(
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               "reconnect"
+             )
+
+    :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+    assert {:ok, successor} = Runners.connect_runner(runner)
+    assert successor.connection_generation > runner.connection_generation
 
     assert :ok = DispatchTimeout.execute([])
 

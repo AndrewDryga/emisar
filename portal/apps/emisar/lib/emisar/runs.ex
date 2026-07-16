@@ -436,14 +436,6 @@ defmodule Emisar.Runs do
     |> Repo.fetch(ActionRun.Query)
   end
 
-  defp fetch_run_by_request_id_for_runner_generation(request_id, runner_id, generation) do
-    ActionRun.Query.all()
-    |> ActionRun.Query.by_runner_id(runner_id)
-    |> ActionRun.Query.by_runner_connection_generation(generation)
-    |> ActionRun.Query.by_request_id(request_id)
-    |> Repo.fetch(ActionRun.Query)
-  end
-
   # -- Creation ---------------------------------------------------------
 
   @doc """
@@ -1788,8 +1780,7 @@ defmodule Emisar.Runs do
   defp deliver_cancel_to_runner({outcome, %ActionRun{} = run}, reason)
        when outcome in [:cancelling, :retry] do
     with {:ok, generation} <-
-           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id),
-         true <- generation == run.runner_connection_generation do
+           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id) do
       Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
         "type" => "cancel",
         "request_id" => run.request_id,
@@ -2010,9 +2001,6 @@ defmodule Emisar.Runs do
           expected_status != :any_nonterminal and loaded_run.status != expected_status ->
             {:error, :not_dispatchable}
 
-          connection_generation_changed?(loaded_run, connection) ->
-            {:error, :connection_superseded}
-
           true ->
             repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
         end
@@ -2053,11 +2041,6 @@ defmodule Emisar.Runs do
       end
     end)
   end
-
-  defp connection_generation_changed?(_run, nil), do: false
-
-  defp connection_generation_changed?(run, {_account_id, _runner_id, generation, _lease_id}),
-    do: run.runner_connection_generation != generation
 
   # Post-commit side effects for a run transition: broadcast the new state,
   # and emit run-outcome telemetry once the run reaches a terminal status
@@ -2150,9 +2133,6 @@ defmodule Emisar.Runs do
             ActionRun.terminal?(loaded_run.status) ->
               {:error, :run_terminal}
 
-            connection_generation_changed?(loaded_run, connection) ->
-              {:error, :connection_superseded}
-
             progress_budget_exceeded?(loaded_run, event_bytes) ->
               {:error, :progress_budget_exceeded}
 
@@ -2203,8 +2183,9 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — appends progress only while the emitting socket still owns the
-  exact connection generation that received this run.
+  Internal — appends progress only while the emitting socket owns the runner.
+  In-flight handlers survive websocket reconnects, so the current owner may
+  continue a run dispatched through an earlier connection generation.
   """
   def append_event_from_connection(
         run_id,
@@ -2219,8 +2200,11 @@ defmodule Emisar.Runs do
       nil ->
         {:error, :unknown_run}
 
-      %ActionRun{} = run ->
+      %ActionRun{account_id: ^account_id, runner_id: ^runner_id} = run ->
         append_event(run, attrs, {account_id, runner_id, generation, lease_id})
+
+      %ActionRun{} ->
+        {:error, :unknown_run}
     end
   end
 
@@ -2315,8 +2299,10 @@ defmodule Emisar.Runs do
     do: {:error, :missing_request_id}
 
   @doc """
-  Finalizes a result only while the emitting socket owns the generation that
-  received the run. Ownership and the terminal transition share one transaction.
+  Finalizes a result only while the emitting socket owns the runner. In-flight
+  handlers and unacknowledged results survive websocket reconnects, so the
+  current owner may finish a run dispatched through an earlier generation.
+  Ownership and the terminal transition share one transaction.
   """
   def finalize_from_connection(
         account_id,
@@ -2325,7 +2311,7 @@ defmodule Emisar.Runs do
         lease_id,
         %{"request_id" => request_id} = result
       ) do
-    case fetch_run_by_request_id_for_runner_generation(request_id, runner_id, generation) do
+    case fetch_run_by_request_id_for_runner(request_id, runner_id) do
       {:error, :not_found} ->
         {:error, :unknown_request_id}
 

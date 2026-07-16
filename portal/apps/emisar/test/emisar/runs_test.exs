@@ -1,8 +1,9 @@
 defmodule Emisar.RunsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Approvals, Catalog, MCPOperations, Repo, RequestContext, Runs}
+  alias Emisar.{ApiKeys, Approvals, Catalog, MCPOperations, Repo, RequestContext, Runners, Runs}
   alias Emisar.Fixtures
+  alias Emisar.Runners.Presence
   alias Emisar.Runs.{ActionRun, RunEvent}
 
   defp base_attrs(account_id, runner_id, attrs \\ %{}) do
@@ -21,6 +22,20 @@ defmodule Emisar.RunsTest do
 
   defp no_permissions_subject(account) do
     Fixtures.Subjects.build_subject(account: account, role: :runner)
+  end
+
+  defp reconnect_runner(runner) do
+    assert {:ok, _} =
+             Runners.mark_disconnected(
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               "test reconnect"
+             )
+
+    :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+    assert {:ok, successor} = Runners.connect_runner(runner)
+    successor
   end
 
   defp deny_all_rules do
@@ -2629,7 +2644,7 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :success
     end
 
-    test "repeating an in-flight cancellation retries delivery without another transition", %{
+    test "repeating an in-flight cancellation reaches a successor connection", %{
       account: account,
       runner: runner
     } do
@@ -2656,12 +2671,16 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: :cancelling} = cancelling} =
                Runs.cancel_run(run, subject, "stop")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "cancel"}}, 500
+      assert_receive {:cloud_to_runner, first_generation, %{"type" => "cancel"}}, 500
+      assert first_generation == runner.connection_generation
+
+      successor = reconnect_runner(runner)
 
       assert {:ok, %ActionRun{status: :cancelling}} =
                Runs.cancel_run(cancelling, subject, "stop")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "cancel"}}, 500
+      assert_receive {:cloud_to_runner, successor_generation, %{"type" => "cancel"}}, 500
+      assert successor_generation == successor.connection_generation
 
       assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
                Runs.finalize_from_result(runner.id, %{
@@ -3345,7 +3364,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "append_event_from_connection/6" do
-    test "accepts only the lease and generation that received the run" do
+    test "accepts the current owner across reconnects and rejects a superseded lease" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
@@ -3368,17 +3387,29 @@ defmodule Emisar.RunsTest do
                  runner.connection_lease_id
                )
 
+      successor = reconnect_runner(runner)
+
+      assert {:ok, %RunEvent{seq: 2}} =
+               Runs.append_event_from_connection(
+                 sent.id,
+                 %{seq: 2, kind: "progress", payload: %{"line" => "resumed"}},
+                 account.id,
+                 runner.id,
+                 successor.connection_generation,
+                 successor.connection_lease_id
+               )
+
       assert {:error, :connection_superseded} =
                Runs.append_event_from_connection(
                  sent.id,
-                 %{seq: 2, kind: "progress", payload: %{"line" => "stale"}},
+                 %{seq: 3, kind: "progress", payload: %{"line" => "stale"}},
                  account.id,
                  runner.id,
                  runner.connection_generation,
-                 Ecto.UUID.generate()
+                 runner.connection_lease_id
                )
 
-      assert Repo.reload!(sent).progress_event_count == 1
+      assert Repo.reload!(sent).progress_event_count == 2
     end
   end
 
@@ -3654,7 +3685,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "finalize_from_connection/5" do
-    test "rejects a result after the socket lease is superseded" do
+    test "accepts a result from the current owner after reconnect" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
@@ -3667,16 +3698,27 @@ defmodule Emisar.RunsTest do
         )
         |> Repo.update()
 
+      successor = reconnect_runner(runner)
+
       assert {:error, :connection_superseded} =
                Runs.finalize_from_connection(
                  account.id,
                  runner.id,
                  runner.connection_generation,
-                 Ecto.UUID.generate(),
+                 runner.connection_lease_id,
                  %{"request_id" => sent.request_id, "status" => "success"}
                )
 
       assert Repo.reload!(sent).status == :sent
+
+      assert {:ok, %ActionRun{status: :success}} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 successor.connection_generation,
+                 successor.connection_lease_id,
+                 %{"request_id" => sent.request_id, "status" => "success"}
+               )
     end
   end
 

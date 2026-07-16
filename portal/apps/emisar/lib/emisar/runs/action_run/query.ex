@@ -17,9 +17,6 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_runner_id(queryable, runner_id),
     do: where(queryable, [runs: r], r.runner_id == ^runner_id)
 
-  def by_runner_connection_generation(queryable, generation),
-    do: where(queryable, [runs: r], r.runner_connection_generation == ^generation)
-
   @doc "Restricts runs to runner ids or groups granted by one membership scope set."
   def by_runner_scope_values(queryable, runner_ids, groups) do
     queryable
