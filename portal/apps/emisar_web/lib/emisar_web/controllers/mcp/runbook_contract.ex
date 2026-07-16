@@ -69,10 +69,10 @@ defmodule EmisarWeb.MCP.RunbookContract do
     with step_id when is_binary(step_id) <- step["id"],
          true <- Regex.match?(@step_id, step_id),
          action_id when is_binary(action_id) <- step["action_id"],
-         pack_ref when is_binary(pack_ref) <- step["pack_ref"],
          args when is_map(args) <- step["args"] || %{},
          true <- encoded_size(args) <= 32_768,
-         %{} = pack <- Map.get(packs_by_ref, pack_ref),
+         {:ok, pack} <- resolve_pack(step["pack_ref"], action_id, snapshot, packs_by_ref),
+         pack_ref <- pack.pack_ref,
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
          :ok <- ActionContract.validate(args, action),
          {:ok, selector, selected_count} <-
@@ -88,6 +88,33 @@ defmodule EmisarWeb.MCP.RunbookContract do
     else
       _ -> {:error, :incomplete_contract}
     end
+  end
+
+  # Recovering a missing ref is safe only when the current catalog has one
+  # compatible exact pack; ambiguity must not silently retarget a runbook.
+  defp resolve_pack(pack_ref, _action_id, _snapshot, packs_by_ref) when is_binary(pack_ref) do
+    case Map.get(packs_by_ref, pack_ref) do
+      %{} = pack -> {:ok, pack}
+      _ -> {:error, :missing_pack}
+    end
+  end
+
+  defp resolve_pack(nil, action_id, snapshot, _packs_by_ref) do
+    candidates = Enum.filter(snapshot.packs, &pack_has_action?(&1, action_id))
+
+    case candidates do
+      [%{} = pack] -> {:ok, pack}
+      _ -> {:error, :ambiguous_pack}
+    end
+  end
+
+  defp resolve_pack(_pack_ref, _action_id, _snapshot, _packs_by_ref),
+    do: {:error, :missing_pack}
+
+  defp pack_has_action?(pack, action_id) do
+    Enum.any?(pack.actions, fn action ->
+      action["action_id"] == action_id and Map.get(action, :compatible_runner_ids, []) != []
+    end)
   end
 
   defp public_selector(%{"runner_id" => ids}, snapshot, action)
@@ -110,10 +137,11 @@ defmodule EmisarWeb.MCP.RunbookContract do
     visible_ids = MapSet.new(snapshot.runners, & &1.id)
     selected = Enum.filter(snapshot.account_runners, &(&1.group in groups))
 
+    # Keep a scoped group visible when at least one member can execute it. The
+    # dispatch plan still resolves and validates every active member later.
     if valid_groups?(groups) and length(selected) in 1..@max_runners_per_step and
-         Enum.all?(selected, fn runner ->
-           MapSet.member?(visible_ids, runner.id) and MapSet.member?(compatible, runner.id)
-         end) do
+         Enum.all?(selected, &MapSet.member?(visible_ids, &1.id)) and
+         Enum.any?(selected, &MapSet.member?(compatible, &1.id)) do
       {:ok, %{groups: groups}, length(selected)}
     else
       {:error, :incomplete_contract}

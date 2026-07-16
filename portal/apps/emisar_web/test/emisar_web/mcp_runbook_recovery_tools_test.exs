@@ -164,6 +164,99 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Operation, :count) == 2
   end
 
+  test "console-authored and seeded runbooks without pack refs list and execute via MCP", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user
+  } do
+    runner = setup_runner!(account, subject, "edge-primary", group: "edge-web")
+    :ok = Runners.subscribe_runner_transport(runner)
+
+    editor_conn = log_in_user(build_conn(), user)
+    {:ok, lv, _html} = live(editor_conn, ~p"/app/#{account}/runbooks/new")
+
+    render_change(lv, "meta_change", %{"title" => "Console edge health", "slug" => "console-edge"})
+
+    render_change(lv, "step_change", %{
+      "index" => "0",
+      "step_id" => "check",
+      "action_id" => "operations.health",
+      "selector_kind" => "group",
+      "selector_values" => ["edge-web"]
+    })
+
+    assert {:error, {:live_redirect, _}} = render_click(lv, "publish", %{})
+    assert [%{slug: "console-edge"} = console_runbook] = Repo.all(Emisar.Runbooks.Runbook)
+
+    seeded_runbook =
+      publish_runbook!(subject, "seeded-edge", %{"group" => ["edge-web"]},
+        include_pack_ref: false
+      )
+
+    listed = call(conn, "list_runbooks", %{})
+    listed_refs = Enum.map(listed["runbooks"], & &1["runbook_ref"])
+    assert Enum.sort(listed_refs) == ["console-edge@1", "seeded-edge@1"]
+
+    for runbook_ref <- ["console-edge@1", "seeded-edge@1"] do
+      fetched = call(conn, "get_runbook", %{"runbook_ref" => runbook_ref})
+      assert [%{"pack_ref" => @pack_ref}] = fetched["runbook"]["steps"]
+    end
+
+    console_execution =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "console-edge@1", "reason" => "Check the edge host"},
+        "op_424NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert console_execution["ok"]
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    seeded_execution =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "seeded-edge@1", "reason" => "Check the seeded host"},
+        "op_624NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert seeded_execution["ok"]
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    assert console_runbook.definition["steps"] |> hd() |> Map.has_key?("pack_ref") == false
+    assert seeded_runbook.definition["steps"] |> hd() |> Map.has_key?("pack_ref") == false
+  end
+
+  test "a group runbook stays listable when one member is offline", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    _connected = setup_runner!(account, subject, "fleet-connected", group: "fleet")
+
+    offline =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "fleet-offline",
+        group: "fleet",
+        connected?: false
+      )
+
+    observe_catalog!(
+      offline,
+      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action()]
+    )
+
+    trust_all!(subject)
+    _runbook = publish_runbook!(subject, "partial-fleet", %{"group" => ["fleet"]})
+
+    listed = call(conn, "list_runbooks", %{})
+    assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "partial-fleet@1"))
+  end
+
   test "draft creation rejects invalid step arguments before reserving an operation", %{
     conn: conn,
     account: account,
@@ -712,7 +805,19 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     end)
   end
 
-  defp publish_runbook!(subject, slug, selector) do
+  defp publish_runbook!(subject, slug, selector, opts \\ []) do
+    step = %{
+      "id" => "check",
+      "action_id" => "operations.health",
+      "args" => %{},
+      "runner_selector" => selector
+    }
+
+    step =
+      if Keyword.get(opts, :include_pack_ref, true),
+        do: Map.put(step, "pack_ref", @pack_ref),
+        else: step
+
     {:ok, draft} =
       Runbooks.create_runbook(
         %{
@@ -720,15 +825,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           "name" => slug,
           "slug" => slug,
           "definition" => %{
-            "steps" => [
-              %{
-                "id" => "check",
-                "action_id" => "operations.health",
-                "pack_ref" => @pack_ref,
-                "args" => %{},
-                "runner_selector" => selector
-              }
-            ]
+            "steps" => [step]
           }
         },
         subject

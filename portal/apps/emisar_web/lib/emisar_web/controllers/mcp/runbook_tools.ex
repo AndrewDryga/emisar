@@ -516,9 +516,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp preflight_runbook(conn, runbook) do
     with {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, _public_runbook} <- RunbookContract.project(runbook, snapshot),
+         {:ok, public_runbook} <- RunbookContract.project(runbook, snapshot),
          {:ok, plan} <- Runbooks.resolve_plan(runbook, conn.assigns.current_subject),
-         :ok <- validate_plan_contract(runbook, plan.plan, snapshot),
+         :ok <- validate_plan_contract(public_runbook, plan.plan, snapshot),
          false <- enforcing_plan?(plan.plan, snapshot.runners) do
       :ok
     else
@@ -529,8 +529,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp validate_plan_contract(runbook, plan, snapshot) do
-    steps = Map.new(Runbooks.expand(runbook), &{&1["id"], &1})
+  defp validate_plan_contract(public_runbook, plan, snapshot) do
+    steps = Map.new(public_runbook.steps, &{&1.step_id, &1})
     packs = Map.new(snapshot.packs, &{&1.pack_ref, &1})
 
     if RunbookContract.valid_plan_size?(plan) and
@@ -541,7 +541,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp valid_plan_item?(item, steps, packs) do
     with %{} = step <- Map.get(steps, item.step_id),
-         pack_ref when is_binary(pack_ref) <- step["pack_ref"],
+         pack_ref when is_binary(pack_ref) <- step.pack_ref,
          %{} = pack <- Map.get(packs, pack_ref),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == item.action_id)) do
       item.runner_id in action.compatible_runner_ids

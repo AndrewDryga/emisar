@@ -48,6 +48,31 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
     assert {:error, :incomplete_contract} = RunbookContract.project(runbook, snapshot)
   end
 
+  test "resolves a missing pack ref and keeps a group visible with one compatible member" do
+    [connected, offline] = runners(2)
+    action = action([connected.id])
+
+    snapshot = %{
+      packs: [%{pack_ref: @pack_ref, actions: [action]}],
+      runners: [connected, offline],
+      account_runners: [connected, offline]
+    }
+
+    definition =
+      %{"steps" => [step(1, %{"group" => ["fleet"]}, %{}) |> Map.delete("pack_ref")]}
+
+    runbook = %Runbook{
+      slug: "partial-group-book",
+      version: 1,
+      title: "Partial group book",
+      description: "Checks an available group member.",
+      definition: definition
+    }
+
+    assert {:ok, public} = RunbookContract.project(runbook, snapshot)
+    assert [%{pack_ref: @pack_ref, runner_selector: %{groups: ["fleet"]}}] = public.steps
+  end
+
   test "resolved plans repeat the same per-step and total ceilings" do
     assert RunbookContract.valid_plan_size?(plan(16, 16))
     refute RunbookContract.valid_plan_size?(plan(1, 17))

@@ -140,6 +140,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
       step = hd(runbook.definition["steps"])
       assert step["runner_selector"] == %{"group" => ["edge-eu", "edge-us"]}
+      refute Map.has_key?(step, "pack_ref")
     end
 
     test "the kind + targets selects reflect the picked values after a change", %{
