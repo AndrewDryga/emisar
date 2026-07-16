@@ -790,8 +790,10 @@ stage_binary() {
 # upgrade never converts a working host into a crash-looping one. Readable
 # pre-v0.12 state is fine — the new runner migrates it forward on boot.
 check_dispatch_log() {
-  # Older binaries don't have the verb; nothing to check against.
-  "${STAGED_BINARY}" state check-dispatch-log --help >/dev/null 2>&1 || return 0
+  # Older binaries don't have the verb; nothing to check against. Probe the
+  # subcommand LISTING — `state check-dispatch-log --help` on an old binary
+  # prints the parent's help and exits 0, so its exit code proves nothing.
+  "${STAGED_BINARY}" state --help 2>/dev/null | grep -q "check-dispatch-log" || return 0
   if "${STAGED_BINARY}" state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1; then
     return 0
   fi
