@@ -39,6 +39,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_runner_text_length 16_384
   @max_db_string_length 255
   @max_action_args_bytes 32_768
+  @min_db_integer -2_147_483_648
+  @max_db_integer 2_147_483_647
+  @max_db_bigint 9_223_372_036_854_775_807
   @max_run_opt_value 9_223_372_036_854_775_807
   @run_opt_keys ~w(timeout max_stdout_bytes max_stderr_bytes)
 
@@ -137,9 +140,22 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
     |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
-    |> validate_number(:emitted_stdout_bytes, greater_than_or_equal_to: 0)
-    |> validate_number(:emitted_stderr_bytes, greater_than_or_equal_to: 0)
-    |> validate_number(:duration_ms, greater_than_or_equal_to: 0)
+    |> validate_number(:exit_code,
+      greater_than_or_equal_to: @min_db_integer,
+      less_than_or_equal_to: @max_db_integer
+    )
+    |> validate_number(:emitted_stdout_bytes,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: @max_db_bigint
+    )
+    |> validate_number(:emitted_stderr_bytes,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: @max_db_bigint
+    )
+    |> validate_number(:duration_ms,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: @max_db_integer
+    )
   end
 
   @doc "Release an approval-gated run into a fresh dispatch window."

@@ -244,5 +244,29 @@ defmodule Emisar.Runs.ActionRunTest do
         assert {"must be greater than or equal to %{number}", _} = changeset.errors[field]
       end
     end
+
+    test "rejects runner result numbers outside their database column ranges" do
+      overflows = [
+        exit_code: 2_147_483_648,
+        duration_ms: 2_147_483_648,
+        emitted_stdout_bytes: 9_223_372_036_854_775_808,
+        emitted_stderr_bytes: 9_223_372_036_854_775_808
+      ]
+
+      for {field, value} <- overflows do
+        changeset = ActionRun.Changeset.transition(transition_run(), :success, %{field => value})
+
+        refute changeset.valid?
+        assert {"must be less than or equal to %{number}", _} = changeset.errors[field]
+      end
+
+      changeset =
+        ActionRun.Changeset.transition(transition_run(), :failed, %{
+          exit_code: -2_147_483_649
+        })
+
+      refute changeset.valid?
+      assert {"must be greater than or equal to %{number}", _} = changeset.errors[:exit_code]
+    end
   end
 end
