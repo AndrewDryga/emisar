@@ -65,6 +65,14 @@ message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
 maximum attestation age.
 
+The optional `degraded_packs` array names installed packs the runner's loader
+skipped (unparseable or invalid on disk): each entry carries the pack
+directory's basename as `pack` (the manifest may not have parsed, so no pack
+id is guaranteed) and a `reason` bounded to 500 bytes. The portal stores it so
+the console and MCP diagnostics can say "pack X failed to load on runner Y"
+instead of the pack silently missing from the catalog. Additive: an older
+portal ignores the field, and an older runner never sends it.
+
 ```json
 {
   "type": "runner_state",
@@ -76,6 +84,9 @@ maximum attestation age.
   "enforce_signatures": true,
   "signing_ca_ids": ["ca-prod-2026"],
   "max_attestation_age_seconds": 86400,
+  "degraded_packs": [
+    {"pack": "cloud-init", "reason": "packs: parse pack.yaml: yaml: unmarshal errors"}
+  ],
   "packs": {
     "cassandra": {
       "version": "1.4.0",

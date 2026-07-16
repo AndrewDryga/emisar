@@ -167,6 +167,9 @@ func canonicalWireFrames() []wireFrameCase {
 					EnforceSignatures:        true,
 					SigningCAIDs:             []string{"ca-production", "ca-staging"},
 					MaxAttestationAgeSeconds: 86400,
+					DegradedPacks: []DegradedPackState{
+						{Pack: "cloud-init", Reason: "packs: parse pack.yaml: yaml: unmarshal errors"},
+					},
 				})
 			},
 		},

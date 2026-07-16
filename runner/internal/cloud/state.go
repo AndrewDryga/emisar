@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -12,6 +14,22 @@ import (
 )
 
 const maxRunnerStateBytes = 2 << 20
+
+// maxDegradedReasonBytes bounds one degraded pack's load-failure reason on
+// the wire — the full detail stays in the host log and doctor.
+const maxDegradedReasonBytes = 500
+
+func boundDegradedReason(reason string) string {
+	if len(reason) <= maxDegradedReasonBytes {
+		return reason
+	}
+	// Cut on a rune boundary so a truncated reason stays valid UTF-8 JSON.
+	cut := maxDegradedReasonBytes
+	for cut > 0 && !utf8.RuneStart(reason[cut]) {
+		cut--
+	}
+	return reason[:cut] + "…"
+}
 
 // StateBuilder constructs the RunnerStateMsg the runner ships on connect
 // and on SIGHUP-driven re-advertisement. GetRegistry and GetVerifier are
@@ -77,6 +95,17 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 			info.Hash = h
 		}
 		msg.Packs[p.ID] = info
+	}
+	// Packs the loader skipped ride along so the cloud can say "pack X failed
+	// to load on runner Y" instead of the pack silently missing from the
+	// catalog. Basename only (the manifest may not have parsed, so no id is
+	// guaranteed) and a bounded reason — this crosses the wire and renders in
+	// the console.
+	for _, degraded := range reg.Degraded() {
+		msg.DegradedPacks = append(msg.DegradedPacks, DegradedPackState{
+			Pack:   filepath.Base(degraded.Dir),
+			Reason: boundDegradedReason(degraded.Reason),
+		})
 	}
 	for _, a := range reg.Actions() {
 		if ok, _ := b.Admission.Admit(a.ID); !ok {

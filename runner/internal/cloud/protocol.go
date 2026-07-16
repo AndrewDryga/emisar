@@ -512,6 +512,19 @@ type RunnerStateMsg struct {
 	// stale, e.g. a slow approval).
 	SigningCAIDs             []string `json:"signing_ca_ids,omitempty"`
 	MaxAttestationAgeSeconds int      `json:"max_attestation_age_seconds,omitempty"`
+	// DegradedPacks names installed packs this runner skipped at load
+	// (unparseable/invalid on disk), so the cloud can say "pack X failed to
+	// load on runner Y" instead of the pack silently missing from the
+	// catalog. Additive: an older portal ignores it.
+	DegradedPacks []DegradedPackState `json:"degraded_packs,omitempty"`
+}
+
+// DegradedPackState is one skipped pack in a runner_state advertisement: the
+// pack directory's basename (the manifest may not have parsed, so no pack id
+// is guaranteed) and a bounded load-failure reason.
+type DegradedPackState struct {
+	Pack   string `json:"pack"`
+	Reason string `json:"reason"`
 }
 
 // PackInfo is the side-index entry for a pack.

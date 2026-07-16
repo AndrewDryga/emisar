@@ -222,7 +222,13 @@
         "ca-production",
         "ca-staging"
       ],
-      "max_attestation_age_seconds": 86400
+      "max_attestation_age_seconds": 86400,
+      "degraded_packs": [
+        {
+          "pack": "cloud-init",
+          "reason": "packs: parse pack.yaml: yaml: unmarshal errors"
+        }
+      ]
     },
     "shutdown": {
       "type": "shutdown",

@@ -141,6 +141,64 @@ func enforcingVerifier(t *testing.T, caIDs ...string) *signing.Verifier {
 	return v
 }
 
+// A degraded pack (skipped by the loader) is advertised by directory basename
+// with a bounded reason, so the cloud can say "pack X failed to load on
+// runner Y" instead of the pack silently missing from the catalog.
+func TestStateBuilder_AdvertisesDegradedPacks(t *testing.T) {
+	root := t.TempDir()
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(root, "p", "actions"), 0o755))
+	must(os.WriteFile(filepath.Join(root, "p", "pack.yaml"), []byte(packManifest), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "echo.yaml"), []byte(echoAction), 0o644))
+	must(os.MkdirAll(filepath.Join(root, "busted"), 0o755))
+	must(os.WriteFile(filepath.Join(root, "busted", "pack.yaml"), []byte("not: [valid"), 0o644))
+	reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{SkipBrokenPacks: true})
+	must(err)
+
+	policy, err := admission.New(nil, nil, "")
+	must(err)
+	b := &StateBuilder{
+		Version:     "0.0.1",
+		Group:       "g",
+		GetRegistry: func() *packs.Registry { return reg },
+		Admission:   policy,
+	}
+	msg := b.Build()
+
+	if len(msg.DegradedPacks) != 1 {
+		t.Fatalf("degraded packs advertised = %+v, want exactly the busted pack", msg.DegradedPacks)
+	}
+	got := msg.DegradedPacks[0]
+	if got.Pack != "busted" || got.Reason == "" {
+		t.Fatalf("degraded advertisement = %+v, want basename + reason", got)
+	}
+	if strings.Contains(got.Pack, string(os.PathSeparator)) {
+		t.Fatalf("degraded pack name leaks a path: %q", got.Pack)
+	}
+	// The healthy pack still advertises normally alongside.
+	if _, ok := msg.Packs["t"]; !ok {
+		t.Fatalf("healthy pack missing from advertisement: %+v", msg.Packs)
+	}
+}
+
+func TestBoundDegradedReason_CutsOnRuneBoundary(t *testing.T) {
+	long := strings.Repeat("é", maxDegradedReasonBytes) // 2 bytes per rune
+	bounded := boundDegradedReason(long)
+	if len(bounded) > maxDegradedReasonBytes+len("…") {
+		t.Fatalf("bounded reason is %d bytes", len(bounded))
+	}
+	if !strings.HasSuffix(bounded, "…") || strings.Contains(bounded, "�") {
+		t.Fatalf("bounded reason is not a clean truncation: %q", bounded[:32])
+	}
+	if !json.Valid([]byte(`"` + strings.ReplaceAll(bounded, `"`, ``) + `"`)) {
+		t.Fatalf("bounded reason is not valid JSON text")
+	}
+}
+
 func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 	reg := setupRegistry(t)
 
