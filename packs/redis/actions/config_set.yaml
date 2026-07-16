@@ -18,13 +18,13 @@ args:
     required: true
     description: Config parameter name.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,63}$"
   - name: value
     type: string
     required: true
     description: New value (limited charset).
     validation:
-      pattern: "^[a-zA-Z0-9_\\-./ %:]{1,256}$"
+      pattern: "^[a-zA-Z0-9_./ %:][a-zA-Z0-9_\\-./ %:]{0,255}$"
 execution:
   command:
     binary: redis-cli

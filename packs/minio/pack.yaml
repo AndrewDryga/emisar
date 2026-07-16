@@ -1,7 +1,8 @@
 schema_version: 1
 id: minio
 name: MinIO operations
-version: 0.1.9
+version: 0.1.10
+retired_below: 0.1.10
 description: >
   Cluster + bucket + user introspection plus operator surface (user
   enable/disable, bucket heal, cluster service restart). Talks to mc

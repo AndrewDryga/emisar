@@ -27,7 +27,7 @@ args:
     required: true
     description: Systemd unit to restart (e.g. nginx, nomad, consul.service, foo@bar.service).
     validation:
-      pattern: "^[A-Za-z0-9@._:-]{1,128}$"
+      pattern: "^[A-Za-z0-9@._:][A-Za-z0-9@._:-]{0,127}$"
       max_length: 128
 
 execution:

@@ -11,7 +11,7 @@ args:
     required: true
     description: Zone name.
     validation:
-      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-]{0,252}$"
 execution:
   command:
     binary: dig

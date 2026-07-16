@@ -13,7 +13,7 @@ args:
     required: true
     description: Stream key.
     validation:
-      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+      pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
   command:
     binary: redis-cli

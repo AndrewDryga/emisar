@@ -15,7 +15,7 @@ args:
     required: true
     description: Event name from LATENCY LATEST.
     validation:
-      pattern: "^[a-z0-9\\-_]{1,32}$"
+      pattern: "^[a-z0-9][a-z0-9\\-_]{0,31}$"
 execution:
   command:
     binary: redis-cli

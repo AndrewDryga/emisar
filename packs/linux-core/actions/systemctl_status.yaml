@@ -23,7 +23,7 @@ args:
       # Any valid systemd unit name. A generic pack can't enumerate every
       # service a fleet runs; the regex keeps the argument injection-safe
       # without baking in one environment's service list.
-      pattern: "^[a-zA-Z0-9@._-]{1,128}$"
+      pattern: "^[a-zA-Z0-9@._][a-zA-Z0-9@._-]{0,127}$"
 
 execution:
   command:

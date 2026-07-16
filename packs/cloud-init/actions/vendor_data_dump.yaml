@@ -2,7 +2,7 @@ schema_version: 1
 id: cloud-init.vendor_data_dump
 title: cat /var/lib/cloud/instance/vendor-data.txt
 kind: exec
-risk: low
+risk: medium
 description: >
   Dump vendor-data the cloud provider injected (AWS / GCE / Azure provider
   defaults that ran before user-data). Useful when "why is X installed

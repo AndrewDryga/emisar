@@ -26,8 +26,8 @@ defmodule Emisar.Catalog.PackBaselineTest do
       current = PackBaseline.current_version(pack_id)
       assert is_binary(current)
       assert {:ok, _} = Version.parse(current)
-      # The current version is the top of that pack's trust window — never below
-      # nothing, and (with no shipped watermark) never retired.
+      # The current version is the top of that pack's trust window and is never
+      # strictly below its own retirement watermark.
       refute PackBaseline.retired?(pack_id, current)
     end
 
@@ -41,10 +41,8 @@ defmodule Emisar.Catalog.PackBaselineTest do
   end
 
   describe "retired?/2" do
-    # No shipped pack carries a retirement watermark yet (the window and
-    # watermarks fill as versions bump through publish), so this also locks
-    # "a shipping catalog never retires its own current" — a current version
-    # is never strictly below its own retire watermark.
+    # A retirement watermark removes only versions strictly below it; a
+    # shipping catalog never retires its own current version.
     test "is false for every version in the shipped baseline" do
       for {{pack_id, version}, _hash} <- PackBaseline.all() do
         refute PackBaseline.retired?(pack_id, version),

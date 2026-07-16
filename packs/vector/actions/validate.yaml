@@ -19,6 +19,8 @@ args:
     description: Path to the Vector config file to validate.
     validation:
       pattern: '^/[A-Za-z0-9._/-]{1,256}$'
+      allowed_prefixes:
+        - /etc/vector/
 execution:
   command:
     binary: vector

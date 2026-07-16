@@ -14,7 +14,7 @@ args:
     required: true
     description: Peer to ping — a tailnet hostname, MagicDNS name, or Tailscale IP.
     validation:
-      pattern: "^[A-Za-z0-9._:-]{1,128}$"
+      pattern: "^[A-Za-z0-9._:][A-Za-z0-9._:-]{0,127}$"
   - name: count
     type: integer
     required: false

@@ -2,7 +2,8 @@ schema_version: 1
 
 id: cassandra
 name: Cassandra operations
-version: 0.4.9
+version: 0.4.10
+retired_below: 0.4.10
 description: >
   Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
   gossip, describering, failure detector), health (tpstats, netstats,

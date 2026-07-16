@@ -20,7 +20,7 @@ args:
     default: "Closed by operator"
     description: Explanation recorded with the connection close.
     validation:
-      pattern: "^.{1,255}$"
+      pattern: "^[A-Za-z0-9].{0,254}$"
 execution:
   command:
     binary: rabbitmqctl

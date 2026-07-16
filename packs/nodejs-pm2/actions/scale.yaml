@@ -13,7 +13,7 @@ args:
     required: true
     description: Process name (cluster-mode).
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+      pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,63}$"
   - name: instances
     type: integer
     required: true

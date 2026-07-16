@@ -2,7 +2,8 @@ schema_version: 1
 
 id: nodejs-pm2
 name: Node.js / PM2 operations
-version: 0.1.6
+version: 0.1.7
+retired_below: 0.1.7
 description: >
   PM2 process inventory + logs + per-app introspection, plus narrow
   mutators (restart, reload, stop, scale). Requires the runner to be the

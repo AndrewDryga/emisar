@@ -19,6 +19,11 @@ output:
   parser: text
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+  redact:
+    - name: redis-acl-password-hash
+      type: regex
+      pattern: '#[0-9A-Fa-f]{64}'
+      replacement: '[REDACTED ACL HASH]'
 examples:
   - title: All ACL users
     args: {}

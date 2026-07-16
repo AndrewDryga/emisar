@@ -15,6 +15,10 @@ args:
     description: .p12 / .pfx file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      allowed_prefixes:
+        - /etc/ssl/
+        - /etc/pki/
+        - /usr/local/share/ca-certificates/
       denied_paths:
         - /etc/shadow
         - /etc/gshadow

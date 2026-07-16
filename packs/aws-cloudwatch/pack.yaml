@@ -1,7 +1,8 @@
 schema_version: 1
 id: aws-cloudwatch
 name: AWS CloudWatch operations
-version: 0.1.2
+version: 0.1.3
+retired_below: 0.1.3
 description: >
   Metric + alarm + log group + log stream + log query introspection.
   Read-only. Auth via AWS_PROFILE.

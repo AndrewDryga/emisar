@@ -2,7 +2,8 @@ schema_version: 1
 
 id: typesense
 name: Typesense search
-version: 0.1.2
+version: 0.1.3
+retired_below: 0.1.3
 description: >
   Read-only diagnostics for a Typesense search node over its HTTP API:
   health and node/raft state, per-endpoint request stats and system

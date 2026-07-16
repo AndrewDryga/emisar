@@ -1,7 +1,8 @@
 schema_version: 1
 id: zfs
 name: ZFS pool + dataset operations
-version: 0.1.7
+version: 0.1.8
+retired_below: 0.1.8
 description: >
   Pool status, dataset inventory, snapshot listing, scrub status, ARC
   stats, plus operator surface for storage incident response: scrub

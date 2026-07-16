@@ -18,7 +18,7 @@ args:
     required: true
     description: New master host, or the literal "NO" to demote.
     validation:
-      pattern: "^[a-zA-Z0-9._\\-]{1,253}$"
+      pattern: "^[a-zA-Z0-9._][a-zA-Z0-9._\\-]{0,252}$"
   - name: port
     type: string
     required: true

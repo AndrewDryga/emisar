@@ -19,6 +19,8 @@ args:
     description: Typesense server log path.
     validation:
       pattern: '^/[A-Za-z0-9._/-]{1,256}$'
+      allowed_prefixes:
+        - /var/log/
   - name: lines
     type: integer
     required: false

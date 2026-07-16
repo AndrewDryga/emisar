@@ -19,7 +19,7 @@ args:
     required: true
     description: Configured master name to check quorum for (e.g. "mymaster").
     validation:
-      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      pattern: "^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"
 execution:
   command:
     binary: redis-cli

@@ -13,7 +13,7 @@ args:
     required: true
     description: Container ID or name.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+      pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,63}$"
 execution:
   command: {binary: podman, argv: ["restart", "{{ args.container }}"]}
   timeout: 2m

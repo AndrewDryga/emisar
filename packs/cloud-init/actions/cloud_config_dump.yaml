@@ -2,7 +2,7 @@ schema_version: 1
 id: cloud-init.cloud_config_dump
 title: cat /var/lib/cloud/instance/cloud-config.txt
 kind: exec
-risk: low
+risk: medium
 description: >
   Dump the final merged cloud-config (user-data + vendor-data + system defaults)
   as cloud-init evaluated it. The source of truth for "what did

@@ -2,7 +2,7 @@ schema_version: 1
 id: nginx.config_dump
 title: Full loaded config (nginx -T)
 kind: exec
-risk: low
+risk: medium
 description: >
   Dumps the loaded config — main + all includes — via `nginx -T`. Sensitive content (passwords in auth_basic_user_file, API keys); output passes through redaction.
 side_effects:

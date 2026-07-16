@@ -2,7 +2,7 @@ schema_version: 1
 id: caddy.config_dump
 title: GET /config (current config)
 kind: exec
-risk: low
+risk: medium
 description: >
   Dump the currently-loaded Caddy configuration as JSON. This surfaces the
   full config, which can carry secrets (TLS private-key material,

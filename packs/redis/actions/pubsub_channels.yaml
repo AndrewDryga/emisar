@@ -16,7 +16,7 @@ args:
     default: "*"
     description: Glob pattern.
     validation:
-      pattern: "^[A-Za-z0-9_:.\\-*?{}@#/=+]{1,256}$"
+      pattern: "^[A-Za-z0-9_:.*?{}@#/=+][A-Za-z0-9_:.\\-*?{}@#/=+]{0,255}$"
 execution:
   command:
     binary: redis-cli

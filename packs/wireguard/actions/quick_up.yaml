@@ -16,7 +16,7 @@ args:
     required: true
     description: Interface name (matches /etc/wireguard/<iface>.conf).
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
+      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,14}$"
 execution:
   command:
     binary: wg-quick

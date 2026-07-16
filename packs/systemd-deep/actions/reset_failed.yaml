@@ -18,7 +18,7 @@ args:
     default: ""
     description: Unit name (empty for all failed units).
     validation:
-      pattern: "^[a-zA-Z0-9@_\\-.]{0,128}$"
+      pattern: "^([a-zA-Z0-9@_][a-zA-Z0-9@_\\-.]{0,127})?$"
 execution:
   command:
     binary: /bin/sh

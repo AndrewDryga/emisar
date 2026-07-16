@@ -23,7 +23,7 @@ args:
     required: true
     description: Partition key (as a literal).
     validation:
-      pattern: "^[a-zA-Z0-9_\\-:.]{1,256}$"
+      pattern: "^[a-zA-Z0-9_:.][a-zA-Z0-9_\\-:.]{0,255}$"
 execution:
   command: {binary: nodetool, argv: ["getendpoints", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.key }}"]}
   timeout: 30s
