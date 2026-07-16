@@ -290,6 +290,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           <.version_upgrade_notice
             id="runner-upgrade"
             kind={:runner}
+            scope={:single}
             versions={[@runner.runner_version]}
             base_url={@base_url}
             class="mt-8"

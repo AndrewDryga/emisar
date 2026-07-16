@@ -38,6 +38,45 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       refute html =~ "Upgrade command"
     end
 
+    test "a single unsupported runner on a list scopes the count to the page" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.version_upgrade_notice
+          id="runner-upgrade"
+          kind={:runner}
+          versions={["0.0.0"]}
+          base_url="https://control.example"
+        />
+        """)
+
+      # List scope (the default): "1 runner on this page is …", never "This
+      # runner" — the page holds many runners, so a definite singular misleads.
+      assert html =~ "1 runner on this page is below the supported range"
+      refute html =~ "This runner is below"
+    end
+
+    test "single scope (a runner's own detail page) keeps \"This runner\"" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.version_upgrade_notice
+          id="runner-upgrade"
+          kind={:runner}
+          scope={:single}
+          versions={["0.0.0"]}
+          base_url="https://control.example"
+        />
+        """)
+
+      # A detail page is one runner in context, so "This runner" is correct and
+      # the page-scoped count would read wrong.
+      assert html =~ "This runner is below the supported range"
+      refute html =~ "on this page"
+    end
+
     test "renders MCP restart instructions for an outdated bridge" do
       assigns = %{}
 

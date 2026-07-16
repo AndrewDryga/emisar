@@ -3581,6 +3581,12 @@ defmodule EmisarWeb.CoreComponents do
   attr :kind, :atom, required: true, values: [:runner, :mcp]
   attr :versions, :list, required: true
   attr :base_url, :string, required: true
+
+  attr :scope, :atom,
+    default: :list,
+    values: [:list, :single],
+    doc: "`:list` scopes the count to \"on this page\"; `:single` is one entity's own detail page"
+
   attr :class, :string, default: nil
 
   def version_upgrade_notice(assigns) do
@@ -3608,7 +3614,7 @@ defmodule EmisarWeb.CoreComponents do
       class={@class}
     >
       <div class="space-y-4">
-        <p>{version_upgrade_message(@kind, @unsupported_count, @outdated_count)}</p>
+        <p>{version_upgrade_message(@kind, @scope, @unsupported_count, @outdated_count)}</p>
         <.code_line
           id={"#{@id}-command"}
           value={@command}
@@ -3639,55 +3645,67 @@ defmodule EmisarWeb.CoreComponents do
   defp version_upgrade_title(:mcp, :unsupported, _count), do: "MCP bridge update required"
   defp version_upgrade_title(:mcp, :outdated, _count), do: "MCP bridge update available"
 
-  defp version_upgrade_message(:runner, 1, 0) do
+  # `:single` scope — the runner's own detail page: the notice describes THIS
+  # runner, so it never scopes a count to "on this page".
+  defp version_upgrade_message(:runner, :single, unsupported, _outdated) when unsupported > 0 do
     "This runner is below the supported range (#{Emisar.Compat.runner_minimum()}). " <>
       "Run the command on its host. The installer preserves its configuration and restarts the service."
   end
 
-  defp version_upgrade_message(:runner, unsupported_count, 0) do
-    "#{unsupported_count} runners on this page are below the supported range " <>
-      "(#{Emisar.Compat.runner_minimum()}). Run the command on each affected host; " <>
-      "the installer preserves its configuration and restarts the service."
-  end
-
-  defp version_upgrade_message(:runner, 0, 1) do
+  defp version_upgrade_message(:runner, :single, 0, _outdated) do
     "This runner is behind the recommended release (#{Emisar.Compat.runner_recommended()}). " <>
       "Run the command on its host. The installer preserves its configuration and restarts the service."
   end
 
-  defp version_upgrade_message(:runner, 0, outdated_count) do
-    "#{outdated_count} runners on this page are behind the recommended release " <>
-      "(#{Emisar.Compat.runner_recommended()}). Run the command on each affected host; " <>
+  # `:list` scope — the notice sits above a paginated list, so it scopes the
+  # count to "on this page" (never "this runner", which reads as one entity when
+  # the page holds many). Parallels the agents-list bridge copy below.
+  defp version_upgrade_message(:runner, :list, unsupported_count, 0) do
+    "#{runner_count_phrase(unsupported_count)} below the supported range " <>
+      "(#{Emisar.Compat.runner_minimum()}). Run the command once on each affected host; " <>
       "the installer preserves its configuration and restarts the service."
   end
 
-  defp version_upgrade_message(:runner, unsupported_count, outdated_count) do
+  defp version_upgrade_message(:runner, :list, 0, outdated_count) do
+    "#{runner_count_phrase(outdated_count)} behind the recommended release " <>
+      "(#{Emisar.Compat.runner_recommended()}). Run the command once on each affected host; " <>
+      "the installer preserves its configuration and restarts the service."
+  end
+
+  defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
       "#{version_count_label(outdated_count, "runner")} behind the recommended release " <>
-      "(#{Emisar.Compat.runner_recommended()}). Run the command on each affected host; " <>
+      "(#{Emisar.Compat.runner_recommended()}). Run the command once on each affected host; " <>
       "the installer preserves its configuration and restarts the service."
   end
 
-  defp version_upgrade_message(:mcp, unsupported_count, 0) do
+  # MCP agents render only as a page-scoped list (there is no per-agent detail
+  # view), so the bridge copy always scopes to "on this page" — scope-agnostic.
+  defp version_upgrade_message(:mcp, _scope, unsupported_count, 0) do
     "#{unsupported_count} #{agent_count_label(unsupported_count)} on this page last connected through a bridge below " <>
       "the supported range (#{Emisar.Compat.mcp_minimum()}). Run the command once on each " <>
       "affected machine, then restart its LLM client."
   end
 
-  defp version_upgrade_message(:mcp, 0, outdated_count) do
+  defp version_upgrade_message(:mcp, _scope, 0, outdated_count) do
     "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
       "the recommended release (#{Emisar.Compat.mcp_recommended()}). Run the command once on " <>
       "each affected machine, then restart its LLM client."
   end
 
-  defp version_upgrade_message(:mcp, unsupported_count, outdated_count) do
+  defp version_upgrade_message(:mcp, _scope, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
       "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
       "#{version_count_label(outdated_count, "agent")} behind the recommended release " <>
       "(#{Emisar.Compat.mcp_recommended()}). Run the command once on each affected machine, " <>
       "then restart its LLM client."
   end
+
+  # "1 runner on this page is" / "3 runners on this page are" — the count-scoped,
+  # number-agreed subject for a list-level runner upgrade notice.
+  defp runner_count_phrase(1), do: "1 runner on this page is"
+  defp runner_count_phrase(count), do: "#{count} runners on this page are"
 
   defp version_count_label(1, noun), do: "1 #{noun} is"
   defp version_count_label(count, noun), do: "#{count} #{noun}s are"
