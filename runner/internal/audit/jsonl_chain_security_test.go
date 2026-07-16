@@ -225,6 +225,52 @@ func TestChain_LastHashHoldsWhenWriteFails(t *testing.T) {
 	}
 }
 
+type syncFailFile struct {
+	auditFile
+	err error
+}
+
+func (f syncFailFile) Sync() error { return f.err }
+
+func TestChain_SyncFailureLatchesUntilRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	s, err := OpenJSONL(path, JSONLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Write(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.do", EventID: "evt_1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	syncErr := errors.New("injected sync failure")
+	s.mu.Lock()
+	s.f = syncFailFile{auditFile: s.f, err: syncErr}
+	s.mu.Unlock()
+	if err := s.Write(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.do", EventID: "evt_2"}); !errors.Is(err, syncErr) {
+		t.Fatalf("sync failure = %v, want %v", err, syncErr)
+	}
+	if err := s.Write(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.do", EventID: "evt_3"}); err == nil || !strings.Contains(err.Error(), "previously failed") {
+		t.Fatalf("latched write error = %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := OpenJSONL(path, JSONLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Write(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.do", EventID: "evt_3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyChain(path); err != nil {
+		t.Fatalf("restart did not recover the persisted chain: %v", err)
+	}
+}
+
 // BenchmarkChainWrite — per-event chain write cost, dominated by
 // the fsync in JSONLSink.Write. Establishes a throughput baseline; growth here
 // flags a regression in the hot append path.

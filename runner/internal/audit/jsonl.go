@@ -28,8 +28,16 @@ type JSONLSink struct {
 	maxBackups   int
 
 	mu       sync.Mutex
-	f        *os.File
+	f        auditFile
+	failed   error
 	lastHash string // sha256(prev line without trailing newline), hex
+}
+
+type auditFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Stat() (os.FileInfo, error)
+	Close() error
 }
 
 // JSONLOptions configure the sink. Zero values mean "no rotation".
@@ -141,6 +149,9 @@ func (s *JSONLSink) seedLastHashLocked() error {
 func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failed != nil {
+		return fmt.Errorf("audit: jsonl sink previously failed: %w", s.failed)
+	}
 
 	ev.PrevHash = s.lastHash
 	b, err := json.Marshal(ev)
@@ -176,27 +187,32 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	if s.f == nil {
 		return fmt.Errorf("audit: jsonl sink has no active file")
 	}
-	if _, err := s.f.Write(line); err != nil {
-		return err
+	if written, err := s.f.Write(line); err != nil {
+		return s.latchLocked(err)
+	} else if written != len(line) {
+		return s.latchLocked(io.ErrShortWrite)
 	}
 
 	// fsync so a hard crash (power loss, OOM-kill, SIGKILL) can't lose a
 	// line that Write already reported as written — this is the tamper-
 	// evident forensics record, so a "best-effort" page-cache write isn't
 	// enough. One fsync per action attempt is negligible at the runner's
-	// dispatch rate. A failed Sync is treated like a failed Write below:
-	// the chain head doesn't advance, so the next attempt re-chains from
-	// the same point rather than leaving a gap.
+	// dispatch rate. Once append begins, any persistence failure is ambiguous:
+	// the bytes may be present even though durability was not confirmed. Latch
+	// the sink closed until restart can inspect and re-seed the actual file.
 	if err := s.f.Sync(); err != nil {
-		return err
+		return s.latchLocked(err)
 	}
 
-	// Chain advances only after the bytes are durably on disk. If the
-	// Write or Sync above had failed, lastHash stays put and the next
-	// attempt chains from the same point.
+	// Chain advances only after the bytes are durably on disk.
 	h := sha256.Sum256(b)
 	s.lastHash = hex.EncodeToString(h[:])
 	return nil
+}
+
+func (s *JSONLSink) latchLocked(err error) error {
+	s.failed = err
+	return err
 }
 
 // maybeRotateLocked rotates the file when the next write would cross
