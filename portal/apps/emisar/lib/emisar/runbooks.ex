@@ -1031,7 +1031,6 @@ defmodule Emisar.Runbooks do
       runner_id: runner_id,
       action_id: step["action"] || step["action_id"],
       args: step["args"] || %{},
-      opts: step["opts"] || %{},
       # The raw operator reason comes from the execution descriptor, not
       # a prior run's already-prefixed `reason` — re-prefixing that would
       # nest "runbook: …" wrappers wave after wave.

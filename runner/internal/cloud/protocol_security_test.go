@@ -60,6 +60,25 @@ func TestRunActionMsgPreservesExactArgumentBytes(t *testing.T) {
 	}
 }
 
+func TestRunActionMsgUsesIntegerNanosecondOptions(t *testing.T) {
+	requestID := testRequestID("req_opts")
+	valid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":5000000000,\"max_stdout_bytes\":65536,\"max_stderr_bytes\":16384}}")
+
+	var msg RunActionMsg
+	if err := json.Unmarshal(valid, &msg); err != nil {
+		t.Fatalf("Unmarshal integer options: %v", err)
+	}
+	if msg.Opts == nil || msg.Opts.Timeout != 5_000_000_000 ||
+		msg.Opts.MaxStdoutBytes != 65_536 || msg.Opts.MaxStderrBytes != 16_384 {
+		t.Fatalf("decoded options = %+v", msg.Opts)
+	}
+
+	invalid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":\"5s\"}}")
+	if err := json.Unmarshal(invalid, &msg); err == nil {
+		t.Fatal("string timeout was accepted")
+	}
+}
+
 func TestRunActionMsgRejectsDuplicateKeysAtEveryDepth(t *testing.T) {
 	for _, raw := range []string{
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"action_id\":\"a.c\",\"args\":{}}",

@@ -147,6 +147,50 @@ defmodule Emisar.Runs.ActionRunTest do
       refute changeset.valid?
       assert Keyword.has_key?(changeset.errors, :mcp_client_metadata)
     end
+
+    test "accepts the canonical unsigned runner options envelope" do
+      opts = %{
+        "timeout" => 5_000_000_000,
+        "max_stdout_bytes" => 65_536,
+        "max_stderr_bytes" => 16_384
+      }
+
+      changeset = ActionRun.Changeset.create(create_attrs(%{opts: opts}))
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_field(changeset, :opts) == opts
+    end
+
+    test "rejects runner options the Go wire decoder cannot use" do
+      invalid = [
+        %{"timeout" => "5s"},
+        %{"timeout" => 1.5},
+        %{"timeout" => 0},
+        %{"timeout" => -1},
+        %{"timeout" => 9_223_372_036_854_775_808},
+        %{"future" => 1},
+        %{timeout: 1}
+      ]
+
+      for opts <- invalid do
+        changeset = ActionRun.Changeset.create(create_attrs(%{opts: opts}))
+
+        refute changeset.valid?
+        assert Keyword.has_key?(changeset.errors, :opts)
+      end
+    end
+
+    test "rejects nonempty runner options on an attested run" do
+      attrs = %{
+        attestation: %{"version" => "emisar-attestation-v4"},
+        opts: %{"timeout" => 1}
+      }
+
+      changeset = ActionRun.Changeset.create(create_attrs(attrs))
+
+      refute changeset.valid?
+      assert {"must be empty for an attested run", _opts} = changeset.errors[:opts]
+    end
   end
 
   describe "transition/3 size caps" do

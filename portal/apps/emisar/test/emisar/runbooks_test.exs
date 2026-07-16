@@ -665,6 +665,20 @@ defmodule Emisar.RunbooksTest do
       assert "is too large (max 65536 bytes)" in errors_on(changeset).definition
     end
 
+    test "saving a runbook step with execution options is rejected", %{subject: subject} do
+      steps = [
+        %{
+          "id" => "s1",
+          "action_id" => "linux.uptime",
+          "args" => %{},
+          "opts" => %{"timeout" => "5s"}
+        }
+      ]
+
+      assert {:error, changeset} = save_runbook(subject, steps)
+      assert "runbook steps do not support execution options" in errors_on(changeset).definition
+    end
+
     test "saving a step that targets too many runners is rejected", %{subject: subject} do
       steps = [
         %{

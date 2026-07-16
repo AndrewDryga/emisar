@@ -1256,6 +1256,28 @@ defmodule Emisar.RunsTest do
       assert payload["attestation"] == attestation
     end
 
+    test "canonical runner options survive the DB and wire round-trip" do
+      account = Fixtures.Accounts.create_account()
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+
+      opts = %{
+        "timeout" => 5_000_000_000,
+        "max_stdout_bytes" => 65_536,
+        "max_stderr_bytes" => 16_384
+      }
+
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      attrs = base_attrs(account.id, runner.id, %{opts: opts})
+      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
+      assert run.opts == opts
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert payload["opts"] == opts
+    end
+
     test "rich args survive the DB + wire round-trip unchanged (so the signature still verifies)" do
       # The MCP signs over the canonical args; the runner re-canonicalizes the
       # args the portal relayed. If the portal's jsonb/Jason round-trip mangled

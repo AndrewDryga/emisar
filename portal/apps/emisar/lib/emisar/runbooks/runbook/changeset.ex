@@ -106,6 +106,9 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
           definition_too_large?(definition) ->
             add_error(changeset, :definition, "is too large (max #{@max_definition_bytes} bytes)")
 
+          any_step_has_opts?(definition) ->
+            add_error(changeset, :definition, "runbook steps do not support execution options")
+
           any_step_too_many_targets?(definition) ->
             add_error(
               changeset,
@@ -131,6 +134,14 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
       {:error, _} -> true
     end
   end
+
+  defp any_step_has_opts?(%{"steps" => steps}) when is_list(steps) do
+    Enum.any?(steps, fn step ->
+      is_map(step) and (Map.has_key?(step, "opts") or Map.has_key?(step, :opts))
+    end)
+  end
+
+  defp any_step_has_opts?(_definition), do: false
 
   defp any_step_too_many_targets?(%{"steps" => steps}) when is_list(steps),
     do: Enum.any?(steps, &too_many_targets?/1)

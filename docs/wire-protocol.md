@@ -134,6 +134,14 @@ nanoseconds, matching Go's `time.Duration` wire representation.
 }
 ```
 
+Portal-originated unsigned dispatches may include an `opts` object with
+`timeout`, `max_stdout_bytes`, and `max_stderr_bytes`. Values are positive
+integers; `timeout` is nanoseconds, matching Go's `time.Duration` JSON encoding.
+The portal validates this envelope before persistence and the runner clamps each
+value to the action's declared override bounds. Attested MCP dispatches never
+carry overrides: the runner rejects them because they are not part of the signed
+execution intent.
+
 ### Exact arguments
 
 The portal relays the exact UTF-8 JSON value bytes from the MCP

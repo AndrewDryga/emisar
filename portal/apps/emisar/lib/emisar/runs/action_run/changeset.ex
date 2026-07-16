@@ -39,6 +39,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_runner_text_length 16_384
   @max_db_string_length 255
   @max_action_args_bytes 32_768
+  @max_run_opt_value 9_223_372_036_854_775_807
+  @run_opt_keys ~w(timeout max_stdout_bytes max_stderr_bytes)
 
   def create(attrs) do
     attrs = Map.put(attrs, :args_raw, action_args_raw(attrs))
@@ -52,6 +54,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:pack_ref, max: @max_db_string_length)
     |> validate_length(:runner_ref, max: 113)
     |> validate_action_args_raw()
+    |> validate_run_opts()
+    |> validate_signed_run_opts()
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
     |> unique_constraint([:account_id, :request_id])
@@ -89,6 +93,38 @@ defmodule Emisar.Runs.ActionRun.Changeset do
           [args_raw: "must be a JSON object"]
       end
     end)
+  end
+
+  defp validate_run_opts(changeset) do
+    validate_change(changeset, :opts, fn :opts, opts ->
+      cond do
+        not is_map(opts) ->
+          [opts: "must be an object"]
+
+        Enum.any?(Map.keys(opts), &(&1 not in @run_opt_keys)) ->
+          [opts: "supports only timeout, max_stdout_bytes, and max_stderr_bytes"]
+
+        Enum.any?(Map.values(opts), &invalid_run_opt?/1) ->
+          [opts: "values must be positive integers within the signed 64-bit range"]
+
+        true ->
+          []
+      end
+    end)
+  end
+
+  defp invalid_run_opt?(value) do
+    not (is_integer(value) and value > 0 and value <= @max_run_opt_value)
+  end
+
+  defp validate_signed_run_opts(changeset) do
+    opts = get_field(changeset, :opts)
+
+    if not is_nil(get_field(changeset, :attestation)) and is_map(opts) and map_size(opts) > 0 do
+      add_error(changeset, :opts, "must be empty for an attested run")
+    else
+      changeset
+    end
   end
 
   def transition(%ActionRun{} = run, status, attrs \\ %{}) when is_atom(status) do
