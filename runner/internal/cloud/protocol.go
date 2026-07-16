@@ -569,9 +569,28 @@ type ActionResultMsg struct {
 	Reason                string             `json:"reason,omitempty"`
 	Error                 string             `json:"error,omitempty"`
 	EventID               string             `json:"event_id"`
-	// ExecutedCommand is the exact command the runner ran, shell-quoted,
-	// with sensitive arg values masked runner-side.
-	ExecutedCommand string `json:"executed_command,omitempty"`
+	// ExecutedCommand is the bounded command the runner ran, shell-quoted,
+	// with sensitive arg values masked runner-side. The local audit keeps the
+	// full masked command when this wire representation is truncated.
+	ExecutedCommand          string `json:"executed_command,omitempty"`
+	ExecutedCommandTruncated bool   `json:"executed_command_truncated,omitempty"`
+}
+
+const maxExecutedCommandBytes = 16 << 10
+
+func boundExecutedCommand(command string) (string, bool) {
+	if !utf8.ValidString(command) {
+		command = string(bytes.ToValidUTF8([]byte(command), []byte("\uFFFD")))
+	}
+	if len(command) <= maxExecutedCommandBytes {
+		return command, false
+	}
+
+	end := maxExecutedCommandBytes
+	for !utf8.ValidString(command[:end]) {
+		end--
+	}
+	return command[:end], true
 }
 
 // RedactionSummary is the per-rule hit count on this action call.

@@ -3508,12 +3508,18 @@ defmodule Emisar.RunsTest do
     } do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:ok, %ActionRun{status: :success, executed_command: "uptime -p"}} =
+      assert {:ok,
+              %ActionRun{
+                status: :success,
+                executed_command: "uptime -p",
+                executed_command_truncated: true
+              }} =
                Runs.finalize_from_result(runner.id, %{
                  "request_id" => run.request_id,
                  "status" => "success",
                  "exit_code" => 0,
-                 "executed_command" => "uptime -p"
+                 "executed_command" => "uptime -p",
+                 "executed_command_truncated" => true
                })
 
       # The terminal run audit event records what actually ran.
@@ -3523,6 +3529,7 @@ defmodule Emisar.RunsTest do
         |> Enum.find(&(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success"))
 
       assert event.payload["executed_command"] == "uptime -p"
+      assert event.payload["executed_command_truncated"]
     end
 
     test "a refusal's human `error` sentence is surfaced as error_message, not the terse code", %{

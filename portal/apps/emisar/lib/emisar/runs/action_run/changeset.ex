@@ -16,7 +16,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     runner_connection_generation sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
     emitted_stdout_sha256 emitted_stderr_sha256 emitted_stdout_bytes emitted_stderr_bytes
-    output_complete stdout_truncated stderr_truncated event_id reason_text error_message executed_command
+    output_complete stdout_truncated stderr_truncated event_id reason_text error_message
+    executed_command executed_command_truncated
   ]a
 
   # Generous caps — well above any real action's args (the largest, the shell
@@ -37,6 +38,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # redacted command, but not unbounded. Plain string columns stay within the DB
   # string budget so malicious runner values fail as changeset errors first.
   @max_runner_text_length 16_384
+  @max_executed_command_bytes 16_384
   @max_db_string_length 255
   @max_action_args_bytes 32_768
   @min_db_integer -2_147_483_648
@@ -136,7 +138,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> put_change(:status, status)
     |> validate_length(:reason_text, max: @max_reason_length)
     |> validate_length(:error_message, max: @max_runner_text_length)
-    |> validate_length(:executed_command, max: @max_runner_text_length)
+    |> validate_change(:executed_command, &validate_executed_command/2)
     |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
     |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
@@ -156,6 +158,12 @@ defmodule Emisar.Runs.ActionRun.Changeset do
       greater_than_or_equal_to: 0,
       less_than_or_equal_to: @max_db_integer
     )
+  end
+
+  defp validate_executed_command(:executed_command, command) do
+    if byte_size(command) <= @max_executed_command_bytes,
+      do: [],
+      else: [executed_command: "is too large (max #{@max_executed_command_bytes} bytes)"]
   end
 
   @doc "Release an approval-gated run into a fresh dispatch window."

@@ -716,24 +716,26 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			"reason", res.Reason,
 		)
 
+		executedCommand, executedCommandTruncated := boundExecutedCommand(res.ExecutedCommand)
 		result := ActionResultMsg{
-			Envelope:              Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-			Status:                string(res.Status),
-			ExitCode:              res.ExitCode,
-			DurationMS:            res.DurationMS,
-			TimedOut:              res.TimedOut,
-			EmittedStdoutSHA256:   res.StdoutSHA256,
-			EmittedStderrSHA256:   res.StderrSHA256,
-			EmittedStdoutBytes:    res.StdoutBytes,
-			EmittedStderrBytes:    res.StderrBytes,
-			ProgressChunks:        seq,
-			DroppedProgressChunks: dropped,
-			TruncatedOut:          res.TruncatedOut,
-			TruncatedErr:          res.TruncatedErr,
-			Redactions:            toProtocolRedactions(res.Redactions),
-			Reason:                res.Reason,
-			EventID:               res.EventID,
-			ExecutedCommand:       res.ExecutedCommand,
+			Envelope:                 Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+			Status:                   string(res.Status),
+			ExitCode:                 res.ExitCode,
+			DurationMS:               res.DurationMS,
+			TimedOut:                 res.TimedOut,
+			EmittedStdoutSHA256:      res.StdoutSHA256,
+			EmittedStderrSHA256:      res.StderrSHA256,
+			EmittedStdoutBytes:       res.StdoutBytes,
+			EmittedStderrBytes:       res.StderrBytes,
+			ProgressChunks:           seq,
+			DroppedProgressChunks:    dropped,
+			TruncatedOut:             res.TruncatedOut,
+			TruncatedErr:             res.TruncatedErr,
+			Redactions:               toProtocolRedactions(res.Redactions),
+			Reason:                   res.Reason,
+			EventID:                  res.EventID,
+			ExecutedCommand:          executedCommand,
+			ExecutedCommandTruncated: executedCommandTruncated,
 		}
 		c.finishRun(s, m, result)
 	}

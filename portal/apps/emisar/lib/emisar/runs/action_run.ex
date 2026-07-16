@@ -130,8 +130,10 @@ defmodule Emisar.Runs.ActionRun do
     field :reason_text, :string
     field :error_message, :string
     # The exact shell command the runner executed, with sensitive arg
-    # values redacted by the runner. Set on the result transition.
+    # values redacted by the runner. The remote copy is bounded; the runner's
+    # local audit retains the full masked command.
     field :executed_command, :string
+    field :executed_command_truncated, :boolean, default: false
 
     # Durable per-run progress budget, incremented under the run's row lock on
     # each accepted progress chunk (`Runs.append_event`). Bounds a hostile

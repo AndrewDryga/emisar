@@ -11,10 +11,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/engine"
@@ -561,6 +563,34 @@ func TestClient_DeliversResultsOnSingleConn(t *testing.T) {
 	res := waitForResult(t, conn, "req_a", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
+	}
+}
+
+func TestClient_BoundsExecutedCommandWithoutSplittingUTF8(t *testing.T) {
+	conn := newFakeConn()
+	d := &queuedDialer{conns: []*fakeConn{conn}}
+	cli := buildClient(t, d)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	msg := strings.Repeat("界", maxExecutedCommandBytes/len("界")+100)
+	sendRunAction(t, conn, cli, "req_long_command", "t.echo", map[string]any{"msg": msg})
+	result := waitForResult(t, conn, "req_long_command", 3*time.Second)
+	command, ok := result["executed_command"].(string)
+	if !ok {
+		t.Fatalf("executed_command=%T, want string", result["executed_command"])
+	}
+	if len(command) > maxExecutedCommandBytes || !utf8.ValidString(command) {
+		t.Fatalf("executed command bytes=%d valid_utf8=%t", len(command), utf8.ValidString(command))
+	}
+	if result["executed_command_truncated"] != true {
+		t.Fatalf("executed_command_truncated=%v, want true", result["executed_command_truncated"])
 	}
 }
 

@@ -1950,6 +1950,7 @@ defmodule Emisar.Runs do
       event_id: payload["event_id"],
       # Exact shell command the runner ran, already redacted runner-side.
       executed_command: payload["executed_command"],
+      executed_command_truncated: payload["executed_command_truncated"] || false,
       # The failure cause belongs in error_message (not reason_text, which holds
       # the operator's freeform reason). The runner sends a terse `reason` code
       # (e.g. "bad_signature", "stale") AND a human `error` sentence ("refused:

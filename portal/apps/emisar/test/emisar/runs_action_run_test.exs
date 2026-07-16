@@ -1,5 +1,6 @@
 defmodule Emisar.Runs.ActionRunTest do
   use ExUnit.Case, async: true
+  import Emisar.DataCase, only: [errors_on: 1]
   alias Emisar.Runs.ActionRun
 
   defp create_attrs(attrs) do
@@ -217,6 +218,22 @@ defmodule Emisar.Runs.ActionRunTest do
         refute changeset.valid?
         assert Keyword.has_key?(changeset.errors, field)
       end
+    end
+
+    test "bounds executed commands by UTF-8 bytes" do
+      exact = String.duplicate("x", 16_384)
+
+      assert ActionRun.Changeset.transition(transition_run(), :success, %{executed_command: exact}).valid?
+
+      oversized = String.duplicate("界", 5_462)
+
+      changeset =
+        ActionRun.Changeset.transition(transition_run(), :success, %{
+          executed_command: oversized
+        })
+
+      refute changeset.valid?
+      assert "is too large (max 16384 bytes)" in errors_on(changeset).executed_command
     end
 
     test "rejects oversized runner result string fields before the DB does" do

@@ -357,6 +357,7 @@ defmodule EmisarWeb.MCP.Service do
       reason: run.reason_text,
       error_message: run.error_message,
       executed_command: run.executed_command,
+      executed_command_truncated: run.executed_command_truncated,
       stdout: stdout,
       stderr: stderr,
       stdout_truncated: run.stdout_truncated or stdout_truncated?,
