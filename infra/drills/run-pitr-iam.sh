@@ -62,10 +62,17 @@ echo "scratch clone: ${clone} at ${restore_time}"
 echo "scratch probe: ${vm} in ${zone}"
 if [[ $apply != true ]]; then
   echo "dry run only; production is read-only and all scratch resources are trap-cleaned with --apply"
+  echo "with --apply the manifest also records measured_rto_seconds: elapsed from drill start to the restored clone serving an emisar_owner query"
   trap - EXIT INT TERM
   rm -rf "$tmp"
   exit 0
 fi
+
+# The RTO clock starts with the first recovery action so each exercise measures
+# the restore leg (IAM setup, PITR clone, connect, validation query) against the
+# committed 2-hour objective; application cutover is budgeted separately.
+drill_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+drill_start_epoch=$(date +%s)
 
 install -d -m 0700 "$manifest_dir"
 umask 077
@@ -76,6 +83,7 @@ umask 077
   printf 'probe_vm=%q\n' "$vm"
   printf 'service_account=%q\n' "$service_account"
   printf 'restore_time=%q\n' "$restore_time"
+  printf 'drill_started_at=%q\n' "$drill_started_at"
   printf 'expires=%q\n' "$expires"
 } >"$manifest"
 
@@ -187,6 +195,13 @@ if [[ $auth_verified != true ]]; then
   printf '%s\n' "$serial" >&2
   exit 1
 fi
+
+measured_rto_seconds=$(($(date +%s) - drill_start_epoch))
+{
+  printf 'restored_serving_at=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'measured_rto_seconds=%q\n' "$measured_rto_seconds"
+} >>"$manifest"
+echo "restored clone served an emisar_owner query ${measured_rto_seconds}s ($((measured_rto_seconds / 60))m$((measured_rto_seconds % 60))s) after drill start"
 
 gcloud sql users delete "${prefix}@${project}.iam" \
   --project "$project" --instance "$clone" --quiet
