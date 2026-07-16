@@ -116,11 +116,8 @@ func TestActionListCmd_EmptyRegistry(t *testing.T) {
 	})
 }
 
-// `action list` reflects the LOADED registry, not the admission-filtered
-// catalog: an action denied by runner admission still appears in `action list`
-// (admission only hides actions from the catalog advertised to cloud, RUN-035;
-// the local command shows what's installed so an operator can see a denied
-// action exists).
+// `action list` shows the installed registry so an operator can inspect actions
+// even when runner admission prevents advertising or executing them.
 func TestActionListCmd_ShowsAdmissionDeniedAction(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, false)

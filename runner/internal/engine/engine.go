@@ -2,9 +2,8 @@
 // cloud-supplied opts against per-action min/max bounds, execute through
 // the executor (streaming progress if asked), redact output, journal.
 //
-// The runner does not evaluate allow/deny policy. The control plane decides
-// what should run; the runner re-validates inputs against the action's
-// declared schema and refuses to execute anything not declared.
+// The control plane decides what should run; the engine independently enforces
+// runner-local admission, the installed action contract, and execution limits.
 package engine
 
 import (

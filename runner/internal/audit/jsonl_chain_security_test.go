@@ -10,12 +10,9 @@ import (
 	"testing"
 )
 
-// This file closes the PHASE-2 "gap" rows for RSEC-012 (audit JSONL
-// hash-chain) that the existing jsonl_chain_test.go / journal_test.go do not
-// already assert. The chain's threat model is documented in event.go and
-// jsonl.go: byte mutation / reorder / mid-file deletion ARE caught; tail
-// truncation and a wholesale consistent rewrite are NOT (no external anchor —
-// the cloud is the system of record). These tests lock both halves in.
+// The local chain detects mutation, reordering, and mid-file deletion. Without
+// an external anchor it cannot detect tail truncation or a consistent rewrite;
+// the cloud remains the fleet audit system of record.
 
 // TestChain_DetectsReordering — swapping two adjacent lines
 // breaks the chain: each event's prev_hash is bound to the *bytes* of the
@@ -153,17 +150,8 @@ func TestVerifyReader_MatchesVerifyChain(t *testing.T) {
 	})
 }
 
-// TestChain_LastHashHoldsWhenWriteFails — the chain head
-// (lastHash) advances ONLY after the line is durably on disk. jsonl.go:191-196
-// computes the new head after s.f.Write + s.f.Sync both succeed; a failure at
-// either leaves lastHash untouched, so the next attempt re-chains from the same
-// point rather than leaving a gap a verifier would read as tamper. This forces a
-// real Write failure by closing the sink's underlying file out from under it
-// (the file handle is the only seam needed — no production change): a write to a
-// closed *os.File errors, exercising the early-return at jsonl.go:176-178 before
-// the head advances. The proof is end-to-end: after the failed write, the chain
-// head equals the last DURABLE line's hash, and a fresh sink (re-seeding from the
-// file) continues the chain with no gap, so VerifyChain still passes.
+// TestChain_LastHashHoldsWhenWriteFails verifies that a failed write cannot
+// advance the in-memory chain head beyond durable bytes.
 func TestChain_LastHashHoldsWhenWriteFails(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	s, err := OpenJSONL(path, JSONLOptions{})

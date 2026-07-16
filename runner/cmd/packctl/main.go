@@ -23,7 +23,7 @@ import (
 var flagJSONOut bool
 
 // Version is overridden via -ldflags at build time.
-var Version = "0.4.0-dev"
+var Version = "dev"
 
 func main() {
 	root := &cobra.Command{

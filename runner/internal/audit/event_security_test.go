@@ -9,10 +9,6 @@ import (
 	"testing"
 )
 
-// This file closes the PHASE-2 "gap" rows for RSEC-012 that concern the Event
-// payload and the "audit log must never become world-readable, even across
-// rotation" invariant (jsonl.go:48-55,229-244).
-
 // TestJSONLSink_PermsNeverDowngraded — the directory is created
 // 0o750 and the file 0o600; rotation must reopen the active file at 0o600 and
 // must not loosen the directory. The log can carry redacted-but-sensitive

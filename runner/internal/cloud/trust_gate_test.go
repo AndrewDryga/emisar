@@ -16,18 +16,6 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 )
 
-// This file closes the PHASE-3 "gap" rows on the dispatch-seam gates that live
-// in internal/cloud — the pack-hash trust gate, the SIGHUP registry hot-swap as
-// observed by a new dispatch, and admission precedence over a valid signature +
-// matching pack hash. These sit at the dispatch wrapper (handleRun /
-// passesTrustGate), not in the leaf packages, so the leaf-package suites
-// correctly left them; the existing fake-cloud harness (client_test.go /
-// gate_test.go / signature_test.go) reaches them with no production change.
-//
-// Harness reused here: newFakeConn, queuedDialer, buildClient, sendRunAction,
-// sendRunActionWithPackContract, sendRunActionWithPackRef, waitForResult,
-// waitUntil, enforcingClient, and attestationFor.
-
 // --- Pack-hash trust gate ---------------------------------------------------
 
 // A known pack-backed action must carry the hash the portal authorized. Missing

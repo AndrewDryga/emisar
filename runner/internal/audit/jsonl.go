@@ -238,10 +238,8 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 			return s.reopenAfterRotationFailure(fmt.Errorf("audit: remove active jsonl for rotation: %w", err))
 		}
 	}
-	// Reopen a fresh active file. Mode matches the initial open at
-	// line 55 — 0o600 (owner-only). Don't downgrade to 0o644 on
-	// rotation: the audit log can contain redacted-but-still-sensitive
-	// metadata and must not become world-readable mid-life.
+	// Reopen owner-only: the log can contain redacted-but-still-sensitive
+	// metadata and rotation must not weaken its permissions.
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		openErr := fmt.Errorf("audit: open fresh jsonl after rotation: %w", err)

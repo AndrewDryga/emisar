@@ -29,8 +29,7 @@ const (
 	EventActionBlockedByAdmission EventType = "action_blocked_by_admission"
 )
 
-// CallerRef identifies who/what requested the action. For v0.1 this is the
-// cloud control plane's request envelope.
+// CallerRef identifies the control-plane request that asked for the action.
 type CallerRef struct {
 	ControlPlaneRequestID string `json:"control_plane_request_id,omitempty"`
 }

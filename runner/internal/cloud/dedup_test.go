@@ -13,6 +13,16 @@ import (
 	"testing"
 )
 
+func (d *dedupRing) lookup(requestID string) (ActionResultMsg, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	entry, ok := d.records[requestID]
+	if !ok || entry.State != dispatchCompleted && entry.State != dispatchAcknowledged {
+		return ActionResultMsg{}, false
+	}
+	return entry.Result, true
+}
+
 func testDispatchDigest(label string) string {
 	digest := sha256.Sum256([]byte(label))
 	return hex.EncodeToString(digest[:])

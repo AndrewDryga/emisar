@@ -258,12 +258,8 @@ func TestEngine_PreExecutionEventsNeverPersistArguments(t *testing.T) {
 // dedicated EventActionBlockedByAdmission type — not a generic
 // validation_failed — so a SIEM rule keyed on that string can alert on it
 // (every such row is either a misconfiguration or a portal-compromise attempt).
-// This drives the real engine→journal seam at engine.go:225-226: the existing
-// admission tests assert the returned status and a non-empty EventID, but none
-// reads the journal back to confirm the recorded event *type*; event_gap_test's
-// records that type directly via j.Record without ever passing
-// through Admit. This closes that seam: deny t.echo, dispatch it, then match the
-// returned EventID in the journal and assert its type + the block reason.
+// Drive the real engine-to-journal boundary and verify both the returned ID and
+// the durable event type.
 func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 	e, j, root := setupEngine(t)
 	defer j.Close()

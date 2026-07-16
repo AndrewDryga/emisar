@@ -2,10 +2,9 @@
 // actions.
 //
 // emisar dials out to the control plane over a TLS websocket, receives
-// named action commands, re-validates their arguments against locally
-// declared schemas, executes via os/exec (argv-only — never a shell), and
-// returns redacted streaming output to the cloud. Every attempt is also
-// written to a local JSONL log on the host for forensics.
+// named action commands, enforces local trust and argument contracts, executes
+// only installed action definitions, and returns redacted streaming output.
+// Every attempt is also written to a local JSONL log for on-host forensics.
 package main
 
 import (
@@ -22,7 +21,7 @@ var (
 )
 
 // Version is overridden via -ldflags at build time.
-var Version = "0.4.0-dev"
+var Version = "dev"
 
 func main() {
 	root := &cobra.Command{

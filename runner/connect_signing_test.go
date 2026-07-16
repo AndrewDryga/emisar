@@ -36,16 +36,10 @@ func TestBuildVerifierRejectsMemoryOnlyEnforcement(t *testing.T) {
 }
 
 func TestOpenNonceStoreUsesDataDir(t *testing.T) {
-	cfg := &config.Config{Signing: config.Signing{MaxAttestationAge: actionspec.Duration(time.Hour)}}
-	memory, err := openNonceStore(cfg)
-	if err != nil {
-		t.Fatalf("open memory store: %v", err)
+	cfg := &config.Config{
+		Paths:   config.Paths{DataDir: t.TempDir()},
+		Signing: config.Signing{MaxAttestationAge: actionspec.Duration(time.Hour)},
 	}
-	if memory.Durable() {
-		t.Fatal("empty data_dir unexpectedly created durable state")
-	}
-
-	cfg.Paths.DataDir = t.TempDir()
 	durable, err := openNonceStore(cfg)
 	if err != nil {
 		t.Fatalf("open durable store: %v", err)

@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// This file closes the PHASE-2 "gap" rows for RSEC-015 (host scan for pack
-// suggestion): firstExecutable's regular-executable-file requirement, the
-// SystemdPresent stat gate, and the lowercase/trim/dedup of probed binary
-// names (hostscan.go:150-199).
-
 // TestFirstExecutable_RequiresRegularExecutableFile — a name
 // resolves only to a REGULAR file with an execute bit set. A directory of that
 // name, or a present-but-non-executable file, must not count as the binary.

@@ -378,16 +378,6 @@ func (d *dedupRing) writeStore() error {
 	return fsutil.SyncDirectory(filepath.Dir(d.storePath))
 }
 
-func (d *dedupRing) lookup(requestID string) (ActionResultMsg, bool) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	e, ok := d.records[requestID]
-	if !ok || (e.State != dispatchCompleted && e.State != dispatchAcknowledged) {
-		return ActionResultMsg{}, false
-	}
-	return e.Result, true
-}
-
 func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {
 	d.mu.Lock()
 	defer d.mu.Unlock()

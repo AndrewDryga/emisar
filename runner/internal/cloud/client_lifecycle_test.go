@@ -13,18 +13,6 @@ import (
 	"time"
 )
 
-// This file closes the PHASE-3 "gap" rows on the connect runtime loop that the
-// existing fake-cloud harness (gate_test.go / client_test.go) can reach without
-// any production-code change:
-//
-//   - Dispatch/ack routing edge cases (/T07/T08)
-//   - Outbox/sender accounting (/T08/T10)
-//   - Heartbeat defaults + load tracking (/T06)
-//   - Reconnect/backoff + NewClient defaults (/T07/T08)
-//
-// The harness pieces reused here: newFakeConn, queuedDialer, buildClient,
-// sendRunAction, waitForResult, waitUntil, backoffCapture (client_test.go).
-
 // --- Dispatch / ack routing -------------------------------------------------
 
 // A premature ack — one that arrives while the run is still in flight (not

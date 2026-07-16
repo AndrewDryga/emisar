@@ -257,9 +257,6 @@ func canonicalPortalOrigin(raw string) (string, error) {
 }
 
 func openNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
-	if cfg.Paths.DataDir == "" {
-		return signing.NewMemoryNonceStore(), nil
-	}
 	storePath := filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
 	return signing.OpenNonceStore(storePath, cfg.Signing.MaxAttestationAge.Std())
 }
