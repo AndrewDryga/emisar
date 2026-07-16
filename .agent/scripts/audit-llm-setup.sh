@@ -187,6 +187,7 @@ for project in . infra mcp packs portal runner; do
 done
 
 expect_link .codex/skills ../.claude/skills
+expect_link .gemini/skills ../.claude/skills
 
 check_manual_text
 check_skill_text

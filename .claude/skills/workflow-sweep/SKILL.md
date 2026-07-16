@@ -46,8 +46,6 @@ fail-safe edits (re-read on collision — a parallel agent may be touching the s
   human resolution, `coop tasks unblock <id>` (it returns to the queue) and fold the decision
   into its `task.md`. **Never resolve one yourself** — only a human-answered `decision.md`
   unblocks (that's the whole point of a blocked task).
-- **Trim the log.** If `LOG.md`'s `## Recent` is past ~50 lines, move the oldest entries to
-  `LOG.archive.md` (the AGENTS.md convention).
 - **Reclaim only *certainly* orphaned claims.** A `10_in_progress/` task left by a dead prior
   session → move it back to `00_todo/` (`coop tasks` / a folder move). Leave any
   `10_in_progress/` task that could be a live parallel claim (you run Claude + Codex at once);
@@ -106,8 +104,8 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
    explicit pathspec commits only yours. (`git commit -- <path>` takes the worktree copy, so for
    a *deletion* `git rm` it then bare-commit guarded to your paths.)
 7. **Log + done** — append a one-line *what + why* (incl. what the review caught + fixed, and any
-   rule recorded) to `<project>/.agent/LOG.md`; `coop tasks done <id>` (moves it to `99_done/`).
-   **Then** the next `00_todo/` task.
+   rule recorded) to the task's own `log.md`, overwrite its `state.md` with the final snapshot;
+   `coop tasks done <id>` (moves it to `99_done/`). **Then** the next `00_todo/` task.
 
 - **Blocked?** `coop tasks block <id>` and fill its `decision.md` (decision · options · recommendation); move on.
 - **Spot a mess?** Small, safe cleanup → fix it in place (boy-scout rule, creed #7). Bigger or unrelated → `coop tasks add` (simple and ready) or `coop backlog add` (big/unscoped); stay on the current task.

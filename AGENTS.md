@@ -13,8 +13,7 @@ Context compaction drops everything except this file (re-injected from disk) and
 1. **This file** — the creed + the contract below.
 2. **The project's `AGENTS.md`, in full** — not a skim. The rules are non-negotiable and you *will* violate them from memory.
 3. **`.agent/kb/README.md`'s index** — the descriptive knowledge base's routing table. Open a card only when your task touches its subsystem; never bulk-load the kb.
-4. **`<project>/.agent/LOG.md`** (if present) — your own recent chain-of-thought: what you were doing and *why*, and the next step you set yourself. This is how intent survives a compaction. (In a `coop loop`, the task's own `log.md`/`state.md` serve this role.)
-5. **`<project>/.agent/tasks/`** — the work queue (run `coop tasks`; it reads `.agent/tasks/`). Resume the first todo or in_progress task.
+4. **`<project>/.agent/tasks/`** — the work queue (run `coop tasks`; it reads `.agent/tasks/`). Resume the first todo or in_progress task: read its `state.md` FIRST (the overwritten resume snapshot — where it stopped, the next action, traps), then its `log.md` (the append-only why-journal). That pair is how intent survives a compaction or a fresh box.
 
 Five top-level areas, each with its own `AGENTS.md`:
 
@@ -64,7 +63,7 @@ A task moves to `99_done/` (via `coop tasks done`) only when **all** of these ho
 
 - the project gate ran **green** (exact command in the project `AGENTS.md`),
 - the change is **committed** — one focused commit per task, carrying its `Coop-Task: <id>` trailer,
-- `LOG.md` has an entry.
+- the task's own `log.md` says *why* (decisions, dead ends — the audit and the next agent read it), and its `state.md` reflects the finished state.
 
 No changelog file — `git log` is the changelog.
 
@@ -76,7 +75,7 @@ Work the first todo task in `.agent/tasks/` (`coop tasks ls`), then the next, un
 2. **Do it** — wear the hats; obey the project's `AGENTS.md`.
 3. **Gate** — run the project gate; fix until green.
 4. **Commit** — one focused commit for the task, ending with a `Coop-Task: <id>` trailer (the id is the task's folder name). The trailer binds the commit to its task — it's how coop resumes correctly after an interruption between commit and folder-move, and reconciles the queue after a fork merge. (Never cite that commit by SHA in task notes — coop re-signs box commits on the host, which rewrites SHAs; cite the task id.)
-5. **Record** — append a *what + why* line to `LOG.md`, `coop tasks done <id>` (moves it to `99_done/`), and move to the next todo task.
+5. **Record** — update the task's `log.md` (*what + why*, append-only) and overwrite its `state.md` with the final snapshot, then `coop tasks done <id>` (moves it to `99_done/`), and move to the next todo task.
 
 When the loop is interrupted:
 
@@ -117,6 +116,10 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 ---
 
 ## The taste pipeline — learn the house style, durably
+
+### Rule index
+
+- **Content:** [plain, specific prose](.agent/rules/content-plain-specific-prose.md) — write for one known reader, make every sentence earn its place, and adapt the density and tone to the surface instead of falling back to corporate or generated language.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 

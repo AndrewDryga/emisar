@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./**/*.tfvars)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {

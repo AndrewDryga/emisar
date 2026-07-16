@@ -1,0 +1,9 @@
+#!/bin/sh
+# Chain to coop's box hook. This repo pins core.hooksPath=.githooks (the pre-commit
+# format gate), and a repo-LOCAL hooksPath overrides the box's GLOBAL one — which is
+# where coop mounts its prepare-commit-msg (the co-author trailer rewrite). Without
+# this shim, in-box commits would silently lose that hook. On the host the coop path
+# doesn't exist and this is a no-op.
+coop_hook="$HOME/.config/coop/git-hooks/prepare-commit-msg"
+[ -x "$coop_hook" ] && exec "$coop_hook" "$@"
+exit 0

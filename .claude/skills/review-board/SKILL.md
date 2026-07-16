@@ -26,7 +26,7 @@ Resolve `$1` into a concrete diff + file list, then read it yourself first. Inpu
 
 **Mind a shared working tree.** With a concurrent agent (Codex) editing, "local changes" can include work that isn't yours — `git diff HEAD` shows everyone's. Narrow with a pathspec, or review a specific commit/range/PR instead, when you want only your slice.
 
-For **intent** on a non-PR scope, read the commit message(s) in range, or — for uncommitted work — the `.agent/tasks/` / `LOG.md` context; if what the change is *for* is unclear, say so (a reviewer who doesn't know the goal judges the wrong things).
+For **intent** on a non-PR scope, read the commit message(s) in range, or — for uncommitted work — the `.agent/tasks/` context (the in-progress task's `task.md` + `log.md`); if what the change is *for* is unclear, say so (a reviewer who doesn't know the goal judges the wrong things).
 
 **Announce the resolved scope before convening the board** — the input mode + the exact file list. Note which areas it touches — portal/ (Elixir), runner/ or mcp/ (Go), packs/ (YAML), marketing, billing/pricing, docs — which drives the hats.
 
