@@ -12,7 +12,8 @@ defmodule EmisarWeb.RunnerSocket do
        socket by broadcasting onto that topic.
     3. Pushes Presence membership for the LiveView "online" indicator.
     4. Translates inbound JSON envelopes into domain calls
-       (`Runs.append_event`, `Runs.mark_running`, etc) and routes
+       (`Runs.append_event_from_connection`, `Runs.finalize_from_connection`, etc)
+       and routes
        outbound domain messages back as JSON envelopes.
 
   All envelopes carry `protocol_version: 1`. Unknown types are logged
@@ -27,8 +28,8 @@ defmodule EmisarWeb.RunnerSocket do
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
-  @known_runner_message_types ~w(runner_state action_progress action_result heartbeat error)
-  @required_request_id_message_types ~w(action_progress action_result)
+  @known_runner_message_types ~w(runner_state action_started action_progress action_result heartbeat error)
+  @required_request_id_message_types ~w(action_started action_progress action_result)
 
   # -- WebSock callbacks ----------------------------------------------
 
@@ -135,6 +136,15 @@ defmodule EmisarWeb.RunnerSocket do
 
       true ->
         {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
+    end
+  end
+
+  def handle_info(:resume_runs, state) do
+    if connection_owner?(state) do
+      Runs.resume_runs_for_runner(state.runner_id)
+      {:ok, state}
+    else
+      {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
     end
   end
 
@@ -270,7 +280,7 @@ defmodule EmisarWeb.RunnerSocket do
         # connect upgrade), so version enforcement gates on it now.
         case maybe_enforce_runner_version(runner, state) do
           {:ok, _new_state} = result ->
-            send(self(), :dispatch_queued)
+            send(self(), :resume_runs)
             result
 
           other ->
@@ -283,10 +293,31 @@ defmodule EmisarWeb.RunnerSocket do
     end
   end
 
+  defp handle_envelope("action_started", msg, state) do
+    case Runs.mark_started_from_connection(
+           state.account_id,
+           state.runner_id,
+           state.connection_generation,
+           state.connection_lease_id,
+           msg["request_id"]
+         ) do
+      {:ok, _run} ->
+        {:ok, state}
+
+      {:error, reason} when reason in [:unknown_request_id, :not_dispatchable] ->
+        {:ok, state}
+
+      {:error, :connection_superseded} ->
+        {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
+
+      {:error, reason} ->
+        Logger.error("mark_started_from_connection failed: #{inspect(reason)}")
+        {:stop, {:action_started_persist_failed, reason}, state}
+    end
+  end
+
   defp handle_envelope("action_progress", msg, state) do
-    # `chunk` + `stream` go inside `payload` because that's what the
-    # `action_run_events` schema actually persists. Earlier versions
-    # set top-level `chunk:` which Ecto silently dropped on insert.
+    # `chunk` + `stream` go inside `payload`, matching the persisted event shape.
     payload = %{
       "chunk" => msg["chunk"],
       "stream" => msg["stream"]

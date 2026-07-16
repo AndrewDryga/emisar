@@ -94,6 +94,25 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert reloaded.error_message =~ "did not execute it again"
   end
 
+  test "an acknowledged quiet action is not mistaken for an unaccepted dispatch" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    run = sent_run_for(runner, 20 * 60)
+
+    assert {:ok, started} =
+             Runs.mark_started_from_connection(
+               runner.account_id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               run.request_id
+             )
+
+    assert started.status == :running
+    assert %DateTime{} = started.started_at
+    assert :ok = DispatchTimeout.execute([])
+    assert Runs.peek_run_by_id(run.id).status == :running
+  end
+
   test "a stale dispatch waits for a successor connection to replay its result" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)

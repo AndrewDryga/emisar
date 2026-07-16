@@ -1412,10 +1412,28 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — sends runs that have never left `:pending` when their runner
-  connects. `:sent` and `:running` runs are deliberately excluded: their prior
-  execution outcome may be unknown, so reconnect must never replay them.
+  Internal — reconciles a runner after its authoritative state advertisement.
+  Exact in-flight envelopes are replayed first: an existing handler ignores the
+  duplicate, while a restarted runner converts its durable pending reservation
+  to outcome-unknown without executing again. Outstanding cancellation follows
+  the replay. A never-sent pending run is dispatched only when no in-flight work
+  needs resolution; each terminal result opens the next queue slot.
   """
+  def resume_runs_for_runner(runner_id) when is_binary(runner_id) do
+    inflight_runs =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_runner_id(runner_id)
+      |> ActionRun.Query.status_in([:sent, :running, :cancelling])
+      |> ActionRun.Query.ordered_by_oldest()
+      |> Repo.all()
+
+    Enum.each(inflight_runs, &recover_inflight_run/1)
+
+    if inflight_runs == [], do: dispatch_queued_for_runner(runner_id)
+    :ok
+  end
+
+  @doc "Internal — dispatches at most one never-sent run after capacity becomes available."
   def dispatch_queued_for_runner(runner_id) when is_binary(runner_id) do
     ActionRun.Query.all()
     |> ActionRun.Query.by_runner_id(runner_id)
@@ -1438,6 +1456,34 @@ defmodule Emisar.Runs do
 
     :ok
   end
+
+  defp recover_inflight_run(%ActionRun{} = run) do
+    with {:ok, generation} <-
+           Emisar.Runners.current_connection_generation(run.account_id, run.runner_id),
+         :ok <-
+           Emisar.Runners.deliver_to_runner(
+             run.account_id,
+             run.runner_id,
+             generation,
+             run_action_payload(run)
+           ),
+         :ok <- recover_cancellation(run, generation) do
+      :ok
+    else
+      {:error, reason} ->
+        Logger.warning("in-flight run recovery failed run=#{run.id}: #{inspect(reason)}")
+    end
+  end
+
+  defp recover_cancellation(%ActionRun{status: :cancelling} = run, generation) do
+    Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
+      "type" => "cancel",
+      "request_id" => run.request_id,
+      "reason" => run.reason_text
+    })
+  end
+
+  defp recover_cancellation(%ActionRun{}, _generation), do: :ok
 
   @doc """
   Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find in-flight
@@ -1511,7 +1557,7 @@ defmodule Emisar.Runs do
   @doc """
   Claims a never-sent `:pending` run and emits its run_action envelope onto the
   runner's PubSub topic. If the runner is offline, the run remains pending and
-  returns `:ok`; the next owned connection calls `dispatch_queued_for_runner/1`.
+  returns `:ok`; the next owned connection calls `resume_runs_for_runner/1`.
   The status claim is row-locked, so concurrent senders cannot both publish.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
@@ -1555,26 +1601,7 @@ defmodule Emisar.Runs do
   end
 
   defp deliver_run_action(%ActionRun{} = run, expected_status, generation) do
-    payload = %{
-      "type" => "run_action",
-      "request_id" => run.request_id,
-      "action_id" => run.action_id,
-      "args" => runner_args(run),
-      "opts" => run.opts || %{},
-      # Use `run.reason` (the operator's freeform "why I'm running this")
-      # — NOT `run.reason_text`, which holds cancel/error reasons that
-      # are written only after the run completes. Reading reason_text
-      # here was a longstanding bug: it was always nil at dispatch
-      # time, so every cloud-dispatched envelope hit the runner's
-      # "reason required" guard.
-      "reason" => run.reason
-    }
-
-    payload = maybe_put_signed_contract(payload, run)
-
-    payload = maybe_put_attestation(payload, run)
-
-    case stamp_pack_hash(payload, run) do
+    case authorized_run_action_payload(run) do
       {:ok, envelope} ->
         with {:ok, _sent} <-
                transition_from(run, expected_status, :sent, %{
@@ -1613,6 +1640,26 @@ defmodule Emisar.Runs do
     end
   end
 
+  defp run_action_payload(%ActionRun{} = run) do
+    %{
+      "type" => "run_action",
+      "request_id" => run.request_id,
+      "action_id" => run.action_id,
+      "args" => runner_args(run),
+      "opts" => run.opts || %{},
+      # Use `run.reason` (the operator's freeform "why I'm running this")
+      # — NOT `run.reason_text`, which holds cancel/error reasons that
+      # are written only after the run completes. Reading reason_text
+      # here was a longstanding bug: it was always nil at dispatch
+      # time, so every cloud-dispatched envelope hit the runner's
+      # "reason required" guard.
+      "reason" => run.reason
+    }
+    |> maybe_put_signed_contract(run)
+    |> maybe_put_attestation(run)
+    |> maybe_put("expected_pack_hash", run.expected_pack_hash)
+  end
+
   # Relay the client attestation (signed by the MCP, never the cloud) so an
   # enforcing runner can verify a real user authorized this run. The portal
   # only carries it through — it neither produces nor checks the signature.
@@ -1635,17 +1682,12 @@ defmodule Emisar.Runs do
   defp maybe_put(payload, _key, nil), do: payload
   defp maybe_put(payload, key, value), do: Map.put(payload, key, value)
 
-  # Stamp the SNAPSHOTTED pack hash (captured at authorization) into the wire
-  # envelope. A pack-less run (nil snapshot) ships no hash. A versioned run ships
-  # the hash the operator/policy authorized for THIS run — never a send-time
-  # re-read. Re-confirm the exact snapshot before every send; catalog absence is
-  # retryable because a reconnect's first runner_state may still be in flight.
-  defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: nil}), do: {:ok, payload}
+  defp authorized_run_action_payload(%ActionRun{expected_pack_hash: nil} = run),
+    do: {:ok, run_action_payload(run)}
 
-  defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: hash} = run) do
-    with :ok <- recheck_snapshotted_pack_trust(run) do
-      {:ok, Map.put(payload, "expected_pack_hash", hash)}
-    end
+  defp authorized_run_action_payload(%ActionRun{} = run) do
+    with :ok <- recheck_snapshotted_pack_trust(run),
+         do: {:ok, run_action_payload(run)}
   end
 
   defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
@@ -2092,6 +2134,30 @@ defmodule Emisar.Runs do
   #
   # Called from the runner socket process — no Subject thread; the
   # socket-level token check is the auth gate.
+
+  @doc "Internal — runner socket: marks a dispatched run accepted while the emitting socket owns its runner."
+  def mark_started_from_connection(
+        account_id,
+        runner_id,
+        generation,
+        lease_id,
+        request_id
+      )
+      when is_binary(request_id) do
+    case fetch_run_by_request_id_for_runner(request_id, runner_id) do
+      {:error, :not_found} ->
+        {:error, :unknown_request_id}
+
+      {:ok, %ActionRun{} = run} ->
+        transition_from(
+          run,
+          :sent,
+          :running,
+          %{started_at: DateTime.utc_now()},
+          {account_id, runner_id, generation, lease_id}
+        )
+    end
+  end
 
   # Per-run progress ceiling. A dispatched runner is authenticated but treated
   # as hostile: without a cap it can append unbounded distinct-seq progress rows

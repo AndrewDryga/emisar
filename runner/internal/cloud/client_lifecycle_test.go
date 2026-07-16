@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -106,6 +108,101 @@ func TestClient_ReconnectRequeuesCompletedResultUntilAcknowledged(t *testing.T) 
 	}
 }
 
+func TestClient_RequeueActiveStartsPrependsOneFrame(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
+	state := &runState{
+		requestID: "req_active_start",
+		started:   true,
+		pending: []any{ActionProgressMsg{
+			Envelope: Envelope{Type: MsgActionProgress, ProtocolVersion: ProtocolVersion, RequestID: "req_active_start"},
+			Seq:      1,
+		}},
+	}
+	cli.mu.Lock()
+	cli.runs[state.requestID] = state
+	cli.mu.Unlock()
+
+	if got := cli.requeueActiveStarts(); got != 1 {
+		t.Fatalf("first requeue=%d, want 1", got)
+	}
+	if got := cli.requeueActiveStarts(); got != 0 {
+		t.Fatalf("duplicate requeue=%d, want 0", got)
+	}
+	state.mu.Lock()
+	pending := append([]any(nil), state.pending...)
+	state.mu.Unlock()
+	if len(pending) != 2 {
+		t.Fatalf("pending messages=%d, want 2", len(pending))
+	}
+	if started, ok := pending[0].(ActionStartedMsg); !ok || started.RequestID != state.requestID {
+		t.Fatalf("first pending message=%#v, want action_started", pending[0])
+	}
+	if _, ok := pending[1].(ActionProgressMsg); !ok {
+		t.Fatalf("second pending message=%T, want ActionProgressMsg", pending[1])
+	}
+}
+
+func TestClient_TerminalResultWaitsForDurableCompletion(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "dedup.jsonl")
+	cli := buildClient(t, &queuedDialer{}, func(opts *Options) {
+		opts.DedupStorePath = storePath
+	})
+	requestID := "req_terminal_retry"
+	digest := testDispatchDigest(requestID)
+	if decision, _, err := cli.dedup.reserve(requestID, digest); err != nil || decision != reservationNew {
+		t.Fatalf("reserve: decision=%v err=%v", decision, err)
+	}
+	state := &runState{requestID: requestID, dispatchDigest: digest}
+	cli.mu.Lock()
+	cli.runs[requestID] = state
+	cli.mu.Unlock()
+
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli.dedup.storePath = filepath.Join(blocker, "dedup.jsonl")
+	result := testActionResult(requestID, ActionResultMsg{Status: "success", EventID: "evt_terminal_retry"})
+	cli.finishRun(state, result)
+
+	conn := newFakeConn()
+	if err := cli.drainOnce(context.Background(), conn); err != nil {
+		t.Fatalf("persistence failure became a transport failure: %v", err)
+	}
+	if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != 0 {
+		t.Fatalf("sent %d result(s) before durable completion", got)
+	}
+	cli.mu.Lock()
+	_, retained := cli.runs[requestID]
+	cli.mu.Unlock()
+	if !retained {
+		t.Fatal("run state was removed while its terminal result was not durable")
+	}
+	state.mu.Lock()
+	held := state.terminal != nil
+	state.mu.Unlock()
+	if !held {
+		t.Fatal("terminal result was not retained for retry")
+	}
+
+	cli.dedup.storePath = storePath
+	if err := cli.drainOnce(context.Background(), conn); err != nil {
+		t.Fatal(err)
+	}
+	if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != 1 {
+		t.Fatalf("sent result count after recovery=%d, want 1", got)
+	}
+	if durable, ok := cli.dedup.lookup(requestID); !ok || durable.EventID != result.EventID {
+		t.Fatalf("durable result after recovery: found=%v result=%+v", ok, durable)
+	}
+	cli.mu.Lock()
+	_, retained = cli.runs[requestID]
+	cli.mu.Unlock()
+	if retained {
+		t.Fatal("run state remained after the durable result was sent")
+	}
+}
+
 // An early cancel is remembered without consuming an execution slot. If its
 // run_action follows, the runner returns cancelled without invoking the engine.
 func TestClient_CancelBeforeRunActionPreventsExecution(t *testing.T) {
@@ -190,6 +287,41 @@ func TestClient_Outbox_ProgressDropCountIsStructured(t *testing.T) {
 	}
 	if payload["progress_chunks"] != float64(pushed) || payload["dropped_progress_chunks"] != float64(dropped) {
 		t.Fatalf("structured progress accounting = %s", encoded)
+	}
+}
+
+func TestClient_Outbox_PreservesActionStartedUnderPressure(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}}, func(o *Options) {
+		o.MaxPendingPerRun = 2
+	})
+	state := &runState{
+		requestID: "req_started_pressure",
+		pending: []any{ActionStartedMsg{Envelope: Envelope{
+			Type: MsgActionStarted, ProtocolVersion: ProtocolVersion, RequestID: "req_started_pressure",
+		}}},
+	}
+	for seq := 1; seq <= 3; seq++ {
+		cli.enqueue(state, ActionProgressMsg{
+			Envelope: Envelope{Type: MsgActionProgress, ProtocolVersion: ProtocolVersion, RequestID: state.requestID},
+			Seq:      seq,
+		}, dropOldestProgress)
+	}
+
+	state.mu.Lock()
+	pending := append([]any(nil), state.pending...)
+	dropped := state.dropped
+	state.mu.Unlock()
+	if len(pending) != 2 {
+		t.Fatalf("pending messages=%d, want 2", len(pending))
+	}
+	if started, ok := pending[0].(ActionStartedMsg); !ok || started.RequestID != state.requestID {
+		t.Fatalf("first pending message=%#v, want preserved action_started", pending[0])
+	}
+	if progress, ok := pending[1].(ActionProgressMsg); !ok || progress.Seq != 3 {
+		t.Fatalf("second pending message=%#v, want newest progress", pending[1])
+	}
+	if dropped != 2 {
+		t.Fatalf("dropped progress=%d, want 2", dropped)
 	}
 }
 

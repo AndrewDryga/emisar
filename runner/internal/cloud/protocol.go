@@ -38,6 +38,7 @@ const (
 
 	// Runner -> Cloud
 	MsgRunnerState    MessageType = "runner_state"
+	MsgActionStarted  MessageType = "action_started"
 	MsgActionProgress MessageType = "action_progress"
 	MsgActionResult   MessageType = "action_result"
 	MsgHeartbeat      MessageType = "heartbeat"
@@ -535,6 +536,13 @@ type DescriptorOutput struct {
 	MaxStderrBytes    int               `json:"max_stderr_bytes"`
 	MaxStderrBytesMin int               `json:"max_stderr_bytes_min,omitempty"`
 	MaxStderrBytesMax int               `json:"max_stderr_bytes_max,omitempty"`
+}
+
+// ActionStartedMsg confirms that the runner passed its signature and pack trust
+// gates and is entering execution. Active runs repeat this message after
+// reconnect so the control plane can recover their lifecycle.
+type ActionStartedMsg struct {
+	Envelope
 }
 
 // ActionProgressMsg streams a line of action output. seq increases

@@ -2200,6 +2200,138 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "resume_runs_for_runner/1" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+      %{account: account, runner: runner}
+    end
+
+    test "replays the persisted execution intent on the current connection", %{
+      account: account,
+      runner: runner
+    } do
+      args_raw = ~s({"job_id":9007199254740993,"ratio":0.1234567890123456789})
+
+      {:ok, run} =
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{
+            args_raw: args_raw,
+            opts: %{"timeout" => 30_000_000_000}
+          })
+        )
+
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      assert_receive {:cloud_to_runner, first_generation, %{"type" => "run_action"} = original},
+                     500
+
+      successor = reconnect_runner(runner)
+      assert :ok = Runs.resume_runs_for_runner(runner.id)
+
+      assert_receive {:cloud_to_runner, successor_generation,
+                      %{"type" => "run_action"} = recovered},
+                     500
+
+      assert first_generation == runner.connection_generation
+      assert successor_generation == successor.connection_generation
+      assert recovered == original
+      assert Jason.encode!(recovered) =~ ~s("job_id":9007199254740993)
+      assert Runs.peek_run_by_id(run.id).status == :sent
+    end
+
+    test "replays cancellation after the execution intent", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      run
+      |> Ecto.Changeset.change(status: :cancelling, reason_text: "operator requested stop")
+      |> Repo.update!()
+
+      {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      successor = reconnect_runner(runner)
+      assert :ok = Runs.resume_runs_for_runner(runner.id)
+
+      assert_receive {:cloud_to_runner, generation,
+                      %{"type" => "run_action", "request_id" => request_id}},
+                     500
+
+      assert_receive {:cloud_to_runner, ^generation,
+                      %{
+                        "type" => "cancel",
+                        "request_id" => ^request_id,
+                        "reason" => "operator requested stop"
+                      }},
+                     500
+
+      assert generation == successor.connection_generation
+      assert request_id == run.request_id
+      assert Runs.peek_run_by_id(run.id).status == :cancelling
+      assert Runs.peek_run_by_id(pending.id).status == :pending
+      refute_receive {:cloud_to_runner, _generation, _message}, 100
+    end
+  end
+
+  describe "mark_started_from_connection/5" do
+    test "marks a sent run running only for the current connection owner" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      assert {:ok, started} =
+               Runs.mark_started_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 run.request_id
+               )
+
+      assert started.status == :running
+      assert %DateTime{} = started.started_at
+
+      assert {:error, :not_dispatchable} =
+               Runs.mark_started_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 run.request_id
+               )
+    end
+
+    test "rejects a superseded lease without changing the run" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      reconnect_runner(runner)
+
+      assert {:error, :connection_superseded} =
+               Runs.mark_started_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 run.request_id
+               )
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
+    end
+  end
+
   describe "list_running_runs/0" do
     test "returns only in-flight rows" do
       account = Fixtures.Accounts.create_account()

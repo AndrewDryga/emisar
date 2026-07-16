@@ -185,6 +185,26 @@ output:
   max_stderr_bytes: 1024
 `
 
+const quietActionYAML = `
+schema_version: 1
+id: t.quiet
+title: Quiet
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: true
+    argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
 // longActionYAML sleeps for 30s if uninterrupted. Used by the
 // CancelMsg test to verify cloud-initiated cancellation reaches the
 // executor and SIGTERMs the process before the 30s elapse.
@@ -270,11 +290,13 @@ version: 0.0.1
 description: t
 actions:
   - actions/echo.yaml
+  - actions/quiet.yaml
   - actions/sleep.yaml
   - actions/stubborn.yaml
   - actions/truncated.yaml
 `), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "echo.yaml"), []byte(echoActionYAML), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "quiet.yaml"), []byte(quietActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "sleep.yaml"), []byte(longActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "stubborn.yaml"), []byte(stubbornActionYAML), 0o644))
 	must(os.WriteFile(filepath.Join(root, "p", "actions", "truncated.yaml"), []byte(truncatedActionYAML), 0o644))
@@ -703,6 +725,101 @@ func TestClient_ReplaysResultAcrossReconnect(t *testing.T) {
 			t.Fatalf("result was sent on dead conn1: %+v", m)
 		}
 	}
+}
+
+func TestClient_ActionStartedPrecedesQuietResult(t *testing.T) {
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	requestID := testRequestID("req_quiet_started")
+	sendRunAction(t, conn, cli, requestID, "t.quiet", nil)
+	_ = waitForResult(t, conn, requestID, 3*time.Second)
+
+	conn.mu.Lock()
+	sent := append([]any(nil), conn.sent...)
+	conn.mu.Unlock()
+	startedAt, resultAt := -1, -1
+	for i, message := range sent {
+		switch typed := message.(type) {
+		case ActionStartedMsg:
+			if typed.RequestID == requestID {
+				startedAt = i
+			}
+		case ActionProgressMsg:
+			if typed.RequestID == requestID {
+				t.Fatalf("quiet action emitted progress: %+v", typed)
+			}
+		case ActionResultMsg:
+			if typed.RequestID == requestID {
+				resultAt = i
+			}
+		}
+	}
+	if startedAt < 0 || resultAt < 0 || startedAt >= resultAt {
+		t.Fatalf("message order started=%d result=%d; want action_started before action_result", startedAt, resultAt)
+	}
+}
+
+func TestClient_ActionStartedRepeatsAfterReconnectWhileRunIsActive(t *testing.T) {
+	conn1 := newFakeConn()
+	conn2 := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn1, conn2}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	requestID := testRequestID("req_started_reconnect")
+	sendRunAction(t, conn1, cli, requestID, "t.sleep", nil)
+	waitUntil(t, 3*time.Second, func() bool {
+		return countMessagesForRequest(conn1, MsgActionStarted, requestID) == 1
+	})
+	if err := conn1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 3*time.Second, func() bool {
+		return countMessagesForRequest(conn2, MsgActionStarted, requestID) == 1
+	})
+
+	raw, err := json.Marshal(CancelMsg{Envelope: Envelope{
+		Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: requestID,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn2.in <- raw
+	result := waitForResult(t, conn2, requestID, 10*time.Second)
+	if result["status"] != "cancelled" {
+		t.Fatalf("status=%v, want cancelled", result["status"])
+	}
+	if got := countMessagesForRequest(conn1, MsgActionStarted, requestID); got != 1 {
+		t.Fatalf("first session action_started count=%d, want 1", got)
+	}
+	if got := countMessagesForRequest(conn2, MsgActionStarted, requestID); got != 1 {
+		t.Fatalf("second session action_started count=%d, want 1", got)
+	}
+}
+
+func countMessagesForRequest(conn *fakeConn, messageType MessageType, requestID string) int {
+	count := 0
+	for _, message := range conn.sentByType(messageType) {
+		if message["request_id"] == requestID {
+			count++
+		}
+	}
+	return count
 }
 
 // heartbeatFailingConn fails Send on the first HeartbeatMsg; other

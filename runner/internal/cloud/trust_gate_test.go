@@ -41,6 +41,9 @@ func TestClient_TrustGate_MissingExpectedHashRefuses(t *testing.T) {
 	if !strings.Contains(res["error"].(string), "<missing>") {
 		t.Fatalf("error=%v, want missing-hash detail", res["error"])
 	}
+	if got := countMessagesForRequest(conn, MsgActionStarted, testRequestID("req_nopin")); got != 0 {
+		t.Fatalf("trust-gate refusal emitted %d action_started frame(s)", got)
+	}
 	requireResultEventID(t, res)
 	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 2 })
 }

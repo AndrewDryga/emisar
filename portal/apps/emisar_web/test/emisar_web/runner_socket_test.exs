@@ -326,7 +326,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "request_id" => request_id}},
+                      %{"type" => "run_action", "request_id" => request_id} = original_action},
                      1_000
 
       assert request_id == run.request_id
@@ -334,7 +334,22 @@ defmodule EmisarWeb.RunnerSocketTest do
       :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
 
       assert {:ok, second_state} = RunnerSocket.init(%{token: token, runner: runner})
-      refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 100
+
+      runner_state = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      assert {:ok, refreshed_state} = RunnerSocket.handle_in({runner_state, text()}, second_state)
+      assert_receive :resume_runs
+      assert {:ok, ^refreshed_state} = RunnerSocket.handle_info(:resume_runs, refreshed_state)
+
+      assert_receive {:cloud_to_runner, successor_generation,
+                      %{"type" => "run_action"} = recovered_action},
+                     1_000
+
+      assert successor_generation == refreshed_state.connection_generation
+      assert recovered_action == original_action
+
+      started = runner_frame(%{"type" => "action_started", "request_id" => run.request_id})
+      assert {:ok, ^refreshed_state} = RunnerSocket.handle_in({started, text()}, refreshed_state)
+      assert Repo.get!(ActionRun, run.id).status == :running
 
       progress =
         runner_frame(%{
@@ -345,12 +360,12 @@ defmodule EmisarWeb.RunnerSocketTest do
           "chunk" => "resumed\n"
         })
 
-      assert {:ok, ^second_state} = RunnerSocket.handle_in({progress, text()}, second_state)
+      assert {:ok, ^refreshed_state} = RunnerSocket.handle_in({progress, text()}, refreshed_state)
 
       result = result_frame(run.request_id, "success", exit_code: 0)
 
       assert {:push, ack, _remembered_state} =
-               RunnerSocket.handle_in({result, text()}, second_state)
+               RunnerSocket.handle_in({result, text()}, refreshed_state)
 
       assert %{"type" => "ack_result", "request_id" => ^request_id} = decode(ack)
 
@@ -367,14 +382,14 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert Repo.get!(ActionRun, run.id).status == :pending
       assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
 
-      refute_receive :dispatch_queued
+      refute_receive :resume_runs
 
       raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
       assert {:ok, refreshed_state} = RunnerSocket.handle_in({raw, text()}, state)
-      assert_receive :dispatch_queued
+      assert_receive :resume_runs
 
       assert {:ok, ^refreshed_state} =
-               RunnerSocket.handle_info(:dispatch_queued, refreshed_state)
+               RunnerSocket.handle_info(:resume_runs, refreshed_state)
 
       assert_receive {:cloud_to_runner, _generation,
                       %{"type" => "run_action", "request_id" => request_id}},
@@ -729,6 +744,33 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
   end
 
+  describe "handle_in/2 — action_started" do
+    setup [:connected_socket, :dispatched_run]
+
+    test "marks a quiet accepted run as running and tolerates a duplicate", %{
+      state: state,
+      run: run
+    } do
+      raw = runner_frame(%{"type" => "action_started", "request_id" => run.request_id})
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      started = Repo.get!(ActionRun, run.id)
+      assert started.status == :running
+      assert %DateTime{} = started.started_at
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Repo.get!(ActionRun, run.id).started_at == started.started_at
+    end
+
+    test "requires a canonical request id", %{state: state} do
+      raw = runner_frame(%{"type" => "action_started"})
+
+      assert {:stop, :normal, {1002, "Invalid action_started request_id."}, ^state} =
+               RunnerSocket.handle_in({raw, text()}, state)
+    end
+  end
+
   describe "handle_in/2 — action_progress" do
     setup [:connected_socket, :dispatched_run]
 
@@ -762,6 +804,15 @@ defmodule EmisarWeb.RunnerSocketTest do
       |> Repo.get!(state.runner_id)
       |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
       |> Repo.update!()
+
+      assert {:error, :connection_superseded} =
+               Runs.mark_started_from_connection(
+                 state.account_id,
+                 state.runner_id,
+                 state.connection_generation,
+                 state.connection_lease_id,
+                 run.request_id
+               )
 
       assert {:error, :connection_superseded} =
                Runs.append_event_from_connection(

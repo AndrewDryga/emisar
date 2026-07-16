@@ -33,6 +33,7 @@ exact lowercase JSON names; case aliases are rejected.
 runner --(TLS connect with bearer token)--> portal
 runner --(runner_state)-------------------> portal
 portal --(run_action)---------------------> runner
+runner --(action_started)----------------> portal
 runner --(action_progress...)------------> portal
 runner --(action_result)-----------------> portal
 portal --(ack_result)---------------------> runner
@@ -180,17 +181,25 @@ Unsigned portal/operator/runbook dispatch is accepted only when signature
 enforcement is disabled. There is no compatibility mode for earlier attestation
 formats.
 
-## Progress and result
+## Start, progress, and result
+
+`action_started` confirms that the runner durably reserved the dispatch,
+passed its signature and pack-trust gates, and is entering the execution
+engine. It is sent before any progress or terminal result. A still-active
+handler repeats the message after reconnect so the portal can recover a quiet
+run without relying on output as an implicit acknowledgement.
 
 `action_progress` carries a monotonically increasing sequence, stream, and one
 already-redacted, valid-UTF-8 output chunk. The runner normalizes invalid bytes
 after redaction and before progress emission, parsing, audit hashing, or byte
 counting, so every downstream representation uses one byte stream.
 
-`action_result` is emitted exactly once after the process exits or the runner
-refuses the call. It carries terminal status, exit code, duration, emitted
-stream hashes/counts, total and dropped progress-chunk counts, truncation flags,
-redaction counts, masked executed command, reason, and the local audit event ID.
+`action_result` is emitted after the process exits or the runner refuses the
+call, and is replayed across reconnects until the portal returns `ack_result`.
+The portal finalizes it idempotently. It carries terminal status, exit code,
+duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
+truncation flags, redaction counts, masked executed command, reason, and the
+local audit event ID.
 If the terminal or refusal event could not be persisted, `event_id` is absent
 and `local_audit_failed` is true; the action's actual status does not change.
 The remote executed command is at most 16 KiB of valid UTF-8 and sets

@@ -120,9 +120,11 @@ type runState struct {
 	cancel         context.CancelFunc
 
 	mu       sync.Mutex
-	pending  []any // queued outbound messages
-	dropped  int   // progress chunks discarded because pending was full
-	finished bool  // ActionResultMsg has been enqueued
+	pending  []any            // queued outbound messages
+	terminal *ActionResultMsg // result waiting for durable dedup completion
+	dropped  int              // progress chunks discarded because pending was full
+	started  bool             // signature and pack gates passed; Engine.Run entered
+	finished bool             // terminal outcome has been produced
 }
 
 // NewClient constructs a Client. Defaults: heartbeat 30s, reconnect 1-60s,
@@ -263,10 +265,12 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 		return true, fmt.Errorf("send state: %w", err)
 	}
 	requeuedResults := c.requeueUnacknowledgedResults()
+	requeuedStarts := c.requeueActiveStarts()
 	c.opts.Logger.Info("cloud.connected",
 		"actions", len(state.Actions),
 		"packs", len(state.Packs),
 		"inflight_runs", c.countInflight(),
+		"requeued_starts", requeuedStarts,
 		"requeued_results", requeuedResults,
 	)
 
@@ -296,6 +300,42 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 			return true, fmt.Errorf("dispatch: %w", err)
 		}
 	}
+}
+
+// requeueActiveStarts makes the current session aware of every action that
+// entered Engine.Run and survived a prior socket. It prepends at most one frame
+// per active run so lifecycle recovery precedes buffered progress.
+func (c *Client) requeueActiveStarts() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	requeued := 0
+	for _, state := range c.runs {
+		state.mu.Lock()
+		if !state.started || state.finished || hasActionStarted(state.pending, state.requestID) {
+			state.mu.Unlock()
+			continue
+		}
+		started := ActionStartedMsg{Envelope: Envelope{
+			Type:            MsgActionStarted,
+			ProtocolVersion: ProtocolVersion,
+			RequestID:       state.requestID,
+		}}
+		state.pending = append([]any{started}, state.pending...)
+		state.mu.Unlock()
+		requeued++
+	}
+	return requeued
+}
+
+func hasActionStarted(messages []any, requestID string) bool {
+	for _, message := range messages {
+		started, ok := message.(ActionStartedMsg)
+		if ok && started.RequestID == requestID {
+			return true
+		}
+	}
+	return false
 }
 
 // requeueUnacknowledgedResults reconciles the durable result log with the
@@ -479,6 +519,8 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		return nil
 	}
 	if preCanceled {
+		s := &runState{requestID: m.RequestID, dispatchDigest: digest}
+		c.runs[m.RequestID] = s
 		c.mu.Unlock()
 		result := withLocalAudit(ActionResultMsg{
 			Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
@@ -488,15 +530,7 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 		}, c.opts.Engine.RecordDispatchCancellation(
 			context.WithoutCancel(parent), requestForDispatch(m, nil, nil), "cancelled before process start",
 		))
-		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
-			if !c.dispatchReservationFailed(parent, m, err) {
-				return errResponseBacklogFull
-			}
-			return nil
-		}
-		if !c.enqueueTransient(m.RequestID, result) {
-			return errResponseBacklogFull
-		}
+		c.finishRun(s, result)
 		return nil
 	}
 	runCtx, cancel := context.WithCancel(parent)
@@ -530,10 +564,7 @@ func (c *Client) handleReservationDecision(
 			"execution_outcome_unknown",
 			"runner restarted after reserving this dispatch; it was not re-executed because prior side effects are unknown",
 		)
-		if err := c.dedup.complete(m.RequestID, digest, result); err != nil {
-			c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", m.RequestID, "error", err)
-		}
-		return c.enqueueTransient(m.RequestID, result)
+		return c.enqueueDurableResult(m.RequestID, digest, result)
 	case reservationConflict:
 		c.opts.Logger.Warn("cloud.dispatch_id_conflict", "request_id", m.RequestID)
 		return c.enqueueTransient(m.RequestID, c.refusedDispatchResult(
@@ -545,6 +576,25 @@ func (c *Client) handleReservationDecision(
 	default:
 		return false
 	}
+}
+
+// enqueueDurableResult installs response state before attempting completion so
+// a transient filesystem failure cannot lose the only terminal result.
+func (c *Client) enqueueDurableResult(requestID, digest string, result ActionResultMsg) bool {
+	c.mu.Lock()
+	if c.closing || len(c.runs) >= c.maxRunStates() {
+		c.mu.Unlock()
+		return false
+	}
+	if _, exists := c.runs[requestID]; exists {
+		c.mu.Unlock()
+		return false
+	}
+	state := &runState{requestID: requestID, dispatchDigest: digest}
+	c.runs[requestID] = state
+	c.mu.Unlock()
+	c.finishRun(state, result)
+	return true
 }
 
 func (c *Client) dispatchReservationFailed(ctx context.Context, m RunActionMsg, err error) bool {
@@ -650,7 +700,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 				result = withLocalAudit(result, c.opts.Engine.RecordExecutionFailure(
 					context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "runner recovered an internal dispatch panic",
 				))
-				c.finishRun(s, m, result)
+				c.finishRun(s, result)
 			}
 		}
 	}()
@@ -670,6 +720,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	if !trusted {
 		return
 	}
+	c.markRunStarted(s)
 
 	seq := 0
 	progress := func(stream executor.Stream, line []byte) {
@@ -703,7 +754,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		result = withLocalAudit(result, c.opts.Engine.RecordExecutionFailure(
 			context.WithoutCancel(ctx), req, "engine returned an internal error: "+err.Error(),
 		))
-		c.finishRun(s, m, result)
+		c.finishRun(s, result)
 	} else {
 		// One log line per completed run. Non-success statuses get Warn
 		// so they stand out in operator logs; success is Info.
@@ -742,18 +793,34 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			ExecutedCommand:          executedCommand,
 			ExecutedCommandTruncated: executedCommandTruncated,
 		}
-		c.finishRun(s, m, result)
+		c.finishRun(s, result)
 	}
 }
 
-func (c *Client) finishRun(s *runState, m RunActionMsg, result ActionResultMsg) {
-	if err := c.dedup.complete(m.RequestID, s.dispatchDigest, result); err != nil {
-		// The durable reservation remains on disk if completion cannot be
-		// persisted, so a restart still refuses to execute the action again.
-		c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", m.RequestID, "error", err)
-	}
+func (c *Client) markRunStarted(s *runState) {
+	s.mu.Lock()
+	s.started = true
+	s.pending = append(s.pending, ActionStartedMsg{Envelope: Envelope{
+		Type:            MsgActionStarted,
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       s.requestID,
+	}})
+	s.mu.Unlock()
+	c.signalSend()
+}
+
+func (c *Client) finishRun(s *runState, result ActionResultMsg) {
 	s.mu.Lock()
 	s.finished = true
+	if err := c.dedup.complete(s.requestID, s.dispatchDigest, result); err != nil {
+		// Keep the terminal result in memory and let the sender backstop retry.
+		// The durable reservation also prevents re-execution after a restart.
+		s.terminal = &result
+		s.mu.Unlock()
+		c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", s.requestID, "error", err)
+		c.signalSend()
+		return
+	}
 	s.pending = append(s.pending, result)
 	s.mu.Unlock()
 	c.signalSend()
@@ -808,7 +875,7 @@ func (c *Client) refuseSignature(ctx context.Context, s *runState, m RunActionMs
 	}, c.opts.Engine.RecordDispatchRefusal(
 		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), "signature refused: "+dec.Code,
 	))
-	c.finishRun(s, m, result)
+	c.finishRun(s, result)
 	return false
 }
 
@@ -899,7 +966,7 @@ func (c *Client) emitPackMismatch(ctx context.Context, s *runState, m RunActionM
 	}, c.opts.Engine.RecordDispatchRefusal(
 		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
 	))
-	c.finishRun(s, m, result)
+	c.finishRun(s, result)
 }
 
 func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engine.ProgressFunc) engine.Request {
@@ -936,8 +1003,19 @@ const (
 func (c *Client) enqueue(s *runState, msg any, policy dropPolicy) {
 	s.mu.Lock()
 	if len(s.pending) >= c.opts.MaxPendingPerRun && policy == dropOldestProgress {
-		s.pending = s.pending[1:]
+		progress := -1
+		for i, pending := range s.pending {
+			if _, ok := pending.(ActionProgressMsg); ok {
+				progress = i
+				break
+			}
+		}
 		s.dropped++
+		if progress < 0 {
+			s.mu.Unlock()
+			return
+		}
+		s.pending = append(s.pending[:progress], s.pending[progress+1:]...)
 	}
 	s.pending = append(s.pending, msg)
 	s.mu.Unlock()
@@ -982,6 +1060,9 @@ func (c *Client) drainOnce(ctx context.Context, conn Conn) error {
 	c.mu.Unlock()
 
 	for _, s := range snapshot {
+		if recovered, err := c.retryTerminalPersistence(s); err == nil && recovered {
+			c.opts.Logger.Info("cloud.dedup_persist_recovered", "request_id", s.requestID)
+		}
 		s.mu.Lock()
 		msgs := s.pending
 		s.pending = nil
@@ -998,7 +1079,7 @@ func (c *Client) drainOnce(ctx context.Context, conn Conn) error {
 		}
 		// If this run is finished and we just sent its tail, remove it.
 		s.mu.Lock()
-		if s.finished && len(s.pending) == 0 {
+		if s.finished && s.terminal == nil && len(s.pending) == 0 {
 			s.mu.Unlock()
 			c.removeRun(s.requestID)
 			continue
@@ -1006,6 +1087,23 @@ func (c *Client) drainOnce(ctx context.Context, conn Conn) error {
 		s.mu.Unlock()
 	}
 	return nil
+}
+
+// retryTerminalPersistence promotes a held terminal result into the send queue
+// only after the completed dedup record is durable. Failure is deliberately not
+// a transport error: the sender backstop retries without reconnecting.
+func (c *Client) retryTerminalPersistence(s *runState) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.terminal == nil {
+		return false, nil
+	}
+	if err := c.dedup.complete(s.requestID, s.dispatchDigest, *s.terminal); err != nil {
+		return false, err
+	}
+	s.pending = append(s.pending, *s.terminal)
+	s.terminal = nil
+	return true, nil
 }
 
 // readvertiseLoop watches for Readvertise() pings and sends a fresh
@@ -1118,7 +1216,7 @@ func (c *Client) ackRun(requestID string) {
 	if ok {
 		s.mu.Lock()
 		finished := s.finished
-		empty := len(s.pending) == 0
+		empty := len(s.pending) == 0 && s.terminal == nil
 		s.mu.Unlock()
 		if !finished || !empty {
 			c.opts.Logger.Warn("cloud.premature_ack",
