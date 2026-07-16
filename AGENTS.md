@@ -44,7 +44,7 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 
 ## The `.agent/` working state (per project)
 
-Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **The knowledge and config are committed — `rules/` (the taste KB), `kb/` (the descriptive KB), `presets/` (orchestration recipes), `scripts/` (maintained dev tooling), `project.yaml`, and `loop.yaml`; everything else is local working state and git-ignored** — the queue, backlog drawer, log, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
+Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **The knowledge and config are committed — `rules/` (the taste KB), `kb/` (the descriptive KB), `presets/` (orchestration recipes), `scripts/` (maintained dev tooling), and the root `project.yaml`, `loop.yaml`, and `compose.yml`; everything else is local working state and git-ignored** — the queue, backlog drawer, log, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
 
 - **`tasks/`** — the work queue: **a folder per task**, driven by `coop tasks`. A task's **state is its directory**, four states, nothing else, so skipped work has nowhere to hide:
   - `00_todo/` todo · `10_in_progress/` **claimed / in progress** · `50_blocked/` blocked · `99_done/` **done _and_ gated-green _and_ committed**. The numeric prefix just sorts `ls` in lifecycle order; a state change is a **folder move**, never a checkbox edit — always via `coop tasks`, never a manual `mv`.

@@ -60,6 +60,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 	cases := map[string]bool{
 		".agent/project.yaml":                                 false,
 		".agent/loop.yaml":                                    false,
+		".agent/compose.yml":                                  false,
 		".agent/kb/README.md":                                 false,
 		".agent/presets/frontier/roles/lead.md":               false,
 		agentReview:                                           true,
