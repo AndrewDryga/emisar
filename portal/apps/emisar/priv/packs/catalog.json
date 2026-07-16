@@ -11052,13 +11052,13 @@
     {
       "id": "cockroach",
       "name": "CockroachDB",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "description": "Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness / store capacity, under-replicated & unavailable ranges, running queries / sessions / transactions, contention & locks, jobs, statement statistics, table sizes, and cluster settings — plus a few gated operators (cancel a query / session / job, pause / resume a job, decommission / recommission a node). Reads are SQL against crdb_internal / SHOW statements; mutators use SQL or `cockroach node`.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/cockroach",
-      "content_hash": "sha256:3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/cockroach/0.1.2/3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959/pack.tar.gz",
+      "content_hash": "sha256:b93cef9ed8802036877f0ee17a3c99a886671edf4a35b662202677f676b295f9",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/cockroach/0.1.3/b93cef9ed8802036877f0ee17a3c99a886671edf4a35b662202677f676b295f9/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11096,8 +11096,7 @@
               "required": true,
               "description": "job_id from cockroach.jobs.",
               "validation": {
-                "min": 1,
-                "max": 9223372036854776000
+                "min": 1
               }
             }
           ],
@@ -11705,8 +11704,7 @@
               "required": true,
               "description": "job_id from cockroach.jobs.",
               "validation": {
-                "min": 1,
-                "max": 9223372036854776000
+                "min": 1
               }
             }
           ],
@@ -11798,8 +11796,7 @@
               "required": true,
               "description": "job_id from cockroach.jobs.",
               "validation": {
-                "min": 1,
-                "max": 9223372036854776000
+                "min": 1
               }
             }
           ],
@@ -12020,6 +12017,957 @@
               "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT table_id, table_name, estimated_row_count FROM crdb_internal.table_row_statistics ORDER BY estimated_row_count DESC LIMIT 200\""
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.2",
+          "content_hash": "sha256:3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/cockroach/0.1.2/3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959/pack.tar.gz",
+          "actions": [
+            {
+              "id": "cockroach.cancel_job",
+              "title": "Cancel a job (CANCEL JOB)",
+              "summary": "Cancel one job by id (from jobs). The job stops and rolls back any partial work where applicable. Use to abort a wrong or stuck schema change / backup / import.",
+              "description": "Cancel one job by id (from jobs). The job stops and rolls back any partial work where applicable. Use to abort a wrong or stuck schema change / backup / import.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "The target job is cancelled and begins reverting."
+              ],
+              "args": [
+                {
+                  "name": "job_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "job_id from cockroach.jobs.",
+                  "validation": {
+                    "min": 1,
+                    "max": 9223372036854776000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Cancel a job",
+                  "args": {
+                    "job_id": 891234567890123500
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL JOB {{ args.job_id }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cancel_query",
+              "title": "Cancel a running query (CANCEL QUERY)",
+              "summary": "Stop one in-flight query by its query_id (from cluster_queries). The query ends with an error; the session/connection stays open. Use to kill a runaway query without dropping the client.",
+              "description": "Stop one in-flight query by its query_id (from cluster_queries). The query ends with an error; the session/connection stays open. Use to kill a runaway query without dropping the client.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "The target query is cancelled with an error.",
+                "The session/connection stays open."
+              ],
+              "args": [
+                {
+                  "name": "query_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "query_id from cockroach.cluster_queries.",
+                  "validation": {
+                    "pattern": "^[0-9a-f]{16,40}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Cancel a query",
+                  "args": {
+                    "query_id": "16f8c5a0b2c3d4e50000000000000001"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL QUERY '{{ args.query_id }}'\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cancel_session",
+              "title": "Cancel a session (CANCEL SESSION)",
+              "summary": "End one client session by its session_id (from cluster_sessions) — its current query is cancelled and the connection closed; an open transaction is rolled back. Use to evict a stuck or abusive connection.",
+              "description": "End one client session by its session_id (from cluster_sessions) — its current query is cancelled and the connection closed; an open transaction is rolled back. Use to evict a stuck or abusive connection.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "The target session is terminated and its connection closed.",
+                "Any open transaction on it is rolled back."
+              ],
+              "args": [
+                {
+                  "name": "session_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "session_id from cockroach.cluster_sessions.",
+                  "validation": {
+                    "pattern": "^[0-9a-f]{16,40}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Cancel a session",
+                  "args": {
+                    "session_id": "16f8c5a0b2c3d4e50000000000000001"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL SESSION '{{ args.session_id }}'\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cluster_queries",
+              "title": "Show running queries cluster-wide",
+              "summary": "Show in-flight queries across all nodes (the SHOW CLUSTER QUERIES surface) — query id, node, user, start time, client address, application, and the query text (truncated). Use to find a long-running or runaway query.",
+              "description": "Show in-flight queries across all nodes (the SHOW CLUSTER QUERIES surface) — query id, node, user, start time, client address, application, and the query text (truncated). Use to find a long-running or runaway query.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.cluster_queries.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 100,
+                  "description": "Max rows to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 1000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Oldest running queries",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT query_id, node_id, user_name, start, client_address, application_name, left(query,200) AS query FROM crdb_internal.cluster_queries ORDER BY start ASC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cluster_sessions",
+              "title": "Show open sessions cluster-wide",
+              "summary": "Show open SQL sessions across all nodes (the SHOW CLUSTER SESSIONS surface) — session id, node, user, client address, application, active queries, and session start. Use to see who is connected and from where.",
+              "description": "Show open SQL sessions across all nodes (the SHOW CLUSTER SESSIONS surface) — session id, node, user, client address, application, active queries, and session start. Use to see who is connected and from where.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.cluster_sessions.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 100,
+                  "description": "Max rows to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 1000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Open sessions",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT session_id, node_id, user_name, client_address, application_name, active_queries, session_start FROM crdb_internal.cluster_sessions ORDER BY session_start ASC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cluster_settings",
+              "title": "Show cluster settings",
+              "summary": "Show all cluster settings with their current value, type, and description (SHOW CLUSTER SETTINGS). Use to confirm a setting's value during an investigation. Read-only — this pack does not change settings.",
+              "description": "Show all cluster settings with their current value, type, and description (SHOW CLUSTER SETTINGS). Use to confirm a setting's value during an investigation. Read-only — this pack does not change settings.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SHOW CLUSTER SETTINGS query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All cluster settings",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SHOW CLUSTER SETTINGS\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.cluster_transactions",
+              "title": "Show open transactions cluster-wide",
+              "summary": "Show open transactions across all nodes — id, node, session, start time, application, statement count, and retry count, from crdb_internal.cluster_transactions. Use to spot long-open or heavily-retried transactions.",
+              "description": "Show open transactions across all nodes — id, node, session, start time, application, statement count, and retry count, from crdb_internal.cluster_transactions. Use to spot long-open or heavily-retried transactions.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.cluster_transactions.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 100,
+                  "description": "Max rows to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 1000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Open transactions",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT id, node_id, session_id, start, application_name, num_stmts, num_retries FROM crdb_internal.cluster_transactions ORDER BY start ASC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.contention_events",
+              "title": "Show who is blocking whom (contention events)",
+              "summary": "Show recent transaction-contention events — blocking vs waiting txn, how long the wait was, and the object (database / table / index) and key contended, from crdb_internal.transaction_contention_events. The core \"what's blocking my writes\" view.",
+              "description": "Show recent transaction-contention events — blocking vs waiting txn, how long the wait was, and the object (database / table / index) and key contended, from crdb_internal.transaction_contention_events. The core \"what's blocking my writes\" view.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.transaction_contention_events.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 50,
+                  "description": "Max rows to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 500
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recent contention",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT collection_ts, blocking_txn_id, waiting_txn_id, contention_duration, database_name, table_name, index_name, contending_pretty_key FROM crdb_internal.transaction_contention_events ORDER BY collection_ts DESC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.contention_leaderboard",
+              "title": "Show most-contended objects",
+              "summary": "Show the most-contended tables/indexes by cumulative contention time, from crdb_internal.cluster_contention_events. Use to find the hotspot behind widespread contention.",
+              "description": "Show the most-contended tables/indexes by cumulative contention time, from crdb_internal.cluster_contention_events. Use to find the hotspot behind widespread contention.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.cluster_contention_events.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Contention leaderboard",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT table_id, index_id, num_contention_events, cumulative_contention_time FROM crdb_internal.cluster_contention_events ORDER BY cumulative_contention_time DESC LIMIT 50\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.databases",
+              "title": "List databases (SHOW DATABASES)",
+              "summary": "List the cluster's databases. Cheap connectivity + auth check, and the pack's verify action.",
+              "description": "List the cluster's databases. Cheap connectivity + auth check, and the pack's verify action.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One SHOW DATABASES query.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All databases",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SHOW DATABASES\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.jobs",
+              "title": "Show recent / running jobs",
+              "summary": "Show cluster jobs (schema changes, backups, restores, imports, row-TTL) from crdb_internal.jobs — id, type, status, running status, timing, fraction complete, description, and any error. Optionally filter by status. Use to find a stuck or failed job.",
+              "description": "Show cluster jobs (schema changes, backups, restores, imports, row-TTL) from crdb_internal.jobs — id, type, status, running status, timing, fraction complete, description, and any error. Optionally filter by status. Use to find a stuck or failed job.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.jobs.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "status",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Optional status filter (e.g. running, paused, failed); empty = all.",
+                  "validation": {
+                    "pattern": "^[a-z-]{0,32}$"
+                  }
+                },
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 50,
+                  "description": "Max rows to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 500
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recent jobs",
+                  "args": {}
+                },
+                {
+                  "title": "Running jobs only",
+                  "args": {
+                    "status": "running"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM crdb_internal.jobs WHERE ('{{ args.status }}' = '' OR status = '{{ args.status }}') ORDER BY created DESC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.locks",
+              "title": "Show contended locks (lock table)",
+              "summary": "Show contended entries in the lock table — range, object, the pretty key, holding txn, lock strength, and how long it's been held, from crdb_internal.cluster_locks. Use to find the lock behind a stall.",
+              "description": "Show contended entries in the lock table — range, object, the pretty key, holding txn, lock strength, and how long it's been held, from crdb_internal.cluster_locks. Use to find the lock behind a stall.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.cluster_locks.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Contended locks",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT range_id, database_name, table_name, index_name, lock_key_pretty, txn_id, lock_strength, granted, contended, duration FROM crdb_internal.cluster_locks WHERE contended ORDER BY duration DESC LIMIT 100\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.node_decommission",
+              "title": "Decommission a node (cockroach node decommission)",
+              "summary": "Mark one node decommissioning and start moving its replicas off. Effectively irreversible once it completes — a fully decommissioned node cannot rejoin under the same id. Uses --wait=none, so the call returns after initiating; track progress with node_status.",
+              "description": "Mark one node decommissioning and start moving its replicas off. Effectively irreversible once it completes — a fully decommissioned node cannot rejoin under the same id. Uses --wait=none, so the call returns after initiating; track progress with node_status.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "The target node stops accepting new replicas and sheds its existing ones.",
+                "A fully decommissioned node cannot rejoin the cluster under the same id."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Node id to decommission (from node_status).",
+                  "validation": {
+                    "min": 1,
+                    "max": 65535
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Begin decommissioning node 4",
+                  "args": {
+                    "node_id": 4
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach node decommission {{ args.node_id }} --wait=none --url \"$COCKROACH_URL\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.node_liveness",
+              "title": "Show node liveness / draining / decommissioning",
+              "summary": "Show per-node liveness from crdb_internal.gossip_liveness — epoch, draining, decommissioning, membership, and last update. Use to see which nodes are live and which are leaving the cluster.",
+              "description": "Show per-node liveness from crdb_internal.gossip_liveness — epoch, draining, decommissioning, membership, and last update. Use to see which nodes are live and which are leaving the cluster.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.gossip_liveness.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Liveness of all nodes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT node_id, epoch, draining, decommissioning, membership, updated_at FROM crdb_internal.gossip_liveness ORDER BY node_id\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.node_recommission",
+              "title": "Recommission a node (cockroach node recommission)",
+              "summary": "Reverse an in-progress decommission so the node resumes accepting replicas. Only valid before the decommission completes. Use to abort a decommission started by mistake.",
+              "description": "Reverse an in-progress decommission so the node resumes accepting replicas. Only valid before the decommission completes. Use to abort a decommission started by mistake.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "The node resumes accepting replicas."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Node id to recommission (from node_status).",
+                  "validation": {
+                    "min": 1,
+                    "max": 65535
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recommission node 4",
+                  "args": {
+                    "node_id": 4
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach node recommission {{ args.node_id }} --url \"$COCKROACH_URL\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.node_status",
+              "title": "Show node status (liveness, ranges, decommission, disk)",
+              "summary": "Show every node's status — address, build, liveness, replica/leaseholder counts, range counts (incl. unavailable / under-replicated), liveness bytes, and decommission / draining / membership state. The first stop for cluster health.",
+              "description": "Show every node's status — address, build, liveness, replica/leaseholder counts, range counts (incl. unavailable / under-replicated), liveness bytes, and decommission / draining / membership state. The first stop for cluster health.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One `cockroach node status` call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All nodes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach node status --all --url \"$COCKROACH_URL\" --format=tsv"
+                ]
+              }
+            },
+            {
+              "id": "cockroach.node_status_one",
+              "title": "Show status for one node",
+              "summary": "Show full status for a single node by id — same columns as node_status, scoped to one node. Use to inspect a node flagged elsewhere.",
+              "description": "Show full status for a single node by id — same columns as node_status, scoped to one node. Use to inspect a node flagged elsewhere.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One `cockroach node status` call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Node id (from node_status).",
+                  "validation": {
+                    "min": 1,
+                    "max": 65535
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Status for node 3",
+                  "args": {
+                    "node_id": 3
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach node status {{ args.node_id }} --all --url \"$COCKROACH_URL\" --format=tsv"
+                ]
+              }
+            },
+            {
+              "id": "cockroach.pause_job",
+              "title": "Pause a job (PAUSE JOB)",
+              "summary": "Pause one running job by id (from jobs). It can be resumed later with resume_job. Use to relieve load from a heavy backup / schema change without losing its progress.",
+              "description": "Pause one running job by id (from jobs). It can be resumed later with resume_job. Use to relieve load from a heavy backup / schema change without losing its progress.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "The target job is paused (resumable)."
+              ],
+              "args": [
+                {
+                  "name": "job_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "job_id from cockroach.jobs.",
+                  "validation": {
+                    "min": 1,
+                    "max": 9223372036854776000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Pause a job",
+                  "args": {
+                    "job_id": 891234567890123500
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"PAUSE JOB {{ args.job_id }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.replication_constraints",
+              "title": "Show replication constraint violations",
+              "summary": "Show zones whose ranges violate their replication constraints (e.g. a region/locality requirement that can't be met), from system.replication_constraint_stats. Empty means all constraints satisfied.",
+              "description": "Show zones whose ranges violate their replication constraints (e.g. a region/locality requirement that can't be met), from system.replication_constraint_stats. Empty means all constraints satisfied.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on system.replication_constraint_stats.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Constraint violations",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT zone_id, subzone_id, type, config, violating_ranges, violation_start FROM system.replication_constraint_stats WHERE violating_ranges > 0 ORDER BY violating_ranges DESC\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.replication_stats",
+              "title": "Show under-replicated / unavailable range counts",
+              "summary": "Show cluster-wide range health — total, under-replicated, unavailable, and over-replicated range counts, summed from system.replication_stats. Any non-zero unavailable count means data is offline; under-replicated means recovery is in progress.",
+              "description": "Show cluster-wide range health — total, under-replicated, unavailable, and over-replicated range counts, summed from system.replication_stats. Any non-zero unavailable count means data is offline; under-replicated means recovery is in progress.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on system.replication_stats.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Range health summary",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT coalesce(sum(total_ranges),0) AS total, coalesce(sum(under_replicated_ranges),0) AS under_replicated, coalesce(sum(unavailable_ranges),0) AS unavailable, coalesce(sum(over_replicated_ranges),0) AS over_replicated FROM system.replication_stats\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.resume_job",
+              "title": "Resume a paused job (RESUME JOB)",
+              "summary": "Resume one paused job by id (from jobs). Use to continue a job paused with pause_job.",
+              "description": "Resume one paused job by id (from jobs). Use to continue a job paused with pause_job.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "The target job resumes running."
+              ],
+              "args": [
+                {
+                  "name": "job_id",
+                  "type": "integer",
+                  "required": true,
+                  "description": "job_id from cockroach.jobs.",
+                  "validation": {
+                    "min": 1,
+                    "max": 9223372036854776000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Resume a job",
+                  "args": {
+                    "job_id": 891234567890123500
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"RESUME JOB {{ args.job_id }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.set_cluster_setting",
+              "title": "Set a cluster setting (SET CLUSTER SETTING)",
+              "summary": "Change one CockroachDB cluster setting cluster-wide — SET CLUSTER SETTING <name> = <value>. An unrestricted config write (rate limits, GC TTLs, feature flags) that can materially change cluster behavior, so risk:critical → default-denied. An operator allows it by explicit policy, and WHICH settings/values are permitted is a portal policy decision, not a hardcoded list. Read cockroach.cluster_settings first to see the current value.",
+              "description": "Change one CockroachDB cluster setting cluster-wide — SET CLUSTER SETTING <name> = <value>. An unrestricted config write (rate limits, GC TTLs, feature flags) that can materially change cluster behavior, so risk:critical → default-denied. An operator allows it by explicit policy, and WHICH settings/values are permitted is a portal policy decision, not a hardcoded list. Read cockroach.cluster_settings first to see the current value.",
+              "kind": "exec",
+              "risk": "critical",
+              "side_effects": [
+                "The named cluster setting is changed for the WHOLE cluster, immediately.",
+                "Rate-limit / GC / admission settings can throttle or destabilize the cluster.",
+                "Reversible with another set (or \"= DEFAULT\")."
+              ],
+              "args": [
+                {
+                  "name": "name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Cluster setting name, e.g. kv.snapshot_rebalance.max_rate (see cockroach.cluster_settings).",
+                  "validation": {
+                    "pattern": "^[a-z][a-z0-9._]{0,127}$",
+                    "max_length": 128
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": "string",
+                  "required": true,
+                  "description": "The value in CockroachDB literal form — a bare number/boolean (100, true, DEFAULT) or a quoted string ('64 MiB', '24h'). Passed verbatim into the statement; bounded so it can't break out of its slot.",
+                  "validation": {
+                    "pattern": "^('[A-Za-z0-9 ._:+/-]{1,254}'|[A-Za-z0-9._+-]{1,64})$",
+                    "max_length": 256
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Raise the snapshot rebalance rate",
+                  "args": {
+                    "name": "kv.snapshot_rebalance.max_rate",
+                    "value": "'64 MiB'"
+                  }
+                },
+                {
+                  "title": "Reset a setting to its default",
+                  "args": {
+                    "name": "kv.range_split.by_load_enabled",
+                    "value": "DEFAULT"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET CLUSTER SETTING {{ args.name }} = {{ args.value }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.statement_stats",
+              "title": "Show top statement fingerprints by exec count",
+              "summary": "Show the busiest statement fingerprints — application, execution count, mean service latency, and the query text — from crdb_internal.statement_statistics (the data behind the DB Console's Statements page). Use to find the highest-volume or slowest statements.",
+              "description": "Show the busiest statement fingerprints — application, execution count, mean service latency, and the query text — from crdb_internal.statement_statistics (the data behind the DB Console's Statements page). Use to find the highest-volume or slowest statements.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.statement_statistics.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 25,
+                  "description": "Max fingerprints to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 200
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Busiest statements",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT app_name, (statistics->'statistics'->>'cnt')::INT AS count, (statistics->'statistics'->'svcLat'->>'mean')::FLOAT AS mean_svc_lat_s, left(metadata->>'query',200) AS query FROM crdb_internal.statement_statistics ORDER BY (statistics->'statistics'->>'cnt')::INT DESC LIMIT {{ args.limit }}\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.store_status",
+              "title": "Show per-store disk capacity / range counts",
+              "summary": "Show each store's capacity, available and used bytes, range and lease counts, and writes/sec from crdb_internal.kv_store_status. Use to spot a node running low on disk or carrying too many ranges.",
+              "description": "Show each store's capacity, available and used bytes, range and lease counts, and writes/sec from crdb_internal.kv_store_status. Use to spot a node running low on disk or carrying too many ranges.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.kv_store_status.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Store capacity",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT node_id, store_id, capacity, available, used, logical_bytes, range_count, lease_count, writes_per_second FROM crdb_internal.kv_store_status ORDER BY node_id, store_id\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.table_ranges",
+              "title": "Show range count + size for one table",
+              "summary": "Show the ranges backing one table — range id, leaseholder, size in MB, and replica nodes — via SHOW RANGES ... WITH DETAILS. Use to find a table's data size and how its ranges are spread across nodes.",
+              "description": "Show the ranges backing one table — range id, leaseholder, size in MB, and replica nodes — via SHOW RANGES ... WITH DETAILS. Use to find a table's data size and how its ranges are spread across nodes.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SHOW RANGES query.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]{0,127}$"
+                  }
+                },
+                {
+                  "name": "table",
+                  "type": "string",
+                  "required": true,
+                  "description": "Table name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Ranges of movr.rides",
+                  "args": {
+                    "database": "movr",
+                    "table": "rides"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT range_id, lease_holder, range_size_mb, replicas FROM [SHOW RANGES FROM TABLE {{ args.database }}.{{ args.table }} WITH DETAILS]\""
+                ]
+              }
+            },
+            {
+              "id": "cockroach.table_row_counts",
+              "title": "Show estimated row counts per table",
+              "summary": "Show estimated row counts for every table from crdb_internal.table_row_statistics, largest first. Cheap (uses table statistics, not a COUNT). Use to find the biggest tables.",
+              "description": "Show estimated row counts for every table from crdb_internal.table_row_statistics, largest first. Cheap (uses table statistics, not a COUNT). Use to find the biggest tables.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only SELECT on crdb_internal.table_row_statistics.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Biggest tables",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT table_id, table_name, estimated_row_count FROM crdb_internal.table_row_statistics ORDER BY estimated_row_count DESC LIMIT 200\""
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -35656,13 +36604,13 @@
     {
       "id": "mongodb",
       "name": "MongoDB operations",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "Replica-set + shard-cluster introspection, slow-query identification, collection stats, plus remediation surface (killOp, replSet stepDown, collection compact, dropIndex). Authenticates via MONGO_URI env var on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/mongodb",
-      "content_hash": "sha256:bc0ee3c031ce8b78cb64abbc94593504961bc7ce4dc4f03c79cb66feddab19b8",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/mongodb/0.3.2/bc0ee3c031ce8b78cb64abbc94593504961bc7ce4dc4f03c79cb66feddab19b8/pack.tar.gz",
+      "content_hash": "sha256:6cb6f6f071ff95b5811585527078f26aed6dd2fb6c2f31a5de94e6e33af64bae",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/mongodb/0.3.3/6cb6f6f071ff95b5811585527078f26aed6dd2fb6c2f31a5de94e6e33af64bae/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -36425,8 +37373,7 @@
               "required": true,
               "description": "Op ID from currentOp.",
               "validation": {
-                "min": 1,
-                "max": 9223372036854776000
+                "min": 1
               }
             }
           ],
@@ -36876,6 +37823,1204 @@
         }
       ],
       "previous_versions": [
+        {
+          "version": "0.3.2",
+          "content_hash": "sha256:bc0ee3c031ce8b78cb64abbc94593504961bc7ce4dc4f03c79cb66feddab19b8",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/mongodb/0.3.2/bc0ee3c031ce8b78cb64abbc94593504961bc7ce4dc4f03c79cb66feddab19b8/pack.tar.gz",
+          "actions": [
+            {
+              "id": "mongo.balancer_status",
+              "title": "sh.getBalancerState()",
+              "summary": "Show whether the balancer is enabled + currently running.",
+              "description": "Show whether the balancer is enabled + currently running.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads sharding metadata.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Balancer state",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify({enabled:sh.getBalancerState(),running:sh.isBalancerRunning()})'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.build_info",
+              "title": "buildInfo",
+              "summary": "Show server version + build flags.",
+              "description": "Show server version + build flags.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One buildInfo command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Build info",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({buildInfo:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.collection_list",
+              "title": "db.getCollectionNames()",
+              "summary": "List collections in one database.",
+              "description": "List collections in one database.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One listCollections command.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Collections in DB",
+                  "args": {
+                    "database": "production"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('{{ args.database }}').getCollectionNames())\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.collection_stats",
+              "title": "db.<coll>.stats()",
+              "summary": "Show per-collection totals — count, size, storage, indexes.",
+              "description": "Show per-collection totals — count, size, storage, indexes.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One collStats command.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                },
+                {
+                  "name": "collection",
+                  "type": "string",
+                  "required": true,
+                  "description": "Collection name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,120}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "One collection",
+                  "args": {
+                    "collection": "users",
+                    "database": "production"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('{{ args.database }}').getCollection('{{ args.collection }}').stats())\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.compact_collection",
+              "title": "db.runCommand({compact:\"<coll>\"})",
+              "summary": "Compact one collection on the connected node. Reclaims disk for WiredTiger after large deletes. BLOCKS reads/writes on the collection during compaction. Run during a low-traffic window; prefer running on a secondary first.",
+              "description": "Compact one collection on the connected node. Reclaims disk for WiredTiger after large deletes. BLOCKS reads/writes on the collection during compaction. Run during a low-traffic window; prefer running on a secondary first.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Collection's reads/writes blocked until compaction finishes.",
+                "Disk usage drops.",
+                "Other collections unaffected."
+              ],
+              "args": [
+                {
+                  "name": "db_name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,64}$"
+                  }
+                },
+                {
+                  "name": "collection",
+                  "type": "string",
+                  "required": true,
+                  "description": "Collection name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Compact after a large delete",
+                  "args": {
+                    "collection": "events",
+                    "db_name": "analytics"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('{{ args.db_name }}').runCommand({compact: '{{ args.collection }}'})\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.concurrent_transactions",
+              "title": "Read/write tickets (concurrency saturation)",
+              "summary": "Show read/write ticket pools — out vs available. Queued/exhausted tickets are the classic sign of storage-engine overload. Version-tolerant: reads queues.execution on MongoDB 8.0+, else wiredTiger.concurrentTransactions (<= 7.0).",
+              "description": "Show read/write ticket pools — out vs available. Queued/exhausted tickets are the classic sign of storage-engine overload. Version-tolerant: reads queues.execution on MongoDB 8.0+, else wiredTiger.concurrentTransactions (<= 7.0).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Ticket pools",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify((function(){var s=db.serverStatus();return (s.queues&&s.queues.execution)?s.queues.execution:(s.wiredTiger&&s.wiredTiger.concurrentTransactions)})())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.connection_stats",
+              "title": "Incoming connection saturation (serverStatus.connections)",
+              "summary": "Show incoming connection counts — current, available, active, totalCreated. Approaching the available limit means new clients will be refused. Distinct from connections (connPoolStats), which is the outgoing pool.",
+              "description": "Show incoming connection counts — current, available, active, totalCreated. Approaching the available limit means new clients will be refused. Distinct from connections (connPoolStats), which is the outgoing pool.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Connection counts",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().connections)'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.connections",
+              "title": "connPoolStats",
+              "summary": "Show connection pool stats — totals, active, available, by host.",
+              "description": "Show connection pool stats — totals, active, available, by host.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One connPoolStats command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Pool stats",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({connPoolStats:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.current_op",
+              "title": "db.currentOp()",
+              "summary": "List in-flight operations. The canonical \"what is the server doing right now?\" check.",
+              "description": "List in-flight operations. The canonical \"what is the server doing right now?\" check.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One currentOp command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Live ops",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.currentOp({active:true}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.cursor_stats",
+              "title": "Cursor saturation / timed-out cursors (metrics.cursor)",
+              "summary": "Show cursor counts — open.total, open.noTimeout, open.pinned, timedOut, totalOpened. A growing timedOut count usually means an application is leaking cursors.",
+              "description": "Show cursor counts — open.total, open.noTimeout, open.pinned, timedOut, totalOpened. A growing timedOut count usually means an application is leaking cursors.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Cursor counts",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().metrics.cursor)'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.db_list",
+              "title": "listDatabases",
+              "summary": "List all databases with size + empty flag.",
+              "description": "List all databases with size + empty flag.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One listDatabases command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "All databases",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({listDatabases:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.db_stats",
+              "title": "db.stats()",
+              "summary": "Show database-level totals — collections, indexes, data size, storage size.",
+              "description": "Show database-level totals — collections, indexes, data size, storage size.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One dbStats command.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Stats for one DB",
+                  "args": {
+                    "database": "production"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('{{ args.database }}').stats())\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.default_rw_concern",
+              "title": "Default read/write concern (getDefaultRWConcern)",
+              "summary": "Show cluster default read and write concern (e.g. w:majority) and its source. The durability/consistency config for the replica set — a weakened default write concern is a common cause of surprising data loss on failover.",
+              "description": "Show cluster default read and write concern (e.g. w:majority) and its source. The durability/consistency config for the replica set — a weakened default write concern is a common cause of surprising data loss on failover.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One getDefaultRWConcern command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Default R/W concern",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({getDefaultRWConcern:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.drop_index",
+              "title": "db.<coll>.dropIndex(\"<name>\")",
+              "summary": "Drop one index from a collection. Use to remove a hot or unused index discovered via index_stats. Queries that relied on the index degrade to COLLSCAN until rebuilt or replaced.",
+              "description": "Drop one index from a collection. Use to remove a hot or unused index discovered via index_stats. Queries that relied on the index degrade to COLLSCAN until rebuilt or replaced.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Index removed.",
+                "Queries that used the index switch to other indexes or full scan.",
+                "Brief lock during the drop."
+              ],
+              "args": [
+                {
+                  "name": "db_name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,64}$"
+                  }
+                },
+                {
+                  "name": "collection",
+                  "type": "string",
+                  "required": true,
+                  "description": "Collection name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,128}$"
+                  }
+                },
+                {
+                  "name": "index_name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Index name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,128}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Drop unused index",
+                  "args": {
+                    "collection": "orders",
+                    "db_name": "shop",
+                    "index_name": "user_1_status_1"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('{{ args.db_name }}').getCollection('{{ args.collection }}').dropIndex('{{ args.index_name }}')\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.election_metrics",
+              "title": "Election / stepdown history (electionMetrics)",
+              "summary": "Show cumulative election and stepdown counters for this member — stepUpCmd, priorityTakeover, electionTimeout, catchUpTakeover, numStepDownsCausedBy HigherTerm, numCatchUps. Use to see how often the set has been re-electing.",
+              "description": "Show cumulative election and stepdown counters for this member — stepUpCmd, priorityTakeover, electionTimeout, catchUpTakeover, numStepDownsCausedBy HigherTerm, numCatchUps. Use to see how often the set has been re-electing.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Election history",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().electionMetrics)'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.explain_query",
+              "title": "explain a find()",
+              "summary": "Show the execution plan for `find(filter)` on one collection at `executionStats` verbosity.",
+              "description": "Show the execution plan for `find(filter)` on one collection at `executionStats` verbosity.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One explain command — does NOT execute the query.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                },
+                {
+                  "name": "collection",
+                  "type": "string",
+                  "required": true,
+                  "description": "Collection name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,120}$"
+                  }
+                },
+                {
+                  "name": "filter_json",
+                  "type": "string",
+                  "required": false,
+                  "default": "{}",
+                  "description": "JSON filter document.",
+                  "validation": {
+                    "pattern": "^.{0,1000}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Plan for {status:'active'}",
+                  "args": {
+                    "collection": "users",
+                    "database": "production",
+                    "filter_json": "{\"status\":\"active\"}"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"executionStats\"))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.get_parameter",
+              "title": "getParameter '*'",
+              "summary": "List all server parameters (read-only view of the current config).",
+              "description": "List all server parameters (read-only view of the current config).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One getParameter command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Server parameters",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.adminCommand({getParameter:'*'}))\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.global_lock",
+              "title": "Global lock queue / active clients (globalLock)",
+              "summary": "Show global lock contention — currentQueue (total/readers/writers) waiting on the lock, and activeClients (total/readers/writers). A growing queue points to lock contention or an overloaded server.",
+              "description": "Show global lock contention — currentQueue (total/readers/writers) waiting on the lock, and activeClients (total/readers/writers). A growing queue points to lock contention or an overloaded server.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Lock queue",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().globalLock)'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.host_info",
+              "title": "hostInfo",
+              "summary": "Show host CPU, memory, NUMA layout, OS.",
+              "description": "Show host CPU, memory, NUMA layout, OS.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One hostInfo command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Host info",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({hostInfo:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.index_builds",
+              "title": "In-progress index builds (with progress)",
+              "summary": "List active index-build operations with progress (done/total), via $currentOp. The canonical \"is an index build stuck / how far along is it\" check across the deployment.",
+              "description": "List active index-build operations with progress (done/total), via $currentOp. The canonical \"is an index build stuck / how far along is it\" check across the deployment.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One $currentOp aggregation on admin.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Active index builds",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"admin\").aggregate([{$currentOp:{idleConnections:true}},{$match:{$or:[{op:\"command\",\"command.createIndexes\":{$exists:true}},{op:\"none\",msg:{$regex:\"^Index Build\"}}]}}]).toArray())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.index_stats",
+              "title": "$indexStats aggregation",
+              "summary": "Show per-index access counts since server start. Zeros usually mean unused indexes.",
+              "description": "Show per-index access counts since server start. Zeros usually mean unused indexes.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One aggregation.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                },
+                {
+                  "name": "collection",
+                  "type": "string",
+                  "required": true,
+                  "description": "Collection name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_.\\-]{1,120}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Index usage for one coll",
+                  "args": {
+                    "collection": "users",
+                    "database": "production"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").aggregate([{$indexStats:{}}]).toArray())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.kill_op",
+              "title": "db.killOp(opid)",
+              "summary": "Kills one in-flight operation by opid.",
+              "description": "Kills one in-flight operation by opid.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "The targeted operation is interrupted.",
+                "Connection holding the op may receive an error."
+              ],
+              "args": [
+                {
+                  "name": "opid",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Op ID from currentOp.",
+                  "validation": {
+                    "min": 1,
+                    "max": 9223372036854776000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Kill op 1234",
+                  "args": {
+                    "opid": 1234
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.killOp({{ args.opid }}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.long_running_ops",
+              "title": "Long-running active ops (currentOp, secs_running >= N)",
+              "summary": "List active operations that have been running at least N seconds — the canonical hunt for a hung or blocked op. Filters currentOp by secs_running.",
+              "description": "List active operations that have been running at least N seconds — the canonical hunt for a hung or blocked op. Filters currentOp by secs_running.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One currentOp command.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "min_secs",
+                  "type": "integer",
+                  "required": false,
+                  "default": 5,
+                  "description": "Minimum seconds an op must have been running.",
+                  "validation": {
+                    "min": 0,
+                    "max": 86400
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Ops running >= 5s",
+                  "args": {
+                    "min_secs": 5
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.currentOp({active:true,secs_running:{$gte:{{ args.min_secs }}}}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.oplog_size",
+              "title": "Oplog size + window",
+              "summary": "Show oplog size + first/last timestamps + estimated time window. The canonical \"how far can a secondary fall behind?\" check.",
+              "description": "Show oplog size + first/last timestamps + estimated time window. The canonical \"how far can a secondary fall behind?\" check.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads oplog metadata.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Oplog stats",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('local').runCommand({collStats:'oplog.rs'}))\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.profile_slow_queries",
+              "title": "Read slow ops from the profiler (system.profile)",
+              "summary": "Read the database profiler collection (system.profile) for the slowest recent ops over a millis threshold, newest first. Requires profiling to be enabled on the database already (see profiler_status); does not change it.",
+              "description": "Read the database profiler collection (system.profile) for the slowest recent ops over a millis threshold, newest first. Requires profiling to be enabled on the database already (see profiler_status); does not change it.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads system.profile (a capped collection).",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database whose profiler to read.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                },
+                {
+                  "name": "min_millis",
+                  "type": "integer",
+                  "required": false,
+                  "default": 100,
+                  "description": "Only ops slower than this many milliseconds.",
+                  "validation": {
+                    "min": 0,
+                    "max": 3600000
+                  }
+                },
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 20,
+                  "description": "Max documents to return.",
+                  "validation": {
+                    "min": 1,
+                    "max": 200
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Slowest 20 ops over 100ms",
+                  "args": {
+                    "database": "production",
+                    "limit": 20,
+                    "min_millis": 100
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").system.profile.find({millis:{$gte:{{ args.min_millis }}}}).sort({ts:-1}).limit({{ args.limit }}).toArray())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.profiler_status",
+              "title": "db.getProfilingStatus()",
+              "summary": "Show profiler level + slow-op threshold for one database.",
+              "description": "Show profiler level + slow-op threshold for one database.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One profile command.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "database",
+                  "type": "string",
+                  "required": true,
+                  "description": "Database name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_\\-]{1,63}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Profiler level",
+                  "args": {
+                    "database": "production"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('{{ args.database }}').getProfilingStatus())\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.replication_info",
+              "title": "Oplog time window (db.getReplicationInfo)",
+              "summary": "Show oplog time window — logSizeMB, usedMB, timeDiff / timeDiffHours, tFirst, tLast. How much history the oplog retains, which bounds how long a secondary can be down before it needs a full resync. Distinct from oplog size.",
+              "description": "Show oplog time window — logSizeMB, usedMB, timeDiff / timeDiffHours, tFirst, tLast. How much history the oplog retains, which bounds how long a secondary can be down before it needs a full resync. Distinct from oplog size.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads oplog metadata.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Oplog window",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getReplicationInfo())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.replset_config",
+              "title": "rs.conf()",
+              "summary": "Show replica set configuration — members, votes, priorities, settings.",
+              "description": "Show replica set configuration — members, votes, priorities, settings.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One replSetGetConfig.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "RS config",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(rs.conf())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.replset_lag",
+              "title": "Replication lag (secs behind primary)",
+              "summary": "Show per-member seconds behind the primary, computed from rs.status() optimeDate (with state, health, sync source, ping). The canonical replica-set lag check.",
+              "description": "Show per-member seconds behind the primary, computed from rs.status() optimeDate (with state, health, sync source, ping). The canonical replica-set lag check.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One replSetGetStatus.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Lag for all members",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify((function(){var s=rs.status();var p=s.members.filter(function(m){return m.stateStr==\"PRIMARY\"})[0];var pt=p?p.optimeDate:null;return{set:s.set,date:s.date,primary:p?p.name:null,members:s.members.map(function(m){return{name:m.name,stateStr:m.stateStr,health:m.health,optimeDate:m.optimeDate,secsBehindPrimary:(pt&&m.optimeDate)?(pt-m.optimeDate)/1000:null,syncSourceHost:m.syncSourceHost,pingMs:m.pingMs}})}})())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.replset_status",
+              "title": "rs.status()",
+              "summary": "Show replica set member health, lag, last applied optime.",
+              "description": "Show replica set member health, lag, last applied optime.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One replSetGetStatus.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "RS status",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(rs.status())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.replset_stepdown",
+              "title": "rs.stepDown(<seconds>)",
+              "summary": "Force the current primary to step down. Replica set elects a new primary; ~5–15s of write unavailability is typical. Use during planned failover when one secondary is known healthier.",
+              "description": "Force the current primary to step down. Replica set elects a new primary; ~5–15s of write unavailability is typical. Use during planned failover when one secondary is known healthier.",
+              "kind": "exec",
+              "risk": "critical",
+              "side_effects": [
+                "Current primary becomes secondary.",
+                "Write unavailability until election finishes.",
+                "Connected drivers reconnect to the new primary.",
+                "Primary refuses primary status for the specified period."
+              ],
+              "args": [
+                {
+                  "name": "seconds",
+                  "type": "integer",
+                  "required": false,
+                  "default": 60,
+                  "description": "How long the stepped-down node refuses primary.",
+                  "validation": {
+                    "min": 5,
+                    "max": 3600
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Step down for 1 minute",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');rs.stepDown({{ args.seconds }})\""
+                ]
+              }
+            },
+            {
+              "id": "mongo.server_status",
+              "title": "db.serverStatus()",
+              "summary": "Show top-level server metrics: connections, ops counters, memory, cluster role.",
+              "description": "Show top-level server metrics: connections, ops counters, memory, cluster role.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Full server status",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus())'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.shard_status",
+              "title": "sh.status()",
+              "summary": "Show sharded cluster summary — shards, databases, chunk distribution.",
+              "description": "Show sharded cluster summary — shards, databases, chunk distribution.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads sharding metadata.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Shard cluster status",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");sh.status(true)'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.top",
+              "title": "db.adminCommand({top:1})",
+              "summary": "Show per-collection time spent in reads/writes/commands. Mongo \"top\" for query traffic.",
+              "description": "Show per-collection time spent in reads/writes/commands. Mongo \"top\" for query traffic.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One top command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Per-coll time",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.adminCommand({top:1}))'"
+                ]
+              }
+            },
+            {
+              "id": "mongo.wiredtiger_cache",
+              "title": "WiredTiger cache pressure (serverStatus.wiredTiger.cache)",
+              "summary": "Show WiredTiger cache pressure — bytes currently in cache vs maximum configured, tracked dirty bytes, pages evicted by application threads, and pages read into cache. Application-thread eviction and a full dirty cache indicate memory pressure.",
+              "description": "Show WiredTiger cache pressure — bytes currently in cache vs maximum configured, tracked dirty bytes, pages evicted by application threads, and pages read into cache. Application-thread eviction and a full dirty cache indicate memory pressure.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One serverStatus command.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Cache stats",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().wiredTiger.cache)'"
+                ]
+              }
+            }
+          ]
+        },
         {
           "version": "0.3.1",
           "content_hash": "sha256:35cc074fef55878a847a32b74eabb96b0acfb76df7e8be6dea60f2a83e91d24b",

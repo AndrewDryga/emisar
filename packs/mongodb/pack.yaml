@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.3.2
+version: 0.3.3
 description: >
   Replica-set + shard-cluster introspection, slow-query identification,
   collection stats, plus remediation surface (killOp, replSet stepDown,
