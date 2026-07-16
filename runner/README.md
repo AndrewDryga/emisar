@@ -33,7 +33,7 @@ This installs the latest tagged release. To pin a specific version:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.11.0 --yes
+  | sudo bash -s -- --version runner-v0.12.0 --yes
 ```
 
 The portal's **Runners → Install** page generates this one-liner with
@@ -204,7 +204,7 @@ incompatible official packs may be repaired before the service starts.
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.11.0 --yes
+  | sudo bash -s -- --version runner-v0.12.0 --yes
 ```
 
 ## Uninstall
@@ -222,11 +222,11 @@ already shipped the log to wherever you want it preserved.
 Download the release tarball directly:
 
 ```sh
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.11.0/emisar-0.11.0-linux-amd64.tar.gz
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.11.0/SHA256SUMS
-grep ' emisar-0.11.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar xzf emisar-0.11.0-linux-amd64.tar.gz
-sudo bash emisar-0.11.0-linux-amd64/install.sh --yes
+curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.12.0/emisar-0.12.0-linux-amd64.tar.gz
+curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.12.0/SHA256SUMS
+grep ' emisar-0.12.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar xzf emisar-0.12.0-linux-amd64.tar.gz
+sudo bash emisar-0.12.0-linux-amd64/install.sh --yes
 ```
 
 The tarball contains a copy of `install.sh` that pins to its own

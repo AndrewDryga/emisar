@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-16],
+      slug: "reliable-runner-startup-and-clearer-mcp-failures",
+      title: "Reliable runner startup and clearer MCP failures",
+      tag: "v0.27.0",
+      summary:
+        "Runner upgrades now use one final durable dispatch journal, refuse to connect when that state is corrupt, keep unsigned installations independent from signing state, and redact sensitive values from failure causes before reporting them. MCP run summaries expose a bounded terminal failure message, while connector setup keeps key-bearing commands out of shell history and OAuth consent lets a person choose the account they intend to connect. Delivery also lets newer non-destructive production plans supersede stale ones without adding a second approval gate."
+    },
+    %{
+      date: ~D[2026-07-16],
       slug: "reconnect-safe-runs-and-clearer-agents",
       title: "Reconnect-safe runs and a clearer agents list",
       tag: "v0.26.0",

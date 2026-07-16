@@ -3,7 +3,7 @@
   "name": "dev.emisar/emisar",
   "title": "emisar",
   "description": "Let AI operate servers without SSH. Choose actions, approve risky changes, and audit every step.",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "websiteUrl": "https://emisar.dev",
   "repository": {
     "url": "https://github.com/andrewdryga/emisar",
