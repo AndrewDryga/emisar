@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,8 +135,20 @@ func TestJSONLSink_BackupRotationFailureKeepsActiveChain(t *testing.T) {
 	if err := os.RemoveAll(path + ".2"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err == nil || !strings.Contains(err.Error(), "previously failed") {
+		t.Fatalf("rotation failure must remain latched until restart, got %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = OpenJSONL(path, JSONLOptions{MaxSizeBytes: 1, MaxBackups: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j = New(Defaults{AgentID: "a"}, s)
 	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err != nil {
-		t.Fatalf("write after clearing obstruction: %v", err)
+		t.Fatalf("restart after clearing obstruction: %v", err)
 	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
@@ -188,6 +201,24 @@ func TestJSONLSink_ActiveRotationFailureKeepsActiveChain(t *testing.T) {
 	}
 	if obstruction, err := os.ReadFile(filepath.Join(path+".1", "obstruction")); err != nil || string(obstruction) != "x" {
 		t.Fatalf("failed active replacement modified its destination: body=%q err=%v", obstruction, err)
+	}
+	if err := os.RemoveAll(path + ".1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err == nil || !strings.Contains(err.Error(), "previously failed") {
+		t.Fatalf("rotation failure must remain latched until restart, got %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = OpenJSONL(path, JSONLOptions{MaxSizeBytes: 1, MaxBackups: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j = New(Defaults{AgentID: "a"}, s)
+	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err != nil {
+		t.Fatalf("restart after clearing obstruction: %v", err)
 	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)

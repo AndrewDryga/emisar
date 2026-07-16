@@ -190,11 +190,9 @@ func (e *Engine) Reload() error {
 	return nil
 }
 
-// journal records ev and logs (but does not propagate) any sink failure.
-// The local JSONL is best-effort durability for forensics; a write
-// failure means the host disk has problems, which is an operator
-// concern, but it shouldn't itself fail the action that was about to
-// be reported successful.
+// journal records refusal and terminal events without changing their outcome.
+// The execution_started event takes the strict recordJournal path below and
+// must be durable before the process is allowed to start.
 func (e *Engine) journal(ctx context.Context, ev audit.Event) audit.Event {
 	rec, _ := e.recordJournal(ctx, ev)
 	return rec

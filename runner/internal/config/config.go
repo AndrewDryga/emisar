@@ -139,9 +139,10 @@ type Events struct {
 	JSONLPath       string `yaml:"jsonl_path"`
 	MaxPreviewBytes int    `yaml:"max_preview_bytes,omitempty"`
 	// MaxSizeBytes triggers JSONL rotation when the active file
-	// reaches this size. Zero disables rotation. Default 100 MiB.
+	// reaches this size. Zero selects the 100 MiB default.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
-	// MaxBackups is how many rotated files to keep (.1 .. .N). Default 5.
+	// MaxBackups is how many rotated files to keep (.1 .. .N). Zero selects
+	// the default of 5.
 	MaxBackups int `yaml:"max_backups,omitempty"`
 }
 
@@ -218,6 +219,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Events.MaxPreviewBytes <= 0 {
 		c.Events.MaxPreviewBytes = 4096
+	}
+	if c.Events.MaxSizeBytes < 0 {
+		return fmt.Errorf("config: events.max_size_bytes must not be negative")
+	}
+	if c.Events.MaxBackups < 0 {
+		return fmt.Errorf("config: events.max_backups must not be negative")
 	}
 	if c.Events.MaxSizeBytes == 0 {
 		c.Events.MaxSizeBytes = 100 * 1024 * 1024 // 100 MiB

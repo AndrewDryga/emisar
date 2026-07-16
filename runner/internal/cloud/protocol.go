@@ -433,9 +433,8 @@ type CancelMsg struct {
 	Envelope
 }
 
-// AckResultMsg confirms cloud received an ActionResultMsg. The runner flips
-// the corresponding JSONL event's upload status to "acked" and can prune
-// it from its outbox replay window.
+// AckResultMsg confirms cloud received an ActionResultMsg. The runner marks
+// the durable dispatch record acknowledged so it can leave the replay window.
 type AckResultMsg struct {
 	Envelope
 }

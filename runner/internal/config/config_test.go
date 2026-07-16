@@ -146,6 +146,24 @@ func TestValidate_MaxRisk(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsNegativeAuditRotationLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		events Events
+	}{
+		{name: "size", events: Events{JSONLPath: "/tmp/events.jsonl", MaxSizeBytes: -1}},
+		{name: "backups", events: Events{JSONLPath: "/tmp/events.jsonl", MaxBackups: -1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Events = tc.events
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("negative audit rotation limit must be rejected")
+			}
+		})
+	}
+}
+
 // TestValidate_Signing covers the client-attested-dispatch config gate
 // (config.go validateSigning):
 //

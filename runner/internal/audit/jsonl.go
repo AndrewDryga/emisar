@@ -167,7 +167,10 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	// actually carries prev_hash="" instead of a dangling backward link
 	// to the rotated-away file (which VerifyChain would flag as tamper).
 	if err := s.maybeRotateLocked(int64(len(b) + 1)); err != nil {
-		return err
+		// Rotation mutates multiple directory entries. Any reported failure can
+		// leave durability ambiguous, so refuse later writes until a restart
+		// inspects the filesystem and seeds the actual active chain.
+		return s.latchLocked(err)
 	}
 	if ev.PrevHash != s.lastHash {
 		ev.PrevHash = s.lastHash
