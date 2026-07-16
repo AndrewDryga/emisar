@@ -10,7 +10,6 @@ defmodule EmisarWeb.MCP.Service do
   alias Emisar.{Approvals, Runs}
   alias EmisarWeb.MCP.{Cancellation, WaitLimiter}
 
-  @max_wait_ms 60_000
   @recheck_interval_ms 2_000
   @max_output_events 32
 
@@ -215,31 +214,24 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Wait parsing ---------------------------------------------------
 
-  @doc ~s(Accepts "15s", "1m", "500ms"; clamped to `max_ms`.)
-  @spec parse_wait(String.t() | nil, pos_integer()) :: {:ok, non_neg_integer()} | :error
-  def parse_wait(nil, _max_ms), do: {:ok, 0}
-  def parse_wait("", _max_ms), do: {:ok, 0}
+  @doc ~s(Parses the public wait_short grammar: "0", 1..60s, or 1..60000ms.)
+  @spec parse_wait(String.t()) :: {:ok, non_neg_integer()} | :error
+  def parse_wait("0"), do: {:ok, 0}
 
-  def parse_wait(s, max_ms) when is_binary(s) do
-    # `\d{1,8}` caps the magnitude (~27h, far past max_ms) so a `wait=<huge>`
-    # can't allocate a giant bignum before the clamp; longer input is rejected.
-    case Regex.run(~r/^(\d{1,8})(ms|s|m)?$/, s) do
-      [_, num, unit] ->
-        ms = String.to_integer(num) * unit_to_ms(unit)
-        {:ok, min(ms, max_ms)}
-
-      [_, num] ->
-        ms = String.to_integer(num) * 1000
-        {:ok, min(ms, max_ms)}
+  def parse_wait(value) when is_binary(value) do
+    case Regex.run(~r/\A([1-9]|[1-5][0-9]|60)s\z/, value) do
+      [_, seconds] ->
+        {:ok, String.to_integer(seconds) * 1_000}
 
       _ ->
-        :error
+        case Regex.run(~r/\A([1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)ms\z/, value) do
+          [_, milliseconds] -> {:ok, String.to_integer(milliseconds)}
+          _ -> :error
+        end
     end
   end
 
-  def parse_wait(_, _), do: :error
-
-  def max_wait_ms, do: @max_wait_ms
+  def parse_wait(_value), do: :error
 
   # -- Per-runner long-poll + result rendering ------------------------
 
@@ -425,9 +417,4 @@ defmodule EmisarWeb.MCP.Service do
   defp drop_incomplete_utf8_prefix(_value, _dropped), do: ""
   defp tl_binary(<<_byte, rest::binary>>), do: rest
   defp tl_binary(<<>>), do: <<>>
-
-  defp unit_to_ms(""), do: 1000
-  defp unit_to_ms("ms"), do: 1
-  defp unit_to_ms("s"), do: 1000
-  defp unit_to_ms("m"), do: 60_000
 end

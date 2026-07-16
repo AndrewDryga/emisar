@@ -14,7 +14,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   @action_id ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
   @runner_ref ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}\z/
   @step_id ~r/\A[a-z][a-z0-9_-]{0,79}\z/
-  @max_wait_ms 60_000
   @recheck_ms 2_000
 
   @doc "Executes one of the three fixed recovery tools."
@@ -138,7 +137,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          execution_id <- args["runbook_execution_id"],
          true <- exactly_one?(run_id, execution_id),
          true <- valid_uuid_or_nil?(run_id) and valid_uuid_or_nil?(execution_id),
-         {:ok, timeout_ms} <- parse_wait(args["timeout"] || "60s") do
+         {:ok, timeout_ms} <- Service.parse_wait(args["timeout"] || "60s") do
       target =
         if run_id,
           do: %{kind: :run, id: run_id, timeout_ms: timeout_ms},
@@ -432,22 +431,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp valid_uuid_or_nil?(nil), do: true
   defp valid_uuid_or_nil?(value), do: is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value))
-
-  defp parse_wait(value) when is_binary(value) do
-    case Regex.run(~r/\A(\d{1,8})(ms|s|m)?\z/, value) do
-      [_, amount, unit] -> bounded_wait(String.to_integer(amount), unit)
-      [_, amount] -> bounded_wait(String.to_integer(amount), "s")
-      _ -> {:error, :invalid_wait}
-    end
-  end
-
-  defp parse_wait(_value), do: {:error, :invalid_wait}
-
-  defp bounded_wait(amount, unit) do
-    multiplier = %{"ms" => 1, "s" => 1_000, "m" => 60_000}[unit]
-    value = amount * multiplier
-    if value <= @max_wait_ms, do: {:ok, value}, else: {:error, :invalid_wait}
-  end
 
   defp optional_match(nil, _regex), do: :ok
 

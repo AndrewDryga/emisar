@@ -52,6 +52,16 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert get_in(by_name, ["create_runbook_draft", "annotations", "openWorldHint"]) == false
   end
 
+  test "run_action rejects wait values outside the public grammar", %{conn: conn} do
+    pack_ref = "database@1.0.0/#{@hash}"
+    runner_ref = "runner~" <> String.duplicate("a", 32)
+
+    for wait <- ["15", "1m", "01s", "61s", "60001ms"] do
+      result = raw_action(conn, run_action_body(pack_ref, runner_ref, "{}", "Check wait", wait))
+      assert result["error"]["code"] == "invalid_args", wait
+    end
+  end
+
   test "catalog reads paginate, rank exact ids first, and never expose drifted runner prose", %{
     conn: conn,
     account: account,

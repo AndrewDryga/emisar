@@ -506,6 +506,18 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert result["error"]["message"] =~ "60s"
   end
 
+  test "wait_for_run rejects timeout values outside the public grammar", %{conn: conn} do
+    for timeout <- ["15", "1m", "01s", "61s", "60001ms"] do
+      result =
+        call(conn, "wait_for_run", %{
+          "run_id" => Ecto.UUID.generate(),
+          "timeout" => timeout
+        })
+
+      assert result["error"]["code"] == "invalid_args", timeout
+    end
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, name, arguments, operation_id \\ nil) do

@@ -222,7 +222,7 @@ defmodule EmisarWeb.MCP.ActionTools do
     do: is_binary(reason) and byte_size(reason) in 1..255 and String.trim(reason) != ""
 
   defp parse_wait(wait) do
-    case Service.parse_wait(wait, Service.max_wait_ms()) do
+    case Service.parse_wait(wait) do
       {:ok, wait_ms} -> {:ok, wait_ms}
       :error -> {:error, :invalid_wait}
     end
