@@ -848,7 +848,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp strip_blank_secret(params), do: params
 
-  defp error_message(:sso_not_available), do: "Single sign-on requires an Enterprise plan."
+  defp error_message(:sso_not_available), do: "Single sign-on requires a Team or Enterprise plan."
   defp error_message(:unauthorized), do: "You don't have permission to configure single sign-on."
   defp error_message(:not_found), do: "That no longer exists — it may have just been removed."
 

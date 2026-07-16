@@ -308,6 +308,17 @@ variable "alert_email" {
   description = "Email address that receives monitoring alerts (uptime, DB CPU/disk). No default on purpose — set per-workspace (Terraform Cloud variable), and make sure the mailbox actually exists: alerts to an unprovisioned alias silently bounce."
 }
 
+variable "slack_alert_channel_id" {
+  type        = string
+  description = "Optional Slack monitoring notification channel that also receives every alert, as a full channel name (projects/<project>/notificationChannels/<id>). Created in the console and referenced by ID because a GCP Slack channel stores an OAuth token Terraform can't round-trip; set it per-workspace (Terraform Cloud variable). Empty routes alerts to email (plus Better Stack paging for the severe subset) only."
+  default     = ""
+
+  validation {
+    condition     = var.slack_alert_channel_id == "" || can(regex("^projects/[^/]+/notificationChannels/[0-9]+$", var.slack_alert_channel_id))
+    error_message = "slack_alert_channel_id must be empty or a full channel name: projects/<project>/notificationChannels/<numeric id>."
+  }
+}
+
 variable "betterstack_api_token" {
   type        = string
   description = "Better Stack (BetterUptime) API token — the provider credential for the external uptime monitors + public status page (uptime.tf). Same custody as the app secrets: a SENSITIVE Terraform Cloud workspace variable, never a committed value. No default on purpose — the workspace must hold it before any plan runs."
@@ -323,6 +334,12 @@ variable "oncall_emails" {
     condition     = length(var.oncall_emails) >= 1
     error_message = "oncall_emails needs at least one address — an empty rotation pages no one."
   }
+}
+
+variable "betterstack_gcp_paging" {
+  type        = bool
+  description = "Page the Better Stack on-call for the severe, silent-failure GCP alarms via its Google Monitoring integration (uptime.tf). Requires a PAID Better Stack tier — the free tier returns 403 on google-monitoring-integrations. When false those alarms still email + Slack like the rest, and the external uptime monitors page regardless; flip to true after upgrading."
+  default     = false
 }
 
 # ── DNS records (email posture) ───────────────────────────────────────────────

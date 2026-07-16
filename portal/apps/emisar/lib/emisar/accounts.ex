@@ -75,6 +75,29 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — lock an active membership inside the caller's transaction.
+  The account and membership ids are both part of the scope, and the inner
+  account join rejects a membership whose account was soft-deleted. OAuth uses
+  this at the consent mint so a stale session subject cannot create a key after
+  access was suspended, removed, or demoted.
+  """
+  def fetch_and_lock_membership(account_id, membership_id, opts \\ []) do
+    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
+      repo = Keyword.get(opts, :repo, Repo)
+
+      Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_id(membership_id)
+      |> Membership.Query.with_joined_account()
+      |> Membership.Query.lock_for_update()
+      |> repo.fetch(Membership.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
   Internal — Approvals reads an account's settings to enforce them
   (e.g. the grant-lifetime cap). No subject; the approval flow
   already authorized the approver.

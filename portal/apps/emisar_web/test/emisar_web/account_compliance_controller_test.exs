@@ -262,7 +262,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
   end
 
   describe "the sso_required shim stays reachable (no redirect loop)" do
-    test "a non-SSO session reaches the shim, which logs it out to the branded sign-in", %{
+    test "a non-SSO session reaches the shim without a destructive GET", %{
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
@@ -270,11 +270,11 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       require_sso!(account)
 
       # The shim carries NO compliance plug, so the bounced magic-link session
-      # can reach it — it logs out and lands on the branded sign-in (no loop).
+      # can reach its explicit sign-out prompt without revoking on GET.
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
-      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
-      refute get_session(conn, :user_token)
+      assert html_response(conn, 200) =~ "Sign out and continue"
+      assert get_session(conn, :user_token)
     end
   end
 end

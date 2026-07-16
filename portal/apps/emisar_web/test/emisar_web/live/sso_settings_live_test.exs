@@ -291,7 +291,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_submit()
 
-      assert html =~ "Single sign-on requires an Enterprise plan."
+      assert html =~ "Single sign-on requires a Team or Enterprise plan."
 
       refute IdentityProvider.Query.not_deleted()
              |> Repo.all()

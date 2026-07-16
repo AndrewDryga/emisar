@@ -20,7 +20,8 @@ defmodule Emisar.Runs do
   def init(_opts) do
     children = [
       job_module("DispatchTimeout"),
-      job_module("EventRetention")
+      job_module("EventRetention"),
+      job_module("ActionRunRetention")
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

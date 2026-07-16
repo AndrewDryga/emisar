@@ -277,9 +277,11 @@ defmodule EmisarWeb.Router do
     get "/checkout/success", CheckoutController, :success
 
     # require_sso step-up shim: :ensure_sso_compliant bounces a non-SSO session here;
-    # it logs out and lands on the account's branded SSO sign-in. OUTSIDE the slug
-    # live_session below, so it never re-triggers the gate (no redirect loop).
+    # GET renders the explicit sign-out form; POST revokes the session and lands on
+    # the account's branded SSO sign-in. OUTSIDE the slug live_session below, so it
+    # never re-triggers the gate (no redirect loop).
     get "/:account_id_or_slug/sso_required", SSORequiredController, :show
+    post "/:account_id_or_slug/sso_required", SSORequiredController, :revoke
 
     # Outside the slug scope on purpose: this is where ensure_mfa_compliant
     # SENDS a non-compliant member, so it must mount without the MFA gate (that

@@ -114,8 +114,18 @@ defmodule Emisar.OAuth do
       raw = "emoc-" <> Crypto.random_secret()
 
       Multi.new()
-      |> Multi.run(:key, fn _repo, _changes ->
-        ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
+      |> Multi.run(:account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(account.id, repo: repo)
+      end)
+      |> Multi.run(:membership, fn repo, %{account: account} ->
+        with {:ok, membership} <-
+               Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
+             :ok <- ensure_membership_can_issue_key(membership) do
+          {:ok, membership}
+        end
+      end)
+      |> Multi.run(:key, fn _repo, %{account: account, membership: membership} ->
+        ApiKeys.create_backing_key(account.id, user_id, membership.id, key_name)
       end)
       |> Multi.insert(:code, fn %{key: key} ->
         AuthorizationCode.Changeset.create(%{
@@ -298,17 +308,29 @@ defmodule Emisar.OAuth do
   def resolve_access_token(_, _), do: {:error, :invalid}
 
   @doc """
-  Internal — delete authorization codes past their expiry.
-  Codes are single-use, 60-second exchange artifacts (`emoc-`) with no
-  audit or forensic value once expired, so they're pruned rather than
-  retained. (Access/refresh tokens are deliberately NOT swept here — a
-  revoked/expired token is a record of access that belongs under a
-  retention policy, not this hygiene job.) Returns the count deleted.
+  Internal — delete authorization codes past their expiry. Codes are
+  single-use, 60-second exchange artifacts (`emoc-`) with no audit or forensic
+  value once expired, so they're pruned rather than retained. Returns the count
+  deleted.
   """
   def delete_expired_authorization_codes(now \\ DateTime.utc_now()) do
     {count, _} =
       AuthorizationCode.Query.all()
       |> AuthorizationCode.Query.expired_before(now)
+      |> Repo.delete_all()
+
+    count
+  end
+
+  @doc """
+  Internal — delete OAuth token rows after their complete grant expires.
+  Refresh-capable rows stay until `refresh_expires_at`; access-only rows are
+  eligible after `access_expires_at`. Returns the count deleted.
+  """
+  def delete_expired_tokens(now \\ DateTime.utc_now()) do
+    {count, _} =
+      Token.Query.all()
+      |> Token.Query.expired_before(now)
       |> Repo.delete_all()
 
     count
@@ -449,6 +471,17 @@ defmodule Emisar.OAuth do
   # (not revoked / deleted / expired) — the same liveness gate the access
   # token's resolve path uses.
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
+
+  defp ensure_membership_can_issue_key(%Emisar.Accounts.Membership{role: role}) do
+    if MapSet.member?(
+         Auth.Permissions.for_role(role),
+         ApiKeys.Authorizer.issue_quick_key_permission()
+       ) do
+      :ok
+    else
+      {:error, :unauthorized}
+    end
+  end
 
   # Every access token carries the `mcp` scope: that scope IS the capability to
   # reach the MCP resource, and the resource server rejects a token without it

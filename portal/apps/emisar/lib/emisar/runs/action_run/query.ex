@@ -111,6 +111,18 @@ defmodule Emisar.Runs.ActionRun.Query do
     |> select([runs: r], r.id)
   end
 
+  @doc "A bounded page of terminal action-run ids whose finished time is before `cutoff`."
+  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+    all()
+    |> by_account_id(account_id)
+    |> where([runs: r], r.id in subquery(finished_before_ids(cutoff)))
+    |> limit(^limit)
+    |> select([runs: r], r.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [runs: r], r.id in ^ids)
+
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
 

@@ -2,9 +2,9 @@ defmodule EmisarWeb.RequireSSOTest do
   @moduledoc """
   Per-account `require_sso` (enforcement approach B): a member must hold an SSO
   session FOR THIS ACCOUNT to reach it. A magic-link session — or an SSO
-  session for a *different* account — is logged out and sent to this account's
-  branded SSO sign-in. The owner-only toggle can't be turned on without an enabled
-  SSO connection (no lock-out).
+  session for a *different* account — reaches an explicit sign-out step before
+  this account's branded SSO sign-in. The owner-only toggle can't be turned on
+  without an enabled SSO connection (no lock-out).
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Repo
@@ -144,23 +144,35 @@ defmodule EmisarWeb.RequireSSOTest do
       %{conn: conn, account: account}
     end
 
-    test "logs the session out and lands on the account's branded sign-in", %{
+    test "GET renders an explicit sign-out step without revoking the session", %{
       conn: conn,
       account: account
     } do
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
-      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
-      refute get_session(conn, :user_token)
+      assert html_response(conn, 200) =~ "Sign out and continue"
+      assert html_response(conn, 200) =~ ~s|method="post"|
+      assert get_session(conn, :user_token)
     end
 
-    test "the shim flashes the SSO-required explanation", %{conn: conn, account: account} do
-      # the step-up shim doesn't bounce silently: it logs out
-      # with a flash naming the cause, so the operator understands why they were
-      # signed out and what to do (sign in with the IdP) rather than seeing a bare
-      # sign-in page.
-      conn = get(conn, ~p"/app/#{account}/sso_required")
+    test "session revocation requires the explicit CSRF-protected POST", %{
+      conn: conn,
+      account: account
+    } do
+      path = ~p"/app/#{account}/sso_required"
+      show_conn = get(conn, path)
+      csrf_token = Plug.CSRFProtection.get_csrf_token()
+      conn_without_csrf = Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
 
+      assert_error_sent(403, fn -> post(conn_without_csrf, path, %{}) end)
+
+      conn =
+        show_conn
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
+        |> post(path, %{"_csrf_token" => csrf_token})
+
+      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
+      refute get_session(conn, :user_token)
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "requires single sign-on"
     end
   end

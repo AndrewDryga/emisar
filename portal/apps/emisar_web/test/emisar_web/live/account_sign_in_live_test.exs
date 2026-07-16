@@ -3,8 +3,9 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   The per-account ("branded") sign-in page at `/app/:account_id_or_slug/sign_in`.
   The team is resolved from the slug PRE-AUTH (knowing a slug grants nothing), so
   the load-bearing behaviors are: it offers exactly that account's enabled SSO
-  providers plus the shared passwordless magic-link path, and an unknown/soft-deleted
-  slug is an indistinguishable 404 — a signed-out prober learns nothing.
+  providers, hides the magic-link path when SSO is required, and an
+  unknown/soft-deleted slug is an indistinguishable 404 — a signed-out prober
+  learns nothing.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Repo
@@ -45,6 +46,22 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     assert html =~ ~s|action="/sign_in/magic/start"|
     assert html =~ ~s|name="return_to"|
     assert html =~ ~s|value="/app/#{account.slug}"|
+  end
+
+  test "a require_sso account leads with SSO and does not offer magic-link sign-in", %{
+    conn: conn
+  } do
+    account = Fixtures.Accounts.create_account(%{name: "SSO Only Co"})
+    provider = enabled_provider(account, "Acme Okta")
+    Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
+
+    assert html =~ "Continue with Acme Okta"
+    assert html =~ ~p"/sign_in/sso/#{provider.id}"
+    assert html =~ "This team requires single sign-on"
+    refute html =~ ~s|action="/sign_in/magic/start"|
+    refute html =~ "Email me a sign-in link"
   end
 
   test "the 'different team' link drops to the generic SSO picker", %{conn: conn} do

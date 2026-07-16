@@ -21,7 +21,7 @@ Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
 
 Private instances -> Cloud NAT for controlled egress
 Operators -> IAP + OS Login for SSH
-Better Stack -> external probes, on-call escalation, public status page
+Better Stack -> external probes, on-call escalation (severe GCP alarms page in), status page
 ```
 
 ## Production controls
@@ -35,7 +35,7 @@ Better Stack -> external probes, on-call escalation, public status page
 | Secrets | Explicit Secret Manager versions fingerprint the VM template; VM access is per-secret and read-only |
 | Supply chain | Production runs an immutable GHCR digest built and tested by CI; pack artifacts are versioned in GCS |
 | DNS | Authoritative Cloud DNS zone with DNSSEC signing and the complete web and email record set |
-| Monitoring | Google Cloud alerts plus independent Better Stack probes, escalation, and status page |
+| Monitoring | Google Cloud alerts to email and Slack, with severe silent-failure alarms paging the Better Stack on-call; independent Better Stack probes, escalation, and status page |
 
 Environment sizing and contacts are HCP Terraform workspace variables. Do not
 commit production scale, spend, contact addresses, or secrets.

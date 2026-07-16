@@ -5,9 +5,10 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
   backdated code.
   """
   use Emisar.DataCase, async: true
+  alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.OAuth
-  alias Emisar.OAuth.{AuthorizationCode, Client}
+  alias Emisar.OAuth.{AuthorizationCode, Client, Token}
   alias Emisar.OAuth.Jobs.Cleanup
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
@@ -31,6 +32,37 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
         },
         subject
       )
+  end
+
+  defp issue_tokens!(subject) do
+    {:ok, client} =
+      OAuth.register_client(%{"client_name" => "C", "redirect_uris" => [@redirect]})
+
+    verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
+
+    {:ok, code} =
+      OAuth.issue_code(
+        client,
+        %{
+          "redirect_uri" => @redirect,
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "scope" => "mcp offline_access",
+          "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
+        },
+        subject
+      )
+
+    {:ok, tokens} =
+      OAuth.exchange_code(%{
+        "code" => code,
+        "client_id" => client.id,
+        "redirect_uri" => @redirect,
+        "code_verifier" => verifier
+      })
+
+    tokens
   end
 
   test "execute/1 prunes expired authorization codes and returns :ok" do
@@ -63,6 +95,26 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
 
     assert :ok = Cleanup.execute([])
     refute Repo.reload(client)
+  end
+
+  test "execute/1 prunes OAuth tokens after their refresh grant expires" do
+    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    tokens = issue_tokens!(subject)
+    token = Repo.get_by!(Token, access_token_hash: Crypto.hash(tokens.access_token))
+
+    # An expired access token can still be refreshed, so the cleanup keeps the
+    # row until the longer-lived refresh grant expires too.
+    past = DateTime.add(DateTime.utc_now(), -120, :second)
+    Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
+    assert :ok = Cleanup.execute([])
+    assert Repo.reload(token)
+
+    Repo.update!(Ecto.Changeset.change(token, refresh_expires_at: past))
+    assert :ok = Cleanup.execute([])
+    refute Repo.reload(token)
+
+    # A second tick is an idempotent no-op.
+    assert :ok = Cleanup.execute([])
   end
 end
 

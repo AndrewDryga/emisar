@@ -13,6 +13,20 @@ defmodule Emisar.OAuth.Token.Query do
   def not_revoked(queryable \\ all()), do: where(queryable, [tokens: t], is_nil(t.revoked_at))
 
   @doc """
+  OAuth token pairs that can no longer be used or refreshed. A pair with a
+  refresh token stays until that longer-lived grant expires; access-only rows
+  are eligible once their access token expires.
+  """
+  def expired_before(queryable \\ all(), now) do
+    where(
+      queryable,
+      [tokens: t],
+      t.access_expires_at < ^now and
+        (is_nil(t.refresh_expires_at) or t.refresh_expires_at < ^now)
+    )
+  end
+
+  @doc """
   Row lock for the refresh-rotation re-read (`FOR NO KEY UPDATE`) so two
   concurrent refreshes of the same token serialize — the loser sees the
   winner's revocation instead of both rotating and minting two pairs.
