@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -560,6 +561,23 @@ func TestClient_Run_UnauthorizedDialFailureIsPermanent(t *testing.T) {
 	}
 	if got := d.calls.Load(); got != 1 {
 		t.Fatalf("unauthorized dial attempts = %d, want 1", got)
+	}
+}
+
+func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "dispatches.jsonl")
+	if err := os.WriteFile(storePath, []byte("not-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dialer := &alwaysFailDialer{}
+	client := NewClient(dialer, Options{DedupStorePath: storePath})
+
+	err := client.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "load durable dispatch state: invalid dispatch log entry on line 1") {
+		t.Fatalf("Run error = %v, want corrupt durable state", err)
+	}
+	if got := dialer.calls.Load(); got != 0 {
+		t.Fatalf("dial attempts = %d, want 0", got)
 	}
 }
 

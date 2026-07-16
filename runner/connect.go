@@ -21,6 +21,8 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
+const dispatchLogFilename = "dispatches.jsonl"
+
 func connectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "connect",
@@ -120,7 +122,7 @@ env var can be unset after the first successful connect.`,
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
 				Engine:         rt.engine,
-				DedupStorePath: filepath.Join(rt.cfg.Paths.DataDir, "dedup.jsonl"),
+				DedupStorePath: dispatchLogPath(rt.cfg.Paths.DataDir),
 				Logger:         logger,
 				HeartbeatEvery: rt.cfg.Cloud.HeartbeatEvery.Std(),
 				ReconnectMin:   rt.cfg.Cloud.ReconnectMin.Std(),
@@ -195,6 +197,10 @@ func validateConnectDataDir(dataDir string) error {
 		return fmt.Errorf("connect requires paths.data_dir for durable identity and dispatch reservations")
 	}
 	return nil
+}
+
+func dispatchLogPath(dataDir string) string {
+	return filepath.Join(dataDir, dispatchLogFilename)
 }
 
 func lockConnectDataDir(dataDir string) (*fsutil.FileLock, error) {

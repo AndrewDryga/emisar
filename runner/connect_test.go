@@ -40,6 +40,15 @@ func TestConnectRequiresDurableDataDir(t *testing.T) {
 	}
 }
 
+func TestDispatchLogPath(t *testing.T) {
+	dataDir := t.TempDir()
+	got := dispatchLogPath(dataDir)
+	want := filepath.Join(dataDir, "dispatches.jsonl")
+	if got != want {
+		t.Fatalf("dispatchLogPath = %q, want %q", got, want)
+	}
+}
+
 // The runner's durable identity: generated once, persisted, reused. This
 // is what lets a reconnect map back to the same cloud runner row instead
 // of registering a brand-new one each time.

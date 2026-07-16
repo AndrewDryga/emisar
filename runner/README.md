@@ -33,7 +33,7 @@ This installs the latest tagged release. To pin a specific version:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.9.1 --yes
+  | sudo bash -s -- --version runner-v0.11.0 --yes
 ```
 
 The portal's **Runners → Install** page generates this one-liner with
@@ -78,11 +78,13 @@ checksum from GitHub releases).
 9. Installs a small, host-matched set of starter packs after a confirmation
    prompt — always `linux-core` + `debugging`, plus `systemd-deep` / `debian`
    / `dnf-rpm` / `docker` when the matching tooling is present. The rest of the
-   catalog is added on demand with `emisar pack install <name>`; subsequent
-   installs leave existing packs alone. Setting `EMISAR_PACKS` (or `--packs`),
-   even to an empty string, makes the set explicit instead: the installer
-   installs exactly those packs (possibly none) and skips host detection and
-   suggestions.
+   catalog is added on demand with `emisar pack install <name>`. Subsequent
+   installs preserve valid packs; if a stricter runner rejects an installed
+   pack, the installer repairs official packs from the registry and stops before
+   startup if the complete tree is still invalid. Setting `EMISAR_PACKS` (or
+   `--packs`), even to an empty string, makes the set explicit instead: the
+   installer installs exactly those packs (possibly none) and skips host
+   detection and suggestions.
 10. Installs the supervisor unit:
     - Linux: `/etc/systemd/system/emisar.service`, enabled but not
       started until you configure the auth key.
@@ -196,13 +198,13 @@ the daemon unable to read `runner.env`.
 
 ## Upgrade
 
-Re-run the installer with the new version. The service is stopped,
-the binary replaced, the service restarted. Configs and packs are
-untouched.
+Re-run the installer with the new version. The service is stopped, the binary
+replaced, and the service restarted. Config and valid packs are preserved;
+incompatible official packs may be repaired before the service starts.
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.9.1 --yes
+  | sudo bash -s -- --version runner-v0.11.0 --yes
 ```
 
 ## Uninstall
@@ -220,11 +222,11 @@ already shipped the log to wherever you want it preserved.
 Download the release tarball directly:
 
 ```sh
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.9.1/emisar-0.9.1-linux-amd64.tar.gz
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.9.1/SHA256SUMS
-sha256sum -c SHA256SUMS
-tar xzf emisar-0.9.1-linux-amd64.tar.gz
-sudo bash emisar-0.9.1-linux-amd64/install.sh --yes
+curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.11.0/emisar-0.11.0-linux-amd64.tar.gz
+curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.11.0/SHA256SUMS
+grep ' emisar-0.11.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar xzf emisar-0.11.0-linux-amd64.tar.gz
+sudo bash emisar-0.11.0-linux-amd64/install.sh --yes
 ```
 
 The tarball contains a copy of `install.sh` that pins to its own

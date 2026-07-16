@@ -199,6 +199,10 @@ func (c *Client) Readvertise() {
 // In-flight actions survive reconnects; their queued messages replay
 // once the new session is established.
 func (c *Client) Run(ctx context.Context) error {
+	if c.dedup.loadErr != nil {
+		return fmt.Errorf("load durable dispatch state: %w", c.dedup.loadErr)
+	}
+
 	backoff := c.opts.ReconnectMin
 	for {
 		if err := ctx.Err(); err != nil {
