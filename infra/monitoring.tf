@@ -196,6 +196,102 @@ resource "google_monitoring_alert_policy" "db_memory" {
   notification_channels = local.alert_notification_channels
 }
 
+# `google-monitoring-enabled` enables COS Node Problem Detector, whose guest
+# metrics are reported against each VM. The portal-only instance label keeps
+# these policies scoped to the MIG and excludes the optional Livebook VM.
+resource "google_monitoring_alert_policy" "portal_cpu" {
+  display_name = "Emisar: Portal VM CPU High"
+  combiner     = "OR"
+
+  documentation {
+    content   = "Portal VM CPU utilization has remained above 85% for five minutes. Inspect the affected instance, application load, and most recent rollout before changing capacity."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "portal-vm"
+    signal    = "cpu"
+  }
+
+  conditions {
+    display_name = "Portal VM CPU Above 85% for 5 Minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metadata.user_labels.cluster_name = \"emisar\" AND metric.type = \"compute.googleapis.com/instance/cpu/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.85
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "portal_memory" {
+  display_name = "Emisar: Portal VM Memory High"
+  combiner     = "OR"
+
+  documentation {
+    content   = "Portal VM memory utilization has remained above 90% for five minutes. Inspect the affected instance and application memory usage for a leak or undersized workload."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "portal-vm"
+    signal    = "memory"
+  }
+
+  conditions {
+    display_name = "Portal VM Memory Above 90% for 5 Minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metadata.user_labels.cluster_name = \"emisar\" AND metric.type = \"compute.googleapis.com/guest/memory/percent_used\" AND metric.labels.state = \"used\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 90
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "portal_disk" {
+  display_name = "Emisar: Portal VM Disk Near Full"
+  combiner     = "OR"
+
+  documentation {
+    content   = "Portal VM disk utilization has remained above 90% for five minutes. Inspect the affected device and release or container logs for unexpected disk growth before the VM reaches capacity."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "portal-vm"
+    signal    = "disk"
+  }
+
+  conditions {
+    display_name = "Portal VM Disk Above 90% for 5 Minutes"
+    condition_threshold {
+      filter          = "resource.type = \"gce_instance\" AND metadata.user_labels.cluster_name = \"emisar\" AND metric.type = \"compute.googleapis.com/guest/disk/percent_used\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 90
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = local.alert_notification_channels
+}
+
 # Transaction-ID wraparound is the one Postgres failure mode that gives no
 # user-visible symptom until the database force-stops writes — autovacuum
 # normally keeps it near zero, so a climb past 70% means vacuum is stuck
