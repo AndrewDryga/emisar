@@ -83,6 +83,22 @@ func (a Arg) Validate() error {
 	if a.Required && a.Default != nil {
 		return fmt.Errorf("arg %s: required args must not specify default", a.Name)
 	}
+	if a.Validation != nil {
+		if len(a.Validation.Enum) > 0 && len(a.Validation.Allowed) > 0 {
+			return fmt.Errorf("arg %s: validation.enum and validation.allowed cannot both be set", a.Name)
+		}
+		for _, membership := range []struct {
+			name   string
+			values []any
+		}{
+			{name: "enum", values: a.Validation.Enum},
+			{name: "allowed", values: a.Validation.Allowed},
+		} {
+			if err := validateMembershipCandidates(a.Type, membership.name, membership.values); err != nil {
+				return fmt.Errorf("arg %s: %w", a.Name, err)
+			}
+		}
+	}
 	// Compile the pattern here so an uncompilable regex fails `pack validate`
 	// at authoring time, not at execution. The runtime validator (which
 	// rejects the arg) uses the same regexp engine, and Go caps a repeat
@@ -137,6 +153,68 @@ func (a Arg) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validateMembershipCandidates(argType ArgType, name string, candidates []any) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if argType == ArgDuration {
+		return fmt.Errorf("validation.%s is not supported for duration args", name)
+	}
+
+	for index, candidate := range candidates {
+		if !membershipCandidateValid(argType, candidate) {
+			return fmt.Errorf("validation.%s[%d] has incompatible type %T for %s", name, index, candidate, argType)
+		}
+	}
+	return nil
+}
+
+func membershipCandidateValid(argType ArgType, candidate any) bool {
+	switch argType {
+	case ArgString, ArgPath, ArgStringArray:
+		_, ok := candidate.(string)
+		return ok
+	case ArgInteger, ArgIntegerArray:
+		return integerCandidate(candidate)
+	case ArgNumber:
+		return numberCandidate(candidate)
+	case ArgBoolean:
+		_, ok := candidate.(bool)
+		return ok
+	default:
+		return false
+	}
+}
+
+func integerCandidate(candidate any) bool {
+	switch number := candidate.(type) {
+	case int, int32, int64, uint, uint32:
+		return true
+	case uint64:
+		return number <= math.MaxInt64
+	case float32:
+		return validIntegerBound(float64(number))
+	case float64:
+		return validIntegerBound(number)
+	default:
+		return false
+	}
+}
+
+func numberCandidate(candidate any) bool {
+	switch number := candidate.(type) {
+	case int, int32, int64, uint, uint32, uint64:
+		return true
+	case float32:
+		value := float64(number)
+		return !math.IsNaN(value) && !math.IsInf(value, 0)
+	case float64:
+		return !math.IsNaN(number) && !math.IsInf(number, 0)
+	default:
+		return false
+	}
 }
 
 func validIntegerBound(bound float64) bool {

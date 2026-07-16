@@ -204,6 +204,55 @@ func TestParseExtendedDuration(t *testing.T) {
 	}
 }
 
+func TestArgValidate_MembershipCandidateTypes(t *testing.T) {
+	valid := []Arg{
+		{Name: "string", Type: ArgString, Validation: &Validation{Enum: []any{"safe"}}},
+		{Name: "path", Type: ArgPath, Validation: &Validation{Allowed: []any{"/var/log"}}},
+		{Name: "integer", Type: ArgInteger, Validation: &Validation{Enum: []any{2, float64(3)}}},
+		{Name: "number", Type: ArgNumber, Validation: &Validation{Allowed: []any{2, 2.5}}},
+		{Name: "boolean", Type: ArgBoolean, Validation: &Validation{Enum: []any{true}}},
+		{Name: "strings", Type: ArgStringArray, Validation: &Validation{Allowed: []any{"safe"}}},
+		{Name: "integers", Type: ArgIntegerArray, Validation: &Validation{Enum: []any{2}}},
+	}
+	for _, arg := range valid {
+		if err := arg.Validate(); err != nil {
+			t.Errorf("%s valid candidates rejected: %v", arg.Name, err)
+		}
+	}
+
+	invalid := []Arg{
+		{Name: "string", Type: ArgString, Validation: &Validation{Enum: []any{1}}},
+		{Name: "integer", Type: ArgInteger, Validation: &Validation{Allowed: []any{"1"}}},
+		{Name: "fraction", Type: ArgInteger, Validation: &Validation{Enum: []any{1.5}}},
+		{Name: "ambiguous integer", Type: ArgInteger, Validation: &Validation{Enum: []any{float64(1 << 53)}}},
+		{Name: "minimum integer", Type: ArgInteger, Validation: &Validation{Enum: []any{float64(math.MinInt64)}}},
+		{Name: "number", Type: ArgNumber, Validation: &Validation{Allowed: []any{"1.25"}}},
+		{Name: "boolean", Type: ArgBoolean, Validation: &Validation{Enum: []any{"true"}}},
+		{Name: "duration", Type: ArgDuration, Validation: &Validation{Enum: []any{"5s"}}},
+		{Name: "strings", Type: ArgStringArray, Validation: &Validation{Allowed: []any{1}}},
+		{Name: "integers", Type: ArgIntegerArray, Validation: &Validation{Enum: []any{"2"}}},
+	}
+	for _, arg := range invalid {
+		if err := arg.Validate(); err == nil {
+			t.Errorf("%s accepted incompatible membership candidate", arg.Name)
+		}
+	}
+}
+
+func TestArgValidate_RejectsMultipleMembershipRules(t *testing.T) {
+	arg := Arg{
+		Name: "mode",
+		Type: ArgString,
+		Validation: &Validation{
+			Enum:    []any{"safe"},
+			Allowed: []any{"safe"},
+		},
+	}
+	if err := arg.Validate(); err == nil {
+		t.Fatal("enum and allowed were accepted together")
+	}
+}
+
 func TestRedactionRule_Validate(t *testing.T) {
 	cases := []struct {
 		name string
