@@ -45,6 +45,12 @@ defmodule EmisarWeb.AuditExportController do
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext
 
+  plug EmisarWeb.Plugs.RateLimit,
+    bucket: "audit_export",
+    limit: 60,
+    window_ms: 60_000,
+    by: :bearer
+
   plug :authenticate
   plug :require_audit_export_key
   plug :require_export_plan

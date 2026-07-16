@@ -55,6 +55,12 @@ defmodule EmisarWeb.Router do
   # content-type resolves to the `json` extension via MIME's `+json` suffix,
   # so `:accepts ["json"]` accepts it and Plug.Parsers' :json entry parses it.
   pipeline :scim do
+    plug EmisarWeb.Plugs.RateLimit,
+      bucket: "scim",
+      limit: 300,
+      window_ms: 60_000,
+      by: :bearer
+
     plug :accepts, ["json"]
   end
 

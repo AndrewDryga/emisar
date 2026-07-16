@@ -16,6 +16,10 @@ defmodule EmisarWeb.RunnerConnectController do
 
   @runner_frame_max_bytes 2 * 1_024 * 1_024
 
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "runner_register", limit: 30, window_ms: 60_000, by: :ip]
+       when action == :register
+
   # -- Token exchange -------------------------------------------------
 
   def register(conn, params) do
