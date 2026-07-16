@@ -85,7 +85,7 @@ type Attestation = attest.Envelope
 const (
 	maxActionArgsBytes       = 32 << 10
 	maxRunActionMessageBytes = 128 << 10
-	requestIDLength          = len("req_") + 22
+	maxRequestIDBytes        = 64
 )
 
 type runActionMsgWire struct {
@@ -140,13 +140,13 @@ func validateRequestID(requestID string) error {
 	if strings.TrimSpace(requestID) == "" {
 		return fmt.Errorf("request_id is required")
 	}
-	if len(requestID) != requestIDLength || !strings.HasPrefix(requestID, "req_") {
-		return fmt.Errorf("request_id must match req_[A-Za-z0-9_-]{22}")
+	if len(requestID) > maxRequestIDBytes {
+		return fmt.Errorf("request_id must be 1..%d base64url characters", maxRequestIDBytes)
 	}
-	for _, b := range []byte(requestID[len("req_"):]) {
+	for _, b := range []byte(requestID) {
 		if (b < 'a' || b > 'z') && (b < 'A' || b > 'Z') &&
 			(b < '0' || b > '9') && b != '_' && b != '-' {
-			return fmt.Errorf("request_id must match req_[A-Za-z0-9_-]{22}")
+			return fmt.Errorf("request_id must be 1..%d base64url characters", maxRequestIDBytes)
 		}
 	}
 	return nil

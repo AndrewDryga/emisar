@@ -310,9 +310,7 @@ func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 	}
 }
 
-// (companion / positive case)
-//
-// The script-SHA re-verify at engine.go:306 runs on EVERY dispatch, re-reading
+// The script-SHA re-verify runs on every dispatch, re-reading
 // the on-disk bytes and comparing to the loader-recorded hash — it is not a
 // one-shot check cached after the first run. An untouched script must therefore
 // keep running across repeated dispatches with checksums enabled (and each run
@@ -351,12 +349,8 @@ func TestEngine_ScriptUnchangedRunsAcrossRedispatches(t *testing.T) {
 
 // SIGHUP pack reload is fail-safe: when re-discovery errors (a pack on disk is
 // now corrupt), engine.Reload() returns the error WITHOUT swapping the registry
-// (engine.go:171-182 stores the new registry only after LoadAll succeeds), so
-// the runner keeps serving the last-known-good catalog rather than going dark on
-// a bad edit. This drives the engine seam directly; the connect.go signal
-// handler that logs "reload_failed" and skips the readvertise on this error
-// lives in the main package and is out of internal-package scope, but the
-// keep-old-registry guarantee it relies on is exactly this.
+// so the runner keeps serving the last-known-good catalog rather than going dark
+// on a bad edit.
 func TestEngine_ReloadFailureKeepsOldRegistry(t *testing.T) {
 	e, j, root := setupEngine(t)
 	defer j.Close()
@@ -391,7 +385,7 @@ func TestEngine_ReloadFailureKeepsOldRegistry(t *testing.T) {
 // twoStreamLeakAction emits one complete, independently-redactable multi-line
 // secret on stdout AND a different one on stderr. The executor streams stdout
 // and stderr from separate goroutines, so this exercises whether the engine
-// gives each stream its own StreamRedactor (engine.go:336-337) or shares one.
+// gives each stream its own StreamRedactor or shares one.
 const twoStreamLeakAction = `
 schema_version: 1
 id: t.two_stream_leak
@@ -419,13 +413,12 @@ output:
       replacement: '[REDACTED_PEM]'
 `
 
-// The engine wires a SEPARATE StreamRedactor per stream (engine.go:336-337):
-// outRed for stdout, errRed for stderr. A StreamRedactor is stateful and not
-// concurrency-safe — it holds a bounded raw tail in `pending` to catch
-// multi-line matches across chunk boundaries. If stdout and stderr (which
-// stream from independent goroutines) shared one instance, the two streams'
-// interleaved Writes would corrupt that shared buffer and a multi-line secret
-// could be split across the emit boundary and leak.
+// The engine wires a separate StreamRedactor per stream. A StreamRedactor is
+// stateful and not concurrency-safe — it holds a bounded raw tail in `pending`
+// to catch multi-line matches across chunk boundaries. If stdout and stderr
+// (which stream from independent goroutines) shared one instance, the two
+// streams' interleaved Writes would corrupt that shared buffer and a multi-line
+// secret could be split across the emit boundary and leak.
 //
 // This asserts the soundness that per-stream instances guarantee: a complete
 // multi-line secret on EACH stream is fully redacted on its own stream, in both

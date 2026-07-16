@@ -3,9 +3,10 @@
 The runner and portal communicate over one TLS websocket initiated by the
 runner. The portal never opens a connection to a runner. Every message is a JSON
 object with `type` and `protocol_version`; action-correlated messages also carry
-`request_id`. A request ID is exactly `req_` plus 22 base64url characters
-(`[A-Za-z0-9_-]`), 26 ASCII bytes total. Both peers reject any other shape
-before lookup, logging, acknowledgement, or in-memory retention.
+`request_id`. The portal generates each ID and the runner treats it as an opaque
+correlation value: 1–64 ASCII base64url characters (`[A-Za-z0-9_-]`). The
+runner rejects values outside that stable safety boundary before lookup,
+logging, acknowledgement, or in-memory retention.
 
 Protocol version: **1**.
 
@@ -230,7 +231,7 @@ logs.
 | Item | Limit |
 | --- | ---: |
 | Complete `run_action` message | 128 KiB |
-| Correlation `request_id` | 26 ASCII bytes |
+| Correlation `request_id` | 1–64 ASCII bytes |
 | Exact `args` object | 32 KiB |
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |

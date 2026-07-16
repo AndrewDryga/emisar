@@ -475,7 +475,7 @@ func TestClient_Run_SendStateFailureResetsBackoff(t *testing.T) {
 // NewClient fills every zero-valued knob with its documented default, so a
 // caller can pass an almost-empty Options and still get a sane client: heartbeat
 // 30s, reconnect 1s..60s, 8 concurrent runs, 2048 buffered per run, dedup ring
-// 1024. (client.go:108-142.)
+// 1024.
 func TestClient_NewClient_ZeroIntervalDefaults(t *testing.T) {
 	cli := NewClient(&queuedDialer{conns: []*fakeConn{newFakeConn()}}, Options{})
 

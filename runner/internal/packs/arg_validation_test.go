@@ -10,7 +10,7 @@ import (
 // Runtime / dispatch-time argument validation, driven against the REAL pack
 // library rather than synthetic schemas.
 //
-// This is the exact seam the engine runs on every dispatch (engine.go:253):
+// This is the validation path the engine runs on every dispatch:
 //
 //	act, _ := reg.Action(req.ActionID)
 //	cleanArgs, err := validation.Validate(act.Args, req.Args)

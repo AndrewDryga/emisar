@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestClientRejectsNoncanonicalControlRequestIDs(t *testing.T) {
+func TestClientRejectsInvalidControlRequestIDs(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{})
 	requestID := "req_" + strings.Repeat("x", maxRunActionMessageBytes)
 
@@ -22,7 +22,7 @@ func TestClientRejectsNoncanonicalControlRequestIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(cli.preCanceled) != 0 || len(cli.preCanceledOrder) != 0 {
-		t.Fatal("noncanonical cancel request_id reached pre-cancel retention")
+		t.Fatal("invalid cancel request_id reached pre-cancel retention")
 	}
 
 	cli.runs[requestID] = &runState{requestID: requestID, finished: true}
@@ -36,7 +36,7 @@ func TestClientRejectsNoncanonicalControlRequestIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, exists := cli.runs[requestID]; !exists {
-		t.Fatal("noncanonical ack_result request_id reached run state")
+		t.Fatal("invalid ack_result request_id reached run state")
 	}
 }
 
@@ -134,27 +134,34 @@ func TestRunActionMsgRequiresRequestID(t *testing.T) {
 	}
 }
 
-func TestRunActionMsgRejectsNoncanonicalRequestID(t *testing.T) {
-	raw := []byte(`{"type":"run_action","request_id":"req_short","action_id":"a.b","args":{}}`)
+func TestRunActionMsgRejectsInvalidRequestID(t *testing.T) {
+	raw := []byte(`{"type":"run_action","request_id":"req invalid","action_id":"a.b","args":{}}`)
 	var msg RunActionMsg
-	if err := json.Unmarshal(raw, &msg); err == nil || !strings.Contains(err.Error(), "must match") {
-		t.Fatalf("Unmarshal error = %v, want noncanonical request_id refusal", err)
+	if err := json.Unmarshal(raw, &msg); err == nil || !strings.Contains(err.Error(), "base64url") {
+		t.Fatalf("Unmarshal error = %v, want invalid request_id refusal", err)
 	}
 }
 
-func TestRequestIDRequiresCanonicalPortalShape(t *testing.T) {
+func TestRequestIDIsOpaqueBoundedAndLogSafe(t *testing.T) {
 	for _, requestID := range []string{
-		"req_short",
-		"req_00000000000000000000000",
-		"req_000000000000000000000!",
-		"other_0000000000000000000000",
+		"",
+		"has space",
+		"punctuation!",
+		"unicode_é",
+		strings.Repeat("x", maxRequestIDBytes+1),
 	} {
 		if err := validateRequestID(requestID); err == nil {
-			t.Fatalf("validateRequestID(%q) accepted noncanonical id", requestID)
+			t.Fatalf("validateRequestID(%q) accepted invalid id", requestID)
 		}
 	}
-	if requestID := "req_0000000000000000000000"; validateRequestID(requestID) != nil {
-		t.Fatalf("validateRequestID(%q) rejected canonical id", requestID)
+	for _, requestID := range []string{
+		"r",
+		"req_short",
+		strings.Repeat("x", maxRequestIDBytes),
+	} {
+		if err := validateRequestID(requestID); err != nil {
+			t.Fatalf("validateRequestID(%q) = %v", requestID, err)
+		}
 	}
 }
 

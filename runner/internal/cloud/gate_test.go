@@ -47,13 +47,9 @@ func TestClient_GateOrder_SignatureBeforeTrust(t *testing.T) {
 	}
 }
 
-// Under outbox pressure the run RESULT is never dropped. enqueue
-// (client.go:634-643) applies dropOldestProgress only to progress chunks;
-// the terminal result uses the `never` policy (client.go:625-628), which
-// appends past MaxPendingPerRun rather than evicting itself. So even when
-// the per-run buffer is saturated with progress while the socket is down,
-// the one message the cloud must eventually see — the result — survives,
-// pushing out older progress instead.
+// Under outbox pressure the terminal result is never dropped. Progress may be
+// evicted while the socket is down, but the cloud must eventually receive the
+// action outcome.
 func TestClient_Enqueue_ResultNeverDroppedUnderPressure(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
 	cli.opts.MaxPendingPerRun = 4

@@ -45,14 +45,9 @@ func TestClient_TrustGate_MissingExpectedHashRefuses(t *testing.T) {
 	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 2 })
 }
 
-// /
-//
 // When the cloud DOES pin a hash but the action id is unknown to this runner's
-// registry, the trust gate has nothing to gate: passesTrustGate returns true on
-// the `!ok || PackID == ""` branch (client.go:561-565) so the engine can produce
-// its own unknown_action result, rather than the gate masking a missing action
-// behind a pack-hash error. The pin is non-empty here precisely to drive the
-// lookup branch (an empty pin would short-circuit earlier, T08).
+// registry, the trust gate defers to the engine's unknown_action result rather
+// than masking a missing action behind a pack-hash error.
 func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 	conn := newFakeConn()
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
@@ -78,11 +73,9 @@ func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 }
 
 // A trust-gate refusal is terminal and idempotent: emitPackMismatch caches the
-// pack_hash_mismatch result in the dedup ring (client.go:619), so a cloud retry
-// of the SAME request_id replays the cached refusal via startRun's dedup path
-// (client.go:301-306) WITHOUT re-running the gate — no second rehash, no second
-// Readvertise. The runner must not re-do work (or re-broadcast) for a request it
-// has already answered, even a refusal.
+// pack_hash_mismatch result in the dedup ring, so a cloud retry of the same
+// request_id replays the cached refusal without re-running the gate or
+// readvertising.
 func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 	conn := newFakeConn()
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
@@ -146,8 +139,6 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 // --- Registry hot-swap (SIGHUP) observed by a new dispatch ------------------
 
-// /
-//
 // A SIGHUP atomically swaps the engine's registry (engine.Reload stores a fresh
 // *packs.Registry behind an atomic.Pointer). A NEW dispatch routed through the
 // Client — dispatch → startRun → handleRun → passesTrustGate + engine.Run, both
@@ -204,7 +195,7 @@ func TestClient_RegistrySwap_NewDispatchSeesReloadedPacks(t *testing.T) {
 // --- Admission precedence over signature + trust ----------------------------
 
 // Admission is the host operator's gate and runs unconditionally at the engine,
-// BEFORE the registry lookup (engine.go:220-236) — and the engine runs only
+// before the registry lookup — and the engine runs only
 // after handleRun's signature + trust gates have already passed. So a dispatch
 // that is perfectly authenticated (valid signature from a trusted key) AND
 // carries a matching pack hash is STILL refused when the host has denied the
