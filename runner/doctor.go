@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
@@ -97,7 +98,7 @@ func runDoctor(ctx context.Context) []checkResult {
 		results = append(results, checkActionBinaries(registry))
 	}
 
-	client := &http.Client{Timeout: cloudProbeTimeout}
+	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout})
 	results = append(results, checkCloud(ctx, cfg, client))
 
 	return results

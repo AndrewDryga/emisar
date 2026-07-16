@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 )
 
 // DefaultGCSEndpoint is the Google Cloud Storage JSON API base. Overridable
@@ -72,6 +74,7 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
+	client = httpsecurity.ClientWithTLS12(client)
 
 	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {

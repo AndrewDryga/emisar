@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 )
 
 // Fetch limits — packs are tiny (tens of KB), so these are generous
@@ -77,7 +78,7 @@ func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string,
 }
 
 func secureFetchClient(base *http.Client) *http.Client {
-	client := *base
+	client := *httpsecurity.ClientWithTLS12(base)
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("packs: stopped after 10 redirects")

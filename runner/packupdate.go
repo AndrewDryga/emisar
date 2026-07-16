@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
@@ -315,7 +316,7 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 }
 
 func packRegistryHTTPClient() *http.Client {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: 15 * time.Second})
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return fmt.Errorf("stopped after 10 redirects")

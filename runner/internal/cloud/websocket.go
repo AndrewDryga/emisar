@@ -20,6 +20,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/coder/websocket"
 )
 
@@ -462,6 +463,7 @@ func (d *WebsocketDialer) portalHTTPClient() *http.Client {
 	if client.Timeout <= 0 {
 		client.Timeout = cloudHandshakeTimeout
 	}
+	client = *httpsecurity.ClientWithTLS12(&client)
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

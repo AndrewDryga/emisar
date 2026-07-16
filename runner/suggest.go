@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/hostscan"
+	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
@@ -226,7 +227,7 @@ func fetchCatalog(ctx context.Context, registry string) ([]hostscan.PackReq, err
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpsecurity.ClientWithTLS12(http.DefaultClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch catalog %s: %w", url, err)
 	}
