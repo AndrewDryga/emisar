@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-16],
+      slug: "reconnect-safe-runs-and-clearer-agents",
+      title: "Reconnect-safe runs and a clearer agents list",
+      tag: "v0.26.0",
+      summary:
+        "When a runner drops its connection and comes back, the control plane recovers the runs that were in flight instead of stranding them, and the runner repairs any packs it kept across an upgrade before resuming work. It also skips processes that were already cancelled, reports a failed local audit honestly instead of masking it, and bounds the action catalog it advertises. In the console, the LLM agents list now groups by the person behind each key and shows each connection's emisar-mcp bridge version inline, so an outdated bridge is obvious and one step from the upgrade command."
+    },
+    %{
+      date: ~D[2026-07-16],
       slug: "stricter-runner-results-and-cleaner-settings",
       title: "Stricter runner results and cleaner settings",
       tag: "v0.25.4",
