@@ -21,6 +21,8 @@ import (
 
 var errResponseBacklogFull = errors.New("response backlog full")
 
+var errTerminalShutdown = errors.New("cloud: terminal shutdown")
+
 // Conn is the transport-level interface the Client uses. A real
 // implementation wraps a websocket; tests can use an in-memory pair.
 //
@@ -219,6 +221,14 @@ func (c *Client) Run(ctx context.Context) error {
 		// between the reader and writer noticing the drop first.
 		if ctx.Err() != nil {
 			return c.shutdown(ctx.Err())
+		}
+		// A portal shutdown for a revoked or unsupported runner is terminal for
+		// this process. Return context.Canceled so the connect command exits
+		// cleanly instead of its supervisor immediately restarting into the same
+		// rejection. Planned cloud shutdowns continue through the normal
+		// reconnect path below.
+		if errors.Is(err, errTerminalShutdown) {
+			return c.shutdown(context.Canceled)
 		}
 		if errors.Is(err, ErrUnauthorized) {
 			return c.shutdown(err)
@@ -421,10 +431,32 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			return nil
 		}
 		c.ackRun(envelope.RequestID)
+	case MsgShutdown:
+		if err := requireProtocolVersion(envelope); err != nil {
+			return err
+		}
+		var m ShutdownMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			c.opts.Logger.Warn("cloud.bad_shutdown", "error", err)
+			return nil
+		}
+		c.opts.Logger.Warn("cloud.shutdown", "reason", m.Reason, "message", m.Message)
+		if terminalShutdownReason(m.Reason) {
+			return fmt.Errorf("%w: reason=%s", errTerminalShutdown, m.Reason)
+		}
 	default:
 		c.opts.Logger.Debug("cloud.unknown_message", "type", envelope.Type)
 	}
 	return nil
+}
+
+func terminalShutdownReason(reason string) bool {
+	switch reason {
+	case "runner_revoked", "runner_version_unsupported":
+		return true
+	default:
+		return false
+	}
 }
 
 func requireProtocolVersion(envelope Envelope) error {

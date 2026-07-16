@@ -35,6 +35,7 @@ const (
 	MsgRunAction MessageType = "run_action"
 	MsgCancel    MessageType = "cancel"
 	MsgAckResult MessageType = "ack_result"
+	MsgShutdown  MessageType = "shutdown"
 
 	// Runner -> Cloud
 	MsgRunnerState    MessageType = "runner_state"
@@ -474,6 +475,15 @@ type CancelMsg struct {
 // the durable dispatch record acknowledged so it can leave the replay window.
 type AckResultMsg struct {
 	Envelope
+}
+
+// ShutdownMsg tells the runner why the portal is closing the current session.
+// cloud_shutdown is a planned cloud restart and should reconnect; a revoked
+// or unsupported runner must stop until the operator changes its state.
+type ShutdownMsg struct {
+	Envelope
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
 }
 
 // RunnerStateMsg is the self-description sent on connect and on pack reload.
