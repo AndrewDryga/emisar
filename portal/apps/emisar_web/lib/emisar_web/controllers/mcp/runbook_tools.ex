@@ -8,6 +8,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runners, Runs, Slug}
   alias EmisarWeb.MCP.{ActionContract, CatalogCursor, ResponseBudget, RunbookContract}
+  alias EmisarWeb.MCP.ToolParams
 
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
@@ -331,10 +332,14 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp validate_list(args) do
     with :ok <- exact_fields(args, [], ~w(query limit cursor)),
          {:ok, query} <- optional_string(args["query"], 256),
-         {:ok, limit} <- limit(args["limit"] || @default_limit, 50),
+         {:ok, limit} <- limit(args["limit"], 50),
          true <- is_nil(args["cursor"]) or is_binary(args["cursor"]) do
       {:ok, %{query: query, limit: limit, cursor: args["cursor"]}}
     else
+      # A field-specific fault keeps its message — the generic line below once
+      # flattened a mistyped limit into "arguments are invalid", hiding which
+      # field (and which fix) the model needed.
+      {:error, %{} = payload} -> {:error, payload}
       _ -> {:error, error("invalid_args", "list_runbooks arguments are invalid.")}
     end
   end
@@ -715,8 +720,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp valid_string?(value, min, max),
     do: is_binary(value) and byte_size(value) in min..max
 
-  defp limit(value, max) when is_integer(value) and value in 1..max//1, do: {:ok, value}
-  defp limit(_value, _max), do: {:error, :invalid_limit}
+  # Full error payload, not an atom: the callers' else blocks pass a
+  # `%{} = payload` through, while `:invalid_limit` fell into the generic
+  # "arguments are invalid" catch-all that hid which field was wrong.
+  defp limit(value, max) do
+    case ToolParams.limit(value, @default_limit, max) do
+      {:ok, parsed} -> {:ok, parsed}
+      {:error, message} -> {:error, error("invalid_args", message)}
+    end
+  end
 
   defp split_more(items, limit) do
     if length(items) > limit, do: {Enum.take(items, limit), true}, else: {items, false}

@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
   """
 
   alias Emisar.{Catalog, Crypto, Runners}
-  alias EmisarWeb.MCP.{CatalogCursor, ToolSchema}
+  alias EmisarWeb.MCP.{CatalogCursor, ToolParams, ToolSchema}
 
   @default_limit 15
   @max_list_limit 50
@@ -671,11 +671,12 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp optional_string(_value, _max, name),
     do: {:error, error("invalid_args", "#{name} must be a non-empty bounded string.")}
 
-  defp optional_boolean(nil, default, _name), do: {:ok, default}
-  defp optional_boolean(value, _default, _name) when is_boolean(value), do: {:ok, value}
-
-  defp optional_boolean(_value, _default, name),
-    do: {:error, error("invalid_args", "#{name} must be a boolean.")}
+  defp optional_boolean(value, default, name) do
+    case ToolParams.boolean(value, default, name) do
+      {:ok, parsed} -> {:ok, parsed}
+      {:error, message} -> {:error, error("invalid_args", message)}
+    end
+  end
 
   defp runner_refs(nil), do: {:ok, []}
 
@@ -719,16 +720,12 @@ defmodule EmisarWeb.MCP.CatalogTools do
       else: {:error, error("invalid_args", "#{name} has an unsupported value.")}
   end
 
-  defp limit(nil, _max), do: {:ok, @default_limit}
-
-  defp limit(value, max) when is_integer(value) do
-    if value in 1..max,
-      do: {:ok, value},
-      else: {:error, error("invalid_args", "limit must be an integer from 1 to #{max}.")}
+  defp limit(value, max) do
+    case ToolParams.limit(value, @default_limit, max) do
+      {:ok, parsed} -> {:ok, parsed}
+      {:error, message} -> {:error, error("invalid_args", message)}
+    end
   end
-
-  defp limit(_value, max),
-    do: {:error, error("invalid_args", "limit must be an integer from 1 to #{max}.")}
 
   defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
     do: Runners.runner_scopes_for_membership(id)

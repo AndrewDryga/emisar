@@ -52,6 +52,29 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert get_in(by_name, ["create_runbook_draft", "annotations", "openWorldHint"]) == false
   end
 
+  test "scalar params coerce LLM-typical string forms and name a real type fault", %{
+    conn: conn,
+    account: account
+  } do
+    Fixtures.Runners.create_runner(account_id: account.id, name: "coerce-target")
+
+    # The observed live failure: Claude.ai sent {"limit": "50"} — a valid value
+    # as a JSON string — was told 'must be an integer from 1 to 50', retried
+    # "25" (still a string), and gave up. Canonical scalar strings now coerce.
+    assert call(conn, "list_runners", %{"limit" => "50"})["ok"]
+    assert call(conn, "list_runners", %{"issues_only" => "true"})["ok"]
+
+    # A genuine mismatch names the received type, so a model can self-correct
+    # in one step instead of hunting the range.
+    junk = call(conn, "list_runners", %{"limit" => "many"})
+
+    assert junk["error"]["message"] ==
+             "limit must be a JSON integer from 1 to 50; it was sent as a string."
+
+    out_of_range = call(conn, "list_runners", %{"limit" => 51})
+    assert out_of_range["error"]["message"] == "limit must be a JSON integer from 1 to 50."
+  end
+
   test "run_action rejects wait values outside the public grammar", %{conn: conn} do
     pack_ref = "database@1.0.0/#{@hash}"
     runner_ref = "runner~" <> String.duplicate("a", 32)

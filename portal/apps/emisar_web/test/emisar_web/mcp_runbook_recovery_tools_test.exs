@@ -34,6 +34,31 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
      raw: raw}
   end
 
+  test "scalar limits coerce string forms and a limit fault names the field", %{conn: conn} do
+    # LLM clients routinely send integers as JSON strings; a canonical string
+    # coerces instead of failing the read.
+    coerced = call(conn, "recent_runs", %{"limit" => "50"})
+    assert coerced["error"] == nil
+    assert coerced["runs"] == []
+
+    junk = call(conn, "recent_runs", %{"limit" => "many"})
+
+    # The fault names the field and the received type — not the generic
+    # "arguments do not match the fixed contract" that hides which field broke.
+    assert junk["error"]["message"] ==
+             "limit must be a JSON integer from 1 to 100; it was sent as a string."
+
+    runbooks = call(conn, "list_runbooks", %{"limit" => "10"})
+    assert runbooks["error"] == nil
+
+    # This exact call used to flatten into "list_runbooks arguments are
+    # invalid" — no field named.
+    runbook_junk = call(conn, "list_runbooks", %{"limit" => "many"})
+
+    assert runbook_junk["error"]["message"] ==
+             "limit must be a JSON integer from 1 to 50; it was sent as a string."
+  end
+
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
     conn: conn,
     account: account,

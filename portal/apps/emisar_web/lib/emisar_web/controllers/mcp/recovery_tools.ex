@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runs}
   alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, ResponseBudget}
-  alias EmisarWeb.MCP.{RunbookTools, Service, WaitLimiter}
+  alias EmisarWeb.MCP.{RunbookTools, Service, ToolParams, WaitLimiter}
 
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @action_id ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
@@ -288,6 +288,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read run history.")}
 
+      {:error, {:invalid_field, message}} ->
+        {:error, error("invalid_args", message)}
+
       {:error, :invalid_recent_runs} ->
         {:error, error("invalid_args", "recent_runs arguments do not match the fixed contract.")}
 
@@ -347,7 +350,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          :ok <- optional_match(args["action_id"], @action_id),
          :ok <- optional_pack_ref(args["pack_ref"]),
          scope when scope in ["own", "account"] <- args["scope"] || "own",
-         limit when is_integer(limit) and limit in 1..100 <- args["limit"] || 15,
+         {:ok, limit} <- ToolParams.limit(args["limit"], 15, 100),
          cursor when is_nil(cursor) or is_binary(cursor) <- args["cursor"],
          :ok <- valid_recent_combination(args) do
       {:ok,
@@ -363,6 +366,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          cursor: cursor
        })}
     else
+      # A limit fault names itself — the generic contract error below once
+      # sent a model hunting the wrong field entirely.
+      {:error, message} when is_binary(message) -> {:error, {:invalid_field, message}}
       _ -> {:error, :invalid_recent_runs}
     end
   end
