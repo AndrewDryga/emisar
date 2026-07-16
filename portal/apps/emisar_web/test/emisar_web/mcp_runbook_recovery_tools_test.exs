@@ -670,6 +670,61 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(healthy_summary["run"], "local_audit_failed")
   end
 
+  test "run summaries omit silent streams and complete-output accounting", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "silent-stream-summary")
+    stdout_only_run = create_mcp_history_run!(account, runner, key, 1)
+    gappy_run = create_mcp_history_run!(account, runner, key, 2)
+
+    assert {:ok, _event} =
+             Runs.append_event(stdout_only_run, %{
+               seq: 1,
+               kind: "progress",
+               stream: "stdout",
+               payload: %{"chunk" => "Datacenter: dc1\n"}
+             })
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(stdout_only_run, %{
+               "status" => "success",
+               "exit_code" => 0,
+               "progress_chunks" => 1,
+               "emitted_stdout_bytes" => 16,
+               "emitted_stderr_bytes" => 0
+             })
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(gappy_run, %{
+               "status" => "success",
+               "progress_chunks" => 3,
+               "dropped_progress_chunks" => 2
+             })
+
+    stdout_only_summary =
+      call(conn, "wait_for_run", %{"run_id" => stdout_only_run.id, "timeout" => "0"})["run"]
+
+    gappy_summary =
+      call(conn, "wait_for_run", %{"run_id" => gappy_run.id, "timeout" => "0"})["run"]
+
+    assert stdout_only_summary["stdout"] == "Datacenter: dc1\n"
+    assert stdout_only_summary["emitted_stdout_bytes"] == 16
+    assert stdout_only_summary["truncated_stdout"] == false
+    refute Map.has_key?(stdout_only_summary, "stderr")
+    refute Map.has_key?(stdout_only_summary, "emitted_stderr_bytes")
+    refute Map.has_key?(stdout_only_summary, "truncated_stderr")
+    refute Map.has_key?(stdout_only_summary, "output_complete")
+    refute Map.has_key?(stdout_only_summary, "emitted_stdout_sha256")
+    refute Map.has_key?(stdout_only_summary, "emitted_stderr_sha256")
+
+    assert gappy_summary["output_complete"] == false
+    refute Map.has_key?(gappy_summary, "stdout")
+    refute Map.has_key?(gappy_summary, "stderr")
+  end
+
   test "recent history exposes a terminal failure cause only when recorded", %{
     conn: conn,
     account: account,

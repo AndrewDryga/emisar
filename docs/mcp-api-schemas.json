@@ -377,13 +377,11 @@
         "exit_code": {"type": ["integer", "null"]},
         "duration_ms": {"type": "integer", "minimum": 0},
         "error_message": {"type": "string", "maxLength": 1024, "x-maxUtf8Bytes": 1024, "description": "Bounded persisted terminal failure or refusal cause, when one was recorded."},
-        "stdout": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stdout."},
-        "stderr": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stderr."},
+        "stdout": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stdout. A stream that produced no bytes omits its preview, byte-count, and truncation fields entirely."},
+        "stderr": {"type": "string", "maxLength": 16384, "x-maxUtf8Bytes": 16384, "description": "Bounded UTF-8 preview of runner-redacted stderr. A stream that produced no bytes omits its preview, byte-count, and truncation fields entirely."},
         "emitted_stdout_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stdout bytes emitted within the runner's output cap."},
         "emitted_stderr_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stderr bytes emitted within the runner's output cap."},
-        "emitted_stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stdout emitted within the runner's output cap."},
-        "emitted_stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of normalized, redacted stderr emitted within the runner's output cap."},
-        "output_complete": {"type": "boolean", "description": "True when every progress chunk the runner reports emitting was durably received; false means the previews may have gaps."},
+        "output_complete": {"const": false, "description": "Present only when the runner or portal detected a missing progress chunk on a terminal run; the previews may then contain gaps. Complete output omits this field."},
         "local_audit_failed": {"const": true, "description": "The runner could not persist the terminal or refusal event in its local audit journal. The action status remains authoritative."},
         "truncated_stdout": {"type": "boolean"},
         "truncated_stderr": {"type": "boolean"},
@@ -411,10 +409,6 @@
         {
           "if": {"properties": {"status": {"const": "sent"}}},
           "then": {"required": ["wait_until"]}
-        },
-        {
-          "if": {"properties": {"status": {"enum": ["success", "failed", "error", "validation_failed", "unknown_action", "cancelled", "timed_out", "refused", "denied"]}}},
-          "then": {"required": ["output_complete"]}
         }
       ]
     },

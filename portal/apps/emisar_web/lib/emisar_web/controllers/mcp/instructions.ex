@@ -43,6 +43,9 @@ defmodule EmisarWeb.MCP.Instructions do
   state only; cancellation never cancels infrastructure work.
   - Use `recent_runs` for bounded output and history. `scope: "own"` follows this credential \
   lineage across key rotation; `scope: "account"` is the authorized account-wide diagnostic view.
+  - Run summaries omit zero-information fields: a stream that produced no bytes has no \
+  `stdout`/`stderr` fields, and `output_complete` appears only when false. An absent output field \
+  means no output, not an error.
 
   Runbooks:
   - `list_runbooks` and `get_runbook` expose exact immutable published refs such as \

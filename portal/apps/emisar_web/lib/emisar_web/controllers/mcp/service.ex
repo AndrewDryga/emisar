@@ -116,7 +116,7 @@ defmodule EmisarWeb.MCP.Service do
     Enum.map(runs, &fixed_run_summary(&1, subject, stream_cap))
   end
 
-  @doc "Renders one fixed-contract run summary."
+  @doc "Renders one fixed-contract run summary. A stream that produced no bytes is omitted."
   def fixed_run_summary(run, subject, stream_cap \\ 16_384) do
     output_preview = run_output_preview(run, subject, stream_cap)
     {approval, approval_wait_until} = fixed_approval(run, subject)
@@ -135,37 +135,58 @@ defmodule EmisarWeb.MCP.Service do
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
       error_message: fixed_error_message(run),
-      stdout: output_preview.stdout,
-      stderr: output_preview.stderr,
-      emitted_stdout_bytes: run.emitted_stdout_bytes,
-      emitted_stderr_bytes: run.emitted_stderr_bytes,
-      emitted_stdout_sha256: run.emitted_stdout_sha256,
-      emitted_stderr_sha256: run.emitted_stderr_sha256,
-      output_complete: terminal_output_complete(run),
+      output_complete: if(terminal_output_complete(run) == false, do: false),
       local_audit_failed: if(run.local_audit_failed, do: true),
-      truncated_stdout:
-        output_truncated?(
-          output_preview.stdout,
-          run.emitted_stdout_bytes,
-          run.stdout_truncated,
-          output_preview.stdout_truncated,
-          output_preview.output_events_truncated
-        ),
-      truncated_stderr:
-        output_truncated?(
-          output_preview.stderr,
-          run.emitted_stderr_bytes,
-          run.stderr_truncated,
-          output_preview.stderr_truncated,
-          output_preview.output_events_truncated
-        ),
       approval: approval,
       wait_until: approval_wait_until || fixed_wait_until(run),
       next: fixed_run_next(run),
       run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
     }
+    |> Map.merge(stream_summary(run, output_preview, :stdout))
+    |> Map.merge(stream_summary(run, output_preview, :stderr))
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  # A stream that produced no bytes carries no information: its preview, byte
+  # count, and truncation flag are omitted so terse results stay terse for LLM
+  # clients (`output_complete` mirrors this by appearing only when false).
+  defp stream_summary(run, %{stdout: preview} = output_preview, :stdout) do
+    if (run.emitted_stdout_bytes || 0) == 0 and preview == "" do
+      %{}
+    else
+      %{
+        stdout: preview,
+        emitted_stdout_bytes: run.emitted_stdout_bytes,
+        truncated_stdout:
+          output_truncated?(
+            preview,
+            run.emitted_stdout_bytes,
+            run.stdout_truncated,
+            output_preview.stdout_truncated,
+            output_preview.output_events_truncated
+          )
+      }
+    end
+  end
+
+  defp stream_summary(run, %{stderr: preview} = output_preview, :stderr) do
+    if (run.emitted_stderr_bytes || 0) == 0 and preview == "" do
+      %{}
+    else
+      %{
+        stderr: preview,
+        emitted_stderr_bytes: run.emitted_stderr_bytes,
+        truncated_stderr:
+          output_truncated?(
+            preview,
+            run.emitted_stderr_bytes,
+            run.stderr_truncated,
+            output_preview.stderr_truncated,
+            output_preview.output_events_truncated
+          )
+      }
+    end
   end
 
   defp output_truncated?(

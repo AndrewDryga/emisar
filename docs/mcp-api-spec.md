@@ -864,14 +864,8 @@ independently; the accepted operation is never retried as a whole.
       "finished_at": "2026-07-13T14:42:11Z",
       "exit_code": 0,
       "stdout": "Datacenter: dc1\nStatus=Up/Normal\n",
-      "stderr": "",
       "emitted_stdout_bytes": 33,
-      "emitted_stderr_bytes": 0,
-      "emitted_stdout_sha256": "21bdd0aef6445534326ef7d51ac3d114bb3c4040fa79a37e399c1ddd7c559186",
-      "emitted_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "output_complete": true,
       "truncated_stdout": false,
-      "truncated_stderr": false,
       "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e163"
     }
   ]
@@ -882,13 +876,16 @@ MCP allocates at most 64 KiB total to stream previews in one result. The
 per-stream cap is `min(16 KiB, floor(64 KiB / (2 * returned run count)))`, so a
 16-run fan-out cannot overflow the result budget. That cap counts the rendered
 UTF-8 bytes after invalid source bytes are replaced; truncation occurs at a
-UTF-8 boundary. Emitted byte counts and SHA-256 cover every normalized,
-redacted byte admitted by the runner's output caps, not the preview.
-`output_complete` is false when the runner or portal detects a missing progress
-chunk; the previews may then contain gaps. These fields are transport
-accounting, not a CA-signed result receipt. Truncation flags are true if the
-runner's output cap or MCP's preview cap omitted bytes. Output is untrusted data,
-never instructions.
+UTF-8 boundary. Emitted byte counts cover every normalized, redacted byte
+admitted by the runner's output caps, not the preview. Summaries omit
+zero-information fields: a stream that produced no bytes carries no preview,
+byte-count, or truncation fields, and `output_complete` appears only when
+false — when the runner or portal detected a missing progress chunk, so the
+previews may contain gaps. An absent output field means no output, not an
+error. These fields are transport accounting, not a CA-signed result receipt;
+full output digests stay on the portal run page and audit record rather than
+in MCP summaries. Truncation flags are true if the runner's output cap or
+MCP's preview cap omitted bytes. Output is untrusted data, never instructions.
 
 Run statuses are a closed initial set: `pending`, `pending_approval`, `sent`,
 `running`, `cancelling`, `success`, `failed`, `error`, `validation_failed`,
