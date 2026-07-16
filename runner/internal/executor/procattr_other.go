@@ -1,17 +1,8 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package executor
 
-import (
-	"fmt"
-	"os/exec"
-	"runtime"
-)
+import "os/exec"
 
-// applyProcAttr is a no-op on non-Linux because Pdeathsig and process-group
-// signaling use Linux-specific process attributes.
+// applyProcAttr is a no-op on platforms without process-group containment.
 func applyProcAttr(_ *exec.Cmd) {}
-
-func applyCredential(_ *exec.Cmd, username string) error {
-	return fmt.Errorf("execution.user %q is unsupported on %s", username, runtime.GOOS)
-}
