@@ -60,6 +60,80 @@ case "$module" in
     test "$before" = "$after"
     grep -Fq "restored previous binary after failed upgrade" "$tmp/failure.log"
 
+    # A new strict runner must be able to repair an older malformed official
+    # pack before startup. Exercise the installer's exact orchestration with a
+    # fake binary: the first full load fails, pack update repairs it, and the
+    # second full load succeeds.
+    repair_lib="$tmp/repair-installed-packs.sh"
+    extract_shell_function install.sh repair_installed_packs >"$repair_lib"
+    extract_shell_function install.sh verify_installed_packs >>"$repair_lib"
+    mkdir -p "$tmp/repair-bin" "$tmp/repair-etc/packs/cloud-init"
+    cat >"$tmp/repair-bin/emisar" <<'FAKE_EMISAR'
+#!/bin/sh
+set -eu
+case "$*" in
+  "pack list --packs-dir "*) test -f "$EMISAR_REPAIR_MARKER" ;;
+  "pack update --packs-dir "*) : >"$EMISAR_REPAIR_MARKER" ;;
+  *) exit 2 ;;
+esac
+FAKE_EMISAR
+    chmod +x "$tmp/repair-bin/emisar"
+    (
+      # shellcheck disable=SC1090
+      source "$repair_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2329
+      warn() { :; }
+      # shellcheck disable=SC2329
+      die() { echo "$*" >&2; exit 1; }
+      export EMISAR_REPAIR_MARKER="$tmp/repaired"
+      BIN_DIR="$tmp/repair-bin" ETC_DIR="$tmp/repair-etc" \
+        repair_installed_packs
+      BIN_DIR="$tmp/repair-bin" ETC_DIR="$tmp/repair-etc" \
+        verify_installed_packs
+    )
+    test -f "$tmp/repaired"
+
+    # systemctl start succeeding is insufficient: Type=simple can exit one
+    # moment later. The installer must reject an activating/restart-loop state
+    # and accept only active.
+    systemd_lib="$tmp/require-systemd-active.sh"
+    extract_shell_function install.sh require_systemd_service_active >"$systemd_lib"
+    mkdir -p "$tmp/fake-systemd-bin"
+    cat >"$tmp/fake-systemd-bin/systemctl" <<'FAKE_SYSTEMCTL'
+#!/bin/sh
+set -eu
+if [ "$1" = "is-active" ]; then
+  echo "${FAKE_SYSTEMD_STATE}"
+  [ "${FAKE_SYSTEMD_STATE}" = active ]
+fi
+FAKE_SYSTEMCTL
+    chmod +x "$tmp/fake-systemd-bin/systemctl"
+    if (
+      # shellcheck disable=SC1090
+      source "$systemd_lib"
+      # Called by the sourced installer function.
+      # shellcheck disable=SC2329
+      die() { echo "$*" >&2; exit 1; }
+      SERVICE_STARTED=0
+      PATH="$tmp/fake-systemd-bin:$PATH" FAKE_SYSTEMD_STATE=activating \
+        require_systemd_service_active
+    ) >"$tmp/systemd-failure.log" 2>&1; then
+      echo "installer accepted an activating runner service" >&2
+      exit 1
+    fi
+    grep -Fq "did not stay active" "$tmp/systemd-failure.log"
+    (
+      # shellcheck disable=SC1090
+      source "$systemd_lib"
+      # shellcheck disable=SC2329
+      die() { echo "$*" >&2; exit 1; }
+      SERVICE_STARTED=0
+      PATH="$tmp/fake-systemd-bin:$PATH" FAKE_SYSTEMD_STATE=active \
+        require_systemd_service_active
+      test "$SERVICE_STARTED" = 1
+    )
+
     # launchd has no EnvironmentFile directive. Execute the exact wrapper
     # embedded in install.sh and prove it exports runner.env before replacing
     # itself with the runner, while preserving a config path with spaces.

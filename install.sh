@@ -57,6 +57,7 @@ PRE_PACKS="${EMISAR_PACKS:-}"     # the explicit list itself (may be empty)
 PACKS_EXPLICIT=0; [ -n "${EMISAR_PACKS+set}" ] && PACKS_EXPLICIT=1
 NO_START="${NO_START:-0}"
 NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
+SERVICE_STARTED=0
 MODE="install"                    # install|uninstall
 
 usage() {
@@ -967,6 +968,30 @@ install_named_packs() {
 
 }
 
+# A strict runner can reject an older malformed pack before `pack update` gets
+# a chance to replace it. The updater inspects packs independently, so use it
+# once before host detection and then require the complete tree to load.
+repair_installed_packs() {
+  local dst="${ETC_DIR}/packs"
+  [ -d "${dst}" ] || return 0
+  if "${BIN_DIR}/emisar" pack list --packs-dir "${dst}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  warn "installed pack validation failed; repairing official packs from the registry"
+  "${BIN_DIR}/emisar" pack update --packs-dir "${dst}" || \
+    die "could not repair installed packs; fix or remove the invalid local pack shown above"
+}
+
+verify_installed_packs() {
+  local dst="${ETC_DIR}/packs" output
+  [ -d "${dst}" ] || return 0
+  if ! output=$("${BIN_DIR}/emisar" pack list --packs-dir "${dst}" 2>&1); then
+    die "installed pack validation failed:
+${output}"
+  fi
+}
+
 secure_pack_tree() {
   local dst="${ETC_DIR}/packs"
   [ -d "${dst}" ] || return 0
@@ -1018,14 +1043,13 @@ start_service() {
   fi
   case "${INIT}" in
     systemd)
-      if systemctl is-active --quiet emisar.service; then
-        log "restarting emisar.service (upgrade)"
-        systemctl restart emisar.service
-      else
-        log "starting emisar.service"
-        systemctl start emisar.service
-      fi
-      systemctl --no-pager --full status emisar.service || true
+      log "starting emisar.service"
+      systemctl restart emisar.service
+      # Type=simple can report a successful start immediately before the
+      # process exits. Give startup validation time to fail, then require the
+      # service to be genuinely active rather than auto-restarting.
+      sleep 2
+      require_systemd_service_active
       ;;
     launchd)
       local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
@@ -1036,6 +1060,17 @@ start_service() {
       launchctl print system/com.emisar.runner || true
       ;;
   esac
+}
+
+require_systemd_service_active() {
+  local state
+  state="$(systemctl is-active emisar.service 2>/dev/null || true)"
+  if [ "${state}" != "active" ]; then
+    systemctl --no-pager --full status emisar.service || true
+    die "emisar.service did not stay active (systemd state: ${state:-unknown})"
+  fi
+  SERVICE_STARTED=1
+  systemctl --no-pager --full status emisar.service || true
 }
 
 stop_service_if_running() {
@@ -1136,6 +1171,7 @@ do_install() {
 
   ensure_dirs
   activate_binary
+  repair_installed_packs
   # EMISAR_PACKS set (even empty) or --packs given ⇒ the pack set is
   # explicit: install exactly it, never host-detect or suggest.
   if [ "${PACKS_EXPLICIT}" = "1" ]; then
@@ -1144,6 +1180,7 @@ do_install() {
     install_default_packs "${extracted}"
     install_suggested_packs
   fi
+  verify_installed_packs
   secure_pack_tree
   drop_config_skeleton
 
@@ -1194,7 +1231,14 @@ EOF
 
   case "${INIT}" in
     systemd)
-      if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+      if [ "${SERVICE_STARTED}" = "1" ]; then
+        cat <<EOF
+
+The service is running. Check status / logs:
+  sudo systemctl status emisar
+  sudo journalctl -u emisar -f
+EOF
+      else
         cat <<EOF
   3. Start the service:
        sudo systemctl start emisar
@@ -1203,13 +1247,6 @@ EOF
   4. Check status / logs:
        sudo systemctl status emisar
        sudo journalctl -u emisar -f
-EOF
-      else
-        cat <<EOF
-
-The service is running. Check status / logs:
-  sudo systemctl status emisar
-  sudo journalctl -u emisar -f
 EOF
       fi
       ;;

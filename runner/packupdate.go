@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // registryPack is one entry of the registry's /packs.json index — the
@@ -24,6 +27,14 @@ type registryPack struct {
 	ID      string `json:"id"`
 	Version string `json:"version"`
 	Hash    string `json:"hash"`
+}
+
+type installedPack struct {
+	id      string
+	version string
+	hash    string
+	root    string
+	loadErr error
 }
 
 func packUpdateCmd() *cobra.Command {
@@ -79,42 +90,54 @@ sudo systemctl reload emisar
 			var updated, current, skipped, failed int
 
 			for _, dir := range dirs {
-				reg, err := packs.LoadAll([]string{dir}, packs.LoadOptions{})
+				installed, err := inspectInstalledPacks(dir)
 				if err != nil {
-					return fmt.Errorf("load installed packs from %s: %w", dir, err)
+					return err
 				}
-				for _, p := range reg.Packs() {
-					seen[p.ID] = true
-					if len(only) > 0 && !only[p.ID] {
+				for _, p := range installed {
+					seen[p.id] = true
+					if len(only) > 0 && !only[p.id] {
 						continue
 					}
 
-					rp, inRegistry := index[p.ID]
+					rp, inRegistry := index[p.id]
 					if !inRegistry {
-						fmt.Printf("  %-22s not in registry — left as-is\n", p.ID)
-						skipped++
+						if p.loadErr != nil {
+							fmt.Printf("  %-22s invalid and not in registry — left as-is: %v\n", p.id, p.loadErr)
+							failed++
+						} else {
+							fmt.Printf("  %-22s not in registry — left as-is\n", p.id)
+							skipped++
+						}
 						continue
 					}
 
-					installed, _ := reg.PackHash(p.ID)
-					if hashEqual(installed, rp.Hash) {
-						fmt.Printf("  %-22s up to date (v%s)\n", p.ID, p.Version)
+					if p.loadErr == nil && hashEqual(p.hash, rp.Hash) {
+						fmt.Printf("  %-22s up to date (v%s)\n", p.id, p.version)
 						current++
 						continue
 					}
 
 					if dryRun {
-						fmt.Printf("  %-22s v%s → v%s (update available)\n", p.ID, p.Version, rp.Version)
+						if p.loadErr != nil {
+							fmt.Printf("  %-22s invalid install → v%s (repair available)\n", p.id, rp.Version)
+						} else {
+							fmt.Printf("  %-22s v%s → v%s (update available)\n", p.id, p.version, rp.Version)
+						}
 						updated++
 						continue
 					}
 
-					if err := updateOnePack(cmd.Context(), p.ID, dir, registry, rp); err != nil {
-						fmt.Printf("  %-22s update FAILED: %v\n", p.ID, err)
+					if err := updateOnePack(cmd.Context(), p.id, p.root, registry, rp); err != nil {
+						fmt.Printf("  %-22s update FAILED: %v\n", p.id, err)
 						failed++
 						continue
 					}
-					fmt.Printf("  %-22s v%s → v%s updated\n", p.ID, p.Version, rp.Version)
+					if p.loadErr != nil {
+						fmt.Printf("  %-22s invalid install → v%s repaired\n", p.id, rp.Version)
+					} else {
+						fmt.Printf("  %-22s v%s → v%s updated\n", p.id, p.version, rp.Version)
+					}
 					updated++
 				}
 			}
@@ -134,20 +157,29 @@ sudo systemctl reload emisar
 
 			fmt.Println()
 			if dryRun {
-				fmt.Printf("%d to update, %d up to date, %d not in registry.\n", updated, current, skipped)
+				fmt.Printf("%d to update, %d up to date, %d not in registry, %d failed.\n",
+					updated, current, skipped, failed)
 				if updated > 0 {
 					fmt.Println("Run without --dry-run to apply.")
+				}
+				if failed > 0 {
+					return fmt.Errorf("%d pack(s) failed to update", failed)
 				}
 				return nil
 			}
 
-			fmt.Printf("%d updated, %d up to date, %d not in registry, %d failed.\n",
-				updated, current, skipped, failed)
+			if failed > 0 {
+				fmt.Printf("%d updated, %d up to date, %d not in registry, %d failed.\n",
+					updated, current, skipped, failed)
+				return fmt.Errorf("%d pack(s) failed to update", failed)
+			}
+			if _, err := packs.LoadAll(dirs, packs.LoadOptions{}); err != nil {
+				return fmt.Errorf("validate installed packs after update: %w", err)
+			}
+			fmt.Printf("%d updated, %d up to date, %d not in registry, 0 failed.\n",
+				updated, current, skipped)
 			if updated > 0 {
 				fmt.Println("Reload the runner to load the new versions: sudo systemctl reload emisar")
-			}
-			if failed > 0 {
-				return fmt.Errorf("%d pack(s) failed to update", failed)
 			}
 			return nil
 		},
@@ -157,10 +189,69 @@ sudo systemctl reload emisar
 	return cmd
 }
 
+// inspectInstalledPacks deliberately loads each pack independently. A broken
+// official pack must remain discoverable so `pack update` can replace it; the
+// runtime's all-or-nothing loader still fails closed on the same bytes.
+func inspectInstalledPacks(dir string) ([]installedPack, error) {
+	roots, err := installedPackRoots(dir)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]installedPack, 0, len(roots))
+	for _, root := range roots {
+		fallbackID := filepath.Base(root)
+		reg, err := packs.LoadOne(root, packs.LoadOptions{})
+		if err != nil {
+			if !packspec.ValidPackID(fallbackID) {
+				return nil, fmt.Errorf("inspect installed pack %s: invalid directory id and pack: %w", root, err)
+			}
+			result = append(result, installedPack{id: fallbackID, root: root, loadErr: err})
+			continue
+		}
+		pack := reg.Packs()[0]
+		hash, _ := reg.PackHash(pack.ID)
+		result = append(result, installedPack{
+			id: pack.ID, version: pack.Version, hash: hash, root: root,
+		})
+	}
+	return result, nil
+}
+
+func installedPackRoots(dir string) ([]string, error) {
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect installed packs in %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("inspect installed packs: %s is not a directory", dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pack.yaml")); err == nil {
+		return []string{dir}, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("inspect installed packs in %s: %w", dir, err)
+	}
+	roots := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		root := filepath.Join(dir, entry.Name())
+		if _, err := os.Stat(filepath.Join(root, "pack.yaml")); err == nil {
+			roots = append(roots, root)
+		}
+	}
+	return roots, nil
+}
+
 // updateOnePack fetches id from the registry, verifies it validates and its
 // hash matches the index, then replaces it through the rollback-safe shared
 // pack installer. A failed stage or activation leaves the old tree available.
-func updateOnePack(ctx context.Context, id, dir, registry string, rp registryPack) error {
+func updateOnePack(ctx context.Context, id, target, registry string, rp registryPack) error {
 	url := strings.TrimRight(registry, "/") + "/packs/" + id + "/pack.tar.gz"
 	src, cleanup, err := packs.Fetch(ctx, url, nil)
 	if err != nil {
@@ -183,7 +274,6 @@ func updateOnePack(ctx context.Context, id, dir, registry string, rp registryPac
 		return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", normalizeHash(rp.Hash), got)
 	}
 
-	target := filepath.Join(dir, id)
 	return replacePackTree(src, target, true)
 }
 

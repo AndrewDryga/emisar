@@ -93,7 +93,7 @@ func TestUpdateOnePack_VerifiesHashAndReplacesSafely(t *testing.T) {
 
 	// Wrong hash → rejected before any swap; the old install stays intact.
 	bad := registryPack{ID: id, Hash: "sha256:" + strings.Repeat("1", 64)}
-	if err := updateOnePack(context.Background(), id, dest, srv.URL, bad); err == nil {
+	if err := updateOnePack(context.Background(), id, installed, srv.URL, bad); err == nil {
 		t.Fatal("expected hash-mismatch rejection")
 	}
 	if _, err := os.Stat(filepath.Join(installed, "OLD")); err != nil {
@@ -102,7 +102,7 @@ func TestUpdateOnePack_VerifiesHashAndReplacesSafely(t *testing.T) {
 
 	// Correct hash → fetched pack swapped in.
 	good := registryPack{ID: id, Version: "9.9.9", Hash: hash}
-	if err := updateOnePack(context.Background(), id, dest, srv.URL, good); err != nil {
+	if err := updateOnePack(context.Background(), id, installed, srv.URL, good); err != nil {
 		t.Fatalf("updateOnePack: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(installed, "OLD")); !os.IsNotExist(err) {
@@ -266,6 +266,64 @@ func TestPackUpdate_NotInRegistryLeftAsIs(t *testing.T) {
 	}
 }
 
+func TestPackUpdate_RepairsInvalidRegistryPack(t *testing.T) {
+	dest := t.TempDir()
+	fixed := writeSourcePack(t, "cloud-init")
+	fixedHash := packHashOnDisk(t, fixed, "cloud-init")
+	installed := filepath.Join(dest, "cloud-init")
+	if err := copyTree(fixed, installed); err != nil {
+		t.Fatal(err)
+	}
+	makeInstalledPackInvalid(t, installed)
+
+	registry := fakeRegistry(t,
+		[]registryPack{{ID: "cloud-init", Version: "0.0.2", Hash: fixedHash}},
+		map[string][]byte{"cloud-init": tarDir(t, fixed)},
+	)
+
+	out, err := runUpdate(t, dest, registry)
+	if err != nil {
+		t.Fatalf("repair invalid pack: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "invalid install") || !strings.Contains(out, "repaired") {
+		t.Fatalf("repair was not reported clearly:\n%s", out)
+	}
+	if _, err := packs.LoadOne(installed, packs.LoadOptions{}); err != nil {
+		t.Fatalf("repaired pack is still invalid: %v", err)
+	}
+	if got := packHashOnDisk(t, installed, "cloud-init"); got != fixedHash {
+		t.Fatalf("repaired hash=%s, want %s", got, fixedHash)
+	}
+}
+
+func TestPackUpdate_InvalidLocalPackFailsAndStaysUntouched(t *testing.T) {
+	dest := t.TempDir()
+	installed := filepath.Join(dest, "homegrown")
+	if err := copyTree(writeSourcePack(t, "homegrown"), installed); err != nil {
+		t.Fatal(err)
+	}
+	makeInstalledPackInvalid(t, installed)
+	invalidBefore, err := os.ReadFile(filepath.Join(installed, "actions", "a.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdate(t, dest, fakeRegistry(t, nil, nil))
+	if err == nil {
+		t.Fatal("invalid local pack did not make update fail")
+	}
+	if !strings.Contains(out, "invalid and not in registry") {
+		t.Fatalf("invalid local pack was not explained:\n%s", out)
+	}
+	invalidAfter, readErr := os.ReadFile(filepath.Join(installed, "actions", "a.yaml"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(invalidAfter, invalidBefore) {
+		t.Fatal("invalid local pack was modified")
+	}
+}
+
 // `pack update --dry-run` reports the available move (vX → vY) but touches
 // nothing on disk (packupdate.go:105-109), and leaves no staging dir behind.
 // The installed hash differs from the index's, so a real run would update — the
@@ -404,6 +462,18 @@ func mutateInstalledHash(t *testing.T, dest, id string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(p, append(data, []byte("\n# local edit\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeInstalledPackInvalid(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "actions", "a.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, []byte("cancel_grace: 60s\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
