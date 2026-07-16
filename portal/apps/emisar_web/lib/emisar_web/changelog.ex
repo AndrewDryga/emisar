@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-16],
+      slug: "upgrade-safe-runners-and-honest-fleet-alarms",
+      title: "Upgrade-safe runners and honest fleet alarms",
+      tag: "v0.28.0",
+      summary:
+        "Runner upgrades now migrate the durable dispatch log across format and location changes instead of silently refusing every dispatch afterwards, and one broken installed pack degrades just that pack — named on the runner page and in MCP diagnostics with its load error — rather than crash-looping the whole runner. An offline runner now wears its connection story instead of tamper-flavored trust alarms about a stale advertisement. The installer verifies dispatch state with the staged binary before touching a running service, and emisar doctor explains a corrupt dispatch log, a degraded pack, and the last cloud rejection offline. Sign-in enforcement for SSO and MFA requirements now covers every controller route, SCIM and other machine endpoints are rate-limited, runner connections assert a TLS 1.2 floor, and operators get direct alerts for database-down and no-healthy-backend conditions."
+    },
+    %{
+      date: ~D[2026-07-16],
       slug: "reliable-runner-startup-and-clearer-mcp-failures",
       title: "Reliable runner startup and clearer MCP failures",
       tag: "v0.27.0",
