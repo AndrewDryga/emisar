@@ -189,6 +189,20 @@ done
 expect_link .codex/skills ../.claude/skills
 expect_link .gemini/skills ../.claude/skills
 
+# The sweep Stop guard is SCOPED to the /workflow-sweep skill (its frontmatter hook + a
+# sibling queue-guard.sh), never the retired repo-global stop-guard.sh + .sweep-active sentinel
+# + a Stop hook in .claude/settings.json (coop retired that pattern).
+check_sweep_guard() {
+  [[ -f .claude/skills/workflow-sweep/queue-guard.sh ]] || fail "the scoped sweep queue-guard.sh is missing"
+  rg -q 'queue-guard\.sh' .claude/skills/workflow-sweep/SKILL.md || fail "workflow-sweep frontmatter no longer declares its scoped Stop hook"
+  [[ ! -e .claude/hooks/stop-guard.sh ]] || fail "retired repo-global stop-guard.sh is back — the sweep guard is skill-scoped now"
+  [[ ! -e .claude/.sweep-active ]] || fail "retired .sweep-active sentinel is back — the sweep guard is skill-scoped now"
+  if rg -q '"Stop"' .claude/settings.json 2>/dev/null; then
+    fail ".claude/settings.json carries a project-global Stop hook — the sweep guard is skill-scoped now"
+  fi
+  ok "sweep Stop guard is skill-scoped; no retired global guard/sentinel"
+}
+
 check_manual_text
 check_skill_text
 check_coop
@@ -196,6 +210,7 @@ check_task_dirs
 check_rule_names
 check_skills
 check_public_skills
+check_sweep_guard
 
 if [[ "$failures" -gt 0 ]]; then
   printf '\nLLM setup audit failed: %d issue(s)\n' "$failures" >&2

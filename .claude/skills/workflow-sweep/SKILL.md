@@ -1,9 +1,14 @@
 ---
 name: workflow-sweep
-description: Drain a project's .agent/tasks/ queue autonomously and run-to-completion, taking EACH task to a ship-ready bar — `coop tasks claim` a 00_todo/ task, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the .agent/rules KB) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and `coop tasks done` — without quitting early. Arms the Stop-hook sentinel for the run. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended sweep.
+description: Drain a project's .agent/tasks/ queue autonomously and run-to-completion, taking EACH task to a ship-ready bar — `coop tasks claim` a 00_todo/ task, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the .agent/rules KB) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and `coop tasks done` — without quitting early. A Stop hook scoped to this skill blocks quitting while any task is actionable. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended sweep.
 effort: max
 argument-hint: "[project: portal|runner|mcp|packs — default: every project with open tasks]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/workflow-sweep/queue-guard.sh"'
 ---
 
 # /workflow-sweep — drain the tasks queue to a ship-ready bar, one commit per task
@@ -21,15 +26,17 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 *check the diff against them*. Don't trust your first draft; review it and fix it.
 
 ## 1. Arm
-- `touch .claude/.sweep-active` — arms `stop-guard.sh`: until you disarm, trying to stop while
-  any `00_todo/` task remains is blocked. (Sentinel is git-ignored.)
+- The Stop hook is already armed: it's declared in this skill's frontmatter, scoped to the
+  skill's lifetime, so while `/workflow-sweep` is active any Stop attempt is blocked until
+  every `00_todo/`+`10_in_progress/` task is finished or blocked. Nothing to touch — no
+  sentinel file. (It releases automatically when the skill ends.)
 - Read the project's `AGENTS.md` in full — the gate **and the rule index** (portal Iron Laws +
   House opinions; runner/mcp security posture + Go house style; pack conventions) — **and every
   `<project>/.agent/rules/*.md`** (the worked-example taste KB). These are the bar you build to,
   not just check against — load them before you touch code. (You'll announce the queue after the tidy step — next.)
 - **Optional `/goal`** — you may set a run goal (`/goal drain <project>'s queue: every task
   house-rule-clean, ship-review-clean and committed; don't stop`) to harden don't-quit-early on
-  top of the sentinel, and/or a **per-task `/goal`** for a stubborn item so its
+  top of the scoped hook, and/or a **per-task `/goal`** for a stubborn item so its
   build→review→iterate cycle runs to completion. Clear it at Finish.
 
 ## 2. Tidy the working state (before the first task)
@@ -115,10 +122,12 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
 - No `00_todo/` task left: **completeness pass** — re-verify every `99_done/` task against
   `git log` (one commit each) and that none shipped with an unaddressed review blocker or a
   house-rule violation.
-- **Disarm** — `rm -f .claude/.sweep-active` (and `/goal clear` if you set a run goal).
+- **Wind down** — `/goal clear` if you set a run goal. The scoped Stop hook releases on its own
+  when the skill ends; there is no sentinel to remove.
 - Report: tasks done (task ids + what the review caught/fixed + any rule recorded), tasks blocked (+ why), queue/backlog adds.
 
 ## Aborting / resuming
-An interrupted sweep deliberately leaves the sentinel in place so the next session resumes the
-queue (the Stop hook keeps it honest). Stop for real: `rm .claude/.sweep-active`. Don't
+The guard only holds while the skill is active, and it reads live queue state — so to stop for
+real, finish or `coop tasks block` the remaining actionable tasks (an interrupted sweep is
+resumed by re-invoking `/workflow-sweep`, which re-arms the hook and reads the same queue). Don't
 auto-reclaim an orphaned `10_in_progress/` task unless you're sure it's dead, not a live parallel claim.
