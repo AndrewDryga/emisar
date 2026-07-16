@@ -11,6 +11,14 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-15],
+      slug: "durable-execution-and-native-mcp",
+      title: "Durable execution and a tighter MCP boundary",
+      tag: "v0.25.0",
+      summary:
+        "Runner execution now begins only after durable audit evidence and remains bound to the trusted pack, dispatch record, output digest, and terminal result. The runner also contains cancelled process trees, rejects ambiguous paths and inexact numeric limits, and redacts secrets across log rotation. The native MCP endpoint now exposes twelve server-owned tools with bounded waits, crash-durable mutation recovery, and safer key promotion. Coordinated installers, rollback-aware releases, multi-zone delivery, and clearer connector setup make the operating path easier to inspect."
+    },
+    %{
       date: ~D[2026-07-13],
       slug: "delivery-trust-and-mcp-discovery",
       title: "Stronger delivery controls and clearer trust evidence",
