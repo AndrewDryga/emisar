@@ -2,6 +2,7 @@ package actionspec
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"time"
 
@@ -109,7 +110,41 @@ func (a Arg) Validate() error {
 			return fmt.Errorf("arg %s: validation.max_length must be positive, got %d", a.Name, *a.Validation.MaxLength)
 		}
 	}
+	if a.Validation != nil && (a.Validation.Min != nil || a.Validation.Max != nil) {
+		if a.Type != ArgInteger && a.Type != ArgIntegerArray && a.Type != ArgNumber {
+			return fmt.Errorf("arg %s: validation.min/max is only valid on numeric args, not %q", a.Name, a.Type)
+		}
+		for _, bound := range []struct {
+			name                  string
+			value                 *float64
+			allowMaxInt64Boundary bool
+		}{
+			{name: "min", value: a.Validation.Min},
+			{name: "max", value: a.Validation.Max, allowMaxInt64Boundary: true},
+		} {
+			if bound.value == nil {
+				continue
+			}
+			if math.IsNaN(*bound.value) || math.IsInf(*bound.value, 0) {
+				return fmt.Errorf("arg %s: validation.%s must be finite", a.Name, bound.name)
+			}
+			if (a.Type == ArgInteger || a.Type == ArgIntegerArray) &&
+				!validIntegerBound(*bound.value, bound.allowMaxInt64Boundary) {
+				return fmt.Errorf("arg %s: validation.%s must be an int64", a.Name, bound.name)
+			}
+		}
+		if a.Validation.Min != nil && a.Validation.Max != nil && *a.Validation.Min > *a.Validation.Max {
+			return fmt.Errorf("arg %s: validation.min must not exceed validation.max", a.Name)
+		}
+	}
 	return nil
+}
+
+func validIntegerBound(bound float64, allowMaxInt64Boundary bool) bool {
+	const maxInt64Exclusive = float64(1 << 63)
+
+	return math.Trunc(bound) == bound && bound >= float64(math.MinInt64) &&
+		(bound < maxInt64Exclusive || allowMaxInt64Boundary && bound == maxInt64Exclusive)
 }
 
 // Duration is time.Duration with YAML string parsing ("30s", "5m", "24h").

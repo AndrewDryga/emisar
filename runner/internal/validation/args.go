@@ -229,20 +229,20 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 		}
 	}
 	if val.Min != nil {
-		f, ok := toFloat(v)
+		below, ok := belowNumericBound(a.Type, v, *val.Min)
 		if !ok {
 			return newError(a.Name, "min", "min requires numeric value")
 		}
-		if f < *val.Min {
+		if below {
 			return newError(a.Name, "min", "must be >= %v", *val.Min)
 		}
 	}
 	if val.Max != nil {
-		f, ok := toFloat(v)
+		above, ok := aboveNumericBound(a.Type, v, *val.Max)
 		if !ok {
 			return newError(a.Name, "max", "max requires numeric value")
 		}
-		if f > *val.Max {
+		if above {
 			return newError(a.Name, "max", "must be <= %v", *val.Max)
 		}
 	}
@@ -265,6 +265,27 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 		}
 	}
 	return nil
+}
+
+func belowNumericBound(argType actionspec.ArgType, value any, bound float64) (bool, bool) {
+	if argType == actionspec.ArgInteger || argType == actionspec.ArgIntegerArray {
+		integer, ok := value.(int64)
+		return ok && integer < int64(bound), ok
+	}
+	valueFloat, ok := toFloat(value)
+	return ok && valueFloat < bound, ok
+}
+
+func aboveNumericBound(argType actionspec.ArgType, value any, bound float64) (bool, bool) {
+	if argType == actionspec.ArgInteger || argType == actionspec.ArgIntegerArray {
+		integer, ok := value.(int64)
+		if bound == float64(1<<63) {
+			return false, ok
+		}
+		return ok && integer > int64(bound), ok
+	}
+	valueFloat, ok := toFloat(value)
+	return ok && valueFloat > bound, ok
 }
 
 // applyPathValidation runs path allow/deny rules. Works on string and

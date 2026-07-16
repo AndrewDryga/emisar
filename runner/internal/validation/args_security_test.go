@@ -28,6 +28,21 @@ func TestValidate_ExactJSONIntegerAboveFloatRange(t *testing.T) {
 	}
 }
 
+func TestValidate_IntegerBoundsStayExactAboveFloatRange(t *testing.T) {
+	max := float64(1 << 53)
+	schema := []actionspec.Arg{{
+		Name: "job_id", Type: actionspec.ArgInteger,
+		Validation: &actionspec.Validation{Max: &max},
+	}}
+
+	if _, err := Validate(schema, map[string]any{"job_id": json.Number("9007199254740992")}); err != nil {
+		t.Fatalf("exact boundary should pass: %v", err)
+	}
+	if _, err := Validate(schema, map[string]any{"job_id": json.Number("9007199254740993")}); err == nil {
+		t.Fatal("integer one above exact boundary passed after float rounding")
+	}
+}
+
 func TestValidate_StringLikeValuesHaveDefaultByteLimit(t *testing.T) {
 	tooLong := strings.Repeat("x", defaultMaxStringBytes+1)
 	for _, tc := range []struct {

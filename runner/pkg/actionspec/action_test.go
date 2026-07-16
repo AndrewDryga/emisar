@@ -1,6 +1,7 @@
 package actionspec
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -272,6 +273,43 @@ func TestArg_Validate_MaxLength(t *testing.T) {
 		if err := (Arg{Name: "a", Type: ArgString, Validation: &Validation{MaxLength: ptr(n)}}).Validate(); err == nil {
 			t.Errorf("max_length %d should be rejected", n)
 		}
+	}
+}
+
+func TestArg_Validate_NumericBounds(t *testing.T) {
+	ptr := func(n float64) *float64 { return &n }
+
+	for _, tc := range []struct {
+		name string
+		arg  Arg
+	}{
+		{name: "integer", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Min: ptr(-1), Max: ptr(1)}}},
+		{name: "integer array", arg: Arg{Name: "a", Type: ArgIntegerArray, Validation: &Validation{Max: ptr(1 << 53)}}},
+		{name: "max int64 rounded boundary", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Max: ptr(1 << 63)}}},
+		{name: "number", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Min: ptr(0.5)}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.arg.Validate(); err != nil {
+				t.Fatalf("valid numeric bounds rejected: %v", err)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		arg  Arg
+	}{
+		{name: "wrong type", arg: Arg{Name: "a", Type: ArgString, Validation: &Validation{Min: ptr(1)}}},
+		{name: "fractional integer", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Max: ptr(1.5)}}},
+		{name: "minimum overflow", arg: Arg{Name: "a", Type: ArgInteger, Validation: &Validation{Min: ptr(1 << 63)}}},
+		{name: "non-finite", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Max: ptr(math.Inf(1))}}},
+		{name: "reversed", arg: Arg{Name: "a", Type: ArgNumber, Validation: &Validation{Min: ptr(2), Max: ptr(1)}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.arg.Validate(); err == nil {
+				t.Fatal("invalid numeric bounds accepted")
+			}
+		})
 	}
 }
 
