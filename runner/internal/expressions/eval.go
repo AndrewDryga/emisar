@@ -19,6 +19,7 @@ package expressions
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +31,7 @@ import (
 // Whole-template expressions that resolve to arrays are an error here; use
 // RenderArgv if you want array expansion.
 func Render(tmpl string, args map[string]any) (string, error) {
-	s, _, err := renderTemplate(tmpl, args)
+	s, _, err := renderTemplate(tmpl, args, true)
 	return s, err
 }
 
@@ -38,7 +39,7 @@ func Render(tmpl string, args map[string]any) (string, error) {
 // reports whether any optional expression ("{{ args.x? }}") in tmpl resolved
 // to an empty value — RenderArgv uses that to drop the whole argv element,
 // while Render (env values, scalar rendering) ignores it and substitutes "".
-func renderTemplate(tmpl string, args map[string]any) (string, bool, error) {
+func renderTemplate(tmpl string, args map[string]any, allowMissingOptional bool) (string, bool, error) {
 	var b strings.Builder
 	dropEmpty := false
 	i := 0
@@ -56,7 +57,7 @@ func renderTemplate(tmpl string, args map[string]any) (string, bool, error) {
 		}
 		expr := strings.TrimSpace(tmpl[i : i+end])
 		i += end + 2
-		v, optional, err := resolve(expr, args)
+		v, optional, err := resolve(expr, args, allowMissingOptional)
 		if err != nil {
 			return "", false, fmt.Errorf("template %q: %w", expr, err)
 		}
@@ -99,11 +100,15 @@ func renderTemplate(tmpl string, args map[string]any) (string, bool, error) {
 // merges with or reorders its neighbors. A non-optional empty value still
 // renders its (possibly empty) token — only "?" opts an element into dropping.
 func RenderArgv(argv []string, args map[string]any) ([]string, error) {
+	return renderArgv(argv, args, true)
+}
+
+func renderArgv(argv []string, args map[string]any, allowMissingOptional bool) ([]string, error) {
 	out := make([]string, 0, len(argv))
 	for _, raw := range argv {
 		expr, ok := wholeExpression(raw)
 		if ok {
-			v, optional, err := resolve(expr, args)
+			v, optional, err := resolve(expr, args, allowMissingOptional)
 			if err != nil {
 				return nil, fmt.Errorf("argv %q: %w", raw, err)
 			}
@@ -125,7 +130,7 @@ func RenderArgv(argv []string, args map[string]any) ([]string, error) {
 			out = append(out, s)
 			continue
 		}
-		s, dropEmpty, err := renderTemplate(raw, args)
+		s, dropEmpty, err := renderTemplate(raw, args, allowMissingOptional)
 		if err != nil {
 			return nil, err
 		}
@@ -135,6 +140,28 @@ func RenderArgv(argv []string, args map[string]any) ([]string, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// ValidateReferences parses argv and env templates with the runtime grammar
+// while requiring every reference, including optional ones, to name a declared
+// argument. args should contain one format-compatible representative value for
+// each declaration.
+func ValidateReferences(argv []string, env map[string]string, args map[string]any) error {
+	if _, err := renderArgv(argv, args, false); err != nil {
+		return fmt.Errorf("argv: %w", err)
+	}
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := env[key]
+		if _, _, err := renderTemplate(value, args, false); err != nil {
+			return fmt.Errorf("env %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // RenderEnv renders every value in env. Keys are not templated.
@@ -158,7 +185,7 @@ func RenderEnv(env map[string]string, args map[string]any) (map[string]string, e
 // optional. Unknown variables and any other syntax (function calls, operators,
 // etc.) are errors; an absent arg is an error only when the expression is not
 // optional — an absent optional resolves to nil so callers can drop it.
-func resolve(expr string, args map[string]any) (any, bool, error) {
+func resolve(expr string, args map[string]any, allowMissingOptional bool) (any, bool, error) {
 	body, optional := splitOptional(expr)
 	const prefix = "args."
 	if !strings.HasPrefix(body, prefix) {
@@ -170,7 +197,7 @@ func resolve(expr string, args map[string]any) (any, bool, error) {
 	}
 	v, ok := args[name]
 	if !ok {
-		if optional {
+		if optional && allowMissingOptional {
 			return nil, true, nil
 		}
 		return nil, false, fmt.Errorf("unknown variable args.%s", name)

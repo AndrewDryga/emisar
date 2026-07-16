@@ -140,6 +140,21 @@ func TestRenderEnv(t *testing.T) {
 	}
 }
 
+func TestValidateReferences_RejectsUnknownOptionalArg(t *testing.T) {
+	err := ValidateReferences(
+		[]string{"{{ args.missing? }}"},
+		map[string]string{"KNOWN": "{{ args.keyspace }}", "TYPO": "{{ args.missing? }}"},
+		args(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown variable args.missing") {
+		t.Fatalf("ValidateReferences() error = %v", err)
+	}
+
+	if _, err := RenderArgv([]string{"{{ args.missing? }}"}, args()); err != nil {
+		t.Fatalf("runtime optional reference should remain optional: %v", err)
+	}
+}
+
 func TestRender_BooleanFormatting(t *testing.T) {
 	s, err := Render("flag={{ args.flag }}", args())
 	if err != nil {

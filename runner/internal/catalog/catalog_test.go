@@ -28,7 +28,10 @@ kind: exec
 risk: low
 description: reads
 side_effects: [none]
-args: []
+args:
+  - name: path
+    type: path
+    required: true
 execution:
   command:
     binary: cat

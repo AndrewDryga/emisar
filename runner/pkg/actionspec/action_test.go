@@ -535,6 +535,36 @@ func TestArg_Validate(t *testing.T) {
 	}
 }
 
+func TestArg_ValidateConstraintApplicability(t *testing.T) {
+	maxItems := 2
+	negativeItems := -1
+	minDuration := Duration(time.Minute)
+	maxDuration := Duration(time.Second)
+	cases := []struct {
+		name string
+		arg  Arg
+		ok   bool
+	}{
+		{"scalar max items", Arg{Name: "x", Type: ArgInteger, Validation: &Validation{MaxItems: &maxItems}}, false},
+		{"negative max items", Arg{Name: "x", Type: ArgStringArray, Validation: &Validation{MaxItems: &negativeItems}}, false},
+		{"duration bound on string", Arg{Name: "x", Type: ArgString, Validation: &Validation{MinDuration: &minDuration}}, false},
+		{"reversed duration bounds", Arg{Name: "x", Type: ArgDuration, Validation: &Validation{MinDuration: &minDuration, MaxDuration: &maxDuration}}, false},
+		{"path rule on integer", Arg{Name: "x", Type: ArgInteger, Validation: &Validation{AllowedPrefixes: []string{"/tmp"}}}, false},
+		{"path rule on string array", Arg{Name: "x", Type: ArgStringArray, Validation: &Validation{AllowedPrefixes: []string{"/tmp"}}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.arg.Validate()
+			if tc.ok && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("Validate() accepted incompatible constraint")
+			}
+		})
+	}
+}
+
 func TestArgType_Valid(t *testing.T) {
 	valid := []ArgType{
 		ArgString, ArgInteger, ArgNumber, ArgBoolean,

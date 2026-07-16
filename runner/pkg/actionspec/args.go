@@ -152,7 +152,34 @@ func (a Arg) Validate() error {
 			return fmt.Errorf("arg %s: validation.min must not exceed validation.max", a.Name)
 		}
 	}
+	if a.Validation != nil && a.Validation.MaxItems != nil {
+		if a.Type != ArgStringArray && a.Type != ArgIntegerArray {
+			return fmt.Errorf("arg %s: validation.max_items is only valid on array args, not %q", a.Name, a.Type)
+		}
+		if *a.Validation.MaxItems < 0 {
+			return fmt.Errorf("arg %s: validation.max_items must not be negative, got %d", a.Name, *a.Validation.MaxItems)
+		}
+	}
+	if a.Validation != nil && (a.Validation.MinDuration != nil || a.Validation.MaxDuration != nil) {
+		if a.Type != ArgDuration {
+			return fmt.Errorf("arg %s: validation.min_duration/max_duration is only valid on duration args, not %q", a.Name, a.Type)
+		}
+		if a.Validation.MinDuration != nil && a.Validation.MaxDuration != nil &&
+			a.Validation.MinDuration.Std() > a.Validation.MaxDuration.Std() {
+			return fmt.Errorf("arg %s: validation.min_duration must not exceed validation.max_duration", a.Name)
+		}
+	}
+	if a.Validation != nil && hasPathValidation(a.Validation) {
+		if a.Type != ArgString && a.Type != ArgPath && a.Type != ArgStringArray {
+			return fmt.Errorf("arg %s: path validation is only valid on string/path/string_array args, not %q", a.Name, a.Type)
+		}
+	}
 	return nil
+}
+
+func hasPathValidation(validation *Validation) bool {
+	return len(validation.AllowedPaths) > 0 || len(validation.DeniedPaths) > 0 ||
+		len(validation.AllowedPrefixes) > 0 || len(validation.DeniedPrefixes) > 0
 }
 
 func validateMembershipCandidates(argType ArgType, name string, candidates []any) error {

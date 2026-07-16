@@ -212,6 +212,9 @@ func loadActionFile(packRoot, rel, packID string, allowSymlinks bool) (*actionsp
 	if err := action.Validate(); err != nil {
 		return nil, nil, err
 	}
+	if err := validateActionSemantics(&action); err != nil {
+		return nil, nil, err
+	}
 	return &action, data, nil
 }
 
