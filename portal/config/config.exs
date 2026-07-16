@@ -129,6 +129,7 @@ config :emisar_web, status_page_url: "https://status.emisar.dev"
 # upstream project's Sentry bucket.
 config :sentry,
   dsn: nil,
+  before_send: {EmisarWeb.Application, :scrub_sentry_event},
   environment_name: config_env(),
   enable_source_code_context: true,
   root_source_code_paths: [File.cwd!()],
@@ -138,6 +139,7 @@ config :sentry,
 # `MAILER_FROM_EMAIL` / `MAILER_FROM_NAME` in `runtime.exs`. Defaults
 # match the emisar-hosted brand.
 config :emisar,
+  log_redaction_keys: ~w[password token secret authorization api_key key_hash token_hash],
   mailer_from_email: "no-reply@emisar.dev",
   mailer_from_name: "emisar"
 

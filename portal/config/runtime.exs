@@ -73,7 +73,7 @@ if config_env() == :prod do
         metadata: {:all_except, [:conn, :socket, :crash_reason]},
         redactors: [
           LoggerJSON.Redactors.RedactKeys.new(
-            ~w[password token secret authorization api_key key_hash token_hash]
+            Application.fetch_env!(:emisar, :log_redaction_keys)
           )
         ]
       )

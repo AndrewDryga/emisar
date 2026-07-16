@@ -1201,19 +1201,53 @@ defmodule EmisarWeb.MarketingTest do
       assert refund =~ "mailto:sales@emisar.dev"
     end
 
-    test "the privacy page names only the real subprocessors", %{conn: conn} do
-      html = conn |> get(~p"/privacy") |> html_response(200)
+    test "the privacy, trust, and DPA pages name only the real subprocessors", %{conn: conn} do
+      for route <- ~w(/privacy /trust /dpa) do
+        html = conn |> get(route) |> html_response(200)
 
-      # The four real subprocessors must be named...
-      assert html =~ "Paddle"
-      assert html =~ "Postmark"
-      assert html =~ "Google Cloud Platform"
-      assert html =~ "Mixpanel"
+        assert html =~ "Paddle", "missing Paddle disclosure on #{route}"
+        assert html =~ "Postmark", "missing Postmark disclosure on #{route}"
+        assert html =~ "Google Cloud Platform", "missing GCP disclosure on #{route}"
+        assert html =~ "Mixpanel", "missing Mixpanel disclosure on #{route}"
+        assert html =~ "Sentry", "missing Sentry disclosure on #{route}"
+        assert html =~ "Paddle Retain", "missing Paddle Retain disclosure on #{route}"
+      end
 
-      # ...and Paddle Retain (ProfitWell), the checkout-page analytics vendor, must be
-      # disclosed here in parity with /trust + /dpa — the checkout page runs its scripts.
-      assert html =~ "Paddle Retain"
-      assert html =~ "checkout page only"
+      privacy = conn |> get(~p"/privacy") |> html_response(200)
+      assert privacy =~ "checkout page only"
+    end
+
+    test "the Sentry before_send scrubber drops PII and redacts secrets" do
+      event = %Sentry.Event{
+        event_id: String.duplicate("a", 32),
+        timestamp: "2026-07-16T00:00:00",
+        request: %Sentry.Interfaces.Request{
+          url: "https://emisar.dev/app?email=person@example.com",
+          query_string: %{"email" => "person@example.com", "token" => "query-secret"},
+          data: %{"password" => "body-secret"},
+          cookies: %{"session" => "session-secret"},
+          headers: %{"authorization" => "bearer-secret"},
+          env: %{"secret" => "env-secret"}
+        },
+        user: %{id: "user-id", email: "person@example.com", ip_address: "203.0.113.10"},
+        extra: %{
+          "api_key" => "api-secret",
+          "nested" => %{"password" => "password-secret", "safe" => "kept"}
+        }
+      }
+
+      scrubbed = EmisarWeb.Application.scrub_sentry_event(event)
+
+      assert scrubbed.request.url == "https://emisar.dev/app"
+      assert scrubbed.request.query_string == nil
+      assert scrubbed.request.data == nil
+      assert scrubbed.request.cookies == nil
+      assert scrubbed.request.headers == nil
+      assert scrubbed.request.env == nil
+      assert scrubbed.user == %{}
+      assert scrubbed.extra["api_key"] == "[REDACTED]"
+      assert scrubbed.extra["nested"]["password"] == "[REDACTED]"
+      assert scrubbed.extra["nested"]["safe"] == "kept"
     end
 
     test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do
