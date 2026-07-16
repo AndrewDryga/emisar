@@ -117,7 +117,7 @@ defmodule EmisarWeb.MCP.Service do
 
   @doc "Renders one fixed-contract run summary."
   def fixed_run_summary(run, subject, stream_cap \\ 16_384) do
-    details = full_run_payload(run, subject, stream_cap)
+    output_preview = run_output_preview(run, subject, stream_cap)
     {approval, approval_wait_until} = fixed_approval(run, subject)
 
     %{
@@ -133,8 +133,8 @@ defmodule EmisarWeb.MCP.Service do
       finished_at: run.finished_at,
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
-      stdout: details.stdout,
-      stderr: details.stderr,
+      stdout: output_preview.stdout,
+      stderr: output_preview.stderr,
       emitted_stdout_bytes: run.emitted_stdout_bytes,
       emitted_stderr_bytes: run.emitted_stderr_bytes,
       emitted_stdout_sha256: run.emitted_stdout_sha256,
@@ -143,19 +143,19 @@ defmodule EmisarWeb.MCP.Service do
       local_audit_failed: if(run.local_audit_failed, do: true),
       truncated_stdout:
         output_truncated?(
-          details.stdout,
+          output_preview.stdout,
           run.emitted_stdout_bytes,
           run.stdout_truncated,
-          details.stdout_truncated,
-          details.output_events_truncated
+          output_preview.stdout_truncated,
+          output_preview.output_events_truncated
         ),
       truncated_stderr:
         output_truncated?(
-          details.stderr,
+          output_preview.stderr,
           run.emitted_stderr_bytes,
           run.stderr_truncated,
-          details.stderr_truncated,
-          details.output_events_truncated
+          output_preview.stderr_truncated,
+          output_preview.output_events_truncated
         ),
       approval: approval,
       wait_until: approval_wait_until || fixed_wait_until(run),
@@ -338,7 +338,7 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  defp full_run_payload(run, subject, stream_cap) do
+  defp run_output_preview(run, subject, stream_cap) do
     {:ok, events} = Runs.list_recent_events_for_run(run.id, @max_output_events + 1, subject)
     {events, output_events_truncated?} = output_tail(events)
 
@@ -346,34 +346,11 @@ defmodule EmisarWeb.MCP.Service do
       collect_streams(events, stream_cap)
 
     %{
-      id: run.id,
-      status: run.status,
-      action_id: run.action_id,
-      runner_id: run.runner_id,
-      request_id: run.request_id,
-      exit_code: run.exit_code,
-      duration_ms: run.duration_ms,
-      started_at: run.started_at,
-      finished_at: run.finished_at,
-      reason: run.reason_text,
-      error_message: run.error_message,
-      executed_command: run.executed_command,
-      executed_command_truncated: run.executed_command_truncated,
       stdout: stdout,
       stderr: stderr,
       stdout_truncated: run.stdout_truncated or stdout_truncated?,
       stderr_truncated: run.stderr_truncated or stderr_truncated?,
-      output_events_truncated: output_events_truncated?,
-      emitted_stdout_sha256: run.emitted_stdout_sha256,
-      emitted_stderr_sha256: run.emitted_stderr_sha256,
-      emitted_stdout_bytes: run.emitted_stdout_bytes,
-      emitted_stderr_bytes: run.emitted_stderr_bytes,
-      output_complete: terminal_output_complete(run),
-      policy: %{
-        decision: run.policy_decision,
-        reason: run.policy_reason,
-        rules: run.matched_rules || []
-      }
+      output_events_truncated: output_events_truncated?
     }
   end
 
