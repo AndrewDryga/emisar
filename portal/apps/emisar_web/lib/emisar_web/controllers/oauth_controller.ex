@@ -20,6 +20,7 @@ defmodule EmisarWeb.OAuthController do
   """
   use EmisarWeb, :controller
   alias Emisar.{Accounts, OAuth}
+  alias Emisar.Auth.Subject
   alias EmisarWeb.MCP.Auth, as: MCPAuth
   alias EmisarWeb.UserAuth
 
@@ -91,7 +92,7 @@ defmodule EmisarWeb.OAuthController do
         "approve" ->
           case consent_subject(conn, params) do
             {:ok, subject} ->
-              approve_consent(conn, client, params, subject, redirect_uri, state)
+              approve_if_compliant(conn, client, params, subject, redirect_uri, state)
 
             # A tampered/blank form value or a membership revoked between render
             # and submit — no code, no redirect to the client, and no hint the
@@ -109,6 +110,35 @@ defmodule EmisarWeb.OAuthController do
     else
       {:error, code} when is_binary(code) -> redirect_error(conn, redirect_uri, code, state)
       _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+    end
+  end
+
+  # The mint is the ONLY place require_sso / require_mfa is enforced for OAuth:
+  # rendering the consent screen mints nothing, and gating that render on the
+  # SESSION account would wrongly block granting a DIFFERENT, compliant account
+  # the operator belongs to. `subject.account` is the CHOSEN account (the picker),
+  # so the shared predicate runs against it with this session's provenance — a
+  # non-compliant grant mints no bearer.
+  defp approve_if_compliant(conn, client, params, %Subject{} = subject, redirect_uri, state) do
+    auth = %{auth_method: subject.auth_method, user_identity_id: subject.user_identity_id}
+
+    case UserAuth.account_compliance(subject.account, auth, subject.actor) do
+      :ok ->
+        approve_consent(conn, client, params, subject, redirect_uri, state)
+
+      :sso_required ->
+        render_invalid(
+          conn,
+          "This team requires single sign-on. Sign in to it with your identity provider " <>
+            "before connecting an MCP client."
+        )
+
+      :mfa_required ->
+        render_invalid(
+          conn,
+          "This team requires two-factor authentication. Enroll from the team's console " <>
+            "before connecting an MCP client."
+        )
     end
   end
 

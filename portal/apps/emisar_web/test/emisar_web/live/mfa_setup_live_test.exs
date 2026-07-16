@@ -237,4 +237,25 @@ defmodule EmisarWeb.MfaSetupLiveTest do
                live(conn, ~p"/app/#{account}")
     end
   end
+
+  describe "SSO precedes MFA on the enrollment interstitial" do
+    setup %{account: account} do
+      # require_sso + require_mfa, with an enabled connection so require_sso is live.
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
+      :ok
+    end
+
+    test "a magic-link member of a require_sso account is bounced to SSO before enrolling", %{
+      conn: conn,
+      account: account
+    } do
+      # A magic-link session must satisfy SSO BEFORE it can enroll a TOTP factor —
+      # else it could set an attacker-chosen second factor without ever passing
+      # the account's IdP. The :ensure_sso_compliant hook on the mfa_setup
+      # live_session bounces it to the step-up shim.
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/mfa_setup")
+      assert to == ~p"/app/#{account}/sso_required"
+    end
+  end
 end

@@ -13,6 +13,13 @@ defmodule EmisarWeb.AuditDownloadController do
   alias Emisar.{Audit, Billing}
   alias EmisarWeb.{LiveTable, TimeHelpers}
 
+  # require_sso / require_mfa are enforced on LiveViews by `on_mount` hooks that
+  # do NOT run for this controller route (nested in the slug `live_session`). The
+  # plug re-checks the resolved account BEFORE any audit data is read, so a
+  # magic-link session in an enforcing account is bounced to the step-up instead
+  # of streaming the trail.
+  plug EmisarWeb.Plugs.EnsureAccountCompliance
+
   # 100 is the paginator's hard page cap. The row bound is checked UP FRONT
   # with one count and over-bound downloads are REFUSED (never silently
   # truncated — a forensic export that looks complete but isn't would be worse

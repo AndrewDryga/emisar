@@ -282,10 +282,14 @@ defmodule EmisarWeb.Router do
     get "/:account_id_or_slug/sso_required", SSORequiredController, :show
 
     # Outside the slug scope on purpose: this is where ensure_mfa_compliant
-    # SENDS a non-compliant member, so it must mount without that gate.
+    # SENDS a non-compliant member, so it must mount without the MFA gate (that
+    # would loop). It DOES carry the SSO gate: SSO precedes MFA, so a member of a
+    # require_sso+require_mfa account must satisfy SSO before enrolling a factor
+    # (else a magic-link session could enroll TOTP without ever passing SSO).
     live_session :mfa_setup,
       on_mount: [
-        {EmisarWeb.UserAuth, :ensure_authenticated}
+        {EmisarWeb.UserAuth, :ensure_authenticated},
+        {EmisarWeb.UserAuth, :ensure_sso_compliant}
       ] do
       live "/mfa_setup", MfaSetupLive, :new
     end

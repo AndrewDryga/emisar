@@ -12,52 +12,60 @@ defmodule EmisarWeb.MfaSetupLive do
   regenerate codes) stays on the profile page.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Auth, SSO}
-  alias EmisarWeb.MfaQr
+  alias Emisar.Auth
+  alias EmisarWeb.{MfaQr, UserAuth}
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
     account = socket.assigns.current_account
-    auth = socket.assigns[:current_auth] || %{auth_method: nil, mfa: nil, user_identity_id: nil}
 
-    cond do
-      # Nothing to enroll — already compliant (or the account stopped
-      # enforcing while this tab was open). Don't strand the user here.
-      user.mfa_enabled_at != nil or not account.settings.require_mfa ->
+    # Delegate the enroll-or-leave decision to the shared predicate so this
+    # interstitial can't drift from the on_mount hooks / the controller plug —
+    # in particular the MFA exemption stays ACCOUNT-SCOPED (a session SSO-authed
+    # via another account's IdP is NOT exempt here and enrolls).
+    case UserAuth.account_compliance(account, socket.assigns[:current_auth], user) do
+      :mfa_required ->
+        mount_enrollment(socket, user)
+
+      :sso_required ->
+        # The :ensure_sso_compliant on_mount already bounced a non-SSO session on
+        # a require_sso+require_mfa account; never enroll a factor before SSO is
+        # satisfied — belt and suspenders.
+        {:ok, push_navigate(socket, to: ~p"/app/#{account}/sso_required")}
+
+      :ok ->
+        # Already compliant (enrolled, not enforcing, or an MFA-satisfying SSO
+        # session FOR THIS account) — don't strand the user in enrollment.
         {:ok, push_navigate(socket, to: ~p"/app")}
+    end
+  end
 
-      # An SSO session whose provider satisfies MFA is exempt from the account's
-      # requirement (mirrors `UserAuth.on_mount(:ensure_mfa_compliant)`), so
-      # don't strand it in enrollment.
-      auth.auth_method == :sso and SSO.identity_satisfies_mfa?(auth.user_identity_id) ->
-        {:ok, push_navigate(socket, to: ~p"/app")}
+  # The secret must be generated exactly once, on the connected mount: the static
+  # render runs in a separate process, so a QR generated there would differ from
+  # the one the form verifies against — the user would scan a code that can never
+  # confirm.
+  defp mount_enrollment(socket, user) do
+    if connected?(socket) do
+      secret = Auth.generate_mfa_secret()
+      uri = MfaQr.provisioning_uri(user.email, secret)
 
-      # The secret must be generated exactly once, on the connected
-      # mount: the static render runs in a separate process, so a QR
-      # generated there would differ from the one the form verifies
-      # against — the user would scan a code that can never confirm.
-      connected?(socket) ->
-        secret = Auth.generate_mfa_secret()
-        uri = MfaQr.provisioning_uri(user.email, secret)
-
-        {:ok,
-         socket
-         |> assign(:page_title, "Set up two-factor authentication")
-         |> assign(:mfa_secret, secret)
-         |> assign(:mfa_uri, uri)
-         |> assign(:mfa_qr_svg, MfaQr.svg(uri))
-         |> assign(:mfa_recovery_codes, nil)
-         |> assign_mfa_form()}
-
-      true ->
-        {:ok,
-         socket
-         |> assign(:page_title, "Set up two-factor authentication")
-         |> assign(:mfa_secret, nil)
-         |> assign(:mfa_uri, nil)
-         |> assign(:mfa_qr_svg, nil)
-         |> assign(:mfa_recovery_codes, nil)
-         |> assign_mfa_form()}
+      {:ok,
+       socket
+       |> assign(:page_title, "Set up two-factor authentication")
+       |> assign(:mfa_secret, secret)
+       |> assign(:mfa_uri, uri)
+       |> assign(:mfa_qr_svg, MfaQr.svg(uri))
+       |> assign(:mfa_recovery_codes, nil)
+       |> assign_mfa_form()}
+    else
+      {:ok,
+       socket
+       |> assign(:page_title, "Set up two-factor authentication")
+       |> assign(:mfa_secret, nil)
+       |> assign(:mfa_uri, nil)
+       |> assign(:mfa_qr_svg, nil)
+       |> assign(:mfa_recovery_codes, nil)
+       |> assign_mfa_form()}
     end
   end
 
