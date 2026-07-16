@@ -211,6 +211,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert body["result"]["isError"] == true
       assert get_in(body, ["result", "structuredContent", "error", "code"]) == "unknown_tool"
+
+      assert get_in(body, ["result", "structuredContent", "error", "message"]) ==
+               "Unknown tool. Emisar exposes only its twelve fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action."
     end
   end
 

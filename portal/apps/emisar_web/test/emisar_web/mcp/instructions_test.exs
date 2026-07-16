@@ -27,10 +27,19 @@ defmodule EmisarWeb.MCP.InstructionsTest do
           "cloud CLIs",
           "database credentials",
           "kubeconfigs",
-          "break-glass access"
+          "break-glass access",
+          "This covers read-only inspection too: run status checks, log tails, process lists, and config reads through Emisar actions rather than opening a shell, so even harmless-looking reads stay scoped, redacted, and audited."
         ] do
       assert @text =~ fragment, "missing authorization guidance: #{fragment}"
     end
+  end
+
+  test "dispatches destructive and critical actions to Emisar's approval gate" do
+    assert @text =~
+             "Destructive and critical actions are also dispatched directly through Emisar: its policy will deny or require human approval."
+
+    assert @text =~
+             "Do not substitute your own confirmation for Emisar's approval gate; dispatch the action and relay Emisar's decision."
   end
 
   test "teaches typed recovery, lineage history, waits, and cancellation semantics" do

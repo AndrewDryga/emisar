@@ -248,7 +248,12 @@ defmodule EmisarWeb.MCPRpcController do
         fixed_tool_result(
           %{
             ok: false,
-            error: %{code: "unknown_tool", message: "Unknown fixed MCP tool.", retryable: false},
+            error: %{
+              code: "unknown_tool",
+              message:
+                "Unknown tool. Emisar exposes only its twelve fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
+              retryable: false
+            },
             dispatch_started: false
           },
           true
@@ -347,7 +352,8 @@ defmodule EmisarWeb.MCPRpcController do
             ok: false,
             error: %{
               code: "invalid_args",
-              message: "run_action requires exact arguments and one operation identity.",
+              message:
+                "run_action arguments are malformed, or the transport-owned operation_id is missing. If your args match the schema, this is a bridge/transport fault, not an argument error — report it to the operator; do not re-edit valid args or retry in a loop.",
               retryable: false
             },
             dispatch_started: false
@@ -369,7 +375,8 @@ defmodule EmisarWeb.MCPRpcController do
             ok: false,
             error: %{
               code: "invalid_operation",
-              message: "This mutation requires one operation identity.",
+              message:
+                "This mutation requires one transport-owned operation_id. If your args match the schema, this is a bridge/transport fault, not an argument error — report it to the operator; do not re-edit valid args or retry in a loop.",
               retryable: false
             },
             dispatch_started: false

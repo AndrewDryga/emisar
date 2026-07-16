@@ -32,6 +32,26 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert byte_size(Jason.encode!(tools)) <= 32_768
   end
 
+  test "pins model-facing descriptions for reasons, waits, and pack availability" do
+    list_packs = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_packs"))
+    run_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "run_action"))
+    wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
+
+    assert list_packs["description"] ==
+             "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; set availability: \"all\" for deployment diagnosis."
+
+    assert run_action["inputSchema"]["properties"]["reason"]["description"] ==
+             "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
+
+    assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
+             "Maximum time to block before returning the current state."
+
+    assert wait_for_run["inputSchema"]["allOf"]
+           |> List.first()
+           |> get_in(["properties", "timeout", "description"]) ==
+             "Maximum time to block before returning the current state."
+  end
+
   test "complete internal contracts retain self-contained response schemas" do
     registry = @schema_path |> File.read!() |> Jason.decode!()
 

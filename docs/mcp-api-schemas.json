@@ -80,6 +80,7 @@
     },
     "reason": {
       "type": "string",
+      "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval.",
       "minLength": 1,
       "maxLength": 255,
       "pattern": "\\S",
@@ -148,7 +149,7 @@
       "properties": {
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s"}
+        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state."}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
@@ -537,7 +538,7 @@
   "tools": {
     "list_packs": {
       "title": "List packs",
-      "description": "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; use availability all for deployment diagnosis.",
+      "description": "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; set availability: \"all\" for deployment diagnosis.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
@@ -764,7 +765,7 @@
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
           "reason": {"$ref": "#/$defs/reason"},
-          "wait": {"$ref": "#/$defs/wait_short", "default": "60s"}
+          "wait": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state."}
         }
       },
       "outputSchema": {

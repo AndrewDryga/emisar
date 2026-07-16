@@ -11,6 +11,9 @@ defmodule EmisarWeb.MCP.Instructions do
   approval where configured, runner scope, pack trust, and audit logging. Do not bypass those \
   controls with SSH, local shells, cloud CLIs, database credentials, kubeconfigs, `.env` files, \
   or other discovered credentials unless the operator explicitly requests break-glass access.
+  This covers read-only inspection too: run status checks, log tails, process lists, and config reads \
+  through Emisar actions rather than opening a shell, so even harmless-looking reads stay scoped, \
+  redacted, and audited.
 
   Discover and execute actions:
   1. Use `list_packs` for a compact view of installed capabilities, or `find_actions` when you \
@@ -21,6 +24,9 @@ defmodule EmisarWeb.MCP.Instructions do
   3. Call `run_action` with those exact refs, schema-valid `args`, and a short nonblank `reason`. \
   Emisar owns approvals: do not add a separate model confirmation. Follow each returned `next` \
   continuation until the run is terminal.
+  Destructive and critical actions are also dispatched directly through Emisar: its policy will deny \
+  or require human approval. Do not substitute your own confirmation for Emisar's approval gate; \
+  dispatch the action and relay Emisar's decision.
 
   Catalog reads are current observations, not promises about future dispatch. Exact refs prevent \
   silently switching pack versions or runner generations. If an exact action contract changes, \
