@@ -1,4 +1,9 @@
 version: 2
+
+# One entry per ecosystem; multi-directory entries share the identical weekly
+# cadence and release-age cooldown every ecosystem uses (Dependabot groups and
+# opens PRs per directory). The dep-age CI gate enforces the same windows on
+# the lock diffs themselves, so a hand-made bump can't dodge the cooldown.
 updates:
   - package-ecosystem: "mix"
     directory: "/portal"
@@ -15,14 +20,11 @@ updates:
       semver-patch-days: 7
     groups:
       mix-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "gomod"
-    directory: "/runner"
+    directories: ["/runner", "/mcp", "/tools"]
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -35,49 +37,7 @@ updates:
       semver-minor-days: 14
       semver-patch-days: 7
     groups:
-      runner-go-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
-  - package-ecosystem: "gomod"
-    directory: "/mcp"
-    schedule:
-      interval: "weekly"
-      day: "wednesday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-    groups:
-      mcp-go-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
-  - package-ecosystem: "gomod"
-    directory: "/tools"
-    schedule:
-      interval: "weekly"
-      day: "wednesday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-    groups:
-      tools-go-minor-patch:
+      go-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -100,77 +60,13 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
-    directory: "/portal"
-    schedule:
-      interval: "weekly"
-      day: "friday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-
-  - package-ecosystem: "docker"
-    directory: "/runner/docker"
-    schedule:
-      interval: "weekly"
-      day: "friday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-
-  - package-ecosystem: "docker"
-    directory: "/mcp"
-    schedule:
-      interval: "weekly"
-      day: "friday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-
-  - package-ecosystem: "docker"
-    directory: "/dev/test-packs"
-    schedule:
-      interval: "weekly"
-      day: "friday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-
-  - package-ecosystem: "docker"
-    directory: "/dev/test-packs/snmpd"
-    schedule:
-      interval: "weekly"
-      day: "friday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
-
-  - package-ecosystem: "docker"
-    directory: "/dev/test-packs/snmpd-frr"
+    directories:
+      - "/portal"
+      - "/runner/docker"
+      - "/mcp"
+      - "/dev/test-packs"
+      - "/dev/test-packs/snmpd"
+      - "/dev/test-packs/snmpd-frr"
     schedule:
       interval: "weekly"
       day: "friday"
@@ -200,11 +96,8 @@ updates:
       semver-patch-days: 7
     groups:
       screenshot-tooling-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -221,8 +114,5 @@ updates:
       semver-patch-days: 7
     groups:
       github-actions-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
