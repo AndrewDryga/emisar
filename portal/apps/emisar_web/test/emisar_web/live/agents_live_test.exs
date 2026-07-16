@@ -150,11 +150,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "Bot"}, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       # Part b — the list filter bar (rendered once keys exist).
       assert html =~ "Name"
       assert html =~ "Status"
+      assert has_element?(lv, ~s(select[name="status"] option[value="live"]), "Live")
+      refute html =~ ">Active</option>"
 
       # Part a — the custom-key form's purpose copy appears once the operator
       # opens the "custom" tab (on the CONNECT page).

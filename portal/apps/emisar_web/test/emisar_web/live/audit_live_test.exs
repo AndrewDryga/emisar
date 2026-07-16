@@ -74,6 +74,30 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "Source IP"
     end
 
+    test "renders stable copy instead of runner transport diagnostics", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _routine} =
+        Audit.log(account.id, "runner.disconnected",
+          target_kind: "runner",
+          target_label: "edge-fra-01",
+          payload: %{reason: "{:error, :closed}"}
+        )
+
+      {:ok, _abnormal} =
+        Audit.log(account.id, "runner.disconnected",
+          target_kind: "runner",
+          target_label: "api-iad-02",
+          payload: %{reason: "websocket dropped"}
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      refute html =~ "{:error, :closed}"
+      refute html =~ "websocket dropped"
+      assert html =~ "Connection ended unexpectedly."
+    end
+
     test "rows carry an outcome dot — rose failures, amber denials, brand passes, neutral routine",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

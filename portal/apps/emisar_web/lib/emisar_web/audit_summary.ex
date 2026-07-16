@@ -15,6 +15,8 @@ defmodule EmisarWeb.AuditSummary do
   one line is just a worse version of the detail page.
   """
 
+  alias EmisarWeb.TransportReason
+
   @doc """
   Returns `[{label, value}, ...]` for the given event. Each value is
   pre-rendered to a string. The LV decides how to style each pair
@@ -119,8 +121,12 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("runner.registered", p),
     do: pairs(group: get(p, :group), hostname: get(p, :hostname))
 
-  defp summarize("runner.disconnected", p),
-    do: pairs(reason: get(p, :reason))
+  defp summarize("runner.disconnected", p) do
+    case TransportReason.disconnect_message(get(p, :reason)) do
+      nil -> []
+      message -> [{"reason", message}]
+    end
+  end
 
   defp summarize("enrollment_key.created", p) do
     pairs(

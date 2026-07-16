@@ -960,7 +960,11 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "an owner without MFA hits the lockout guard", %{conn: conn, account: account} do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "button[disabled]", "Enforce 2FA")
+      assert html =~ "hero-lock-closed-mini"
+      assert html =~ "lock yourself out"
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
@@ -983,6 +987,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
+      refute has_element?(lv, "button[disabled]", "Enforce 2FA")
       assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
       assert Emisar.Repo.reload!(account).settings.require_mfa
     end

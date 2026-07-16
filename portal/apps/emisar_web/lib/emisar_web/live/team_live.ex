@@ -1352,35 +1352,29 @@ defmodule EmisarWeb.TeamLive do
               <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
             </p>
             <div class="mt-4">
-              <.confirm_button
-                :if={Accounts.subject_can_manage_account_security?(@current_subject)}
-                id="enforce-mfa"
-                variant={:secondary}
-                tone={:neutral}
-                size={:sm}
-                title={
-                  if @current_account.settings.require_mfa,
-                    do: "Stop enforcing 2FA account-wide?",
-                    else: "Enforce 2FA for everyone on this account?"
-                }
-                confirm_label={
-                  if @current_account.settings.require_mfa, do: "Stop enforcing", else: "Enforce 2FA"
-                }
-                on_confirm={JS.push("toggle_require_mfa")}
-              >
-                <:body>
-                  <%= if @current_account.settings.require_mfa do %>
-                    Members will be able to use the account without 2FA again.
-                  <% else %>
-                    {unenrolled} of {@mfa_stats.total} members aren't enrolled yet — they'll be
-                    funneled to set it up before they can use the account again. You can't enable
-                    this until you've enrolled yourself.
-                  <% end %>
-                </:body>
-                {if @current_account.settings.require_mfa,
-                  do: "Stop enforcing 2FA",
-                  else: "Enforce 2FA"}
-              </.confirm_button>
+              <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
+                <%= if mfa_enforcement_disabled?(@current_account, @current_user) do %>
+                  <.tooltip
+                    text="Enable 2FA on your own profile first — otherwise you'd lock yourself out."
+                    placement={:bottom}
+                    class="shrink-0"
+                  >
+                    <.mfa_confirm_button
+                      require_mfa={@current_account.settings.require_mfa}
+                      total={@mfa_stats.total}
+                      unenrolled={unenrolled}
+                      disabled={true}
+                    />
+                  </.tooltip>
+                <% else %>
+                  <.mfa_confirm_button
+                    require_mfa={@current_account.settings.require_mfa}
+                    total={@mfa_stats.total}
+                    unenrolled={unenrolled}
+                    disabled={false}
+                  />
+                <% end %>
+              <% end %>
               <span
                 :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
                 class="text-[11px] text-zinc-600"
@@ -1827,6 +1821,40 @@ defmodule EmisarWeb.TeamLive do
     do: true
 
   defp self_owner?(_, _), do: false
+
+  defp mfa_enforcement_disabled?(account, user),
+    do: not account.settings.require_mfa and is_nil(user.mfa_enabled_at)
+
+  defp mfa_confirm_button(assigns) do
+    ~H"""
+    <.confirm_button
+      id="enforce-mfa"
+      variant={:secondary}
+      tone={:neutral}
+      size={:sm}
+      icon="hero-lock-closed-mini"
+      disabled={@disabled}
+      title={
+        if @require_mfa,
+          do: "Stop enforcing 2FA account-wide?",
+          else: "Enforce 2FA for everyone on this account?"
+      }
+      confirm_label={if @require_mfa, do: "Stop enforcing", else: "Enforce 2FA"}
+      on_confirm={JS.push("toggle_require_mfa")}
+    >
+      <:body>
+        <%= if @require_mfa do %>
+          Members will be able to use the account without 2FA again.
+        <% else %>
+          {@unenrolled} of {@total} members aren't enrolled yet — they'll be funneled to set it up
+          before they can use the account again. You can't enable this until you've enrolled
+          yourself.
+        <% end %>
+      </:body>
+      {if @require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
+    </.confirm_button>
+    """
+  end
 
   # A member whose role is authoritatively the IdP's: they carry an identity for a
   # provider with directory sync (SCIM) enabled, so the sync recomputes their role

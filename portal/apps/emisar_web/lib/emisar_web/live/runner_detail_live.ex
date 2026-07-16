@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runners, Runs}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -582,19 +582,12 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   defp runner_labels(_), do: []
 
-  # Socket termination values are diagnostic data, not customer copy. Routine
-  # closes add nothing beyond the Offline badge; abnormal closes get one stable
-  # sentence while their raw reason remains available in logs and audit data.
+  # Socket termination values are diagnostic data, not customer copy. Keep the
+  # same stable wording as the audit list; raw reasons remain in diagnostics.
   defp disconnect_message(%{online?: true}), do: nil
 
-  defp disconnect_message(%{last_disconnect_reason: reason}) when is_binary(reason) do
-    case String.trim(reason) do
-      reason when reason in ["", "normal", "closed", "{:error, :closed}", "reconnect"] -> nil
-      "shutdown" -> "Runner service stopped."
-      "shutdown:" <> _reason -> "Runner service stopped."
-      _reason -> "Connection ended unexpectedly."
-    end
-  end
+  defp disconnect_message(%{last_disconnect_reason: reason}),
+    do: TransportReason.disconnect_message(reason)
 
   defp disconnect_message(_runner), do: nil
 
