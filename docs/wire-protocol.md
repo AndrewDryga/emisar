@@ -68,7 +68,7 @@ maximum attestation age.
 {
   "type": "runner_state",
   "protocol_version": 1,
-  "version": "0.2.0",
+  "version": "0.10.0",
   "hostname": "dbcas103",
   "group": "cassandra",
   "labels": {"datacenter": "dc1", "rack": "rack3"},
