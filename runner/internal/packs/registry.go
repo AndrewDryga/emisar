@@ -16,6 +16,14 @@ type ScriptInfo struct {
 	SHA256 string
 }
 
+// DegradedPack is a pack directory a SkipBrokenPacks load skipped because it
+// failed to parse, hash, or validate — recorded so the daemon, doctor, and
+// operators can see exactly what is broken instead of silently serving less.
+type DegradedPack struct {
+	Dir    string
+	Reason string
+}
+
 // Registry is the in-memory index of loaded packs and actions.
 type Registry struct {
 	packs          map[string]*packspec.Pack
@@ -23,6 +31,7 @@ type Registry struct {
 	scripts        map[string]ScriptInfo
 	packHashes     map[string]string
 	packHashInputs map[string][]hashEntry
+	degraded       []DegradedPack
 }
 
 func newRegistry() *Registry {
@@ -122,6 +131,29 @@ func (r *Registry) PackFiles(packID string) ([]PackFile, error) {
 		files[i] = PackFile{Rel: e.rel, Data: data}
 	}
 	return files, nil
+}
+
+// Degraded returns the pack directories a SkipBrokenPacks load skipped,
+// in load order.
+func (r *Registry) Degraded() []DegradedPack {
+	out := make([]DegradedPack, len(r.degraded))
+	copy(out, r.degraded)
+	return out
+}
+
+// removePack erases every trace of one pack from the index — the loader's
+// cleanup when a pack fails part-way through insertion. Actions and scripts
+// registered by other packs are untouched.
+func (r *Registry) removePack(packID string) {
+	delete(r.packs, packID)
+	delete(r.packHashes, packID)
+	delete(r.packHashInputs, packID)
+	for id, action := range r.actions {
+		if action.PackID == packID {
+			delete(r.actions, id)
+			delete(r.scripts, id)
+		}
+	}
 }
 
 // Packs returns all packs sorted by id.

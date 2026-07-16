@@ -38,6 +38,15 @@ type LoadOptions struct {
 	// Logger is the structured logger used for load-time events
 	// (duplicate IDs, etc.). Defaults to slog.Default.
 	Logger *slog.Logger
+
+	// SkipBrokenPacks records a pack directory that fails to load as degraded
+	// (Registry.Degraded) and keeps loading the rest, instead of failing the
+	// whole load. The connect daemon and doctor set it: one unparseable
+	// installed pack must degrade that pack, not crash-loop the runner and
+	// take every healthy pack's incident-response surface down with it.
+	// Publisher and install-verification paths keep the default fail-fast —
+	// a broken pack must never silently vanish from a published catalog.
+	SkipBrokenPacks bool
 }
 
 func (o LoadOptions) logger() *slog.Logger {
@@ -64,7 +73,10 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 		}
 		if _, err := os.Stat(filepath.Join(root, "pack.yaml")); err == nil {
 			if err := loadPackInto(reg, root, opts); err != nil {
-				return nil, err
+				if !opts.SkipBrokenPacks {
+					return nil, err
+				}
+				reg.degraded = append(reg.degraded, DegradedPack{Dir: root, Reason: err.Error()})
 			}
 			continue
 		}
@@ -84,7 +96,10 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 				continue
 			}
 			if err := loadPackInto(reg, sub, opts); err != nil {
-				return nil, err
+				if !opts.SkipBrokenPacks {
+					return nil, err
+				}
+				reg.degraded = append(reg.degraded, DegradedPack{Dir: sub, Reason: err.Error()})
 			}
 		}
 	}
@@ -104,7 +119,7 @@ func LoadOne(root string, opts LoadOptions) (*Registry, error) {
 	return reg, nil
 }
 
-func loadPackInto(reg *Registry, root string, opts LoadOptions) error {
+func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("packs: resolve %s: %w", root, err)
@@ -130,7 +145,18 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) error {
 		)
 		return fmt.Errorf("packs: duplicate pack id %q (first=%s second=%s)", pack.ID, existing.Root, absRoot)
 	}
+	// The pack builds into the shared registry incrementally from here on. A
+	// failure part-way must remove everything it added — a SkipBrokenPacks
+	// caller keeps the registry, and a half-loaded pack (some actions
+	// registered, hash absent) is worse than a missing one.
+	inserted := false
+	defer func() {
+		if err != nil && inserted {
+			reg.removePack(pack.ID)
+		}
+	}()
 	reg.packs[pack.ID] = &pack
+	inserted = true
 	reg.packHashInputs[pack.ID] = []hashEntry{
 		{rel: "pack.yaml", data: data},
 	}

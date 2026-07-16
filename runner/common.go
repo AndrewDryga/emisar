@@ -95,7 +95,11 @@ func loadRegistry(cfg *config.Config) (*packs.Registry, []string, error) {
 	if len(flagPacksDir) > 0 {
 		packDirs = flagPacksDir
 	}
-	registry, err := packs.LoadAll(packDirs, packs.LoadOptions{})
+	// The daemon degrades a broken installed pack instead of refusing to
+	// boot: one unparseable pack file once crash-looped a production runner
+	// 1,164 times, taking every healthy pack down with it. Callers surface
+	// Registry.Degraded(); publisher/verification paths keep fail-fast.
+	registry, err := packs.LoadAll(packDirs, packs.LoadOptions{SkipBrokenPacks: true})
 	return registry, packDirs, err
 }
 

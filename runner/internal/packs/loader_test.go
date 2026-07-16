@@ -164,6 +164,73 @@ func TestLoadAll_IgnoresHiddenReplacementDirectories(t *testing.T) {
 	}
 }
 
+// One unparseable installed pack once crash-looped a production runner 1,164
+// times (boot-fatal LoadAll under systemd Restart=always), taking every
+// healthy pack's incident-response surface down with it. Under
+// SkipBrokenPacks the daemon degrades that pack and serves the rest.
+func TestLoadAll_SkipBrokenPacksDegradesInsteadOfFailing(t *testing.T) {
+	tmp := t.TempDir()
+	writePack(t, tmp, "good", map[string]string{
+		"pack.yaml":      packYAML("good"),
+		"actions/a.yaml": actionYAML("good.a"),
+	})
+	broken := writePack(t, tmp, "broken", map[string]string{
+		"pack.yaml":      packYAML("broken"),
+		"actions/a.yaml": "unknown_field: true\n" + actionYAML("broken.a"),
+	})
+
+	// Default stays fail-fast — the publisher must never silently drop a pack.
+	if _, err := LoadAll([]string{tmp}, LoadOptions{}); err == nil {
+		t.Fatal("default load accepted a broken pack")
+	}
+
+	reg, err := LoadAll([]string{tmp}, LoadOptions{SkipBrokenPacks: true})
+	if err != nil {
+		t.Fatalf("SkipBrokenPacks load failed the whole registry: %v", err)
+	}
+	if loaded := reg.Packs(); len(loaded) != 1 || loaded[0].ID != "good" {
+		t.Fatalf("loaded packs=%v, want only good", loaded)
+	}
+	degraded := reg.Degraded()
+	if len(degraded) != 1 || degraded[0].Dir != broken || degraded[0].Reason == "" {
+		t.Fatalf("degraded=%v, want the broken pack dir with a reason", degraded)
+	}
+}
+
+// A pack that fails part-way through insertion (the manifest parsed; an
+// action file did not) must leave no trace — a half-loaded pack advertises
+// actions its content hash can never match.
+func TestLoadAll_SkipBrokenPacksRemovesPartialInsertion(t *testing.T) {
+	tmp := t.TempDir()
+	writePack(t, tmp, "partial", map[string]string{
+		"pack.yaml": `schema_version: 1
+id: partial
+name: t
+version: 0.0.1
+description: t
+actions:
+  - actions/a.yaml
+  - actions/b.yaml
+`,
+		"actions/a.yaml": actionYAML("partial.a"),
+		"actions/b.yaml": "not: [valid",
+	})
+
+	reg, err := LoadAll([]string{tmp}, LoadOptions{SkipBrokenPacks: true})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(reg.Packs()) != 0 {
+		t.Fatalf("half-loaded pack left in the registry: %v", reg.Packs())
+	}
+	if _, ok := reg.Action("partial.a"); ok {
+		t.Fatal("half-loaded pack left an action registered")
+	}
+	if len(reg.Degraded()) != 1 {
+		t.Fatalf("degraded=%v, want exactly the partial pack", reg.Degraded())
+	}
+}
+
 func TestLoad_MultiLevelNamespaceAllowed(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{
