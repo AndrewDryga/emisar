@@ -347,6 +347,19 @@ defmodule EmisarWeb.RunDetailLive do
               <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
             </.event_block>
 
+            <.event_block
+              :if={@run.local_audit_failed}
+              icon="hero-document-minus"
+              tone={:rose}
+              title="Runner audit record incomplete"
+            >
+              <:body>
+                The runner could not persist its terminal event to its local audit journal.
+                This run's cloud audit trail and result remain available; inspect the runner's
+                audit storage before relying on its local journal.
+              </:body>
+            </.event_block>
+
             <%!-- Runner-dropped warning — in flight but its runner's socket is
                gone. Don't fake a terminal status; flag that output may be
                incomplete until it reconnects (or the timeout sweep errors it). --%>
@@ -444,7 +457,11 @@ defmodule EmisarWeb.RunDetailLive do
         <.code_panel
           :if={@run.executed_command && @run.executed_command != ""}
           label="Executed command"
-          annotation="secrets redacted"
+          annotation={
+            if @run.executed_command_truncated,
+              do: "truncated · secrets redacted",
+              else: "secrets redacted"
+          }
           code={@run.executed_command}
         />
 
@@ -527,6 +544,7 @@ defmodule EmisarWeb.RunDetailLive do
       (run.status == :cancelled and run.reason_text not in [nil, ""]) or
       run.status == :cancelling or
       run.error_message != nil or
+      run.local_audit_failed or
       (run.status in [:sent, :running, :cancelling, :pending] and runner_connection == :offline)
   end
 

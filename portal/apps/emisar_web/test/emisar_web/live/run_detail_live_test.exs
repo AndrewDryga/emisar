@@ -182,6 +182,79 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "Client metadata"
   end
 
+  test "marks an executed command that the runner truncated", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0,
+        "executed_command" => "printf [REDACTED]",
+        "executed_command_truncated" => true
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Executed command"
+    assert html =~ "truncated · secrets redacted"
+  end
+
+  test "keeps the complete executed-command annotation quiet", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0,
+        "executed_command" => "uptime -p"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "secrets redacted"
+    refute html =~ "truncated · secrets redacted"
+  end
+
+  test "warns when the runner could not persist its terminal audit event", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0,
+        "local_audit_failed" => true
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "hero-document-minus"
+    assert html =~ "Runner audit record incomplete"
+    assert html =~ "audit storage before relying on its local journal"
+  end
+
+  test "does not show a runner audit warning for a healthy terminal result", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute html =~ "Runner audit record incomplete"
+    refute html =~ "audit storage before relying on its local journal"
+  end
+
   # Metadata keys/values are attacker-influenced (a hostile MCP client controls
   # them), so they must render ESCAPED — never via raw/1 (IL-16).
   test "escapes attacker-influenced client metadata (no stored XSS)", %{conn: conn} do
