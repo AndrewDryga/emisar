@@ -67,6 +67,21 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     |> Repo.update!()
   end
 
+  defp pending_run_for(runner, seconds_ago) do
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: runner.account_id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "test",
+        source: "operator"
+      })
+
+    queued_at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
+    run |> Ecto.Changeset.change(queued_at: queued_at) |> Repo.update!()
+  end
+
   test "an online runner's stale sent run is re-dispatched, not failed" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)
@@ -256,6 +271,33 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert reloaded.error_message =~ "disconnected after accepting this dispatch"
     assert reloaded.error_message =~ "outcome is unknown"
     assert reloaded.error_message =~ "did not execute it again"
+  end
+
+  test "all stale pending runs on an offline runner fail in one sweep" do
+    runner = Fixtures.Runners.create_runner(connected?: false)
+    runner = backdate_disconnect!(runner, 10 * 60)
+    runs = Enum.map(1..3, fn _ -> pending_run_for(runner, 5 * 60) end)
+
+    assert :ok = DispatchTimeout.execute([])
+
+    assert Enum.all?(runs, fn run ->
+             reloaded = Runs.peek_run_by_id(run.id)
+             reloaded.status == :error and reloaded.error_message =~ "offline"
+           end)
+  end
+
+  test "a pending queue advances when its stale sent head times out" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    Runners.subscribe_runner_transport(runner)
+    sent = sent_run_for(runner, 20 * 60)
+    pending = pending_run_for(runner, 0)
+
+    assert :ok = DispatchTimeout.execute([])
+
+    assert Runs.peek_run_by_id(sent.id).status == :error
+    assert Runs.peek_run_by_id(pending.id).status == :sent
+    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+    assert request_id == pending.request_id
   end
 
   # the disabled-runner branch names "disabled", distinct

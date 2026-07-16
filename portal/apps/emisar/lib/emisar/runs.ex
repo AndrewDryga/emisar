@@ -437,6 +437,52 @@ defmodule Emisar.Runs do
     |> Repo.fetch(ActionRun.Query)
   end
 
+  @doc """
+  Internal — runner socket: return a dispatch refused at the runner's
+  concurrency cap to the pending queue. The runner checks its active-run
+  count before spawning a handler, so this refusal proves the action never
+  started. The runner and account filters keep the request correlation inside
+  the authenticated socket's scope.
+
+  Duplicate cap errors are idempotent once the run is pending; a result or a
+  terminal transition that won the race is left authoritative.
+  """
+  def handle_runner_error(
+        account_id,
+        runner_id,
+        %{
+          "code" => "concurrency_cap_reached",
+          "request_id" => request_id
+        }
+      )
+      when is_binary(account_id) and is_binary(runner_id) and is_binary(request_id) do
+    queryable =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_account_id(account_id)
+      |> ActionRun.Query.by_runner_id(runner_id)
+      |> ActionRun.Query.by_request_id(request_id)
+
+    case Repo.fetch(queryable, ActionRun.Query) do
+      {:error, :not_found} ->
+        {:error, :unknown_request_id}
+
+      {:ok, %ActionRun{status: :pending} = run} ->
+        {:ok, run}
+
+      {:ok, %ActionRun{status: :sent} = run} ->
+        transition_from(run, :sent, :pending, %{
+          queued_at: DateTime.utc_now(),
+          sent_at: nil,
+          runner_connection_generation: nil
+        })
+
+      {:ok, %ActionRun{} = run} ->
+        {:error, {:not_dispatchable, run.status}}
+    end
+  end
+
+  def handle_runner_error(_account_id, _runner_id, _payload), do: :ok
+
   # -- Creation ---------------------------------------------------------
 
   @doc """
@@ -1903,10 +1949,19 @@ defmodule Emisar.Runs do
   mid-run, or stayed online but never acknowledged the send past the
   redispatch deadline. The reason explains which, so the operator sees a
   terminal row with context instead of one stuck in `sent`/`running`
-  forever.
+  forever. The transition is fenced to the caller's observed status so a
+  stale timeout row cannot overwrite a cap-refused run that has returned to
+  `:pending`.
   """
-  def mark_errored(%ActionRun{} = run, reason) when is_binary(reason) do
-    transition(run, :error, %{finished_at: DateTime.utc_now(), error_message: reason})
+  def mark_errored(%ActionRun{status: status} = run, reason) when is_binary(reason) do
+    if ActionRun.terminal?(status) do
+      {:ok, run}
+    else
+      transition_from(run, status, :error, %{
+        finished_at: DateTime.utc_now(),
+        error_message: reason
+      })
+    end
   end
 
   # Unknown / missing status from the runner is treated as "failed" so

@@ -413,6 +413,8 @@ defmodule EmisarWeb.RunnerSocket do
       state.request_context
     )
 
+    _ = Runs.handle_runner_error(state.account_id, state.runner_id, msg)
+
     {:ok, state}
   end
 

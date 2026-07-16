@@ -3040,10 +3040,64 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
+      run = Runs.peek_run_by_id(run.id)
+
       assert {:ok, %ActionRun{status: :error, error_message: msg, finished_at: %DateTime{}}} =
                Runs.mark_errored(run, "runner was disconnected")
 
       assert msg =~ "disconnected"
+    end
+  end
+
+  describe "handle_runner_error/3" do
+    test "returns a cap-refused dispatch to pending and redelivers it after a slot opens" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      Runners.subscribe_runner_transport(runner)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      old_queued_at = DateTime.utc_now() |> DateTime.add(-60, :second)
+      run = run |> Ecto.Changeset.change(queued_at: old_queued_at) |> Repo.update!()
+
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+      assert request_id == run.request_id
+
+      sent = Runs.peek_run_by_id(run.id)
+
+      assert {:ok, %ActionRun{status: :pending, sent_at: nil} = pending} =
+               Runs.handle_runner_error(account.id, runner.id, %{
+                 "code" => "concurrency_cap_reached",
+                 "request_id" => run.request_id
+               })
+
+      assert pending.runner_connection_generation == nil
+      assert DateTime.compare(pending.queued_at, sent.queued_at) == :gt
+      refute ActionRun.terminal?(pending.status)
+
+      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+
+      redelivered = Runs.peek_run_by_id(run.id)
+      assert redelivered.status == :sent
+      assert DateTime.compare(redelivered.sent_at, sent.sent_at) == :gt
+      refute redelivered.status == :error
+    end
+
+    test "does not correlate a cap refusal outside the runner's account" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      other_account = Fixtures.Accounts.create_account()
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      assert {:error, :unknown_request_id} =
+               Runs.handle_runner_error(other_account.id, runner.id, %{
+                 "code" => "concurrency_cap_reached",
+                 "request_id" => run.request_id
+               })
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
     end
   end
 

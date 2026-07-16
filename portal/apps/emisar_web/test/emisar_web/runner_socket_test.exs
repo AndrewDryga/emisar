@@ -744,6 +744,27 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
   end
 
+  describe "handle_in/2 — concurrency-cap refusal" do
+    setup [:connected_socket, :dispatched_run]
+
+    test "returns a refused dispatch to pending", %{state: state, run: run} do
+      raw =
+        runner_frame(%{
+          "type" => "error",
+          "code" => "concurrency_cap_reached",
+          "request_id" => run.request_id
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      assert %ActionRun{
+               status: :pending,
+               sent_at: nil,
+               runner_connection_generation: nil
+             } = Repo.get!(ActionRun, run.id)
+    end
+  end
+
   describe "handle_in/2 — action_started" do
     setup [:connected_socket, :dispatched_run]
 

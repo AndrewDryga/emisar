@@ -13,7 +13,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   ]a
 
   @transition_fields ~w[
-    runner_connection_generation sent_at started_at finished_at cancelled_at
+    runner_connection_generation queued_at sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
     emitted_stdout_sha256 emitted_stderr_sha256 emitted_stdout_bytes emitted_stderr_bytes
     output_complete stdout_truncated stderr_truncated event_id local_audit_failed reason_text error_message
