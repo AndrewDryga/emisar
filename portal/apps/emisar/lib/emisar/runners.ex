@@ -525,11 +525,35 @@ defmodule Emisar.Runners do
           # propagates on the next reconnect.
           enforce_signatures: payload["enforce_signatures"] == true,
           # The freshness window the runner advertises when enforcing; nil clears it.
-          max_attestation_age_seconds: payload["max_attestation_age_seconds"]
+          max_attestation_age_seconds: payload["max_attestation_age_seconds"],
+          # Packs the runner's loader skipped, so the console and MCP can say
+          # "pack X failed to load on runner Y". Normalized here — display
+          # text from a hostile authenticated runner — and self-clearing: an
+          # advertisement without the field (or an older runner) resets to [].
+          degraded_packs: normalize_degraded_packs(payload["degraded_packs"])
         })
       end
     )
   end
+
+  # Keep only well-shaped entries, bound their sizes, and cap the list — the
+  # payload is runner-controlled display text.
+  @max_degraded_packs 32
+  defp normalize_degraded_packs(entries) when is_list(entries) do
+    entries
+    |> Enum.filter(&valid_degraded_pack?/1)
+    |> Enum.take(@max_degraded_packs)
+    |> Enum.map(fn %{"pack" => pack, "reason" => reason} ->
+      %{"pack" => String.slice(pack, 0, 80), "reason" => String.slice(reason, 0, 500)}
+    end)
+  end
+
+  defp normalize_degraded_packs(_absent), do: []
+
+  defp valid_degraded_pack?(%{"pack" => pack, "reason" => reason}),
+    do: is_binary(pack) and pack != "" and is_binary(reason) and reason != ""
+
+  defp valid_degraded_pack?(_entry), do: false
 
   defp nonblank(value) when is_binary(value) and value != "", do: value
   defp nonblank(_), do: nil

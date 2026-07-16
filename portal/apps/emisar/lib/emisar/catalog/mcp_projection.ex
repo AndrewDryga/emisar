@@ -65,15 +65,21 @@ defmodule Emisar.Catalog.MCPProjection do
 
     projected_runners =
       Enum.map(projected_runners, fn runner ->
-        issues =
-          (runner.issues ++ Map.get(pack_issues_by_runner, runner.id, []))
-          |> unique_issues()
-
-        %{runner | issues: issues}
+        %{runner | issues: unique_issues(runner_issues(runner, pack_issues_by_runner))}
       end)
 
     %{packs: packs, runners: projected_runners}
   end
+
+  # A runner that is not connected wears ONLY its connection story. Its stored
+  # advertisement is a stale snapshot (a crash-looping runner once wore
+  # descriptor_mismatch + pack_untrusted for 100 minutes — tamper-flavored
+  # alarms whose real cause was runner health), so trust-vs-advertisement
+  # judgments wait until it reconnects and re-advertises.
+  defp runner_issues(%{status: "connected"} = runner, pack_issues_by_runner),
+    do: runner.issues ++ Map.get(pack_issues_by_runner, runner.id, [])
+
+  defp runner_issues(runner, _pack_issues_by_runner), do: runner.issues
 
   @doc "Stable readable runner reference derived from the durable runner external id."
   @spec runner_ref(Runners.Runner.t()) :: {:ok, String.t()} | {:error, :invalid_runner}
@@ -122,7 +128,8 @@ defmodule Emisar.Catalog.MCPProjection do
       {labels, labels_valid?} = safe_labels(runner.labels)
 
       issues =
-        [connection_issue(runner), metadata_issue(labels_valid?)]
+        ([connection_issue(runner), metadata_issue(labels_valid?)] ++
+           degraded_pack_issues(runner))
         |> Enum.reject(&is_nil/1)
 
       [
@@ -319,7 +326,12 @@ defmodule Emisar.Catalog.MCPProjection do
     issues =
       [
         trust_issue,
-        if(descriptor_match?,
+        # Only a CONNECTED runner's advertisement can genuinely mismatch trust
+        # — a disconnected/pending runner's stored advertisement is stale, and
+        # raising a tamper-flavored alarm on it misled a real incident (the
+        # runner was crash-looping, not tampered with). Executability stays
+        # gated by descriptor_match? regardless.
+        if(descriptor_match? or deployment.runner_status != "connected",
           do: nil,
           else:
             issue(
@@ -370,8 +382,13 @@ defmodule Emisar.Catalog.MCPProjection do
     end)
   end
 
+  # Judged on connected runners only — a stale advertisement from an offline
+  # runner is a health condition (partially_deployed / runner_disconnected
+  # carry it), not evidence of drift.
   defp descriptor_mismatch_issue(compatibility) do
-    if Enum.any?(compatibility, fn {_runner_id, result} -> not result.descriptor_match? end) do
+    if Enum.any?(compatibility, fn {_runner_id, result} ->
+         result.status == "connected" and not result.descriptor_match?
+       end) do
       issue(
         "descriptor_mismatch",
         "At least one runner advertisement differs from the complete trusted manifest."
@@ -410,6 +427,20 @@ defmodule Emisar.Catalog.MCPProjection do
       "disconnected" -> issue("runner_disconnected", "The runner is disconnected.")
       "pending" -> issue("runner_pending", "The runner has not connected yet.")
       "disabled" -> issue("runner_disabled", "The runner is disabled.")
+    end
+  end
+
+  # Packs the runner's loader skipped, as the runner itself advertised them
+  # (normalized + bounded at ingest). Connected-only, like every
+  # advertisement-derived judgment: a stale offline snapshot wears just its
+  # connection story.
+  defp degraded_pack_issues(%Runners.Runner{} = runner) do
+    if runner_status(runner) == "connected" do
+      Enum.map(runner.degraded_packs || [], fn %{"pack" => pack, "reason" => reason} ->
+        issue("pack_load_failed", "Pack #{pack} failed to load on this runner: #{reason}")
+      end)
+    else
+      []
     end
   end
 

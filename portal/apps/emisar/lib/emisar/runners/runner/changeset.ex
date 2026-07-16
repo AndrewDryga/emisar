@@ -68,6 +68,7 @@ defmodule Emisar.Runners.Runner.Changeset do
       :labels,
       :runner_version,
       :packs,
+      :degraded_packs,
       :group,
       :enforce_signatures,
       :max_attestation_age_seconds
@@ -86,6 +87,7 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_length(:runner_version, max: @max_runner_version_length)
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
+    |> validate_json_size(:degraded_packs, @max_json_bytes)
     |> validate_number(:max_attestation_age_seconds, greater_than: 0)
     |> validate_signing_advertisement()
   end

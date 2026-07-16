@@ -22,6 +22,30 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     assert html =~ runner.name
     assert html =~ runner.hostname
+    refute html =~ "failed to load on this runner"
+  end
+
+  test "runner-advertised degraded packs render with their reasons and the remedy", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {:ok, _updated} =
+      Runners.apply_state(runner, %{
+        "degraded_packs" => [
+          %{
+            "pack" => "cloud-init",
+            "reason" => "packs: parse modules_config.yaml: yaml: unmarshal"
+          }
+        ]
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "A pack failed to load on this runner"
+    assert html =~ "cloud-init"
+    assert html =~ "packs: parse modules_config.yaml: yaml: unmarshal"
+    assert html =~ "emisar pack install"
   end
 
   test "does not expose a routine socket-close tuple", %{conn: conn, account: account} do

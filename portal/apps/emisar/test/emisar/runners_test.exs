@@ -841,6 +841,61 @@ defmodule Emisar.RunnersTest do
       assert Runners.apply_state(runner, %{"hostname" => "after"}) == {:error, :not_found}
       assert Repo.reload!(runner).hostname == "before"
     end
+
+    test "persists advertised degraded packs, normalized and bounded", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, updated} =
+        Runners.apply_state(runner, %{
+          "degraded_packs" => [
+            %{"pack" => "cloud-init", "reason" => "packs: parse pack.yaml: yaml: unmarshal"},
+            %{"pack" => String.duplicate("p", 200), "reason" => String.duplicate("r", 2_000)},
+            # Hostile/garbage shapes are dropped, never persisted.
+            %{"pack" => "", "reason" => "empty pack"},
+            %{"pack" => "no-reason"},
+            "not-a-map",
+            %{"pack" => 7, "reason" => 9}
+          ]
+        })
+
+      assert [first, second] = updated.degraded_packs
+
+      assert first == %{
+               "pack" => "cloud-init",
+               "reason" => "packs: parse pack.yaml: yaml: unmarshal"
+             }
+
+      assert second["pack"] == String.duplicate("p", 80)
+      assert second["reason"] == String.duplicate("r", 500)
+    end
+
+    test "caps advertised degraded packs at 32 entries", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      entries =
+        Enum.map(1..40, fn index ->
+          %{"pack" => "pack#{index}", "reason" => "broken"}
+        end)
+
+      {:ok, updated} = Runners.apply_state(runner, %{"degraded_packs" => entries})
+      assert length(updated.degraded_packs) == 32
+    end
+
+    test "an advertisement without degraded packs clears them", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, degraded} =
+        Runners.apply_state(runner, %{
+          "degraded_packs" => [%{"pack" => "busted", "reason" => "broken"}]
+        })
+
+      assert [%{"pack" => "busted"}] = degraded.degraded_packs
+
+      # The latest advertisement is authoritative: a repaired (or older)
+      # runner that advertises no degraded packs resets the record.
+      {:ok, repaired} = Runners.apply_state(degraded, %{"hostname" => "h"})
+      assert repaired.degraded_packs == []
+    end
   end
 
   describe "apply_state_from_connection/4" do

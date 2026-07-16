@@ -295,6 +295,29 @@ defmodule EmisarWeb.RunnerDetailLive do
             base_url={@base_url}
             class="mt-8"
           />
+
+          <%!-- Packs this runner's loader skipped, as it advertised them —
+             without this the pack just silently vanishes from the catalog
+             while the runner looks healthy. --%>
+          <.callout
+            :if={@runner.degraded_packs != []}
+            id="degraded-packs"
+            tone={:amber}
+            icon="hero-exclamation-triangle"
+            title={degraded_packs_title(@runner.degraded_packs)}
+            class="mt-8"
+          >
+            <div class="space-y-3">
+              <p :for={degraded <- @runner.degraded_packs}>
+                <span class="font-mono text-zinc-200">{degraded["pack"]}</span>
+                <span class="text-zinc-500">— {degraded["reason"]}</span>
+              </p>
+              <p>
+                Reinstall the pack on the host (<code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">emisar pack install &lt;name&gt;</code>) or re-run the installer; the runner
+                re-advertises on its next reload.
+              </p>
+            </div>
+          </.callout>
         </div>
 
         <%!-- A signature-enforcing runner has locked the portal out: it verifies a
@@ -574,4 +597,9 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   defp disconnect_message(_runner), do: nil
+
+  defp degraded_packs_title([_single]), do: "A pack failed to load on this runner"
+
+  defp degraded_packs_title(degraded),
+    do: "#{length(degraded)} packs failed to load on this runner"
 end

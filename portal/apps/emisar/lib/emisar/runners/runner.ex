@@ -21,6 +21,10 @@ defmodule Emisar.Runners.Runner do
     field :connection_lease_id, Ecto.UUID
     field :connection_lease_expires_at, :utc_datetime_usec
     field :packs, :map, default: %{}
+    # Packs the runner's loader skipped at boot (unparseable/invalid on disk),
+    # advertised on runner_state: [%{"pack" => name, "reason" => text}],
+    # normalized + bounded at ingest.
+    field :degraded_packs, {:array, :map}, default: []
 
     # Runner-advertised: the runner verifies a client signature on every
     # dispatch and refuses unsigned ones, so the portal disables its own

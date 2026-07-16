@@ -282,6 +282,76 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert call(conn, "find_actions", %{"action_id" => "foreign.secret"})["candidates"] == []
   end
 
+  test "a runner that is not connected wears only its connection story, never trust alarms", %{
+    conn: conn,
+    account: account
+  } do
+    # Both runners advertise the SAME untrusted pack; neither advertisement is
+    # trusted. The connected runner honestly wears the trust issue; the
+    # disconnected runner's stored advertisement is a stale snapshot, so its
+    # row tells only the connection story (a crash-looping production runner
+    # once wore descriptor_mismatch + pack_untrusted for 100 minutes when the
+    # real problem was runner health).
+    connected = Fixtures.Runners.create_runner(account_id: account.id, name: "up")
+
+    offline =
+      Fixtures.Runners.create_runner(account_id: account.id, name: "down", connected?: false)
+
+    observe!(connected, %{"suspect" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("suspect.read", "suspect")
+    ])
+
+    observe!(offline, %{"suspect" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("suspect.read", "suspect")
+    ])
+
+    result = call(conn, "list_runners", %{"issues_only" => true})
+    issues_by_name = Map.new(result["runners"], &{&1["name"], &1["issues"]})
+
+    connected_codes = issues_by_name |> Map.fetch!("up") |> Enum.map(& &1["code"])
+    assert "pack_untrusted" in connected_codes
+
+    # The never-connected fixture reads "pending" — the same not-connected
+    # branch; a stale advertisement never raises trust alarms either way.
+    offline_codes = issues_by_name |> Map.fetch!("down") |> Enum.map(& &1["code"])
+    assert offline_codes == ["runner_pending"]
+  end
+
+  test "a runner-advertised degraded pack surfaces as a named issue", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "degraded-host")
+
+    payload = %{
+      "hostname" => runner.hostname,
+      "version" => runner.runner_version,
+      "labels" => runner.labels,
+      "enforce_signatures" => false,
+      "packs" => %{"healthy" => %{"version" => "1.0.0", "hash" => @hash}},
+      "actions" => [action("healthy.read", "healthy")],
+      "degraded_packs" => [
+        %{"pack" => "cloud-init", "reason" => "packs: parse modules_config.yaml: yaml: unmarshal"}
+      ]
+    }
+
+    assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+    trust_all!(subject)
+
+    result = call(conn, "list_runners", %{"issues_only" => true})
+
+    assert [%{"name" => "degraded-host", "issues" => issues}] = result["runners"]
+
+    assert [
+             %{
+               "code" => "pack_load_failed",
+               "message" =>
+                 "Pack cloud-init failed to load on this runner: packs: parse modules_config.yaml: yaml: unmarshal"
+             }
+           ] = issues
+  end
+
   test "list_runners with a pack filter tolerates a runner missing that pack's compatibility", %{
     conn: conn,
     account: account,
