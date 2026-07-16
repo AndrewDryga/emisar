@@ -51,6 +51,24 @@ const (
 	StatusBlockedByAdmission Status = "blocked_by_admission"
 )
 
+var resultStatuses = [...]Status{
+	StatusSuccess,
+	StatusFailed,
+	StatusError,
+	StatusValidationFailed,
+	StatusUnknownAction,
+	StatusTimedOut,
+	StatusCancelled,
+	StatusBlockedByAdmission,
+}
+
+// ResultStatuses returns every terminal status the engine can put in a Result.
+// Callers use the copy to keep transport contracts exhaustive without exposing
+// the package's internal backing array.
+func ResultStatuses() []Status {
+	return append([]Status(nil), resultStatuses[:]...)
+}
+
 // Opts are the cloud-supplied per-call overrides. Each is clamped against
 // the action's declared min/max before use.
 type Opts struct {

@@ -297,13 +297,7 @@ func validLegacyActionResult(result ActionResultMsg, requestID string) bool {
 	if result.Type != MsgActionResult || result.RequestID != requestID {
 		return false
 	}
-	switch result.Status {
-	case "success", "failed", "error", "validation_failed", "unknown_action", "timed_out",
-		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":
-		return true
-	default:
-		return false
-	}
+	return validActionResultStatus(result.Status)
 }
 
 func legacyDispatchDigest(requestID string) string {
@@ -388,13 +382,7 @@ func validActionResult(result ActionResultMsg, requestID string) bool {
 	if result.LocalAuditFailed != (result.EventID == "") {
 		return false
 	}
-	switch result.Status {
-	case "success", "failed", "error", "validation_failed", "unknown_action", "timed_out",
-		"blocked_by_admission", "cancelled", "signature_invalid", "pack_hash_mismatch":
-		return true
-	default:
-		return false
-	}
+	return validActionResultStatus(result.Status)
 }
 
 // reserve binds requestID to digest and persists the reservation before the
@@ -617,6 +605,16 @@ func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {
 		}
 	}
 	return results
+}
+
+func (d *dedupRing) unacknowledgedResult(requestID string) (ActionResultMsg, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	entry, ok := d.records[requestID]
+	if !ok || entry.State != dispatchCompleted {
+		return ActionResultMsg{}, false
+	}
+	return entry.Result, true
 }
 
 func (d *dedupRing) contains(requestID string) bool {

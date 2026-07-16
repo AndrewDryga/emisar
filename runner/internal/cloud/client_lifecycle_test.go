@@ -203,6 +203,56 @@ func TestClient_ReconnectRequeuesCompletedResultUntilAcknowledged(t *testing.T) 
 	}
 }
 
+func TestClient_RetriesTransientFinalizeOnceOnStableSession(t *testing.T) {
+	tests := []struct {
+		name       string
+		code       string
+		repeat     bool
+		wantResult int
+	}{
+		{name: "finalize failure", code: "finalize_failed", repeat: false, wantResult: 1},
+		{name: "duplicate finalize failure", code: "finalize_failed", repeat: true, wantResult: 1},
+		{name: "other error", code: "runner_state_failed", repeat: true, wantResult: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
+			conn := newFakeConn()
+			requestID := testRequestID("req_finalize_retry_" + tc.name)
+			result := testActionResult(requestID, ActionResultMsg{
+				Status:  "success",
+				EventID: "evt_finalize_retry",
+			})
+			reserveAndComplete(t, cli.dedup, requestID, testDispatchDigest(requestID), result)
+
+			raw, err := json.Marshal(ErrorMsg{
+				Envelope: Envelope{
+					Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: requestID,
+				},
+				Code: tc.code,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cli.dispatch(context.Background(), raw); err != nil {
+				t.Fatalf("dispatch first error: %v", err)
+			}
+			if tc.repeat {
+				if err := cli.dispatch(context.Background(), raw); err != nil {
+					t.Fatalf("dispatch duplicate error: %v", err)
+				}
+			}
+			if err := cli.drainOnce(context.Background(), conn); err != nil {
+				t.Fatalf("drain retry: %v", err)
+			}
+			if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != tc.wantResult {
+				t.Fatalf("action_result count=%d, want %d", got, tc.wantResult)
+			}
+		})
+	}
+}
+
 func TestClient_RequeueActiveStartsPrependsOneFrame(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
 	state := &runState{

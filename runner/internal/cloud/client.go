@@ -23,6 +23,11 @@ var errResponseBacklogFull = errors.New("response backlog full")
 
 var errTerminalShutdown = errors.New("cloud: terminal shutdown")
 
+const (
+	resultStatusSignatureInvalid = "signature_invalid"
+	resultStatusPackHashMismatch = "pack_hash_mismatch"
+)
+
 // Conn is the transport-level interface the Client uses. A real
 // implementation wraps a websocket; tests can use an in-memory pair.
 //
@@ -111,6 +116,12 @@ type Client struct {
 	preCanceled      map[string]struct{}
 	preCanceledOrder []string
 
+	// finalizeRetries bounds a same-session replay to one attempt per
+	// request. Completed, unacknowledged results are already retained by the
+	// dedup ring for reconnect recovery; this map only covers the extra retry
+	// requested by a transient portal persistence error.
+	finalizeRetries map[string]struct{}
+
 	// readvertise is a coalescing wake-up: Readvertise() does a
 	// non-blocking send and readvertiseLoop drains it. Buffered size 1,
 	// so many calls between drains collapse into a single extra send.
@@ -169,9 +180,10 @@ func NewClient(d Dialer, opts Options) *Client {
 		runs:   map[string]*runState{},
 		dedup: newDedupRing(
 			opts.DedupRingSize, opts.DedupStorePath, opts.DedupLegacyStorePath, opts.Logger),
-		preCanceled: map[string]struct{}{},
-		readvertise: make(chan struct{}, 1),
-		wake:        make(chan struct{}, 1),
+		preCanceled:     map[string]struct{}{},
+		finalizeRetries: map[string]struct{}{},
+		readvertise:     make(chan struct{}, 1),
+		wake:            make(chan struct{}, 1),
 	}
 	c.verifier.Store(opts.Verifier)
 	return c
@@ -450,6 +462,24 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			return nil
 		}
 		c.ackRun(envelope.RequestID)
+	case MsgError:
+		if err := requireProtocolVersion(envelope); err != nil {
+			return err
+		}
+		if envelope.RequestID != "" {
+			if err := validateRequestID(envelope.RequestID); err != nil {
+				c.opts.Logger.Warn("cloud.bad_error", "error", err)
+				return nil
+			}
+		}
+		var m ErrorMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			c.opts.Logger.Warn("cloud.bad_error", "error", err)
+			return nil
+		}
+		if m.Code == "finalize_failed" {
+			c.retryFinalization(envelope.RequestID)
+		}
 	case MsgShutdown:
 		if err := requireProtocolVersion(envelope); err != nil {
 			return err
@@ -927,7 +957,7 @@ func (c *Client) refuseSignature(ctx context.Context, s *runState, m RunActionMs
 	)
 	result := withLocalAudit(ActionResultMsg{
 		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-		Status:     "signature_invalid",
+		Status:     resultStatusSignatureInvalid,
 		ExitCode:   -1,
 		DurationMS: 0,
 		Error:      "refused: " + dec.Detail,
@@ -1018,7 +1048,7 @@ func (c *Client) emitPackMismatch(ctx context.Context, s *runState, m RunActionM
 	)
 	result := withLocalAudit(ActionResultMsg{
 		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-		Status:     "pack_hash_mismatch",
+		Status:     resultStatusPackHashMismatch,
 		ExitCode:   -1,
 		DurationMS: 0,
 		Error:      detail,
@@ -1291,9 +1321,58 @@ func (c *Client) ackRun(requestID string) {
 		c.opts.Logger.Error("cloud.dedup_ack_failed", "request_id", requestID, "error", err)
 		return
 	}
+	c.mu.Lock()
+	delete(c.finalizeRetries, requestID)
+	c.mu.Unlock()
 	if ok {
 		c.removeRun(requestID)
 	}
+}
+
+// retryFinalization requeues a durable terminal result after the portal says
+// its first finalize attempt failed. The normal dedup replay remains the
+// reconnect backstop; this bounded same-session retry removes avoidable
+// latency when the socket itself is healthy.
+func (c *Client) retryFinalization(requestID string) {
+	if requestID == "" {
+		return
+	}
+
+	result, ok := c.dedup.unacknowledgedResult(requestID)
+	if !ok {
+		return
+	}
+
+	c.mu.Lock()
+	if _, retried := c.finalizeRetries[requestID]; retried {
+		c.mu.Unlock()
+		return
+	}
+	if !c.enqueueTransientLocked(requestID, result) {
+		c.mu.Unlock()
+		return
+	}
+	c.finalizeRetries[requestID] = struct{}{}
+	c.mu.Unlock()
+	c.signalSend()
+	c.opts.Logger.Warn("cloud.finalize_retry", "request_id", requestID)
+}
+
+func runnerResultStatuses() []string {
+	statuses := make([]string, 0, len(engine.ResultStatuses())+2)
+	for _, status := range engine.ResultStatuses() {
+		statuses = append(statuses, string(status))
+	}
+	return append(statuses, resultStatusSignatureInvalid, resultStatusPackHashMismatch)
+}
+
+func validActionResultStatus(status string) bool {
+	for _, allowed := range runnerResultStatuses() {
+		if status == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) removeRun(requestID string) {

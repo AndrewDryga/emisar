@@ -639,7 +639,9 @@ type HeartbeatMsg struct {
 	ActionLoad int    `json:"action_load"`
 }
 
-// ErrorMsg is a generic runner-to-cloud error. It does not abort the session.
+// ErrorMsg is a generic session error. Runner-originated errors do not abort
+// the session; the cloud may also send finalize_failed to request one bounded
+// replay of a durable terminal result.
 type ErrorMsg struct {
 	Envelope
 	Code    string `json:"code"`
