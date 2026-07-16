@@ -226,12 +226,18 @@ defmodule EmisarWeb.MCP.CatalogTools do
 
   defp runner_pack_match?(runner, packs_by_ref, args) do
     Enum.any?(packs_by_ref, fn {_pack_ref, pack} ->
-      compatibility = Map.get(pack.compatibility, runner.id)
+      # A pack the runner has no compatibility entry for is simply not a match —
+      # guard nil explicitly. The old `compatibility && (...)` returned nil, which
+      # `and` then rejected with a BadBooleanError, crashing the filter.
+      case Map.get(pack.compatibility, runner.id) do
+        nil ->
+          false
 
-      (compatibility &&
-         (is_nil(args.pack_id) or pack.pack_id == args.pack_id)) and
-        (is_nil(args.pack_ref) or pack.pack_ref == args.pack_ref) and
-        (is_nil(args.action_id) or args.action_id in compatibility.compatible_action_ids)
+        compatibility ->
+          (is_nil(args.pack_id) or pack.pack_id == args.pack_id) and
+            (is_nil(args.pack_ref) or pack.pack_ref == args.pack_ref) and
+            (is_nil(args.action_id) or args.action_id in compatibility.compatible_action_ids)
+      end
     end)
   end
 

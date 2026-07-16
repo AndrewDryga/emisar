@@ -236,6 +236,35 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert call(conn, "find_actions", %{"action_id" => "foreign.secret"})["candidates"] == []
   end
 
+  test "list_runners with a pack filter tolerates a runner missing that pack's compatibility", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner_a = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-a")
+    runner_b = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-b")
+
+    # Each runner advertises a DIFFERENT pack, so the account catalog holds packa,
+    # which runner-b has no compatibility entry for.
+    observe!(runner_a, %{"packa" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("demo.a", "packa")
+    ])
+
+    observe!(runner_b, %{"packb" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("demo.b", "packb")
+    ])
+
+    trust_all!(subject)
+
+    # Filtering by packa makes runner_pack_match?/3 test runner-b against packa,
+    # where compatibility is nil — the old `nil and …` raised BadBooleanError.
+    # Now that runner is simply not a match.
+    result = call(conn, "list_runners", %{"pack_id" => "packa"})
+
+    assert result["ok"]
+    assert Enum.map(result["runners"], & &1["name"]) == ["runner-a"]
+  end
+
   test "run_action preserves exact argument bytes, binds the v4 header, and replays one run", %{
     conn: conn,
     account: account,
