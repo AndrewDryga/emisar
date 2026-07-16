@@ -229,7 +229,7 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 		}
 	}
 	if val.Min != nil {
-		below, ok := belowNumericBound(a.Type, v, *val.Min)
+		below, ok := belowNumericBound(v, *val.Min)
 		if !ok {
 			return newError(a.Name, "min", "min requires numeric value")
 		}
@@ -238,7 +238,7 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 		}
 	}
 	if val.Max != nil {
-		above, ok := aboveNumericBound(a.Type, v, *val.Max)
+		above, ok := aboveNumericBound(v, *val.Max)
 		if !ok {
 			return newError(a.Name, "max", "max requires numeric value")
 		}
@@ -267,22 +267,14 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 	return nil
 }
 
-func belowNumericBound(argType actionspec.ArgType, value any, bound float64) (bool, bool) {
-	if argType == actionspec.ArgInteger || argType == actionspec.ArgIntegerArray {
-		integer, ok := value.(int64)
-		return ok && integer < int64(bound), ok
-	}
-	valueFloat, ok := toFloat(value)
-	return ok && valueFloat < bound, ok
+func belowNumericBound(value any, bound float64) (bool, bool) {
+	comparison, ok := compareNumeric(value, bound)
+	return ok && comparison < 0, ok
 }
 
-func aboveNumericBound(argType actionspec.ArgType, value any, bound float64) (bool, bool) {
-	if argType == actionspec.ArgInteger || argType == actionspec.ArgIntegerArray {
-		integer, ok := value.(int64)
-		return ok && integer > int64(bound), ok
-	}
-	valueFloat, ok := toFloat(value)
-	return ok && valueFloat > bound, ok
+func aboveNumericBound(value any, bound float64) (bool, bool) {
+	comparison, ok := compareNumeric(value, bound)
+	return ok && comparison > 0, ok
 }
 
 // applyPathValidation runs path allow/deny rules. Works on string and
@@ -453,20 +445,67 @@ func equal(a, b any) bool {
 		bn, ok := toInt(b)
 		return ok && av == bn
 	case json.Number:
-		an, ok := toFloat(av)
-		if !ok {
-			return false
-		}
-		bn, ok := toFloat(b)
-		return ok && an == bn
+		comparison, ok := compareNumeric(av, b)
+		return ok && comparison == 0
 	case float64:
-		bn, ok := toFloat(b)
-		return ok && av == bn
+		comparison, ok := compareNumeric(av, b)
+		return ok && comparison == 0
+	case float32:
+		comparison, ok := compareNumeric(av, b)
+		return ok && comparison == 0
 	case bool:
 		bb, ok := b.(bool)
 		return ok && av == bb
 	}
 	return a == b
+}
+
+func compareNumeric(a, b any) (int, bool) {
+	ar, ok := exactNumeric(a)
+	if !ok {
+		return 0, false
+	}
+	br, ok := exactNumeric(b)
+	if !ok {
+		return 0, false
+	}
+	return ar.Cmp(br), true
+}
+
+func exactNumeric(value any) (*big.Rat, bool) {
+	var raw string
+	switch number := value.(type) {
+	case int:
+		raw = strconv.FormatInt(int64(number), 10)
+	case int32:
+		raw = strconv.FormatInt(int64(number), 10)
+	case int64:
+		raw = strconv.FormatInt(number, 10)
+	case uint:
+		raw = strconv.FormatUint(uint64(number), 10)
+	case uint32:
+		raw = strconv.FormatUint(uint64(number), 10)
+	case uint64:
+		raw = strconv.FormatUint(number, 10)
+	case float32:
+		if _, ok := finiteFloat(float64(number)); !ok {
+			return nil, false
+		}
+		raw = strconv.FormatFloat(float64(number), 'g', -1, 32)
+	case float64:
+		if _, ok := finiteFloat(number); !ok {
+			return nil, false
+		}
+		raw = strconv.FormatFloat(number, 'g', -1, 64)
+	case json.Number:
+		raw = number.String()
+	case string:
+		raw = number
+	default:
+		return nil, false
+	}
+	rational, ok := new(big.Rat).SetString(raw)
+	return rational, ok
 }
 
 func arrayLen(v any) (int, bool) {

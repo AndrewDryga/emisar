@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -116,6 +117,7 @@ func TestEqual(t *testing.T) {
 		{int64(5), 5.0}, // int target, float candidate coerces
 		{int64(5), "5"}, // int target, string candidate coerces
 		{float64(2.5), "2.5"},
+		{json.Number("1.250"), 1.25},
 		{true, true},
 	}
 	for _, c := range truthy {
@@ -127,6 +129,7 @@ func TestEqual(t *testing.T) {
 		{"x", "y"},
 		{int64(5), int64(6)},
 		{int64(5), "abc"}, // uncoercible
+		{json.Number("1.2500000000000001"), 1.25},
 		{true, false},
 		{true, "true"}, // bool only equals bool
 	}
