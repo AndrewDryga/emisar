@@ -61,6 +61,31 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert :ok = ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action)
   end
 
+  test "matches Go regex anchors and duration range semantics" do
+    action =
+      action([
+        arg("name", "string", validation: %{"pattern" => "^[a-z]+$"}),
+        arg("delay", "duration", validation: %{"min_duration" => "1ns"})
+      ])
+
+    assert_issue(%{"name" => "safe\n"}, action, "name", "pattern")
+    assert_issue(%{"delay" => "0.6ns0.6ns"}, action, "delay", "min_duration")
+    assert_issue(%{"delay" => "2562048h"}, action, "delay", "type")
+    assert :ok = ActionContract.validate(%{"delay" => "0"}, action([arg("delay", "duration")]))
+
+    assert :ok =
+             ActionContract.validate(
+               %{"delay" => "2562047h47m16.854775807s"},
+               action([arg("delay", "duration")])
+             )
+
+    assert :ok =
+             ActionContract.validate(
+               %{"delay" => "-2562047h47m16.854775808s"},
+               action([arg("delay", "duration")])
+             )
+  end
+
   test "accepts every bundled example and declared default" do
     catalog =
       :emisar

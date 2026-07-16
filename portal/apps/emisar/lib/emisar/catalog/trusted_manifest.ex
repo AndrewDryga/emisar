@@ -39,6 +39,7 @@ defmodule Emisar.Catalog.TrustedManifest do
   @max_search_term_length 80
   @max_descriptor_bytes 32_768
   @max_manifest_bytes 1_048_576
+  @max_compact_pack_bytes 57_344
   @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
   @unsafe_text ~r/[\p{Cc}\p{Cf}\p{Cs}]/u
 
@@ -70,7 +71,8 @@ defmodule Emisar.Catalog.TrustedManifest do
          valid_action_count?(actions) and
          Enum.all?(actions, fn {action_id, descriptor} ->
            valid_descriptor?(action_id, descriptor)
-         end) and encoded_within?(manifest, @max_manifest_bytes) do
+         end) and compact_pack_within?(actions) and
+         encoded_within?(manifest, @max_manifest_bytes) do
       {:ok, manifest}
     else
       {:error, :incomplete_manifest}
@@ -223,6 +225,34 @@ defmodule Emisar.Catalog.TrustedManifest do
     do: length(values) <= max_items and Enum.all?(values, &is_map/1)
 
   defp valid_map_list?(_values, _max_items), do: false
+
+  defp compact_pack_within?(actions) do
+    action_summaries =
+      Enum.map(actions, fn {action_id, descriptor} ->
+        %{
+          "action_id" => action_id,
+          "title" => descriptor["title"],
+          "summary" => descriptor["summary"],
+          "risk" => descriptor["risk"],
+          "availability" => "unavailable"
+        }
+      end)
+
+    worst_case_issue = %{
+      "code" => String.duplicate("x", 80),
+      "message" => String.duplicate("\u00E9", 512)
+    }
+
+    encoded_within?(
+      %{
+        "pack_ref" => String.duplicate("x", 256),
+        "availability" => "unavailable",
+        "issues" => List.duplicate(worst_case_issue, 8),
+        "actions" => action_summaries
+      },
+      @max_compact_pack_bytes
+    )
+  end
 
   defp case_insensitively_distinct?(values) do
     normalized = Enum.map(values, &String.downcase/1)

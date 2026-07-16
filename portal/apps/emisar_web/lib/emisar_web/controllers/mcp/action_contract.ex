@@ -10,7 +10,7 @@ defmodule EmisarWeb.MCP.ActionContract do
   alias EmisarWeb.MCP.RawJSON.Number
 
   @default_max_string_bytes 32_768
-  @duration ~r/\A[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+\z/u
+  @duration ~r/\A[+-]?(?:0|(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)\z/u
   @duration_part ~r/([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h)/u
   @duration_units %{
     "ns" => 1,
@@ -22,6 +22,8 @@ defmodule EmisarWeb.MCP.ActionContract do
     "m" => 60_000_000_000,
     "h" => 3_600_000_000_000
   }
+  @min_duration_nanoseconds Decimal.new(-9_223_372_036_854_775_808)
+  @max_duration_nanoseconds Decimal.new(9_223_372_036_854_775_807)
 
   @type issue :: %{arg: String.t(), code: String.t(), message: String.t()}
 
@@ -206,9 +208,9 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   defp validate_pattern(%{"name" => name}, value, %{"pattern" => pattern})
        when is_binary(pattern) and is_binary(value) do
-    case Regex.compile(pattern) do
+    case :re.compile(pattern, [:unicode, :dollar_endonly]) do
       {:ok, regex} ->
-        if Regex.match?(regex, value),
+        if :re.run(value, regex, capture: :none) == :match,
           do: :ok,
           else: issue(name, "pattern", "does not match the required pattern")
 
@@ -329,16 +331,22 @@ defmodule EmisarWeb.MCP.ActionContract do
         @duration_part
         |> Regex.scan(parts, capture: :all_but_first)
         |> Enum.reduce(Decimal.new(0), fn [amount, unit], acc ->
-          Decimal.add(
-            acc,
-            Decimal.mult(
-              Decimal.new(normalize_decimal(amount)),
-              Decimal.new(@duration_units[unit])
-            )
-          )
+          nanoseconds =
+            amount
+            |> normalize_decimal()
+            |> Decimal.new()
+            |> Decimal.mult(Decimal.new(@duration_units[unit]))
+            |> Decimal.round(0, :down)
+
+          Decimal.add(acc, nanoseconds)
         end)
 
-      {:ok, Decimal.mult(total, Decimal.new(sign))}
+      signed = Decimal.mult(total, Decimal.new(sign))
+
+      if Decimal.compare(signed, @min_duration_nanoseconds) != :lt and
+           Decimal.compare(signed, @max_duration_nanoseconds) != :gt,
+         do: {:ok, signed},
+         else: :error
     else
       :error
     end
