@@ -327,7 +327,11 @@
         "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"},
         "hostname": {"type": "string", "minLength": 1, "maxLength": 255},
         "group": {"type": "string", "minLength": 1, "maxLength": 80},
-        "status": {"type": "string", "enum": ["connected", "disconnected", "pending", "disabled"]}
+        "status": {"type": "string", "enum": ["connected", "disconnected", "pending", "disabled"]},
+        "enforce_signatures": {
+          "type": "boolean",
+          "description": "True when this runner verifies a customer-CA action attestation before executing; dispatching to it needs a signing-enabled bridge."
+        }
       }
     },
     "approval": {

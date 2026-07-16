@@ -1019,8 +1019,11 @@ the portal HTTP server's single-header limit. Both sides reject a larger value
 before decoding or allocation.
 
 An unsigned `run_action` may target only runners that do not enforce signed
-dispatch. If any selected runner advertises enforcement, a missing or invalid
-attestation fails preflight with `signature_required`. Direct Streamable
+dispatch. Each runner object carries `enforce_signatures` so a client can see
+enforcement before dispatching. If any selected runner advertises enforcement,
+a missing or invalid attestation fails preflight with `signature_required`,
+whose `details.runner_refs` lists exactly the enforcing runners among those the
+call selected. Direct Streamable
 HTTP otherwise remains a supported MCP transport; it does not gain access to a
 client signing key merely by being direct.
 
@@ -1467,7 +1470,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `operation_not_found` | Exact operation is absent or belongs to another credential lineage. | Keep ambiguous mutations unresolved. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
 | `runbook_not_found` | Exact visible published ref is absent. | List runbooks; do not substitute a slug. |
-| `signature_required` | A selected runner requires a customer-CA action attestation. | Use a signing-enabled bridge or select only non-enforcing runners. |
+| `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
 | `target_contract_changed` | Selected runner lost the exact pack/action. | Exact refresh, then retry once. |
 

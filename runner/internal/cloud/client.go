@@ -116,9 +116,11 @@ type Client struct {
 	preCanceled      map[string]struct{}
 	preCanceledOrder []string
 
-	// finalizeRetries bounds a same-session replay to one attempt per
-	// request. Completed, unacknowledged results are already retained by the
-	// dedup ring for reconnect recovery; this map only covers the extra retry
+	// finalizeRetries bounds the transient-finalize replay to one attempt
+	// per request for the client's lifetime (entries clear only on ack, so a
+	// retry consumed in one session is not granted again after a reconnect).
+	// Completed, unacknowledged results are already retained by the dedup
+	// ring for reconnect recovery; this map only covers the extra retry
 	// requested by a transient portal persistence error.
 	finalizeRetries map[string]struct{}
 
@@ -1331,8 +1333,8 @@ func (c *Client) ackRun(requestID string) {
 
 // retryFinalization requeues a durable terminal result after the portal says
 // its first finalize attempt failed. The normal dedup replay remains the
-// reconnect backstop; this bounded same-session retry removes avoidable
-// latency when the socket itself is healthy.
+// reconnect backstop; this once-per-request retry removes avoidable latency
+// when the socket itself is healthy.
 func (c *Client) retryFinalization(requestID string) {
 	if requestID == "" {
 		return
