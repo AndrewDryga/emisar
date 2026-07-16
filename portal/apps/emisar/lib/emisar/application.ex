@@ -32,6 +32,7 @@ defmodule Emisar.Application do
       Emisar.Audit,
       Emisar.Billing,
       Emisar.OAuth,
+      Emisar.MCPOperations,
       Emisar.Runs
     ]
 

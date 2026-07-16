@@ -6,12 +6,24 @@ defmodule Emisar.MCPOperations do
   recovery snapshot is deliberately independent of current runner scope: scope
   can revoke future work without hiding whether an earlier mutation committed.
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.{ApiKeys, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.MCPOperations.{Authorizer, Operation}
 
   @crockford_alphabet "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([job_module("ReplayRetention")], strategy: :one_for_one)
+  end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   @doc """
   Derives the stable operation identity for a native MCP mutation request.
