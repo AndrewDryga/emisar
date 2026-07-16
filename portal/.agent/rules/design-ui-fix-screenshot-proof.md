@@ -4,16 +4,25 @@
 or marketing — the fix is a four-step loop, and the FIRST step happens before
 any code is edited:
 
-1. **Before-shot** — capture the reported state from the running `:4010` stack:
+1. **Before-shot** — capture the reported state from the running `:4010` stack,
+   writing into the folder that owns the work (`--out`):
+
+   - **Working a queued task?** Its own `screenshots/` folder:
+     `--out .agent/tasks/10_in_progress/<id>/screenshots`.
+   - **A one-off with no task?** A dated, named folder:
+     `--out .agent/screenshots/<YYYY-MM-DD>-<what-is-fixed>` (e.g.
+     `.agent/screenshots/2026-07-16-agents-owner-grouping`).
 
    ```sh
-   node portal/.agent/scripts/shot.mjs <path> --label before --select '<css>'
+   node portal/.agent/scripts/shot.mjs <path> --label before --select '<css>' \
+     --out .agent/screenshots/<YYYY-MM-DD>-<what-is-fixed>
    ```
 
-   Writes `test-results/ui-fix/before-full.png` (full page) and
-   `before-crop.png` (the element under fix). Anchor by `--select CSS`,
-   `--heading "exact text"` (+ `--climb section` to take the enclosing
-   container), or `--class-contains a,b` for Tailwind arbitrary classes.
+   Writes `<out>/before-full.png` (full page) and `before-crop.png` (the element
+   under fix). Both locations are git-ignored, so the shots never add commit
+   noise; a forgotten `--out` falls back to `.agent/screenshots/scratch`. Anchor
+   by `--select CSS`, `--heading "exact text"` (+ `--climb section` to take the
+   enclosing container), or `--class-contains a,b` for Tailwind arbitrary classes.
 2. **Fix** — the normal workflow (AGENTS.md, `design-system.md`, the gate).
 3. **Rebuild** — from the repo root: `docker compose build portal &&
    docker compose up -d portal`, wait for healthy. The screenshots see only the

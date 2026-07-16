@@ -3,9 +3,15 @@
 // rule): one page on the seeded :4010 compose stack → a full-page PNG plus a
 // crop of the element under fix.
 //
-//   node shot.mjs /app/demo/runners --label before --select '#runners'
-//   node shot.mjs /pricing --label after --heading "Pricing" --climb section
+//   # task-scoped work — pass the task's own screenshots/ folder:
+//   node shot.mjs /app/demo/runners --label before --select '#runners' \
+//     --out .agent/tasks/10_in_progress/<id>/screenshots
+//   # one-off (no task) — a dated, named folder under .agent/screenshots/:
+//   node shot.mjs /pricing --label after --heading "Pricing" --climb section \
+//     --out .agent/screenshots/2026-07-16-pricing-headline
 //
+// Pass --out so shots land with the work that owns them (both paths are
+// git-ignored); a forgotten --out falls back to .agent/screenshots/scratch.
 // Anchors (same logic as capture-docs-screenshots.mjs): --select CSS,
 // --heading "exact text" (tightest enclosing element), or --class-contains a,b
 // (Tailwind arbitrary classes don't select via CSS); --climb SEL walks up to a
@@ -38,7 +44,7 @@ if (!path || !flags.label) {
 }
 const OUT = flags.out
   ? resolve(flags.out)
-  : resolve(import.meta.dirname, "../../../test-results/ui-fix");
+  : resolve(import.meta.dirname, "../../../.agent/screenshots/scratch");
 mkdirSync(OUT, { recursive: true });
 const WIDTH = Number(flags.width) || 1440;
 const SETTLE = Number(flags.settle) || 1200;
