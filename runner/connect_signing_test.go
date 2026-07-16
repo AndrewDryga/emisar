@@ -52,6 +52,34 @@ func TestOpenNonceStoreUsesDataDir(t *testing.T) {
 	}
 }
 
+func TestOpenRuntimeNonceStoreIgnoresDisabledSigningState(t *testing.T) {
+	dataDir := t.TempDir()
+	journalDir := filepath.Join(dataDir, "signing")
+	if err := os.MkdirAll(journalDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(journalDir, "nonce-cache.json"), []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Paths:   config.Paths{DataDir: dataDir},
+		Signing: config.Signing{MaxAttestationAge: actionspec.Duration(time.Hour)},
+	}
+
+	store, err := openRuntimeNonceStore(cfg)
+	if err != nil {
+		t.Fatalf("disabled signing opened unused durable state: %v", err)
+	}
+	if store.Durable() {
+		t.Fatal("disabled signing unexpectedly opened durable replay state")
+	}
+
+	cfg.Signing.EnforceSignatures = true
+	if _, err := openRuntimeNonceStore(cfg); err == nil {
+		t.Fatal("enforcing signing accepted a corrupt nonce journal")
+	}
+}
+
 func TestCanonicalPortalOrigin(t *testing.T) {
 	tests := []struct {
 		name string

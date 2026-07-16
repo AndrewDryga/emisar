@@ -107,7 +107,10 @@ func boot() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	return bootWithConfig(cfg)
+}
 
+func bootWithConfig(cfg *config.Config) (*runtime, error) {
 	registry, packDirs, err := loadRegistry(cfg)
 	if err != nil {
 		return nil, err

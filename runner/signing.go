@@ -348,7 +348,7 @@ this, mint fresh certs as they expire with "emisar signing new-cert".`,
 			fmt.Print("3. MCP client — set these env vars (keep the private key SECRET):\n\n")
 			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafSeed)
 			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", string(certJSON))
-			fmt.Print("Apply the runner config with SIGHUP (or restart): it rebuilds the verifier\n")
+			fmt.Print("Restart the runner after applying this config so it opens durable replay state\n")
 			fmt.Print("and advertises enforcement. Never put the CA or leaf private key on the\n")
 			fmt.Print("control plane or in version control.\n")
 			return nil

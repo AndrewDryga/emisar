@@ -64,9 +64,11 @@ workspace.
 
 ## Runner lifecycle
 
-At boot, the runner loads config, packs, admission rules, the local journal,
-and the signed-dispatch nonce store and verifier. It then exchanges a bootstrap
-key for a per-runner token when needed, connects, and advertises state. `SIGHUP`
+At boot, the runner locks its data directory, then loads config, packs, admission
+rules, and the local journal. A runner enforcing signed dispatch also opens its
+durable nonce store before building the verifier; unsigned runners do not depend
+on signing state. It then exchanges a bootstrap key for a per-runner token when
+needed, connects, and advertises state. While enforcement is active, `SIGHUP`
 rebuilds packs and immutable signing policy and atomically swaps them for new
 requests; all verifier generations share the boot-owned nonce store, while
 in-flight actions continue with the policy snapshot they started under.

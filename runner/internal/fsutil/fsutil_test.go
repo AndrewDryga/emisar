@@ -3,6 +3,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,5 +48,27 @@ func TestSecureMkdirAll(t *testing.T) {
 				t.Fatalf("perm = %#o, want %#o", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAcquireFileLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runner.lock")
+	owner, err := AcquireFileLock(path)
+	if err != nil {
+		t.Fatalf("acquire owner: %v", err)
+	}
+	if _, err := AcquireFileLock(path); err == nil || !strings.Contains(err.Error(), "already held") {
+		t.Fatalf("second owner error = %v, want already held", err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatalf("close owner: %v", err)
+	}
+
+	reopened, err := AcquireFileLock(path)
+	if err != nil {
+		t.Fatalf("reacquire after close: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatalf("close reopened lock: %v", err)
 	}
 }

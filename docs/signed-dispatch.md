@@ -111,9 +111,9 @@ the CA **private** key to store offline, and the two MCP env vars.
    EMISAR_SIGNING_CERT=<cert JSON from the command>
    ```
 
-4. **Apply it.** Send the runner `SIGHUP` (or restart it): it rebuilds the
-   verifier from config and re-advertises, so enabling enforcement — and every
-   later change — takes effect live, no restart required.
+4. **Apply it.** Restart the runner. Initial enforcement opens the durable replay
+   journal at startup before any signed dispatch can be accepted. Once enforcement
+   is active, later CA rotation or revocation takes effect live with `SIGHUP`.
 
 5. **Verify:** the portal's Runner page shows **"Signed dispatch only"** and the
    Run button is disabled; an MCP `tools/call` runs; an operator/runbook dispatch
@@ -133,7 +133,7 @@ the CA **private** key to store offline, and the two MCP env vars.
   the operator already has a leaf keypair, pass `--pubkey <hex>` and it certifies
   that key instead of minting one.
 
-- **A new runner**: add the same `trusted_cas` block to its config and `SIGHUP`.
+- **A new runner**: add the same `trusted_cas` block to its config and restart it.
   Every operator holding a CA-issued certificate in that runner's scope can
   already reach it.
 

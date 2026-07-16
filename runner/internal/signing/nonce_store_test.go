@@ -161,7 +161,7 @@ func TestNonceJournalLockRejectsASecondOwnerAndReleasesCleanly(t *testing.T) {
 		t.Fatalf("OpenNonceStore owner: %v", err)
 	}
 	if _, err := OpenNonceStore(path, time.Hour); err == nil ||
-		!strings.Contains(err.Error(), "another runner process owns the journal") {
+		!strings.Contains(err.Error(), "file lock is already held") {
 		t.Fatalf("second owner error = %v", err)
 	}
 	if err := owner.Close(); err != nil {

@@ -35,18 +35,27 @@ returned per-runner token to cloud.token_path, then upgrades to the
 websocket. Subsequent boots reuse the cached token, so the auth key
 env var can be unset after the first successful connect.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			rt, err := boot()
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			if cfg.Cloud.URL == "" {
+				return fmt.Errorf("cloud.url not set in config (this binary has no other long-running mode)")
+			}
+			if err := validateConnectDataDir(cfg.Paths.DataDir); err != nil {
+				return err
+			}
+			dataDirLock, err := lockConnectDataDir(cfg.Paths.DataDir)
+			if err != nil {
+				return err
+			}
+			defer dataDirLock.Close()
+
+			rt, err := bootWithConfig(cfg)
 			if err != nil {
 				return err
 			}
 			defer rt.journal.Close()
-
-			if rt.cfg.Cloud.URL == "" {
-				return fmt.Errorf("cloud.url not set in config (this binary has no other long-running mode)")
-			}
-			if err := validateConnectDataDir(rt.cfg.Paths.DataDir); err != nil {
-				return err
-			}
 
 			authKey := os.Getenv(rt.cfg.Cloud.AuthKeyEnv)
 			tokenPath := rt.cfg.Cloud.TokenPath
@@ -68,18 +77,16 @@ env var can be unset after the first successful connect.`,
 			// enforcing, the runner advertises it (cloud disables its own
 			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
 			// it so a rotated/revoked key takes effect without a restart.
-			nonceStore, err := openNonceStore(rt.cfg)
+			nonceStore, err := openRuntimeNonceStore(rt.cfg)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
 			// connect owns this store for the process lifetime and shares it with
-			// every verifier. Close releases the cross-process journal lock only
-			// after the client and its dispatch goroutines have stopped.
+			// every verifier replacement.
 			defer nonceStore.Close()
 
-			// The nonce journal lock is also the process-lifetime data-directory
-			// lock. Resolve identity only after acquiring it, so two first boots
-			// cannot mint different ids for one installation.
+			// Resolve identity only after acquiring the data-directory lock, so
+			// two first boots cannot mint different ids for one installation.
 			externalID, err := rt.ensureExternalID()
 			if err != nil {
 				return fmt.Errorf("resolve runner id: %w", err)
@@ -190,6 +197,17 @@ func validateConnectDataDir(dataDir string) error {
 	return nil
 }
 
+func lockConnectDataDir(dataDir string) (*fsutil.FileLock, error) {
+	if err := fsutil.SecureMkdirAll(dataDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create runner data directory: %w", err)
+	}
+	lock, err := fsutil.AcquireFileLock(filepath.Join(dataDir, "runner.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("lock runner data directory %q: %w", dataDir, err)
+	}
+	return lock, nil
+}
+
 func reloadComponents(reloadPacks, reloadSigning func() error) (changed bool, packErr, signingErr error) {
 	packErr = reloadPacks()
 	signingErr = reloadSigning()
@@ -259,6 +277,13 @@ func canonicalPortalOrigin(raw string) (string, error) {
 func openNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
 	storePath := filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
 	return signing.OpenNonceStore(storePath, cfg.Signing.MaxAttestationAge.Std())
+}
+
+func openRuntimeNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
+	if !cfg.Signing.EnforceSignatures {
+		return signing.NewMemoryNonceStore(), nil
+	}
+	return openNonceStore(cfg)
 }
 
 // reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP

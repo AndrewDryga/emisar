@@ -78,11 +78,11 @@ execution: {}
 # stays offline and signs new operator certs as they expire
 # (`emisar signing new-cert`).
 #
-# Changing anything under `signing` (enabling enforcement, rotating or revoking
-# a CA) takes effect on the next SIGHUP — the runner rebuilds the verifier and
-# re-advertises — or on a full restart. SIGHUP shares the live, boot-owned nonce
-# store with the replacement verifier; restart reloads it from disk. A
-# still-fresh captured dispatch cannot replay across either transition.
+# Enabling enforcement requires a restart so the runner opens its durable nonce
+# journal before accepting signed dispatches. Once enforcement is active, CA
+# rotation or revocation takes effect on SIGHUP: the replacement verifier shares
+# the live nonce store and re-advertises without a restart. A still-fresh captured
+# dispatch cannot replay across either transition.
 #
 # signing:
 #   enforce_signatures: true

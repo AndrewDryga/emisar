@@ -1,6 +1,6 @@
 //go:build windows
 
-package signing
+package fsutil
 
 import (
 	"fmt"
@@ -19,17 +19,19 @@ var (
 	kernel32LockFileEx   = syscall.NewLazyDLL("kernel32.dll").NewProc("LockFileEx")
 )
 
-type nonceJournalLock struct {
+// FileLock is an exclusive, process-owned lock held until Close.
+type FileLock struct {
 	file       *os.File
 	overlapped syscall.Overlapped
 }
 
-func acquireNonceJournalLock(path string) (*nonceJournalLock, error) {
+// AcquireFileLock acquires a non-blocking exclusive lock on path.
+func AcquireFileLock(path string) (*FileLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	lock := &nonceJournalLock{file: file}
+	lock := &FileLock{file: file}
 	result, _, callErr := kernel32LockFileEx.Call(
 		file.Fd(),
 		lockfileExclusiveLock|lockfileFailImmediately,
@@ -40,12 +42,13 @@ func acquireNonceJournalLock(path string) (*nonceJournalLock, error) {
 	)
 	if result == 0 {
 		_ = file.Close()
-		return nil, fmt.Errorf("another runner process owns the journal: %w", callErr)
+		return nil, fmt.Errorf("file lock is already held: %w", callErr)
 	}
 	return lock, nil
 }
 
-func (l *nonceJournalLock) Close() error {
+// Close releases the lock.
+func (l *FileLock) Close() error {
 	if l == nil || l.file == nil {
 		return nil
 	}

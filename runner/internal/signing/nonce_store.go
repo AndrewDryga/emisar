@@ -67,7 +67,7 @@ type NonceStore struct {
 	mu sync.Mutex
 
 	path      string
-	lock      *nonceJournalLock
+	lock      *fsutil.FileLock
 	retention time.Duration
 	seen      map[string]time.Time
 	expiry    expiryQueue
@@ -104,7 +104,7 @@ func OpenNonceStore(path string, maxAge time.Duration) (*NonceStore, error) {
 	if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("signing: create nonce-journal dir: %w", err)
 	}
-	journalLock, err := acquireNonceJournalLock(path + ".lock")
+	journalLock, err := fsutil.AcquireFileLock(path + ".lock")
 	if err != nil {
 		return nil, fmt.Errorf("signing: lock nonce journal %q: %w", path, err)
 	}
