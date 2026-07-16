@@ -122,7 +122,9 @@ try {
     }
     if (!link) throw new Error("no magic-link email showed up in /dev/mailbox");
     await page.goto(link, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => location.pathname.startsWith("/app/"));
+    // Login is done once we leave /sign_in — the return-to isn't always /app/
+    // (an /oauth/authorize consent URL bounces back to itself).
+    await page.waitForFunction(() => !location.pathname.startsWith("/sign_in"));
     await go(target);
   }
 
