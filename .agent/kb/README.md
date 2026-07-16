@@ -48,5 +48,4 @@ updated: <YYYY-MM-DD>                # last edit
 
 ## Index
 
-_(empty — cards accrue as tasks teach lessons; add the first one in the same commit as
-the work that taught it)_
+- [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — PGHOST=db reaches the sibling postgres; box BEAM/Go builds live under the coop-cache volume (MIX_BUILD_ROOT), never the host's _build; the portal output guard warms deps unscanned

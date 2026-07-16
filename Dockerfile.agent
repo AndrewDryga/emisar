@@ -40,6 +40,17 @@ ENV ASDF_DATA_DIR=/home/node/.asdf \
 # resolves the database automatically.
 ENV PGHOST=db
 
+# The repo mount shares portal/_build with the (macOS) host, but BEAM builds are
+# platform-specific — NIFs like LazyHTML compiled for darwin crash in a linux box
+# (observed: hundreds of "LazyHTML.NIF is not available" test EXITs), and an
+# in-box compile would poison the host's artifacts right back. Redirect the box's
+# build root under ~/.cache: never mixes with the host, and persists across boxes
+# when the coop-cache volume is mounted (COOP_CACHE). GOMODCACHE rides along for
+# persistence only (module sources are platform-neutral; the default ~/go/pkg/mod
+# is ephemeral box home).
+ENV MIX_BUILD_ROOT=/home/node/.cache/mix-build/emisar \
+    GOMODCACHE=/home/node/.cache/go-mod
+
 USER node
 
 # Install whatever .tool-versions pins: an asdf plugin per listed tool, then

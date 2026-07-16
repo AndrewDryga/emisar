@@ -38,6 +38,19 @@ run_and_check() {
   cat "$output"
 }
 
+# Warm third-party deps UNSCANNED first: on a cold build (fresh clone, or a coop
+# box with its own MIX_BUILD_ROOT) the first scanned step would compile the whole
+# dep tree, and upstream packages' own compile warnings (e.g. sentry's
+# `unused require Logger`) would trip the guard on noise that isn't ours to fix.
+# Emisar's own apps still compile inside the scanned steps below, so a warning in
+# OUR code is still caught. On a warm tree this is a fast no-op.
+printf '==> deps warm-up (unscanned: third-party compile warnings are not ours)\n'
+if ! bash -lc 'mix deps.compile' >"$output" 2>&1; then
+  cat "$output"
+  printf '\nFAIL: deps compile failed\n' >&2
+  exit 1
+fi
+
 run_and_check "database setup and migrations" bash -lc \
   'cd apps/emisar && mix ecto.create --quiet && mix ecto.migrate --quiet'
 
