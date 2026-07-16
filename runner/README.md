@@ -183,6 +183,25 @@ using a custom macOS deployment. Update the plist plus the wrapper, config,
 secret, state, and log ownership as one change; changing only `UserName` leaves
 the daemon unable to read `runner.env`.
 
+## Reconnect and half-open sockets
+
+The default `heartbeat_every: 30s` keeps the portal's 90-second heartbeat
+watchdog and 120-second connection lease alive. If a network disappears
+without closing the websocket, the runner cannot observe the loss immediately:
+the portal closes the stale socket after missed heartbeats, and ownership is
+then released by the socket/lease lifecycle. A reconnect can therefore take
+roughly 90–120 seconds before a sleeping or flaky-network host is accepted
+again. This is expected availability behavior, not an action timeout.
+
+The window is intentional. The lease must outlive the stale socket's last
+possible write, so a replacement connection cannot race an old connection and
+finalize or advertise state under the wrong ownership. The runner's
+`reconnect_min`/`reconnect_max` backoff applies after the socket is observed as
+closed; lowering it does not bypass the portal's heartbeat and lease gates.
+Keep `heartbeat_every` below the portal watchdog with room for scheduling and
+network jitter, and change the heartbeat/lease contract together if a shorter
+half-open window is ever required.
+
 ## Useful commands
 
 | What                                  | Linux                                                | macOS                                                       |
