@@ -1338,6 +1338,15 @@ defmodule Emisar.AuditTest do
       assert fetched.id == event.id
     end
 
+    test "rejects a subject without view_audit permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      assert Audit.fetch_event_by_id(event.id, subject) == {:error, :unauthorized}
+    end
+
     test "an owner of account B cannot fetch account A's event (cross-account → :not_found)" do
       account_a = Fixtures.Accounts.create_account()
       {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")

@@ -863,6 +863,10 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, old_code)
       assert :ok = Auth.consume_mfa_recovery_code(Repo.reload!(user), hd(new_codes))
     end
+
+    test "refuses when MFA is not enabled", %{subject: subject} do
+      assert Auth.regenerate_mfa_recovery_codes(subject) == {:error, :mfa_not_enabled}
+    end
   end
 
   describe "verify_mfa/3" do

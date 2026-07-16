@@ -3,6 +3,7 @@ defmodule Emisar.ApprovalsTest do
   alias Ecto.Multi
   alias Emisar.{Approvals, Audit, Repo, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
+  alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.Runs.ActionRun
 
@@ -268,6 +269,23 @@ defmodule Emisar.ApprovalsTest do
 
       walked = walk_pages(&Approvals.list_pending_approval_requests(subject, &1), 2)
       assert Enum.map(walked, & &1.id) == Enum.map(requests, & &1.id)
+    end
+
+    test "rejects a subject without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert Approvals.list_pending_approval_requests(subject) == {:error, :unauthorized}
+    end
+
+    test "does not list another account's pending requests" do
+      {_account_a, run_a} = run_fixture()
+      {:ok, _request} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, nil)
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject_b)
     end
   end
 

@@ -2197,6 +2197,18 @@ defmodule Emisar.SSOTest do
       assert updated.role == :operator
     end
 
+    test "denies a viewer without manage_sso", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, mapping} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-1", role: :admin}, subject)
+
+      assert SSO.update_group_mapping(mapping, %{role: :viewer}, viewer_in(account)) ==
+               {:error, :unauthorized}
+    end
+
     test "rejects editing a mapping up to :owner", %{provider: provider, subject: subject} do
       {:ok, mapping} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-1", role: :admin}, subject)
@@ -2234,6 +2246,17 @@ defmodule Emisar.SSOTest do
       assert {:ok, deleted} = SSO.delete_group_mapping(mapping, subject)
       assert deleted.deleted_at
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject)
+    end
+
+    test "denies a viewer without manage_sso", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, mapping} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-1", role: :admin}, subject)
+
+      assert SSO.delete_group_mapping(mapping, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "cross-account: B can't delete A's mapping (:not_found)", %{

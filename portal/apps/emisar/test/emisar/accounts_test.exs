@@ -1444,6 +1444,26 @@ defmodule Emisar.AccountsTest do
                Accounts.update_membership_role(owner_membership, "admin", subject)
     end
 
+    test "a member without manage_team permission cannot change a role" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      operator = Fixtures.Users.create_user()
+
+      operator_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      target_membership = Fixtures.Memberships.create_membership(account_id: account.id)
+      subject = Fixtures.Subjects.membership_subject(operator_membership)
+
+      assert Accounts.update_membership_role(target_membership, "admin", subject) ==
+               {:error, :unauthorized}
+    end
+
     test "promotes operator to admin" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -2498,6 +2518,17 @@ defmodule Emisar.AccountsTest do
                {:error, :not_found}
     end
 
+    test "the last active owner cannot be removed" do
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      assert Accounts.delete_membership(owner_membership, subject) == {:error, :last_owner}
+    end
+
     test "removing a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -2726,6 +2757,19 @@ defmodule Emisar.AccountsTest do
       assert invitee.email == email
       refute invitee.confirmed_at
       assert is_binary(token)
+    end
+
+    test "a member without invite permission cannot invite a user" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      subject = Fixtures.Subjects.membership_subject(viewer_membership)
+      email = "denied-invite-#{System.unique_integer([:positive])}@example.test"
+
+      assert Accounts.invite_user_to_account(email, "operator", subject) ==
+               {:error, :unauthorized}
     end
 
     test "reuses the existing user when one is already registered" do

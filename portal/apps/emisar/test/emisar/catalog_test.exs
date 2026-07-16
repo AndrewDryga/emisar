@@ -1246,6 +1246,13 @@ defmodule Emisar.CatalogTest do
       {_account, other_subject} = account_with_owner()
       assert {:ok, []} = Catalog.list_all_actions_for_account(other_subject)
     end
+
+    test "rejects a subject without view_catalog permission" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.build_subject(account: account, role: :runner)
+
+      assert Catalog.list_all_actions_for_account(subject) == {:error, :unauthorized}
+    end
   end
 
   describe "risk_by_action_ids/2" do

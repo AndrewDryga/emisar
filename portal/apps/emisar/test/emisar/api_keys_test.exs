@@ -240,6 +240,15 @@ defmodule Emisar.ApiKeysTest do
       assert fetched.id == key.id
     end
 
+    test "rejects a subject without view_api_keys permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      assert ApiKeys.fetch_api_key_by_id(key.id, subject) == {:error, :unauthorized}
+    end
+
     test "an owner of account B cannot fetch account A's key (cross-account → :not_found)" do
       account_a = Fixtures.Accounts.create_account()
       {_raw, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)

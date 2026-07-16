@@ -609,6 +609,15 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{runner: %Emisar.Runners.Runner{}}} =
                Runs.fetch_run_by_id(run.id, subject, preload: [:runner])
     end
+
+    test "rejects a subject without view_runs permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert Runs.fetch_run_by_id(run.id, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+    end
   end
 
   describe "fetch_mcp_run_by_id/2" do
@@ -1410,6 +1419,42 @@ defmodule Emisar.RunsTest do
   end
 
   describe "compose_dispatch_batch_in_multi/5" do
+    test "rejects a subject without dispatch permission" do
+      %{account: account, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      assert Runs.compose_dispatch_batch_in_multi(
+               Multi.new(),
+               [target],
+               no_permissions_subject(account),
+               :denied
+             ) == {:error, :unauthorized}
+    end
+
+    test "rejects a runner from another account" do
+      %{runners: [runner_a], key: key_a} = mcp_fanout_fixture(["low"])
+      {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+
+      {_raw, key_b} =
+        Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
+
+      subject_b = Emisar.Auth.Subject.for_api_key(key_b, account_b)
+      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner_a, key_a, operation.operation_id)
+
+      assert {:ok, multi} =
+               Runs.compose_dispatch_batch_in_multi(
+                 Multi.new(),
+                 [target],
+                 subject_b,
+                 :cross_account
+               )
+
+      assert {:error, {:dispatch_batch, :cross_account}, :runner_not_found, _changes} =
+               Repo.transaction(multi)
+    end
+
     test "commits the complete batch without running post-commit side effects" do
       %{changes: changes, runner: runner} = composed_dispatch_fixture(:compose_contract)
 
@@ -1449,6 +1494,30 @@ defmodule Emisar.RunsTest do
   end
 
   describe "dispatch_mcp_fanout/3" do
+    test "rejects a subject without dispatch permission" do
+      %{account: account, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      assert Runs.dispatch_mcp_fanout(operation, [target], no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+    end
+
+    test "rejects a runner from another account" do
+      %{runners: [runner_a], key: key_a} = mcp_fanout_fixture(["low"])
+      {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+
+      {_raw, key_b} =
+        Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
+
+      subject_b = Emisar.Auth.Subject.for_api_key(key_b, account_b)
+      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner_a, key_a, operation.operation_id)
+
+      assert Runs.dispatch_mcp_fanout(operation, [target], subject_b) ==
+               {:error, :runner_not_found}
+    end
+
     test "commits every target before delivery and exact replay never redelivers" do
       %{subject: subject, runners: [runner_a, runner_b], key: key} =
         mcp_fanout_fixture(["low", "low"])
