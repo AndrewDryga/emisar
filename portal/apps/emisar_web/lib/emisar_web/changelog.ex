@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-15],
+      slug: "cleaner-setup-and-reliable-release-publication",
+      title: "Cleaner setup and reliable release publication",
+      tag: "v0.25.1",
+      summary:
+        "Runner and connector setup now keeps one-line commands compact, uses shorter Claude.ai instructions, and leaves transport diagnostics out of customer screens. Fleet examples distinguish supported from unsupported runners, account settings use quieter status labels, and release publication waits for the tagged commit's required CI result instead of losing a race. Runner argument parsing also accepts numeric strings only when they use valid JSON number syntax."
+    },
+    %{
+      date: ~D[2026-07-15],
       slug: "durable-execution-and-native-mcp",
       title: "Durable execution and a tighter MCP boundary",
       tag: "v0.25.0",
