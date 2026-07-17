@@ -137,8 +137,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "emisar"
     assert html =~ "Sign in"
     assert html =~ "Start free"
-    assert html =~ "declared actions, never a shell"
-    assert html =~ "denials included"
+    assert html =~ "approved actions instead of an SSH key"
     assert html =~ "Apache-2.0"
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.

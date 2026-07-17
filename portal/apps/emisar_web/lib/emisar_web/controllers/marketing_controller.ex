@@ -162,9 +162,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "Give AI agents safe production access — approved actions, not SSH",
+      page_title: "Secure infrastructure access for AI agents — approved actions, not SSH",
       meta_description:
-        "One MCP server gives Claude, Cursor, ChatGPT — any AI agent — declared, policy-gated actions on your infrastructure instead of SSH. Safe work runs unattended; every call is audited.",
+        "Connect Claude, Cursor, ChatGPT, or any MCP agent to your infrastructure through approved, audited actions instead of SSH. Set up in five minutes.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: EmisarWeb.PacksRegistry.pack_count(),
