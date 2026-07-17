@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
-  alias EmisarWeb.UserAgent
+  alias EmisarWeb.{LiveTable, UserAgent}
   alias Phoenix.LiveView.JS
 
   def mount(_params, session, socket) do
@@ -18,56 +18,77 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
+     |> assign(:current_session_digest, current_session_digest(session["user_token"]))
      |> assign(:session_count, 0)
+     |> assign(:session_page_count, 0)
+     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+     |> assign(:filter_params, %{})
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> assign_mfa_form()
      |> assign_mfa_disable_form()
      |> reset_email_step()
-     |> maybe_load_sessions()}
+     |> stream(:sessions, [])}
   end
 
-  # IL-18: the session list is the only DB read on this page — skip it on
-  # the pre-connect render so `mount/3` does no query work; the connected
-  # mount fills it in.
-  defp maybe_load_sessions(socket) do
+  def handle_params(params, _uri, socket), do: {:noreply, maybe_load_sessions(socket, params)}
+
+  # IL-18: the session list is the only DB read on this page — skip it on the
+  # pre-connect static render so mount + handle_params do no query work; the
+  # connected params load fills it in, and each prev/next patch re-runs it.
+  defp maybe_load_sessions(socket, params) do
     if connected?(socket) do
-      load_sessions(socket)
+      load_sessions(socket, params)
     else
-      socket
-      |> assign(:current_session_digest, nil)
-      |> assign(:session_count, 0)
-      |> stream(:sessions, [])
+      assign(socket, :filter_params, params)
     end
   end
 
-  defp load_sessions(socket) do
-    sessions =
-      case Auth.list_sessions_for_user(socket.assigns.current_subject, page: [limit: 100]) do
-        {:ok, list, _meta} -> list
-        _ -> []
-      end
+  # 15 a page: a heavy automation account can hold ~100 sessions, and an
+  # ungrouped wall of near-identical rows buries the one unfamiliar device an
+  # operator is scanning for. Cursor-paginated (UserToken.Query.cursor_fields).
+  defp load_sessions(socket, params) do
+    opts = LiveTable.params_to_opts(params)
+    list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 15))
 
-    current_digest = current_session_digest(socket.assigns.current_session_token)
+    case Auth.list_sessions_for_user(socket.assigns.current_subject, list_opts) do
+      {:ok, sessions, metadata} ->
+        current_digest = socket.assigns.current_session_digest
+        presented = Enum.map(sessions, &present_session(&1, current_digest))
 
-    presented =
-      sessions
-      |> Enum.sort_by(&(not current_session?(&1, current_digest)))
-      |> Enum.map(fn session ->
-        %{
-          id: session.id,
-          device_label: session_device_label(session),
-          icon: session_device_icon(session),
-          current?: current_session?(session, current_digest),
-          ip_address: session_ip(session),
-          inserted_at: session.inserted_at
-        }
-      end)
+        socket
+        |> assign(:session_count, metadata.count || 0)
+        |> assign(:session_page_count, length(presented))
+        |> assign(:metadata, metadata)
+        |> assign(:filter_params, params)
+        |> stream(:sessions, presented, reset: true)
 
-    socket
-    |> assign(:current_session_digest, current_digest)
-    |> assign(:session_count, length(sessions))
-    |> stream(:sessions, presented, reset: true)
+      # A bad cursor from a hand-edited URL — retry once, clean, on page 1.
+      {:error, _} when map_size(params) > 0 ->
+        load_sessions(socket, %{})
+
+      {:error, _} ->
+        socket
+        |> assign(:session_count, 0)
+        |> assign(:session_page_count, 0)
+        |> assign(:filter_params, params)
+        |> stream(:sessions, [], reset: true)
+    end
+  end
+
+  # Reload the page the operator is on after a revoke, so a single sign-out
+  # doesn't bounce them back to page 1 (their cursor rides on filter_params).
+  defp reload_sessions(socket), do: load_sessions(socket, socket.assigns.filter_params)
+
+  defp present_session(session, current_digest) do
+    %{
+      id: session.id,
+      device_label: session_device_label(session),
+      icon: session_device_icon(session),
+      current?: current_session?(session, current_digest),
+      ip_address: session_ip(session),
+      inserted_at: session.inserted_at
+    }
   end
 
   defp current_session_digest(nil), do: nil
@@ -161,7 +182,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("revoke_session", %{"id" => id}, socket) do
     case Auth.revoke_session(id, socket.assigns.current_subject) do
       :ok ->
-        {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
+        {:noreply, socket |> put_flash(:info, "Session revoked.") |> reload_sessions()}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Session no longer exists.")}
@@ -181,7 +202,9 @@ defmodule EmisarWeb.ProfileLive do
         revoked_count -> "#{revoked_count} other sessions signed out."
       end
 
-    {:noreply, socket |> put_flash(:info, msg) |> load_sessions()}
+    # Only the current session survives, and it's always on page 1 — land there
+    # rather than reloading a now-empty cursor the operator was paging through.
+    {:noreply, socket |> put_flash(:info, msg) |> load_sessions(%{})}
   end
 
   def handle_event("start_mfa", _params, socket) do
@@ -728,58 +751,73 @@ defmodule EmisarWeb.ProfileLive do
           </.section_header>
 
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
-               sliver that read as a rendering bug; "Sign out everywhere else"
-               is the long-list affordance. --%>
-          <ul
-            id="active-sessions"
-            phx-update="stream"
-            class="divide-y divide-zinc-800/70 text-sm"
-          >
-            <.list_row
-              :for={{dom_id, session} <- @streams.sessions}
-              id={dom_id}
-              icon={session.icon}
-              class={session.current? && "bg-brand-500/[0.04]"}
+               sliver that read as a rendering bug. Long lists paginate (15 a
+               page) instead of scrolling, so "Sign out everywhere else" and the
+               pager below carry the long-list affordance. space-y-4 spaces the
+               pager off the list only when the pager renders (its :if drops the
+               node on a single page, leaving one child and no phantom gap). --%>
+          <div class="space-y-4">
+            <ul
+              id="active-sessions"
+              phx-update="stream"
+              class="divide-y divide-zinc-800/70 text-sm"
             >
-              <:title>
-                <span class="truncate font-medium text-zinc-100">
-                  {session.device_label}
-                </span>
-              </:title>
-              <:chips>
-                <.chip :if={session.current?} tone={:neutral}>
-                  this device
-                </.chip>
-              </:chips>
-              <:meta>
-                Started
-                <.local_time
-                  id={"session-started-#{session.id}"}
-                  value={session.inserted_at}
-                  mode={:relative}
-                /> · <span class="font-mono">{session.ip_address || "—"}</span>
-              </:meta>
-              <:actions>
-                <%!-- Neutral, not rose — a routine self-service sign-out shouldn't
+              <.list_row
+                :for={{dom_id, session} <- @streams.sessions}
+                id={dom_id}
+                icon={session.icon}
+                class={session.current? && "bg-brand-500/[0.04]"}
+              >
+                <:title>
+                  <span class="truncate font-medium text-zinc-100">
+                    {session.device_label}
+                  </span>
+                </:title>
+                <:chips>
+                  <.chip :if={session.current?} tone={:neutral}>
+                    this device
+                  </.chip>
+                </:chips>
+                <:meta>
+                  Started
+                  <.local_time
+                    id={"session-started-#{session.id}"}
+                    value={session.inserted_at}
+                    mode={:relative}
+                  /> · <span class="font-mono">{session.ip_address || "—"}</span>
+                </:meta>
+                <:actions>
+                  <%!-- Neutral, not rose — a routine self-service sign-out shouldn't
                      read as dangerous as the account-wide "Sign out everywhere else"
                      (which keeps the danger tone). --%>
-                <.confirm_button
-                  :if={not session.current?}
-                  id={"signout-session-#{session.id}"}
-                  title="Sign out this session?"
-                  confirm_label="Sign out"
-                  variant={:ghost}
-                  tone={:neutral}
-                  size={:sm}
-                  class="shrink-0"
-                  on_confirm={JS.push("revoke_session", value: %{id: session.id})}
-                >
-                  <:body>That browser or device will need to sign in again.</:body>
-                  Sign out
-                </.confirm_button>
-              </:actions>
-            </.list_row>
-          </ul>
+                  <.confirm_button
+                    :if={not session.current?}
+                    id={"signout-session-#{session.id}"}
+                    title="Sign out this session?"
+                    confirm_label="Sign out"
+                    variant={:ghost}
+                    tone={:neutral}
+                    size={:sm}
+                    class="shrink-0"
+                    on_confirm={JS.push("revoke_session", value: %{id: session.id})}
+                  >
+                    <:body>That browser or device will need to sign in again.</:body>
+                    Sign out
+                  </.confirm_button>
+                </:actions>
+              </.list_row>
+            </ul>
+
+            <%!-- Renders only past one page (metadata cursors / count > page) —
+               a handful of sessions stays a plain list, no pager chrome. --%>
+            <LiveTable.paginator
+              id="active-sessions"
+              path={~p"/app/#{@current_account}/settings/profile"}
+              metadata={@metadata}
+              filter_params={@filter_params}
+              page_count={@session_page_count}
+            />
+          </div>
         </section>
       </div>
     </.dashboard_shell>

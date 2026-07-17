@@ -198,16 +198,43 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # The current row is pinned first; the second device renders its IP + parsed
-      # label in its own row.
+      # The current session carries the "this device" marker; the second device
+      # renders its IP + parsed label in its own row. Rows order by recency, so
+      # position isn't asserted — the marker, not the slot, orients the operator.
       assert html =~ "this device"
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome on Linux"
-      assert has_element?(lv, "#active-sessions > li:first-child", "this device")
+      assert has_element?(lv, "#active-sessions li", "this device")
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       assert length(sessions) == 2
+    end
+
+    test "caps the page at 15 sessions and pages the rest", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      # 15 more devices on top of the current session — 16 total, one past a page.
+      for n <- 1..15 do
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
+          "ip_address" => "203.0.113.#{n}",
+          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+        })
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      # Page one holds exactly 15 rows and a pager that names the 16 total.
+      assert rendered_session_rows(lv) == 15
+      assert has_element?(lv, "#active-sessions-pager", "16")
+      assert has_element?(lv, "#active-sessions-pager a", "Next")
+
+      # Following Next patches to page two — the 16th session, and the way back.
+      html = lv |> element("#active-sessions-pager a", "Next") |> render_click()
+      assert rendered_session_rows(lv) == 1
+      assert html =~ "Prev"
     end
 
     test "renders and revokes same-device sessions independently", %{
@@ -641,6 +668,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "Could not disable 2FA."
       assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
+  end
+
+  # Count of session rows rendered on the current page — each stream row is an
+  # <li id="sessions-<uuid>">, so the ids that match are exactly this page's rows.
+  defp rendered_session_rows(lv) do
+    lv
+    |> render()
+    |> then(&Regex.scan(~r/id="sessions-[0-9a-f-]+"/, &1))
+    |> length()
   end
 
   defp mfa_secret_from(html) do
