@@ -648,8 +648,19 @@ defmodule EmisarWeb.MarketingTest do
     test "the connect-an-llm page renders every client config block", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
-      # Current ChatGPT Apps setup path: OAuth, Developer mode, no static token.
-      assert html =~ "Settings → Apps &amp; Connectors"
+      # Current ChatGPT Developer-mode setup path: OAuth, no static token.
+      # Developer mode lives under Settings → Security and login (also linked at
+      # the bottom of Settings → Plugins); the connector is created under Settings
+      # → Plugins; switching Permissions to "Allow all actions" drops the prompts.
+      assert html =~ "Settings → Security and login"
+      assert html =~ "Settings → Plugins"
+      assert html =~ "Developer mode"
+      assert html =~ "Server URL"
+      assert html =~ "I understand and want to continue"
+      assert html =~ "Allow low-risk actions"
+      assert html =~ "Allow all actions"
+
+      # Claude's connector block on the same page is unchanged.
       assert html =~ "Settings → Connectors"
       assert html =~ "Connector name"
       assert html =~ "OAuth Client ID / Client Secret"

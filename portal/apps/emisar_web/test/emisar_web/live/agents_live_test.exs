@@ -233,10 +233,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
       assert html =~ "/api/mcp/rpc"
       assert has_element?(lv, "#connector-name-chatgpt", "Emisar")
-      assert html =~ "App name"
       assert html =~ "Steps for ChatGPT"
-      assert html =~ "Settings &rarr; Apps" or html =~ "Settings → Apps"
-      assert html =~ "Create app"
+      # Current Developer-mode path: Security and login, create under Plugins,
+      # then Permissions → Allow all actions to drop the per-call prompts.
+      assert html =~ "Security and login"
+      assert html =~ "Developer mode"
+      assert html =~ "Allow all actions"
       assert html =~ "choose OAuth"
       refute html =~ "Authorization: Bearer emk-"
     end

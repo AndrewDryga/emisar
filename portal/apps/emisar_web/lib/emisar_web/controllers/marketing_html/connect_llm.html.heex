@@ -128,54 +128,64 @@
           <section>
             <h3 class="text-xl font-semibold text-zinc-50">ChatGPT</h3>
             <p class="mt-2 text-sm text-zinc-400">
-              ChatGPT now calls custom MCP connectors <strong>apps</strong>. Developer mode exposes
-              the app-creation flow for your own MCP server. Available on Plus,
-              Pro, Business, Enterprise, and Education.
+              ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on
+              Plus, Pro, Business, Enterprise, and Education.
             </p>
             <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
               <li>
-                Enable it once:
-                <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>
-                → turn on <strong>Developer mode</strong>.
+                Turn on Developer mode once — it's off by default and flagged <strong>Higher risk</strong>: <strong>Settings → Security and login</strong>, toggle <strong>Developer mode</strong>. (The same toggle sits at the bottom of <strong>Settings → Plugins</strong>.)
               </li>
               <li>
-                Open <strong>Settings → Connectors</strong> and click <strong>Create</strong>.
+                Open <strong>Settings → Plugins</strong>
+                (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">chatgpt.com/plugins</code>)
+                and click <strong>Create</strong>.
               </li>
               <li>
                 Fill the form:
                 <ul class="mt-1 list-disc space-y-1 pl-6 text-zinc-400">
                   <li>
-                    <strong>Connector name</strong>
+                    <strong>Name</strong>
                     — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
                   </li>
                   <li>
-                    <strong>Description</strong> — e.g. "Run approved
+                    <strong>Description</strong> (optional) — e.g. "Run approved
                     infrastructure actions on my fleet."
                   </li>
                   <li>
-                    <strong>Connector URL</strong>
-                    —
+                    <strong>Connection</strong>
+                    → <strong>Server URL</strong>, then paste
                     <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
                       https://emisar.dev/api/mcp/rpc
                     </code>
                   </li>
                   <li><strong>Authentication</strong> — choose <strong>OAuth</strong></li>
                 </ul>
+                Check <strong>I understand and want to continue</strong>, then click <strong>Create</strong>.
               </li>
               <li>
-                Click <strong>Create</strong>. ChatGPT sends you to an emisar
-                sign-in → <strong>Authorize</strong>. If ChatGPT shows a token or header field,
-                switch the authentication type back to OAuth.
+                ChatGPT sends you to an emisar sign-in → <strong>Authorize</strong>. On success it
+                lists the tools emisar advertises.
+              </li>
+              <li>
+                Optional — stop the per-call prompts: open <strong>emisar</strong>
+                under <strong>Settings → Plugins</strong>, go to <strong>Permissions</strong>, and
+                switch it from <strong>Allow low-risk actions</strong>
+                (the default) to <strong>Allow all actions</strong>. ChatGPT then stops asking before
+                each call; emisar policy, approvals, and audit still apply, so the gate stays on the
+                server, not ChatGPT's prompt.
               </li>
               <li>
                 Use it from a <strong>new chat</strong>: click the <strong>+</strong>
-                button near the composer, choose <strong>More</strong>, then select <strong>emisar</strong>. Seeing actions in settings only proves ChatGPT
-                fetched metadata; this step adds the app to the conversation context
+                button near the composer, choose <strong>More</strong>, then select <strong>emisar</strong>. Seeing tools in settings only proves ChatGPT
+                fetched metadata; this step adds emisar to the conversation context
                 so the model can call it.
               </li>
               <li>
-                After changing emisar's tool metadata, open the connector in settings and
-                choose <strong>Refresh</strong> before testing again.
+                After changing emisar's tool metadata, open the connector under
+                <strong>Settings → Plugins</strong>
+                and choose <strong>Refresh</strong>
+                before testing
+                again.
               </li>
             </ol>
             <p class="mt-3 text-xs leading-relaxed text-zinc-400">

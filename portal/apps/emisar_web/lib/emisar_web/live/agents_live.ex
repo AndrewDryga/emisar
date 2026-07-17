@@ -552,9 +552,9 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("chatgpt", url, _key) do
     %{
       kind: :remote,
-      setup_label: "app form",
+      setup_label: "connector form",
       connector_name: "Emisar",
-      connector_name_label: "App name",
+      connector_name_label: "Name",
       rpc_url: "#{url}/api/mcp/rpc",
       rpc_url_label: "MCP Server URL",
       oauth_note: %{
@@ -563,11 +563,11 @@ defmodule EmisarWeb.AgentsLive do
           "No API key is required. ChatGPT discovers Emisar's OAuth metadata from the server URL."
       },
       steps: [
-        "Open Settings → Apps → Advanced settings and turn on Developer mode.",
-        "Open ChatGPT Apps settings and click Create app.",
-        "Paste the app name and MCP Server URL shown above, then choose OAuth.",
-        "Create the app, then complete the emisar sign-in and consent screen.",
-        "Use it from a conversation by choosing Developer mode and selecting Emisar."
+        "Turn on Developer mode once: Settings → Security and login (also linked at the bottom of Settings → Plugins).",
+        "Open Settings → Plugins and click Create.",
+        "Set Connection to Server URL, paste the Name and MCP Server URL shown above, then choose OAuth.",
+        "Check \"I understand and want to continue\", click Create, then complete the emisar sign-in and consent screen.",
+        "Use it from a new chat: + → More → Emisar. To skip the per-call prompts, open Emisar → Permissions and choose Allow all actions."
       ]
     }
   end
