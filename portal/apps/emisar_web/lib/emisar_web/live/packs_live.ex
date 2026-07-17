@@ -890,8 +890,9 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <.page_intro>
-        Each pack version is pinned to a trusted hash — a runner advertising different
-        contents flips it to pending, and dispatch refuses it until you review.
+        A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
+        a runner may execute — the runner advertises what it has installed, and this
+        page is your account's trust ledger over it.
         <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 
@@ -1080,8 +1081,19 @@ defmodule EmisarWeb.PacksLive do
                     >
                     </span>
                     <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
+                    <%!-- ONE row-state marker in ONE grammar (dot + word), BESIDE
+                         the identity it qualifies — the page's primary fact, so
+                         nothing wedges between them and the status column stays
+                         steady to scan. A blocked row reads "retired" INSTEAD of
+                         "trusted" (side by side they contradicted); an overridden
+                         row is trusted again (the note below says why). --%>
+                    <.status_badge
+                      status={(retired_blocked?(v) && "retired") || to_string(v.trust_state)}
+                      class="text-xs"
+                    />
                     <%!-- The hash said nothing at browse altitude — the full hash
-                         lives in the contents expansion; last-seen takes its slot. --%>
+                         lives in the contents expansion; last-seen trails like
+                         timestamps everywhere else in the console. --%>
                     <span class="text-[11px] text-zinc-500">
                       last seen
                       <.local_time
@@ -1091,16 +1103,6 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
-                    <%!-- ONE row-state marker in ONE grammar (dot + word): a
-                         blocked row reads "retired" INSTEAD of "trusted" —
-                         side by side they contradicted, and a chip beside
-                         dot-word badges was a second visual language. An
-                         overridden row is trusted again (the note below says
-                         why). --%>
-                    <.status_badge
-                      status={(retired_blocked?(v) && "retired") || to_string(v.trust_state)}
-                      class="text-xs"
-                    />
                     <div
                       :if={Catalog.subject_can_manage_packs?(@current_subject)}
                       class="ml-auto flex shrink-0 items-center gap-2"
@@ -1399,15 +1401,10 @@ defmodule EmisarWeb.PacksLive do
 
         <aside class="space-y-6">
           <.docs_rail
-            title="What's a pack?"
+            title="How pack trust works"
             doc_href="/docs/action-packs"
             doc_label="Action pack docs"
           >
-            <p>
-              A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
-              a runner may execute — the runner advertises what it has installed, and this
-              page is your account's trust ledger over it.
-            </p>
             <p>
               Packs published by emisar are <span class="text-brand-300">trusted automatically</span>
               — every version is
