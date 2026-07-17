@@ -852,12 +852,24 @@ defmodule EmisarWeb.PacksLive do
   defp pack_version_retired?(version),
     do: match?({:retired, _}, Catalog.pack_version_retirement(version))
 
-  # Dispatch-blocked by retirement: trusted, unoverridden, and below the
-  # watermark — the one row state the RETIRED chip marks (replacing the trust
-  # badge, which would contradict it side by side).
+  # A version the shipped catalog RETIRED and no admin has overridden — the one
+  # row state the "retired" badge marks (replacing the trust badge, which would
+  # contradict it). Covers a trusted row a watermark bump retired AND a
+  # first-seen retired version a lagging runner still advertises (pending, never
+  # trusted — a KNOWN pack whose bytes a security fix superseded, not an unknown
+  # one to trust). A rejected row stays quiet.
   defp retired_blocked?(version) do
-    version.trust_state == :trusted and is_nil(version.retirement_overridden_at) and
+    version.trust_state != :rejected and is_nil(version.retirement_overridden_at) and
       pack_version_retired?(version)
+  end
+
+  # The version that superseded a retired one (nil if not retired) — the upgrade
+  # target named in the "emisar pack install" guidance.
+  defp retirement_successor(version) do
+    case Catalog.pack_version_retirement(version) do
+      {:retired, current} -> current
+      :active -> nil
+    end
   end
 
   # The admin who overrode a retirement, human-first (name, then email). The
@@ -1224,26 +1236,43 @@ defmodule EmisarWeb.PacksLive do
                   <%!-- The one state that earns real weight: a live trust
                        decision, on the shared spine like every operational
                        alert — what changed, who it unblocks, and the decision
-                       buttons inside one contained unit. --%>
+                       buttons inside one contained unit. A pending version that
+                       sits below a shipped pack's retirement watermark is a KNOWN
+                       pack whose bytes a security fix superseded, NOT an unknown
+                       one to trust — it wears the rose retired face and leads
+                       with the upgrade, keeping trust a labelled escape hatch. --%>
                   <.event_block
                     :if={v.trust_state == :pending}
                     icon="hero-shield-exclamation"
-                    tone={:amber}
-                    title="Pending trust review"
+                    tone={(retired_blocked?(v) && :rose) || :amber}
+                    title={
+                      (retired_blocked?(v) && "Retired by a newer release") || "Pending trust review"
+                    }
                     class="mt-3 pl-8"
                   >
                     <:body>
-                      <span :if={is_nil(v.hash)}>
+                      <span :if={retired_blocked?(v)}>
+                        <code>{pack.id}</code> v{v.version} was retired by a newer release — a
+                        security fix superseded it. The runners below are still on the old
+                        version; update the pack to clear this.
+                      </span>
+                      <span :if={not retired_blocked?(v) and is_nil(v.hash)}>
                         A runner advertised <code>{pack.id}</code> v{v.version} —
                         a pack we don't ship a baseline for. Dispatch is blocked until
                         you trust its contents.
                       </span>
-                      <span :if={not is_nil(v.hash)}>
+                      <span :if={not retired_blocked?(v) and not is_nil(v.hash)}>
                         A runner is advertising a different hash. Dispatch is blocked for
                         <code>{pack.id}</code>
                         v{v.version} until you decide.
                       </span>
                     </:body>
+                    <p
+                      :if={retired_blocked?(v)}
+                      class="mt-2 font-mono text-[11px] text-zinc-400"
+                    >
+                      <span :if={retirement_successor(v)}>→ v{retirement_successor(v)}: </span>emisar pack install {pack.id}
+                    </p>
                     <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
                       <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
                       <%!-- Amber flags the hash that CHANGED — the reason dispatch is blocked. --%>
@@ -1262,7 +1291,12 @@ defmodule EmisarWeb.PacksLive do
                         <span class="font-semibold text-zinc-300">
                           {length(@advertising[v.id])}
                         </span>
-                        runner(s) advertise this — trusting unblocks dispatch on:
+                        <span :if={retired_blocked?(v)}>
+                          runner(s) still on this retired version — update the pack on:
+                        </span>
+                        <span :if={not retired_blocked?(v)}>
+                          runner(s) advertise this — trusting unblocks dispatch on:
+                        </span>
                       </p>
                       <%!-- The chips wrap: a fleet can advertise dozens of runners, and a
                            comprehension renders them with no whitespace between, so an inline
@@ -1351,19 +1385,33 @@ defmodule EmisarWeb.PacksLive do
                       class="mt-3 flex flex-wrap gap-2"
                     >
                       <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
-                           not a destruction, so the modal is amber, not rose. --%>
+                           not a destruction, so the modal is amber. On a RETIRED
+                           version trust is the wrong default (upgrade the runner
+                           instead), so it recedes to a rose "Trust anyway" escape
+                           hatch — the confirm body spells out the override. --%>
                       <.confirm_button
                         id={"trust-#{v.id}"}
-                        variant={:primary}
-                        tone={:amber}
+                        variant={(retired_blocked?(v) && :secondary) || :primary}
+                        tone={(retired_blocked?(v) && :rose) || :amber}
                         size={:sm}
                         title={
-                          if is_nil(v.hash),
-                            do: "Trust #{pack.id} v#{v.version}?",
-                            else: "Adopt the new hash for #{pack.id} v#{v.version}?"
+                          cond do
+                            retired_blocked?(v) ->
+                              "Trust the retired #{pack.id} v#{v.version} anyway?"
+
+                            is_nil(v.hash) ->
+                              "Trust #{pack.id} v#{v.version}?"
+
+                            true ->
+                              "Adopt the new hash for #{pack.id} v#{v.version}?"
+                          end
                         }
                         confirm_label={
-                          if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"
+                          cond do
+                            retired_blocked?(v) -> "Trust anyway"
+                            is_nil(v.hash) -> "Trust pack"
+                            true -> "Trust new contents"
+                          end
                         }
                         on_confirm={JS.push("trust", value: %{id: v.id})}
                       >
@@ -1375,7 +1423,11 @@ defmodule EmisarWeb.PacksLive do
                             that retirement, so its actions run despite the fix.
                           </span>
                         </:body>
-                        {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
+                        {cond do
+                          retired_blocked?(v) -> "Trust anyway"
+                          is_nil(v.hash) -> "Trust pack"
+                          true -> "Trust new contents"
+                        end}
                       </.confirm_button>
                       <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
                            data-confirm. The button only OPENS the page-level dialog

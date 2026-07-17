@@ -418,6 +418,37 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#override-#{pack_version.id}")
     end
 
+    test "a first-seen retired version reads as retired (upgrade the runner), not an unknown pack",
+         %{conn: conn, account: account} do
+      # A lagging runner advertises a SHIPPED pack at a version below its
+      # retirement watermark — never trusted, so it lands pending, but the
+      # watermark prunes it from the baseline (lookup == nil). It must NOT read
+      # as "a pack we don't ship a baseline for" with a plain Trust: it's OUR
+      # pack, retired by a security fix, and the remedy is upgrading the runner,
+      # not re-authorizing the superseded bytes.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _runner} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [],
+          "packs" => %{pack_id => %{"version" => "0.0.0", "hash" => "abc123"}}
+        })
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      assert html =~ "emisar pack install #{pack_id}"
+      assert html =~ "Trust anyway"
+      refute html =~ "pack we don&#39;t ship a baseline for"
+    end
+
     test "a retired-blocked version lights the Packs nav badge; overriding clears it", %{
       conn: conn,
       account: account
