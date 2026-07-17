@@ -22,10 +22,10 @@ func TestMissingRequiredEnv(t *testing.T) {
 }
 
 func TestRiskSummary(t *testing.T) {
-	if s := riskSummary(7, 0, 3, 0); s != "7 low · 3 high" {
+	if s := riskSummary(styler{}, 7, 0, 3, 0); s != "7 low · 3 high" {
 		t.Fatalf("riskSummary = %q", s)
 	}
-	if s := riskSummary(0, 0, 0, 0); s != "none" {
+	if s := riskSummary(styler{}, 0, 0, 0, 0); s != "none" {
 		t.Fatalf("riskSummary empty = %q", s)
 	}
 }

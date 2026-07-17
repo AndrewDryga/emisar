@@ -406,6 +406,7 @@ func clockSkew(dateHeader string) (time.Duration, bool) {
 // reportDoctor writes the aligned report and returns the number of failed
 // checks (the caller's exit signal).
 func reportDoctor(w io.Writer, results []checkResult) int {
+	style := newStyler(w)
 	fmt.Fprintln(w, "emisar doctor")
 	fmt.Fprintln(w)
 
@@ -417,28 +418,32 @@ func reportDoctor(w io.Writer, results []checkResult) int {
 		case checkWarn:
 			warns++
 		}
-		fmt.Fprintf(w, "  %s  %-12s  %s\n", statusGlyph(r.status), r.name, r.detail)
+		fmt.Fprintf(w, "  %s  %-12s  %s\n", statusGlyph(style, r.status), r.name, r.detail)
 	}
 
 	fmt.Fprintln(w)
 	switch {
 	case fails > 0:
-		fmt.Fprintf(w, "%d problem(s), %d warning(s) — fix the ✗ items, then run `emisar connect`.\n", fails, warns)
+		summary := fmt.Sprintf("%d problem(s), %d warning(s) — fix the ✗ items, then run `emisar connect`.", fails, warns)
+		fmt.Fprintln(w, style.fail(summary))
 	case warns > 0:
-		fmt.Fprintf(w, "Critical checks passed, %d warning(s) — the runner should connect.\n", warns)
+		summary := fmt.Sprintf("Critical checks passed, %d warning(s) — the runner should connect.", warns)
+		fmt.Fprintln(w, style.warn(summary))
 	default:
-		fmt.Fprintln(w, "All checks passed — the runner is ready to connect.")
+		fmt.Fprintln(w, style.ok("All checks passed — the runner is ready to connect."))
 	}
 	return fails
 }
 
-func statusGlyph(s checkStatus) string {
+// statusGlyph is the one-cell verdict mark, colored like the portal's
+// pass/pending/deny statuses when the terminal supports it.
+func statusGlyph(style styler, s checkStatus) string {
 	switch s {
 	case checkOK:
-		return "✓"
+		return style.ok("✓")
 	case checkWarn:
-		return "⚠"
+		return style.warn("⚠")
 	default:
-		return "✗"
+		return style.fail("✗")
 	}
 }
