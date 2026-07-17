@@ -15,6 +15,7 @@ alias Emisar.Audit
 alias Emisar.Auth
 alias Emisar.Auth.Subject
 alias Emisar.Billing
+alias Emisar.Billing.Subscription
 alias Emisar.Catalog
 alias Emisar.Catalog.{PackBaseline, PackVersion}
 alias Emisar.Policies
@@ -37,9 +38,13 @@ days_ago = &DateTime.add(now.(), -&1 * 86_400, :second)
 
 # Plan now lives on the account's subscription (no `accounts.plan` column) —
 # mint one for a paid tier; free accounts simply have no subscription.
-# Idempotent: upsert_subscription peeks-then-updates, so re-seeding refreshes it.
+# Idempotent AND reconciling: upsert refreshes a paid tier, and a free persona
+# has its subscription DELETED — so a reseed onto an account that was paid in a
+# prior run doesn't leave a stale row that misreports the plan.
 seed_subscription = fn %Account{} = account, plan ->
-  if plan != "free" do
+  if plan == "free" do
+    Repo.delete_all(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
+  else
     {:ok, _} = Billing.upsert_subscription(account.id, %{plan: plan, status: "active"})
   end
 
@@ -1748,6 +1753,18 @@ seed_plan_account = fn name, slug, plan ->
 
   seed_subscription.(acct, plan)
 
+  # Reconcile the Paddle link to the persona so a reseed can't leave an account
+  # wearing a prior run's customer id — a stale id lights up "Manage subscription"
+  # and the stub PaddleClient's fake invoices on a page that should show none (the
+  # Blank Workspace free account did exactly this). Only the team persona is
+  # self-serve in dev; every other tier is nil.
+  paddle_customer_id = if plan == "team", do: "ctm_dev_#{slug}", else: nil
+
+  acct =
+    acct
+    |> Ecto.Changeset.change(paddle_customer_id: paddle_customer_id)
+    |> Repo.update!()
+
   subject = Subject.for_user(owner, acct, membership)
 
   {acct, owner, subject}
@@ -1760,16 +1777,6 @@ for {name, slug, plan} <- [
       {"Globex Platform Demo", "globex", "team"}
     ] do
   {acct, owner, subject} = seed_plan_account.(name, slug, plan)
-
-  # Give the paid (Globex/Team) account a Paddle customer so its billing page
-  # shows the full self-serve surface — the "Manage subscription" portal button
-  # (payment method + plan change) and the inline Recent invoices (the stub
-  # PaddleClient serves fake transactions). Free/enterprise accounts have none.
-  if plan == "team" do
-    acct
-    |> Ecto.Changeset.change(paddle_customer_id: "ctm_dev_#{slug}")
-    |> Repo.update!()
-  end
 
   runner_name = "#{slug}-prod-1"
 
