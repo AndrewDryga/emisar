@@ -4612,7 +4612,10 @@ defmodule EmisarWeb.CoreComponents do
           <%!-- Beginner framing first — someone installing their first runner
                needs "what is this and why" before "what the script does". --%>
           <section>
-            <.section_header title="What's a runner?" />
+            <%!-- Rail heading matches the shared `docs_rail` (text-sm, zinc-200),
+                 NOT the canvas `section_header` (16px display) — so "What's a
+                 runner?" reads identically here and on the Runners list rail. --%>
+            <h3 class="mb-3 text-sm font-semibold text-zinc-200">What's a runner?</h3>
             <div class="space-y-3 text-sm leading-relaxed text-zinc-400">
               <p>
                 A runner is the small <span class="text-zinc-200">emisar agent</span>
@@ -4631,7 +4634,7 @@ defmodule EmisarWeb.CoreComponents do
           </section>
 
           <section>
-            <.section_header title="Resources" />
+            <h3 class="mb-3 text-sm font-semibold text-zinc-200">Resources</h3>
             <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
               <li>
                 <.link
