@@ -198,7 +198,7 @@ defmodule EmisarWeb.RunsLive do
                 if it persists, your access to this account may have changed.
               </.empty_state>
             <% any_filter_active?(@filter_params, @filters) -> %>
-              <span class="text-zinc-500">No runs match these filters.</span>
+              <span class="text-zinc-400">No runs match these filters.</span>
             <% not connected?(@socket) -> %>
               <%!-- Dead/pre-connect render: don't commit to the onboarding
                    pitch before the live socket confirms the list is really
@@ -259,7 +259,7 @@ defmodule EmisarWeb.RunsLive do
             </.link>
             <.status_badge status={run.status} class="shrink-0" />
           </div>
-          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-500">
+          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-400">
             <.source_badge source={run.source} label={run_actor(run)} class="max-w-[60vw] text-xs" />
             <span aria-hidden="true">·</span>
             <span>{(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}</span>

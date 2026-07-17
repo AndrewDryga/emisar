@@ -249,7 +249,7 @@ defmodule EmisarWeb.RunDetailLive do
                   {if who, do: "via #{via}", else: via}
                 </span>
                 <span :if={!who && !via} class="text-zinc-500">—</span>
-                <span :if={client_version(@run)} class="text-zinc-500">{client_version(@run)}</span>
+                <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
               </span>
             </.meta_field>
             <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
@@ -400,7 +400,7 @@ defmodule EmisarWeb.RunDetailLive do
           <.section_header title="Why" />
           <dl class="space-y-5">
             <div :if={@run.reason && @run.reason != ""}>
-              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Reason
               </dt>
               <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
@@ -408,7 +408,7 @@ defmodule EmisarWeb.RunDetailLive do
             <div :if={show_policy?(@run)}>
               <%!-- Plain field-key like REASON above — one icon on one label
                    made the pair read as two different kinds of fact. --%>
-              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Policy
               </dt>
               <dd
@@ -422,7 +422,7 @@ defmodule EmisarWeb.RunDetailLive do
                   matched_rules_label(@run.matched_rules) != "—" or
                     is_integer(@run.policy_version)
                 }
-                class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
+                class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400"
               >
                 <span :if={matched_rules_label(@run.matched_rules) != "—"}>
                   Matched
@@ -492,7 +492,7 @@ defmodule EmisarWeb.RunDetailLive do
                 <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
               </span>
             </div>
-            <div class="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-500">
+            <div class="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-400">
               <%!-- More chunks were produced than the window shows — say so, so a
                    trimmed head never reads as the complete output. --%>
               <span :if={events_truncated?(@run)} class="text-amber-400/80">

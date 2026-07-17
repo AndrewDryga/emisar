@@ -55,7 +55,7 @@
            change waits for a human. Simpler than a contract dump on purpose;
            the full incident is the demo further down. --%>
       <div class="rise-5 surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
-        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-500">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
           <span class="flex items-center gap-2">
             <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
           </span>
@@ -118,7 +118,7 @@
           </span>
         </div>
 
-        <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-500">
+        <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-400">
           Safe reads run on their own · risky changes are policy-gated · every call audited
         </div>
       </div>
@@ -134,7 +134,7 @@
     <div class="mx-auto grid max-w-7xl grid-cols-2 px-6 sm:grid-cols-4 sm:divide-x sm:divide-zinc-900 lg:px-8">
       <div class="border-b border-zinc-900 px-4 py-6 text-center sm:border-b-0 sm:py-7">
         <div class="font-mono text-2xl font-bold tabular-nums text-zinc-50">{@action_count}</div>
-        <div class="mt-1 text-xs text-zinc-500">audited actions &middot; {@pack_count} packs</div>
+        <div class="mt-1 text-xs text-zinc-400">audited actions &middot; {@pack_count} packs</div>
       </div>
       <.link
         navigate={~p"/zero-trust"}
@@ -143,11 +143,11 @@
         <div class="text-base font-semibold text-zinc-100 transition group-hover:text-brand-300">
           Zero-Trust for AI
         </div>
-        <div class="mt-1 text-xs text-zinc-500">built to Anthropic's control set</div>
+        <div class="mt-1 text-xs text-zinc-400">built to Anthropic's control set</div>
       </.link>
       <div class="px-4 py-6 text-center sm:py-7">
         <div class="text-base font-semibold text-zinc-100">Hash-chained journal</div>
-        <div class="mt-1 text-xs text-zinc-500">every action, tamper-evident on the host</div>
+        <div class="mt-1 text-xs text-zinc-400">every action, tamper-evident on the host</div>
       </div>
       <a
         href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -158,7 +158,7 @@
         <div class="text-base font-semibold text-zinc-100 transition group-hover:text-brand-300">
           Open code
         </div>
-        <div class="mt-1 text-xs text-zinc-500">
+        <div class="mt-1 text-xs text-zinc-400">
           Apache-2.0 runner &middot; read the whole control plane
         </div>
       </a>
@@ -259,7 +259,7 @@
             another MCP server to roll out to every client.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
               linux-core/actions/systemctl_status.yaml
             </div>
             <pre class="overflow-x-auto p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
@@ -292,7 +292,7 @@
             routine calls don't ask every time.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
               Risk-tier defaults
             </div>
             <div class="divide-y divide-zinc-900 p-3 font-mono text-[11px] text-zinc-300">
@@ -320,7 +320,7 @@
                 <span class="truncate text-zinc-400">nomad.job_*</span>
                 <span class="ml-3 flex-none text-amber-300">require approval</span>
               </div>
-              <div class="pt-3 text-[10px] leading-4 text-zinc-500">
+              <div class="pt-3 text-[10px] leading-4 text-zinc-400">
                 Or scope a stricter ruleset to a single runner or a group.
               </div>
             </div>
@@ -341,7 +341,7 @@
             your SIEM.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
               emisar.dev / audit
             </div>
             <div class="divide-y divide-zinc-900 font-mono text-[11px] tabular-nums">
@@ -360,16 +360,16 @@
                 }
                 class="flex gap-3 px-3 py-2.5"
               >
-                <span class="flex-none text-zinc-500">{time}</span>
+                <span class="flex-none text-zinc-400">{time}</span>
                 <div class="min-w-0 flex-1">
                   <div class={[title_class, "font-medium"]}>{title}</div>
-                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-zinc-500">
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-zinc-400">
                     <span>{type}</span>
                     <span class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-400">{chip}</span>
                   </div>
                   <%!-- Actor on its own line, consistent across rows. System
                        (engine) actor is highlighted like the api_key actors. --%>
-                  <div class="mt-1 text-[10px] text-zinc-500">
+                  <div class="mt-1 text-[10px] text-zinc-400">
                     <span :if={actor_label}>
                       {actor_kind}: <span class="text-brand-300">{actor_label}</span>
                     </span>
@@ -435,7 +435,7 @@
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead>
-              <tr class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
+              <tr class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
                 <th class="px-6 py-4 font-medium"></th>
                 <th class="px-6 py-4 font-semibold text-brand-300">emisar</th>
                 <th class="px-6 py-4 font-medium">Raw SSH key</th>
@@ -473,7 +473,7 @@
                           <%!-- Absence, not a denial: a competitor lacking a
                                feature stays muted so emisar's column wins by
                                contrast — a table full of rose reads as fear. --%>
-                          <span class="inline-flex items-center gap-1.5 text-zinc-500">
+                          <span class="inline-flex items-center gap-1.5 text-zinc-400">
                             <.icon name="hero-x-mark" class="h-4 w-4" />No
                           </span>
                         <% true -> %>
@@ -546,7 +546,7 @@
               <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
                 <.icon name={icon} class="h-5 w-5" />
               </div>
-              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
                 {tag}
               </span>
             </div>
@@ -610,7 +610,7 @@
           See emisar mapped to the framework, control by control
           <.icon name="hero-arrow-right" class="h-4 w-4" />
         </.link>
-        <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-500">
+        <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-400">
           Not affiliated with or endorsed by Anthropic. We cite the framework because emisar is
           built to the control set it describes.
         </p>
@@ -637,7 +637,7 @@
           <p class="mt-2 text-sm text-zinc-400">For homelab and tinkering.</p>
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">$0</span>
-            <span class="text-sm text-zinc-500">/ forever</span>
+            <span class="text-sm text-zinc-400">/ forever</span>
           </div>
           <.marketing_button variant={:secondary} href={~p"/sign_up"} block class="mt-8">
             Start free
@@ -667,7 +667,7 @@
           <p class="mt-2 text-sm text-zinc-400">For teams running real production.</p>
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">$20</span>
-            <span class="text-sm text-zinc-500">/ runner / month</span>
+            <span class="text-sm text-zinc-400">/ runner / month</span>
           </div>
           <.marketing_button href={~p"/sign_up"} block class="mt-8">
             Start free

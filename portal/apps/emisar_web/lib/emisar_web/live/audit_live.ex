@@ -346,7 +346,7 @@ defmodule EmisarWeb.AuditLive do
            (now − window); the date filter below consumes it. Re-adds the
            presets the date-unification dropped, without a second bar. --%>
       <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="text-zinc-500">Quick filters:</span>
+        <span class="text-zinc-400">Quick filters:</span>
         <%!-- An active preset wears the brand active-filter tint and clicking
              it again clears the window — the chip is a TOGGLE, like every
              other filter control. Which chip is active rides a `window` URL
@@ -445,7 +445,7 @@ defmodule EmisarWeb.AuditLive do
         ]}>
           Filters
         </span>
-        <span :if={@active_facet_count > 0 and not @filters_open?} class="truncate text-zinc-500">
+        <span :if={@active_facet_count > 0 and not @filters_open?} class="truncate text-zinc-400">
           — {@active_facet_summary}
         </span>
       </button>
@@ -516,12 +516,12 @@ defmodule EmisarWeb.AuditLive do
                   >
                     {format_event_type(event.event_type)}
                   </div>
-                  <div class="mt-0.5 truncate text-xs leading-4 text-zinc-500 xl:hidden">
+                  <div class="mt-0.5 truncate text-xs leading-4 text-zinc-400 xl:hidden">
                     {event_meta(event, @refs)}
                   </div>
                   <div
                     :if={pairs_text(event) != ""}
-                    class="mt-0.5 hidden truncate text-xs leading-4 text-zinc-500 xl:block"
+                    class="mt-0.5 hidden truncate text-xs leading-4 text-zinc-400 xl:block"
                   >
                     {pairs_text(event)}
                   </div>
@@ -543,7 +543,7 @@ defmodule EmisarWeb.AuditLive do
                 value={event.occurred_at}
                 mode={:relative}
                 styled_tooltip
-                class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-500 xl:ml-0 xl:text-right"
+                class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-400 xl:ml-0 xl:text-right"
               />
             </.link>
           </li>
@@ -564,7 +564,7 @@ defmodule EmisarWeb.AuditLive do
                 access to this account may have changed.
               </.empty_state>
             <% any_filter_active?(@filter_params, @filters) -> %>
-              <span class="text-zinc-500">No events match these filters.</span>
+              <span class="text-zinc-400">No events match these filters.</span>
             <% true -> %>
               <.empty_state icon="hero-document-text" title="No audit events yet.">
                 They appear as soon as something happens — a
@@ -608,7 +608,7 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp audit_column_header_class,
-    do: "text-[11px] font-medium uppercase tracking-wider text-zinc-500"
+    do: "text-[11px] font-medium uppercase tracking-wider text-zinc-400"
 
   attr :value, :string, default: nil
   attr :mono, :boolean, default: false
@@ -665,7 +665,7 @@ defmodule EmisarWeb.AuditLive do
       </span>
       <span
         :if={@credential}
-        class="mt-0.5 block truncate text-xs leading-4 text-zinc-500"
+        class="mt-0.5 block truncate text-xs leading-4 text-zinc-400"
         data-audit-secondary
       >
         {@credential}
@@ -809,7 +809,7 @@ defmodule EmisarWeb.AuditLive do
       </span>
       <span
         :if={@via}
-        class="mt-0.5 block break-words text-xs leading-4 text-zinc-500"
+        class="mt-0.5 block break-words text-xs leading-4 text-zinc-400"
         data-audit-secondary
       >
         {@via}

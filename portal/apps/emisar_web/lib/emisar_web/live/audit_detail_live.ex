@@ -90,7 +90,7 @@ defmodule EmisarWeb.AuditDetailLive do
              audit LIST keeps the per-row dot where scanning actually happens. --%>
         <.detail_header back="Audit log" navigate={~p"/app/#{@current_account}/audit"}>
           <span class="font-semibold">{format_event_type(@event.event_type)}</span>
-          <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
+          <span class="ml-2 font-mono text-xs font-normal text-zinc-400">{@event.event_type}</span>
         </.detail_header>
       </:title>
       <% posture = parse_client_posture(@event.user_agent) %>
@@ -187,11 +187,11 @@ defmodule EmisarWeb.AuditDetailLive do
             :if={AuditSummary.summary_pairs(@event) != []}
             class="mt-8 flex flex-wrap items-center gap-2"
           >
-            <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Summary
             </span>
             <.chip :for={pair <- AuditSummary.summary_pairs(@event)}>
-              <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
+              <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
               <span class="text-zinc-200">{elem(pair, 1)}</span>
             </.chip>
           </div>
@@ -285,7 +285,7 @@ defmodule EmisarWeb.AuditDetailLive do
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
                 <code class="font-mono text-brand-300">{ov["decision"]}</code>
-                <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-500">
+                <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-400">
                   ({ov["name"]})
                 </span>
               </li>
@@ -366,7 +366,7 @@ defmodule EmisarWeb.AuditDetailLive do
     ~H"""
     <div class="min-w-0" data-audit-entity={@role}>
       <.entity_heading role={@role} />
-      <p class="mt-2 text-sm text-zinc-500">— (not recorded)</p>
+      <p class="mt-2 text-sm text-zinc-400">— (not recorded)</p>
     </div>
     """
   end
@@ -468,7 +468,7 @@ defmodule EmisarWeb.AuditDetailLive do
       </span>
       <span :if={@kind_label} aria-hidden="true" class="text-zinc-700">·</span>
       <span
-        class={["font-medium", if(@kind_label, do: "text-zinc-600", else: "text-zinc-500")]}
+        class="font-medium text-zinc-400"
         data-audit-entity-role
       >
         {@role}
@@ -481,7 +481,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp entity_kind_label(kind), do: String.replace(kind, "_", " ")
 
   defp entity_fact_label_class,
-    do: "flex min-h-5 items-start font-normal text-zinc-500"
+    do: "flex min-h-5 items-start font-normal text-zinc-400"
 
   defp entity_fact_value_class,
     do: "flex min-h-5 min-w-0 items-start text-zinc-300"

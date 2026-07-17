@@ -333,7 +333,7 @@ defmodule EmisarWeb.DashboardLive do
               <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">
                 {request.context["action_id"] || "—"}
               </div>
-              <div class="truncate text-xs text-zinc-500">
+              <div class="truncate text-xs text-zinc-400">
                 <.local_time
                   id={"dash-pending-#{request.id}"}
                   value={request.requested_at}
@@ -360,7 +360,7 @@ defmodule EmisarWeb.DashboardLive do
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             Recent runs
           </h2>
-          <span :if={@run_stats && @run_stats.total > 0} class="text-xs text-zinc-500">
+          <span :if={@run_stats && @run_stats.total > 0} class="text-xs text-zinc-400">
             <span class="tabular-nums">
               {@run_stats.total} in the last {@run_stats.window_hours}h
             </span>
@@ -471,7 +471,7 @@ defmodule EmisarWeb.DashboardLive do
           {@done_count} of 3 done
         </span>
       </div>
-      <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
+      <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
         Two connections, then ask any MCP client — Claude, Cursor, Codex — to run an action
         on your own hosts. Every call is checked against policy first.
       </p>
@@ -514,7 +514,7 @@ defmodule EmisarWeb.DashboardLive do
             "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ring-1",
             if(@both_connected?,
               do: "bg-zinc-800 text-zinc-100 ring-zinc-600",
-              else: "text-zinc-500 ring-zinc-800"
+              else: "text-zinc-400 ring-zinc-800"
             )
           ]}>
             3
@@ -526,7 +526,7 @@ defmodule EmisarWeb.DashboardLive do
             ]}>
               Ask your agent to run an action
             </span>
-            <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
+            <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
               Ask in plain English — your agent picks the matching action from the catalog and
               runs it on the host. A read-only health check is a safe first run:
             </p>
@@ -557,7 +557,7 @@ defmodule EmisarWeb.DashboardLive do
 
       <p
         :if={not (@can_install_runners? or @can_issue_agent_key? or @can_invite_members?)}
-        class="mt-4 text-xs text-zinc-500"
+        class="mt-4 text-xs text-zinc-400"
       >
         Setup needs an operator role or above — ask an owner or admin to connect the
         first runner and agent.
@@ -595,7 +595,7 @@ defmodule EmisarWeb.DashboardLive do
           "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ring-1",
           if(@current,
             do: "bg-zinc-800 text-zinc-100 ring-zinc-600",
-            else: "text-zinc-500 ring-zinc-800"
+            else: "text-zinc-400 ring-zinc-800"
           )
         ]}
       >
@@ -616,7 +616,7 @@ defmodule EmisarWeb.DashboardLive do
           </span>
           <span :if={@optional} class="text-[11px] text-zinc-400">optional</span>
         </div>
-        <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
+        <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
           <%= if @done do %>
             {@done_text}
           <% else %>
@@ -915,7 +915,7 @@ defmodule EmisarWeb.DashboardLive do
   # stacks into an alarm wall — a healthy pillar stays quiet (no green shout).
   defp pillar_status_class(:amber), do: "text-amber-300"
   defp pillar_status_class(:rose), do: "text-rose-300"
-  defp pillar_status_class(:neutral), do: "text-zinc-500"
+  defp pillar_status_class(:neutral), do: "text-zinc-400"
 
   # Every posture line leads with its tone dot — attention lines wear their
   # amber/rose, a healthy pillar the quiet brand dot, an idle one neutral.

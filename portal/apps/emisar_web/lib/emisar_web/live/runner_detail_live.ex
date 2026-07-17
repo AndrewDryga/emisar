@@ -220,7 +220,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         <%!-- The group is CONTEXT, not a link — there's no per-group page and the
              runners list has no group filter, so a link would go nowhere. Render
              it dimmer than the clickable "Runners" so it doesn't read as one. --%>
-        <span class="inline-flex items-center text-zinc-500">
+        <span class="inline-flex items-center text-zinc-400">
           <span class="font-medium">{@runner.group}</span>
           <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
         </span>
@@ -313,7 +313,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             :if={runner_labels(@runner) != []}
             class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-5"
           >
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Labels
             </span>
             <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
@@ -478,7 +478,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                    genuinely empty catalog gets the onboarding box (floored to the
                    recent-runs placeholder height in the mixed side-by-side view). --%>
                 <%= if LiveTable.has_active_filters?(@filter_params, @action_filters) do %>
-                  <span class="text-zinc-500">No actions match these filters.</span>
+                  <span class="text-zinc-400">No actions match these filters.</span>
                 <% else %>
                   <.empty_state
                     icon="hero-cpu-chip"

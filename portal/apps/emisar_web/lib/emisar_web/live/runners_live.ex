@@ -285,7 +285,7 @@ defmodule EmisarWeb.RunnersLive do
                 </span>
                 <span :if={@fleet.disabled > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:neutral} size={:sm} />
-                  <span class="tabular-nums text-zinc-500">{@fleet.disabled} disabled</span>
+                  <span class="tabular-nums text-zinc-400">{@fleet.disabled} disabled</span>
                 </span>
               </div>
 
@@ -330,7 +330,7 @@ defmodule EmisarWeb.RunnersLive do
                           <span class="truncate font-medium text-zinc-100">{runner.name}</span>
                           <span
                             :if={runner.runner_version}
-                            class="font-mono text-[11px] text-zinc-500"
+                            class="font-mono text-[11px] text-zinc-400"
                           >
                             v{runner.runner_version}
                           </span>
@@ -350,7 +350,7 @@ defmodule EmisarWeb.RunnersLive do
                             signed-only
                           </.chip>
                         </div>
-                        <.meta_line class="mt-0.5 text-xs text-zinc-500">
+                        <.meta_line class="mt-0.5 text-xs text-zinc-400">
                           <%!-- When name == hostname the title already says it —
                            don't restate the identifier one line down. --%>
                           <:seg :if={
