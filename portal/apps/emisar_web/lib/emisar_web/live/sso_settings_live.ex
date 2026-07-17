@@ -122,8 +122,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # connections, pending requests, and sign-in link all live on Team now. The
   # per-connection detail (/settings/sso/:id) and Add (/new) stay.
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
-    {:noreply,
-     push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
+    # The fragment lands the operator on Team's Single sign-on card (its DOM id)
+    # instead of the top of a long page — docs and old bookmarks deep-link here.
+    destination = ~p"/app/#{socket.assigns.current_account}/settings/team" <> "#single-sign-on"
+    {:noreply, push_navigate(socket, to: destination)}
   end
 
   def handle_params(params, _uri, socket) do

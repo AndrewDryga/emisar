@@ -40,10 +40,14 @@ defmodule EmisarWeb.TeamLiveTest do
       # With the plan (still no provider), the door becomes the real Add button
       # into /new — the plan gate is cleared.
       Fixtures.Accounts.create_subscription(account, "team")
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Add provider"
       assert html =~ ~p"/app/#{account}/settings/sso/new"
       refute html =~ "Available on the Team and Enterprise plans"
+
+      # The card's anchor id is a deep-link contract: /settings/sso redirects to
+      # /settings/team#single-sign-on, and /docs/sso sends operators there.
+      assert has_element?(lv, "#single-sign-on")
     end
 
     test "pending SSO access requests surface on Team, and approving clears one", %{conn: conn} do

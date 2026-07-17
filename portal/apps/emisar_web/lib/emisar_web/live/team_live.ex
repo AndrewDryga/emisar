@@ -1397,8 +1397,10 @@ defmodule EmisarWeb.TeamLive do
           </div>
 
           <%!-- ── Single sign-on connections ── --%>
+          <%!-- The id is a documented deep-link target: /settings/sso lands here
+               via its anchored redirect, and /docs/sso points operators at it. --%>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-          <div class="rounded-xl border border-zinc-800/80 p-4">
+          <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               Connect your organization's identity provider so members sign in through it. New

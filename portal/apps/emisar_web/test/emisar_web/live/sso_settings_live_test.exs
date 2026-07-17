@@ -42,10 +42,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "the overview /settings/sso now redirects to Team (the SSO hub moved there)",
+    test "the overview /settings/sso now redirects to Team's anchored SSO card",
          %{conn: conn, account: account} do
       assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/settings/sso")
-      assert to == ~p"/app/#{account}/settings/team"
+
+      # The fragment matches the Team page's Single sign-on card id, so docs
+      # deep-links and old bookmarks land at the section, not the page top.
+      assert to == ~p"/app/#{account}/settings/team" <> "#single-sign-on"
     end
 
     test "Add a connection is its own page with the per-provider setup guide",

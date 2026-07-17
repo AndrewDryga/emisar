@@ -948,6 +948,17 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "Mint per host"
     end
 
+    test "the SSO page's directions match the console's Team-hosted SSO hub", %{conn: conn} do
+      html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+      # SSO folded into Team: directions say Team → Single sign-on and the
+      # console's own button label (Add provider) — UI-010 regression.
+      assert html =~ "Team → Single sign-on"
+      assert html =~ "Add provider"
+      refute html =~ "Settings → Single sign-on"
+      refute html =~ "Add connection</strong>"
+    end
+
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
 

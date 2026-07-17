@@ -19,9 +19,11 @@
         (sign in through your IdP) and
         <strong class="text-zinc-200">directory sync (SCIM)</strong>
         (provision and deprovision from the directory). You can run login on its own; directory
-        sync builds on a configured connection. Both are configured from one page —
-        <strong class="text-zinc-200">Settings → Single sign-on</strong>
-        in your emisar workspace; the screenshots below are that page.
+        sync builds on a configured connection. Both are managed from
+        <strong class="text-zinc-200">Team → Single sign-on</strong>
+        in your emisar workspace — the Team page lists your connections, and each connection's
+        own page holds its configuration and directory sync. The screenshots below are those
+        pages.
       </p>
 
       <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm leading-6 text-zinc-400">
@@ -42,9 +44,9 @@
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         You need an emisar owner or admin. Open
-        <strong class="text-zinc-200">Settings → Single sign-on</strong>
-        and click <strong class="text-zinc-200">Add connection</strong>; the form fills the
-        right-hand side and walks you through the provider-side app as you pick a provider type.
+        <strong class="text-zinc-200">Team → Single sign-on</strong>
+        and click <strong class="text-zinc-200">Add provider</strong>; the form opens on its own
+        page and walks you through the provider-side app as you pick a provider type.
         <.plan_note tier={:team} />
       </p>
 
@@ -243,8 +245,8 @@
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
-        and JumpCloud all speak as a provisioning client. The directory-sync panel lives right under
-        each connection on the same Single sign-on page. <.plan_note tier={:enterprise} />
+        and JumpCloud all speak as a provisioning client. The directory-sync panel lives on each
+        connection's page, right under its settings. <.plan_note tier={:enterprise} />
       </p>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
