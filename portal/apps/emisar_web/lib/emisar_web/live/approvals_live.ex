@@ -604,12 +604,6 @@ defmodule EmisarWeb.ApprovalsLive do
                 action by the same API key — optionally pinned to one runner and exact
                 arguments — auto-approve for that window instead of re-asking.
               </p>
-              <p>
-                Grants are bounded by the account's
-                <span class="text-zinc-200">Maximum grant lifetime</span>
-                beside, can carry a use limit, and are revocable here at any time — every
-                use is logged.
-              </p>
             </.docs_rail>
 
             <div>
@@ -625,20 +619,8 @@ defmodule EmisarWeb.ApprovalsLive do
               <div id="approvals-grant-cap" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                 <h4 class="text-sm font-medium text-zinc-100">Maximum grant lifetime</h4>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                  Cap how long an approved grant can keep skipping the prompt. Single-use
-                  ("once") approvals are always allowed; the limit is enforced server-side.
-                </p>
-                <p
-                  :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
-                  class="mt-2 flex items-start gap-1.5 text-xs"
-                >
-                  <.status_dot tone={:amber} size={:sm} class="mt-1" />
-                  <span>
-                    <span class="whitespace-nowrap text-amber-300">no cap</span>
-                    <span class="text-zinc-500">
-                      — each grant keeps the lifetime it was approved with
-                    </span>
-                  </span>
+                  Cap how long an approved grant can keep skipping the prompt.
+                  Single-use approvals are always allowed.
                 </p>
                 <p
                   :if={grants_disabled?(@current_account)}

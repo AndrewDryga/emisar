@@ -432,7 +432,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
       assert html =~ "linux.reboot"
-      assert html =~ "no cap"
+      # Uncapped default — the Guardrails select shows it as the selected option.
+      assert has_element?(lv, ~s(#approvals-grant-cap option[value=""][selected]))
 
       html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "0"})
 
