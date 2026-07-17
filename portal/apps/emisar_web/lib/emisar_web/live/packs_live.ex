@@ -790,9 +790,11 @@ defmodule EmisarWeb.PacksLive do
         A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
         v{@version.version} until you update the pack on the runner.
       </:body>
-      <p class="mt-2 font-mono text-[11px] text-zinc-400">
-        <span :if={@current_version}>→ v{@current_version}: </span>emisar pack install {@pack_id}
-      </p>
+      <.install_command
+        id={"retired-cmd-#{@version.id}"}
+        pack_id={@pack_id}
+        successor={@current_version}
+      />
       <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
            confirm, admin-only. It re-enables dispatch for this exact retired
            version; the audited context fn stays the server gate (IL-15). The
@@ -876,13 +878,32 @@ defmodule EmisarWeb.PacksLive do
       class="mt-3 pl-8"
     >
       <:body>
-        v{@successor} has shipped. This version still runs fine — update the pack on the runner
-        when it's convenient.
+        v{@successor} has shipped. This one is still safe — it runs and dispatches fine.
       </:body>
-      <p class="mt-2 font-mono text-[11px] text-zinc-400">
-        → v{@successor}: emisar pack install {@pack_id}
-      </p>
+      <.install_command id={"update-cmd-#{@version.id}"} pack_id={@pack_id} successor={@successor} />
     </.event_block>
+    """
+  end
+
+  # The "fix it" command as a compact, copyable row — never a code panel (the
+  # one-line-copy-value rule): the label names the target version, the row clips
+  # the command mono at text-xs (a step below the block title, not above it), and
+  # Copy lifts the complete value.
+  attr :id, :string, required: true
+  attr :pack_id, :string, required: true
+  attr :successor, :string, default: nil
+
+  defp install_command(assigns) do
+    ~H"""
+    <div class="mt-3">
+      <p class="text-xs text-zinc-400">
+        <span :if={@successor}>
+          Update the runner to <span class="font-medium text-zinc-200">v{@successor}</span>
+        </span>
+        <span :if={is_nil(@successor)}>Install on the runner</span>
+      </p>
+      <.code_line id={@id} value={"emisar pack install #{@pack_id}"} prompt class="mt-1.5" />
+    </div>
     """
   end
 
@@ -1314,27 +1335,39 @@ defmodule EmisarWeb.PacksLive do
                         v{v.version} until you decide.
                       </span>
                     </:body>
-                    <p
+                    <.install_command
                       :if={retired_blocked?(v)}
-                      class="mt-2 font-mono text-[11px] text-zinc-400"
+                      id={"upgrade-cmd-#{v.id}"}
+                      pack_id={pack.id}
+                      successor={retirement_successor(v)}
+                    />
+                    <%!-- The two-hash comparison earns its rows only on a real drift —
+                         a trusted hash to diff the advertised one against. A first-seen
+                         retired version was never trusted, so drop the empty
+                         "trusted: (none yet)" and show just the bytes on the runner. A
+                         hash is a plain identifier, so it reads neutral. --%>
+                    <dl
+                      :if={not is_nil(v.hash)}
+                      class="mt-3 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]"
                     >
-                      <span :if={retirement_successor(v)}>→ v{retirement_successor(v)}: </span>emisar pack install {pack.id}
-                    </p>
-                    <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                      <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
-                      <%!-- A hash is a plain identifier, not a warning — the "trusted:"
-                           vs "advertising:" labels already say which one changed, so it
-                           reads neutral, not amber. --%>
+                      <.kv layout={:grid} label="trusted:">{v.hash}</.kv>
                       <.kv layout={:grid} label="advertising:">
                         <span class="text-zinc-300">{v.pending_hash || "—"}</span>
                       </.kv>
                     </dl>
+                    <p
+                      :if={is_nil(v.hash)}
+                      class="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px] text-zinc-400"
+                    >
+                      on the runner:
+                      <span class="break-all font-mono text-zinc-300">{v.pending_hash || "—"}</span>
+                    </p>
                     <%!-- Blast radius — which hosts this trust click unblocks.
                          One canary box vs the whole fleet is the difference
                          between a safe and a scary Trust. --%>
                     <div
                       :if={@advertising[v.id] not in [nil, []]}
-                      class="mt-2 text-[11px] leading-relaxed text-zinc-400"
+                      class="mt-3 text-[11px] leading-relaxed text-zinc-400"
                     >
                       <p>
                         <span class="font-semibold text-zinc-300">
@@ -1354,13 +1387,13 @@ defmodule EmisarWeb.PacksLive do
                            amber. The tags wrap in a flex container (a fleet can advertise
                            dozens, and a comprehension renders them with no whitespace
                            between — an inline run would overflow the page). --%>
-                      <div class="mt-1.5 flex flex-wrap gap-1">
+                      <div class="mt-2 flex flex-wrap gap-1.5">
                         <span
                           :for={r <- @advertising[v.id]}
-                          class="inline-flex items-stretch overflow-hidden rounded bg-zinc-900/40 font-mono text-[11px] ring-1 ring-zinc-800/70"
+                          class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60"
                         >
-                          <span class="px-1.5 py-0.5 text-zinc-400">{r.group}</span>
-                          <span class="border-l border-zinc-800/70 px-1.5 py-0.5 text-zinc-300">
+                          <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{r.group}</span>
+                          <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">
                             {r.name}
                           </span>
                         </span>

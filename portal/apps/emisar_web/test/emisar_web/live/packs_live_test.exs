@@ -96,11 +96,10 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "canary-01"
       assert html =~ "staging"
 
-      # The mono trusted/advertising readout (the <.kv layout={:grid}> rows):
-      # a never-trusted pack has no baseline hash, and advertises abc123.
-      assert html =~ "trusted:"
-      assert html =~ "— (none yet)"
-      assert html =~ "advertising:"
+      # A never-trusted pack has no baseline hash to diff against, so the readout
+      # skips the empty "trusted: (none yet)" and shows just the bytes on the runner.
+      refute html =~ "(none yet)"
+      assert html =~ "on the runner"
       assert html =~ "abc123"
     end
 
