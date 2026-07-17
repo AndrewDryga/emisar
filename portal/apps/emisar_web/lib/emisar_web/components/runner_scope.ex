@@ -34,7 +34,7 @@ defmodule EmisarWeb.RunnerScope do
 
       <div
         :if={@runners == []}
-        class="rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-500 ring-1 ring-white/[0.08]"
+        class="rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-400 ring-1 ring-white/[0.08]"
       >
         No runners registered yet.
       </div>
@@ -80,7 +80,7 @@ defmodule EmisarWeb.RunnerScope do
         </div>
 
         <div :if={@tree.ungrouped != []}>
-          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             Ungrouped
           </p>
           <.checkbox

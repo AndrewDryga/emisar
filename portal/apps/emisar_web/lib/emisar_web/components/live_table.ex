@@ -152,7 +152,7 @@ defmodule EmisarWeb.LiveTable do
         <%!-- Just padding around the slot: a truly-empty slot renders a
              dashed-border `empty_state` placeholder that brings its own frame;
              a filtered one-liner sits quietly in the padding. --%>
-        <div id={"#{@id}-empty"} class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-500"]}>
+        <div id={"#{@id}-empty"} class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-400"]}>
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -218,7 +218,7 @@ defmodule EmisarWeb.LiveTable do
              `empty_state` placeholder that brings its own frame, and a stray
              solid rule above it reads as a broken table edge. A filtered
              one-liner just sits in the padding. --%>
-        <div id={"#{@id}-empty"} class="py-1 text-sm text-zinc-500">
+        <div id={"#{@id}-empty"} class="py-1 text-sm text-zinc-400">
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -237,7 +237,7 @@ defmodule EmisarWeb.LiveTable do
           ]}
         >
           <table id={@id} class={["w-full text-sm text-left", @class]}>
-            <thead class="text-xs uppercase tracking-wider text-zinc-500">
+            <thead class="text-xs uppercase tracking-wider text-zinc-400">
               <tr class="border-b border-zinc-700/80">
                 <th
                   :for={col <- @col}
