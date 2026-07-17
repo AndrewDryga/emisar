@@ -1406,17 +1406,17 @@ defmodule EmisarWeb.PacksLive do
             doc_label="Action pack docs"
           >
             <p>
-              Packs published by emisar are <span class="text-brand-300">trusted automatically</span>
+              Packs published by emisar are <span class="text-zinc-200">trusted automatically</span>
               — every version is
               pinned to the exact content hash of the signed registry build. When a
               security fix supersedes a version, the older release is
-              <span class="text-rose-300">retired</span>
+              <span class="text-zinc-200">retired</span>
               and dispatch to it is blocked until you update the runner or decide
               otherwise.
             </p>
             <p>
               Everything else — your own packs, third-party builds, or contents that
-              changed on a host — waits as <span class="text-amber-300">pending</span>
+              changed on a host — waits as <span class="text-zinc-200">pending</span>
               until an admin reviews and trusts it.
             </p>
           </.docs_rail>

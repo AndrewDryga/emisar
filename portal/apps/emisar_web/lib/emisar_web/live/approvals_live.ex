@@ -477,7 +477,7 @@ defmodule EmisarWeb.ApprovalsLive do
             </p>
             <p>
               Approve releases the held run; deny cancels it. Either way your reason is
-              logged. A request nobody decides <span class="text-amber-300">expires</span>
+              logged. A request nobody decides <span class="text-zinc-200">expires</span>
               on its own and its held run is cancelled.
             </p>
           </.docs_rail>
@@ -721,8 +721,8 @@ defmodule EmisarWeb.ApprovalsLive do
 
           <.docs_rail title="The decision log">
             <p>
-              Every decided request — <span class="text-brand-300">approved</span>, <span class="text-rose-300">denied</span>, or
-              <span class="text-amber-300">expired</span>
+              Every decided request — <span class="text-zinc-200">approved</span>, <span class="text-zinc-200">denied</span>, or
+              <span class="text-zinc-200">expired</span>
               — with who decided it and when.
             </p>
             <p>
