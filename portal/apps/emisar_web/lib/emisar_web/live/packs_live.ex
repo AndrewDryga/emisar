@@ -847,6 +847,37 @@ defmodule EmisarWeb.PacksLive do
     """
   end
 
+  # A trusted version below the current shipped one that is NOT retired — a
+  # convenience nudge, never a warning: a security fix RETIRES a version (packs
+  # retire only on security/critical fixes), so an outdated-but-trusted version
+  # is safe by construction and still dispatches. The weakest tier on the row —
+  # a muted line + a quiet arrow, no spine, no tone, no count — quieter than the
+  # rose retired block and the amber pending spine. Retirement takes precedence:
+  # `pack_version_outdated` returns `:current` for a retired version, so this
+  # never stacks on top of the rose block. Renders nothing for a current version.
+  defp update_available_note(assigns) do
+    successor =
+      case Catalog.pack_version_outdated(assigns.version) do
+        {:outdated, successor} -> successor
+        :current -> nil
+      end
+
+    assigns = assign(assigns, :successor, successor)
+
+    ~H"""
+    <p
+      :if={@successor}
+      class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 pl-8 text-xs text-zinc-400"
+    >
+      <span class="inline-flex items-center gap-1.5">
+        <.icon name="hero-arrow-up-circle" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+        v{@successor} available
+      </span>
+      <span class="font-mono text-[11px]">emisar pack install {@pack_id}</span>
+    </p>
+    """
+  end
+
   # Retirement is an overlay on a trusted row (release-frozen `PackBaseline`),
   # not a trust_state — so it's a pure per-row check, not a row field.
   defp pack_version_retired?(version),
@@ -1224,6 +1255,15 @@ defmodule EmisarWeb.PacksLive do
                     version={v}
                     pack_id={pack.id}
                     can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
+                  />
+
+                  <%!-- A gentle "update available" for a trusted, non-retired
+                       version below the shipped current (retirement, above,
+                       takes precedence and this stays silent under it). --%>
+                  <.update_available_note
+                    :if={v.trust_state == :trusted}
+                    version={v}
+                    pack_id={pack.id}
                   />
 
                   <%!-- A rejected version stays listed quietly — no alert, no

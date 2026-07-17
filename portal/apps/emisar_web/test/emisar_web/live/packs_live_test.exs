@@ -393,6 +393,71 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, ~s([id^="override-"]))
     end
 
+    test "a trusted version below the shipped current shows a quiet update-available note",
+         %{conn: conn, account: account} do
+      # A shipped pack that retires nothing, trusted at a version below its
+      # current: outdated-but-safe, so the gentle "update available" hint (never
+      # rose/amber) names the successor + the install command.
+      all_pack_ids =
+        Emisar.Catalog.PackBaseline.all() |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+      pack_id = List.first(all_pack_ids -- Map.keys(Emisar.Catalog.PackBaseline.retired_below()))
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "v#{current} available"
+      assert html =~ "emisar pack install #{pack_id}"
+      # A nudge, not a warning — no rose retired block on this row.
+      refute html =~ "Retired by a newer release"
+    end
+
+    test "a trusted CURRENT version shows no update-available note",
+         %{conn: conn, account: account} do
+      {{pack_id, _v}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: current
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      refute html =~ "v#{current} available"
+    end
+
+    test "a retired version shows the rose retired block and NOT the update-available note",
+         %{conn: conn, account: account} do
+      # Retirement takes precedence — the stronger rose block owns the row; the
+      # gentle hint stays silent and never stacks on top of it.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      refute html =~ "v#{current} available"
+    end
+
     test "a retired trusted version renders the rose warning with the admin override CTA",
          %{conn: conn, account: account} do
       # The prod-shaped row: trusted under an older release, then a newer

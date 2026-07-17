@@ -1750,6 +1750,50 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "pack_version_outdated/1" do
+    # Composes over the release-frozen baseline: a non-retired version below the
+    # shipped current is {:outdated, successor}; a retired version defers to its
+    # stronger treatment and reads :current. Version math is unit-tested in
+    # PackBaselineTest; here we assert the retirement-precedence composition.
+    test "is {:outdated, current} for a non-retired version below the shipped current" do
+      # A shipped pack that retires nothing — an older version is outdated-but-safe.
+      all_pack_ids =
+        Emisar.Catalog.PackBaseline.all() |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+      pack_id = List.first(all_pack_ids -- Map.keys(Emisar.Catalog.PackBaseline.retired_below()))
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+      pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0", trust_state: :trusted}
+
+      assert Catalog.pack_version_outdated(pack_version) == {:outdated, current}
+    end
+
+    test "is :current for a version that already is the shipped current" do
+      {{pack_id, _version}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+      pack_version = %PackVersion{pack_id: pack_id, version: current, trust_state: :trusted}
+
+      assert Catalog.pack_version_outdated(pack_version) == :current
+    end
+
+    test "is :current for a custom pack the release does not ship" do
+      pack_version = %PackVersion{pack_id: "definitely-not-a-real-pack", version: "0.0.0"}
+
+      assert Catalog.pack_version_outdated(pack_version) == :current
+    end
+
+    test "is :current for a retired version — retirement takes precedence over the hint" do
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0"}
+
+      # The same version reads {:retired, _} from pack_version_retirement...
+      assert {:retired, _} = Catalog.pack_version_retirement(pack_version)
+      # ...so the gentle "update available" hint stays silent under the rose block.
+      assert Catalog.pack_version_outdated(pack_version) == :current
+    end
+  end
+
   describe "pack_version_needs_decision?/1" do
     test "pending needs one; trusted+active, rejected, and overridden do not" do
       pending = %Emisar.Catalog.PackVersion{trust_state: :pending, pack_id: "x", version: "1.0"}

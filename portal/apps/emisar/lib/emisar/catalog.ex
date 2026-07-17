@@ -996,6 +996,26 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Whether a trusted pack version has a newer shipped successor to update to —
+  `{:outdated, successor}` for a NON-retired version below the current shipped
+  version, else `:current`. A convenience signal, not a warning: a security fix
+  RETIRES a version (packs retire only on security/critical fixes), so an
+  outdated-but-not-retired version is safe by construction and still dispatches.
+  Retirement takes precedence — a retired version reads `:current` here so the
+  stronger rose retired block shows alone, never the gentle hint on top of it.
+  Pure over the release-frozen `PackBaseline`; the packs LiveView reads it.
+  """
+  @spec pack_version_outdated(PackVersion.t()) :: {:outdated, String.t()} | :current
+  def pack_version_outdated(%PackVersion{pack_id: pack_id, version: version}) do
+    with false <- PackBaseline.retired?(pack_id, version),
+         successor when is_binary(successor) <- PackBaseline.newer_version(pack_id, version) do
+      {:outdated, successor}
+    else
+      _ -> :current
+    end
+  end
+
+  @doc """
   A version awaiting an operator decision: a pending trust review, or a
   trusted version whose shipped-catalog retirement blocks dispatch until an
   admin overrides, updates, revokes, or deletes it. Rejected and overridden

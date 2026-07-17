@@ -40,6 +40,46 @@ defmodule Emisar.Catalog.PackBaselineTest do
     end
   end
 
+  describe "newer_version/2" do
+    test "returns the current version when the advertised one is strictly behind" do
+      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
+      current = PackBaseline.current_version(pack_id)
+
+      # "0.0.0" is below every shipped current, so the successor is the current.
+      assert PackBaseline.newer_version(pack_id, "0.0.0") == current
+    end
+
+    test "returns nil when the advertised version already is the current one" do
+      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
+      current = PackBaseline.current_version(pack_id)
+
+      assert PackBaseline.newer_version(pack_id, current) == nil
+    end
+
+    test "returns nil when the advertised version is ahead of the current one" do
+      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
+
+      assert PackBaseline.newer_version(pack_id, "999.0.0") == nil
+    end
+
+    test "returns nil for a pack the release does not ship" do
+      assert PackBaseline.newer_version("definitely-not-a-real-pack", "0.0.0") == nil
+    end
+
+    test "returns nil (no false hint) for an unparseable advertised version" do
+      # The OPPOSITE fail direction from retirement: junk yields nil, so a garbage
+      # runner version never surfaces a bogus "update available".
+      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
+
+      assert PackBaseline.newer_version(pack_id, "not-a-semver") == nil
+    end
+
+    test "returns nil for non-binary arguments" do
+      assert PackBaseline.newer_version(nil, "0.0.0") == nil
+      assert PackBaseline.newer_version("consul", nil) == nil
+    end
+  end
+
   describe "retired?/2" do
     # A retirement watermark removes only versions strictly below it; a
     # shipping catalog never retires its own current version.

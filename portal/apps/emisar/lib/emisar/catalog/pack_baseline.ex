@@ -174,6 +174,29 @@ defmodule Emisar.Catalog.PackBaseline do
   def current_version(_), do: nil
 
   @doc """
+  The strictly-newer shipped version an operator could update `(pack_id,
+  version)` to — `current_version/1` when it is strictly ahead of `version` — or
+  `nil` when we don't ship the pack, `version` already is (or is ahead of) the
+  current, or the runner advertises an unparseable version. Pure. The fail
+  direction is the OPPOSITE of retirement: junk yields `nil` (no false "update
+  available"), because an update hint is a convenience, never a gate — it must
+  never fire on a garbage version string.
+  """
+  @spec newer_version(String.t(), String.t()) :: String.t() | nil
+  def newer_version(pack_id, version) when is_binary(pack_id) and is_binary(version) do
+    with current when is_binary(current) <- current_version(pack_id),
+         {:ok, advertised_version} <- Version.parse(version),
+         {:ok, current_parsed} <- Version.parse(current),
+         :lt <- Version.compare(advertised_version, current_parsed) do
+      current
+    else
+      _ -> nil
+    end
+  end
+
+  def newer_version(_, _), do: nil
+
+  @doc """
   Whether `(pack_id, version)` is retired per the shipped catalog's
   `retired_below` watermark for that pack. False when the pack has no
   watermark; fail-closed for an unparseable advertised version against a
