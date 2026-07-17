@@ -141,6 +141,9 @@ defmodule EmisarWeb.RequireSSOTest do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       require_sso!(account)
+      # The shim's GET re-checks compliance and fails OPEN with no usable
+      # provider — the interstitial only renders when step-up genuinely holds.
+      _ = enabled_provider(account)
       %{conn: conn, account: account}
     end
 
