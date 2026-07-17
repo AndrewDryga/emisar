@@ -302,6 +302,17 @@ variable "db_disk_size_gb" {
   default     = 20
 }
 
+variable "db_max_connections" {
+  type        = number
+  description = "The deployed Cloud SQL tier's max_connections ceiling, used only to guard the portal fleet's total pooled connections at plan time (compute.tf). Cloud SQL derives the real ceiling from the tier's memory and it is not pinned as a flag, so set this per-workspace to the tier's actual value (SHOW max_connections) whenever db_tier changes; the default is a conservative generic reference, not the production value."
+  default     = 100
+
+  validation {
+    condition     = var.db_max_connections >= 1 && floor(var.db_max_connections) == var.db_max_connections
+    error_message = "db_max_connections must be a positive integer."
+  }
+}
+
 # ── Monitoring ────────────────────────────────────────────────────────────────
 variable "alert_email" {
   type        = string

@@ -17,6 +17,11 @@ locals {
   # tier for Cloud SQL internals and for old + new fleets to overlap during a
   # create-before-destroy MIG replacement or multi-zone surge.
   portal_database_pool_size = 5
+  # Connections the tier must keep for principals other than the portal pool: Cloud
+  # SQL's superuser reserve, the pgaudit_owner / operator / livebook admin logins,
+  # and the per-VM migration-on-boot connection. Held as headroom so a rollout surge
+  # can't exhaust max_connections (see the MIG connection-ceiling precondition).
+  db_connection_reserve = 15
   ensure_image_script = templatefile("${path.module}/templates/ensure-image.sh", {
     container_image       = var.container_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
@@ -264,6 +269,17 @@ resource "google_compute_region_instance_group_manager" "emisar" {
         var.paddle_api_key != "" && var.paddle_webhook_secret != "" && var.paddle_client_token != ""
       )
       error_message = "Billing is enabled (disable_billing = false) but paddle_api_key / paddle_webhook_secret / paddle_client_token are not all set in the TFC workspace. Set all three, or set disable_billing = true to ship the Paddle stub."
+    }
+
+    # Guard the DB connection ceiling against fleet growth: a create-before-destroy
+    # rollout transiently runs the steady fleet PLUS one surge VM per zone, each
+    # opening up to portal_database_pool_size Ecto connections. Keep that peak draw
+    # plus the admin/system reserve within the tier's max_connections, or a raised
+    # instance_count or pool silently exhausts connections mid-deploy. Move to a
+    # larger db_tier and set db_max_connections to its SHOW max_connections first.
+    precondition {
+      condition     = ((var.instance_count + length(var.zones)) * local.portal_database_pool_size + local.db_connection_reserve) <= var.db_max_connections
+      error_message = "Portal fleet DB connections would exceed the tier ceiling: rollout-peak (instance_count + zones) * pool_size (${local.portal_database_pool_size}) + reserve (${local.db_connection_reserve}) must stay within db_max_connections (${var.db_max_connections}). Lower instance_count or the pool, or move to a larger db_tier and set db_max_connections to its SHOW max_connections."
     }
 
   }
