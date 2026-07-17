@@ -478,6 +478,33 @@ const Tooltip = {
   }
 }
 
+// Return focus to the element that opened a <.confirm_dialog> when it closes.
+// The dialog shows/hides entirely client-side (JS commands, no round-trip), so
+// without this the opener's focus falls to <body> on Escape / backdrop / Cancel
+// — a keyboard or screen-reader operator loses their place after dismissing a
+// destructive prompt (UI-016). phx:show-start fires before the dialog's
+// focus_first moves focus inward, so document.activeElement is still the opener
+// there; phx:hide-end fires once it has fully closed.
+const ConfirmDialog = {
+  mounted() {
+    this.opener = null
+    this.onShow = () => {
+      const active = document.activeElement
+      if (active && active !== document.body) this.opener = active
+    }
+    this.onHide = () => {
+      if (this.opener && this.opener.isConnected) this.opener.focus()
+      this.opener = null
+    }
+    this.el.addEventListener("phx:show-start", this.onShow)
+    this.el.addEventListener("phx:hide-end", this.onHide)
+  },
+  destroyed() {
+    this.el.removeEventListener("phx:show-start", this.onShow)
+    this.el.removeEventListener("phx:hide-end", this.onHide)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -485,7 +512,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip }
+  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog }
 })
 
 // Show progress bar on live navigation and form submits

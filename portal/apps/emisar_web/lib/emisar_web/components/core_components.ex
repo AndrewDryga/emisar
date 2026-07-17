@@ -4147,6 +4147,7 @@ defmodule EmisarWeb.CoreComponents do
       role="dialog"
       aria-modal="true"
       aria-label={@title}
+      phx-hook="ConfirmDialog"
       phx-window-keydown={@close_dialog}
       phx-key="escape"
     >

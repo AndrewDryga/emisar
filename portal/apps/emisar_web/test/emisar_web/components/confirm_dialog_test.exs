@@ -11,6 +11,29 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
 
+  test "carries the ConfirmDialog focus hook so the opener regains focus on close (UI-016)" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="del"
+        title="Delete this runner"
+        confirm_label="Delete runner"
+        on_confirm="delete"
+      >
+        <:body>Removes the runner row.</:body>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    # The dialog shows/hides client-side, so a JS hook captures the opener and
+    # restores focus to it on Escape / backdrop / Cancel (behavior verified in
+    # the browser — the suite has no DOM). Without the hook focus falls to
+    # <body>; this pins the wiring so that a11y regression can't return silently.
+    assert html =~ ~s(phx-hook="ConfirmDialog")
+    assert html =~ ~s(role="dialog")
+  end
+
   test "renders title, body, and the type-to-confirm prompt for the token" do
     assigns = %{}
 
