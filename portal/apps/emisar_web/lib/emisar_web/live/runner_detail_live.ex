@@ -67,7 +67,9 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   defp load_actions(socket, runner, subject, params) do
-    opts = LiveTable.params_to_opts(params)
+    filters = action_filters(runner, subject)
+    opts = LiveTable.params_to_opts(params, filters)
+    socket = assign(socket, :action_filters, filters)
 
     case Catalog.list_actions_for_runner(runner.id, subject, opts) do
       {:ok, actions, meta} ->
@@ -88,6 +90,23 @@ defmodule EmisarWeb.RunnerDetailLive do
     end
   end
 
+  # The action catalog's filters (the LiveTable %Filter{} grammar) with the Pack
+  # picker's options injected — the packs THIS runner advertises, resolved per
+  # render like the runs page's Runner picker. Search + Risk carry their own
+  # static definitions from the Query module.
+  defp action_filters(runner, subject) do
+    pack_options =
+      case Catalog.list_action_pack_options_for_runner(runner.id, subject) do
+        {:ok, options} -> options
+        _ -> []
+      end
+
+    Enum.map(Catalog.RunnerAction.Query.filters(), fn
+      %{name: :pack_id} = filter -> %{filter | values: pack_options}
+      filter -> filter
+    end)
+  end
+
   defp recent_runs(runner, subject) do
     case Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20]) do
       {:ok, recent_runs, _} -> recent_runs
@@ -105,6 +124,17 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  # Filtering is a URL patch (handle_params re-runs the catalog read, which is
+  # `view_catalog`-gated in the context) — no mutation, so no gate here.
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     LiveTable.apply_filter(
+       socket,
+       ~p"/app/#{socket.assigns.current_account}/runners/#{socket.assigns.runner.id}",
+       params
+     )}
+  end
 
   def handle_event("disable", _params, socket) do
     Permissions.gated(
@@ -348,65 +378,37 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.loading_state :if={@loading?} />
 
         <%!-- Advertised actions (the wide column) + recent runs (a freshness
-           check beside it) as CANVAS sections. Recent runs is DOM-FIRST so a
-           phone answers "is it healthy?" before the long catalog; on desktop
-           EXPLICIT placement (col-start/row-start) pins both to row 1 so their
-           headers sit on the same line — `order`+col-span auto-placement drifted
-           them onto different rows. `items-start` keeps a short empty column
-           from stretching to the tall one. --%>
+           check beside it) as CANVAS sections. Actions leads in the DOM — it is
+           the runner's capabilities, the page's primary job, so a phone (and a
+           screen reader) reaches the SEARCHABLE catalog first instead of
+           scrolling past 20 recent runs (UI-014); the identity block's Status +
+           heartbeat above already answer "is it healthy?". On desktop EXPLICIT
+           placement (col-start/row-start) pins both to row 1 so their headers
+           sit on the same line, unchanged; `items-start` keeps a short empty
+           column from stretching to the tall one. --%>
         <div
           :if={not @loading?}
           class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
         >
-          <section class="lg:col-start-3 lg:row-start-1">
-            <.section_header title="Recent runs">
-              <:actions :if={@recent_runs != []}>
-                <.link
-                  navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
-                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
-                >
-                  View all <.cta_arrow />
-                </.link>
-              </:actions>
-            </.section_header>
-
-            <%= if @recent_runs == [] do %>
-              <%!-- Shared min-height + centered content so this narrow (1/3)
-                   placeholder matches the wide "No actions yet" box beside it —
-                   their descriptions wrap to different line counts, so a bare box
-                   would be two different heights. A fixed floor doesn't couple to
-                   the neighbor the way items-stretch would in the mixed (one
-                   column full) state. --%>
-              <.empty_state
-                icon="hero-bolt"
-                title="No runs yet"
-                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
-              >
-                Nothing dispatched to this runner yet — runs land here as they happen.
-              </.empty_state>
-            <% else %>
-              <ul class="divide-y divide-zinc-800/70">
-                <li :for={run <- @recent_runs}>
-                  <.run_row run={run} current_account={@current_account} />
-                </li>
-              </ul>
-            <% end %>
-          </section>
-
           <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
             <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
-            <%= if @actions == [] do %>
-              <.empty_state
-                icon="hero-cpu-chip"
-                title="No actions yet"
-                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
-              >
-                This runner hasn't reported a catalog yet. Check the runner logs on the host.
-              </.empty_state>
-            <% else %>
-              <ul class="divide-y divide-zinc-800/70">
-                <.list_row :for={action <- @actions}>
+            <%!-- The catalog runs the shared LiveTable :cards shell so its Search
+               + Pack + Risk filters render in the standard bar and the list stays
+               paginated — a 58-82-action catalog is undiscoverable as a flat
+               scroll. --%>
+            <LiveTable.live_table
+              layout={:cards}
+              id="actions"
+              path={~p"/app/#{@current_account}/runners/#{@runner.id}"}
+              rows={@actions}
+              metadata={@actions_metadata}
+              filter_params={@filter_params}
+              filters={@action_filters}
+              wrapper_class="divide-y divide-zinc-800/70"
+            >
+              <:item :let={action}>
+                <.list_row>
                   <:title>
                     <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
                   </:title>
@@ -470,19 +472,58 @@ defmodule EmisarWeb.RunnerDetailLive do
                     <% end %>
                   </:actions>
                 </.list_row>
-              </ul>
+              </:item>
+              <:empty>
+                <%!-- Two-state empty: an over-filter stays a quiet one-liner; a
+                   genuinely empty catalog gets the onboarding box (floored to the
+                   recent-runs placeholder height in the mixed side-by-side view). --%>
+                <%= if LiveTable.has_active_filters?(@filter_params, @action_filters) do %>
+                  <span class="text-zinc-500">No actions match these filters.</span>
+                <% else %>
+                  <.empty_state
+                    icon="hero-cpu-chip"
+                    title="No actions yet"
+                    class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                  >
+                    This runner hasn't reported a catalog yet. Check the runner logs on the host.
+                  </.empty_state>
+                <% end %>
+              </:empty>
+            </LiveTable.live_table>
+          </section>
 
-              <div
-                :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
-                class="pt-3"
+          <section class="lg:col-start-3 lg:row-start-1">
+            <.section_header title="Recent runs">
+              <:actions :if={@recent_runs != []}>
+                <.link
+                  navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
+                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                >
+                  View all <.cta_arrow />
+                </.link>
+              </:actions>
+            </.section_header>
+
+            <%= if @recent_runs == [] do %>
+              <%!-- Shared min-height + centered content so this narrow (1/3)
+                   placeholder matches the wide "No actions yet" box beside it —
+                   their descriptions wrap to different line counts, so a bare box
+                   would be two different heights. A fixed floor doesn't couple to
+                   the neighbor the way items-stretch would in the mixed (one
+                   column full) state. --%>
+              <.empty_state
+                icon="hero-bolt"
+                title="No runs yet"
+                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
               >
-                <LiveTable.paginator
-                  id="actions"
-                  path={~p"/app/#{@current_account}/runners/#{@runner.id}"}
-                  metadata={@actions_metadata}
-                  filter_params={@filter_params}
-                />
-              </div>
+                Nothing dispatched to this runner yet — runs land here as they happen.
+              </.empty_state>
+            <% else %>
+              <ul class="divide-y divide-zinc-800/70">
+                <li :for={run <- @recent_runs}>
+                  <.run_row run={run} current_account={@current_account} />
+                </li>
+              </ul>
             <% end %>
           </section>
         </div>

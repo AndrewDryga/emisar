@@ -1820,6 +1820,90 @@ defmodule Emisar.CatalogTest do
 
       assert {:error, :unauthorized} = Catalog.list_actions_for_runner(runner.id, no_view)
     end
+
+    test "the Search filter narrows to matches on the action id OR the human title", %{
+      subject: subject,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "db.vacuum",
+        title: "Postgres vacuum"
+      )
+
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", title: "Uptime")
+
+      # "postgres" matches db.vacuum via its TITLE (its id carries no "postgres").
+      assert {:ok, [%RunnerAction{action_id: "db.vacuum"}], _} =
+               Catalog.list_actions_for_runner(runner.id, subject, filter: [action: "postgres"])
+    end
+
+    test "the Risk filter narrows to a tier", %{subject: subject, runner: runner} do
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.reboot_host",
+        risk: "critical"
+      )
+
+      assert {:ok, [%RunnerAction{action_id: "linux.reboot_host"}], _} =
+               Catalog.list_actions_for_runner(runner.id, subject, filter: [risk: ["critical"]])
+    end
+  end
+
+  describe "list_action_pack_options_for_runner/2" do
+    setup do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      %{account: account, subject: subject, runner: runner}
+    end
+
+    test "returns the runner's distinct packs, sorted, as {id, id} options", %{
+      subject: subject,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "postgres.uptime",
+        pack_id: "postgres"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "postgres.vacuum",
+        pack_id: "postgres"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      assert {:ok, [{"linux-core", "linux-core"}, {"postgres", "postgres"}]} =
+               Catalog.list_action_pack_options_for_runner(runner.id, subject)
+    end
+
+    test "another account's subject sees none of this runner's packs (cross-account)", %{
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      {_other_account, other_subject} = account_with_owner()
+      assert {:ok, []} = Catalog.list_action_pack_options_for_runner(runner.id, other_subject)
+    end
+
+    test "a subject without view_catalog is denied", %{account: account, runner: runner} do
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert {:error, :unauthorized} =
+               Catalog.list_action_pack_options_for_runner(runner.id, no_view)
+    end
   end
 
   describe "list_all_actions_for_account/1" do

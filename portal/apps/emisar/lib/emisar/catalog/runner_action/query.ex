@@ -1,5 +1,6 @@
 defmodule Emisar.Catalog.RunnerAction.Query do
   use Emisar, :query
+  alias Emisar.Repo.{Filter, Like}
 
   def all,
     do: from(runner_actions in Emisar.Catalog.RunnerAction, as: :runner_actions)
@@ -44,6 +45,11 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def distinct_runner_ids(queryable),
     do: queryable |> distinct(true) |> select([runner_actions: a], a.runner_id)
 
+  # Distinct pack ids in the scoped actions — the option set for the runner
+  # detail page's Pack filter (the packs THAT runner advertises).
+  def distinct_pack_ids(queryable),
+    do: queryable |> distinct(true) |> select([runner_actions: a], a.pack_id)
+
   def by_account_runner_and_action(queryable, account_id, runner_id, action_id) do
     queryable
     |> where(
@@ -76,5 +82,55 @@ defmodule Emisar.Catalog.RunnerAction.Query do
       {:runner_actions, :asc, :action_id},
       {:runner_actions, :asc, :last_seen_at},
       {:runner_actions, :asc, :id}
+    ]
+
+  # The runner-detail action catalog's filters: a 58-82-action list is
+  # undiscoverable without them. Search matches the id + title; Pack narrows to
+  # one advertised pack; Risk to a tier. All three are the LiveTable `%Filter{}`
+  # grammar, so a control at its default reads inactive and doesn't raise "clear".
+  @impl Emisar.Repo.Query
+  def filters,
+    do: [
+      %Filter{
+        name: :action,
+        title: "Search actions",
+        type: :string,
+        # Substring, case-insensitive, over the action id AND its human title —
+        # "log" finds `caddy.access_log_tail` and "Tail access log".
+        fun: fn queryable, term ->
+          pattern = Like.contains(term)
+
+          {queryable,
+           dynamic(
+             [runner_actions: a],
+             ilike(a.action_id, ^pattern) or ilike(a.title, ^pattern)
+           )}
+        end
+      },
+      %Filter{
+        name: :pack_id,
+        title: "Pack",
+        type: {:list, :string},
+        # Options are per-runner — the RunnerDetail LiveView injects the packs
+        # this runner advertises at render, like the runs page's Runner picker.
+        values: [],
+        fun: fn queryable, pack_ids ->
+          {queryable, dynamic([runner_actions: a], a.pack_id in ^pack_ids)}
+        end
+      },
+      %Filter{
+        name: :risk,
+        title: "Risk",
+        type: {:list, :string},
+        values: [
+          {"low", "Low"},
+          {"medium", "Medium"},
+          {"high", "High"},
+          {"critical", "Critical"}
+        ],
+        fun: fn queryable, risks ->
+          {queryable, dynamic([runner_actions: a], a.risk in ^risks)}
+        end
+      }
     ]
 end

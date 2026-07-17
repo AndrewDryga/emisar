@@ -1137,6 +1137,29 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Distinct pack ids advertised by a runner, as `{pack_id, pack_id}` options for
+  the runner-detail action catalog's Pack filter (the pack id IS the display
+  name). Same `view_catalog` gate + account scoping as the other catalog reads;
+  returns `{:ok, [{pack_id, label}]}` sorted for a stable dropdown.
+  """
+  def list_action_pack_options_for_runner(runner_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      pack_ids =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_runner_id(runner_id)
+        |> RunnerAction.Query.distinct_pack_ids()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, pack_ids |> Enum.sort() |> Enum.map(&{&1, &1})}
+    end
+  end
+
+  @doc """
   Every advertised catalog action for the subject's account — the
   COMPLETE set, deliberately un-paginated.
 
