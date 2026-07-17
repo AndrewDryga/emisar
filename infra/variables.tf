@@ -58,6 +58,17 @@ variable "subnet_cidr" {
   }
 }
 
+variable "vpc_flow_log_sampling" {
+  type        = number
+  description = "VPC subnet flow-log sampling rate (0.0–1.0). Forensics-vs-cost dial: a lower rate cuts Cloud Logging spend but thins visibility into low-volume connections — a quiet exfil or C2 beacon can hide in the unsampled remainder — so treat it as a per-workspace security decision. 1.0 logs every flow; 0.0 disables flow logs."
+  default     = 0.01
+
+  validation {
+    condition     = var.vpc_flow_log_sampling >= 0 && var.vpc_flow_log_sampling <= 1
+    error_message = "vpc_flow_log_sampling must be between 0.0 and 1.0."
+  }
+}
+
 # ── Pack registry (the one public-read bucket) ────────────────────────────────
 variable "pack_registry_bucket" {
   type        = string
