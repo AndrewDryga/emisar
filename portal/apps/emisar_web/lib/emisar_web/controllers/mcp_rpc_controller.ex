@@ -37,6 +37,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat, MCPOperations}
+  alias EmisarWeb.AppVersion
   alias EmisarWeb.MCP.{ActionTools, Auth, BoundaryResponse, Cancellation}
   alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
   alias EmisarWeb.MCP.ClientMetadata
@@ -195,7 +196,7 @@ defmodule EmisarWeb.MCPRpcController do
       {:ok,
        %{
          protocolVersion: negotiated_protocol_version(params),
-         serverInfo: %{name: @server_name, version: app_version()},
+         serverInfo: %{name: @server_name, version: AppVersion.version()},
          capabilities: %{tools: %{listChanged: false}},
          instructions: Instructions.text()
        }}
@@ -515,13 +516,6 @@ defmodule EmisarWeb.MCPRpcController do
       :ok
     else
       {:error, -32002, "wrong key kind", %{required: "mcp"}}
-    end
-  end
-
-  defp app_version do
-    case Application.spec(:emisar_web, :vsn) do
-      nil -> "dev"
-      v -> to_string(v)
     end
   end
 

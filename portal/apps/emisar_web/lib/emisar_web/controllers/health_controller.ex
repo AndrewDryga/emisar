@@ -12,6 +12,7 @@ defmodule EmisarWeb.HealthController do
   otherwise healthy VM.
   """
   use EmisarWeb, :controller
+  alias EmisarWeb.AppVersion
 
   @live_after_ready {__MODULE__, :live_after_ready}
 
@@ -51,7 +52,13 @@ defmodule EmisarWeb.HealthController do
   end
 
   defp respond(conn, status) do
-    body = if status == :ok, do: %{status: "ok"}, else: %{status: "error"}
+    # `version` rides both probes — the MCP registry reconciler compares it
+    # against the latest release tag to publish the listing only once the
+    # deploy actually serves that version.
+    body =
+      if status == :ok,
+        do: %{status: "ok", version: AppVersion.version()},
+        else: %{status: "error", version: AppVersion.version()}
 
     conn
     |> put_resp_header("cache-control", "no-store")

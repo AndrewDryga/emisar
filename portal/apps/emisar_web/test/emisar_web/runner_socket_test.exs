@@ -231,7 +231,12 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   describe "GET /healthz" do
     test "returns ok", %{conn: conn} do
-      assert json_response(get(conn, ~p"/healthz"), 200) == %{"status" => "ok"}
+      version = EmisarWeb.AppVersion.version()
+
+      assert json_response(get(conn, ~p"/healthz"), 200) == %{
+               "status" => "ok",
+               "version" => version
+             }
     end
   end
 

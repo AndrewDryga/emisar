@@ -5781,12 +5781,6 @@ defmodule EmisarWeb.CoreComponents do
   defp state_label(:pending), do: "Approval"
   defp state_label(:deny), do: "Denied"
 
-  # The emisar_web app version, read at runtime from the loaded app spec (whose
-  # vsn comes from portal/VERSION via mix.exs), so the footer always reflects the
-  # running release — a compile-time bake goes stale until something recompiles
-  # this module. `vsn` comes back as a charlist; convert to a string.
-  defp app_version, do: Application.spec(:emisar_web, :vsn) |> to_string()
-
   @doc """
   Footer for marketing pages. Same on every page.
   """
@@ -5798,7 +5792,7 @@ defmodule EmisarWeb.CoreComponents do
     # rendered).
     assigns =
       assigns
-      |> assign(:app_version, app_version())
+      |> assign(:app_version, EmisarWeb.AppVersion.version())
       |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
 
     ~H"""

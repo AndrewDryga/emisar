@@ -17,7 +17,10 @@ top of it.
 - These product tags are **distinct from the per-component release tags**
   (`runner-v*`, `mcp-v*`), which publish client binaries. The changelog and
   product GitHub releases use the **product** tags only; product tags also
-  publish the hosted MCP Registry listing.
+  publish the hosted MCP Registry listing — but that publication is
+  **deploy-gated**: the workflow reconciles against the version the live
+  `/healthz` reports, so the public listing follows the founder's
+  Confirm & Apply (within one half-hourly tick), never the tag alone.
 - A version's tag points at the **last commit of its window** (the tip — usually
   `HEAD` at release time). Pick the anchor deliberately so the range
   `<previous-tag>..<anchor>` is exactly what the entry describes.

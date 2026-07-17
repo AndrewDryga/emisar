@@ -1,54 +1,117 @@
 name: Portal - Publish MCP Registry Listing
 
-run-name: MCP Registry listing ${{ inputs.release_tag || github.ref_name }}
+run-name: MCP Registry reconcile ${{ inputs.release_tag || github.ref_name }}
 
-# Product releases advertise the hosted MCP server. Binary bridge releases use
-# mcp-v* and are handled independently by mcp-release.yml.
+# Reconciles the public MCP registry listing to what production ACTUALLY
+# serves. Deploys are founder-gated in HCP Terraform (cd.yml stops at a saved
+# plan), so a tag can precede its apply by hours or days — publishing on the
+# tag alone advertised versions emisar.dev did not serve yet. Every trigger
+# runs the same reconcile: read the live version from /healthz, and publish
+# its listing only when the registry does not list it as latest, guarded by
+# the same signed-tag + CI checks as before. The tag push gives an immediate
+# tick (a no-op until the apply lands); the schedule converges within one
+# tick after the founder confirms the apply.
+#
+# Binary bridge releases use mcp-v* and are handled by mcp-release.yml.
 on:
   push:
     tags:
       - "v*.*.*"
+  schedule:
+    # Offset from :00/:30 — GitHub delays top-of-hour scheduled workflows.
+    - cron: "13,43 * * * *"
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing immutable product release to recover
-        required: true
-        default: v0.24.1
+        description: >-
+          Existing immutable product release to force-publish (recovery —
+          skips the live-version match, keeps every source guard). Leave
+          empty for a plain reconcile tick.
+        required: false
         type: string
 
+# One serialized lane for every trigger: an active publication is never
+# raced by a schedule tick or canceled mid-write.
 concurrency:
-  group: mcp-registry-${{ github.ref }}
+  group: mcp-registry-publication
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify release source
+  reconcile:
+    name: Reconcile against the live deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
       contents: read
       checks: read
     outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      version: ${{ steps.decide.outputs.version }}
       tag_target: ${{ steps.tag.outputs.tag_target }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      FORCED_TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          ref: main
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Verify exact signed annotated tag
+      - name: Decide what the registry should list
+        id: decide
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "::error::tag must exactly match vMAJOR.MINOR.PATCH"; exit 1; }
-          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+
+          if [ -n "$FORCED_TAG" ]; then
+            # Recovery: a human explicitly re-publishes an existing release.
+            [[ "$FORCED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo "::error::release_tag must exactly match vMAJOR.MINOR.PATCH"; exit 1; }
+            version=${FORCED_TAG#v}
+            echo "Forced recovery publication of ${FORCED_TAG}." >> "$GITHUB_STEP_SUMMARY"
+            { echo "publish=true"; echo "version=${version}"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          live=$(curl --fail --silent --show-error --retry 3 --max-time 15 \
+            https://emisar.dev/healthz | jq -r '.version // empty' || true)
+
+          if [ -z "$live" ]; then
+            echo "Live /healthz reports no version yet (pre-0.31 deploy or transient error) — nothing to reconcile." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$live" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::live /healthz reports a non-release version '${live}' — investigate the deploy"; exit 1; }
+
+          registry_latest=$(curl --fail --silent --show-error --retry 3 --max-time 15 --get \
+            --data-urlencode "search=dev.emisar/emisar" \
+            https://registry.modelcontextprotocol.io/v0/servers \
+            | jq -r '[.servers[] | select(.server.name == "dev.emisar/emisar")
+                      | select(._meta."io.modelcontextprotocol.registry/official".isLatest == true)]
+                     | first | .server.version // empty')
+
+          if [ "$live" = "$registry_latest" ]; then
+            echo "Registry already lists the live version ${live} as latest — nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Live deploy serves ${live}; registry latest is ${registry_latest:-none} — publishing v${live}." >> "$GITHUB_STEP_SUMMARY"
+          { echo "publish=true"; echo "version=${live}"; } >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact signed annotated tag
+        id: tag
+        if: steps.decide.outputs.publish == 'true'
+        env:
+          RELEASE_TAG: v${{ steps.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}") || {
+            echo "::error::the live deploy serves ${RELEASE_TAG#v} but no ${RELEASE_TAG} tag exists"; exit 1; }
           test "$(jq -r '.object.type' <<< "$ref")" = tag || {
             echo "::error::release tags must be signed annotated tags"; exit 1; }
           tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
@@ -57,54 +120,46 @@ jobs:
           tag_target=$(jq -r '.object.sha' <<< "$tag")
           git merge-base --is-ancestor "$tag_target" origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            test "$tag_target" = "$(git rev-parse HEAD)" || {
-              echo "::error::tag target does not match the checked-out commit"; exit 1; }
-            test "$tag_target" = "$(git rev-parse origin/main)" || {
-              echo "::error::new release tags must target current main"; exit 1; }
-          else
-            immutable=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.immutable')
-            test "$immutable" = true || {
-              echo "::error::recovery publication requires an immutable existing release"; exit 1; }
-          fi
-          echo "tag_target=${tag_target}" >> "$GITHUB_OUTPUT"
-        id: tag
 
-      - name: Require successful CI for tagged commit
+          if ! release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null); then
+            # Mid-release window: the tag exists but the GitHub release is
+            # still being created. The next tick converges.
+            echo "Tag ${RELEASE_TAG} exists but its GitHub release does not yet — skipping this tick." >> "$GITHUB_STEP_SUMMARY"
+            echo "tag_target=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$(jq -r '.immutable' <<< "$release")" = true || {
+            echo "::error::publication requires an immutable release"; exit 1; }
+
+          echo "tag_target=${tag_target}" >> "$GITHUB_OUTPUT"
+
+      - name: Require successful CI for the tagged commit
+        if: steps.tag.outputs.tag_target != ''
         env:
           SOURCE_SHA: ${{ steps.tag.outputs.tag_target }}
         run: |
           set -euo pipefail
           # PR commits carry the check as "Required - CI"; on main the same job
           # arrives via cd.yml's workflow_call and registers as "CI / Required - CI".
-          deadline=$((SECONDS + 1500))
-          while true; do
-            result=$(gh api \
-              -H 'Accept: application/vnd.github+json' \
-              "repos/${GITHUB_REPOSITORY}/commits/${SOURCE_SHA}/check-runs?per_page=100" \
-              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
-            IFS=$'\t' read -r status conclusion <<< "$result"
+          result=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/commits/${SOURCE_SHA}/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+          IFS=$'\t' read -r status conclusion <<< "$result"
 
-            if [ "$status" = completed ]; then
-              test "$conclusion" = success || {
-                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
-                exit 1
-              }
-              break
-            fi
-
-            if ((SECONDS >= deadline)); then
-              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
-              exit 1
-            fi
-
-            echo "Required - CI is ${status}; checking again in 15 seconds"
-            sleep 15
-          done
+          if [ "$status" != completed ]; then
+            echo "::error::the tagged commit's Required - CI check is '${status}' — a deployed release must have finished CI"
+            exit 1
+          fi
+          test "$conclusion" = success || {
+            echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+            exit 1
+          }
 
   publish:
     name: Publish listing
-    needs: verify
+    needs: reconcile
+    if: needs.reconcile.outputs.publish == 'true' && needs.reconcile.outputs.tag_target != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -112,17 +167,17 @@ jobs:
     permissions:
       contents: read
     env:
-      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      LISTING_VERSION: ${{ needs.reconcile.outputs.version }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          ref: main
           persist-credentials: false
 
       - name: Check out verified release source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ needs.verify.outputs.tag_target }}
+          ref: ${{ needs.reconcile.outputs.tag_target }}
           path: release-source
           persist-credentials: false
 
@@ -148,8 +203,7 @@ jobs:
       - name: Prepare listing
         run: |
           set -euo pipefail
-          version=${RELEASE_TAG#v}
-          jq --arg version "$version" '.version = $version' release-source/server.json > /tmp/server.json
+          jq --arg version "$LISTING_VERSION" '.version = $version' release-source/server.json > /tmp/server.json
 
       - name: Install verified mcp-publisher
         run: .github/scripts/install-mcp-publisher.sh
@@ -161,3 +215,26 @@ jobs:
         run: |
           ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY_HEX"
           ./mcp-publisher publish /tmp/server.json
+
+      - name: Verify the live listing
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 180))
+          while true; do
+            latest=$(curl --fail --silent --show-error --get \
+              --data-urlencode "search=dev.emisar/emisar" \
+              https://registry.modelcontextprotocol.io/v0/servers \
+              | jq -r '[.servers[] | select(.server.name == "dev.emisar/emisar")
+                        | select(._meta."io.modelcontextprotocol.registry/official".isLatest == true)]
+                       | first | .server.version // empty')
+            if [ "$latest" = "$LISTING_VERSION" ]; then
+              echo "Registry lists ${LISTING_VERSION} as latest." >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+            if ((SECONDS >= deadline)); then
+              echo "::error::registry does not list ${LISTING_VERSION} as latest after publish (still '${latest:-none}')"
+              exit 1
+            fi
+            echo "Registry latest is '${latest:-none}'; checking again in 10 seconds"
+            sleep 10
+          done

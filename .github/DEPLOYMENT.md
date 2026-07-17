@@ -94,7 +94,7 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 |---|---|---|
 | `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, pack assets, and provenance. |
 | `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and provenance. |
-| `Portal - Publish MCP Registry Listing` | `vX.Y.Z` | The hosted server's signed `server.json` listing; no binary artifact. |
+| `Portal - Publish MCP Registry Listing` | `vX.Y.Z` + a half-hourly schedule | The hosted server's signed `server.json` listing; no binary artifact. Reconciles against the LIVE deploy: it publishes a version only once `/healthz` on emisar.dev reports it (applies are founder-gated, so the tag can precede its deploy by days — the listing follows the apply, not the tag). |
 
 ## Apply and verify a production plan
 
