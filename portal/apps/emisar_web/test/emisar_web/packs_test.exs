@@ -79,6 +79,22 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ ~s(<meta name="description" content="#{pack.description}")
     end
 
+    test "the content hash wraps so a phone-width detail page can't overflow", %{conn: conn} do
+      pack = PacksRegistry.get("cassandra")
+      html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
+
+      # A real sha256 (`sha256:` + 64 hex) is one unbreakable 71-char token — the
+      # exact string that pushed /packs/:id past a 390px viewport (UI-007) before it
+      # was wrapped.
+      assert pack.content_hash =~ ~r/\Asha256:[0-9a-f]{64}\z/,
+             "expected a real sha256 content hash to regress the overflow against"
+
+      # It renders inside a break-anywhere span, so a future edit that drops the
+      # wrap fails here — not only in a mobile screenshot no test would catch.
+      assert html =~
+               ~r{<span class="[^"]*\[overflow-wrap:anywhere\][^"]*">#{Regex.escape(pack.content_hash)}</span>}
+    end
+
     test "the required-binaries banner shows only when the pack needs binaries", %{conn: conn} do
       with_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries != []))
       without_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries == []))

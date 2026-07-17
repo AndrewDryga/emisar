@@ -100,8 +100,11 @@
           install to the exact bytes on this page — a tampered copy is rejected. After
           install, reload the runner; it re-reads the catalog and advertises every action.
         </p>
+        <%!-- The 64-char sha256 is one unbreakable "word": without an explicit
+             wrap it pushes /packs/:id past a 390px phone viewport (UI-007). Break
+             it anywhere so the row stays inside the column; the label stays whole. --%>
         <p class="mt-2 font-mono text-[11px] text-zinc-500">
-          content hash: {@pack.content_hash}
+          content hash: <span class="[overflow-wrap:anywhere]">{@pack.content_hash}</span>
         </p>
         <div class="mt-3 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
           <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
