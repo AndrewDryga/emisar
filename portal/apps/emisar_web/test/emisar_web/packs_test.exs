@@ -47,7 +47,6 @@ defmodule EmisarWeb.PacksTest do
 
       assert html =~ escaped_description
       assert html =~ "<details"
-      assert html =~ "Side effects"
     end
 
     test "the capability chips read as one parallel by-default trio", %{conn: conn} do

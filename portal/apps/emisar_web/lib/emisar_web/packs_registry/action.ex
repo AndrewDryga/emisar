@@ -11,10 +11,10 @@ defmodule EmisarWeb.PacksRegistry.Action do
   # placeholders. It drives the approval-page command preview (resolved
   # against the run's args). `nil` for script-kind actions, whose real
   # invocation is an on-host script path we can't render from here.
-  # `description` + `side_effects` are the pack author's operator docs —
-  # rendered (collapsed) on the public pack page; lenient defaults so a
-  # docless third-party catalog entry still parses.
-  defstruct [:id, :title, :kind, :risk, :command, description: "", side_effects: []]
+  # `description` is the pack author's operator doc — rendered (collapsed) on
+  # the public pack page; lenient default so a docless third-party catalog
+  # entry still parses.
+  defstruct [:id, :title, :kind, :risk, :command, description: ""]
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -22,7 +22,6 @@ defmodule EmisarWeb.PacksRegistry.Action do
           kind: String.t(),
           risk: String.t(),
           command: %{binary: String.t(), argv: [String.t()]} | nil,
-          description: String.t(),
-          side_effects: [String.t()]
+          description: String.t()
         }
 end

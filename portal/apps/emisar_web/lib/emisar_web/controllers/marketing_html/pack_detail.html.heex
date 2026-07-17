@@ -173,14 +173,6 @@
                 >
                   {action.description}
                 </p>
-                <div :if={action.side_effects != []}>
-                  <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
-                    Side effects
-                  </div>
-                  <ul class="mt-1.5 space-y-1 text-xs leading-relaxed text-zinc-500">
-                    <li :for={effect <- action.side_effects}>{effect}</li>
-                  </ul>
-                </div>
                 <.external_link
                   href={EmisarWeb.PacksRegistry.action_source_url(@pack, action)}
                   class="inline-flex text-xs text-zinc-500 hover:text-zinc-300"

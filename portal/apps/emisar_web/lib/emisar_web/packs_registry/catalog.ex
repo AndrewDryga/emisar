@@ -129,8 +129,7 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
         kind: kind,
         risk: risk,
         command: command,
-        description: string_field(raw, "description"),
-        side_effects: string_list_field(raw, "side_effects")
+        description: string_field(raw, "description")
       }
 
       {:ok, action}
@@ -271,15 +270,6 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
     case Map.get(raw, key) do
       value when is_binary(value) -> value
       _ -> ""
-    end
-  end
-
-  # Lenient like `string_field/2` — presentation-only docs; a malformed or
-  # absent list reads as no entries, never a parse failure.
-  defp string_list_field(raw, key) do
-    case Map.get(raw, key) do
-      values when is_list(values) -> Enum.filter(values, &is_binary/1)
-      _ -> []
     end
   end
 
