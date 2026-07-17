@@ -38,7 +38,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
-             "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; set availability: \"all\" for deployment diagnosis."
+             "List packs observed on in-scope runners, with their bounded action catalogs. Returns the executable capabilities you can run right now."
 
     assert run_action["inputSchema"]["properties"]["reason"]["description"] ==
              "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."

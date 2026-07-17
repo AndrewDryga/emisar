@@ -536,7 +536,7 @@
   "tools": {
     "list_packs": {
       "title": "List packs",
-      "description": "List packs observed on in-scope runners, including bounded action catalogs and availability diagnostics. Defaults to executable capabilities; set availability: \"all\" for deployment diagnosis.",
+      "description": "List packs observed on in-scope runners, with their bounded action catalogs. Returns the executable capabilities you can run right now.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
       "inputSchema": {
         "type": "object",

@@ -30,9 +30,10 @@ defmodule EmisarWeb.MCP.Instructions do
 
   Catalog reads are current observations, not promises about future dispatch. Exact refs prevent \
   silently switching pack versions or runner generations. If an exact action contract changes, \
-  call `get_action` again and decide from the new schema and compatible runners. Use \
-  `list_runners` and `list_packs` with `availability: "all"` to diagnose offline runners, pack \
-  skew, untrusted versions, or descriptor mismatches. Do not retry a deterministic catalog or \
+  call `get_action` again and decide from the new schema and compatible runners. Catalog reads \
+  default to what you can run right now. An offline runner, an untrusted or retired pack version, \
+  or a descriptor mismatch is a deployment concern the operator resolves — report it plainly rather \
+  than listing every status or trying to work around it. Do not retry a deterministic catalog or \
   authorization error in a loop.
 
   Recovery and history:
