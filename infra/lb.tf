@@ -151,8 +151,8 @@ resource "google_compute_backend_service" "livebook" {
   }
 
   log_config {
-    enable      = true
-    sample_rate = 1.0
+    enable      = var.lb_request_log_sampling > 0
+    sample_rate = var.lb_request_log_sampling
   }
 
   backend {
@@ -177,8 +177,8 @@ resource "google_compute_backend_service" "livebook_public" {
   health_checks                   = [google_compute_health_check.livebook[0].id]
 
   log_config {
-    enable      = true
-    sample_rate = 1.0
+    enable      = var.lb_request_log_sampling > 0
+    sample_rate = var.lb_request_log_sampling
   }
 
   backend {
@@ -249,10 +249,13 @@ resource "google_compute_backend_service" "app" {
   connection_draining_timeout_sec = 120
   health_checks                   = [google_compute_health_check.readiness.id]
 
-  # Structured request logging at the edge (SOC 2: access log / forensics).
+  # Edge request log — the record of traffic the app never sees (probes, 502
+  # windows, blocked paths, the client-IP chain). A cost/forensics dial, NOT a
+  # claimed SOC 2 control: the LB 5xx/503 alerts read the platform request_count
+  # metric, not this log, so 0 (off) breaks no alert and no compliance claim.
   log_config {
-    enable      = true
-    sample_rate = 1.0
+    enable      = var.lb_request_log_sampling > 0
+    sample_rate = var.lb_request_log_sampling
   }
 
   backend {

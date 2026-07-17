@@ -69,6 +69,17 @@ variable "vpc_flow_log_sampling" {
   }
 }
 
+variable "lb_request_log_sampling" {
+  type        = number
+  description = "External Application Load Balancer request-log sampling rate (0.0–1.0), applied to every backend. Forensics-vs-cost dial for the edge access log — the only record of traffic the app never sees (probes, 502 windows, blocked paths, the client-IP chain). 0 disables request logging; 1.0 logs every request. Not a claimed SOC 2 control, and the LB 5xx/503 alerts read the platform request_count metric rather than this log, so either extreme is safe."
+  default     = 0
+
+  validation {
+    condition     = var.lb_request_log_sampling >= 0 && var.lb_request_log_sampling <= 1
+    error_message = "lb_request_log_sampling must be between 0.0 and 1.0."
+  }
+}
+
 # ── Pack registry (the one public-read bucket) ────────────────────────────────
 variable "pack_registry_bucket" {
   type        = string
