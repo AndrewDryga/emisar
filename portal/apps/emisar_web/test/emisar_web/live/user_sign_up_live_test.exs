@@ -32,6 +32,16 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     refute html =~ ~s|name="user[password]"|
   end
 
+  test "the account-name input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
+    # The visible "Team or company name" label is wired to the input via
+    # <label for>/id, so a screen reader announces it — the name-based <.input>
+    # falls back id → name to keep the association it would otherwise lose.
+    {:ok, lv, _html} = live(conn, ~p"/sign_up")
+
+    assert has_element?(lv, ~s|label[for="account_name"]|, "Team or company name")
+    assert has_element?(lv, ~s|input#account_name[name="account_name"]|)
+  end
+
   test "the registration form carries a CSRF token for its POST to the magic-link start",
        %{conn: conn} do
     # the form's hidden auto-login POST rides the

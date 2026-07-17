@@ -1335,12 +1335,15 @@ defmodule EmisarWeb.SSOSettingsLive do
               <span class="font-medium text-zinc-200">SCIM directory sync</span>
               — automatic provisioning and offboarding from your IdP, plus group→role mapping —
               is available on the Enterprise plan.
-              <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
+              <.link
+                navigate={~p"/pricing"}
+                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+              >
                 See plans
               </.link>
               or <a
                 href={scim_sales_mailto(@current_account, @current_user)}
-                class="font-medium text-brand-400 hover:text-brand-300"
+                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
               >talk to us</a>.
             </p>
 

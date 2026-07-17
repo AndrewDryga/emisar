@@ -1219,13 +1219,16 @@ defmodule EmisarWeb.PoliciesLive do
         </.choice_cards>
 
         <div class="mt-6">
-          <.label variant={:eyebrow}>Required approvals</.label>
+          <.label variant={:eyebrow} for={"policy-#{@editor_id}-min-approvals"}>
+            Required approvals
+          </.label>
           <%!-- The eyebrow labels from above; the input and the trailing clause
                share one centered row so they align — an inline eyebrow beside the
                input never lined up with the trailing text. --%>
           <div class="mt-2 flex items-center gap-x-2.5">
             <input
               type="number"
+              id={"policy-#{@editor_id}-min-approvals"}
               name="policy[approval][min_approvals]"
               value={@approval["min_approvals"]}
               min="1"

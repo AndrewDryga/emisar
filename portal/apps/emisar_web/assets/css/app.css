@@ -161,6 +161,24 @@ pre::-webkit-scrollbar-track,
   border-radius: 0;
 }
 
+/* In-content links carry a persistent underline, so a prose link is
+   distinguishable without relying on color alone (WCAG 1.4.1 / axe
+   `link-in-text-block`). Scoped to prose blocks (<p>, <li>) on the marketing
+   surface — the quiet zinc underline matches the hand-applied gold-standard
+   treatment. Chrome links (the top/mobile nav, the "on this page" and breadcrumb
+   navs, the footer) reset back: they're navigation, not body copy, and the
+   standalone "next steps" CTA links sit in <div>s (icon-and-arrow distinguished),
+   so this never touches them. `:where()` keeps specificity low, so an explicit
+   Tailwind decoration utility still wins. */
+:where(.marketing) :is(p, li) a {
+  text-decoration-line: underline;
+  text-decoration-color: #3f3f46; /* zinc-700 */
+  text-underline-offset: 4px;
+}
+:where(.marketing) :is(nav, footer) a {
+  text-decoration-line: none;
+}
+
 /* Honor "reduce motion": neutralize the hover lifts, pings, spins, and long
    transitions for operators who opt out of animation. */
 @media (prefers-reduced-motion: reduce) {

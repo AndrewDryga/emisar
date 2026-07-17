@@ -225,10 +225,16 @@ defmodule EmisarWeb.LiveTable do
              frame. Readability comes from structure, not a box: a quiet
              uppercase header over a stronger rule, then thin-but-VISIBLE row
              separators (white/[0.08] — 0.06 was below the legibility line). --%>
-        <div class={[
-          "overflow-x-auto",
-          @responsive && "hidden sm:block"
-        ]}>
+        <%!-- The horizontal scroll region is keyboard-focusable so a keyboard-only
+             operator can scroll a wide table to a clipped column (WCAG 2.1.1 /
+             scrollable-region-focusable); the global focus-visible ring shows it. --%>
+        <div
+          tabindex="0"
+          class={[
+            "overflow-x-auto",
+            @responsive && "hidden sm:block"
+          ]}
+        >
           <table id={@id} class={["w-full text-sm text-left", @class]}>
             <thead class="text-xs uppercase tracking-wider text-zinc-500">
               <tr class="border-b border-zinc-700/80">

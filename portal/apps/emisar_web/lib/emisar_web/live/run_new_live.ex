@@ -314,7 +314,11 @@ defmodule EmisarWeb.RunNewLive do
                 class="rounded-lg bg-black/40 p-3 ring-1 ring-white/[0.08]"
               >
                 <div :if={ex["description"]} class="text-xs text-zinc-400">{ex["description"]}</div>
-                <pre class="mt-1 overflow-x-auto font-mono text-[11px] leading-5 text-zinc-200"><%= example_args_json(ex) %></pre>
+                <pre
+                  tabindex="0"
+                  aria-label="Example arguments"
+                  class="mt-1 overflow-x-auto font-mono text-[11px] leading-5 text-zinc-200"
+                ><%= example_args_json(ex) %></pre>
               </li>
             </ul>
           </div>

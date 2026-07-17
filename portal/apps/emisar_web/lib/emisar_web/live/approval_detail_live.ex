@@ -692,7 +692,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
                 </span>
               </:summary>
-              <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@action_args)}</pre>
+              <pre
+                tabindex="0"
+                aria-label="Raw arguments"
+                class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300"
+              >{format_json(@action_args)}</pre>
             </.disclosure>
 
             <%!-- ONE why-cluster: the reason given and what gated it, together —

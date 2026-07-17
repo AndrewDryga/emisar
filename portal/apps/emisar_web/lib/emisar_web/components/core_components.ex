@@ -2979,6 +2979,8 @@ defmodule EmisarWeb.CoreComponents do
       </header>
       <pre
         id={@id}
+        tabindex={if not @wrap or not is_nil(@max_h), do: "0"}
+        aria-label={@label}
         class={[
           "bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
           if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-auto"),

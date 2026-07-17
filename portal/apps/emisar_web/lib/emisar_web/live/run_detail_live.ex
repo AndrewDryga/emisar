@@ -523,6 +523,8 @@ defmodule EmisarWeb.RunDetailLive do
             :if={@output_present? or @run.status in [:sent, :running, :cancelling]}
             id="run-output"
             phx-update="stream"
+            tabindex="0"
+            aria-label="Run output"
             class={[
               "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4",
               "font-mono text-xs leading-normal text-zinc-300",

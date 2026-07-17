@@ -39,8 +39,12 @@ defmodule EmisarWeb.UserSignUpLive do
       >
         <.input field={@form[:full_name]} type="text" label="Your name" required />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
+        <%!-- Explicit id: account_name isn't a @form field (it's a standalone
+             param), so it needs an id for its <label for> to associate — a screen
+             reader can't otherwise name the field (UI-005). --%>
         <.input
           name="account_name"
+          id="account_name"
           value={@account_name}
           type="text"
           label="Team or company name"

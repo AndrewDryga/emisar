@@ -87,5 +87,27 @@ defmodule EmisarWeb.Components.CodePanelTest do
       refute html =~ "<script>alert(1)</script>"
       assert html =~ "&lt;script&gt;"
     end
+
+    test "the scroll region is keyboard-focusable and names itself (UI-006 a11y)" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H|<CoreComponents.code_panel label="Arguments" code="{}" />|)
+
+      # The overflow-auto <pre> takes a tab stop so a keyboard-only operator can
+      # scroll to clipped code (axe scrollable-region-focusable); its label names it.
+      assert html =~ ~s(tabindex="0")
+      assert html =~ ~s(aria-label="Arguments")
+    end
+
+    test "a wrapping, unclamped panel is not a dead tab stop (UI-006 a11y)" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H|<CoreComponents.code_panel label="Prompt" wrap code="hi" />|)
+
+      # It wraps and has no height clamp, so it never scrolls — no focus target.
+      refute html =~ ~s(tabindex="0")
+    end
   end
 end

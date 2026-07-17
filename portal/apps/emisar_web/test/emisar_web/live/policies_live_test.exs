@@ -38,6 +38,21 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert lv |> element("#add-ruleset-control") |> render() =~ "lg:col-span-3"
     end
 
+    test "the approval-count input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
+      # The raw min_approvals number input had no accessible name; it now carries
+      # an editor-scoped id wired to its "Required approvals" <label for> (the id
+      # is scoped so the default policy + each ruleset don't collide).
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert has_element?(lv, ~s|label[for="policy-account-min-approvals"]|, "Required approvals")
+
+      assert has_element?(
+               lv,
+               ~s|input#policy-account-min-approvals[name="policy[approval][min_approvals]"]|
+             )
+    end
+
     test "a tier select disables decisions below its floor and pre-selects the current value", %{
       conn: conn
     } do

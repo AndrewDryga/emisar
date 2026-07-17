@@ -21,6 +21,7 @@ import {initMobileNav} from "./mobile_nav.js"
 import {initPackSearch} from "./pack_search.js"
 import {initPricingCycle} from "./pricing_cycle.js"
 import {initReveal} from "./reveal.js"
+import {initScrollFocusable} from "./scroll_focusable.js"
 
 setupCopyToClipboardDelegation()
 initEmisarDemo()
@@ -29,3 +30,4 @@ initMobileNav()
 initPackSearch()
 initPricingCycle()
 initReveal()
+initScrollFocusable()
