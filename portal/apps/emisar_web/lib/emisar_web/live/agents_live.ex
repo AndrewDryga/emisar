@@ -1259,10 +1259,16 @@ defmodule EmisarWeb.AgentsLive do
           <% @selected_client == "custom" -> %>
             <div class="mt-10 space-y-6">
               <%= if @quick_secret do %>
-                <.minted_note>
-                  Copy the bearer token below before you leave this page; we won't show it
-                  again. If you lose it, create another key.
-                </.minted_note>
+                <%!-- NEUTRAL, not amber — the copy-now caution is a permanent
+                     property of a fresh mint, not an exceptional state (the
+                     install-wizard grammar); amber stays reserved for a state
+                     that needs the operator's attention. --%>
+                <.event_block icon="hero-key" tone={:neutral} title="New key minted — it's live now">
+                  <:body>
+                    Copy the bearer token below before you leave this page; we won't show it
+                    again. If you lose it, create another key.
+                  </:body>
+                </.event_block>
 
                 <.code_panel
                   id="custom-secret"
@@ -1294,16 +1300,41 @@ defmodule EmisarWeb.AgentsLive do
             <div class="mt-10 space-y-8">
               <.local_install_block base_url={@base_url} />
 
-              <div>
-                <%!-- Two shapes, and the header must not lie about which: a
-                     config-file client (Claude Desktop, Cursor, …) pastes the
-                     snippet INTO a file — the path is the load-bearing step, so
-                     it's an imperative + legible inline-code, not a muted gray
-                     subtitle that reads as decoration. A command client (Claude
-                     Code) RUNS the snippet in a terminal — not a paste at all. --%>
+              <%!-- The key is its own step — the installer's prompt wants JUST
+                   the key, so it gets a one-line copy row (code_line, the
+                   compact-value grammar), not a buried value inside the config
+                   snippet. The shown-once caution lives here with the key. --%>
+              <div :if={@quick_secret}>
+                <.step_header step={2} title="Copy your API key">
+                  <:subtitle>the installer asks for it</:subtitle>
+                </.step_header>
+                <.code_line
+                  id={"quick-key-#{@selected_client}"}
+                  value={@quick_secret}
+                  copy_label="Copy key"
+                />
+                <p class="mt-3 text-xs text-zinc-400">
+                  Shown only once — it's live already. Lost it later? Pick this client again for
+                  a fresh key.
+                </p>
+              </div>
+
+              <%!-- Manual setup is the fallback now that the installer writes
+                   the config itself — collapsed by default (the auto_permit
+                   disclosure grammar). Two body shapes, and the lead-in must
+                   not lie about which: a config-file client (Claude Desktop,
+                   Cursor, …) pastes the snippet INTO a file — the path is the
+                   load-bearing step — while a command client (Claude Code)
+                   RUNS the snippet in a terminal. --%>
+              <.disclosure size={:md}>
+                <:summary>
+                  <span class="font-medium">
+                    Set up {client_label(@selected_client)} manually
+                    <span class="text-zinc-400">(if you skipped the installer's offer)</span>
+                  </span>
+                </:summary>
                 <%= if config_target_is_file?(@config) do %>
-                  <.section_header title={"Add this to #{client_label(@selected_client)}"} />
-                  <p class="-mt-2 mb-4 text-sm text-zinc-400">
+                  <p class="text-sm text-zinc-400">
                     Open
                     <code class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[13px] text-zinc-200 ring-1 ring-white/10">
                       {@config.location}
@@ -1311,9 +1342,7 @@ defmodule EmisarWeb.AgentsLive do
                     and add:
                   </p>
                 <% else %>
-                  <%!-- No subtitle: "Run this in your terminal" says it all;
-                       a generic "one command" line is dead text. --%>
-                  <.section_header title="Run this in your terminal" />
+                  <p class="text-sm text-zinc-400">Run this in your terminal:</p>
                 <% end %>
                 <.code_panel
                   id={"snippet-#{@selected_client}"}
@@ -1322,6 +1351,7 @@ defmodule EmisarWeb.AgentsLive do
                   copy
                   copy_label="Copy snippet"
                   code={@config.body}
+                  class="mt-3"
                 />
                 <%!-- Mechanical next step sits right under the snippet: paste or
                      run it, then restart. --%>
@@ -1331,35 +1361,29 @@ defmodule EmisarWeb.AgentsLive do
                     else: "Start a fresh #{client_label(@selected_client)} session to use it."}
                   <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
                 </p>
-                <%!-- The fresh-mint key reminder is the last thing before the
-                     operator leaves — set off with space so it reads as a distinct
-                     "save your key now" callout, not another setup step. --%>
-                <.minted_note :if={@quick_secret} class="mt-6">
-                  Copy the whole snippet above now — it holds your key, and you won't see it
-                  again. Lost it later? Pick this client again for a fresh key.
-                </.minted_note>
-              </div>
+              </.disclosure>
             </div>
         <% end %>
 
-        <%!-- Live connection status for the just-minted key — the agents analog
-             of the runner-install "waiting → connected" watchdog, sitting
-             directly after the setup it follows (the optional auto-permit
-             disclosure reads below it). Keyed to THIS key's id (the
-             api_key.first_used handler), so a different agent connecting
-             can't flip it. Waiting is the page's NORMAL state, so it stays
-             the quiet dot-led wait line (the wait-room grammar) — the brand
-             connected block takes over once its first call lands (instant
-             via the broadcast, tick as the fallback). --%>
-        <%= cond do %>
-          <% is_nil(@quick_key_id) -> %>
-            <span></span>
-          <% @quick_connected? -> %>
+        <%!-- Step 3 — Connect your agent: the live connection status for the
+             just-minted key (the agents analog of the runner-install "waiting →
+             connected" watchdog). Keyed to THIS key's id (the api_key.first_used
+             handler), so a different agent connecting can't flip it. Waiting is
+             the NORMAL state — the quiet dot-led wait line (wait-room grammar) —
+             and the brand connected block takes over on the first call (instant
+             via the broadcast, tick as the fallback). Shown once a key is minted
+             (picking a local client mints one), so it completes the 1-2-3. --%>
+        <section :if={@quick_key_id} class="mt-8">
+          <.step_header step={3} title="Connect your agent">
+            <:subtitle>
+              start {client_label(@selected_client)} — its first call lands it here
+            </:subtitle>
+          </.step_header>
+          <%= if @quick_connected? do %>
             <.event_block
               icon="hero-check-circle"
               tone={:brand}
               title="Connected — your agent is live"
-              class="mt-8"
             >
               <:body>
                 Its first call just landed. Every request now shows under its name in
@@ -1375,8 +1399,8 @@ defmodule EmisarWeb.AgentsLive do
                 >Runs</.link>.
               </:body>
             </.event_block>
-          <% true -> %>
-            <div class="mt-8 flex items-start gap-3">
+          <% else %>
+            <div class="flex items-start gap-3">
               <%!-- mt-[6px]: optically centers the 10px dot on the first
                    text line (text-sm/relaxed ≈ 23px line box). --%>
               <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
@@ -1386,7 +1410,8 @@ defmodule EmisarWeb.AgentsLive do
                 agents list either way.
               </p>
             </div>
-        <% end %>
+          <% end %>
+        </section>
 
         <%!-- Optional, off the act→wait timeline — reads after the live
              status for local clients (remote keeps its copy inside
@@ -1409,27 +1434,6 @@ defmodule EmisarWeb.AgentsLive do
         <.agent_docs_rail />
       </div>
     </div>
-    """
-  end
-
-  # Thin wrapper over the shared alert spine so the "New key minted" phrase +
-  # its key identity live in ONE place for the three quick-mint branches.
-  # NEUTRAL, not amber — the copy-now caution is a permanent property of a
-  # fresh mint, not an exceptional state (the install-wizard grammar); amber
-  # stays reserved for a state that needs the operator's attention.
-  attr :class, :string, default: nil
-  slot :inner_block, required: true
-
-  defp minted_note(assigns) do
-    ~H"""
-    <.event_block
-      icon="hero-key"
-      tone={:neutral}
-      title="New key minted — it's live now"
-      class={@class}
-    >
-      <:body>{render_slot(@inner_block)}</:body>
-    </.event_block>
     """
   end
 
@@ -1456,6 +1460,40 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
+  attr :step, :integer, required: true
+  attr :title, :string, required: true
+  slot :subtitle
+  slot :actions
+
+  # A numbered section header for the local-client connect flow — a circled step
+  # number + the `section_header` title/subtitle/actions shape — so the three
+  # sections read as an explicit sequence: 1 Install the bridge, 2 Copy your API
+  # key, 3 Connect your agent. (Cloud clients get numbered `<.steps>` in the
+  # remote panel; local clients are richer sections, so they number the headers.)
+  defp step_header(assigns) do
+    ~H"""
+    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <div class="flex min-w-0 items-baseline gap-3">
+        <%!-- A quiet typographic numeral, not a badge — same size as the title,
+             muted and tabular so the three step numbers align down the column and
+             the eye reads a sequence without chrome. --%>
+        <span class="shrink-0 font-display text-base font-medium tabular-nums text-zinc-400">
+          {@step}
+        </span>
+        <div class="min-w-0">
+          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+            {@title}
+          </h2>
+          <p :if={@subtitle != []} class="mt-0.5 text-xs text-zinc-400">{render_slot(@subtitle)}</p>
+        </div>
+      </div>
+      <div :if={@actions != []} class="flex shrink-0 items-center gap-2">
+        {render_slot(@actions)}
+      </div>
+    </header>
+    """
+  end
+
   # Renders only AFTER a local client is picked. The install line is the
   # same for every local client — extracting it keeps the per-client
   # snippet focused on just the config the operator needs to paste, and
@@ -1471,18 +1509,18 @@ defmodule EmisarWeb.AgentsLive do
            RIGHT as header actions — they open the docs/trust pages in a new tab
            (doc_link's ↗), so a security-conscious operator can vet the curl|bash
            without losing this flow. --%>
-      <.section_header title="Install the bridge">
+      <.step_header step={1} title="Install the bridge">
         <:subtitle>one-time, per machine</:subtitle>
         <:actions>
           <%!-- text-xs so these header-action links stay subordinate to the
-               16px heading — doc_link inherits ambient size, and a section_header
+               16px heading — doc_link inherits ambient size, and step_header's
                actions slot sets none. --%>
           <div class="flex items-center gap-3 text-xs">
             <.doc_link href={~p"/docs/connect-an-llm"}>Manual install</.doc_link>
             <.doc_link href={~p"/trust" <> "#release-integrity"}>Verify the release</.doc_link>
           </div>
         </:actions>
-      </.section_header>
+      </.step_header>
       <.code_panel
         id="install-mcp-cmd"
         label="macOS / Linux"
@@ -1491,8 +1529,7 @@ defmodule EmisarWeb.AgentsLive do
       />
       <p class="mt-2 text-xs leading-5 text-zinc-400">
         The installer offers to add emisar to the LLM clients it finds on the machine —
-        when it asks for a key, paste the <span class="font-mono">emk-…</span> value from
-        the snippet below.
+        paste the key below when it asks.
       </p>
     </div>
     """
