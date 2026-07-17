@@ -31,6 +31,28 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert {:error, {:redirect, %{to: "/onboarding"}}} = live(conn, ~p"/app")
     end
 
+    test "an operator lands on the dashboard, not billing", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      # An operator can read runs, so the dashboard is theirs — the first-run
+      # checklist (a fresh account has no runs), not a bounce to billing.
+      {:ok, _lv, html} =
+        build_conn()
+        |> log_in_user(operator)
+        |> live(~p"/app/#{account}")
+
+      assert html =~ "Get to your first gated run"
+    end
+
     test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       # register_and_log_in confirms by default — simulate the unverified state.
@@ -473,7 +495,7 @@ defmodule EmisarWeb.DashboardLiveTest do
   end
 
   describe "a billing_manager's console" do
-    test "the dashboard renders and the nav offers only what the role can open", %{conn: conn} do
+    test "redirects to billing, where the nav offers only what the role can open", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
       member = Emisar.Fixtures.Users.create_user() |> Emisar.Fixtures.Users.confirm_user()
@@ -485,7 +507,15 @@ defmodule EmisarWeb.DashboardLiveTest do
       )
 
       conn = log_in_user(Phoenix.ConnTest.build_conn(), member)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      # The dashboard is runner onboarding + dispatch a finance-only seat can't
+      # perform (every tile reads :unauthorized), so /app bounces to billing —
+      # the seat's actual job — instead of a dead-end first-run checklist.
+      billing = ~p"/app/#{account}/settings/billing"
+      assert {:error, {:live_redirect, %{to: ^billing}}} = live(conn, ~p"/app/#{account}")
+
+      # And on billing the nav still offers only what the role can open.
+      {:ok, lv, _html} = live(conn, billing)
 
       # Billing + Team stay reachable (billing is the seat's job; the roster
       # view is every member's floor).

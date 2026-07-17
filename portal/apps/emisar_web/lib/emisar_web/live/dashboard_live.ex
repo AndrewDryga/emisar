@@ -5,16 +5,36 @@ defmodule EmisarWeb.DashboardLive do
   @reload_debounce_ms 500
 
   def mount(_params, _session, socket) do
-    account_id = socket.assigns.current_account.id
+    subject = socket.assigns.current_subject
 
-    if connected?(socket) do
-      Runs.subscribe_account_runs(account_id)
-      Runners.subscribe_connections(account_id)
-      Approvals.subscribe_account_approvals(account_id)
-      {:ok, load(socket)}
+    # A finance-only member (billing_manager) can't read a single dashboard
+    # tile — every operational query returns :unauthorized, so recent_runs is
+    # always empty and the first-run checklist ("Get to your first gated run")
+    # leads a dead-end tutorial for runner onboarding they can't perform. Send
+    # them to their home base instead. Capability-based, not role-name, so a
+    # future narrow finance role inherits the right landing.
+    if finance_only?(subject) do
+      {:ok,
+       push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/settings/billing")}
     else
-      {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
+      account_id = socket.assigns.current_account.id
+
+      if connected?(socket) do
+        Runs.subscribe_account_runs(account_id)
+        Runners.subscribe_connections(account_id)
+        Approvals.subscribe_account_approvals(account_id)
+        {:ok, load(socket)}
+      else
+        {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
+      end
     end
+  end
+
+  # Can manage billing but can't even view the operational surfaces: among the
+  # roles only billing_manager (owners/admins can view runs; operators/viewers
+  # can't manage billing), but stated as capabilities so it can't drift.
+  defp finance_only?(subject) do
+    Billing.subject_can_manage_billing?(subject) and not Runs.subject_can_view_runs?(subject)
   end
 
   # A busy fleet emits many account-topic broadcasts per second, and load/1 is
