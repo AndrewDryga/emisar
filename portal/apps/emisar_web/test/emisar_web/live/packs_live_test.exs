@@ -311,7 +311,7 @@ defmodule EmisarWeb.PacksLiveTest do
       refute render(lv) =~ "phx-click=\"trust\""
     end
 
-    test "Reject through the typed-confirm dialog hides a never-trusted custom pack from the list",
+    test "Reject through the typed-confirm dialog keeps the pack listed as rejected",
          %{
            conn: conn,
            account: account
@@ -331,9 +331,27 @@ defmodule EmisarWeb.PacksLiveTest do
       type_confirm_token(lv, "reject-pack", "acme-tools v9.9")
       html = confirm_dialog(lv, "reject-pack", "Reject pack")
 
-      assert html =~ "Rejected drift on acme-tools"
-      # The flash quotes the pack name, so scope the absence check to the list.
-      refute has_element?(lv, "#packs li", "acme-tools")
+      assert html =~ "Rejected acme-tools v9.9. It stays listed as rejected"
+      # The rejected row stays visible — quietly, with the fix-admin-mistake
+      # Trust affordance — instead of vanishing from the list.
+      assert has_element?(lv, "#packs li", "acme-tools")
+      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      assert has_element?(lv, "#trust-#{pack_version.id}")
+    end
+
+    test "a rejected version can be trusted again from its quiet row", %{
+      conn: conn,
+      account: account
+    } do
+      pack_version = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      render_click(lv, "reject", %{"id" => pack_version.id})
+
+      html = render_click(lv, "trust", %{"id" => pack_version.id})
+
+      assert html =~ "Trusted acme-tools v9.9."
+      refute has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
     end
 
     test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{
@@ -374,17 +392,17 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
-      assert html =~ "Rejected drift on acme-tools"
-      refute has_element?(lv, "#packs li", "acme-tools")
+      assert html =~ "Rejected acme-tools v9.9. It stays listed as rejected"
+      assert has_element?(lv, "#packs li", "acme-tools")
     end
 
     test "a trusted, non-retired version shows no Retired flag or override CTA (overlay dormant)",
          %{conn: conn, user: user, account: account} do
       # The custom acme-tools pack carries no retirement watermark, so its
       # trusted row is never retired — the rose flag, the warning block, and
-      # the "Trust anyway" CTA all stay off. This locks the overlay against
-      # false positives while exercising the `retired_notice` render path on
-      # an ordinary row.
+      # the "Override retirement" CTA all stay off. This locks the overlay
+      # against false positives while exercising the `retired_notice` render
+      # path on an ordinary row.
       subject = Fixtures.Subjects.subject_for(user, account)
       pack_version = observe_pending_pack!(account)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
@@ -393,7 +411,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       refute html =~ "Retired"
-      refute html =~ "Trust anyway"
+      refute html =~ "Override retirement"
       refute has_element?(lv, ~s([id^="override-"]))
     end
 
@@ -418,13 +436,44 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "Retired by a newer release"
-      assert html =~ "Trust anyway"
+      assert html =~ "Override retirement"
       assert has_element?(lv, "#override-#{pack_version.id}")
+    end
+
+    test "a rejected retired version shows the Retired chip but no rose warning block", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      # Revoking trust in a retired version is the quiet path — the version
+      # stays flagged Retired in the list, but the blocking alert (and its
+      # override CTA) stops nagging: the operator already refused it.
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, _} = Emisar.Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired"
+      refute html =~ "Retired by a newer release"
+      refute has_element?(lv, "#override-#{pack_version.id}")
+      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
     end
 
     test "the override-retirement handler re-trusts and stays gated when dispatched directly",
          %{conn: conn, user: user, account: account} do
-      # The "Trust anyway" CTA only renders on a genuinely-retired row — but a
+      # The "Override retirement" CTA only renders on a genuinely-retired row — but a
       # crafted event against a non-retired row still hits the
       # server-authz-gated handler, which stamps the audited override on the
       # trusted row and flashes the confirmation.
@@ -435,7 +484,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "override_retirement", %{"id" => trusted.id})
 
-      assert html =~ "Re-trusted retired acme-tools"
+      assert html =~ "Overrode the retirement of acme-tools"
     end
 
     test "a viewer's crafted override-retirement event is denied", %{account: account} do
@@ -456,6 +505,45 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render_click(lv, "override_retirement", %{"id" => pack_version.id})
 
       assert html =~ "Admin required to override pack retirement."
+    end
+
+    test "an owner revokes trust from the row's quiet control — the version turns rejected", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      pack_version = observe_pending_pack!(account)
+      {:ok, trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      assert has_element?(lv, "#revoke-#{trusted.id}")
+
+      html = render_click(lv, "revoke_trust", %{"id" => trusted.id})
+
+      assert html =~ "Revoked trust in acme-tools v9.9."
+      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      refute has_element?(lv, "#revoke-#{trusted.id}")
+    end
+
+    test "a viewer's crafted revoke-trust event is denied", %{account: account} do
+      pack_version = observe_pending_pack!(account)
+
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+
+      html = render_click(lv, "revoke_trust", %{"id" => pack_version.id})
+
+      assert html =~ "Admin required to revoke pack trust."
     end
 
     test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
@@ -790,7 +878,7 @@ defmodule EmisarWeb.PacksLiveTest do
       type_confirm_token(lv, "reject-pack", "acme-extras v1.0")
       html = confirm_dialog(lv, "reject-pack", "Reject pack")
 
-      assert html =~ "Rejected drift on acme-extras"
+      assert html =~ "Rejected acme-extras v1.0. It stays listed as rejected"
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 

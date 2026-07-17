@@ -579,6 +579,62 @@ defmodule Emisar.CatalogTest do
       assert trusted.pending_hash == nil
     end
 
+    test "trust on a rejected row adopts the refused hash (fix-admin-mistake)", %{
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, rejected} = Catalog.reject_pack_version(pack_version.id, subject)
+      assert rejected.trust_state == :rejected
+
+      assert {:ok, trusted} = Catalog.trust_pack_version(rejected.id, subject)
+      assert trusted.trust_state == :trusted
+      assert trusted.hash == "sha256:NOPE"
+      assert trusted.pending_hash == nil
+    end
+
+    test "trust on a revoked row restores its recorded hash and manifest", %{
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:GOOD"}},
+            actions: [action("custom.inspect", pack_id: "custom", description: "Recorded.")]
+          )
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      {:ok, _trusted} = Catalog.trust_pack_version(pending.id, subject)
+      {:ok, revoked} = Catalog.revoke_pack_version_trust(pending.id, subject)
+      assert revoked.trust_state == :rejected
+
+      assert {:ok, restored} = Catalog.trust_pack_version(revoked.id, subject)
+      assert restored.trust_state == :trusted
+      assert restored.hash == "sha256:GOOD"
+      assert restored.pending_hash == nil
+
+      assert get_in(restored.trusted_manifest, ["actions", "custom.inspect", "description"]) ==
+               "Recorded."
+    end
+
+    test "trust on a rejected row with nothing recorded is :nothing_to_trust", %{
+      account: account,
+      subject: subject
+    } do
+      pack_version = Fixtures.Catalog.create_empty_rejected_pack_version(account_id: account.id)
+
+      assert {:error, :nothing_to_trust} = Catalog.trust_pack_version(pack_version.id, subject)
+    end
+
     test "trust snapshots only descriptors bound to the exact pending hash", %{
       account: account,
       subject: subject,
@@ -839,13 +895,40 @@ defmodule Emisar.CatalogTest do
 
       # The row is NOT deleted — it stays as an explicit :rejected pin so the
       # action that references this version resolves to "untrusted", not the
-      # fail-open "missing row = trusted" the old delete left behind.
+      # fail-open "missing row = trusted" the old delete left behind. The
+      # refused bytes stay recorded so the decision sticks across reconnects.
       assert rejected.trust_state == :rejected
       assert rejected.hash == nil
-      assert rejected.pending_hash == nil
+      assert rejected.pending_hash == "sha256:NOPE"
       assert {:ok, [persisted], _} = Catalog.list_pack_versions(subject)
       assert persisted.id == pack_version.id
       assert persisted.trust_state == :rejected
+    end
+
+    test "re-advertising the SAME rejected hash keeps the row rejected (no re-nag)", %{
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.reject_pack_version(pack_version.id, subject)
+
+      # The runner reconnects and re-advertises the refused bytes — the
+      # decision sticks instead of re-opening a review on every reconnect.
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
+        )
+
+      {:ok, [still_rejected], _} = Catalog.list_pack_versions(subject)
+      assert still_rejected.trust_state == :rejected
+      assert still_rejected.pending_hash == "sha256:NOPE"
     end
 
     test "a re-advertised hash flips a :rejected row back to :pending for re-review", %{
@@ -1041,6 +1124,133 @@ defmodule Emisar.CatalogTest do
 
     test "an invalid id is :not_found", %{subject: subject} do
       assert {:error, :not_found} = Catalog.override_pack_retirement("not-a-uuid", subject)
+    end
+  end
+
+  describe "revoke_pack_version_trust/2" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}})
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      {:ok, trusted} = Catalog.trust_pack_version(pending.id, subject)
+
+      %{user: user, account: account, subject: subject, runner: runner, pack_version: trusted}
+    end
+
+    test "moves a trusted row to :rejected, keeping the hash and clearing any override", %{
+      user: user,
+      subject: subject,
+      pack_version: pack_version
+    } do
+      {:ok, overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
+      assert %DateTime{} = overridden.retirement_overridden_at
+
+      assert {:ok, revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+      assert revoked.trust_state == :rejected
+      assert revoked.hash == "sha256:OK"
+      assert revoked.retirement_overridden_at == nil
+      assert revoked.retirement_overridden_by_id == nil
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_trust_revoked"))
+
+      assert audit, "expected a pack_trust_revoked audit row"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_id == pack_version.id
+      assert audit.target_label == "custom@1.0"
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert audit.payload["revoked_hash"] == "sha256:OK"
+    end
+
+    test "a same-hash re-advertisement leaves the revoked row rejected", %{
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}})
+        )
+
+      {:ok, [still_rejected], _} = Catalog.list_pack_versions(subject)
+      assert still_rejected.trust_state == :rejected
+      assert still_rejected.hash == "sha256:OK"
+    end
+
+    test "a NEW hash re-opens the review on a revoked row", %{
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:CHANGED"}})
+        )
+
+      {:ok, [reopened], _} = Catalog.list_pack_versions(subject)
+      assert reopened.trust_state == :pending
+      assert reopened.pending_hash == "sha256:CHANGED"
+    end
+
+    test "a pending row is refused with :not_trusted", %{subject: subject, runner: runner} do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"other" => %{"version" => "2.0", "hash" => "sha256:P"}})
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      pending = Enum.find(versions, &(&1.pack_id == "other"))
+      assert pending.trust_state == :pending
+
+      assert {:error, :not_trusted} = Catalog.revoke_pack_version_trust(pending.id, subject)
+    end
+
+    test "a viewer subject is denied", %{account: account, pack_version: pack_version} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Catalog.revoke_pack_version_trust(pack_version.id, viewer_subject)
+    end
+
+    test "revoke of another account's pin is :not_found (cross-account)", %{
+      pack_version: pack_version
+    } do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} =
+               Catalog.revoke_pack_version_trust(pack_version.id, subject_b)
+    end
+
+    test "an invalid id is :not_found", %{subject: subject} do
+      assert {:error, :not_found} = Catalog.revoke_pack_version_trust("not-a-uuid", subject)
+    end
+
+    test "broadcasts the pack-trust change after the revoke commits", %{
+      account: account,
+      subject: subject,
+      pack_version: pack_version
+    } do
+      account_id = account.id
+      Catalog.subscribe_account_packs(account_id)
+
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+      assert_receive {:pack_trust_changed, ^account_id}
     end
   end
 

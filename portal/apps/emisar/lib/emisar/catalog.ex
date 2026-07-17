@@ -21,6 +21,11 @@ defmodule Emisar.Catalog do
     * **Subsequent sight** —
       * Same as trusted hash → no-op (touch last_seen).
       * Different → keep trusted, set pending_hash. Dispatch refuses.
+
+    * **Rejected rows remember the refused bytes** — a rejected
+      advertisement keeps its hash in `pending_hash` (and a revoked
+      trust keeps `hash`), so re-advertising the same bytes stays
+      quiet; only a genuinely new hash re-opens the `:pending` review.
   """
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo, Runners}
@@ -378,8 +383,11 @@ defmodule Emisar.Catalog do
   Adopt the pending hash as the new trusted hash. Snapshots the action set
   advertised for this `(pack_id, version)` into `trusted_manifest` in the
   SAME transaction as the flip, so a later re-advertised hash can be diffed
-  against what was trusted. Records who clicked and audits the adoption.
-  Returns `{:error, :not_pending}` when there's nothing pending to adopt.
+  against what was trusted. Also serves a `:rejected` row — adopt the refused
+  bytes, or restore a revoked row's recorded hash (the fix-admin-mistake
+  path). Records who clicked and audits the adoption. Returns
+  `{:error, :not_pending}` when there's nothing to decide and
+  `{:error, :nothing_to_trust}` for a rejected row with no recorded hash.
   """
   def trust_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
@@ -391,24 +399,24 @@ defmodule Emisar.Catalog do
 
       Multi.new()
       |> Multi.run(:before, fn repo, _changes ->
-        lock_pending_pack_version(repo, pack_version_id, subject)
+        lock_trustable_pack_version(repo, pack_version_id, subject)
       end)
-      |> Multi.run(:manifest, fn repo, %{before: pending} ->
-        snapshot_action_set(repo, pending)
+      |> Multi.run(:manifest, fn repo, %{before: pack_version} ->
+        trusted_manifest_source(repo, pack_version)
       end)
       # Trusting a RETIRED version IS the override — an explicit,
       # permission-gated action. Compute it inside the transaction (retirement
       # is release-controlled, so this can't race the lock) and thread it to
       # both the changeset and the audit payload from one source.
-      |> Multi.run(:retired, fn _repo, %{before: pending} ->
-        {:ok, PackBaseline.retired?(pending.pack_id, pending.version)}
+      |> Multi.run(:retired, fn _repo, %{before: pack_version} ->
+        {:ok, PackBaseline.retired?(pack_version.pack_id, pack_version.version)}
       end)
       |> Multi.run(:pack_version, fn repo,
-                                     %{before: pending, manifest: manifest, retired: retired} ->
-        repo.update(trust_changeset(pending, manifest, retired, overridden_by_id))
+                                     %{before: pack_version, manifest: manifest, retired: retired} ->
+        repo.update(trust_changeset(pack_version, manifest, retired, overridden_by_id))
       end)
-      |> Multi.insert(:audit, fn %{before: pending, retired: retired} ->
-        Audit.Events.pack_trust_adopted(subject, pending, retired)
+      |> Multi.insert(:audit, fn %{before: pack_version, retired: retired} ->
+        Audit.Events.pack_trust_adopted(subject, pack_version, retired)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: updated} ->
@@ -439,8 +447,9 @@ defmodule Emisar.Catalog do
       this `(pack_id, version)` by string with no FK, so a deleted row
       reads as "missing" which the dispatch gate USED to treat as trusted
       (fail-open). The persisted `:rejected` state fails dispatch CLOSED.
-      A later runner advertisement of a fresh hash flips it back to
-      `:pending` for another review (`judge_drift`).
+      The refused bytes stay in `pending_hash`, so a runner re-advertising
+      them is parked quietly (`judge_drift`) instead of re-opening the
+      review; only a genuinely NEW hash flips it back to `:pending`.
   """
   def reject_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
@@ -479,17 +488,31 @@ defmodule Emisar.Catalog do
   defp reject_changeset(%PackVersion{} = pack_version),
     do: PackVersion.Changeset.reject(pack_version)
 
-  # Adopt the pending hash, and — when the version is retired — stamp the
-  # override in the SAME changeset so trusting a retired version re-enables
-  # dispatch atomically with the trust flip.
-  defp trust_changeset(%PackVersion{} = pending, manifest, true, overridden_by_id) do
-    pending
-    |> PackVersion.Changeset.trust(manifest)
+  # Adopt the hash (pending or restored), and — when the version is retired —
+  # stamp the override in the SAME changeset so trusting a retired version
+  # re-enables dispatch atomically with the trust flip.
+  defp trust_changeset(%PackVersion{} = pack_version, manifest, true, overridden_by_id) do
+    pack_version
+    |> adopt_trust_changeset(manifest)
     |> PackVersion.Changeset.override_retirement(overridden_by_id)
   end
 
-  defp trust_changeset(%PackVersion{} = pending, manifest, false, _overridden_by_id),
-    do: PackVersion.Changeset.trust(pending, manifest)
+  defp trust_changeset(%PackVersion{} = pack_version, manifest, false, _overridden_by_id),
+    do: adopt_trust_changeset(pack_version, manifest)
+
+  defp adopt_trust_changeset(%PackVersion{} = pack_version, :restore),
+    do: PackVersion.Changeset.restore_trust(pack_version)
+
+  defp adopt_trust_changeset(%PackVersion{} = pack_version, %{} = manifest),
+    do: PackVersion.Changeset.trust(pack_version, manifest)
+
+  # What the trust adopts: a row carrying a pending_hash snapshots the
+  # complete advertised descriptor set for those exact bytes; a revoked row
+  # with no pending hash restores its recorded hash + manifest instead.
+  defp trusted_manifest_source(_repo, %PackVersion{pending_hash: nil}), do: {:ok, :restore}
+
+  defp trusted_manifest_source(repo, %PackVersion{} = pack_version),
+    do: snapshot_action_set(repo, pack_version)
 
   @doc """
   Explicitly re-trust an already-trusted pack version whose version the
@@ -537,35 +560,97 @@ defmodule Emisar.Catalog do
 
   defp override_retirement_changeset(%PackVersion{}, _overridden_by_id), do: :not_trusted
 
-  # Locked re-read for the Trust/Reject decision: the row is fetched
-  # FOR NO KEY UPDATE inside the transaction (account-scoped via
-  # for_subject) and must still be pending — so two operators racing
-  # Trust vs. Reject serialize, and the loser gets `:not_pending`
-  # instead of flipping or deleting a row the winner already resolved.
-  defp lock_pending_pack_version(repo, pack_version_id, %Subject{} = subject) do
+  @doc """
+  Revoke trust in a version — the inverse of Trust for an accidental adopt,
+  and the quiet way to silence a retired version's warning without allowing
+  it to dispatch. The row moves to `:rejected` (dispatch fails closed, no
+  review alert), keeps its recorded hash + manifest so trust can be restored
+  later, and clears any retirement override so a re-trust must re-decide it.
+  Requires `manage_catalog`; returns `{:error, :not_trusted}` for a
+  non-trusted row and `{:error, :not_found}` cross-account.
+  """
+  def revoke_pack_version_trust(pack_version_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ) do
+      if Repo.valid_uuid?(pack_version_id) do
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_id(pack_version_id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(PackVersion.Query,
+          with: &revoke_trust_changeset/1,
+          audit: &Audit.Events.pack_trust_revoked(subject, &1),
+          after_commit: fn updated ->
+            broadcast_pack_trust(updated.account_id)
+            :ok
+          end
+        )
+      else
+        {:error, :not_found}
+      end
+    end
+  end
+
+  # Only a TRUSTED row can be revoked; any other state aborts as :not_trusted.
+  defp revoke_trust_changeset(%PackVersion{trust_state: :trusted} = pack_version),
+    do: PackVersion.Changeset.revoke_trust(pack_version)
+
+  defp revoke_trust_changeset(%PackVersion{}), do: :not_trusted
+
+  # Locked, account-scoped re-read shared by the trust-state deciders
+  # (`FOR NO KEY UPDATE`): two operators racing decisions on the same row
+  # serialize, and the loser judges the winner's already-flipped state
+  # instead of overwriting it.
+  defp lock_pack_version(repo, pack_version_id, %Subject{} = subject) do
     if Repo.valid_uuid?(pack_version_id) do
-      pack_version =
+      queryable =
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
         |> PackVersion.Query.lock_for_update()
         |> Authorizer.for_subject(subject)
-        |> repo.one()
 
-      case pack_version do
-        nil ->
-          {:error, :not_found}
-
-        %PackVersion{trust_state: :pending, pending_hash: hash} = pack_version
-        when not is_nil(hash) ->
-          {:ok, pack_version}
-
-        %PackVersion{} ->
-          {:error, :not_pending}
-      end
+      repo.fetch(queryable, PackVersion.Query)
     else
       {:error, :not_found}
     end
   end
+
+  # Reject decides a live pending review only.
+  defp lock_pending_pack_version(repo, pack_version_id, %Subject{} = subject) do
+    with {:ok, pack_version} <- lock_pack_version(repo, pack_version_id, subject) do
+      judge_pending(pack_version)
+    end
+  end
+
+  defp judge_pending(%PackVersion{trust_state: :pending, pending_hash: hash} = pack_version)
+       when not is_nil(hash),
+       do: {:ok, pack_version}
+
+  defp judge_pending(%PackVersion{}), do: {:error, :not_pending}
+
+  # Trust decides a live pending review OR a rejected row (adopt the refused
+  # bytes / restore revoked trust). A rejected row with nothing recorded (a
+  # pre-revoke-era reject that cleared both hashes) has nothing to adopt
+  # until a runner advertises the pack again.
+  defp lock_trustable_pack_version(repo, pack_version_id, %Subject{} = subject) do
+    with {:ok, pack_version} <- lock_pack_version(repo, pack_version_id, subject) do
+      judge_trustable(pack_version)
+    end
+  end
+
+  defp judge_trustable(%PackVersion{trust_state: :pending, pending_hash: hash} = pack_version)
+       when not is_nil(hash),
+       do: {:ok, pack_version}
+
+  defp judge_trustable(%PackVersion{trust_state: :rejected, pending_hash: nil, hash: nil}),
+    do: {:error, :nothing_to_trust}
+
+  defp judge_trustable(%PackVersion{trust_state: :rejected} = pack_version),
+    do: {:ok, pack_version}
+
+  defp judge_trustable(%PackVersion{}), do: {:error, :not_pending}
 
   # The complete descriptors advertised for the exact pending hash — read
   # inside the trust transaction so adopting the hash and its reviewed model

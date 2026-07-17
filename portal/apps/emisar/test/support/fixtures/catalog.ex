@@ -68,4 +68,31 @@ defmodule Emisar.Fixtures.Catalog do
 
     pack_version
   end
+
+  @doc """
+  Inserts a REJECTED pack version row with NOTHING recorded — the legacy
+  shape a pre-revoke-era reject left behind (it cleared both hashes).
+  `Catalog.reject_pack_version/2` can no longer build it (rejects now keep
+  the refused hash), so the nothing-to-trust paths arrange it here.
+  """
+  def create_empty_rejected_pack_version(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || raise ":account_id is required"
+    now = DateTime.utc_now()
+
+    params = %{
+      account_id: account_id,
+      pack_id: attrs[:pack_id] || "acme-tools",
+      version: attrs[:version] || "9.9",
+      trust_state: :rejected,
+      first_seen_at: now,
+      last_seen_at: now
+    }
+
+    {:ok, pack_version} =
+      Catalog.PackVersion.Changeset.insert(params)
+      |> Repo.insert()
+
+    pack_version
+  end
 end

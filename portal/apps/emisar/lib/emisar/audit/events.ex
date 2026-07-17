@@ -594,8 +594,23 @@ defmodule Emisar.Audit.Events do
       pack_id: pack_version.pack_id,
       version: pack_version.version,
       previous_hash: pack_version.hash,
-      new_hash: pack_version.pending_hash,
+      # Restoring a revoked row's trust has no pending hash — the recorded
+      # hash is what becomes trusted again.
+      new_hash: pack_version.pending_hash || pack_version.hash,
       retired: retired
+    })
+  end
+
+  @doc """
+  Operator revoked trust in a version — dispatch refuses it (fail closed)
+  until trust is restored. Takes the post-revoke row; the recorded hash
+  stays on it.
+  """
+  def pack_trust_revoked(%Subject{} = subject, %Catalog.PackVersion{} = pack_version) do
+    pack_trust_event(subject, pack_version, "pack_trust_revoked", %{
+      pack_id: pack_version.pack_id,
+      version: pack_version.version,
+      revoked_hash: pack_version.hash
     })
   end
 

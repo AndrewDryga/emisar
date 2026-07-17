@@ -43,6 +43,7 @@ defmodule Emisar.Audit.Event.Query do
     {"pack_trust_drift_detected", "Pack drift detected"},
     {"pack_trust_adopted", "Pack hash trusted"},
     {"pack_trust_rejected", "Pack hash rejected"},
+    {"pack_trust_revoked", "Pack trust revoked"},
     {"pack_retirement_overridden", "Pack retirement overridden"},
     {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
     {"dispatch_blocked_pack_retired", "Dispatch blocked (pack retired)"},
@@ -167,6 +168,7 @@ defmodule Emisar.Audit.Event.Query do
        {"pack_trust_drift_detected", "Drift detected"},
        {"pack_trust_adopted", "Hash trusted"},
        {"pack_trust_rejected", "Hash rejected"},
+       {"pack_trust_revoked", "Trust revoked"},
        {"pack_retirement_overridden", "Retirement overridden"},
        {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
        {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
@@ -684,6 +686,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator trusted a pack hash — runners advertising it may execute."},
     "pack_trust_rejected" =>
       {true, true, true, "An operator rejected a pack hash — dispatches with it are refused."},
+    "pack_trust_revoked" =>
+      {true, true, true,
+       "An operator revoked trust in a pack version — dispatches with it are refused."},
     "pack_retirement_overridden" =>
       {true, true, true,
        "An admin re-trusted a retired pack version — dispatches with it are allowed again."},

@@ -243,9 +243,10 @@ defmodule EmisarWeb.PacksLive do
     |> assign(:pack_diffs, Map.new(details, fn {id, {_actions, diff}} -> {id, diff} end))
   end
 
-  # Blast radius of a pending trust decision: which runners advertise each
-  # pending version (so the operator sees one canary box vs the whole fleet).
-  # Keyed by pack_version id; only pending versions are looked up.
+  # Blast radius of a trust decision: which runners advertise each version
+  # awaiting one (so the operator sees one canary box vs the whole fleet).
+  # Keyed by pack_version id; pending reviews and rejected rows (whose Trust
+  # modal quotes the same count) are looked up.
   defp advertising_runners(rows, subject) do
     runners_by_id =
       case Runners.list_runners_for_account(subject) do
@@ -254,7 +255,7 @@ defmodule EmisarWeb.PacksLive do
       end
 
     rows
-    |> Enum.filter(&(&1.trust_state == :pending))
+    |> Enum.filter(&(&1.trust_state in [:pending, :rejected]))
     |> Map.new(fn version ->
       ids =
         case Catalog.runner_ids_advertising_pack(version.pack_id, version.version, subject) do
@@ -273,12 +274,11 @@ defmodule EmisarWeb.PacksLive do
            preload: [:retirement_overridden_by],
            page: [limit: 500]
          ) do
-      # A `:rejected` row persists in the DB so dispatch fails closed (a missing
-      # row would read as trusted), but the list shows only actionable versions
-      # — pending (needs a decision) and trusted. When the runner re-advertises
-      # a rejected pack, `judge_drift` flips it back to `:pending` and it
-      # reappears here for another review.
-      {:ok, rows, _meta} -> {:ok, Enum.reject(rows, &(&1.trust_state == :rejected))}
+      # Rejected rows stay listed (quietly — no review alert) so an admin
+      # mistake is visible and reversible: the row offers Trust to adopt the
+      # refused bytes or restore revoked trust. Dispatch fails closed on them
+      # either way.
+      {:ok, rows, _meta} -> {:ok, rows}
       {:error, _} -> :error
     end
   end
@@ -305,6 +305,14 @@ defmodule EmisarWeb.PacksLive do
       {:error, :not_pending} ->
         {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
 
+      {:error, :nothing_to_trust} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Nothing recorded to trust — wait for a runner to advertise this pack again."
+         )}
+
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "Admin required to trust packs.")}
 
@@ -318,10 +326,7 @@ defmodule EmisarWeb.PacksLive do
       {:ok, pack_version} ->
         {:noreply,
          socket
-         |> put_flash(
-           :info,
-           "Rejected drift on #{pack_version.pack_id} v#{pack_version.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
-         )
+         |> put_flash(:info, reject_flash(pack_version))
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_pending} ->
@@ -335,8 +340,33 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # Re-trust a version the shipped catalog RETIRED — the deliberate, audited
-  # admin override that unblocks dispatch again. `override_pack_retirement/2`
+  def handle_event("revoke_trust", %{"id" => id}, socket) do
+    case Catalog.revoke_pack_version_trust(id, socket.assigns.current_subject) do
+      {:ok, pack_version} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Revoked trust in #{pack_version.pack_id} v#{pack_version.version}. Dispatch refuses it until you trust it again."
+         )
+         |> restream_pack(pack_version.pack_id)}
+
+      {:error, :not_trusted} ->
+        {:noreply, put_flash(socket, :error, "Only a trusted version can be revoked.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to revoke pack trust.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not revoke trust — try again.")}
+    end
+  end
+
+  # Override the retirement of a trusted version — the deliberate, audited
+  # admin decision that unblocks dispatch again. `override_pack_retirement/2`
   # re-checks manage_catalog (IL-15), so a crafted event from a viewer denies.
   def handle_event("override_retirement", %{"id" => id}, socket) do
     case Catalog.override_pack_retirement(id, socket.assigns.current_subject) do
@@ -345,12 +375,13 @@ defmodule EmisarWeb.PacksLive do
          socket
          |> put_flash(
            :info,
-           "Re-trusted retired #{pack_version.pack_id} v#{pack_version.version}. Dispatch is unblocked for this version — update the pack on your runners when you can."
+           "Overrode the retirement of #{pack_version.pack_id} v#{pack_version.version}. Dispatch is unblocked for this version — update the pack on your runners when you can."
          )
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_trusted} ->
-        {:noreply, put_flash(socket, :error, "Only a trusted version can be re-trusted.")}
+        {:noreply,
+         put_flash(socket, :error, "Only a trusted version's retirement can be overridden.")}
 
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "Admin required to override pack retirement.")}
@@ -422,6 +453,17 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  # A drift-reject reverts to the trusted bytes and the on-host mismatch stays
+  # live, so it re-surfaces on the next advertisement; a never-trusted reject
+  # sticks (the refused hash is remembered) until different bytes show up.
+  defp reject_flash(%Catalog.PackVersion{trust_state: :trusted} = pack_version) do
+    "Rejected drift on #{pack_version.pack_id} v#{pack_version.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
+  end
+
+  defp reject_flash(%Catalog.PackVersion{} = pack_version) do
+    "Rejected #{pack_version.pack_id} v#{pack_version.version}. It stays listed as rejected — a runner advertising different contents will re-open the review."
+  end
+
   # Re-render one pack group's stream item against the current assigns (a
   # stream child is static once pushed, so the just-loaded `inspected_actions`
   # only appears after a re-insert). One query for the group's versions; unlike
@@ -444,12 +486,11 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # After a Trust/Reject, recompute just the affected pack group and update
+  # After a trust decision, recompute just the affected pack group and update
   # the stream in place: `stream_delete` if no displayable version of the pack
-  # remains (a never-trusted custom pack's only version was Rejected → hidden
-  # from the list by `fetch_rows`, though the row persists for the dispatch
-  # gate), otherwise `stream_insert` the regrouped versions. The `pending_count`
-  # (and sidebar badge) are recomputed from the full set.
+  # remains (the name/risk filter can drop the group), otherwise
+  # `stream_insert` the regrouped versions. The `pending_count` (and sidebar
+  # badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
     case fetch_rows(socket) do
       {:ok, rows} ->
@@ -578,10 +619,10 @@ defmodule EmisarWeb.PacksLive do
 
   # A trusted version the shipped catalog RETIRED — a newer release marked every
   # version below a watermark unsafe (a critical fix). Dispatch fails closed
-  # against it until the pack is updated on the runner OR an admin re-trusts it
-  # here. An already-overridden row shows a muted, dated note instead of the
-  # block + CTA — the override is deliberate and audited, so it doesn't nag.
-  # Renders nothing for a version that isn't retired.
+  # against it until the pack is updated on the runner OR an admin overrides the
+  # retirement here. An already-overridden row shows a muted, dated note instead
+  # of the block + CTA — the override is deliberate and audited, so it doesn't
+  # nag. Renders nothing for a version that isn't retired.
   defp retired_notice(assigns) do
     {retired?, current} =
       case Catalog.pack_version_retirement(assigns.version) do
@@ -614,7 +655,11 @@ defmodule EmisarWeb.PacksLive do
            confirm, admin-only. It re-enables dispatch for this exact retired
            version; the audited context fn stays the server gate (IL-15).
            Bordered rose is the house destructive face — a FILLED rose pair
-           deliberately doesn't exist in `button_face/2`. --%>
+           deliberately doesn't exist in `button_face/2`. The version is
+           already trusted, so the CTA names what it actually does — override
+           the retirement — never "Trust". The quiet alternative (Revoke
+           trust, in the row's meta column) silences this warning by refusing
+           the version instead. --%>
       <.confirm_button
         :if={@can_manage}
         id={"override-#{@version.id}"}
@@ -622,16 +667,17 @@ defmodule EmisarWeb.PacksLive do
         tone={:rose}
         size={:sm}
         class="mt-3"
-        title={"Re-trust retired #{@pack_id} v#{@version.version}?"}
-        confirm_label="Trust anyway"
+        title={"Override the retirement of #{@pack_id} v#{@version.version}?"}
+        confirm_label="Override retirement"
         on_confirm={JS.push("override_retirement", value: %{id: @version.id})}
       >
         <:body>
-          This version was retired by a newer release. Re-trusting lets its actions run again
+          This version was retired by a newer release. Overriding lets its actions run again
           despite the fix — do this only if you can't yet update the pack on the runner. The
-          override is audited.
+          override is audited. To silence this warning without allowing dispatch, revoke the
+          version's trust instead.
         </:body>
-        Trust anyway
+        Override retirement
       </.confirm_button>
     </div>
     <p
@@ -822,8 +868,13 @@ defmodule EmisarWeb.PacksLive do
                 <div class="flex min-w-0 flex-col gap-2">
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
-                    <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
-                      sha256:{short_hash(v.hash)}
+                    <%!-- A rejected never-trusted row has no trusted hash — show the
+                         refused bytes it remembers instead of a bare dash. --%>
+                    <span
+                      class="truncate font-mono text-[11px] text-zinc-500"
+                      title={v.hash || v.pending_hash}
+                    >
+                      sha256:{short_hash(v.hash || v.pending_hash)}
                     </span>
                     <%!-- If this exact trusted hash is a published pack version,
                          link out to its public registry page (opens in a new tab). --%>
@@ -853,6 +904,47 @@ defmodule EmisarWeb.PacksLive do
                     pack_id={pack.id}
                     can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
                   />
+                  <%!-- A rejected version stays listed quietly — no alert, no
+                       pending count — with Trust as the fix-admin-mistake path
+                       (adopt the refused bytes, or restore revoked trust). --%>
+                  <div
+                    :if={v.trust_state == :rejected}
+                    class="flex flex-wrap items-center gap-3"
+                  >
+                    <p class="text-xs text-zinc-500">
+                      Rejected — dispatch refuses this version until you trust it.
+                    </p>
+                    <.confirm_button
+                      :if={
+                        Catalog.subject_can_manage_packs?(@current_subject) and
+                          (v.pending_hash || v.hash) != nil
+                      }
+                      id={"trust-#{v.id}"}
+                      variant={:secondary}
+                      tone={:amber}
+                      size={:sm}
+                      title={"Trust #{pack.id} v#{v.version}?"}
+                      confirm_label="Trust pack"
+                      on_confirm={JS.push("trust", value: %{id: v.id})}
+                    >
+                      <:body>
+                        <span :if={not is_nil(v.pending_hash)}>
+                          Adopts the refused contents — its actions may run on {length(
+                            @advertising[v.id] || []
+                          )} advertising runner(s).
+                        </span>
+                        <span :if={is_nil(v.pending_hash)}>
+                          Restores trust in the previously recorded contents — its actions may
+                          dispatch again.
+                        </span>
+                        <span :if={pack_version_retired?(v)} class="text-rose-300">
+                          This version was retired by a newer release — trusting it also
+                          overrides that retirement, so its actions run despite the fix.
+                        </span>
+                      </:body>
+                      Trust
+                    </.confirm_button>
+                  </div>
                 </div>
                 <%!-- The meta column caps with the trust state (dot + word, not a
                      filled pill — the run/runner status grammar), then the
@@ -879,6 +971,32 @@ defmodule EmisarWeb.PacksLive do
                       mode={:relative}
                       class="text-zinc-300"
                     />
+                  </div>
+                  <%!-- The undo for an accidental Trust, kept next to the badge it
+                       reverses. Quiet ghost — revoking BLOCKS dispatch (the safe
+                       direction) and is reversible from the rejected row. --%>
+                  <div
+                    :if={
+                      v.trust_state == :trusted and
+                        Catalog.subject_can_manage_packs?(@current_subject)
+                    }
+                    class="mt-1.5 flex justify-end"
+                  >
+                    <.confirm_button
+                      id={"revoke-#{v.id}"}
+                      variant={:ghost}
+                      tone={:neutral}
+                      size={:sm}
+                      title={"Revoke trust in #{pack.id} v#{v.version}?"}
+                      confirm_label="Revoke trust"
+                      on_confirm={JS.push("revoke_trust", value: %{id: v.id})}
+                    >
+                      <:body>
+                        Dispatch refuses this version until it's trusted again. It stays
+                        listed as rejected, so you can restore trust later.
+                      </:body>
+                      Revoke trust
+                    </.confirm_button>
                   </div>
                 </div>
               </div>

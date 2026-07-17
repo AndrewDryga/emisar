@@ -75,16 +75,41 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
 
   @doc """
   Reject a never-trusted pack (no prior `hash` to fall back to). Marks the row
-  `:rejected` and clears the pending hash — the row PERSISTS so the
-  `runner_actions` referencing this version resolve to an explicit untrusted
-  decision and dispatch fails closed (it is NOT deleted, which would leave a
-  missing row the gate read as trusted).
+  `:rejected` — the row PERSISTS so the `runner_actions` referencing this
+  version resolve to an explicit untrusted decision and dispatch fails closed
+  (it is NOT deleted, which would leave a missing row the gate read as
+  trusted). The refused bytes stay in `pending_hash` so `judge_drift` parks a
+  same-hash re-advertisement quietly instead of re-opening the review; only a
+  genuinely new hash re-surfaces as `:pending`.
   """
   def reject_untrusted(%PackVersion{} = pack_version) do
+    change(pack_version, trust_state: :rejected)
+  end
+
+  @doc """
+  Revoke an operator's trust in a version (an accidental Trust, or silencing a
+  retired version's warning). The row moves to `:rejected` keeping `hash` +
+  `trusted_manifest` on record — a same-hash re-advertisement stays quiet and
+  `restore_trust/1` can re-adopt it later — and any retirement override is
+  cleared so a later re-trust must re-decide it deliberately.
+  """
+  def revoke_trust(%PackVersion{} = pack_version) do
     pack_version
     |> change(%{
-      pending_hash: nil,
-      trust_state: :rejected
+      trust_state: :rejected,
+      retirement_overridden_at: nil,
+      retirement_overridden_by_id: nil
     })
+  end
+
+  @doc """
+  Restore trust in a revoked row that still carries its recorded `hash` +
+  `trusted_manifest` (the fix-admin-mistake inverse of `revoke_trust/1`).
+  A rejected row with a `pending_hash` goes through `trust/2` instead.
+  """
+  def restore_trust(%PackVersion{} = pack_version) do
+    pack_version
+    |> change(trust_state: :trusted)
+    |> validate_required([:hash])
   end
 end

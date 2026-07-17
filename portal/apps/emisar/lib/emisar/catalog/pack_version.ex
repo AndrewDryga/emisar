@@ -13,12 +13,16 @@ defmodule Emisar.Catalog.PackVersion do
       baseline). Dispatch refuses runs for this pack/version until
       a user clicks Trust (adopt `pending_hash`) or Reject (clear).
 
-    * `"rejected"` — an operator rejected a never-trusted pack (no prior
-      `hash` to fall back to). The row PERSISTS in this state rather than
-      being deleted, so the `runner_actions` referencing this
+    * `"rejected"` — an operator refused this version: a never-trusted
+      pack they rejected (the refused bytes stay in `pending_hash`), or a
+      previously-trusted version whose trust they revoked (`hash` +
+      `trusted_manifest` stay on record). The row PERSISTS in this state
+      rather than being deleted, so the `runner_actions` referencing this
       `(pack_id, version)` resolve to an explicit untrusted decision and
-      dispatch fails CLOSED. A later runner advertisement of a fresh hash
-      flips it back to `:pending` for another review.
+      dispatch fails CLOSED. Re-advertisements of the already-refused hash
+      stay quiet; only a genuinely new hash flips it back to `:pending`
+      for another review. Trusting the row again (adopt the refused hash,
+      or restore the revoked one) is always available.
 
   `trusted_manifest` is a versioned snapshot of the complete bounded action
   descriptors for the exact trusted hash. A re-advertised hash can therefore
