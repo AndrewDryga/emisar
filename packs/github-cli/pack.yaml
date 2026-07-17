@@ -2,8 +2,8 @@ schema_version: 1
 
 id: github-cli
 name: GitHub CLI operations
-version: 0.1.7
-retired_below: 0.1.7
+version: 0.1.8
+retired_below: 0.1.8
 description: >
   GitHub introspection — PRs, issues, repos, workflow runs, releases,
   commit checks, search — plus operator actions: merge PR, close PR,

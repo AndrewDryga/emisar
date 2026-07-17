@@ -4,7 +4,10 @@ title: docker image inspect
 kind: exec
 risk: low
 description: >
-  Returns the full JSON inspect document for one image — labels, config, env, exposed ports, build history root. Read-only.
+  Returns the full JSON inspect document for one image — labels, config,
+  exposed ports, build history root, and the image's baked-in env. Image
+  env is build-time config, but a badly-built image can bake a secret in;
+  the runner's redaction is a pattern-bound backstop. Read-only.
 side_effects:
   - One docker image inspect invocation.
   - Read-only.

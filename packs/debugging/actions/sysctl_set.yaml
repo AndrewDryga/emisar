@@ -18,7 +18,7 @@ args:
     required: true
     description: sysctl key (e.g., net.ipv4.tcp_max_syn_backlog).
     validation:
-      pattern: "^[a-z0-9._\\-]{1,128}$"
+      pattern: "^[a-z0-9][a-z0-9._\\-]{0,127}$"
   - name: value
     type: string
     required: true

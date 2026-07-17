@@ -12137,13 +12137,13 @@
     {
       "id": "debugging",
       "name": "Linux debugging toolkit",
-      "version": "0.2.8",
+      "version": "0.2.9",
       "description": "General-purpose Linux diagnostics + low-level remediation: process and memory tops, vmstat/iostat snapshots, socket inventories, per-PID inspection, kernel-state checks, network reachability, plus fix-it actions (drop_caches, kill_pid by signal, sysctl_set). Use as the first-touch pack when something is wrong.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/debugging",
-      "content_hash": "sha256:864c852fb0cac73413eb65f260dcd73243b456ffdc67c12e4c2567e4a1b77983",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/debugging/0.2.8/864c852fb0cac73413eb65f260dcd73243b456ffdc67c12e4c2567e4a1b77983/pack.tar.gz",
+      "content_hash": "sha256:9e525b9563f3e9b05138d676da895d6e4737f11b9a39166c36d80501d255d2f9",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/debugging/0.2.9/9e525b9563f3e9b05138d676da895d6e4737f11b9a39166c36d80501d255d2f9/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -12647,7 +12647,7 @@
           "summary": "Show the full set of environment variables a PID was started with — reads /proc/<pid>/environ and turns NULs into newlines. This deliberately surfaces the process's entire environment, which commonly carries injected secrets (DB URLs, API keys, cloud credentials); scope it by policy and prefer pid_status / pid_limits when you don't need the values. The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
           "description": "Show the full set of environment variables a PID was started with — reads /proc/<pid>/environ and turns NULs into newlines. This deliberately surfaces the process's entire environment, which commonly carries injected secrets (DB URLs, API keys, cloud credentials); scope it by policy and prefer pid_status / pid_limits when you don't need the values. The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
           "kind": "exec",
-          "risk": "low",
+          "risk": "medium",
           "side_effects": [
             "Reads /proc/<pid>/environ — requires runner uid to match or root.",
             "Read-only, but exposes the process's full environment (may include secrets)."
@@ -13139,7 +13139,7 @@
               "required": true,
               "description": "sysctl key (e.g., net.ipv4.tcp_max_syn_backlog).",
               "validation": {
-                "pattern": "^[a-z0-9._\\-]{1,128}$"
+                "pattern": "^[a-z0-9][a-z0-9._\\-]{0,127}$"
               }
             },
             {
@@ -13291,7 +13291,7 @@
           }
         }
       ],
-      "retired_below": "0.2.8"
+      "retired_below": "0.2.9"
     },
     {
       "id": "dell-idrac",
@@ -15218,13 +15218,13 @@
     {
       "id": "docker",
       "name": "Docker operations pack",
-      "version": "0.2.7",
+      "version": "0.2.8",
       "description": "Operator pack for Docker hosts: read-only inventory and per-container introspection, plus narrow mutators (restart, stop, kill, prune). Includes docker-compose support. The runner uid must be in the docker group; this pack does NOT escalate.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/docker",
-      "content_hash": "sha256:e1e5b4348c4b0bfee605cf7e970969f5352c64b58c55ca47b33af957fcf03529",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/docker/0.2.7/e1e5b4348c4b0bfee605cf7e970969f5352c64b58c55ca47b33af957fcf03529/pack.tar.gz",
+      "content_hash": "sha256:7ec8cfb33d62a20cf0ea9509fee12b9f80d5fdcf53f21a1fa888a0035a6ecb92",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/docker/0.2.8/7ec8cfb33d62a20cf0ea9509fee12b9f80d5fdcf53f21a1fa888a0035a6ecb92/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -15551,8 +15551,8 @@
         {
           "id": "docker.image_inspect",
           "title": "docker image inspect",
-          "summary": "Returns the full JSON inspect document for one image — labels, config, env, exposed ports, build history root. Read-only.",
-          "description": "Returns the full JSON inspect document for one image — labels, config, env, exposed ports, build history root. Read-only.",
+          "summary": "Returns the full JSON inspect document for one image — labels, config, exposed ports, build history root, and the image's baked-in env. Image env is build-time config, but a badly-built image can bake a secret in; the runner's redaction is a pattern-bound backstop. Read-only.",
+          "description": "Returns the full JSON inspect document for one image — labels, config, exposed ports, build history root, and the image's baked-in env. Image env is build-time config, but a badly-built image can bake a secret in; the runner's redaction is a pattern-bound backstop. Read-only.",
           "kind": "exec",
           "risk": "low",
           "side_effects": [
@@ -15643,13 +15643,13 @@
         {
           "id": "docker.inspect",
           "title": "docker inspect (one container)",
-          "summary": "Returns the full JSON inspect document for one container. Includes state, exit code, restart count, mounts, network config, env, labels. Container name is pattern-restricted. Read-only.",
-          "description": "Returns the full JSON inspect document for one container. Includes state, exit code, restart count, mounts, network config, env, labels. Container name is pattern-restricted. Read-only.",
+          "summary": "Returns the full JSON inspect document for one container — state, exit code, restart count, mounts, network config, labels, and the container's env. The env commonly carries injected secrets (DB URLs, API keys, values passed with -e), so this is approval-gated; the runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret. Container name is pattern-restricted. Read-only.",
+          "description": "Returns the full JSON inspect document for one container — state, exit code, restart count, mounts, network config, labels, and the container's env. The env commonly carries injected secrets (DB URLs, API keys, values passed with -e), so this is approval-gated; the runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret. Container name is pattern-restricted. Read-only.",
           "kind": "exec",
-          "risk": "low",
+          "risk": "medium",
           "side_effects": [
             "One docker inspect invocation.",
-            "Read-only."
+            "Read-only, but exposes the container's env (may include secrets)."
           ],
           "args": [
             {
@@ -16244,7 +16244,7 @@
           }
         }
       ],
-      "retired_below": "0.2.7"
+      "retired_below": "0.2.8"
     },
     {
       "id": "elasticsearch",
@@ -21316,13 +21316,13 @@
     {
       "id": "git-local",
       "name": "Host-side git",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "description": "Read-only git operations against a checkout living on the runner host (e.g. /opt/myapp). For remote-GitHub-API work, see the `github-cli` pack. The repo directory must live at GIT_REPO env var on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/git-local",
-      "content_hash": "sha256:ceea2909f3d374d43fd8e51dec3d812fc7c38716790d9c907ada1f1717c2bec0",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/git-local/0.1.3/ceea2909f3d374d43fd8e51dec3d812fc7c38716790d9c907ada1f1717c2bec0/pack.tar.gz",
+      "content_hash": "sha256:7a912e504ff29d582caa3fc8efd7ecce8b4047710b2633805057db486a1f491f",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/git-local/0.1.4/7a912e504ff29d582caa3fc8efd7ecce8b4047710b2633805057db486a1f491f/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -21555,7 +21555,7 @@
               "required": true,
               "description": "Commit ref (SHA, tag, HEAD~N).",
               "validation": {
-                "pattern": "^[a-zA-Z0-9_.~^/\\-]{1,128}$"
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.~^/\\-]{0,127}$"
               }
             }
           ],
@@ -21603,18 +21603,19 @@
             ]
           }
         }
-      ]
+      ],
+      "retired_below": "0.1.4"
     },
     {
       "id": "github-cli",
       "name": "GitHub CLI operations",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "description": "GitHub introspection — PRs, issues, repos, workflow runs, releases, commit checks, search — plus operator actions: merge PR, close PR, rerun workflow, dispatch workflow. Authenticates via the runner host's `gh auth status` token (i.e. ~/.config/gh).",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/github-cli",
-      "content_hash": "sha256:227deb16cecd1d2467ded214e071f48d19fc55841206ec6e55c4c0bf2fa894aa",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/github-cli/0.1.7/227deb16cecd1d2467ded214e071f48d19fc55841206ec6e55c4c0bf2fa894aa/pack.tar.gz",
+      "content_hash": "sha256:a9e7697d78ec4ea3afcfadb99ee5619ff9d989f808b8bc8787a3757d0c4d6f48",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/github-cli/0.1.8/a9e7697d78ec4ea3afcfadb99ee5619ff9d989f808b8bc8787a3757d0c4d6f48/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -22243,11 +22244,12 @@
             "argv": [
               "search",
               "prs",
-              "{{ args.query }}",
               "--limit",
               "100",
               "--json",
-              "number,title,repository,author,state,createdAt,updatedAt"
+              "number,title,repository,author,state,createdAt,updatedAt",
+              "--",
+              "{{ args.query }}"
             ]
           }
         },
@@ -22560,7 +22562,7 @@
           }
         }
       ],
-      "retired_below": "0.1.7"
+      "retired_below": "0.1.8"
     },
     {
       "id": "grafana",
@@ -40358,13 +40360,13 @@
     {
       "id": "podman",
       "name": "Podman containers",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "Read-only inventory + per-container introspection plus narrow mutators (restart, stop, kill, prune). Drop-in alternative for Docker on RHEL / Fedora hosts. Rootless mode supported as long as the runner uid matches the user that owns the containers.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/podman",
-      "content_hash": "sha256:758ae8c800d267d963ea9c20d1e666aad22c1ddf4ef01048244fe254c8bb48e4",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/podman/0.1.5/758ae8c800d267d963ea9c20d1e666aad22c1ddf4ef01048244fe254c8bb48e4/pack.tar.gz",
+      "content_hash": "sha256:62417ba312de19b9ec69c53db6dee8d4e85a9e042d6f095e4eac18170f562781",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/podman/0.1.6/62417ba312de19b9ec69c53db6dee8d4e85a9e042d6f095e4eac18170f562781/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -40440,13 +40442,13 @@
         {
           "id": "podman.inspect",
           "title": "podman inspect <id>",
-          "summary": "Show full container details (state, mounts, network config, env, labels) for one ID/name. Read-only.",
-          "description": "Show full container details (state, mounts, network config, env, labels) for one ID/name. Read-only.",
+          "summary": "Show full container details for one ID/name — state, mounts, network config, labels, and the container's env. The env commonly carries injected secrets (values passed with -e), so this is approval-gated; the runner's redaction is a pattern-bound backstop, not a guarantee. Read-only.",
+          "description": "Show full container details for one ID/name — state, mounts, network config, labels, and the container's env. The env commonly carries injected secrets (values passed with -e), so this is approval-gated; the runner's redaction is a pattern-bound backstop, not a guarantee. Read-only.",
           "kind": "exec",
-          "risk": "low",
+          "risk": "medium",
           "side_effects": [
             "One CLI call.",
-            "Read-only."
+            "Read-only, but exposes the container's env (may include secrets)."
           ],
           "args": [
             {
@@ -40787,7 +40789,7 @@
           }
         }
       ],
-      "retired_below": "0.1.5"
+      "retired_below": "0.1.6"
     },
     {
       "id": "postfix",
@@ -52606,13 +52608,13 @@
     {
       "id": "vector",
       "name": "Vector observability pipeline",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "description": "Read-only ops for a Vector (vector.dev) pipeline running on the runner host: version + compiled-component inventory, offline config validation, the configured topology as Graphviz DOT, a bounded live event tap, plus health and per-component throughput reads over the local API. CLI subcommands talk to the local binary; the API reads hit 127.0.0.1:8686.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/vector",
-      "content_hash": "sha256:d908f1e80b281e0fc4f0e4b91e15a5bad8a5da28d3ccba5feb873e13f342f869",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/vector/0.1.3/d908f1e80b281e0fc4f0e4b91e15a5bad8a5da28d3ccba5feb873e13f342f869/pack.tar.gz",
+      "content_hash": "sha256:63978efb53bc1cef3ad7fbd62a552a14d13b1d9212bc62b0242e71853da1b066",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/vector/0.1.4/63978efb53bc1cef3ad7fbd62a552a14d13b1d9212bc62b0242e71853da1b066/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -52761,7 +52763,7 @@
               "required": true,
               "description": "Component ID (or glob) whose outputs to tap, e.g. parse_json or \"transform_*\".",
               "validation": {
-                "pattern": "^[A-Za-z0-9._*-]{1,128}$"
+                "pattern": "^[A-Za-z0-9._*][A-Za-z0-9._*-]{0,127}$"
               }
             },
             {
@@ -52893,6 +52895,275 @@
               "--version"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.3",
+          "content_hash": "sha256:d908f1e80b281e0fc4f0e4b91e15a5bad8a5da28d3ccba5feb873e13f342f869",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/vector/0.1.3/d908f1e80b281e0fc4f0e4b91e15a5bad8a5da28d3ccba5feb873e13f342f869/pack.tar.gz",
+          "actions": [
+            {
+              "id": "vector.component_metrics",
+              "title": "POST /graphql (component metrics)",
+              "summary": "Show per-component throughput from the Vector GraphQL API: received and sent event totals for every source, transform, and sink, plus sent-bytes for sinks. GraphQL API — Vector <= 0.54 ONLY. On Vector >= 0.55 (gRPC migration, April 2026) the /graphql endpoint was REMOVED and this returns 404; run vector.version first and, if >= 0.55, use gRPC tooling instead. Requires api.enabled=true; binds 127.0.0.1:8686.",
+              "description": "Show per-component throughput from the Vector GraphQL API: received and sent event totals for every source, transform, and sink, plus sent-bytes for sinks. GraphQL API — Vector <= 0.54 ONLY. On Vector >= 0.55 (gRPC migration, April 2026) the /graphql endpoint was REMOVED and this returns 404; run vector.version first and, if >= 0.55, use gRPC tooling instead. Requires api.enabled=true; binds 127.0.0.1:8686.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only GraphQL POST (a query, not a mutation) to the local Vector API.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Per-component event + byte totals (Vector <= 0.54)",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "curl -sS -X POST \"${VECTOR_API:-http://127.0.0.1:8686}/graphql\" -H 'Content-Type: application/json' --data '{\"query\":\"query { sources { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } transforms { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } sinks { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } sentBytesTotal { sentBytesTotal } } } } } }\"}'"
+                ]
+              }
+            },
+            {
+              "id": "vector.graph",
+              "title": "vector graph",
+              "summary": "Render the configured Vector topology as a Graphviz DOT graph — the source -> transform -> sink wiring read from the config file. Offline: reads the config, emits DOT, connects to nothing. Pipe the output to `dot` to draw it. Talks only to the local binary — needs no API.",
+              "description": "Render the configured Vector topology as a Graphviz DOT graph — the source -> transform -> sink wiring read from the config file. Offline: reads the config, emits DOT, connects to nothing. Pipe the output to `dot` to draw it. Talks only to the local binary — needs no API.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads the Vector config and emits its topology as DOT.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Topology as Graphviz DOT",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "vector",
+                "argv": [
+                  "graph"
+                ]
+              }
+            },
+            {
+              "id": "vector.health",
+              "title": "GET /health",
+              "summary": "Check liveness of the local Vector API. Returns {\"ok\":true} (HTTP 200) when serving, or {\"ok\":false} (HTTP 503) while draining/shutting down. Works on ANY Vector version — this endpoint survived the v0.55 gRPC migration. Requires api.enabled=true in the Vector config; binds 127.0.0.1:8686.",
+              "description": "Check liveness of the local Vector API. Returns {\"ok\":true} (HTTP 200) when serving, or {\"ok\":false} (HTTP 503) while draining/shutting down. Works on ANY Vector version — this endpoint survived the v0.55 gRPC migration. Requires api.enabled=true in the Vector config; binds 127.0.0.1:8686.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One read-only HTTP GET to the local Vector API.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Is Vector serving?",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "curl -sS \"${VECTOR_API:-http://127.0.0.1:8686}/health\""
+                ]
+              }
+            },
+            {
+              "id": "vector.list",
+              "title": "vector list --format json",
+              "summary": "List the sources, transforms, and sinks compiled into this Vector binary, as JSON. This is the static component catalog of the build — not the running topology (use vector.graph for what is actually configured). Talks only to the local binary — needs no API.",
+              "description": "List the sources, transforms, and sinks compiled into this Vector binary, as JSON. This is the static component catalog of the build — not the running topology (use vector.graph for what is actually configured). Talks only to the local binary — needs no API.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads the local Vector binary's component list.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Components compiled into the binary",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "vector",
+                "argv": [
+                  "list",
+                  "--format",
+                  "json"
+                ]
+              }
+            },
+            {
+              "id": "vector.tap",
+              "title": "vector tap --outputs-of",
+              "summary": "Sample live events flowing OUT of a named component for a bounded window, as JSON, then auto-exit. The run terminates after duration_ms — NOT on --limit alone, which caps events PER sampling interval, not total, so without a duration a tap can run indefinitely. Adds slight overhead on the running Vector instance while sampling. Connects to the local API (tap is API-backed); component is matched against configured component IDs and supports glob patterns.",
+              "description": "Sample live events flowing OUT of a named component for a bounded window, as JSON, then auto-exit. The run terminates after duration_ms — NOT on --limit alone, which caps events PER sampling interval, not total, so without a duration a tap can run indefinitely. Adds slight overhead on the running Vector instance while sampling. Connects to the local API (tap is API-backed); component is matched against configured component IDs and supports glob patterns.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Subscribes to a component's output stream on the local Vector instance.",
+                "Slight runtime overhead while sampling; auto-exits after duration_ms.",
+                "Read-only — observes events, never modifies the pipeline."
+              ],
+              "args": [
+                {
+                  "name": "component",
+                  "type": "string",
+                  "required": true,
+                  "description": "Component ID (or glob) whose outputs to tap, e.g. parse_json or \"transform_*\".",
+                  "validation": {
+                    "pattern": "^[A-Za-z0-9._*-]{1,128}$"
+                  }
+                },
+                {
+                  "name": "duration_ms",
+                  "type": "integer",
+                  "required": false,
+                  "default": 2000,
+                  "description": "How long to sample before auto-exiting, in milliseconds. This is what bounds the run.",
+                  "validation": {
+                    "min": 100,
+                    "max": 10000
+                  }
+                },
+                {
+                  "name": "limit",
+                  "type": "integer",
+                  "required": false,
+                  "default": 100,
+                  "description": "Max events per sampling interval (per-interval cap, NOT a total — duration_ms bounds the run).",
+                  "validation": {
+                    "min": 1,
+                    "max": 1000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Sample one transform's output for 2s",
+                  "args": {
+                    "component": "parse_json"
+                  }
+                },
+                {
+                  "title": "Sample a sink's input briefly with a small per-interval cap",
+                  "args": {
+                    "component": "datadog_logs",
+                    "duration_ms": 1000,
+                    "limit": 20
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "vector",
+                "argv": [
+                  "tap",
+                  "--duration-ms",
+                  "{{ args.duration_ms }}",
+                  "--limit",
+                  "{{ args.limit }}",
+                  "--quiet",
+                  "--format",
+                  "json",
+                  "--outputs-of",
+                  "{{ args.component }}"
+                ]
+              }
+            },
+            {
+              "id": "vector.validate",
+              "title": "vector validate --no-environment",
+              "summary": "Validate a Vector config file offline — checks syntax and topology. Runs with --no-environment, so it checks structure only and skips all network sink healthchecks and environment probing — it never connects to anything. Talks only to the local binary — needs no API.",
+              "description": "Validate a Vector config file offline — checks syntax and topology. Runs with --no-environment, so it checks structure only and skips all network sink healthchecks and environment probing — it never connects to anything. Talks only to the local binary — needs no API.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads and parses a Vector config file on the runner host.",
+                "Read-only — no network healthchecks (--no-environment), no reload."
+              ],
+              "args": [
+                {
+                  "name": "config_path",
+                  "type": "string",
+                  "required": false,
+                  "default": "/etc/vector/vector.yaml",
+                  "description": "Path to the Vector config file to validate.",
+                  "validation": {
+                    "pattern": "^/[A-Za-z0-9._/-]{1,256}$",
+                    "allowed_prefixes": [
+                      "/etc/vector/"
+                    ]
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Validate the default config",
+                  "args": {}
+                },
+                {
+                  "title": "Validate a specific config file",
+                  "args": {
+                    "config_path": "/etc/vector/pipelines/api.yaml"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "vector",
+                "argv": [
+                  "validate",
+                  "--no-environment",
+                  "{{ args.config_path }}"
+                ]
+              }
+            },
+            {
+              "id": "vector.version",
+              "title": "vector --version",
+              "summary": "Print the Vector binary version and build metadata. Run this FIRST: it tells you whether the observability API is GraphQL (Vector <= 0.54) or gRPC (>= 0.55, April 2026). That determines whether the GraphQL component_metrics action will work or 404. Talks only to the local binary — needs no API.",
+              "description": "Print the Vector binary version and build metadata. Run this FIRST: it tells you whether the observability API is GraphQL (Vector <= 0.54) or gRPC (>= 0.55, April 2026). That determines whether the GraphQL component_metrics action will work or 404. Talks only to the local binary — needs no API.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads the local Vector binary version.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Show version (and pick GraphQL vs gRPC)",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "vector",
+                "argv": [
+                  "--version"
+                ]
+              }
+            }
+          ]
         }
       ],
       "retired_below": "0.1.3"
@@ -53858,13 +54129,13 @@
     {
       "id": "zfs",
       "name": "ZFS pool + dataset operations",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "description": "Pool status, dataset inventory, snapshot listing, scrub status, ARC stats, plus operator surface for storage incident response: scrub start/stop, clear pool errors, take/destroy snapshots, dataset rollback.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zfs",
-      "content_hash": "sha256:0871dc6753f6e646ee2489109ca2d5255594f276b909732d4bef49abc9cb4d0b",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/zfs/0.1.8/0871dc6753f6e646ee2489109ca2d5255594f276b909732d4bef49abc9cb4d0b/pack.tar.gz",
+      "content_hash": "sha256:492e3fa134b7d09d349c6fb7dcb8a58db700dbd57eb6207c42008fc30f1d8000",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/zfs/0.1.9/492e3fa134b7d09d349c6fb7dcb8a58db700dbd57eb6207c42008fc30f1d8000/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -54120,7 +54391,7 @@
               "default": "",
               "description": "Specific pool (empty = all).",
               "validation": {
-                "pattern": "^[a-zA-Z0-9_.\\-]{0,64}$"
+                "pattern": "^([a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,63})?$"
               }
             }
           ],
@@ -54387,7 +54658,7 @@
           }
         }
       ],
-      "retired_below": "0.1.8"
+      "retired_below": "0.1.9"
     },
     {
       "id": "zookeeper",

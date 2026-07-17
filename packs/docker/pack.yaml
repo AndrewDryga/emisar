@@ -2,8 +2,8 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.7
-retired_below: 0.2.7
+version: 0.2.8
+retired_below: 0.2.8
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
   introspection, plus narrow mutators (restart, stop, kill, prune).

@@ -20,11 +20,12 @@ execution:
     argv:
       - "search"
       - "prs"
-      - "{{ args.query }}"
       - "--limit"
       - "100"
       - "--json"
       - "number,title,repository,author,state,createdAt,updatedAt"
+      - "--"
+      - "{{ args.query }}"
   timeout: 30s
 output:
   parser: json

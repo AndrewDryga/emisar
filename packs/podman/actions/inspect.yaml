@@ -2,11 +2,14 @@ schema_version: 1
 id: podman.inspect
 title: podman inspect <id>
 kind: exec
-risk: low
+risk: medium
 description: >
-  Show full container details (state, mounts, network config, env, labels)
-  for one ID/name. Read-only.
-side_effects: ["One CLI call.", "Read-only."]
+  Show full container details for one ID/name — state, mounts, network
+  config, labels, and the container's env. The env commonly carries
+  injected secrets (values passed with -e), so this is approval-gated;
+  the runner's redaction is a pattern-bound backstop, not a guarantee.
+  Read-only.
+side_effects: ["One CLI call.", "Read-only, but exposes the container's env (may include secrets)."]
 args:
   - name: container
     type: string

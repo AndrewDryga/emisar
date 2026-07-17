@@ -3,16 +3,20 @@ schema_version: 1
 id: docker.inspect
 title: docker inspect (one container)
 kind: exec
-risk: low
+risk: medium
 
 description: >
-  Returns the full JSON inspect document for one container. Includes
-  state, exit code, restart count, mounts, network config, env, labels.
-  Container name is pattern-restricted. Read-only.
+  Returns the full JSON inspect document for one container — state, exit
+  code, restart count, mounts, network config, labels, and the
+  container's env. The env commonly carries injected secrets (DB URLs,
+  API keys, values passed with -e), so this is approval-gated; the
+  runner's redaction is a fail-closed backstop, not a guarantee — it is
+  pattern-bound and can miss a bespoke secret. Container name is
+  pattern-restricted. Read-only.
 
 side_effects:
   - One docker inspect invocation.
-  - Read-only.
+  - Read-only, but exposes the container's env (may include secrets).
 
 args:
   - name: container

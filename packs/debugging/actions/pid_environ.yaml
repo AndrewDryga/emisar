@@ -3,7 +3,7 @@ schema_version: 1
 id: debugging.pid_environ
 title: Process environment
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Show the full set of environment variables a PID was started with —

@@ -13,7 +13,7 @@ args:
     required: true
     description: 'Commit ref (SHA, tag, HEAD~N).'
     validation:
-      pattern: "^[a-zA-Z0-9_.~^/\\-]{1,128}$"
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.~^/\\-]{0,127}$"
 execution:
   command:
     binary: /bin/sh
