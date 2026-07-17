@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-16],
+      slug: "database-enforced-tenant-isolation-and-steadier-dispatch",
+      title: "Database-enforced tenant isolation and steadier dispatch",
+      tag: "v0.30.0",
+      summary:
+        "Tenant isolation now lives in the database itself: every runner-owned child row carries a composite foreign key to its account, and CHECK constraints backstop the security-relevant enums, so a cross-tenant or out-of-range write is refused at the row rather than only in application code. A retired pack's re-trust control no longer crashes the packs page. Dispatch recovers more of its own edge cases: a runner at capacity redelivers the dispatches it refused, the stale-dispatch sweep drains the oldest queued first, and stuck pending runs advance instead of stranding. Active sessions each render as their own row with their own address, sign-in time, and revoke. Public pages and error responses now carry the same Content-Security-Policy as the rest of the site, Sentry is disclosed as a subprocessor with its events scrubbed of personal data before they leave, and a runner that requires signed packs announces it over MCP. Operators also get faster run search on large accounts and direct paging for severe database and load-balancer alarms."
+    },
+    %{
+      date: ~D[2026-07-16],
       slug: "leaner-mcp-results-and-hardened-pack-catalog",
       title: "Leaner MCP results and a hardened pack catalog",
       tag: "v0.29.0",
