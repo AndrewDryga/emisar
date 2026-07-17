@@ -1,6 +1,6 @@
 <%!-- ============================================================
   Home — emisar marketing landing
-  Secure infrastructure access for your AI agents.
+  Give your LLM safe access to production. Without the panic.
 ============================================================ --%>
 
 <div class="bg-zinc-950 text-zinc-100 antialiased">
@@ -18,13 +18,16 @@
           scale={:display}
           class="rise-1 max-w-4xl !text-4xl/[1.1] sm:!text-6xl/[1.1] md:!text-7xl/[1.1]"
         >
-          Secure infrastructure access for your AI&nbsp;agents.
+          Your AI agent needs production access&nbsp;— not your SSH key.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          emisar connects Claude, Cursor, ChatGPT, and any other MCP agent to your servers
-          through approved actions instead of an SSH key. Policy decides what runs on its own
-          and what waits for a human, and every call is audited. Your first runner is up in
-          five minutes.
+          emisar is one governed MCP server that connects Claude, Cursor, ChatGPT — any AI
+          agent — to your infrastructure. One server covers production access, debugging, alerting,
+          runbooks, and internal ops — so a new capability is another pack, not another MCP server
+          to roll out to every client. Your agent reads real production state to debug what it
+          shipped and help work incidents. Safe reads run on their own. Risky changes clear your
+          policy first — allowed, denied, or held for approval. No SSH key, no always-on access,
+          every call on the record.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -162,11 +165,11 @@
     </div>
   </section>
 
-  <%!-- "Eyes on production" — the canonical "what your agent gains with
-       production access" section: trained-on-everything-but-blind-to-prod
-       framing, the read-everything breadth, and the act-only-behind-approval
-       line. Shaded: it takes the alternation slot the removed pain section
-       held — the alternatives argument now lives with the comparison below. --%>
+  <%!-- "Your AI is brilliant. And blind." — the canonical "what your agent
+       gains with production access" section: the brilliant-and-blind framing,
+       the read-everything breadth, and the act-only-behind-approval line.
+       Shaded: it takes the alternation slot the removed pain section held —
+       the alternatives argument now lives with the comparison table below. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <%!-- Asymmetric layout (left pitch / right capability list), deliberately
@@ -174,16 +177,16 @@
            of the page movement and its own distinct shape. --%>
       <div class="grid gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
         <div class="lg:sticky lg:top-24 lg:self-start">
-          <p class="text-base font-semibold text-brand-400">Eyes on production</p>
-          <h2 class="mt-2 text-4xl font-bold tracking-tight text-white text-balance sm:text-5xl">
-            Your agent works from live production data.
-          </h2>
+          <h2 class="text-base font-semibold text-brand-400">With eyes on production</h2>
+          <p class="mt-2 text-4xl font-bold tracking-tight text-white text-balance sm:text-5xl">
+            Your AI is brilliant. And blind.
+          </p>
           <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-            Claude, Cursor, and ChatGPT can reason about your stack, but they can't see it.
-            emisar gives your agent read access to live logs, metrics, hosts, datastores, and
-            the network — through the same approved actions that limit what it can touch. It
-            debugs from real state, works incidents beside you, and stops for you only when a
-            change is risky.
+            Claude, Cursor, and ChatGPT reason about your stack all day — but they can't see it
+            running. emisar gives your agent eyes on production. It reads live logs, metrics, hosts,
+            datastores, and the network, so its plan matches what's actually running. It catches its
+            own mistakes. It works incidents beside you. And it stops for you only when a change is
+            actually risky.
           </p>
           <p class="mt-8 text-sm">
             <.link
@@ -228,10 +231,10 @@
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">How it works</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Approved actions, policy checks, and a full audit trail.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Three pillars</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          A catalog, a gate, and a ledger.
+        </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
           Every request is handled the same way. Each action declares what it can do and carries a
           risk tier — low, medium, high, or critical. The policy you set decides which tiers need a
@@ -284,7 +287,7 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Set allow, require approval, or deny for each risk tier, then override specific actions.
+            Set allow, ask-for-approval, or deny for each risk tier, then override specific actions.
             Approvals can require one person or several — or hand out a limited, revocable pass so
             routine calls don't ask every time.
           </p>
@@ -379,19 +382,12 @@
         </div>
       </div>
 
-      <div class="mt-12 flex flex-wrap justify-center gap-x-6 gap-y-3 text-center">
+      <div class="mt-12 flex justify-center">
         <.link
           navigate={~p"/packs"}
           class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
         >
           Browse all {@action_count} actions across {@pack_count} packs — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and more
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/how-it-works"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
-        >
-          Follow one request from intent to receipt
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
@@ -404,10 +400,10 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Live demo</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Watch an agent work a real incident.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          A real incident, start to finish.
+        </p>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
           A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
           investigate through declared actions, stop the writes behind one approval, and hand
@@ -423,15 +419,15 @@
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Comparison</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          emisar vs. SSH keys and custom MCP servers.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Why not just&hellip;</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          The alternatives, honestly.
+        </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
           A raw SSH key gives a "creative" model full shell on prod — no gate before the action,
           no trustworthy record after. The weekend-built MCP server hardcodes one cluster,
           swallows stderr, and lives in a repo nobody dares touch. Slack slash-commands lose
-          their output to scrollback and their owners to attrition.
+          their output to scrollback and their owners to attrition. The comparison, honestly:
         </p>
       </div>
 
@@ -455,7 +451,7 @@
                 {"Per-user runner scopes", "yes", "no", "maybe"},
                 {"Streaming stdout/stderr", "yes", "yes", "maybe"},
                 {"Audit + SIEM export", "yes", "no", "maybe"},
-                {"Setup time", "5 min", "instant, ungated", "1-2 weeks"}
+                {"Setup time", "5 min", "instant + nightmares", "1-2 weeks"}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{row}</td>
@@ -526,10 +522,10 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Case studies</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Two real incidents, documented end to end.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Case studies</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          Two incidents, in full.
+        </p>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
           The storage wipe from the demo, written up end to end — and a completely different
           failure on the network. Both real, both logged with the command output to prove it.
@@ -585,10 +581,10 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Zero Trust for AI Agents</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Least agency, deny by default, human approval, immutable audit.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Zero Trust for AI Agents</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          The framework a frontier lab published — enforced by emisar.
+        </p>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
           Anthropic's
           <a
@@ -626,10 +622,10 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Pricing</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Priced per runner, not per seat.
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">Pricing</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          Pay per runner. Not per seat.
+        </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
           Free for 3 runners and 1 user. Team is $20/runner/month with unlimited users.
         </p>
@@ -728,15 +724,6 @@
           </ul>
         </div>
       </div>
-
-      <p class="mt-12 text-center text-sm">
-        <.link
-          navigate={~p"/pricing"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Compare the plans in detail <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </p>
     </div>
   </section>
 
@@ -744,10 +731,10 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
       <div class="text-center">
-        <p class="text-base font-semibold text-brand-400">FAQ</p>
-        <h2 class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Frequently asked questions
-        </h2>
+        <h2 class="text-base font-semibold text-brand-400">FAQ</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          The skeptical questions, answered.
+        </p>
       </div>
 
       <div class="mt-16 divide-y divide-zinc-900 overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
@@ -775,11 +762,11 @@
         <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div class="relative text-center">
           <.marketing_heading tag="h2" scale={:section}>
-            Connect your first runner in five minutes.
+            Give your AI production access. You keep the last word.
           </.marketing_heading>
           <p class="mx-auto mt-6 max-w-xl text-lg text-zinc-400 leading-relaxed">
-            Free covers three runners and a seven-day audit trail — no credit card. Install
-            the runner, connect your agent, and run your first audited action.
+            Three runners. Seven-day audit. No credit card. Read the quickstart and
+            run your first gated action.
           </p>
           <form
             action={~p"/sign_up"}
@@ -807,7 +794,7 @@
             >Book a 30-minute demo</a>.
           </p>
           <p class="mt-4 text-xs text-zinc-400">
-            Cancel anytime. Your audit log is yours to export.
+            No credit card. Cancel anytime. Your audit log is yours to export.
           </p>
         </div>
       </div>
