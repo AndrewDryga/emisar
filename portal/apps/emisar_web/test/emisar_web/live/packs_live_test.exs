@@ -546,6 +546,67 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Admin required to revoke pack trust."
     end
 
+    test "an owner deletes a version — the row disappears with the re-insert warning", %{
+      conn: conn,
+      account: account
+    } do
+      pack_version = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      assert has_element?(lv, "#delete-version-#{pack_version.id}")
+
+      html = render_click(lv, "delete_version", %{"id" => pack_version.id})
+
+      assert html =~ "Deleted acme-tools v9.9."
+      assert html =~ "re-insert it as a fresh trust decision"
+      refute has_element?(lv, "#packs li", "acme-tools")
+    end
+
+    test "an owner deletes a whole pack from its header control", %{
+      conn: conn,
+      account: account
+    } do
+      _pack_version = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      assert has_element?(lv, "#delete-pack-acme-tools")
+
+      html = render_click(lv, "delete_pack", %{"pack_id" => "acme-tools"})
+
+      assert html =~ "Deleted acme-tools (1 version)."
+      refute has_element?(lv, "#packs li", "acme-tools")
+    end
+
+    test "a viewer sees no delete controls and their crafted delete is denied", %{
+      account: account
+    } do
+      pack_version = observe_pending_pack!(account)
+
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+
+      refute has_element?(lv, "#delete-version-#{pack_version.id}")
+      refute has_element?(lv, "#delete-pack-acme-tools")
+
+      html = render_click(lv, "delete_version", %{"id" => pack_version.id})
+      assert html =~ "Admin required to delete packs."
+
+      html = render_click(lv, "delete_pack", %{"pack_id" => "acme-tools"})
+      assert html =~ "Admin required to delete packs."
+
+      # The pending row survives both crafted attempts.
+      assert has_element?(lv, "#packs li", "acme-tools")
+    end
+
     test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
          %{conn: conn, user: user, account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)

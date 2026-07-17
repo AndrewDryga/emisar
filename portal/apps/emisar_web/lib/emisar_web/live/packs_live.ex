@@ -365,6 +365,50 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  def handle_event("delete_version", %{"id" => id}, socket) do
+    case Catalog.delete_pack_version(id, socket.assigns.current_subject) do
+      {:ok, pack_version} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Deleted #{pack_version.pack_id} v#{pack_version.version}. A runner still advertising it will re-insert it as a fresh trust decision."
+         )
+         |> restream_pack(pack_version.pack_id)}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to delete packs.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not delete the version — try again.")}
+    end
+  end
+
+  def handle_event("delete_pack", %{"pack_id" => pack_id}, socket) do
+    case Catalog.delete_pack(pack_id, socket.assigns.current_subject) do
+      {:ok, versions} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Deleted #{pack_id} (#{version_count_label(versions)}). A runner still advertising it will re-insert it as a fresh trust decision."
+         )
+         |> restream_pack(pack_id)}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to delete packs.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "That pack no longer exists.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not delete the pack — try again.")}
+    end
+  end
+
   # Override the retirement of a trusted version — the deliberate, audited
   # admin decision that unblocks dispatch again. `override_pack_retirement/2`
   # re-checks manage_catalog (IL-15), so a crafted event from a viewer denies.
@@ -856,6 +900,27 @@ defmodule EmisarWeb.PacksLive do
               status="pending"
               class="ml-2 text-[11px]"
             />
+            <%!-- Whole-pack removal — every version at once. Derived state:
+                 runners still advertising it re-insert it, which the modal
+                 says plainly. --%>
+            <.confirm_button
+              :if={Catalog.subject_can_manage_packs?(@current_subject)}
+              id={"delete-pack-#{pack.id}"}
+              variant={:ghost}
+              tone={:rose}
+              size={:sm}
+              class="ml-auto"
+              title={"Delete #{pack.id}?"}
+              confirm_label="Delete pack"
+              on_confirm={JS.push("delete_pack", value: %{pack_id: pack.id})}
+            >
+              <:body>
+                Removes every recorded version of <code>{pack.id}</code> — trust decisions
+                and advertised actions — from the catalog. Runners still advertising it
+                will re-insert it as a fresh trust decision. Audit history is kept.
+              </:body>
+              Delete pack
+            </.confirm_button>
           </header>
 
           <ul class="divide-y divide-zinc-800/70">
@@ -972,17 +1037,18 @@ defmodule EmisarWeb.PacksLive do
                       class="text-zinc-300"
                     />
                   </div>
-                  <%!-- The undo for an accidental Trust, kept next to the badge it
-                       reverses. Quiet ghost — revoking BLOCKS dispatch (the safe
-                       direction) and is reversible from the rejected row. --%>
+                  <%!-- Quiet per-version admin controls, kept next to the badge
+                       they act on. Revoke trust is the undo for an accidental
+                       Trust (BLOCKS dispatch — the safe direction — and is
+                       reversible from the rejected row); Delete removes the
+                       observation entirely (derived state: a runner still
+                       advertising it re-inserts it). --%>
                   <div
-                    :if={
-                      v.trust_state == :trusted and
-                        Catalog.subject_can_manage_packs?(@current_subject)
-                    }
-                    class="mt-1.5 flex justify-end"
+                    :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                    class="mt-1.5 flex justify-end gap-1"
                   >
                     <.confirm_button
+                      :if={v.trust_state == :trusted}
                       id={"revoke-#{v.id}"}
                       variant={:ghost}
                       tone={:neutral}
@@ -996,6 +1062,22 @@ defmodule EmisarWeb.PacksLive do
                         listed as rejected, so you can restore trust later.
                       </:body>
                       Revoke trust
+                    </.confirm_button>
+                    <.confirm_button
+                      id={"delete-version-#{v.id}"}
+                      variant={:ghost}
+                      tone={:rose}
+                      size={:sm}
+                      title={"Delete #{pack.id} v#{v.version}?"}
+                      confirm_label="Delete version"
+                      on_confirm={JS.push("delete_version", value: %{id: v.id})}
+                    >
+                      <:body>
+                        Removes this version and its advertised actions from the catalog.
+                        If a runner still advertises it, it will reappear as a fresh trust
+                        decision on its next connection or reload. Audit history is kept.
+                      </:body>
+                      Delete
                     </.confirm_button>
                   </div>
                 </div>

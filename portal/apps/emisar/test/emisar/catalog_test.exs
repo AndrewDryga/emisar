@@ -1254,6 +1254,210 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "delete_pack_version/2" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}},
+            actions: [action("custom.inspect", pack_id: "custom")]
+          )
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+
+      %{
+        user: user,
+        account: account,
+        subject: subject,
+        runner: runner,
+        pack_version: pack_version
+      }
+    end
+
+    test "deletes the pin row and its advertised action rows, and audits", %{
+      user: user,
+      subject: subject,
+      pack_version: pack_version
+    } do
+      assert {:ok, deleted} = Catalog.delete_pack_version(pack_version.id, subject)
+      assert deleted.id == pack_version.id
+
+      assert {:ok, [], _} = Catalog.list_pack_versions(subject)
+      refute Repo.one(Emisar.Catalog.RunnerAction)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_version_deleted"))
+
+      assert audit, "expected a pack_version_deleted audit row"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_label == "custom@1.0"
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert audit.payload["removed_action_rows"] == 1
+    end
+
+    test "a re-advertising runner re-inserts the version as a fresh decision", %{
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      assert {:ok, _} = Catalog.delete_pack_version(pack_version.id, subject)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}})
+        )
+
+      assert {:ok, [reinserted], _} = Catalog.list_pack_versions(subject)
+      assert reinserted.id != pack_version.id
+      # No baseline for the custom pack — the fresh observation lands pending.
+      assert reinserted.trust_state == :pending
+    end
+
+    test "a viewer subject is denied", %{account: account, pack_version: pack_version} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Catalog.delete_pack_version(pack_version.id, viewer_subject)
+    end
+
+    test "delete of another account's pin is :not_found (cross-account)", %{
+      subject: subject,
+      pack_version: pack_version
+    } do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Catalog.delete_pack_version(pack_version.id, subject_b)
+
+      # A's pin is untouched.
+      assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
+      assert unchanged.id == pack_version.id
+    end
+
+    test "an invalid id is :not_found", %{subject: subject} do
+      assert {:error, :not_found} = Catalog.delete_pack_version("not-a-uuid", subject)
+    end
+
+    test "broadcasts the pack-trust change after the delete commits", %{
+      account: account,
+      subject: subject,
+      pack_version: pack_version
+    } do
+      account_id = account.id
+      Catalog.subscribe_account_packs(account_id)
+
+      assert {:ok, _} = Catalog.delete_pack_version(pack_version.id, subject)
+      assert_receive {:pack_trust_changed, ^account_id}
+    end
+  end
+
+  describe "delete_pack/2" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "custom" => %{"version" => "1.0", "hash" => "sha256:V1"},
+              "other" => %{"version" => "2.0", "hash" => "sha256:OTHER"}
+            },
+            actions: [
+              action("custom.inspect", pack_id: "custom"),
+              action("other.check", pack_id: "other")
+            ]
+          )
+        )
+
+      # A second observed version of the same pack (a runner advertises its
+      # COMPLETE state, so the sibling pack + actions ride along or they'd be
+      # pruned), so the whole-pack delete provably removes more than one row.
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "custom" => %{"version" => "1.1", "hash" => "sha256:V2"},
+              "other" => %{"version" => "2.0", "hash" => "sha256:OTHER"}
+            },
+            actions: [
+              action("custom.inspect", pack_id: "custom"),
+              action("other.check", pack_id: "other")
+            ]
+          )
+        )
+
+      %{user: user, account: account, subject: subject, runner: runner}
+    end
+
+    test "deletes every version and action row of the pack, audits ONE event", %{
+      user: user,
+      subject: subject
+    } do
+      assert {:ok, versions} = Catalog.delete_pack("custom", subject)
+      assert versions |> Enum.map(& &1.version) |> Enum.sort() == ["1.0", "1.1"]
+
+      # The sibling pack is untouched.
+      assert {:ok, [remaining], _} = Catalog.list_pack_versions(subject)
+      assert remaining.pack_id == "other"
+      assert remaining_action = Repo.one(Emisar.Catalog.RunnerAction)
+      assert remaining_action.pack_id == "other"
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_deleted"))
+
+      assert audit, "expected a pack_deleted audit row"
+      assert audit.target_kind == "pack"
+      assert audit.target_id == nil
+      assert audit.target_label == "custom"
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert Enum.sort(audit.payload["versions"]) == ["1.0", "1.1"]
+      assert audit.payload["removed_action_rows"] == 1
+    end
+
+    test "an unknown pack id is :not_found", %{subject: subject} do
+      assert {:error, :not_found} = Catalog.delete_pack("never-seen", subject)
+    end
+
+    test "a viewer subject is denied", %{account: account} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Catalog.delete_pack("custom", viewer_subject)
+    end
+
+    test "another account's subject cannot delete the pack (cross-account)", %{
+      subject: subject
+    } do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Catalog.delete_pack("custom", subject_b)
+
+      # A's versions are untouched.
+      assert {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      assert Enum.count(versions, &(&1.pack_id == "custom")) == 2
+    end
+
+    test "broadcasts the pack-trust change after the delete commits", %{
+      account: account,
+      subject: subject
+    } do
+      account_id = account.id
+      Catalog.subscribe_account_packs(account_id)
+
+      assert {:ok, _} = Catalog.delete_pack("custom", subject)
+      assert_receive {:pack_trust_changed, ^account_id}
+    end
+  end
+
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

@@ -7,6 +7,9 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def by_id(queryable, id),
     do: where(queryable, [packs: p], p.id == ^id)
 
+  def by_ids(queryable, ids),
+    do: where(queryable, [packs: p], p.id in ^ids)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [packs: p], p.account_id == ^account_id)
 

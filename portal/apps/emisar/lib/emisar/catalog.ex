@@ -652,6 +652,122 @@ defmodule Emisar.Catalog do
 
   defp judge_trustable(%PackVersion{}), do: {:error, :not_pending}
 
+  # -- Deletion ----------------------------------------------------------
+
+  @doc """
+  Delete one observed pack version — the pin row AND the runner-action rows
+  advertising that exact `(pack_id, version)`. The catalog is derived state:
+  a runner still advertising this version re-inserts it as a fresh trust
+  decision on its next advertisement (connect or reload), which the UI warns
+  about. Audit history persists (events reference versions by snapshot).
+  Requires `manage_catalog`; `{:error, :not_found}` cross-account.
+  """
+  def delete_pack_version(pack_version_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ) do
+      Multi.new()
+      |> Multi.run(:pack_version, fn repo, _changes ->
+        lock_pack_version(repo, pack_version_id, subject)
+      end)
+      |> Multi.run(:actions, fn repo, %{pack_version: pack_version} ->
+        queryable =
+          RunnerAction.Query.all()
+          |> RunnerAction.Query.by_account_id(pack_version.account_id)
+          |> RunnerAction.Query.by_pack(pack_version.pack_id, pack_version.version)
+
+        {count, _} = repo.delete_all(queryable)
+        {:ok, count}
+      end)
+      |> Multi.delete(:deleted, fn %{pack_version: pack_version} -> pack_version end)
+      |> Multi.insert(:audit, fn %{pack_version: pack_version, actions: action_count} ->
+        Audit.Events.pack_version_deleted(subject, pack_version, action_count)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{pack_version: pack_version} ->
+          broadcast_pack_trust(pack_version.account_id)
+          :ok
+        end
+      )
+      |> case do
+        {:ok, %{pack_version: pack_version}} -> {:ok, pack_version}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Delete every observed version of a pack — all its pin rows AND all its
+  runner-action rows in the subject's account. Same derived-state semantics
+  as `delete_pack_version/2`: a runner still advertising the pack re-inserts
+  it as a fresh trust decision. One `pack_deleted` audit event carries the
+  removed versions. Requires `manage_catalog`; `{:error, :not_found}` when
+  the account has no versions of `pack_id`.
+  """
+  def delete_pack(pack_id, %Subject{} = subject) when is_binary(pack_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ) do
+      Multi.new()
+      |> Multi.run(:versions, fn repo, _changes ->
+        lock_pack_versions_by_pack_id(repo, pack_id, subject)
+      end)
+      |> Multi.run(:actions, fn repo, %{versions: [version | _]} ->
+        queryable =
+          RunnerAction.Query.all()
+          |> RunnerAction.Query.by_account_id(version.account_id)
+          |> RunnerAction.Query.by_pack_id(pack_id)
+
+        {count, _} = repo.delete_all(queryable)
+        {:ok, count}
+      end)
+      |> Multi.run(:deleted, fn repo, %{versions: versions} ->
+        # Exactly the locked (and audited) set — a version observed after the
+        # lock survives and simply reappears in the list, which is the
+        # documented derived-state semantics.
+        queryable =
+          PackVersion.Query.all()
+          |> PackVersion.Query.by_ids(Enum.map(versions, & &1.id))
+
+        {count, _} = repo.delete_all(queryable)
+        {:ok, count}
+      end)
+      |> Multi.insert(:audit, fn %{versions: versions, actions: action_count} ->
+        Audit.Events.pack_deleted(subject, pack_id, versions, action_count)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{versions: [version | _]} ->
+          broadcast_pack_trust(version.account_id)
+          :ok
+        end
+      )
+      |> case do
+        {:ok, %{versions: versions}} -> {:ok, versions}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  # Locked, account-scoped read of every version row of a pack — the
+  # whole-pack delete works from this exact set, so a version observed after
+  # the lock re-inserts (documented semantics) instead of vanishing silently.
+  defp lock_pack_versions_by_pack_id(repo, pack_id, %Subject{} = subject) do
+    queryable =
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_pack_id(pack_id)
+      |> PackVersion.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    case repo.all(queryable) do
+      [] -> {:error, :not_found}
+      versions -> {:ok, versions}
+    end
+  end
+
   # The complete descriptors advertised for the exact pending hash — read
   # inside the trust transaction so adopting the hash and its reviewed model
   # contract is atomic. Rows for another runner's different hash are excluded.

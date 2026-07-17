@@ -615,6 +615,51 @@ defmodule Emisar.Audit.Events do
   end
 
   @doc """
+  Operator deleted one observed pack version (its pin + the runner-action
+  rows advertising it). The payload snapshots what was removed — the catalog
+  is derived state, so a runner still advertising it re-inserts it.
+  """
+  def pack_version_deleted(
+        %Subject{} = subject,
+        %Catalog.PackVersion{} = pack_version,
+        action_count
+      ) do
+    pack_trust_event(subject, pack_version, "pack_version_deleted", %{
+      pack_id: pack_version.pack_id,
+      version: pack_version.version,
+      trust_state: pack_version.trust_state,
+      trusted_hash: pack_version.hash,
+      pending_hash: pack_version.pending_hash,
+      removed_action_rows: action_count
+    })
+  end
+
+  @doc """
+  Operator deleted every observed version of a pack. One event carries the
+  removed versions; a pack has no row of its own, so the target is the pack
+  id label with no target id.
+  """
+  def pack_deleted(%Subject{} = subject, pack_id, versions, action_count)
+      when is_binary(pack_id) and is_list(versions) do
+    account_id = versions |> hd() |> Map.fetch!(:account_id)
+
+    Audit.changeset(
+      account_id,
+      "pack_deleted",
+      actor(subject) ++
+        [
+          target_kind: "pack",
+          target_label: pack_id,
+          payload: %{
+            pack_id: pack_id,
+            versions: Enum.map(versions, & &1.version),
+            removed_action_rows: action_count
+          }
+        ]
+    )
+  end
+
+  @doc """
   Admin explicitly re-trusted an already-trusted pack version whose version
   was retired — the deliberate override that re-enables dispatch.
   """

@@ -45,6 +45,8 @@ defmodule Emisar.Audit.Event.Query do
     {"pack_trust_rejected", "Pack hash rejected"},
     {"pack_trust_revoked", "Pack trust revoked"},
     {"pack_retirement_overridden", "Pack retirement overridden"},
+    {"pack_version_deleted", "Pack version deleted"},
+    {"pack_deleted", "Pack deleted"},
     {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
     {"dispatch_blocked_pack_retired", "Dispatch blocked (pack retired)"},
     {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"},
@@ -122,7 +124,7 @@ defmodule Emisar.Audit.Event.Query do
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
   @danger_suffixes ~w[_failed .failed .error .timed_out]
-  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected .disabled .deleted .removed .suspended .expired .cancelled]
+  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected .disabled .deleted _deleted .removed .suspended .expired .cancelled]
   @pass_suffixes ~w[.success .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
@@ -170,6 +172,8 @@ defmodule Emisar.Audit.Event.Query do
        {"pack_trust_rejected", "Hash rejected"},
        {"pack_trust_revoked", "Trust revoked"},
        {"pack_retirement_overridden", "Retirement overridden"},
+       {"pack_version_deleted", "Version deleted"},
+       {"pack_deleted", "Pack deleted"},
        {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
        {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
      ]},
@@ -689,6 +693,11 @@ defmodule Emisar.Audit.Event.Query do
     "pack_trust_revoked" =>
       {true, true, true,
        "An operator revoked trust in a pack version — dispatches with it are refused."},
+    "pack_version_deleted" =>
+      {true, true, true,
+       "An operator removed an observed pack version — a runner still advertising it re-inserts it."},
+    "pack_deleted" =>
+      {true, true, true, "An operator removed every observed version of a pack from the catalog."},
     "pack_retirement_overridden" =>
       {true, true, true,
        "An admin re-trusted a retired pack version — dispatches with it are allowed again."},

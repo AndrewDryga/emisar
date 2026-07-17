@@ -33,6 +33,9 @@ defmodule Emisar.Catalog.RunnerAction.Query do
     )
   end
 
+  def by_pack_id(queryable, pack_id),
+    do: where(queryable, [runner_actions: a], a.pack_id == ^pack_id)
+
   def by_pack_hash(queryable, pack_hash),
     do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
 
