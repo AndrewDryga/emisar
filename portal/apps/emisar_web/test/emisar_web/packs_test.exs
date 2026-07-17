@@ -79,20 +79,22 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ ~s(<meta name="description" content="#{pack.description}")
     end
 
-    test "the content hash wraps so a phone-width detail page can't overflow", %{conn: conn} do
+    test "the content hash lives in the install command's own scroll, not a page-wide row", %{
+      conn: conn
+    } do
       pack = PacksRegistry.get("cassandra")
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
 
-      # A real sha256 (`sha256:` + 64 hex) is one unbreakable 71-char token — the
-      # exact string that pushed /packs/:id past a 390px viewport (UI-007) before it
-      # was wrapped.
+      # A real sha256 (`sha256:` + 64 hex) is one unbreakable 71-char token that
+      # pushed /packs/:id past a 390px viewport (UI-007). It's now pinned IN the
+      # command (`--hash`), not a separate free-standing row, and the command sits
+      # in a locally-scrolling <pre> — so the long token scrolls the code block, not
+      # the page.
       assert pack.content_hash =~ ~r/\Asha256:[0-9a-f]{64}\z/,
              "expected a real sha256 content hash to regress the overflow against"
 
-      # It renders inside a break-anywhere span, so a future edit that drops the
-      # wrap fails here — not only in a mobile screenshot no test would catch.
-      assert html =~
-               ~r{<span class="[^"]*\[overflow-wrap:anywhere\][^"]*">#{Regex.escape(pack.content_hash)}</span>}
+      assert html =~ "--hash #{pack.content_hash}"
+      assert html =~ ~r/<pre[^>]*overflow-x-auto/
     end
 
     test "the required-binaries banner shows only when the pack needs binaries", %{conn: conn} do
@@ -241,14 +243,16 @@ defmodule EmisarWeb.PacksTest do
       assert url =~ "linux-core/actions/disk_usage.yaml"
     end
 
-    test "install_snippet/1 includes the pack id, pack install, and the --hash pin" do
+    test "install_snippet/1 is one integrity-pinned command — no --dest, no manual reload" do
       pack = PacksRegistry.get("cassandra")
       snippet = PacksRegistry.install_snippet(pack)
-      assert snippet =~ "cassandra"
-      assert snippet =~ "/etc/emisar/packs"
-      assert snippet =~ "emisar pack install"
+
+      assert snippet =~ "emisar pack install cassandra"
       assert snippet =~ "--hash #{pack.content_hash}"
-      assert snippet =~ "systemctl reload emisar"
+      # --dest defaults to the runner's packs dir, and the command reloads a running
+      # daemon itself, so neither belongs in the copy-paste snippet.
+      refute snippet =~ "--dest"
+      refute snippet =~ "systemctl reload"
     end
 
     test "every pack has a well-formed sha256 content hash" do

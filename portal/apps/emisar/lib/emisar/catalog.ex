@@ -1016,6 +1016,18 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  The content hash the release ships for `(pack_id, version)`, or nil when we
+  don't ship it — the `--hash` integrity pin for an `emisar pack install`
+  command that updates a runner to a shipped version. Pure over the
+  release-frozen `PackBaseline`.
+  """
+  @spec shipped_hash(String.t(), String.t() | nil) :: String.t() | nil
+  def shipped_hash(pack_id, version) when is_binary(pack_id) and is_binary(version),
+    do: PackBaseline.lookup(pack_id, version)
+
+  def shipped_hash(_, _), do: nil
+
+  @doc """
   A version awaiting an operator decision: a pending trust review, or a
   trusted version whose shipped-catalog retirement blocks dispatch until an
   admin overrides, updates, revokes, or deletes it. Rejected and overridden

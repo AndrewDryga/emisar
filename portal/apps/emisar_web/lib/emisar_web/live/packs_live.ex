@@ -794,6 +794,7 @@ defmodule EmisarWeb.PacksLive do
         id={"retired-cmd-#{@version.id}"}
         pack_id={@pack_id}
         successor={@current_version}
+        hash={Catalog.shipped_hash(@pack_id, @current_version)}
       />
       <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
            confirm, admin-only. It re-enables dispatch for this exact retired
@@ -880,7 +881,12 @@ defmodule EmisarWeb.PacksLive do
       <:body>
         v{@successor} has shipped. This one is still safe — it runs and dispatches fine.
       </:body>
-      <.install_command id={"update-cmd-#{@version.id}"} pack_id={@pack_id} successor={@successor} />
+      <.install_command
+        id={"update-cmd-#{@version.id}"}
+        pack_id={@pack_id}
+        successor={@successor}
+        hash={Catalog.shipped_hash(@pack_id, @successor)}
+      />
     </.event_block>
     """
   end
@@ -892,6 +898,7 @@ defmodule EmisarWeb.PacksLive do
   attr :id, :string, required: true
   attr :pack_id, :string, required: true
   attr :successor, :string, default: nil
+  attr :hash, :string, default: nil
 
   defp install_command(assigns) do
     ~H"""
@@ -902,10 +909,17 @@ defmodule EmisarWeb.PacksLive do
         </span>
         <span :if={is_nil(@successor)}>Install on the runner</span>
       </p>
-      <.code_line id={@id} value={"emisar pack install #{@pack_id}"} prompt class="mt-1.5" />
+      <.code_line id={@id} value={install_command_string(@pack_id, @hash)} prompt class="mt-1.5" />
     </div>
     """
   end
+
+  # The `--hash` pin (the shipped bytes) makes the install integrity-checked and
+  # is the only place the hash needs to appear — no separate hash readout below.
+  defp install_command_string(pack_id, nil), do: "emisar pack install #{pack_id}"
+
+  defp install_command_string(pack_id, hash),
+    do: "emisar pack install #{pack_id} --hash #{hash}"
 
   # Retirement is an overlay on a trusted row (release-frozen `PackBaseline`),
   # not a trust_state — so it's a pure per-row check, not a row field.
@@ -1340,6 +1354,7 @@ defmodule EmisarWeb.PacksLive do
                       id={"upgrade-cmd-#{v.id}"}
                       pack_id={pack.id}
                       successor={retirement_successor(v)}
+                      hash={Catalog.shipped_hash(pack.id, retirement_successor(v))}
                     />
                     <%!-- The two-hash comparison earns its rows only on a real drift —
                          a trusted hash to diff the advertised one against. A first-seen
@@ -1355,8 +1370,11 @@ defmodule EmisarWeb.PacksLive do
                         <span class="text-zinc-300">{v.pending_hash || "—"}</span>
                       </.kv>
                     </dl>
+                    <%!-- Only a trust decision needs the bytes shown: an unknown pack you're
+                         about to trust. A retired version's fix-it command already pins the
+                         target hash (--hash), so its old bytes are noise — omit them. --%>
                     <p
-                      :if={is_nil(v.hash)}
+                      :if={is_nil(v.hash) and not retired_blocked?(v)}
                       class="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px] text-zinc-400"
                     >
                       on the runner:

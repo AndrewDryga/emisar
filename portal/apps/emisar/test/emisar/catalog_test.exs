@@ -1794,6 +1794,23 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "shipped_hash/2" do
+    test "returns the release's content hash for a shipped (pack_id, version)" do
+      {{pack_id, version}, hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
+
+      assert Catalog.shipped_hash(pack_id, version) == hash
+    end
+
+    test "returns nil for a pack the release does not ship" do
+      assert Catalog.shipped_hash("definitely-not-a-real-pack", "9.9.9") == nil
+    end
+
+    test "returns nil for non-binary arguments" do
+      assert Catalog.shipped_hash(nil, "0.1.0") == nil
+      assert Catalog.shipped_hash("redis", nil) == nil
+    end
+  end
+
   describe "pack_version_needs_decision?/1" do
     test "pending needs one; trusted+active, rejected, and overridden do not" do
       pending = %Emisar.Catalog.PackVersion{trust_state: :pending, pack_id: "x", version: "1.0"}

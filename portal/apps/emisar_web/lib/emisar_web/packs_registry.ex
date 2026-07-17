@@ -198,19 +198,14 @@ defmodule EmisarWeb.PacksRegistry do
   `emisar pack install <id>` fetches just this pack from the registry
   (`/packs/<id>/pack.tar.gz`, which redirects to the immutable tarball),
   re-validates it, and verifies its content hash against `--hash` before
-  copying it into the packs dir. The `--hash` pin means a tampered mirror is
-  rejected — the runner only installs the exact bytes this page was rendered
-  against.
+  copying it into the runner's packs dir. The `--hash` pin means a tampered
+  mirror is rejected — the runner installs only the exact bytes this page was
+  rendered against — and the command reloads a running daemon itself, so there
+  is no manual restart. `--dest` defaults to the runner's configured packs dir,
+  so it's only needed to override it.
   """
   @spec install_snippet(Pack.t()) :: String.t()
   def install_snippet(%Pack{id: id, content_hash: hash}) do
-    """
-    sudo emisar pack install #{id} \\
-      --hash #{hash} \\
-      --dest /etc/emisar/packs
-
-    # Reload so the runner re-reads the catalog:
-    sudo systemctl reload emisar\
-    """
+    "sudo emisar pack install #{id} --hash #{hash}"
   end
 end
