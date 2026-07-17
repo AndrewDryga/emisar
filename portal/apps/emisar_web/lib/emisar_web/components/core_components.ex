@@ -2367,10 +2367,12 @@ defmodule EmisarWeb.CoreComponents do
   # CAUTION (needs attention), not neutral — amber, one tone for the fact
   # everywhere (summary strip, row status, dashboard posture).
   defp status_word_class("offline"), do: "text-amber-300"
-  # Planned (a runbook slot not yet dispatched) and expired recede a step
-  # below routine neutral — not-yet / no-longer states shouldn't compete.
+  # Planned (a runbook slot not yet dispatched) recedes a step below routine
+  # neutral — a not-yet state shouldn't compete. Expired is different: in a
+  # decision log it's an OUTCOME (nobody decided in time), and the one
+  # uncolored verdict beside approved/denied read as a bug — it wears amber
+  # via the :pending bucket below.
   defp status_word_class("planned"), do: "text-zinc-500"
-  defp status_word_class("expired"), do: "text-zinc-500"
 
   defp status_word_class(status) do
     case status_tone(status) do
@@ -2393,7 +2395,7 @@ defmodule EmisarWeb.CoreComponents do
       s when s in ~w[success connected approved published running sent cancelling] ->
         :pass
 
-      s when s in ~w[pending_approval refused rejected] ->
+      s when s in ~w[pending_approval refused rejected expired] ->
         :pending
 
       s
@@ -2417,6 +2419,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("pending"), do: {:amber, false}
   defp status_dot_spec("rejected"), do: {:amber, false}
+  defp status_dot_spec("expired"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
   defp status_dot_spec("retired"), do: {:rose, false}
 
