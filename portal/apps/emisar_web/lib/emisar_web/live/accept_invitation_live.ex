@@ -111,7 +111,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         <%!-- Naked meta field (the detail-page key+value grammar) — the box
              around it was an island (§8.1). --%>
         <div>
-          <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
             Joining as
           </div>
           <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.user.email}</div>

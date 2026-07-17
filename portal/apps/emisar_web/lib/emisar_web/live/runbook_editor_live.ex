@@ -474,7 +474,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
           <%= if @runbook do %>
             Edit runbook <span class="font-mono text-base text-zinc-400">{@runbook.slug}</span>
-            <span class="ml-2 text-sm font-normal text-zinc-500">v{@runbook.version}</span>
+            <span class="ml-2 text-sm font-normal text-zinc-400">v{@runbook.version}</span>
           <% else %>
             New runbook
           <% end %>
@@ -618,7 +618,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 </dl>
                 <p
                   :if={@runbook.status == :published}
-                  class="mt-4 text-xs text-zinc-500 leading-relaxed"
+                  class="mt-4 text-xs text-zinc-400 leading-relaxed"
                 >
                   Published runbooks are immutable — saving creates a new draft version.
                 </p>
@@ -701,7 +701,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp step_unit(assigns) do
     ~H"""
     <div class="flex items-center justify-between gap-3">
-      <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+      <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
         Step {@index + 1}
       </span>
       <div class="flex items-center gap-1">
@@ -836,7 +836,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             options={options}
             class="mt-1"
           />
-          <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
+          <p :if={options == []} class="mt-1 text-[11px] text-zinc-400">
             {if @step["selector_kind"] == "runner_id",
               do: "No runners connected yet.",
               else: "No runner groups yet."}
@@ -883,7 +883,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           <.label variant={:eyebrow}>
             Args
           </.label>
-          <p :if={@known_args != []} class="mt-0.5 text-[10px] text-zinc-500">
+          <p :if={@known_args != []} class="mt-0.5 text-[10px] text-zinc-400">
             Known for <code class="font-mono text-zinc-400">{@action_id}</code>:
             <%= for {n, i} <- Enum.with_index(@known_args) do %>
               <span :if={i > 0}>, </span><code class="font-mono text-zinc-300">{n}</code>

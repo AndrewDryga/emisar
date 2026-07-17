@@ -63,7 +63,7 @@ defmodule EmisarWeb.SSOPendingLive do
           moment they approve.
         </p>
 
-        <p class="text-xs leading-relaxed text-zinc-500">
+        <p class="text-xs leading-relaxed text-zinc-400">
           Until then you can't reach anything in the account — there's nothing you need to do here.
         </p>
 

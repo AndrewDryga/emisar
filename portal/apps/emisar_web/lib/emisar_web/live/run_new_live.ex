@@ -401,7 +401,7 @@ defmodule EmisarWeb.RunNewLive do
                 required={true}
                 placeholder="Why are you running this action?"
               />
-              <p class="mt-1 text-xs text-zinc-500">Logged to the audit trail.</p>
+              <p class="mt-1 text-xs text-zinc-400">Logged to the audit trail.</p>
             </div>
 
             <:actions>
@@ -417,12 +417,12 @@ defmodule EmisarWeb.RunNewLive do
               </.button>
               <%!-- Signed-only runner — the run would be refused, so there's no
                    Dispatch button; the quiet fact points at the MCP client. --%>
-              <p :if={@can_dispatch? and signed_only?(@runner)} class="text-sm text-zinc-500">
+              <p :if={@can_dispatch? and signed_only?(@runner)} class="text-sm text-zinc-400">
                 This runner only runs signed dispatches — run it from your MCP client.
               </p>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>
-              <p :if={not @can_dispatch?} class="text-sm text-zinc-500">
+              <p :if={not @can_dispatch?} class="text-sm text-zinc-400">
                 Your role can't dispatch runs. Ask an operator, admin, or owner to run this.
               </p>
             </:actions>
@@ -471,7 +471,7 @@ defmodule EmisarWeb.RunNewLive do
         required={@arg["required"]}
         placeholder={@arg["description"]}
       />
-      <p :if={@hint} class="mt-1 text-xs text-zinc-500">{@hint}</p>
+      <p :if={@hint} class="mt-1 text-xs text-zinc-400">{@hint}</p>
     </div>
     """
   end

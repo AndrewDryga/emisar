@@ -187,7 +187,7 @@ defmodule EmisarWeb.RunbooksLive do
                     {runbook.title}
                   </span>
                   <.status_badge status={runbook.status} />
-                  <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
+                  <span class="font-mono text-[11px] text-zinc-400">v{runbook.version}</span>
                   <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>

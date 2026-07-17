@@ -400,7 +400,7 @@ defmodule EmisarWeb.ApprovalsLive do
                           class="flex-none"
                         />
                       </div>
-                      <div class="mt-0.5 text-xs text-zinc-500 sm:truncate">
+                      <div class="mt-0.5 text-xs text-zinc-400 sm:truncate">
                         on {runner_label(request, @runner_labels)} · requested by {user_label(
                           request.requested_by_id,
                           @user_labels
@@ -414,7 +414,7 @@ defmodule EmisarWeb.ApprovalsLive do
                       </p>
                     </div>
                     <div class="shrink-0 text-right">
-                      <div class="text-xs text-zinc-500">
+                      <div class="text-xs text-zinc-400">
                         <.local_time
                           id={"pending-when-#{request.id}"}
                           value={request.requested_at}
@@ -607,7 +607,7 @@ defmodule EmisarWeb.ApprovalsLive do
             </.docs_rail>
 
             <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Guardrails
               </h3>
               <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
@@ -629,7 +629,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   <.status_dot tone={:brand} size={:sm} class="mt-1" />
                   <span>
                     <span class="whitespace-nowrap text-brand-300">disabled</span>
-                    <span class="text-zinc-500">— every approval is single-use</span>
+                    <span class="text-zinc-400">— every approval is single-use</span>
                   </span>
                 </p>
                 <p
@@ -681,7 +681,7 @@ defmodule EmisarWeb.ApprovalsLive do
                       <div class="truncate font-mono text-sm text-zinc-200">
                         {request.context["action_id"] || "—"}
                       </div>
-                      <div class="text-xs text-zinc-500 sm:truncate">
+                      <div class="text-xs text-zinc-400 sm:truncate">
                         on {runner_label(request, @runner_labels)}
                         <%!-- The status badge on the right carries the outcome word
                            (approved / denied / expired); the meta just attributes
@@ -700,7 +700,7 @@ defmodule EmisarWeb.ApprovalsLive do
                         id={"decided-when-#{request.id}"}
                         value={request.decided_at || request.requested_at}
                         mode={:relative}
-                        class="text-xs text-zinc-500"
+                        class="text-xs text-zinc-400"
                       />
                       <.status_badge status={request.status} />
                     </div>

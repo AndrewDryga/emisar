@@ -54,7 +54,7 @@ defmodule EmisarWeb.UserSignUpLive do
 
         <%!-- The auth mechanism, stated where it happens (the CTA) — not
              mixed into the plan facts above. --%>
-        <p class="text-xs leading-relaxed text-zinc-500">
+        <p class="text-xs leading-relaxed text-zinc-400">
           No password to set — we'll email you a one-time sign-in link and a 6-character code.
         </p>
 
@@ -77,7 +77,7 @@ defmodule EmisarWeb.UserSignUpLive do
 
       <%!-- Consent at the point of account creation — footer links don't
            read as agreement on a trust product. --%>
-      <p class="mt-3 text-center text-xs text-zinc-500">
+      <p class="mt-3 text-center text-xs text-zinc-400">
         By creating an account you agree to the
         <.link href={~p"/terms"} class="text-zinc-400 underline hover:text-zinc-200">Terms</.link>
         and <.link href={~p"/privacy"} class="text-zinc-400 underline hover:text-zinc-200">

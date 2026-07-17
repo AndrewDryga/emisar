@@ -52,7 +52,7 @@ defmodule EmisarWeb.OnboardingLive do
         </:actions>
       </.simple_form>
 
-      <p class="mt-6 text-xs text-zinc-500">
+      <p class="mt-6 text-xs text-zinc-400">
         Starts on the Free plan: 3 runners, 1 user, 7-day audit retention. You can upgrade any time.
       </p>
     </.auth_layout>

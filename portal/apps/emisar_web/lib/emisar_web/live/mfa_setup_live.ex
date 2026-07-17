@@ -117,7 +117,7 @@ defmodule EmisarWeb.MfaSetupLive do
             </:actions>
           </.mfa_enrollment>
         <% true -> %>
-          <p class="text-sm text-zinc-500">Preparing your setup code…</p>
+          <p class="text-sm text-zinc-400">Preparing your setup code…</p>
       <% end %>
     </.auth_layout>
     """

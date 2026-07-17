@@ -572,7 +572,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                      who asked is metadata, not a status. --%>
                 <span
                   :if={@run && @run.source != :operator}
-                  class="text-zinc-500"
+                  class="text-zinc-400"
                   title={dispatch_source_title(@run.source)}
                 >
                   · {format_source(@run.source)}
@@ -688,7 +688,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             >
               <:summary>
                 Raw arguments
-                <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-500">
+                <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-400">
                   sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
                 </span>
               </:summary>
@@ -709,19 +709,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <.section_header title="Why" />
               <dl class="space-y-5">
                 <div :if={@request.reason && @request.reason != ""}>
-                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     Reason
                   </dt>
                   <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
                 </div>
                 <div :if={@run && @run.policy_reason}>
-                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     Policy
                   </dt>
                   <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.policy_reason}</dd>
                   <dd
                     :if={@run.matched_rules && @run.matched_rules != []}
-                    class="mt-1.5 text-xs text-zinc-500"
+                    class="mt-1.5 text-xs text-zinc-400"
                   >
                     Matched rules:
                     <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
@@ -749,12 +749,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <span class="min-w-0 flex-1 truncate text-zinc-200">
                     {user_label(decision.decider, decision.decider_id)}
                   </span>
-                  <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
+                  <span class="text-xs text-zinc-400">{decision_verb(decision.decision)}</span>
                   <.local_time
                     id={"decision-when-#{decision.id}"}
                     value={decision.decided_at}
                     mode={:forensic}
-                    class="text-xs tabular-nums text-zinc-500"
+                    class="text-xs tabular-nums text-zinc-400"
                   />
                 </li>
               </ul>
@@ -856,11 +856,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       <%= cond do %>
         <% not @can_decide? -> %>
-          <p class="mt-4 text-xs leading-relaxed text-zinc-500">
+          <p class="mt-4 text-xs leading-relaxed text-zinc-400">
             Viewers can't decide approvals.
           </p>
         <% @already_decided? -> %>
-          <p class="mt-4 text-xs leading-relaxed text-zinc-500">
+          <p class="mt-4 text-xs leading-relaxed text-zinc-400">
             You've already recorded your decision on this request. Waiting on the remaining approvers.
           </p>
         <% true -> %>
@@ -868,7 +868,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                policy forbids self-approval — the context refuses it anyway
                (IL-15), this just removes the dead button. They can still Deny
                their own request. --%>
-          <p :if={@self_blocked?} class="mt-4 text-xs leading-relaxed text-zinc-500">
+          <p :if={@self_blocked?} class="mt-4 text-xs leading-relaxed text-zinc-400">
             You can't approve your own request — a different operator must approve it.
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
@@ -896,7 +896,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  affordance is gone. --%>
             <p
               :if={not @self_blocked? and length(@grant_duration_options) <= 1}
-              class="text-[11px] leading-relaxed text-zinc-500"
+              class="text-[11px] leading-relaxed text-zinc-400"
             >
               Standing grants are disabled for this account — every approval is single-use.
             </p>
@@ -952,7 +952,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     min="1"
                     placeholder="unlimited"
                   />
-                  <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                  <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
                     Cap how many times this grant can be used within the window. Leave blank for unlimited.
                     Grants are reviewable + revocable on the <.link
                       navigate={~p"/app/#{@current_account}/approvals"}

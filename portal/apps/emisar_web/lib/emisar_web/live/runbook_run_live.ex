@@ -668,7 +668,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 risk={plan_max_risk(@action_risk, @steps)}
                 class="flex-none"
               />
-              <span class="text-xs text-zinc-500">
+              <span class="text-xs text-zinc-400">
                 {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
                 <span :if={!@execution && @blast_radius.total} class="text-zinc-400">
                   → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
@@ -718,7 +718,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   <%!-- The action id names what dispatches — it wraps to show in
                        full on a phone, never clips to "…upstr…". --%>
                   <span class="break-all font-mono text-zinc-200">{row.action_id}</span>
-                  <span class="ml-2 text-xs text-zinc-500">
+                  <span class="ml-2 text-xs text-zinc-400">
                     on {row.runner_name}
                   </span>
                   <span
@@ -737,7 +737,7 @@ defmodule EmisarWeb.RunbookRunLive do
                     <.icon name="hero-exclamation-triangle" class="h-3 w-3" /> {row.dispatch_error}
                   </span>
                 </div>
-                <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-500">
+                <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-400">
                   {row.run.duration_ms} ms
                 </span>
                 <.link
@@ -820,7 +820,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   <.chip upcase tone={:rose}>Blocked by policy</.chip>
                 </span>
               </div>
-              <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
+              <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-400">
                 {step["description"]}
               </p>
               <% count = @blast_radius.counts[idx] %>
@@ -836,7 +836,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <%!-- Nothing to run — nudge to the editor instead of dispatching
                an empty runbook. --%>
-          <p :if={!@execution && @steps == []} class="py-4 text-sm text-zinc-500">
+          <p :if={!@execution && @steps == []} class="py-4 text-sm text-zinc-400">
             No steps defined.
             <.link
               navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
@@ -871,7 +871,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 required
                 placeholder="Why are you running this runbook now?"
               />
-              <p class="mt-1 text-xs text-zinc-500">Logged in audit and propagated to every step.</p>
+              <p class="mt-1 text-xs text-zinc-400">Logged in audit and propagated to every step.</p>
             </div>
 
             <%!-- Re-dispatching resets the execution stream above, so confirm
