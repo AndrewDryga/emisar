@@ -180,8 +180,14 @@ variable "mailer_from_email" {
 # ── Livebook admin workbench ─────────────────────────────────────────────────
 variable "livebook_enabled" {
   type        = bool
-  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_ready and livebook_iap_iam_user."
+  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_ready and livebook_iap_iam_user. To turn a provisioned workbench off day-to-day, set livebook_running = false instead — flipping this back to false plans a full teardown, which prevent_destroy on the data disk, secret, and database principal deliberately blocks until those are explicitly retired."
   default     = false
+}
+
+variable "livebook_running" {
+  type        = bool
+  description = "Desired power state of the provisioned Livebook workbench. false parks it: the VM stops, ending compute and license billing, while its disks (notebooks), secret, database principal, and LB/IAP wiring remain so resuming is a restart, not a rebuild. Only read when livebook_enabled is true."
+  default     = true
 }
 
 variable "livebook_machine_type" {
