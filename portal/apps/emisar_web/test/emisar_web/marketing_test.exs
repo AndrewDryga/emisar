@@ -934,6 +934,20 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://emisar.dev/install.sh"
     end
 
+    test "the runners page documents both enrollment-key models", %{conn: conn} do
+      html = conn |> get(~p"/docs/runners") |> html_response(200)
+
+      # The key-model contract must match the shipped product (EnrollmentKey:
+      # single-use default + reusable with max-uses/expiry) — UI-008 regression.
+      assert html =~ "Two key models"
+      assert html =~ "single-use"
+      assert html =~ "reusable"
+      assert html =~ "max-uses cap"
+      assert html =~ "mint one reusable key"
+      refute html =~ "enrolls exactly one runner"
+      refute html =~ "Mint per host"
+    end
+
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
 

@@ -42,30 +42,45 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
           <span>
-            <strong class="text-zinc-200">Single-use, shown once.</strong>
-            Each <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-auth-…</code>
-            key
-            enrolls exactly one runner; concurrent attempts with the same key can't both win.
-            The runner trades it for its own long-lived token
+            <strong class="text-zinc-200">Two key models.</strong>
+            An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-auth-…</code>
+            key is <strong class="text-zinc-200">single-use</strong>
+            by default — spent on its first registration (concurrent attempts with the same key
+            can't both win), right for an autoscaler enrolling one host at a time. Mark it
+            <strong class="text-zinc-200">reusable</strong>
+            and the same key keeps enrolling hosts until it expires or hits its max-uses cap —
+            leave the cap blank for unlimited. Right for image bakes and stable fleets.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Shown once, traded for a token.</strong>
+            The raw key appears once, at creation. On first connect the runner trades it for its
+            own long-lived token
             (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rnrtok-…</code>, stored
-            hashed cloud-side, mode-0600 on the host) and the key is spent.
+            hashed cloud-side, mode-0600 on the host) — the key itself is never presented again
+            by that host, whichever model minted it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
           <span>
-            <strong class="text-zinc-200">Mint per host, at install time.</strong>
+            <strong class="text-zinc-200">Mint at install time.</strong>
             <strong>Runners → Connect a runner</strong> generates the install one-liner with a
-            fresh key baked in. For fleet provisioning (cloud-init, Packer, Ansible), mint a key
-            per host and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_AUTH_KEY</code>.
+            fresh single-use key baked in. For fleet provisioning (cloud-init, Packer, Ansible),
+            mint one reusable key under <strong>Runners → Enrollment keys</strong> — cap it with
+            max uses or an expiry to fit the rollout — and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_AUTH_KEY</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
           <span>
-            <strong class="text-zinc-200">Revocation is cloud-side.</strong> Revoke a runner's
-            token (or disable the runner) and its next frame gets a 401; the service exits
-            rather than retrying forever.
+            <strong class="text-zinc-200">Revocation is cloud-side.</strong>
+            Revoking a key blocks new registrations; hosts already enrolled keep running on
+            their own tokens. For an enrolled host, revoke the runner's token (or disable the
+            runner) — its next frame gets a 401 and the service exits rather than retrying
+            forever.
           </span>
         </li>
       </ul>
@@ -156,8 +171,8 @@ execution:
           <span>
             <strong class="text-zinc-200">Never shows up:</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">journalctl -u emisar -f</code>.
-            A 401 means a spent or revoked enrollment key — mint a fresh one. A connect timeout
-            means outbound 443 to
+            A 401 means the enrollment key was spent, expired, out of uses, or revoked — mint a
+            fresh one. A connect timeout means outbound 443 to
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>
             is blocked.
           </span>
