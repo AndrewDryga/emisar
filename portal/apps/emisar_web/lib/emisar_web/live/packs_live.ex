@@ -1060,11 +1060,10 @@ defmodule EmisarWeb.PacksLive do
                 <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
                 <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
                 <.registry_link pack_id={pack.id} />
-                <.status_badge
-                  :if={any_pending?(pack.versions)}
-                  status="pending"
-                  class="ml-1 text-[11px]"
-                />
+                <%!-- No pack-level status here: each version row carries its own
+                     trust state, so a rolled-up "pending" on the header just
+                     double-labels the same fact and reads as a second, conflicting
+                     status. --%>
                 <.button
                   :if={Catalog.subject_can_manage_packs?(@current_subject)}
                   variant={:secondary}
@@ -1315,9 +1314,11 @@ defmodule EmisarWeb.PacksLive do
                     </p>
                     <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
                       <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
-                      <%!-- Amber flags the hash that CHANGED — the reason dispatch is blocked. --%>
+                      <%!-- A hash is a plain identifier, not a warning — the "trusted:"
+                           vs "advertising:" labels already say which one changed, so it
+                           reads neutral, not amber. --%>
                       <.kv layout={:grid} label="advertising:">
-                        <span class="text-amber-300">{v.pending_hash || "—"}</span>
+                        <span class="text-zinc-300">{v.pending_hash || "—"}</span>
                       </.kv>
                     </dl>
                     <%!-- Blast radius — which hosts this trust click unblocks.
@@ -1338,13 +1339,23 @@ defmodule EmisarWeb.PacksLive do
                           runner(s) advertise this — trusting unblocks dispatch on:
                         </span>
                       </p>
-                      <%!-- The chips wrap: a fleet can advertise dozens of runners, and a
-                           comprehension renders them with no whitespace between, so an inline
-                           run would be one unbreakable line that overflows the page. --%>
+                      <%!-- A neutral two-tone tag per runner — the group (muted, left)
+                           then the runner name (brighter, right), split by a divider.
+                           WHICH hosts is informative, not a warning: the retired/pending
+                           context above carries the concern, so the tag stays zinc, never
+                           amber. The tags wrap in a flex container (a fleet can advertise
+                           dozens, and a comprehension renders them with no whitespace
+                           between — an inline run would overflow the page). --%>
                       <div class="mt-1.5 flex flex-wrap gap-1">
-                        <.chip :for={r <- @advertising[v.id]} tone={:amber} mono>
-                          {r.name}<span class="text-amber-400/70"> · {r.group}</span>
-                        </.chip>
+                        <span
+                          :for={r <- @advertising[v.id]}
+                          class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/70"
+                        >
+                          <span class="bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{r.group}</span>
+                          <span class="border-l border-zinc-700/70 bg-zinc-900 px-1.5 py-0.5 text-zinc-200">
+                            {r.name}
+                          </span>
+                        </span>
                       </div>
                     </div>
                     <%!-- What CHANGED since this hash was last trusted — diffed
@@ -1611,8 +1622,6 @@ defmodule EmisarWeb.PacksLive do
 
   defp sort_versions(versions),
     do: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})
-
-  defp any_pending?(versions), do: Enum.any?(versions, &(&1.trust_state == :pending))
 
   defp version_count_label(versions) do
     n = length(versions)

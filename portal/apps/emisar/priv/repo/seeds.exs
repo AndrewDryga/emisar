@@ -662,6 +662,29 @@ PackVersion.Query.all()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Advertised actions on every runner" <> IO.ANSI.reset())
 
+# A lagging runner still on an OLDER, still-safe pack version, so the packs page
+# shows the quiet "update available" nudge. postgres 0.2.9 sits below the shipped
+# 0.2.10 and carries no retirement watermark, so it stays trusted (its bytes match
+# the baseline) and dispatches fine — the hint is a convenience, not a block.
+# Idempotent: on_conflict keeps a prior seed's row.
+{:ok, _} =
+  PackVersion.Changeset.insert(%{
+    account_id: account.id,
+    pack_id: "postgres",
+    version: "0.2.9",
+    hash: PackBaseline.lookup("postgres", "0.2.9"),
+    trust_state: :trusted,
+    first_seen_at: DateTime.utc_now(),
+    last_seen_at: DateTime.utc_now()
+  })
+  |> Repo.insert(on_conflict: :nothing, conflict_target: [:account_id, :pack_id, :version])
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Seeded an outdated-but-safe pack version (postgres 0.2.9 → update-available hint)" <>
+    IO.ANSI.reset()
+)
+
 # -- Runs across various states --------------------------------------
 #
 # Skip everything below if any runs already exist — we don't want
