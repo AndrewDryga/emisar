@@ -526,7 +526,6 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("claude_web", url, _key) do
     %{
       kind: :remote,
-      setup_label: "custom connector form",
       connector_name: "Emisar",
       connector_name_label: "Connector name",
       rpc_url: "#{url}/api/mcp/rpc",
@@ -538,9 +537,12 @@ defmodule EmisarWeb.AgentsLive do
       },
       steps: [
         "Open Settings → Connectors → Add custom connector in claude.ai.",
-        "Paste the connector name and Remote MCP server URL shown above.",
+        "Paste the connector name and Remote MCP server URL below.",
         "Select Add, then complete the emisar sign-in and consent screen."
       ],
+      # The copy fields render inside this step (paste the values), so the guide
+      # reads paste → values → next step without scrolling back up.
+      form_at_step: 2,
       auto_permit: %{
         pointer:
           "After connecting, open Settings → Connectors → Emisar, then set Read-only tools and Write/delete tools to Always allow.",
@@ -552,7 +554,6 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("chatgpt", url, _key) do
     %{
       kind: :remote,
-      setup_label: "connector form",
       connector_name: "Emisar",
       connector_name_label: "Name",
       rpc_url: "#{url}/api/mcp/rpc",
@@ -565,10 +566,13 @@ defmodule EmisarWeb.AgentsLive do
       steps: [
         "Turn on Developer mode once: Settings → Security and login (also linked at the bottom of Settings → Plugins).",
         "Open Settings → Plugins and click Create.",
-        "Set Connection to Server URL, paste the Name and MCP Server URL shown above, then choose OAuth.",
+        "Set Connection to Server URL, paste the Name and MCP Server URL below, then choose OAuth.",
         "Check \"I understand and want to continue\", click Create, then complete the emisar sign-in and consent screen.",
         "Use it from a new chat: + → More → Emisar. To skip the per-call prompts, open Emisar → Permissions and choose Allow all actions."
-      ]
+      ],
+      # The copy fields render inside this step (paste the values), so the guide
+      # reads paste → values → next step without scrolling back up.
+      form_at_step: 3
     }
   end
 
@@ -1267,9 +1271,9 @@ defmodule EmisarWeb.AgentsLive do
                 connector_name_label={@config.connector_name_label}
                 rpc_url={@config.rpc_url}
                 rpc_url_label={@config.rpc_url_label}
-                setup_label={@config.setup_label}
                 oauth_note={@config.oauth_note}
                 steps={@config.steps}
+                form_at_step={@config.form_at_step}
                 auto_permit={Map.get(@config, :auto_permit)}
               />
             </div>
@@ -1385,8 +1389,11 @@ defmodule EmisarWeb.AgentsLive do
 
       <%!-- The reading rail — how agent keys work, so the operator minting a
            credential understands its reach and lifecycle before handing it to
-           an LLM (the keys-new explainer pattern). --%>
-      <aside class="mt-12 lg:mt-0">
+           an LLM (the keys-new explainer pattern). Hidden below lg (where the
+           grid collapses to one column): the connect steps lead, and the
+           explainer is supporting context, not something to scroll past on a
+           phone. --%>
+      <aside class="hidden lg:block">
         <%!-- Beginner framing first — connecting your first agent needs "what is
              this" before "how keys work". --%>
         <div class="mb-10">
@@ -1584,51 +1591,43 @@ defmodule EmisarWeb.AgentsLive do
   attr :connector_name_label, :string, required: true
   attr :rpc_url, :string, required: true
   attr :rpc_url_label, :string, required: true
-  attr :setup_label, :string, required: true
   attr :oauth_note, :map, required: true
   attr :steps, :list, required: true
+  attr :form_at_step, :integer, required: true
   attr :auto_permit, :any, required: true
 
   defp remote_mcp_panel(assigns) do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.section_header title="Add the connector">
-          <:subtitle>
-            Copy these values into {@client_label}'s {@setup_label}.
-          </:subtitle>
-        </.section_header>
-        <div class="mt-5 space-y-4">
-          <.code_line
-            id={"connector-name-#{@client_id}"}
-            label={@connector_name_label}
-            value={@connector_name}
-            copy_label="Copy name"
-          />
-          <.code_line
-            id={"rpc-url-#{@client_id}"}
-            label={@rpc_url_label}
-            value={@rpc_url}
-            copy_label="Copy URL"
-          />
-        </div>
-        <.status_note
-          icon="hero-information-circle"
-          tone={:neutral}
-          title={@oauth_note.title}
-          class="mt-5"
-        >
-          {@oauth_note.body}
-        </.status_note>
-      </div>
-
-      <div>
-        <%!-- Per-host step list on the canvas — content, not an artifact. Each
-             client config stores its own list because the menu paths differ
-             (Claude.ai uses Custom connectors, ChatGPT uses Apps). --%>
+        <%!-- One top-to-bottom guide. The copy-paste values render INSIDE the
+             step that uses them (form_at_step) rather than in a separate block
+             above the steps, so the operator reads "paste these" → the fields →
+             the next step without scrolling back up. Each client stores its own
+             step list + paste index because the menu paths and paste point differ
+             (Claude.ai pastes at step 2, ChatGPT at step 3). --%>
         <.section_header title={"Steps for #{@client_label}"} />
-        <.steps>
-          <:step :for={step <- @steps}>{step}</:step>
+        <.steps class="mt-5">
+          <:step :for={{step, idx} <- Enum.with_index(@steps)}>
+            {step}
+            <div :if={idx == @form_at_step - 1} class="mt-4 space-y-4">
+              <.code_line
+                id={"connector-name-#{@client_id}"}
+                label={@connector_name_label}
+                value={@connector_name}
+                copy_label="Copy name"
+              />
+              <.code_line
+                id={"rpc-url-#{@client_id}"}
+                label={@rpc_url_label}
+                value={@rpc_url}
+                copy_label="Copy URL"
+              />
+              <.status_note icon="hero-information-circle" tone={:neutral} title={@oauth_note.title}>
+                {@oauth_note.body}
+              </.status_note>
+            </div>
+          </:step>
         </.steps>
       </div>
 

@@ -225,7 +225,9 @@ defmodule EmisarWeb.RunnersLive do
                of page — pair it with a docs rail (the main+aside grammar): the
                fleet leads, a plain-terms "what's a runner" teaches beside it. The
                rail is a FIXED 22rem track that only splits off at xl (so its prose
-               never squeezes to 3 words a line); below xl it stacks full-width. --%>
+               never squeezes to 3 words a line); below xl it's hidden — the fleet
+               leads, and the explainer is supporting context, not something to
+               scroll past on a narrow screen. --%>
           <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
             <div class="min-w-0">
               <%!-- Alerts keep a tight internal rhythm, then the stack leaves a
@@ -382,24 +384,26 @@ defmodule EmisarWeb.RunnersLive do
               </LiveTable.live_table>
             </div>
 
-            <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
-              <p>
-                A runner is the small <span class="text-zinc-200">emisar agent</span>
-                installed on one of your hosts — a server, VM, or container.
-              </p>
-              <p>
-                It's what actually runs an action. The cloud never touches your hosts directly: it
-                dispatches to a runner, which executes only the vetted actions in its trusted packs
-                and reports the result back.
-              </p>
-              <p>
-                A host needs a connected runner before you can dispatch to it. Give runners a
-                <span class="font-mono text-[13px] text-zinc-300">group</span>
-                (like <span class="font-mono text-[13px] text-zinc-300">web</span>
-                or <span class="font-mono text-[13px] text-zinc-300">cassandra-prod</span>) so
-                policies, runbooks, and an LLM's fan-out can target a whole tier at once.
-              </p>
-            </.docs_rail>
+            <div class="hidden xl:block">
+              <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
+                <p>
+                  A runner is the small <span class="text-zinc-200">emisar agent</span>
+                  installed on one of your hosts — a server, VM, or container.
+                </p>
+                <p>
+                  It's what actually runs an action. The cloud never touches your hosts directly: it
+                  dispatches to a runner, which executes only the vetted actions in its trusted packs
+                  and reports the result back.
+                </p>
+                <p>
+                  A host needs a connected runner before you can dispatch to it. Give runners a
+                  <span class="font-mono text-[13px] text-zinc-300">group</span>
+                  (like <span class="font-mono text-[13px] text-zinc-300">web</span>
+                  or <span class="font-mono text-[13px] text-zinc-300">cassandra-prod</span>) so
+                  policies, runbooks, and an LLM's fan-out can target a whole tier at once.
+                </p>
+              </.docs_rail>
+            </div>
           </div>
       <% end %>
     </.dashboard_shell>
