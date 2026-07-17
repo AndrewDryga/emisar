@@ -22,8 +22,9 @@ const defaultRegistry = "https://emisar.dev"
 
 func packCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "pack",
-		Short: "Manage action packs",
+		Use:     "pack",
+		Aliases: []string{"packs"},
+		Short:   "Manage action packs",
 		Long: `Packs are the runner's action catalog: versioned bundles of action schemas
 this host may execute. Install them from a registry — the public one at
 https://emisar.dev by default, or your own (--registry / EMISAR_PACKS_REGISTRY;

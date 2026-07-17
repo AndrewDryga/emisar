@@ -74,6 +74,16 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	// version + the built-in help/completion stay ungrouped ("Additional Commands").
 	root.AddCommand(versionCmd())
 
+	// The default help plus a Paths footer on the ROOT help only, so `emisar`
+	// on a fresh host says where its config, packs, token, and logs live.
+	defaultHelp := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defaultHelp(cmd, args)
+		if cmd == root {
+			writePaths(cmd.OutOrStdout())
+		}
+	})
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

@@ -14,7 +14,11 @@ import (
 )
 
 func actionCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "action", Short: "List, describe, and run actions locally"}
+	cmd := &cobra.Command{
+		Use:     "action",
+		Aliases: []string{"actions"},
+		Short:   "List, describe, and run actions locally",
+	}
 	cmd.AddCommand(actionListCmd())
 	cmd.AddCommand(actionDescribeCmd())
 	cmd.AddCommand(actionRunCmd())
