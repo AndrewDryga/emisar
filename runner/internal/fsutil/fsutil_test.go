@@ -72,3 +72,61 @@ func TestAcquireFileLock(t *testing.T) {
 		t.Fatalf("close reopened lock: %v", err)
 	}
 }
+
+func TestFileLockWriteRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runner.lock")
+	lock, err := AcquireFileLock(path)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer func() { _ = lock.Close() }()
+
+	if err := lock.WriteRecord([]byte("12345")); err != nil {
+		t.Fatalf("write record: %v", err)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "12345" {
+		t.Errorf("record = %q, want %q", raw, "12345")
+	}
+
+	// A rewrite truncates — a shorter record must not leave stale bytes.
+	if err := lock.WriteRecord([]byte("7")); err != nil {
+		t.Fatalf("rewrite record: %v", err)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "7" {
+		t.Errorf("record after rewrite = %q, want %q", raw, "7")
+	}
+
+	var released *FileLock
+	if err := released.WriteRecord([]byte("x")); err == nil {
+		t.Error("expected an error writing through a nil lock")
+	}
+}
+
+func TestProbeFileLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runner.lock")
+
+	if _, err := ProbeFileLock(path); !os.IsNotExist(err) {
+		t.Errorf("probe of a missing file = %v, want os.ErrNotExist", err)
+	}
+
+	lock, err := AcquireFileLock(path)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+
+	// A probe through a second file description conflicts with the held
+	// flock — even from the same process — so it reads held (the probe can't
+	// tell WHO holds it, which is why callers read the PID record).
+	if held, err := ProbeFileLock(path); err != nil || !held {
+		t.Errorf("probe of a held lock: held=%v err=%v, want true, nil", held, err)
+	}
+
+	if err := lock.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if held, err := ProbeFileLock(path); err != nil || held {
+		t.Errorf("probe of a released lock: held=%v err=%v, want false, nil", held, err)
+	}
+}

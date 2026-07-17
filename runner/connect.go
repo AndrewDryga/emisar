@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -210,11 +211,23 @@ func lockConnectDataDir(dataDir string) (*fsutil.FileLock, error) {
 	if err := fsutil.SecureMkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create runner data directory: %w", err)
 	}
-	lock, err := fsutil.AcquireFileLock(filepath.Join(dataDir, "runner.lock"))
+	lock, err := fsutil.AcquireFileLock(runnerLockPath(dataDir))
 	if err != nil {
 		return nil, fmt.Errorf("lock runner data directory %q: %w", dataDir, err)
 	}
+	// Record our PID in the held lock so `emisar pack install/update/uninstall`
+	// can SIGHUP the daemon into a reload (see notifyRunnerReload). Best-effort:
+	// the lock is load-bearing, the record is a convenience.
+	if err := lock.WriteRecord([]byte(strconv.Itoa(os.Getpid()))); err != nil {
+		slog.Warn("could not record pid in runner.lock", "error", err)
+	}
 	return lock, nil
+}
+
+// runnerLockPath is the single-instance daemon lock inside the data dir —
+// shared with the CLI-side reload probe, which reads the recorded PID.
+func runnerLockPath(dataDir string) string {
+	return filepath.Join(dataDir, "runner.lock")
 }
 
 func reloadComponents(reloadPacks, reloadSigning func() error) (changed bool, packErr, signingErr error) {

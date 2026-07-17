@@ -43,3 +43,22 @@ func (l *FileLock) Close() error {
 	}
 	return closeErr
 }
+
+// ProbeFileLock reports whether path's lock is currently held by some other
+// process, WITHOUT creating the file (a probe must never plant a wrongly-owned
+// lock file the real daemon later can't open). A missing file surfaces as
+// `os.ErrNotExist`.
+func ProbeFileLock(path string) (bool, error) {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return true, nil
+	}
+
+	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return false, nil
+}

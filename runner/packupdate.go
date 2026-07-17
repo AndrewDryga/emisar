@@ -58,8 +58,8 @@ With no arguments every installed pack is checked; pass ids to update just
 those. Packs not in the registry (locally authored) are left untouched.
 --dry-run reports what would change without touching anything.
 
-After updating, reload the runner so it re-reads the catalog:
-sudo systemctl reload emisar
+After updating, a running daemon is reloaded automatically (SIGHUP) so it
+re-reads the catalog; without one: sudo systemctl reload emisar
 
   emisar pack update                  # check + update every installed pack
   emisar pack update redis postgres   # just these
@@ -180,7 +180,7 @@ sudo systemctl reload emisar
 			fmt.Printf("%d updated, %d up to date, %d not in registry, 0 failed.\n",
 				updated, current, skipped)
 			if updated > 0 {
-				fmt.Println("Reload the runner to load the new versions: sudo systemctl reload emisar")
+				announceReload(os.Stdout, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
 			}
 			return nil
 		},

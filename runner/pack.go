@@ -223,8 +223,9 @@ computed hash matches exactly — this pins the install to the exact pack
 content the portal advertised, so a tampered or mismatched copy is
 rejected before it reaches the runner.
 
-The pack is copied to <dest>/<pack-id>. After install, reload the runner
-(systemctl reload emisar, or SIGHUP) so it re-reads the catalog.
+The pack is copied to <dest>/<pack-id>. A running daemon is reloaded
+automatically (SIGHUP) so it re-reads the catalog and re-advertises;
+without one, reload manually: systemctl reload emisar.
 
   emisar pack install redis --dest /etc/emisar/packs
   emisar pack install redis=0.2.3 --hash sha256:... --dest /etc/emisar/packs
@@ -286,7 +287,8 @@ The pack is copied to <dest>/<pack-id>. After install, reload the runner
 			fmt.Printf("installed %s → %s\n", pack.ID, target)
 			env, haveCfg := configInheritEnv()
 			writePackInfo(os.Stdout, reg, pack, env, haveCfg)
-			fmt.Println("\nReload the runner to load it: sudo systemctl reload emisar")
+			fmt.Println()
+			announceReload(os.Stdout, nil, "Reload the runner to load it: sudo systemctl reload emisar")
 			return nil
 		},
 	}
@@ -353,9 +355,9 @@ func packUninstallCmd() *cobra.Command {
 		Long: `Delete a pack from the runner's packs dir by id.
 
 Resolves the destination the same way 'pack install' does (--dest, else
-config paths.packs[0]) and removes <dest>/<name>. After removal, reload
-the runner (systemctl reload emisar, or SIGHUP) so it drops the pack's
-actions from the advertised catalog.
+config paths.packs[0]) and removes <dest>/<name>. A running daemon is
+reloaded automatically (SIGHUP) so it drops the pack's actions from the
+advertised catalog; without one, reload manually: systemctl reload emisar.
 
   emisar pack uninstall redis --dest /etc/emisar/packs
   emisar pack rm redis`,
@@ -405,7 +407,7 @@ actions from the advertised catalog.
 			}
 
 			fmt.Printf("removed pack %s from %s\n", name, target)
-			fmt.Println("reload the runner to drop its actions: sudo systemctl reload emisar")
+			announceReload(os.Stdout, nil, "Reload the runner to drop its actions: sudo systemctl reload emisar")
 			return nil
 		},
 	}

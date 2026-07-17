@@ -39,3 +39,20 @@ func SecureMkdirAll(dir string, perm os.FileMode) error {
 	}
 	return nil
 }
+
+// WriteRecord replaces the held lock file's contents — the connect daemon
+// records its PID there so sibling CLI invocations (pack install/update/
+// uninstall) can signal it to reload. Only meaningful while the lock is held;
+// the flock itself is the liveness proof, the record just names the holder.
+func (l *FileLock) WriteRecord(data []byte) error {
+	if l == nil || l.file == nil {
+		return os.ErrInvalid
+	}
+	if err := l.file.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := l.file.WriteAt(data, 0); err != nil {
+		return err
+	}
+	return l.file.Sync()
+}
