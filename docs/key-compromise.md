@@ -22,9 +22,9 @@ This is the default order for a production response:
    delivery, runner reconnections, and the relevant audit events. Keep the old
    value only for a documented overlap window.
 
-## Runner enrollment/auth keys
+## Runner enrollment keys
 
-This is the `EMISAR_AUTH_KEY` value with an `emkey-auth-…` prefix. The portal
+This is the `EMISAR_ENROLLMENT_KEY` value with an `emkey-enroll-…` prefix. The portal
 mints it from **Runners → Connect a runner** and stores only its hash in the
 `runner_enrollment_keys` table. The operator sees the raw value once and puts it
 in the host's mode-0600 `/etc/emisar/runner.env` (or the configured equivalent).
@@ -55,7 +55,7 @@ host's token or control of the host.
 
 ### Immediate containment
 
-1. Revoke every affected enrollment key in **Runners → Auth keys**. If one
+1. Revoke every affected enrollment key in **Runners → Enrollment keys**. If one
    reusable key was installed on several hosts, treat every host using it as
    affected; do not wait for a per-host attribution.
 2. Review runner-registration audit events and the fleet inventory. Disable and
@@ -73,7 +73,7 @@ For each legitimate host:
 1. Mint a fresh enrollment key. Use one key per host for a fleet; do not return
    to a shared reusable key after this incident.
 2. Stop the runner service before changing its credentials.
-3. Replace `EMISAR_AUTH_KEY` in the host's protected environment file.
+3. Replace `EMISAR_ENROLLMENT_KEY` in the host's protected environment file.
 4. Remove the cached token at the configured `cloud.token_path`. If the path is
    not explicitly configured, remove `/var/lib/emisar/token.json`.
 5. Start the runner and confirm that it registers with the new key, receives a
@@ -86,7 +86,7 @@ For each legitimate host:
 Do not call the rotation complete until the fleet inventory shows the new
 registrations and the old key fails at `/runner/register`. If a host's old
 token may have been exposed, replace its runner identity as described above;
-changing only `EMISAR_AUTH_KEY` does not revoke an already-issued token.
+changing only `EMISAR_ENROLLMENT_KEY` does not revoke an already-issued token.
 
 See the runner [installation and connection notes](../runner/README.md#after-install)
 for the supported host paths and service layout.

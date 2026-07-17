@@ -30,10 +30,10 @@ func connectCmd() *cobra.Command {
 control-plane websocket, advertises this runner's actions, and processes
 incoming RunAction messages. There is no inbound listener on this host.
 
-On first connect, the runner presents the bootstrap auth key (env var
-named by cloud.auth_key_env) to POST /runner/register, persists the
+On first connect, the runner presents the bootstrap enrollment key (env var
+named by cloud.enrollment_key_env) to POST /runner/register, persists the
 returned per-runner token to cloud.token_path, then upgrades to the
-websocket. Subsequent boots reuse the cached token, so the auth key
+websocket. Subsequent boots reuse the cached token, so the enrollment key
 env var can be unset after the first successful connect.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
@@ -58,19 +58,19 @@ env var can be unset after the first successful connect.`,
 			}
 			defer rt.journal.Close()
 
-			authKey := os.Getenv(rt.cfg.Cloud.AuthKeyEnv)
+			enrollmentKey := os.Getenv(rt.cfg.Cloud.EnrollmentKeyEnv)
 			tokenPath := rt.cfg.Cloud.TokenPath
 			if tokenPath == "" {
 				tokenPath = filepath.Join(rt.cfg.Paths.DataDir, "token.json")
 			}
 
-			// AuthKey is only required on first connect (when no token
+			// EnrollmentKey is only required on first connect (when no token
 			// file exists yet). Subsequent boots reuse the persisted
 			// per-runner token so the operator can unset the env var.
-			if authKey == "" {
+			if enrollmentKey == "" {
 				if _, statErr := os.Stat(tokenPath); statErr != nil {
 					return fmt.Errorf("first connect needs $%s; no cached token at %s",
-						rt.cfg.Cloud.AuthKeyEnv, tokenPath)
+						rt.cfg.Cloud.EnrollmentKeyEnv, tokenPath)
 				}
 			}
 
@@ -107,14 +107,14 @@ env var can be unset after the first successful connect.`,
 					"pack_dir", degraded.Dir, "error", degraded.Reason)
 			}
 			dialer := &cloud.WebsocketDialer{
-				URL:        rt.cfg.Cloud.URL,
-				AuthKey:    authKey,
-				TokenPath:  tokenPath,
-				Hostname:   hostname,
-				Group:      rt.cfg.Runner.Group,
-				Version:    Version,
-				ExternalID: externalID,
-				Logger:     logger,
+				URL:           rt.cfg.Cloud.URL,
+				EnrollmentKey: enrollmentKey,
+				TokenPath:     tokenPath,
+				Hostname:      hostname,
+				Group:         rt.cfg.Runner.Group,
+				Version:       Version,
+				ExternalID:    externalID,
+				Logger:        logger,
 			}
 
 			builder := &cloud.StateBuilder{

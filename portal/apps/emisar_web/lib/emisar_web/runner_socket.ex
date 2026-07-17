@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnerSocket do
   Each connection is one BEAM process. The process:
 
     1. Authenticates the runner on `init/1` using the bearer token (or
-       bootstrap auth key) presented in the `Authorization` header,
+       bootstrap enrollment key) presented in the `Authorization` header,
        then ingests the runner's first `runner_state` message.
     2. Subscribes to the runner transport topic (`Runners.subscribe_runner_transport/1`) so the cloud can
        deliver `run_action`/`cancel`/`ack_result` messages to this

@@ -116,7 +116,7 @@ defmodule EmisarWeb.AuditSummary do
     end
   end
 
-  # -- Runners / auth keys / API keys ----------------------------------
+  # -- Runners / enrollment keys / API keys ----------------------------------
 
   defp summarize("runner.registered", p),
     do: pairs(group: get(p, :group), hostname: get(p, :hostname))

@@ -172,8 +172,8 @@ including the documented aliases, are public inputs.
 The runner configuration is YAML with exact `schema_version: 1` and strict
 keys. Its top-level sections are `runner`, `cloud`, `paths`, `execution`,
 `admission`, `signing`, `events`, and `redaction`. `EMISAR_CONFIG` selects the
-file, `EMISAR_URL` overrides `cloud.url`, and `cloud.auth_key_env` names the
-bootstrap credential (normally `EMISAR_AUTH_KEY`). `EMISAR_PACKS_REGISTRY` and
+file, `EMISAR_URL` overrides `cloud.url`, and `cloud.enrollment_key_env` names the
+bootstrap credential (normally `EMISAR_ENROLLMENT_KEY`). `EMISAR_PACKS_REGISTRY` and
 the `--registry` flag select a pack registry.
 
 The MCP bridge has no subcommands. Its flags are `-h/--help` and
@@ -249,7 +249,7 @@ in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--uninstall`, `--purge`, `--no-start`, `--no-service`, `--bin-dir`,
 `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its environment
 includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
-`EMISAR_URL`, and `EMISAR_AUTH_KEY`.
+`EMISAR_URL`, and `EMISAR_ENROLLMENT_KEY`.
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, and `--yes`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, and `ASSUME_YES`.

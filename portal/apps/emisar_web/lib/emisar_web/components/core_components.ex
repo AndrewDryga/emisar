@@ -5065,15 +5065,15 @@ defmodule EmisarWeb.CoreComponents do
 
       <.secret_reveal
         :if={@new_secret}
-        title="Copy this auth key now — it will not be shown again."
+        title="Copy this enrollment key now — it will not be shown again."
         secret={@new_secret}
         on_dismiss="dismiss_secret"
       >
-        Treat it like a password. Anyone with this key can register an
+        Treat it like a password. Anyone with this key can register a
         runner under your account.
 
         <:install_command>
-          curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} bash
+          curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY={@new_secret} bash
         </:install_command>
       </.secret_reveal>
 

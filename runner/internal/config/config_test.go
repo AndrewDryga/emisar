@@ -58,8 +58,8 @@ func TestLoad_RejectsPlaintextNonLoopbackCloudURL(t *testing.T) {
 
 	// Same URL, but the operator explicitly opted in.
 	optedIn := strings.Replace(insecure,
-		"auth_key_env: EMISAR_AUTH_KEY",
-		"auth_key_env: EMISAR_AUTH_KEY\n  allow_insecure: true", 1)
+		"enrollment_key_env: EMISAR_ENROLLMENT_KEY",
+		"enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  allow_insecure: true", 1)
 	ok := filepath.Join(dir, "ok.yaml")
 	writeYAML(t, ok, optedIn)
 	if _, err := Load(ok); err != nil {
@@ -73,21 +73,21 @@ func validConfig() *Config {
 	return &Config{
 		SchemaVersion: SchemaVersion,
 		Runner:        Runner{Group: "g"},
-		Cloud:         Cloud{URL: "wss://cloud.example.com/runner", AuthKeyEnv: "EMISAR_AUTH_KEY"},
+		Cloud:         Cloud{URL: "wss://cloud.example.com/runner", EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
 		Paths:         Paths{DataDir: "/var/lib/emisar"},
 		Events:        Events{JSONLPath: "/tmp/events.jsonl"},
 	}
 }
 
-func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
+func TestValidate_RejectsEnrollmentKeyVarInInheritEnv(t *testing.T) {
 	base := validConfig
 
-	// Listing the auth-key var in inherit_env would leak the bootstrap secret
+	// Listing the enrollment-key var in inherit_env would leak the bootstrap secret
 	// into every action's environment — must be rejected.
 	cfg := base()
-	cfg.Execution.InheritEnv = []string{"NOMAD_ADDR", "EMISAR_AUTH_KEY"}
+	cfg.Execution.InheritEnv = []string{"NOMAD_ADDR", "EMISAR_ENROLLMENT_KEY"}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("inherit_env including the auth key var must be rejected")
+		t.Fatal("inherit_env including the enrollment key var must be rejected")
 	}
 
 	// The same config without the overlap validates — proving the rejection is

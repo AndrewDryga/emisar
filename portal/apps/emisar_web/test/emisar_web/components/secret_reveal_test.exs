@@ -18,7 +18,7 @@ defmodule EmisarWeb.Components.SecretRevealTest do
       html =
         rendered_to_string(~H"""
         <CoreComponents.secret_reveal
-          title="Copy this auth key now."
+          title="Copy this enrollment key now."
           secret="emk-abc123"
           on_dismiss="dismiss_secret"
         >

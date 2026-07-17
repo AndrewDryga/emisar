@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunnerInstallLive do
   the first-time onboarding case on the dashboard.
 
   Behaviour:
-  - On mount (connected pass only), mint a fresh install auth key for
+  - On mount (connected pass only), mint a fresh install enrollment key for
     this account so the operator doesn't have to click "generate" then
     copy. Ring eviction in `Runners.mint_install_key/2` caps unused
     autos at 42 per account regardless of how many times this page

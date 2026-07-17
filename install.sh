@@ -96,9 +96,9 @@ Flags:
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
-EMISAR_AUTH_KEY, RUNNER_GROUP, RUNNER_ROLE, RUNNER_ENVIRONMENT.
+EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_ROLE, RUNNER_ENVIRONMENT.
 
-EMISAR_URL + EMISAR_AUTH_KEY are baked into config.yaml + runner.env
+EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
 RUNNER_GROUP defaults to `hostname -s`; RUNNER_ENVIRONMENT to `prod`.
 
@@ -154,9 +154,9 @@ die_systemd_required() {
   die "this installer requires systemd on Linux (${reason}).
 
 For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
-  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
+  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
 
-If you are reusing a portal-generated one-liner, keep its EMISAR_AUTH_KEY/EMISAR_URL values and replace the final 'bash' with:
+If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
 }
 # log()/warn()/die() ALL write to stderr. Function return values come
@@ -319,7 +319,7 @@ ExecReload=/bin/kill -HUP \$MAINPID
 
 # Restart only on failure — clean shutdowns stay shut down.
 # StartLimitBurst caps a permanently-broken config (e.g., revoked
-# auth key returning 401) so it doesn't hammer the cloud forever.
+# enrollment key returning 401) so it doesn't hammer the cloud forever.
 Restart=on-failure
 RestartSec=5s
 StartLimitIntervalSec=300
@@ -470,10 +470,10 @@ cloud:
   # local-only mode (CLI subcommands work; \`connect\` exits with an
   # error).
   url: "${cloud_url}"
-  # Name of the environment variable holding the runner auth key. The
+  # Name of the environment variable holding the runner enrollment key. The
   # systemd unit reads ${ETC_DIR}/runner.env which should contain:
-  #   EMISAR_AUTH_KEY=emkey-auth-...
-  auth_key_env: EMISAR_AUTH_KEY
+  #   EMISAR_ENROLLMENT_KEY=emkey-enroll-...
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
   token_path: ${DATA_DIR}/token
   heartbeat_every: 30s
   reconnect_min: 1s
@@ -508,25 +508,25 @@ EOF
 }
 
 runner_env_skeleton() {
-  # If the install command set EMISAR_AUTH_KEY, bake it in so the runner
+  # If the install command set EMISAR_ENROLLMENT_KEY, bake it in so the runner
   # boots without a follow-up edit. Otherwise emit a commented-out
   # placeholder the operator fills in by hand.
-  if [ -n "${EMISAR_AUTH_KEY:-}" ]; then
+  if [ -n "${EMISAR_ENROLLMENT_KEY:-}" ]; then
     cat <<EOF
-# Cloud auth key. Loaded at runner start via systemd's EnvironmentFile=
+# Cloud enrollment key. Loaded at runner start via systemd's EnvironmentFile=
 # (failure to read is non-fatal, but the runner refuses to connect
 # without the key).
-EMISAR_AUTH_KEY=${EMISAR_AUTH_KEY}
+EMISAR_ENROLLMENT_KEY=${EMISAR_ENROLLMENT_KEY}
 EOF
   else
     cat <<'EOF'
-# Drop your cloud auth key here. The systemd unit's EnvironmentFile=
+# Drop your cloud enrollment key here. The systemd unit's EnvironmentFile=
 # directive loads this file at start (failure to read is non-fatal,
 # but the runner will refuse to connect without the key).
 #
 # Format is shell-style KEY=VALUE, one per line, no quotes.
 #
-#EMISAR_AUTH_KEY=emkey-auth-replace-me
+#EMISAR_ENROLLMENT_KEY=emkey-enroll-replace-me
 EOF
   fi
 
@@ -703,11 +703,11 @@ ensure_dirs() {
 drop_config_skeleton() {
   local cfg="${ETC_DIR}/config.yaml"
   if [ ! -f "${cfg}" ]; then
-    # If the install command supplied EMISAR_URL + EMISAR_AUTH_KEY, the
+    # If the install command supplied EMISAR_URL + EMISAR_ENROLLMENT_KEY, the
     # generated config + env are complete and the runner can boot. Only
     # flag NEEDS_CONFIGURATION when an operator-edit is actually needed.
     local needs=0
-    if [ -z "${EMISAR_URL:-}" ] || [ -z "${EMISAR_AUTH_KEY:-}" ]; then
+    if [ -z "${EMISAR_URL:-}" ] || [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
       needs=1
     fi
     if [ "${needs}" = "1" ]; then
@@ -723,7 +723,7 @@ drop_config_skeleton() {
     # Config exists — preserve the operator's file. But an explicitly
     # passed RUNNER_GROUP is a deliberate provisioning instruction, so
     # honor it by rewriting only the runner.group line; nothing else is
-    # touched. (EMISAR_URL / EMISAR_AUTH_KEY still apply on fresh installs
+    # touched. (EMISAR_URL / EMISAR_ENROLLMENT_KEY still apply on fresh installs
     # only — on an existing host they may hold operator-tuned values.)
     if [ -n "${RUNNER_GROUP:-}" ] && \
        printf '%s' "${RUNNER_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
@@ -748,7 +748,7 @@ drop_config_skeleton() {
   if [ ! -f "${env}" ]; then
     log "writing runner.env stub to ${env}"
     # Create the file 0600 from the first byte (umask in a subshell) so
-    # EMISAR_AUTH_KEY is never momentarily world-readable. The previous
+    # EMISAR_ENROLLMENT_KEY is never momentarily world-readable. The previous
     # write-then-chmod left a brief race window where it was 0644.
     ( umask 077 && runner_env_skeleton > "${env}" )
     # Belt-and-suspenders in case a restrictive umask wasn't honoured.
@@ -1244,19 +1244,19 @@ Data:     ${DATA_DIR}
 Logs:     ${LOG_DIR}/events.jsonl (security log)
 EOF
 
-  # If EMISAR_URL + EMISAR_AUTH_KEY came in via env, drop_config_skeleton
+  # If EMISAR_URL + EMISAR_ENROLLMENT_KEY came in via env, drop_config_skeleton
   # already wrote them — no manual edit needed. Otherwise prompt for it.
   if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
     cat <<EOF
 
 Next steps:
   1. Edit ${ETC_DIR}/config.yaml — set runner.group, cloud.url, etc.
-  2. Edit ${ETC_DIR}/runner.env — set EMISAR_AUTH_KEY=emkey-auth-...
+  2. Edit ${ETC_DIR}/runner.env — set EMISAR_ENROLLMENT_KEY=emkey-enroll-...
 EOF
   else
     cat <<EOF
 
-Pre-configured from install env (EMISAR_URL + EMISAR_AUTH_KEY).
+Pre-configured from install env (EMISAR_URL + EMISAR_ENROLLMENT_KEY).
 Edit ${ETC_DIR}/config.yaml to tighten runner.group / labels later.
 EOF
   fi
@@ -1288,7 +1288,7 @@ EOF
   3. Run the binary directly (no service was installed):
        ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml
      For a one-off connect test, pass the key inline:
-       EMISAR_AUTH_KEY=emkey-... ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml
+       EMISAR_ENROLLMENT_KEY=emkey-... ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml
 EOF
       else
         # No systemd to load runner.env, so we source it in the same

@@ -40,10 +40,10 @@ The portal's **Runners → Install** page generates this one-liner with
 the control-plane URL and a fresh bootstrap key already baked in:
 
 ```sh
-curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-... bash
+curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash
 ```
 
-`EMISAR_URL` / `EMISAR_AUTH_KEY` provided as env vars are written into
+`EMISAR_URL` / `EMISAR_ENROLLMENT_KEY` provided as env vars are written into
 `config.yaml` / `runner.env` at install time, so the service starts
 connected — no post-install editing. Other accepted env/flags:
 `--packs LIST` (fixed pack set, no prompts), `--no-start` (install +
@@ -72,7 +72,7 @@ checksum from GitHub releases).
    - `/var/log/emisar/` — JSONL security log + rotated backups.
 7. Drops a `config.yaml` skeleton **only if one does not already
    exist**. Existing configs are preserved on upgrade.
-8. Drops a `runner.env` stub (`chmod 600`) for the auth key and pack
+8. Drops a `runner.env` stub (`chmod 600`) for the enrollment key and pack
    credentials — **only if one does not already exist**, so an upgrade
    never clobbers tokens you've added.
 9. Installs a small, host-matched set of starter packs after a confirmation
@@ -87,7 +87,7 @@ checksum from GitHub releases).
    detection and suggestions.
 10. Installs the supervisor unit:
     - Linux: `/etc/systemd/system/emisar.service`, enabled but not
-      started until you configure the auth key.
+      started until you configure the enrollment key.
     - macOS: `/Library/LaunchDaemons/com.emisar.runner.plist`,
       registered with launchd. A root-owned `/etc/emisar/run-launchd.sh`
       wrapper loads the protected `runner.env` before it replaces itself with
@@ -99,7 +99,7 @@ checksum from GitHub releases).
 
 1. **Edit `/etc/emisar/config.yaml`** — set `runner.group` (the cloud
    UI's auto-grouping key) and `cloud.url`.
-2. **Edit `/etc/emisar/runner.env`** — set `EMISAR_AUTH_KEY=emkey-auth-...`
+2. **Edit `/etc/emisar/runner.env`** — set `EMISAR_ENROLLMENT_KEY=emkey-enroll-...`
    (the cloud-issued bootstrap key for this runner).
 3. **Start the service:**
    ```sh
@@ -163,7 +163,7 @@ and `StartLimitIntervalSec=300`. Meaning:
 - After 5 restarts in 5 minutes the unit goes into a `failed` state
   and stops trying. The operator must run `systemctl reset-failed
   emisar && systemctl start emisar` to retry. This prevents a
-  misconfigured runner (e.g., revoked auth key returning 401) from
+  misconfigured runner (e.g., revoked enrollment key returning 401) from
   hammering the cloud forever.
 
 `TimeoutStopSec=7m` gives the runner up to 7 minutes for graceful
@@ -259,7 +259,7 @@ version — running it does not re-fetch from GitHub.
 - **`Restart=on-failure` not `Restart=always`.** Clean shutdowns
   (operator-initiated, planned restarts) should stay shut down. Only
   crashes warrant restart.
-- **`StartLimitBurst=5`.** Without it, a broken auth key produces an
+- **`StartLimitBurst=5`.** Without it, a broken enrollment key produces an
   infinite 401-reconnect loop. With it, the runner fails closed after 5
   attempts and surfaces a clear error in `systemctl status`.
 - **Minimal default sandbox.** The unit only sets `User=emisar` and

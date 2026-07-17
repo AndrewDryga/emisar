@@ -16,7 +16,7 @@ cloud:
   # above is refused unless we explicitly opt in. Safe here (local dev
   # against a host-side control plane); never set this for a real endpoint.
   allow_insecure: true
-  auth_key_env: "EMISAR_AUTH_KEY"
+  enrollment_key_env: "EMISAR_ENROLLMENT_KEY"
   token_path: "/var/lib/emisar/token.json"
   heartbeat_every: "30s"
   reconnect_min: "1s"

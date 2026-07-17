@@ -1,6 +1,6 @@
 defmodule Emisar.Runners.EnrollmentKey.Changeset do
   @moduledoc """
-  Changesets for runner auth keys: create / mint-install (auto-generated)
+  Changesets for runner enrollment keys: create / mint-install (auto-generated)
   / revoke / soft-delete / usage. The raw key only ever flows through
   `create/2` and `mint_install/2` return values — `key_hash` is the
   persisted form.
@@ -44,16 +44,16 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
     |> validate_number(:max_uses, greater_than: 0)
   end
 
-  # Mirrors Emisar.Runners' mint size ("emkey-auth-" + 16 random chars);
+  # Mirrors Emisar.Runners' mint size ("emkey-enroll-" + 16 random chars => 29);
   # the round-trip test on `peek_enrollment_key_by_secret/1` breaks on drift.
-  @enrollment_key_prefix_size 27
+  @enrollment_key_prefix_size 29
 
   @doc """
   Seed/dev-bootstrap variant of `create/5` deriving prefix + hash from a
   caller-supplied raw secret (docker-compose's fixed dev key, test
   fixtures). Production keys MUST mint through
   `Emisar.Runners.create_enrollment_key/2` — a known raw value defeats the
-  server-side randomization that makes auth keys credentials.
+  server-side randomization that makes enrollment keys credentials.
   """
   def create_with_secret(account_id, user_id, raw, attrs)
       when is_binary(raw) and byte_size(raw) >= @enrollment_key_prefix_size do

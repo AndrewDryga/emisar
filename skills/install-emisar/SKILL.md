@@ -113,12 +113,12 @@ curl --fail --silent --show-error --location \
 bash "$installer" --help
 sudo env \
   EMISAR_URL="$EMISAR_URL" \
-  EMISAR_AUTH_KEY="$EMISAR_AUTH_KEY" \
+  EMISAR_ENROLLMENT_KEY="$EMISAR_ENROLLMENT_KEY" \
   RUNNER_GROUP="$RUNNER_GROUP" \
   RUNNER_ROLE="$RUNNER_ROLE" \
   RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
   bash "$installer" --version "$RUNNER_VERSION"
-unset EMISAR_AUTH_KEY
+unset EMISAR_ENROLLMENT_KEY
 rm -f "$installer"
 trap - EXIT HUP INT TERM
 ```

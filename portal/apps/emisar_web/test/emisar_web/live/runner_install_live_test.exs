@@ -27,7 +27,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert html =~ "curl -sSL"
 
       # The Copy button copies the literal command via data-copy-text,
-      # including the intentional leading space (keeps the auth key out of
+      # including the intentional leading space (keeps the enrollment key out of
       # shell history under HISTCONTROL=ignorespace). Regression: copying
       # via the element's innerText used to strip that leading space.
       assert html =~ ~s(data-copy-text=" curl -sSL)
@@ -68,7 +68,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert html =~ "curl -sSL"
       assert html =~ ~s(data-copy-text=" curl -sSL)
-      refute html =~ "couldn't mint a bootstrap auth key"
+      refute html =~ "couldn't mint a bootstrap enrollment key"
     end
 
     test "a viewer is redirected at mount — install is issue-tier", %{conn: conn} do
@@ -115,7 +115,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # real command…
       assert html =~ "Generating your install command"
       refute html =~ ~s(data-copy-text=" curl -sSL)
-      # …and crucially mints no auth key.
+      # …and crucially mints no enrollment key.
       assert Repo.all(EnrollmentKey) == []
     end
 

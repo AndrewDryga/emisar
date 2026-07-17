@@ -79,11 +79,11 @@ type Runner struct {
 
 // Cloud configures the outbound websocket connection.
 type Cloud struct {
-	URL        string `yaml:"url"`
-	AuthKeyEnv string `yaml:"auth_key_env"`
+	URL              string `yaml:"url"`
+	EnrollmentKeyEnv string `yaml:"enrollment_key_env"`
 	// AllowInsecure opts in to a cleartext (http/ws) control-plane URL on
 	// a non-loopback host. Off by default: plaintext transmits the runner
-	// auth key in the clear, so it's only permitted for loopback dev or
+	// enrollment key in the clear, so it's only permitted for loopback dev or
 	// when an operator explicitly accepts the risk.
 	AllowInsecure  bool                `yaml:"allow_insecure,omitempty"`
 	TokenPath      string              `yaml:"token_path,omitempty"`
@@ -180,16 +180,16 @@ func (c *Config) Validate() error {
 	if c.Cloud.URL == "" {
 		// Permitted: developer using only CLI subcommands locally.
 	} else {
-		if c.Cloud.AuthKeyEnv == "" {
-			return fmt.Errorf("config: cloud.auth_key_env required when cloud.url is set")
+		if c.Cloud.EnrollmentKeyEnv == "" {
+			return fmt.Errorf("config: cloud.enrollment_key_env required when cloud.url is set")
 		}
-		// The bootstrap auth key must never reach a child process's environment
+		// The bootstrap enrollment key must never reach a child process's environment
 		// (readable via /proc/<pid>/environ, crash dumps, child logs). Refuse an
 		// inherit_env that would leak it into every action the runner spawns.
 		for _, name := range c.Execution.InheritEnv {
-			if name == c.Cloud.AuthKeyEnv {
+			if name == c.Cloud.EnrollmentKeyEnv {
 				return fmt.Errorf(
-					"config: execution.inherit_env must not include the auth key var %q — "+
+					"config: execution.inherit_env must not include the enrollment key var %q — "+
 						"it would leak the bootstrap secret into every action's environment",
 					name,
 				)
@@ -283,14 +283,14 @@ func (c *Config) validateSigning() error {
 }
 
 // validateCloudTransportSecurity refuses a cleartext (http/ws) control-
-// plane URL to a non-loopback host: the runner sends its auth key and
+// plane URL to a non-loopback host: the runner sends its enrollment key and
 // per-runner token over that channel, so plaintext to a real host exposes
 // credentials and invites MITM command injection. Loopback is allowed for
 // local development; any other insecure endpoint requires an explicit
 // cloud.allow_insecure opt-in so it can never happen by accident in prod.
 func (c *Config) validateCloudTransportSecurity() error {
 	if err := CheckEndpointScheme(c.Cloud.URL, c.Cloud.AllowInsecure); err != nil {
-		// Cleartext to the cloud sends the runner auth key in plaintext.
+		// Cleartext to the cloud sends the runner enrollment key in plaintext.
 		return fmt.Errorf("config: cloud.url %w (set cloud.allow_insecure: true to override)", err)
 	}
 	u, _ := url.Parse(c.Cloud.URL)

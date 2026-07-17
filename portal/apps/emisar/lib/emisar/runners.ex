@@ -1,6 +1,6 @@
 defmodule Emisar.Runners do
   @moduledoc """
-  Runner lifecycle: registration, auth-key management, token mint/verify,
+  Runner lifecycle: registration, enrollment-key management, token mint/verify,
   state advertisement persistence, connection state.
 
   Presence carries the runner's live UI state (`action_load`, last heartbeat).
@@ -23,8 +23,8 @@ defmodule Emisar.Runners do
   alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token, UserRunnerScope}
   require Logger
 
-  # 11 chars for "emkey-auth-" + 16 random chars => 27.
-  @enrollment_key_prefix_size 27
+  # 13 chars for "emkey-enroll-" + 16 random chars => 29.
+  @enrollment_key_prefix_size 29
   # 7 chars for "rnrtok-" + 5 random.
   @token_prefix_size 12
 
@@ -517,7 +517,7 @@ defmodule Emisar.Runners do
           # (Policies.resolve_policy), so a compromised host could declare a looser
           # group — but it already owns the box the runner executes on, so it gains
           # nothing it couldn't do locally. The host is the trust anchor. Pin to the
-          # auth key if you need it operator-authoritative. See docs/security-model.md.
+          # enrollment key if you need it operator-authoritative. See docs/security-model.md.
           group: nonblank(payload["group"]) || active_runner.group,
           # Runner-declared too, but trusting it is unconditionally safe: it only
           # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
@@ -940,7 +940,7 @@ defmodule Emisar.Runners do
 
   def runner_in_scope?(_runner, _scopes), do: false
 
-  # -- Auth keys -------------------------------------------------------
+  # -- Enrollment keys -------------------------------------------------------
 
   def list_enrollment_keys(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -970,7 +970,7 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Changeset for the auth-key create form (operator-facing fields, no secret
+  Changeset for the enrollment-key create form (operator-facing fields, no secret
   minted). Drives `phx-change` validation + inline field errors in the
   LiveView; the real key is minted by `create_enrollment_key/2`.
   """
@@ -984,7 +984,7 @@ defmodule Emisar.Runners do
            ) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
-      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @enrollment_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
 
       Multi.new()
       |> Multi.insert(
@@ -1009,7 +1009,7 @@ defmodule Emisar.Runners do
     Emisar.PubSub.subscribe(Presence.topic(account_id))
   end
 
-  @doc "Subscribe the caller to the account's auth-key list changes (`{:list_changed, :enrollment_key, …}`)."
+  @doc "Subscribe the caller to the account's enrollment-key list changes (`{:list_changed, :enrollment_key, …}`)."
   def subscribe_account_enrollment_keys(account_id),
     do: Emisar.PubSub.subscribe(account_enrollment_keys_topic(account_id))
 
@@ -1115,7 +1115,7 @@ defmodule Emisar.Runners do
     do: "account:#{account_id}:runner:#{runner_id}:control"
 
   @doc """
-  Mints a fresh, single-use bootstrap auth key for the dashboard's
+  Mints a fresh, single-use bootstrap enrollment key for the dashboard's
   install command, marks it auto-generated, and evicts the oldest
   auto-unused key beyond the per-account ring cap of #{@install_ring_cap}.
 
@@ -1134,7 +1134,7 @@ defmodule Emisar.Runners do
       cap = opts[:ring_cap] || @install_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
-      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @enrollment_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
 
       Multi.new()
       # Insert first, then evict — so the account never momentarily has
@@ -1295,7 +1295,7 @@ defmodule Emisar.Runners do
   def subject_can_install_runners?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission())
 
-  @doc "Whether `subject` may manage runner auth keys (admin+)."
+  @doc "Whether `subject` may manage runner enrollment keys (admin+)."
   def subject_can_manage_enrollment_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_enrollment_keys_permission())
 
@@ -1303,7 +1303,7 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — runner-register controller, raw secret in hand (the secret IS
-  the auth, no Subject yet exists): a runner presents a valid auth key on
+  the auth, no Subject yet exists): a runner presents a valid enrollment key on
   first connect. Creates the runner record (or returns the existing one
   for a reusable key) and mints a fresh per-runner token; enforces the
   account's runner-count plan limit.
@@ -1411,7 +1411,7 @@ defmodule Emisar.Runners do
   # plan's runner-count limit is enforced only on the fresh-insert branch
   # and before the row exists (so the count excludes it). A reconnecting
   # runner — e.g. one that lost its token on a redeploy and re-registers
-  # via its auth key — is already counted, so checking the limit for it
+  # via its enrollment key — is already counted, so checking the limit for it
   # would lock an operator out of their own fleet at the plan ceiling.
   defp register_or_reuse_runner(repo, key, attrs, external_id) do
     case fetch_runner_by_external_id_for_account(external_id, key.account_id, repo: repo) do

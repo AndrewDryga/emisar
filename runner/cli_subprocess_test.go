@@ -330,7 +330,7 @@ func TestCLI_ReadCommandBootFailureExitsOne(t *testing.T) {
 // --- RUN-003 — connect config-validation fatals (no live socket) -----------
 
 // `connect` fails fast on a misconfiguration, before any dial: no cloud.url, a
-// first connect with no auth key + no cached token, and a malformed signing key
+// first connect with no enrollment key + no cached token, and a malformed signing key
 // each produce a clear `error: …` on stderr and exit 1. None of these reach the
 // network (the assertions return immediately, proving the fatal is hit at the
 // CLI boundary, not after a dial).
@@ -365,17 +365,17 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 		}
 	})
 
-	t.Run("first connect needs the auth key", func(t *testing.T) {
+	t.Run("first connect needs the enrollment key", func(t *testing.T) {
 		// a loopback URL passes the transport-security gate,
 		// so the failure is the missing-credential fatal, not a scheme refusal.
-		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  auth_key_env: EMISAR_AUTH_KEY\n")
-		// EMISAR_AUTH_KEY deliberately unset; no token file exists yet.
-		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_AUTH_KEY": ""})
+		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n")
+		// EMISAR_ENROLLMENT_KEY deliberately unset; no token file exists yet.
+		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_ENROLLMENT_KEY": ""})
 		if code != 1 {
 			t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
 		}
-		if !strings.Contains(stderr, "first connect needs $EMISAR_AUTH_KEY") || !strings.Contains(stderr, "no cached token") {
-			t.Errorf("stderr should explain the missing auth key + absent token, got %q", stderr)
+		if !strings.Contains(stderr, "first connect needs $EMISAR_ENROLLMENT_KEY") || !strings.Contains(stderr, "no cached token") {
+			t.Errorf("stderr should explain the missing enrollment key + absent token, got %q", stderr)
 		}
 		if stdout != "" {
 			t.Errorf("a fatal connect produces no stdout, got %q", stdout)
@@ -385,10 +385,10 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 	t.Run("malformed signing key is fatal", func(t *testing.T) {
 		// enforce + a non-hex public key makes buildVerifier
 		// fail; connect surfaces it as `signing: …` and exits 1.
-		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  auth_key_env: EMISAR_AUTH_KEY\n"+
+		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n"+
 			"signing:\n  enforce_signatures: true\n  trusted_cas:\n    - ca_id: k1\n      public_key: zzzznothex\n")
-		// Provide the auth key so we get PAST the credential check to buildVerifier.
-		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_AUTH_KEY": "ek-test"})
+		// Provide the enrollment key so we get PAST the credential check to buildVerifier.
+		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_ENROLLMENT_KEY": "ek-test"})
 		if code != 1 {
 			t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
 		}

@@ -1538,27 +1538,27 @@ if existing_runs == [] do
   )
 end
 
-# -- Bootstrap auth key (unchanged) ----------------------------------
+# -- Bootstrap enrollment key (unchanged) ----------------------------------
 
 case Runners.list_enrollment_keys(owner_subject) do
   {:ok, [], _} ->
-    case System.get_env("EMISAR_DEV_FIXED_AUTH_KEY") do
-      fixed when is_binary(fixed) and byte_size(fixed) >= 27 ->
+    case System.get_env("EMISAR_DEV_FIXED_ENROLLMENT_KEY") do
+      fixed when is_binary(fixed) and byte_size(fixed) >= 29 ->
         {:ok, _key} =
           Emisar.Runners.EnrollmentKey.Changeset.create_with_secret(account.id, user.id, fixed, %{
-            description: "Dev fixed auth key (docker-compose)",
+            description: "Dev fixed enrollment key (docker-compose)",
             group: "dev-docker",
             reusable: true
           })
           |> Repo.insert()
 
-        IO.puts(IO.ANSI.green() <> "✓ Seeded dev fixed auth key" <> IO.ANSI.reset())
+        IO.puts(IO.ANSI.green() <> "✓ Seeded dev fixed enrollment key" <> IO.ANSI.reset())
 
       _ ->
         {:ok, raw, _key} =
           Runners.create_enrollment_key(
             %{
-              description: "Demo auth key",
+              description: "Demo enrollment key",
               group: "edge-web",
               reusable: true
             },
@@ -1567,7 +1567,11 @@ case Runners.list_enrollment_keys(owner_subject) do
 
         IO.puts("")
         IO.puts(IO.ANSI.green() <> "Bootstrap a runner:" <> IO.ANSI.reset())
-        IO.puts("  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY=#{raw} bash")
+
+        IO.puts(
+          "  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw} bash"
+        )
+
         IO.puts("")
     end
 

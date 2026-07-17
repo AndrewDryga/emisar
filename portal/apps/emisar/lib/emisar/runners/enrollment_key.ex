@@ -4,7 +4,7 @@ defmodule Emisar.Runners.EnrollmentKey do
   and the runner presents on first connect. Reusable for stable VM
   fleets; single-use for ephemeral / autoscaler use-cases.
 
-  Stored as `key_prefix` (e.g. "emkey-auth-AB12") + `key_hash`. The
+  Stored as `key_prefix` (e.g. "emkey-enroll-AB12") + `key_hash`. The
   raw key is only returned to the operator at creation.
   """
   use Emisar, :schema

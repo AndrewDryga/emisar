@@ -25,7 +25,7 @@
 #               its way up; becomes healthy on GET /healthz
 #   seeder      runs once after portal is healthy; inserts the demo
 #               account, default policy, sample runbook, the demo runner
-#               rows, and a fixed dev auth key matching what the runners present
+#               rows, and a fixed dev enrollment key matching what the runners present
 #   runner-*    depend on seeder succeeding; register against portal and
 #               ADOPT their pre-seeded rows by external_id — so they come up
 #               online carrying the seeded run history, approvals, and grants
@@ -199,7 +199,7 @@ services:
 
   # ----------------------------------------------------------------
   # Seeder — runs once, exits. Inserts the demo account, default
-  # policy, sample runbook, and an auth key whose SHA-256 matches the
+  # policy, sample runbook, and an enrollment key whose SHA-256 matches the
   # raw secret the runner services below present. Idempotent.
   # ----------------------------------------------------------------
   seeder:
@@ -213,10 +213,10 @@ services:
       PHX_HOST: "localhost"
       FORCE_SSL: "false"
       EMISAR_DISABLE_BILLING: "1"
-      # DEV-ONLY well-known auth key. Same value the runners use. The
+      # DEV-ONLY well-known enrollment key. Same value the runners use. The
       # seed inserts a row with the SHA-256 of this raw string so the
       # runners' /runner/register call resolves it.
-      EMISAR_DEV_FIXED_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      EMISAR_DEV_FIXED_ENROLLMENT_KEY: "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
       # DEV-ONLY well-known MCP API key. The seed mints the demo agent key
       # ("Claude Code - on-call") with this exact raw value so the `mcp`
       # service below can drive the bridge with no manual key minting. Must
@@ -274,7 +274,7 @@ services:
         condition: service_completed_successfully
     environment:
       EMISAR_URL: "http://portal:4000"
-      EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      EMISAR_ENROLLMENT_KEY: "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
     volumes:
       - runner_1_data:/var/lib/emisar
       - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
@@ -306,7 +306,7 @@ services:
     # environment: replaces the anchor's, so the bootstrap vars are repeated.
     environment:
       EMISAR_URL: "http://portal:4000"
-      EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      EMISAR_ENROLLMENT_KEY: "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
       PGHOST: "db"
       PGUSER: "postgres"
       PGPASSWORD: "postgres"

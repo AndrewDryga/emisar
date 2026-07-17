@@ -1,7 +1,7 @@
 defmodule Emisar.Runners.Authorizer do
   @moduledoc """
   Permissions + queryable scoping for runner-related schemas: runners,
-  auth keys, runner tokens.
+  enrollment keys, runner tokens.
 
     * `manage_*` gates mutations and admin-only listings.
     * `view_runners_permission` gates read-only operator/viewer surfaces.

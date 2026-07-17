@@ -100,7 +100,7 @@ Commands run from the repo root. The runner is its own Go module under
 To run in daemon mode (waiting for cloud commands):
 
 ```sh
-EMISAR_AUTH_KEY=emkey-auth-... \
+EMISAR_ENROLLMENT_KEY=emkey-enroll-... \
   ./bin/emisar --config ./runner/examples/config.yaml connect
 ```
 

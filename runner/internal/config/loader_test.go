@@ -25,7 +25,7 @@ runner:
   group: test-group
 cloud:
   url: wss://cloud/runner
-  auth_key_env: EMISAR_AUTH_KEY
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
 paths:
   packs:
     - ./packs
@@ -120,14 +120,14 @@ func TestLoad_RejectsMissingGroup(t *testing.T) {
 	}
 }
 
-func TestLoad_RejectsMissingAuthKeyEnvWhenCloudSet(t *testing.T) {
+func TestLoad_RejectsMissingEnrollmentKeyEnvWhenCloudSet(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	body := strings.Replace(minimalConfig, "auth_key_env: EMISAR_AUTH_KEY\n", "", 1)
+	body := strings.Replace(minimalConfig, "enrollment_key_env: EMISAR_ENROLLMENT_KEY\n", "", 1)
 	writeYAML(t, cfgPath, body)
 
 	if _, err := Load(cfgPath); err == nil {
-		t.Fatal("expected missing auth_key_env to fail")
+		t.Fatal("expected missing enrollment_key_env to fail")
 	}
 }
 
@@ -137,7 +137,7 @@ func TestLoad_AllowsCloudURLEmpty(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 	body := strings.Replace(minimalConfig, `cloud:
   url: wss://cloud/runner
-  auth_key_env: EMISAR_AUTH_KEY
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
 `, "cloud: {}\n", 1)
 	writeYAML(t, cfgPath, body)
 	if _, err := Load(cfgPath); err != nil {
@@ -179,7 +179,7 @@ runner:
   group: test-group
 cloud:
   url: wss://cloud/runner
-  auth_key_env: EMISAR_AUTH_KEY
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
   heartbeat_every: 5s
   reconnect_min: 100ms
 paths:

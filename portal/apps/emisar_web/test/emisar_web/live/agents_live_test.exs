@@ -526,7 +526,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # a `datetime-local` expiry on the custom-create form
     # (no seconds, no zone) is stored as UTC: `parse_expires_at` appends ":00Z"
     # before parsing, so "2030-12-25 at 10:30" persists as 10:30:00 UTC. (The
-    # auth-keys form has the parallel; this is the agents path.)
+    # enrollment-keys form has the parallel; this is the agents path.)
     test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")

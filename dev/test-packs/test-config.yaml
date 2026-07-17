@@ -7,7 +7,7 @@ runner:
 
 cloud:
   url: wss://does-not-connect.invalid/runner/v1
-  auth_key_env: EMISAR_AUTH_KEY
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
   token_path: /tmp/emisar-test/token
   heartbeat_every: 30s
   reconnect_min: 1s

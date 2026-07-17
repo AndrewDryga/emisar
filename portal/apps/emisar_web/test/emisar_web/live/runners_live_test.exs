@@ -15,7 +15,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # so a first-time operator connects a host with no detour to a separate page.
       assert html =~ "Run this on the host"
       assert html =~ "curl -sSL"
-      assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
+      assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
       assert has_element?(lv, "#runner-install-command")
       assert html =~ "min-h-9"
       refute html =~ "overflow-x-auto"
@@ -275,7 +275,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Connect a runner"
       assert html =~ "Connect a runner"
       assert html =~ "curl -sSL"
-      assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
+      assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
 
       # The command embeds a live root-capable credential — the wizard must
       # say so (won't reshow, treat like a password) and let the operator

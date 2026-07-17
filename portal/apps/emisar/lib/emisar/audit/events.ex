@@ -288,7 +288,7 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  # A runner enrolling itself via an auth key on first connect — the
+  # A runner enrolling itself via an enrollment key on first connect — the
   # runner is the actor, no operator `%Subject{}` is involved.
   def runner_registered(
         %Runners.Runner{} = runner,
@@ -321,7 +321,7 @@ defmodule Emisar.Audit.Events do
   def runner_deleted(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.deleted")
 
-  # -- Auth keys (runner install/enrolment keys) -----------------------
+  # -- Enrollment keys (runner install/enrolment keys) -----------------------
 
   def enrollment_key_created(%Subject{} = subject, %Runners.EnrollmentKey{} = key) do
     Audit.changeset(

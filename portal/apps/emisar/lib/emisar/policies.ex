@@ -361,7 +361,7 @@ defmodule Emisar.Policies do
   Security note: `group` is runner-declared (see `Runners.apply_state/2`), so a
   group-scoped override is a SCOPING convenience, not a trust boundary against a
   compromised runner — a host that can forge its group already owns the box the
-  runner executes on. The host is the trust anchor; pin `group` to the auth key
+  runner executes on. The host is the trust anchor; pin `group` to the enrollment key
   for operator-authoritative scoping. See `docs/security-model.md`.
   """
   def resolve_policy(account_id, runner_id, group) do

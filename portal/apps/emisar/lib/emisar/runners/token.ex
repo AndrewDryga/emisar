@@ -2,7 +2,7 @@ defmodule Emisar.Runners.Token do
   @moduledoc """
   Per-runner long-lived token, minted at first registration. The
   runner persists this at `${data_dir}/token` and presents it on every
-  reconnect. Auth keys are one-shot bootstraps; tokens are the durable
+  reconnect. Enrollment keys are one-shot bootstraps; tokens are the durable
   credential.
   """
   use Emisar, :schema

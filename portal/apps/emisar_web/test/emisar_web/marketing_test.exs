@@ -794,7 +794,7 @@ defmodule EmisarWeb.MarketingTest do
       # interpolated, so assert the stable contiguous pieces, not the whole
       # line as one string.
       assert html =~ "curl -sSL https://emisar.dev/install.sh"
-      assert html =~ "sudo EMISAR_AUTH_KEY="
+      assert html =~ "sudo EMISAR_ENROLLMENT_KEY="
       assert html =~ "EMISAR_URL=https://emisar.dev bash"
       assert html =~ ~s(href="/install.sh")
     end

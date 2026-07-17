@@ -74,10 +74,10 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert json_response(conn, 401) == %{"error" => "missing_bearer"}
     end
 
-    test "rejects bogus auth key", %{conn: conn} do
+    test "rejects bogus enrollment key", %{conn: conn} do
       conn =
         conn
-        |> put_req_header("authorization", "Bearer emkey-auth-NOTREAL")
+        |> put_req_header("authorization", "Bearer emkey-enroll-NOTREAL")
         |> post(~p"/runner/register", %{"external_id" => "bogus-key-runner"})
 
       assert json_response(conn, 401) == %{"error" => "enrollment_key_invalid"}

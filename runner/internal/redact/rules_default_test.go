@@ -19,7 +19,7 @@ func defaultApply(t *testing.T, s string) (string, []Hit) {
 }
 
 // every emisar credential prefix is masked by the always-on
-// emisar-token rule (rules.go:82-94). The rule must keep pace with the portal
+// emisar-token rule (rules.go). The rule must keep pace with the portal
 // credential format; this pins the exact prefix family and its marker, and
 // asserts a near-miss prefix that is NOT in the format does not falsely match.
 func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
@@ -34,8 +34,9 @@ func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
 		{"oauth access token (emo-)", "emo-" + tail},
 		{"oauth refresh token (emor-)", "emor-" + tail},
 		{"oauth authorization code (emoc-)", "emoc-" + tail},
-		{"enrollment key (emkey-auth-)", "emkey-auth-" + tail},
-		{"legacy enrollment key (tskey-auth-)", "tskey-auth-" + tail},
+		{"enrollment key (emkey-enroll-)", "emkey-enroll-" + tail},
+		{"pre-rename enrollment key (emkey-auth-)", "emkey-auth-" + tail},
+		{"pre-rebrand enrollment key (tskey-auth-)", "tskey-auth-" + tail},
 	}
 	for _, tc := range masked {
 		t.Run(tc.name, func(t *testing.T) {

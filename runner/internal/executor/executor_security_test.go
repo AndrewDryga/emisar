@@ -64,7 +64,7 @@ func TestExecutor_PreCancelledContextDoesNotSpawnProcess(t *testing.T) {
 
 // TestExecutor_StripsNonAllowlistedParentEnv: a parent environment variable
 // that is NOT in the inherit allowlist must not reach the child process.
-// This is the guard that keeps host secrets (the runner's own auth key,
+// This is the guard that keeps host secrets (the runner's own enrollment key,
 // cloud tokens, …) out of every action's environment.
 func TestExecutor_StripsNonAllowlistedParentEnv(t *testing.T) {
 	t.Setenv("EMISAR_LEAK_PROBE", "supersecret")

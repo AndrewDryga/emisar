@@ -43,7 +43,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Two key models.</strong>
-            An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-auth-…</code>
+            An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-enroll-…</code>
             key is <strong class="text-zinc-200">single-use</strong>
             by default — spent on its first registration (concurrent attempts with the same key
             can't both win), right for an autoscaler enrolling one host at a time. Mark it
@@ -70,7 +70,7 @@
             <strong>Runners → Connect a runner</strong> generates the install one-liner with a
             fresh single-use key baked in. For fleet provisioning (cloud-init, Packer, Ansible),
             mint one reusable key under <strong>Runners → Enrollment keys</strong> — cap it with
-            max uses or an expiry to fit the rollout — and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_AUTH_KEY</code>.
+            max uses or an expiry to fit the rollout — and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

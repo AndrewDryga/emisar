@@ -96,7 +96,7 @@ func TestStateCmd_DoesNotPersistRuntimeStateAndAdvertisesSigningPolicy(t *testin
 	dir := t.TempDir()
 	packs := writePack(t, dir+"/packs", "linux")
 	flagConfig = writeMinimalConfig(t, dir, packs)
-	extra := "cloud:\n  url: wss://portal.example/socket\n  auth_key_env: EMISAR_AUTH_KEY\n" +
+	extra := "cloud:\n  url: wss://portal.example/socket\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n" +
 		"signing:\n  enforce_signatures: true\n  trusted_cas:\n" +
 		"    - ca_id: k1\n      public_key: " + strings.Repeat("ab", 32) + "\n"
 	if err := appendToFile(t, flagConfig, extra); err != nil {

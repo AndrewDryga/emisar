@@ -1,6 +1,6 @@
 defmodule Emisar.Fixtures.Runners do
   @moduledoc """
-  Runner + auth-key test fixtures. Use via `alias Emisar.Fixtures` then
+  Runner + enrollment-key test fixtures. Use via `alias Emisar.Fixtures` then
   `Fixtures.Runners.create_runner/1`.
   """
 
@@ -63,7 +63,7 @@ defmodule Emisar.Fixtures.Runners do
   end
 
   @doc """
-  Creates a bootstrap auth key. Returns `{raw, key}` so callers can
+  Creates a bootstrap enrollment key. Returns `{raw, key}` so callers can
   test both the raw secret + the persisted struct.
   """
   def create_enrollment_key(attrs \\ %{}) do
@@ -87,7 +87,7 @@ defmodule Emisar.Fixtures.Runners do
   end
 
   @doc """
-  Auth key persisted from a caller-supplied raw secret — the seed/dev
+  Enrollment key persisted from a caller-supplied raw secret — the seed/dev
   bootstrap shape (`EnrollmentKey.Changeset.create_with_secret/4`). Tests use
   it to exercise the secret→key round-trip with a known raw value.
   """

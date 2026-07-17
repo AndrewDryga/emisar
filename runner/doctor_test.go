@@ -21,7 +21,7 @@ import (
 func TestCheckCredential(t *testing.T) {
 	t.Run("token file 0600 present", func(t *testing.T) {
 		path := writeToken(t, "tok", 0o600)
-		got := checkCredential(&config.Config{Cloud: config.Cloud{TokenPath: path, AuthKeyEnv: "X"}})
+		got := checkCredential(&config.Config{Cloud: config.Cloud{TokenPath: path, EnrollmentKeyEnv: "X"}})
 		if got.status != checkOK {
 			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
 		}
@@ -36,10 +36,10 @@ func TestCheckCredential(t *testing.T) {
 	})
 
 	t.Run("no token, env set", func(t *testing.T) {
-		t.Setenv("EMISAR_AUTH_KEY", "emk-secret")
+		t.Setenv("EMISAR_ENROLLMENT_KEY", "emk-secret")
 		missing := filepath.Join(t.TempDir(), "absent")
 		got := checkCredential(&config.Config{
-			Cloud: config.Cloud{TokenPath: missing, AuthKeyEnv: "EMISAR_AUTH_KEY"},
+			Cloud: config.Cloud{TokenPath: missing, EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
 		})
 		if got.status != checkOK {
 			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
@@ -47,10 +47,10 @@ func TestCheckCredential(t *testing.T) {
 	})
 
 	t.Run("no token, env unset, fails", func(t *testing.T) {
-		t.Setenv("EMISAR_AUTH_KEY", "")
+		t.Setenv("EMISAR_ENROLLMENT_KEY", "")
 		missing := filepath.Join(t.TempDir(), "absent")
 		got := checkCredential(&config.Config{
-			Cloud: config.Cloud{TokenPath: missing, AuthKeyEnv: "EMISAR_AUTH_KEY"},
+			Cloud: config.Cloud{TokenPath: missing, EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
 		})
 		if got.status != checkFail {
 			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
@@ -58,12 +58,12 @@ func TestCheckCredential(t *testing.T) {
 	})
 
 	t.Run("empty token file falls back to env", func(t *testing.T) {
-		t.Setenv("EMISAR_AUTH_KEY", "emk-secret")
+		t.Setenv("EMISAR_ENROLLMENT_KEY", "emk-secret")
 		path := writeToken(t, "", 0o600)
 		got := checkCredential(&config.Config{
-			Cloud: config.Cloud{TokenPath: path, AuthKeyEnv: "EMISAR_AUTH_KEY"},
+			Cloud: config.Cloud{TokenPath: path, EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
 		})
-		if got.status != checkOK || !strings.Contains(got.detail, "EMISAR_AUTH_KEY") {
+		if got.status != checkOK || !strings.Contains(got.detail, "EMISAR_ENROLLMENT_KEY") {
 			t.Fatalf("got %v %q, want ok via env", got.status, got.detail)
 		}
 	})
@@ -522,7 +522,7 @@ func writeDoctorConfig(t *testing.T, dir, packDir, cloudURL, tokenPath string) s
 	cfgPath := filepath.Join(dir, "config.yaml")
 	yaml := "schema_version: 1\n" +
 		"runner:\n  group: test\n" +
-		"cloud:\n  url: " + cloudURL + "\n  auth_key_env: EMISAR_AUTH_KEY\n  token_path: " + tokenPath + "\n" +
+		"cloud:\n  url: " + cloudURL + "\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  token_path: " + tokenPath + "\n" +
 		"paths:\n  packs:\n    - " + packDir + "\n  data_dir: " + filepath.Join(dir, "data") + "\n" +
 		"events:\n  jsonl_path: " + filepath.Join(dir, "events.jsonl") + "\n"
 	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {

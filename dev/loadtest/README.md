@@ -89,7 +89,7 @@ a template and launch them against the host-published port `4010`:
 
 ```sh
 # runner built as /tmp/emisar (from repo root: go build -o /tmp/emisar ./runner)
-export EMISAR_AUTH_KEY=emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD
+export EMISAR_ENROLLMENT_KEY=emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD
 for i in $(seq 1 50); do
   d=$(mktemp -d)
   cat > "$d/config.yaml" <<YAML
@@ -98,7 +98,7 @@ runner: { id: "load-$i", group: "loadtest", labels: { role: load } }
 cloud:
   url: "http://localhost:4010"
   allow_insecure: true
-  auth_key_env: "EMISAR_AUTH_KEY"
+  enrollment_key_env: "EMISAR_ENROLLMENT_KEY"
   token_path: "$d/token.json"
   heartbeat_every: "30s"
 paths: { data_dir: "$d", work_dir: "$d/work", packs: ["/opt/emisar/packs/linux-core"] }

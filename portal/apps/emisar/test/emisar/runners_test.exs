@@ -1664,7 +1664,7 @@ defmodule Emisar.RunnersTest do
       assert {:ok, raw, %EnrollmentKey{} = key} =
                Runners.create_enrollment_key(%{description: "for dev"}, subject)
 
-      assert String.starts_with?(raw, "emkey-auth-")
+      assert String.starts_with?(raw, "emkey-enroll-")
       assert key.account_id == account.id
       assert key.created_by_id == user.id
       assert is_binary(key.key_hash)
@@ -1707,7 +1707,7 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "subscribe_account_enrollment_keys/1" do
-    test "the subscriber receives the account's auth-key list changes" do
+    test "the subscriber receives the account's enrollment-key list changes" do
       {account, _user, subject} = account_with_owner_subject()
       :ok = Runners.subscribe_account_enrollment_keys(account.id)
 
@@ -1716,7 +1716,7 @@ defmodule Emisar.RunnersTest do
       assert key_id == key.id
     end
 
-    test "a subscriber to account A does not receive account B's auth-key changes" do
+    test "a subscriber to account A does not receive account B's enrollment-key changes" do
       {_account_a, _ua, _sa} = account_with_owner_subject()
       account_a = Fixtures.Accounts.create_account()
       {_account_b, _ub, subject_b} = account_with_owner_subject()
@@ -1801,7 +1801,7 @@ defmodule Emisar.RunnersTest do
 
     test "stores an auto_generated_at timestamp", %{subject: subject} do
       assert {:ok, raw, %EnrollmentKey{} = key} = Runners.mint_install_key(subject)
-      assert String.starts_with?(raw, "emkey-auth-")
+      assert String.starts_with?(raw, "emkey-enroll-")
       assert key.auto_generated_at != nil
       assert is_nil(key.last_used_at)
       assert EnrollmentKey.auto_unused?(key)
@@ -1881,7 +1881,7 @@ defmodule Emisar.RunnersTest do
                Runners.revoke_enrollment_key(key, viewer_subject_for(account))
     end
 
-    test "won't touch an auth key in another account (cross-account → :not_found)" do
+    test "won't touch an enrollment key in another account (cross-account → :not_found)" do
       {_account_a, _ua, owner_a} = account_with_owner_subject()
       {_account_b, _ub, owner_b} = account_with_owner_subject()
       {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
@@ -1889,7 +1889,7 @@ defmodule Emisar.RunnersTest do
       assert {:error, :not_found} = Runners.revoke_enrollment_key(key_a, owner_b)
     end
 
-    test "won't return an already-revoked auth key in another account" do
+    test "won't return an already-revoked enrollment key in another account" do
       {_account_a, _ua, owner_a} = account_with_owner_subject()
       {_account_b, _ub, owner_b} = account_with_owner_subject()
       {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
@@ -1947,14 +1947,14 @@ defmodule Emisar.RunnersTest do
     test "round-trips a fixed seed-bootstrap raw secret" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
-      raw = "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      raw = "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
 
       key =
         Fixtures.Runners.create_enrollment_key_with_secret(raw, account.id, user.id, %{
           reusable: true
         })
 
-      assert key.key_prefix == String.slice(raw, 0, 27)
+      assert key.key_prefix == String.slice(raw, 0, 29)
       # Presenting the raw secret resolves to the same record — what makes the
       # docker-compose seeder + runner handoff work without an out-of-band copy.
       assert %EnrollmentKey{id: id} = Runners.peek_enrollment_key_by_secret(raw)
@@ -1975,7 +1975,7 @@ defmodule Emisar.RunnersTest do
       assert id == runner.id
     end
 
-    test "records the issuing auth-key id when supplied" do
+    test "records the issuing enrollment-key id when supplied" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
@@ -2351,7 +2351,7 @@ defmodule Emisar.RunnersTest do
 
     test "returns :enrollment_key_invalid for an unknown raw secret" do
       assert {:error, :enrollment_key_invalid} =
-               Runners.register_via_enrollment_key("emkey-auth-garbage", %{})
+               Runners.register_via_enrollment_key("emkey-enroll-garbage", %{})
     end
 
     test "threads the request context onto the runner.registered audit row" do

@@ -136,8 +136,8 @@ defmodule Emisar.CryptoTest do
     end
 
     test "preserves each credential type's prefix length" do
-      assert {_, p, _} = Crypto.mint("emkey-auth-", 27)
-      assert String.length(p) == 27 and String.starts_with?(p, "emkey-auth-")
+      assert {_, p, _} = Crypto.mint("emkey-enroll-", 29)
+      assert String.length(p) == 29 and String.starts_with?(p, "emkey-enroll-")
 
       assert {_, q, _} = Crypto.mint("rnrtok-", 12)
       assert String.length(q) == 12 and String.starts_with?(q, "rnrtok-")
@@ -166,7 +166,7 @@ defmodule Emisar.CryptoTest do
 
       assert String.starts_with?(Crypto.run_request_id(), "req_")
       assert String.starts_with?(Crypto.scim_token_namespace(), "ems-")
-      tags = ["emk-", "emkey-auth-", "rnrtok-", "ems-", "req_"]
+      tags = ["emk-", "emkey-enroll-", "rnrtok-", "ems-", "req_"]
       assert tags == Enum.uniq(tags)
     end
   end

@@ -26,7 +26,7 @@ defmodule EmisarWeb.RunnerInstall do
         # Leading space keeps the key out of shell history under
         # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
         command =
-          " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
+          " curl -sSL #{base}/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw} EMISAR_URL=#{base} bash"
 
         {command, key.id}
 

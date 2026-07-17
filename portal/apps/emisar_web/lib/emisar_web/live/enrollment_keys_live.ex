@@ -5,10 +5,10 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
-    # Manage-only page (auth keys have no view-only permission): anyone
+    # Manage-only page (enrollment keys have no view-only permission): anyone
     # without manage lands on not-found at LOAD time, not on first submit.
     if Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject) do
-      # Subscribe to the per-account auth-keys topic so another operator's
+      # Subscribe to the per-account enrollment-keys topic so another operator's
       # create / revoke (or an auto-bind from a runner registration) reflows
       # this list without the viewer having to refresh.
       if connected?(socket),
@@ -85,7 +85,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     )
   end
 
-  # Typed-confirm state for the "Revoke auth key" dialog (UX friction only —
+  # Typed-confirm state for the "Revoke enrollment key" dialog (UX friction only —
   # `revoke` above stays the server gate).
   def handle_event("confirm_typed", params, socket),
     do: {:noreply, ConfirmDialog.put_typed(socket, params)}
@@ -296,7 +296,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 annotation="contains your enrollment key"
                 prompt
                 copy
-                code={" curl -sSL #{@base_url}/install.sh | sudo EMISAR_AUTH_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
+                code={" curl -sSL #{@base_url}/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
                 class="mt-6"
               />
 
@@ -407,7 +407,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
              <:title> above — no extra section card around it. --%>
         <LiveTable.live_table
           layout={:cards}
-          id="auth-keys"
+          id="enrollment-keys"
           path={~p"/app/#{@current_account}/runners/keys"}
           rows={@enrollment_keys}
           metadata={@metadata}

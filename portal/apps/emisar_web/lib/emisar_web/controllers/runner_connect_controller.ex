@@ -2,7 +2,7 @@ defmodule EmisarWeb.RunnerConnectController do
   @moduledoc """
   Entry points for the runner transport:
 
-    * `POST /runner/register` — exchanges a bootstrap auth key (the one
+    * `POST /runner/register` — exchanges a bootstrap enrollment key (the one
       baked into the image) for a per-runner token. Called once at first
       boot. Idempotent on `external_id`.
 

@@ -53,7 +53,7 @@ func TestEngine_DefaultRulesCommonSecrets(t *testing.T) {
 
 	emisarAPIKey := "emk-" + strings.Repeat("a", 43)
 	emisarRunnerToken := "rnrtok-" + strings.Repeat("b", 43)
-	emisarAuthKey := "emkey-auth-" + strings.Repeat("c", 43)
+	emisarEnrollmentKey := "emkey-enroll-" + strings.Repeat("c", 43)
 	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature12345"
 	githubPAT := "github_pat_" + strings.Repeat("A", 82)
 	openAIKey := "sk-proj-" + strings.Repeat("A", 30)
@@ -85,9 +85,9 @@ func TestEngine_DefaultRulesCommonSecrets(t *testing.T) {
 			leak:  emisarRunnerToken,
 		},
 		{
-			name:  "emisar auth key",
-			input: "auth key " + emisarAuthKey,
-			leak:  emisarAuthKey,
+			name:  "emisar enrollment key",
+			input: "enrollment key " + emisarEnrollmentKey,
+			leak:  emisarEnrollmentKey,
 		},
 		{
 			// neutral "issued " prefix (no token/secret word, no =/:) so

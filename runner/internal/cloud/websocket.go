@@ -25,7 +25,7 @@ import (
 )
 
 // WebsocketDialer is the real cloud transport. It does the two-step
-// runner bootstrap (register → exchange auth key for per-runner token,
+// runner bootstrap (register → exchange enrollment key for per-runner token,
 // then open the websocket) and wraps the resulting conn so the rest of
 // the cloud package can treat send/recv as message-level.
 //
@@ -33,10 +33,10 @@ import (
 //
 //   - If the file at TokenPath exists and is non-empty, its contents
 //     are used as the bearer for the websocket upgrade.
-//   - Otherwise, AuthKey is presented to POST {URL}/runner/register; the
+//   - Otherwise, EnrollmentKey is presented to POST {URL}/runner/register; the
 //     response token is persisted to TokenPath (perms 0600) and used.
 //
-// Auth-key revocation surfaces as HTTP 401 from /runner/register; the
+// Enrollment-key revocation surfaces as HTTP 401 from /runner/register; the
 // dialer returns an `unauthorized` error and exits — the runner will
 // not retry forever against a bad key.
 type WebsocketDialer struct {
@@ -45,9 +45,9 @@ type WebsocketDialer struct {
 	// the ws URL from this base.
 	URL string
 
-	// AuthKey is the bootstrap secret (env-provided, typically). Only
+	// EnrollmentKey is the bootstrap secret (env-provided, typically). Only
 	// consulted on first connect.
-	AuthKey string
+	EnrollmentKey string
 
 	// TokenPath is where the per-runner token is persisted between
 	// boots. Parent dir is created with 0750 if missing.
@@ -75,7 +75,7 @@ type WebsocketDialer struct {
 
 // ErrUnauthorized is returned when /runner/register or the websocket
 // upgrade comes back 401. Callers should fail closed.
-var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked auth key / token)")
+var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked enrollment key / token)")
 
 const (
 	cloudHandshakeTimeout        = 10 * time.Second
@@ -144,7 +144,7 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 
 type agentToken struct {
 	Raw string
-	// KeyFP fingerprints the auth key that minted this token, so a later
+	// KeyFP fingerprints the enrollment key that minted this token, so a later
 	// boot can tell when the operator swapped the key under it.
 	KeyFP string
 }
@@ -156,23 +156,23 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 		// configured key whose fingerprint no longer matches the one stamped
 		// on the token means re-register with the new key. An empty key means
 		// the operator intentionally relies only on the persisted runner token.
-		if d.AuthKey == "" || existing.KeyFP == keyFingerprint(d.AuthKey) {
+		if d.EnrollmentKey == "" || existing.KeyFP == keyFingerprint(d.EnrollmentKey) {
 			return existing, nil
 		}
-		d.logger().Info("cloud.auth_key_rotated",
+		d.logger().Info("cloud.enrollment_key_rotated",
 			"path", d.TokenPath,
-			"detail", "configured auth key no longer matches the cached token; re-registering")
+			"detail", "configured enrollment key no longer matches the cached token; re-registering")
 	}
 
-	if d.AuthKey == "" {
-		return agentToken{}, fmt.Errorf("%w: no token cached and no auth key provided", ErrUnauthorized)
+	if d.EnrollmentKey == "" {
+		return agentToken{}, fmt.Errorf("%w: no token cached and no enrollment key provided", ErrUnauthorized)
 	}
 
 	token, err := d.register(ctx)
 	if err != nil {
 		return agentToken{}, err
 	}
-	token.KeyFP = keyFingerprint(d.AuthKey)
+	token.KeyFP = keyFingerprint(d.EnrollmentKey)
 
 	if err := d.writeToken(token); err != nil {
 		return agentToken{}, fmt.Errorf("persist runner token: %w", err)
@@ -285,8 +285,8 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 // operator swapped the key under the runner (e.g. moving it to another
 // account). Not a secret and not reversible — 8 bytes of SHA-256 is
 // ample to tell one key from another.
-func keyFingerprint(authKey string) string {
-	sum := sha256.Sum256([]byte(authKey))
+func keyFingerprint(enrollmentKey string) string {
+	sum := sha256.Sum256([]byte(enrollmentKey))
 	return hex.EncodeToString(sum[:8])
 }
 
@@ -344,7 +344,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	if err != nil {
 		return agentToken{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+d.AuthKey)
+	req.Header.Set("Authorization", "Bearer "+d.EnrollmentKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)

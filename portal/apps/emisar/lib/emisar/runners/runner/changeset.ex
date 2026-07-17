@@ -23,7 +23,7 @@ defmodule Emisar.Runners.Runner.Changeset do
 
   # -- Bootstrap paths -------------------------------------------------
 
-  @doc "Inserted by the runner socket on first auth-key registration."
+  @doc "Inserted by the runner socket on first enrollment-key registration."
   def register(attrs) do
     %Runner{}
     |> cast(attrs, [

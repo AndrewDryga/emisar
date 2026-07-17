@@ -129,12 +129,12 @@ func checkConfig() (*config.Config, checkResult) {
 }
 
 // checkCredential mirrors what the connect path needs: either a persisted
-// per-runner token file, or the bootstrap auth key in the configured env var
+// per-runner token file, or the bootstrap enrollment key in the configured env var
 // (which mints a token on first connect). A token file readable by group/other
 // is a warning — it's a host secret.
 func checkCredential(cfg *config.Config) checkResult {
 	tokenPath := cfg.Cloud.TokenPath
-	envName := cfg.Cloud.AuthKeyEnv
+	envName := cfg.Cloud.EnrollmentKeyEnv
 
 	if tokenPath != "" {
 		if info, err := os.Stat(tokenPath); err == nil && info.Size() > 0 {
@@ -157,11 +157,11 @@ func checkCredential(cfg *config.Config) checkResult {
 func credentialMissingDetail(tokenPath, envName string) string {
 	switch {
 	case tokenPath != "" && envName != "":
-		return fmt.Sprintf("no token at %s and $%s is unset — set the bootstrap key", tokenPath, envName)
+		return fmt.Sprintf("no token at %s and $%s is unset — set the enrollment key", tokenPath, envName)
 	case envName != "":
 		return fmt.Sprintf("$%s is unset and no cloud.token_path is configured", envName)
 	default:
-		return "neither cloud.auth_key_env nor cloud.token_path is configured"
+		return "neither cloud.enrollment_key_env nor cloud.token_path is configured"
 	}
 }
 

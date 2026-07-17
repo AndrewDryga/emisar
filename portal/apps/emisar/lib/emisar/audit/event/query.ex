@@ -28,9 +28,9 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
     {"runner.version_rejected", "Runner version rejected"},
-    {"enrollment_key.created", "Auth key created"},
-    {"enrollment_key.revoked", "Auth key revoked"},
-    {"enrollment_key.bound", "Auth key bound to runner"},
+    {"enrollment_key.created", "Enrollment key created"},
+    {"enrollment_key.revoked", "Enrollment key revoked"},
+    {"enrollment_key.bound", "Enrollment key bound to runner"},
     {"api_key.created", "API key created"},
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
@@ -179,7 +179,7 @@ defmodule Emisar.Audit.Event.Query do
        {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
        {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
      ]},
-    {"Auth key",
+    {"Enrollment key",
      [
        {"enrollment_key.created", "Created"},
        {"enrollment_key.revoked", "Revoked"},
@@ -302,7 +302,7 @@ defmodule Emisar.Audit.Event.Query do
     "Policy" => "decisions",
     "Pack trust" => "decisions",
     "Account" => "access",
-    "Auth key" => "access",
+    "Enrollment key" => "access",
     "API key" => "access",
     "Sign-in" => "access",
     "User security" => "access",
@@ -657,7 +657,7 @@ defmodule Emisar.Audit.Event.Query do
           {"account", "Account"},
           {"runner", "Runner"},
           {"api_key", "API key"},
-          {"enrollment_key", "Auth key"},
+          {"enrollment_key", "Enrollment key"},
           {"approval_request", "Approval"},
           {"approval_grant", "Standing grant"},
           {"runbook", "Runbook"},
@@ -711,13 +711,13 @@ defmodule Emisar.Audit.Event.Query do
     "runner.error" =>
       {true, false, false, "A runner reported an internal error over its socket."},
     "enrollment_key.created" =>
-      {true, true, true, "An operator minted a runner bootstrap/auth key."},
+      {true, true, true, "An operator minted a runner bootstrap/enrollment key."},
     "enrollment_key.revoked" =>
       {true, true, true,
-       "An operator revoked a runner auth key — future registrations with it fail."},
+       "An operator revoked a runner enrollment key — future registrations with it fail."},
     "enrollment_key.bound" =>
       {true, false, true,
-       "A runner presented an auth key for the first time and was bound to it."},
+       "A runner presented an enrollment key for the first time and was bound to it."},
     "api_key.created" => {true, true, true, "An operator minted an LLM-agent or export API key."},
     "api_key.revoked" =>
       {true, true, true, "An operator revoked an API key — its next call gets a 401."},

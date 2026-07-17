@@ -1,8 +1,8 @@
 defmodule Emisar.Crypto do
   @moduledoc """
   The single home for the portal's opaque-token-secret mechanism. Every
-  bearer credential — MCP API keys (`emk-`), runner auth keys
-  (`emkey-auth-`), per-runner tokens (`rnrtok-`), and OAuth access /
+  bearer credential — MCP API keys (`emk-`), runner enrollment keys
+  (`emkey-enroll-`), per-runner tokens (`rnrtok-`), and OAuth access /
   refresh / authorization-code secrets (`emo-` / `emor-` / `emoc-`) — is
   minted, hashed, and compared here, so there is one place to audit the
   RNG, the encoding, and the hash algorithm.
@@ -261,7 +261,7 @@ defmodule Emisar.Crypto do
 
   @doc """
   Mint a prefixed bearer secret for a credential looked up by a visible
-  prefix (API keys, runner auth keys, runner tokens).
+  prefix (API keys, runner enrollment keys, runner tokens).
 
     * `prefix`      — the human-readable type tag, e.g. `"emk-"`.
     * `prefix_size` — total length of the stored lookup prefix (the tag

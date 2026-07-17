@@ -1,6 +1,6 @@
 defmodule EmisarWeb.EnrollmentKeysLiveTest do
   @moduledoc """
-  The runner auth-keys list defaults to hiding revoked keys (the Status
+  The runner enrollment-keys list defaults to hiding revoked keys (the Status
   filter defaults to "active"); the operator widens it via the dropdown.
   """
   use EmisarWeb.ConnCase, async: true
@@ -27,7 +27,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # submits status="", and because the status filter declares a default,
     # apply_filter KEEPS the explicit blank in the URL — that's what overrides
     # the "active" default on the next load instead of snapping back to it.
-    lv |> form("#auth-keys-filter", %{"status" => ""}) |> render_change()
+    lv |> form("#enrollment-keys-filter", %{"status" => ""}) |> render_change()
     assert_patched(lv, ~p"/app/#{account}/runners/keys?status=")
 
     html = render(lv)
@@ -35,9 +35,9 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "dead-key-zzz"
   end
 
-  # a brand-new account with no auth keys renders the
+  # a brand-new account with no enrollment keys renders the
   # "No enrollment keys yet." onboarding empty state.
-  test "no auth keys → onboarding empty state", %{conn: conn} do
+  test "no enrollment keys → onboarding empty state", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
@@ -159,7 +159,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       |> form("#enrollment_key_form", %{"enrollment_key" => %{"description" => "one-time"}})
       |> render_submit()
 
-    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
+    [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{20,}/, html)
     # The success step offers "Issue another" (dismiss); there is NO re-reveal.
     assert has_element?(lv, "[phx-click=\"dismiss_secret\"]")
 
@@ -172,7 +172,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute render(lv) =~ raw_secret
   end
 
-  test "a viewer cannot mint an auth key", %{conn: conn} do
+  test "a viewer cannot mint an enrollment key", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
     viewer = Fixtures.Users.create_user()
@@ -302,11 +302,11 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     assert key.account_id == account.id
     # The raw secret is revealed once in the DOM; the row persists only a hash.
-    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
+    [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{20,}/, html)
     refute key.key_hash == raw_secret
   end
 
-  # the page is manage-only (auth keys have no
+  # the page is manage-only (enrollment keys have no
   # view permission). An operator (view-only on runners, no manage_enrollment_keys) is
   # bounced at LOAD time with an honest why-not back to Runners — they never
   # reach the form or a `revoke` event.
