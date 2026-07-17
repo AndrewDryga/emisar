@@ -1407,7 +1407,7 @@ defmodule EmisarWeb.CoreComponents do
 
         <div class="flex justify-center">
           <footer class="mt-10 w-full max-w-md border-t border-zinc-800/70 pt-6">
-            <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+            <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
               <.link href={~p"/trust"} class="transition-colors hover:text-zinc-300">Trust</.link>
               <.link href={~p"/privacy"} class="transition-colors hover:text-zinc-300">Privacy</.link>
               <.link href={~p"/terms"} class="transition-colors hover:text-zinc-300">Terms</.link>
@@ -1415,7 +1415,7 @@ defmodule EmisarWeb.CoreComponents do
                 Security
               </.link>
             </nav>
-            <p class="mt-3 text-xs text-zinc-600">
+            <p class="mt-3 text-xs text-zinc-400">
               © {Date.utc_today().year} Andrii Dryga. All rights reserved.
             </p>
           </footer>
@@ -1960,7 +1960,7 @@ defmodule EmisarWeb.CoreComponents do
     >
       <.icon name={@icon} class="h-4 w-4 text-zinc-500" />
       <span class="flex-1">{render_slot(@inner_block)}</span>
-      <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-600" />
+      <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-500" />
     </.link>
     """
   end
@@ -1970,7 +1970,7 @@ defmodule EmisarWeb.CoreComponents do
   defp nav_group(assigns) do
     ~H"""
     <div class="pb-1 pt-2.5 first:pt-0">
-      <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+      <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
         {@label}
       </p>
     </div>
@@ -1993,7 +1993,7 @@ defmodule EmisarWeb.CoreComponents do
           <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
           <div class="min-w-0 flex-1">
             <div class="truncate font-medium">{@current_user.full_name || @current_user.email}</div>
-            <div class="truncate text-xs text-zinc-500">{@current_user.email}</div>
+            <div class="truncate text-xs text-zinc-400">{@current_user.email}</div>
           </div>
         </.link>
         <.link
@@ -2077,7 +2077,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   def loading_state(assigns) do
     ~H"""
-    <div class="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
+    <div class="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400">
       <.icon name="hero-arrow-path" class="h-5 w-5 animate-spin" />
       <span>Loading…</span>
     </div>
@@ -2122,7 +2122,7 @@ defmodule EmisarWeb.CoreComponents do
              channel: "by maya@… via portal", "by jordan@… via Claude Code -
              on-call" (an MCP run's human is its key's owner). No icon, no
              column — the digest row is content left, status right. --%>
-        <div class="truncate text-xs text-zinc-500">
+        <div class="truncate text-xs text-zinc-400">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time
             id={"digest-run-#{@run.id}"}
@@ -2371,13 +2371,15 @@ defmodule EmisarWeb.CoreComponents do
   # CAUTION (needs attention), not neutral — amber, one tone for the fact
   # everywhere (summary strip, row status, dashboard posture).
   defp status_word_class("offline"), do: "text-amber-300"
-  # Planned (a runbook slot not yet dispatched) recedes a step below routine
-  # neutral — a not-yet state shouldn't compete. Expired and cancelled are
+  # Planned (a runbook slot not yet dispatched) is the quietest state — but a
+  # status word an operator reads must clear AA, so it wears the neutral muted
+  # tier (zinc-400); the de-pilled word, not a sub-AA gray, marks it not-yet.
+  # Expired and cancelled are
   # different: in a run/decision log they're OUTCOMES (nobody decided in time;
   # an operator pulled the run back), and an uncolored verdict beside
   # approved/denied/error reads as a bug — they wear amber via the :pending
   # bucket below.
-  defp status_word_class("planned"), do: "text-zinc-500"
+  defp status_word_class("planned"), do: "text-zinc-400"
 
   defp status_word_class(status) do
     case status_tone(status) do
@@ -2584,7 +2586,7 @@ defmodule EmisarWeb.CoreComponents do
             >
             </span>
           </span>
-          <span class="mt-0.5 block text-xs leading-relaxed text-zinc-500">
+          <span class="mt-0.5 block text-xs leading-relaxed text-zinc-400">
             {render_slot(card)}
           </span>
         </span>
@@ -2728,7 +2730,7 @@ defmodule EmisarWeb.CoreComponents do
   # A bare ordered-list numeral — a filled disc per row read as chrome and
   # outweighed the instructions it was numbering.
   defp steps_marker_class(:guide) do
-    "w-4 shrink-0 text-right text-xs font-medium tabular-nums text-zinc-500"
+    "w-4 shrink-0 text-right text-xs font-medium tabular-nums text-zinc-400"
   end
 
   defp steps_marker_class(:plan) do
@@ -2838,7 +2840,7 @@ defmodule EmisarWeb.CoreComponents do
         "flex min-h-9 items-center gap-2 rounded-lg bg-zinc-950/80 px-2.5 py-1 ring-1 ring-zinc-800",
         @label && "mt-1.5"
       ]}>
-        <span :if={@prompt} class="select-none font-mono text-xs text-zinc-600">$</span>
+        <span :if={@prompt} class="select-none font-mono text-xs text-zinc-500">$</span>
         <code
           id={@id}
           phx-no-format
@@ -2889,7 +2891,7 @@ defmodule EmisarWeb.CoreComponents do
         data-copy-label-copied="✓"
         aria-label="Copy"
         title="Copy"
-        class="shrink-0 rounded p-0.5 leading-none text-zinc-600 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+        class="shrink-0 rounded p-0.5 leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
       >
         <.icon name="hero-clipboard-document" class="h-3.5 w-3.5" />
       </button>
@@ -2963,7 +2965,7 @@ defmodule EmisarWeb.CoreComponents do
         <div class="flex min-w-0 items-center gap-2">
           <span
             :if={@annotation}
-            class="truncate font-mono text-[11px] text-zinc-500"
+            class="truncate font-mono text-[11px] text-zinc-400"
             title={@annotation}
           >
             {@annotation}
@@ -2986,7 +2988,7 @@ defmodule EmisarWeb.CoreComponents do
           if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-auto"),
           @max_h
         ]}
-      ><span :if={@prompt} class="select-none text-zinc-600">$ </span>{@code}</pre>
+      ><span :if={@prompt} class="select-none text-zinc-500">$ </span>{@code}</pre>
     </div>
     """
   end
@@ -3165,7 +3167,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def plan_note(assigns) do
     ~H"""
-    <span class={["text-zinc-500", @class]}>
+    <span class={["text-zinc-400", @class]}>
       Only available on <.link
         href={~p"/pricing"}
         title={plan_note_title(@tier)}
@@ -3210,7 +3212,7 @@ defmodule EmisarWeb.CoreComponents do
           </h2>
           <.count_badge count={@count} tone={@count_tone} />
         </div>
-        <p :if={@subtitle != []} class="mt-0.5 max-w-xl text-xs text-zinc-500">
+        <p :if={@subtitle != []} class="mt-0.5 max-w-xl text-xs text-zinc-400">
           {render_slot(@subtitle)}
         </p>
       </div>
@@ -3244,7 +3246,7 @@ defmodule EmisarWeb.CoreComponents do
       <dl class="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
         <div :for={{key, value} <- Enum.sort(@metadata)} class="min-w-0">
           <dt
-            class="truncate font-mono text-[11px] uppercase tracking-wide text-zinc-500"
+            class="truncate font-mono text-[11px] uppercase tracking-wide text-zinc-400"
             title={key}
           >
             {key}
@@ -3299,7 +3301,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <li class="flex items-baseline gap-2 pb-2 pt-8 first:pt-0">
       <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">{@label}</h2>
-      <span :if={@inner_block != []} class="text-[11px] text-zinc-500">
+      <span :if={@inner_block != []} class="text-[11px] text-zinc-400">
         {render_slot(@inner_block)}
       </span>
     </li>
@@ -3328,7 +3330,7 @@ defmodule EmisarWeb.CoreComponents do
     # No wrapping div: the <dt>/<dd> are direct children of the caller's grid
     # <dl> so its columns align label and value across every row.
     ~H"""
-    <dt class="font-mono text-zinc-500">{@label}</dt>
+    <dt class="font-mono text-zinc-400">{@label}</dt>
     <dd class="break-all font-mono text-zinc-300">{render_slot(@inner_block)}</dd>
     """
   end
@@ -3336,7 +3338,7 @@ defmodule EmisarWeb.CoreComponents do
   def kv(assigns) do
     ~H"""
     <div class="flex items-baseline justify-between gap-3 py-1">
-      <dt class="text-zinc-500">{@label}</dt>
+      <dt class="text-zinc-400">{@label}</dt>
       <dd class="text-right font-medium text-zinc-100">{render_slot(@inner_block)}</dd>
     </div>
     """
@@ -3364,7 +3366,7 @@ defmodule EmisarWeb.CoreComponents do
   def meta_field(assigns) do
     ~H"""
     <div class={["min-w-0", @wrap && "col-span-2 sm:col-span-1"]}>
-      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@label}</div>
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
       <div class={["mt-1.5 text-[15px] leading-tight", if(@wrap, do: "break-words", else: "truncate")]}>
         {render_slot(@inner_block)}
       </div>
@@ -3457,7 +3459,7 @@ defmodule EmisarWeb.CoreComponents do
         <%!-- Two lines on mobile (a credential row's "last used" is its
              security signal — never silently truncated away), single-line
              truncate from sm up. --%>
-        <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-500 sm:line-clamp-none">
+        <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-400 sm:line-clamp-none">
           {render_slot(@meta)}
         </div>
       </div>
@@ -3856,7 +3858,7 @@ defmodule EmisarWeb.CoreComponents do
          (the shared row rarely fits both), so the separator slash never
          dangles at a wrap point; sm+ restores the inline "Crumb / Entity"
          breadcrumb at the title's size. --%>
-    <span class="flex items-center text-base text-zinc-500 sm:inline-flex sm:text-[length:inherit]">
+    <span class="flex items-center text-base text-zinc-400 sm:inline-flex sm:text-[length:inherit]">
       <.link
         navigate={@navigate}
         class="font-medium text-zinc-400 hover:text-zinc-200"
@@ -3914,7 +3916,7 @@ defmodule EmisarWeb.CoreComponents do
         "ml-2 font-normal",
         if(@mono,
           do: "font-mono text-lg tracking-tight text-zinc-400 sm:text-xl",
-          else: "text-sm text-zinc-500"
+          else: "text-sm text-zinc-400"
         )
       ]}
     ><%!-- A mono title's trailing context ("on edge-fra-01") speaks the SAME
@@ -4016,7 +4018,7 @@ defmodule EmisarWeb.CoreComponents do
     <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
         <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
-        <p class="mt-1 text-xs leading-relaxed text-zinc-500">{render_slot(@body)}</p>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">{render_slot(@body)}</p>
       </div>
       <.button
         class="shrink-0 self-start sm:self-auto"
@@ -4046,7 +4048,7 @@ defmodule EmisarWeb.CoreComponents do
     <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
         <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
-        <p class="mt-1 text-xs leading-relaxed text-zinc-500">{render_slot(@body)}</p>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">{render_slot(@body)}</p>
       </div>
       <.button
         class="shrink-0 self-start sm:self-auto"
@@ -4393,14 +4395,14 @@ defmodule EmisarWeb.CoreComponents do
   defp stat_hint_tone(:rose), do: "text-rose-300"
   defp stat_hint_tone(:amber), do: "text-amber-300"
   defp stat_hint_tone(:brand), do: "text-brand-300"
-  defp stat_hint_tone(_), do: "text-zinc-500"
+  defp stat_hint_tone(_), do: "text-zinc-400"
 
   # `value={:unavailable}` renders a muted em dash so a tile whose read failed
   # reads "couldn't load", not a misleading 0 (the value is otherwise a count
   # or an "N / M" string).
   defp stat_value(:unavailable), do: "—"
   defp stat_value(value), do: value
-  defp stat_value_class(:unavailable), do: "text-zinc-600"
+  defp stat_value_class(:unavailable), do: "text-zinc-500"
   defp stat_value_class(_), do: "text-zinc-50"
 
   @doc """
@@ -4451,7 +4453,7 @@ defmodule EmisarWeb.CoreComponents do
                     class="mt-3"
                   />
                   <%!-- Right where the odd first character raises the question. --%>
-                  <p class="mt-2 text-xs text-zinc-600">
+                  <p class="mt-2 text-xs text-zinc-400">
                     The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
@@ -4474,7 +4476,7 @@ defmodule EmisarWeb.CoreComponents do
                   <%!-- The alternate path is routing, not warning — it lives
                          outside the credential note, right after the one-time
                          story it forks from. --%>
-                  <p :if={@show_keys_link} class="mt-4 text-sm leading-relaxed text-zinc-500">
+                  <p :if={@show_keys_link} class="mt-4 text-sm leading-relaxed text-zinc-400">
                     Baking an image, or enrolling a whole fleet with cloud-init? Mint a
                     <span class="font-medium text-zinc-400">multi-use</span>
                     key under
@@ -4636,13 +4638,13 @@ defmodule EmisarWeb.CoreComponents do
                 >
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-medium text-zinc-100">Installation guide</div>
-                    <div class="mt-0.5 text-xs text-zinc-500">
+                    <div class="mt-0.5 text-xs text-zinc-400">
                       Image-bake, cloud-init, manual install.
                     </div>
                   </div>
                   <.icon
                     name="hero-arrow-top-right-on-square"
-                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-brand-400"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
               </li>
@@ -4653,13 +4655,13 @@ defmodule EmisarWeb.CoreComponents do
                 >
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-medium text-zinc-100">Pack registry</div>
-                    <div class="mt-0.5 text-xs text-zinc-500">
+                    <div class="mt-0.5 text-xs text-zinc-400">
                       Browse linux-core, cassandra, showcase. Install snippets included.
                     </div>
                   </div>
                   <.icon
                     name="hero-arrow-right"
-                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-brand-400"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
               </li>
@@ -4702,7 +4704,7 @@ defmodule EmisarWeb.CoreComponents do
         <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
           {Phoenix.HTML.raw(@qr_svg)}
         </div>
-        <p class="text-[11px] text-zinc-500">Scan with your authenticator</p>
+        <p class="text-[11px] text-zinc-400">Scan with your authenticator</p>
       </div>
 
       <div class="space-y-3">
@@ -4820,9 +4822,9 @@ defmodule EmisarWeb.CoreComponents do
   # `mt-4` gives the headline room to breathe from the body; `mx-auto max-w-lg`
   # caps the measure so a paragraph reads at a comfortable line length instead
   # of stretching the full width of the placeholder box.
-  defp empty_state_body(:boxed), do: "mx-auto mt-4 max-w-lg text-sm text-zinc-500"
-  defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"
-  defp empty_state_body(:hint), do: "text-xs leading-relaxed text-zinc-500"
+  defp empty_state_body(:boxed), do: "mx-auto mt-4 max-w-lg text-sm text-zinc-400"
+  defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-400"
+  defp empty_state_body(:hint), do: "text-xs leading-relaxed text-zinc-400"
 
   defp empty_state_cta(:boxed) do
     "mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
@@ -4981,10 +4983,10 @@ defmodule EmisarWeb.CoreComponents do
   # not urgent — keep it muted.
   defp expiry_class(%DateTime{} = expires_at) do
     seconds_left = DateTime.diff(expires_at, DateTime.utc_now(), :second)
-    if seconds_left > 0 and seconds_left <= 7200, do: "text-amber-400", else: "text-zinc-500"
+    if seconds_left > 0 and seconds_left <= 7200, do: "text-amber-400", else: "text-zinc-400"
   end
 
-  defp expiry_class(_), do: "text-zinc-500"
+  defp expiry_class(_), do: "text-zinc-400"
 
   @doc """
   A bounded, static preview of an action run's tail output — the last few
@@ -5628,7 +5630,7 @@ defmodule EmisarWeb.CoreComponents do
                 {@secondary_label}
               </.marketing_button>
             </div>
-            <p class="mt-4 text-xs text-zinc-500">{@note}</p>
+            <p class="mt-4 text-xs text-zinc-400">{@note}</p>
           </div>
         </div>
       </div>
@@ -5648,7 +5650,7 @@ defmodule EmisarWeb.CoreComponents do
   def breadcrumbs(assigns) do
     ~H"""
     <nav aria-label="Breadcrumb" class="text-sm">
-      <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-500">
+      <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-400">
         <%= for {{label, path}, index} <- Enum.with_index(@items) do %>
           <li class="flex items-center gap-x-1.5">
             <.icon :if={index > 0} name="hero-chevron-right" class="h-3 w-3 text-zinc-700" />
@@ -5837,7 +5839,7 @@ defmodule EmisarWeb.CoreComponents do
             <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
               Product updates
             </h2>
-            <p class="mt-1 max-w-md text-sm text-zinc-500">
+            <p class="mt-1 max-w-md text-sm text-zinc-400">
               The occasional note when we ship something major — new packs, features, and security
               improvements. No noise.
             </p>
@@ -5867,10 +5869,10 @@ defmodule EmisarWeb.CoreComponents do
                 Subscribe
               </.marketing_button>
             </div>
-            <p class="mt-2 text-xs text-zinc-600">
+            <p class="mt-2 text-xs text-zinc-400">
               No spam, just product news. See our <.link
                 navigate={~p"/privacy"}
-                class="text-zinc-500 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
+                class="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
               >privacy policy</.link>.
             </p>
           </.form>
@@ -5881,10 +5883,10 @@ defmodule EmisarWeb.CoreComponents do
             <.link href={~p"/"}>
               <.brand size={:md} />
             </.link>
-            <p class="mt-4 max-w-xs text-sm text-zinc-500">
+            <p class="mt-4 max-w-xs text-sm text-zinc-400">
               Give AI tools approved infrastructure actions, not SSH.
             </p>
-            <p class="mt-3 max-w-xs text-xs leading-relaxed text-zinc-600">
+            <p class="mt-3 max-w-xs text-xs leading-relaxed text-zinc-400">
               The runner, MCP bridge, and packs are Apache-2.0 open source; the control-plane
               source is available under the <a
                 href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -6069,7 +6071,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
 
-        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-800/70 pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-800/70 pt-8 text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {Date.utc_today().year} <a
               href="https://dryga.com"
@@ -6081,7 +6083,7 @@ defmodule EmisarWeb.CoreComponents do
           <span>
             v{@app_version}
             <span
-              class="text-zinc-600"
+              class="text-zinc-400"
               title="Server-render time (UTC). If it trails the real clock, a CDN/edge is serving this page from cache."
             >
               · {@rendered_at}

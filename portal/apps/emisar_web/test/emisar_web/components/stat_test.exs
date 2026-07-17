@@ -33,7 +33,8 @@ defmodule EmisarWeb.Components.StatTest do
 
     assert html =~ "—"
     # Muted, not the bright value color — so it reads as "no data", not a real value.
-    assert html =~ "text-zinc-600"
+    # zinc-500 (not zinc-600) so the large "—" clears AA-large while staying muted.
+    assert html =~ "text-zinc-500"
     refute html =~ "unavailable"
   end
 end

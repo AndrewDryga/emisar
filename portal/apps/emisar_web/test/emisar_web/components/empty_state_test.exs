@@ -50,7 +50,7 @@ defmodule EmisarWeb.Components.EmptyStateTest do
         """)
 
       assert html =~ "border-dashed"
-      assert html =~ "text-xs leading-relaxed text-zinc-500"
+      assert html =~ "text-xs leading-relaxed text-zinc-400"
       assert html =~ "No overrides."
       refute html =~ "<h2"
       refute html =~ "hero-"

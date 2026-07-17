@@ -112,9 +112,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       # its action — not the ≤5 first-wave runs streaming in one at a time.
       assert html |> String.split("linux.uptime") |> length() == 7
       # The 6th item is beyond the first wave of 5, so it has no run yet and
-      # stays a planned placeholder — the de-pilled status word at :planned's
-      # receded tone (dimmer than routine neutral).
-      assert html =~ "text-zinc-500"
+      # stays a planned placeholder — the de-pilled status word marks it not-yet.
+      # It wears the AA-safe muted tier (zinc-400); the missing pill, not a
+      # sub-AA gray, is what reads as "not dispatched".
+      assert html =~ "text-zinc-400"
       assert html =~ "planned"
     end
 
