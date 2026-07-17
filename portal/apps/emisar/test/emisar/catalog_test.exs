@@ -1150,9 +1150,10 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  # The compiled PackBaseline can't be fixtured (no shipped pack is retired), so
-  # this pure fn — the dispatch seam check_pack_trusted composes with the real
-  # PackBaseline.retired?/2 — carries the exhaustive retirement branch coverage.
+  # The compiled PackBaseline can't be fixtured per-test (its watermarks are
+  # baked from the shipped catalog), so this pure fn — the dispatch seam
+  # check_pack_trusted composes with the real PackBaseline.retired?/2 —
+  # carries the exhaustive retirement branch coverage.
   describe "trusted_row_dispatch_decision/2" do
     test "not retired → {:ok, hash}" do
       pack_version = %PackVersion{hash: "sha256:OK", retirement_overridden_at: nil}
@@ -1173,12 +1174,11 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "pack_version_retirement/1" do
-    # The `{:retired, current}` branch lives at the same compiled-baseline seam
-    # as `trusted_row_dispatch_decision/2`: no shipped pack carries a retirement
-    # watermark, so a real row is always `:active`. The retired branch's parts —
-    # `PackBaseline.retired?/2` + `current_version/1` — are unit-tested against
-    # a synthetic watermark in `PackBaselineTest`; here we lock the `:active`
-    # composition over real rows.
+    # Both branches compose over the compiled baseline: the shipped catalog
+    # carries a retirement watermark per pack, so a version strictly below it
+    # is `{:retired, current}` while baseline entries and custom packs stay
+    # `:active`. The compare itself is unit-tested against synthetic
+    # watermarks in `PackBaselineTest`.
     test "is :active for a shipped current version" do
       {{pack_id, version}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
       pack_version = %PackVersion{pack_id: pack_id, version: version}
@@ -1190,6 +1190,16 @@ defmodule Emisar.CatalogTest do
       pack_version = %PackVersion{pack_id: "definitely-not-a-real-pack", version: "9.9.9"}
 
       assert Catalog.pack_version_retirement(pack_version) == :active
+    end
+
+    test "is {:retired, current} for a shipped version below its pack's watermark" do
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0"}
+
+      assert Catalog.pack_version_retirement(pack_version) ==
+               {:retired, Emisar.Catalog.PackBaseline.current_version(pack_id)}
     end
   end
 

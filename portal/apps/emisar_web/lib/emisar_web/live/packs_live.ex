@@ -612,11 +612,13 @@ defmodule EmisarWeb.PacksLive do
       </p>
       <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
            confirm, admin-only. It re-enables dispatch for this exact retired
-           version; the audited context fn stays the server gate (IL-15). --%>
+           version; the audited context fn stays the server gate (IL-15).
+           Bordered rose is the house destructive face — a FILLED rose pair
+           deliberately doesn't exist in `button_face/2`. --%>
       <.confirm_button
         :if={@can_manage}
         id={"override-#{@version.id}"}
-        variant={:primary}
+        variant={:secondary}
         tone={:rose}
         size={:sm}
         class="mt-3"

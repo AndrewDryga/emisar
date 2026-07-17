@@ -380,10 +380,11 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "a trusted, non-retired version shows no Retired flag or override CTA (overlay dormant)",
          %{conn: conn, user: user, account: account} do
-      # No shipped pack carries a retirement watermark, so a real trusted row is
-      # never retired — the rose flag, the warning block, and the "Trust anyway"
-      # CTA all stay off. This locks the overlay against false positives while
-      # exercising the `retired_notice` render path on an ordinary row.
+      # The custom acme-tools pack carries no retirement watermark, so its
+      # trusted row is never retired — the rose flag, the warning block, and
+      # the "Trust anyway" CTA all stay off. This locks the overlay against
+      # false positives while exercising the `retired_notice` render path on
+      # an ordinary row.
       subject = Fixtures.Subjects.subject_for(user, account)
       pack_version = observe_pending_pack!(account)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
@@ -396,11 +397,36 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, ~s([id^="override-"]))
     end
 
+    test "a retired trusted version renders the rose warning with the admin override CTA",
+         %{conn: conn, account: account} do
+      # The prod-shaped row: trusted under an older release, then a newer
+      # release raised the pack's watermark — trusted + retired + NO override
+      # stamp. The trust API can't arrange it (trusting a retired version IS
+      # the override), so the fixture inserts the row directly against a real
+      # shipped watermark; "0.0.0" sits strictly below every one.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      assert html =~ "Trust anyway"
+      assert has_element?(lv, "#override-#{pack_version.id}")
+    end
+
     test "the override-retirement handler re-trusts and stays gated when dispatched directly",
          %{conn: conn, user: user, account: account} do
-      # The "Trust anyway" CTA only renders on a genuinely-retired row (no
-      # shipped watermark, so none render E2E) — but a crafted event still hits
-      # the server-authz-gated handler, which stamps the audited override on the
+      # The "Trust anyway" CTA only renders on a genuinely-retired row — but a
+      # crafted event against a non-retired row still hits the
+      # server-authz-gated handler, which stamps the audited override on the
       # trusted row and flashes the confirmation.
       subject = Fixtures.Subjects.subject_for(user, account)
       pack_version = observe_pending_pack!(account)

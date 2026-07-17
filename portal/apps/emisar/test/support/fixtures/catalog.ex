@@ -38,4 +38,34 @@ defmodule Emisar.Fixtures.Catalog do
 
     action
   end
+
+  @doc """
+  Inserts a TRUSTED pack version row directly — the shape a version trusted
+  under an older release has after a newer release raises the pack's
+  retirement watermark: trusted, retired, and NO override stamp.
+  `Catalog.trust_pack_version/2` cannot build this state (trusting an
+  already-retired version stamps the override), so retirement UI paths
+  arrange it here. Defaults to `pack_id: "acme-tools"`, `version: "9.9"`.
+  """
+  def create_trusted_pack_version(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || raise ":account_id is required"
+    now = DateTime.utc_now()
+
+    params = %{
+      account_id: account_id,
+      pack_id: attrs[:pack_id] || "acme-tools",
+      version: attrs[:version] || "9.9",
+      hash: attrs[:hash] || "sha256:trusted-fixture",
+      trust_state: :trusted,
+      first_seen_at: now,
+      last_seen_at: now
+    }
+
+    {:ok, pack_version} =
+      Catalog.PackVersion.Changeset.insert(params)
+      |> Repo.insert()
+
+    pack_version
+  end
 end
