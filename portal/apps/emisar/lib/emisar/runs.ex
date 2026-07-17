@@ -1455,6 +1455,7 @@ defmodule Emisar.Runs do
     ActionRun.Query.all()
     |> ActionRun.Query.status_in([:pending, :sent])
     |> ActionRun.Query.queued_before(cutoff)
+    |> ActionRun.Query.ordered_by_oldest()
     |> Repo.all()
   end
 
