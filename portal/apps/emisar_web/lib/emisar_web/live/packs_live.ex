@@ -1451,7 +1451,7 @@ defmodule EmisarWeb.PacksLive do
                   id="packs-cleanup-now"
                   variant={:secondary}
                   tone={:neutral}
-                  size={:sm}
+                  size={:lg}
                   class="mt-3 w-full"
                   title="Clean up unseen pack versions?"
                   confirm_label="Clean up now"
