@@ -23,6 +23,18 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def pending(queryable \\ all()),
     do: where(queryable, [packs: p], p.trust_state == :pending)
 
+  @doc "Trusted rows with no retirement override — the retired-blocked badge read."
+  def trusted_unoverridden(queryable \\ all()) do
+    where(
+      queryable,
+      [packs: p],
+      p.trust_state == :trusted and is_nil(p.retirement_overridden_at)
+    )
+  end
+
+  def by_pack_ids(queryable \\ all(), pack_ids),
+    do: where(queryable, [packs: p], p.pack_id in ^pack_ids)
+
   def last_seen_before(queryable \\ all(), cutoff),
     do: where(queryable, [packs: p], p.last_seen_at < ^cutoff)
 

@@ -679,10 +679,14 @@ defmodule EmisarWeb.UserAuth do
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
 
-  # Pack-trust badge counterpart: computed at mount (assign_new) and kept
-  # live by `refresh_pending_packs` on the account's packs topic.
+  # Pack-decision badge counterpart: computed at mount (assign_new) and kept
+  # live by `refresh_pending_packs` on the account's packs topic. Counts
+  # every version awaiting a decision — pending trust reviews AND
+  # retired-blocked trusted versions.
   defp pack_pending_count_for(nil), do: 0
-  defp pack_pending_count_for(subject), do: Emisar.Catalog.count_pending_pack_versions(subject)
+
+  defp pack_pending_count_for(subject),
+    do: Emisar.Catalog.count_pack_versions_needing_decision(subject)
 
   # Fleet-offline alert: computed at mount (assign_new) and kept live by
   # `refresh_fleet_offline` on the account's runner-connections topic.

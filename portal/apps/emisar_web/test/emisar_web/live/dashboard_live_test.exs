@@ -433,10 +433,10 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "at your runner limit"
     end
 
-    # when a runner advertises a pack version no operator
-    # has trusted yet (`count_pending_pack_versions > 0`), the dashboard surfaces
-    # the amber packs-pending-trust banner linking to the Packs page (dispatch is
-    # blocked against those packs until an admin trusts the new hash).
+    # when a runner advertises a pack version no operator has trusted yet
+    # (`count_pack_versions_needing_decision > 0`), the dashboard surfaces the
+    # amber packs-decision banner linking to the Packs page (dispatch is
+    # blocked against those packs until an admin resolves the decision).
     test "a pending pack version surfaces the packs-pending-trust banner", %{
       conn: conn,
       account: account
@@ -465,8 +465,9 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
-      assert html =~ "trust review"
-      # …and it links to the Packs page where the admin trusts/rejects the hash.
+      assert html =~ "need"
+      assert html =~ "a decision"
+      # …and it links to the Packs page where the admin resolves it.
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/packs"}']")
     end
   end

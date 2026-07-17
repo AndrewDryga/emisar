@@ -440,6 +440,32 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#override-#{pack_version.id}")
     end
 
+    test "a retired-blocked version lights the Packs nav badge; overriding clears it", %{
+      conn: conn,
+      account: account
+    } do
+      # The retired fleet state had NO nav signal — the badge counted only
+      # pending trust reviews, not retired versions awaiting a decision.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      badge = "a[href='/app/#{account.slug}/packs'] span.tabular-nums"
+      assert has_element?(lv, badge, "1")
+
+      render_click(lv, "override_retirement", %{"id" => pack_version.id})
+
+      refute has_element?(lv, badge)
+    end
+
     test "a rejected retired version shows the Retired chip but no rose warning block", %{
       conn: conn,
       user: user,

@@ -83,7 +83,10 @@ defmodule EmisarWeb.PacksLive do
     case fetch_rows(socket) do
       {:ok, rows} ->
         # Pending counts + the sidebar badge reflect the ACCOUNT, not the
-        # current filter — only the rendered groups narrow.
+        # current filter — only the rendered groups narrow. The badge counts
+        # every decision (pending reviews + retired-blocked); the page's
+        # amber callout stays trust-review-only — retired versions carry
+        # their own rose notice per row.
         pending = Enum.count(rows, &(&1.trust_state == :pending))
         index = load_action_index(socket)
         socket = assign(socket, :pack_action_index, index)
@@ -95,8 +98,8 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pack_count, count_packs(visible_rows))
         |> assign(:version_count, length(visible_rows))
         |> assign(:pending_count, pending)
-        # Keep the sidebar badge in step after Trust/Reject on this page.
-        |> assign(:pending_packs_count, pending)
+        # Keep the sidebar badge in step after a decision on this page.
+        |> assign(:pending_packs_count, Enum.count(rows, &Catalog.pack_version_needs_decision?/1))
         |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
         |> assign_pending_pack_actions(rows)
         |> assign(:matched_actions, matched)
@@ -638,7 +641,10 @@ defmodule EmisarWeb.PacksLive do
           |> assign(:pack_count, count_packs(visible_rows))
           |> assign(:version_count, length(visible_rows))
           |> assign(:pending_count, pending)
-          |> assign(:pending_packs_count, pending)
+          |> assign(
+            :pending_packs_count,
+            Enum.count(rows, &Catalog.pack_version_needs_decision?/1)
+          )
           |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
           |> assign_pending_pack_actions(rows)
           |> assign(:matched_actions, matched)

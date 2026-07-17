@@ -69,7 +69,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_mfa, team_mfa(account, subject))
     |> assign(:sso_enabled?, SSO.account_has_enabled_provider?(account.id))
-    |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
+    |> assign(:pending_packs_count, Catalog.count_pack_versions_needing_decision(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
@@ -736,12 +736,13 @@ defmodule EmisarWeb.DashboardLive do
     <.callout
       tone={:amber}
       icon="hero-shield-exclamation"
-      title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} trust review"}
+      title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} a decision"}
       navigate={~p"/app/#{@current_account}/packs"}
       class="mb-10"
     >
-      Dispatch is blocked against these until an admin trusts or rejects the new hash.
-      <:action>Review pack trust →</:action>
+      Dispatch is blocked against these until an admin reviews the advertised hash or
+      resolves the retired version.
+      <:action>Review packs →</:action>
     </.callout>
     """
   end

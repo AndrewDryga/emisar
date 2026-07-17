@@ -995,6 +995,25 @@ defmodule Emisar.Catalog do
     end
   end
 
+  @doc """
+  A version awaiting an operator decision: a pending trust review, or a
+  trusted version whose shipped-catalog retirement blocks dispatch until an
+  admin overrides, updates, revokes, or deletes it. Rejected and overridden
+  rows are decided. Pure over the release-frozen `PackBaseline`; drives the
+  sidebar badge and the packs page attention notices.
+  """
+  def pack_version_needs_decision?(%PackVersion{trust_state: :pending}), do: true
+
+  def pack_version_needs_decision?(%PackVersion{
+        trust_state: :trusted,
+        retirement_overridden_at: nil,
+        pack_id: pack_id,
+        version: version
+      }),
+      do: PackBaseline.retired?(pack_id, version)
+
+  def pack_version_needs_decision?(%PackVersion{}), do: false
+
   # The pinned pack_version row for an action's (account, pack_id, version),
   # or nil — shared by the two dispatch-gate reads. `peek` (nil-or-struct)
   # per §1.1: a missing row is a meaningful "nothing pinned yet" state.
@@ -1528,21 +1547,42 @@ defmodule Emisar.Catalog do
   def trusted_manifest_for_static_reads(%PackVersion{}), do: {:error, :pack_untrusted}
 
   @doc """
-  Cheap COUNT(*) of pack versions pending trust review — drives the
-  sidebar + dashboard "needs review" badge. Same Subject gate + account
-  scoping as `list_pack_versions/2`; returns `0` when the caller lacks
-  permission so the badge silently disappears instead of erroring.
+  Cheap count of pack versions awaiting an operator decision — pending trust
+  reviews PLUS retired-blocked trusted versions (see
+  `pack_version_needs_decision?/1`) — drives the sidebar + dashboard badge.
+  Same Subject gate + account scoping as `list_pack_versions/2`; returns `0`
+  when the caller lacks permission so the badge silently disappears instead
+  of erroring.
   """
-  def count_pending_pack_versions(%Subject{} = subject) do
+  def count_pack_versions_needing_decision(%Subject{} = subject) do
     case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       :ok ->
-        PackVersion.Query.pending()
-        |> Authorizer.for_subject(subject)
-        |> Repo.aggregate(:count)
+        pending =
+          PackVersion.Query.pending()
+          |> Authorizer.for_subject(subject)
+          |> Repo.aggregate(:count)
+
+        pending + count_retired_blocked(subject)
 
       _ ->
         0
     end
+  end
+
+  # Retirement is compile-time data (`PackBaseline`), so the version
+  # comparison happens in Elixir over a narrow read: trusted, unoverridden
+  # rows of the packs that carry a watermark at all.
+  defp count_retired_blocked(%Subject{} = subject) do
+    watermarked_pack_ids = Map.keys(PackBaseline.retired_below())
+
+    queryable =
+      PackVersion.Query.trusted_unoverridden()
+      |> PackVersion.Query.by_pack_ids(watermarked_pack_ids)
+      |> Authorizer.for_subject(subject)
+
+    queryable
+    |> Repo.all()
+    |> Enum.count(&pack_version_needs_decision?/1)
   end
 
   # -- PubSub ----------------------------------------------------------
