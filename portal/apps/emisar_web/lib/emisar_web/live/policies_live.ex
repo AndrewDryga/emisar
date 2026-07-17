@@ -755,7 +755,7 @@ defmodule EmisarWeb.PoliciesLive do
 
           <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an
                actionable warning (§8.1). --%>
-          <p :if={not @can_manage?} class="text-xs text-zinc-500">
+          <p :if={not @can_manage?} class="text-xs text-zinc-400">
             You can view the policy, but only owners and admins can change it.
           </p>
         </div>
@@ -823,7 +823,7 @@ defmodule EmisarWeb.PoliciesLive do
                precedent — no dashed hint above a dashed composer). --%>
           <p
             :if={not @load_error? and @rulesets == [] and not @can_manage?}
-            class="text-sm text-zinc-500"
+            class="text-sm text-zinc-400"
           >
             No targeted rulesets — every runner uses the default policy above.
           </p>
@@ -892,15 +892,15 @@ defmodule EmisarWeb.PoliciesLive do
     ~H"""
     <div class="space-y-5">
       <div>
-        <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">In effect</h3>
-        <p :if={@total > 0} class="mt-1 text-xs leading-relaxed text-zinc-500">
+        <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">In effect</h3>
+        <p :if={@total > 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
           What this policy decides for {@target}'s
           <span class="font-medium text-zinc-300">{@total}</span>
           {ngettext_action(@total)}.
         </p>
         <%!-- No catalog yet: the empty note stands in as the subtitle — no
              "…for your fleet's 0 actions." line to state a count of nothing. --%>
-        <p :if={@total == 0} class="mt-1 text-xs leading-relaxed text-zinc-500">
+        <p :if={@total == 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
           No actions advertised on this target yet — decisions appear once a runner reports its catalog.
         </p>
       </div>
@@ -916,13 +916,13 @@ defmodule EmisarWeb.PoliciesLive do
            action catalog (Packs) in a new tab, so an in-flight edit is untouched. --%>
       <div :if={@total > 0} class="border-t border-zinc-800/70 pt-4">
         <div class="flex items-baseline justify-between">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             Catalog by risk
           </h3>
           <.link
             href={@catalog_path}
             target="_blank"
-            class="inline-flex items-center gap-0.5 text-[10px] font-medium text-zinc-500 hover:text-zinc-300"
+            class="inline-flex items-center gap-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-300"
           >
             View all <.icon name="hero-arrow-top-right-on-square" class="h-2.5 w-2.5" />
           </.link>
@@ -997,7 +997,7 @@ defmodule EmisarWeb.PoliciesLive do
                   {target_name(@ruleset, @runners)}
                 </span>
               </div>
-              <p class="mt-1 text-xs text-zinc-500">
+              <p class="mt-1 text-xs text-zinc-400">
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
@@ -1067,7 +1067,7 @@ defmodule EmisarWeb.PoliciesLive do
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
         />
-        <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
+        <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-400">
           Pick a runner or group above, then set its rules.
         </p>
       </div>
@@ -1152,12 +1152,12 @@ defmodule EmisarWeb.PoliciesLive do
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Per-action overrides
         </h3>
-        <p class="mt-0.5 text-xs text-zinc-500">
+        <p class="mt-0.5 text-xs text-zinc-400">
           First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
         </p>
 
         <%!-- Viewer's empty fact; a manager's empty state IS the composer below. --%>
-        <p :if={@overrides == [] and not @can_manage} class="mt-4 text-xs text-zinc-500">
+        <p :if={@overrides == [] and not @can_manage} class="mt-4 text-xs text-zinc-400">
           No overrides — the tier defaults above decide every action.
         </p>
 
@@ -1237,7 +1237,7 @@ defmodule EmisarWeb.PoliciesLive do
               disabled={!@can_manage}
               class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
             />
-            <span class="text-xs text-zinc-500">
+            <span class="text-xs text-zinc-400">
               {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
             </span>
           </div>

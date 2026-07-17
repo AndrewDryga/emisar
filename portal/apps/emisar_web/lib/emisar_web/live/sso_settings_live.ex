@@ -1005,7 +1005,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <div :if={@live_action == :new} class="max-w-3xl space-y-5">
           <%!-- The shell title carries the job + the ONE back affordance; no
                second in-body title. --%>
-          <p class="max-w-prose text-sm leading-relaxed text-zinc-500">
+          <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
             We'll use the issuer's OIDC discovery document. Follow the steps in each section to
             create an OAuth/OIDC app at your provider, then paste its client ID and secret.
           </p>
@@ -1055,7 +1055,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <.icon name="hero-arrow-left" class="h-4 w-4" /> {provider.name}
               </.link>
               <h2 class="mt-3 text-lg font-semibold text-zinc-100">Edit connection</h2>
-              <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
+              <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
                 Update this connection's OIDC settings. Leave the client secret blank to keep the
                 stored one.
               </p>
@@ -1097,7 +1097,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.simple_form>
           </div>
 
-          <div :if={not @loaded?} class="text-sm text-zinc-500">Loading…</div>
+          <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
         </div>
 
         <%!-- ── Pending access requests (needs attention) ──────────────────
@@ -1121,7 +1121,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </span>
                   <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
                 </div>
-                <div class="mt-0.5 truncate text-xs text-zinc-500">
+                <div class="mt-0.5 truncate text-xs text-zinc-400">
                   <span :if={request.email}>{request.email}</span>
                   <span :if={request.email} class="text-zinc-500">·</span>
                   <span class="font-mono">{request.provider_identifier}</span>
@@ -1183,7 +1183,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                     <.chip :if={provider.scim_enabled}>Directory sync</.chip>
                   </div>
-                  <div class="mt-1 truncate text-xs text-zinc-500">
+                  <div class="mt-1 truncate text-xs text-zinc-400">
                     {provider.issuer} · {provisioner_label(provider.provisioner)}
                   </div>
                   <.sync_meta
@@ -1213,7 +1213,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              providers. NAKED — the code_line is the artifact. --%>
         <section :if={@live_action == :index}>
           <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
             Share this with your members — it opens this team's sign-in page with your SSO
             connections (and email sign-in as a fallback).
           </p>
@@ -1272,7 +1272,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <span :if={provider.satisfies_mfa} class="text-zinc-300">
                       Satisfied by this provider
                     </span>
-                    <span :if={not provider.satisfies_mfa} class="text-zinc-500">Not satisfied</span>
+                    <span :if={not provider.satisfies_mfa} class="text-zinc-400">Not satisfied</span>
                   </.meta_field>
                 </div>
               </div>
@@ -1387,7 +1387,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.confirm_dialog>
           </div>
 
-          <div :if={not @loaded?} class="text-sm text-zinc-500">Loading…</div>
+          <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
         </div>
       </div>
     </.dashboard_shell>
@@ -1422,15 +1422,15 @@ defmodule EmisarWeb.SSOSettingsLive do
       <:body>This issuer serves a valid OIDC configuration.</:body>
       <dl class="mt-3 space-y-1 text-xs text-zinc-400">
         <div :if={@summary.authorization_endpoint} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-zinc-500">Authorization</dt>
+          <dt class="w-32 shrink-0 text-zinc-400">Authorization</dt>
           <dd class="truncate font-mono text-zinc-300">{@summary.authorization_endpoint}</dd>
         </div>
         <div :if={@summary.token_endpoint} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-zinc-500">Token</dt>
+          <dt class="w-32 shrink-0 text-zinc-400">Token</dt>
           <dd class="truncate font-mono text-zinc-300">{@summary.token_endpoint}</dd>
         </div>
         <div :if={@summary.jwks_uri} class="flex gap-2">
-          <dt class="w-32 shrink-0 text-zinc-500">JWKS</dt>
+          <dt class="w-32 shrink-0 text-zinc-400">JWKS</dt>
           <dd class="truncate font-mono text-zinc-300">{@summary.jwks_uri}</dd>
         </div>
       </dl>
@@ -1502,7 +1502,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
               {selected_kind_label(@form, @kind_options)}
             </div>
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               Set when the connection was created. Add a new connection to use a different provider.
             </p>
           </div>
@@ -1542,7 +1542,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                 {fixed}
               </div>
-              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
                 Fixed for {setup_kind_label(@kind)} — the same for every org, so there's nothing to set.
               </p>
             <% else %>
@@ -1553,7 +1553,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 placeholder={issuer_hint(@kind)}
                 class="font-mono"
               />
-              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
                 The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
               </p>
             <% end %>
@@ -1575,7 +1575,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               label="Identifier claim"
               options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
             />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               The stable, provider-issued claim that identifies a user — restricted to immutable
               subject identifiers (a mutable claim like email would allow account takeover). Leave
               as <code>sub</code>
@@ -1597,7 +1597,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               label="New-user provisioning"
               options={@provisioner_options}
             />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               <span class="font-medium text-zinc-400">Auto-provision</span>
               creates a user on first sign-in. <span class="font-medium text-zinc-400">Manual</span>
               holds first-time sign-ins as pending requests for an admin to approve. Either way
@@ -1631,7 +1631,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               label="Allowed email domain (optional)"
               placeholder="acme.com"
             />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               Restricts sign-in to verified emails on this domain and routes that domain's
               sign-ins here. Leave blank to accept any address the provider asserts.
             </p>
@@ -1658,7 +1658,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                  shown at the safe default would just argue with itself. --%>
             <p
               :if={not checkbox_on?(@form[:satisfies_mfa])}
-              class="mt-1 text-[11px] leading-relaxed text-zinc-500"
+              class="mt-1 text-[11px] leading-relaxed text-zinc-400"
             >
               Turn on only if this provider enforces MFA itself — then a sign-in here counts as
               the account's second factor.
@@ -1709,7 +1709,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <:step :if={is_nil(fixed_issuer(@kind))}>
           Set the <span class="text-zinc-300">Issuer URL</span>
           below to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
-          <span class="text-zinc-500">{issuer_where_hint(@kind)}</span>
+          <span class="text-zinc-400">{issuer_where_hint(@kind)}</span>
         </:step>
         <:step>
           Paste the app's <span class="text-zinc-300">Client ID</span>
@@ -1719,7 +1719,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       </.steps>
       <%!-- Only providers whose OAuth app exposes a DPoP toggle get this note —
            Google and JumpCloud have no such setting, so it would only confuse. --%>
-      <p :if={dpop_relevant?(@kind)} class="mt-3 text-xs leading-relaxed text-zinc-500">
+      <p :if={dpop_relevant?(@kind)} class="mt-3 text-xs leading-relaxed text-zinc-400">
         Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
         reads the ID token only and never presents the access token to an API, so DPoP adds no
         security here and turning it on would break the token request.
@@ -2010,7 +2010,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               claim carries — so a member's SSO login and their synced record are one identity.
             </:step>
           </.steps>
-          <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-500">
+          <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-400">
             The SCIM app is a second Okta integration, separate from your sign-in app — its own
             SSO doesn't need to be functional. Okta defaults both the OIDC
             <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
@@ -2070,7 +2070,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </p>
                 <p
                   :if={mapping.external_group_display}
-                  class="truncate font-mono text-[11px] text-zinc-500"
+                  class="truncate font-mono text-[11px] text-zinc-400"
                 >
                   {mapping.external_group_id}
                 </p>
@@ -2235,7 +2235,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               </p>
               <p
                 :if={group.mapping && group.mapping.external_group_display}
-                class="truncate font-mono text-[11px] text-zinc-500"
+                class="truncate font-mono text-[11px] text-zinc-400"
               >
                 {group.external_group_id}
               </p>
@@ -2246,7 +2246,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               {members_label(group.member_count)}
             </span>
             <.chip :if={group.mapping}>{role_label(group.mapping.role)}</.chip>
-            <span :if={!group.mapping} class="text-xs text-zinc-500">No role mapping</span>
+            <span :if={!group.mapping} class="text-xs text-zinc-400">No role mapping</span>
           </div>
         </li>
       </ul>
@@ -2309,7 +2309,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </div>
             <%!-- No truncate: a long directory id (a UUID `sub`) wraps so its
                  "· last synced" tail stays visible rather than clipping to "last s…". --%>
-            <div class="mt-0.5 text-xs text-zinc-500">
+            <div class="mt-0.5 text-xs text-zinc-400">
               <span class="break-all font-mono">{synced_external_id(member.identity)}</span>
               <span :if={member.identity.last_seen_at}>
                 · last synced
@@ -2324,7 +2324,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
           <div :if={@can_manage_team? and member.membership} class="flex shrink-0 items-center gap-2">
             <%= if member.membership.user_id == @current_user_id do %>
-              <span class="text-xs text-zinc-500">you</span>
+              <span class="text-xs text-zinc-400">you</span>
             <% else %>
               <%!-- On a directory-synced provider the role is the IdP's: a group→role
                  mapping (or the provider default) recomputes it on every sync, so a
@@ -2389,7 +2389,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 :if={
                   Accounts.Membership.disabled?(member.membership) and not member.identity.scim_active
                 }
-                class="text-xs text-zinc-500"
+                class="text-xs text-zinc-400"
               >
                 Reactivate in your IdP
               </span>
@@ -2437,7 +2437,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # on the IdP).
   defp sync_meta(assigns) do
     ~H"""
-    <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-500">
+    <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-400">
       <span class="tabular-nums">{count_label(@stats.users, "user")}</span>
       <span class="tabular-nums">· {count_label(@stats.groups, "group")}</span>
       <span :if={@provider.scim_enabled and @provider.scim_last_seen_at} class="text-brand-300/90">

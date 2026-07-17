@@ -345,7 +345,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 label="Max uses"
                 placeholder="unlimited"
               />
-              <p class="text-xs leading-relaxed text-zinc-500">
+              <p class="text-xs leading-relaxed text-zinc-400">
                 Caps how many runners can register before the key auto-revokes.
                 Leave blank for unlimited.
               </p>
@@ -510,7 +510,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
         <p
           :if={not Runners.subject_can_manage_enrollment_keys?(@current_subject)}
-          class="text-xs text-zinc-500"
+          class="text-xs text-zinc-400"
         >
           Only owners and admins can issue or revoke enrollment keys.
         </p>

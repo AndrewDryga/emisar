@@ -320,7 +320,7 @@ defmodule EmisarWeb.BillingLive do
           <div class="space-y-8 lg:col-span-3">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                   Current plan
                 </div>
                 <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -353,7 +353,7 @@ defmodule EmisarWeb.BillingLive do
                   </.chip>
                   <span
                     :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
-                    class="text-zinc-500"
+                    class="text-zinc-400"
                   >
                     Next charge
                     <.local_time
@@ -390,7 +390,7 @@ defmodule EmisarWeb.BillingLive do
                  still owns the full ledger + PDF downloads. A paid row is silent
                  (no green "Paid" chip); only past-due earns a tone. --%>
             <section :if={@invoices != []}>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Recent invoices
               </h3>
               <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
@@ -407,7 +407,7 @@ defmodule EmisarWeb.BillingLive do
                   <span class="w-16 font-medium tabular-nums text-zinc-200">
                     {format_total(invoice.amount_cents)}
                   </span>
-                  <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-500">
+                  <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-400">
                     {invoice.invoice_number}
                   </span>
                   <div class="ml-auto flex items-center gap-4">
@@ -536,7 +536,7 @@ defmodule EmisarWeb.BillingLive do
                       <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
                         <%!-- Quiet fact for non-owners, not a gray slab that apes a
                          disabled button. --%>
-                        <p class="py-2 text-center text-xs font-medium text-zinc-500">Owners only</p>
+                        <p class="py-2 text-center text-xs font-medium text-zinc-400">Owners only</p>
                       <% @summary.plan == "enterprise" -> %>
                         <%!-- On a custom Enterprise plan every other tier is a downgrade,
                          and there's no self-serve path off it — the note above
@@ -585,7 +585,7 @@ defmodule EmisarWeb.BillingLive do
              (the create-page helper-column grammar), no framing line. --%>
           <aside class="space-y-8">
             <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Usage
               </h3>
               <%!-- The summary limits are entitlement-aware (Paddle product
@@ -615,7 +615,7 @@ defmodule EmisarWeb.BillingLive do
               </div>
             </div>
             <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Features
               </h3>
               <%!-- Plan-gated features (entitlement-aware) — what this plan turns on. --%>
@@ -626,7 +626,7 @@ defmodule EmisarWeb.BillingLive do
               </ul>
             </div>
             <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Need help?
               </h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-400">
@@ -659,7 +659,7 @@ defmodule EmisarWeb.BillingLive do
         name={if @enabled, do: "hero-check-circle-mini", else: "hero-minus-circle-mini"}
         class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-500")}
       />
-      <span class={(@enabled && "text-zinc-300") || "text-zinc-500"}>{@label}</span>
+      <span class={(@enabled && "text-zinc-300") || "text-zinc-400"}>{@label}</span>
     </li>
     """
   end
@@ -675,7 +675,7 @@ defmodule EmisarWeb.BillingLive do
       <div class="flex items-baseline justify-between text-xs">
         <span class="text-zinc-400">{@label}</span>
         <span class="font-medium text-zinc-200">
-          {@count} <span class="text-zinc-500">/ {@limit_label}</span>
+          {@count} <span class="text-zinc-400">/ {@limit_label}</span>
         </span>
       </div>
       <%!-- A progress bar only when there's a numeric cap to show progress

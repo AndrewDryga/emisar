@@ -390,11 +390,11 @@ defmodule EmisarWeb.AgentsLive do
     cond do
       DateTime.compare(exp, now) == :lt -> "text-rose-400"
       DateTime.diff(exp, now, :day) < 7 -> "text-amber-400"
-      true -> "text-zinc-500"
+      true -> "text-zinc-400"
     end
   end
 
-  defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-500"
+  defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-400"
 
   # Rotation lineage. The swap is PENDING while the replaced key is still usable
   # — this key's first authenticated use retires it. The lineage seg renders only
@@ -827,7 +827,7 @@ defmodule EmisarWeb.AgentsLive do
              every chip dies in a denial flash. --%>
         <p
           :if={not ApiKeys.subject_can_issue_quick_key?(@current_subject)}
-          class="max-w-prose text-sm leading-relaxed text-zinc-500"
+          class="max-w-prose text-sm leading-relaxed text-zinc-400"
         >
           Connecting an agent needs an operator role or above — ask an operator,
           admin, or owner to mint the key.
@@ -899,7 +899,7 @@ defmodule EmisarWeb.AgentsLive do
               title="last call within 24 hours"
             >
               <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-500">{@idle_count} idle</span>
+              <span class="tabular-nums text-zinc-400">{@idle_count} idle</span>
             </span>
             <span
               :if={@dormant_count > 0}
@@ -907,11 +907,11 @@ defmodule EmisarWeb.AgentsLive do
               title="no call for over 24 hours"
             >
               <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-500">{@dormant_count} dormant</span>
+              <span class="tabular-nums text-zinc-400">{@dormant_count} dormant</span>
             </span>
             <span :if={@never_used_count > 0} class="flex items-center gap-1.5">
               <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-500">{@never_used_count} never used</span>
+              <span class="tabular-nums text-zinc-400">{@never_used_count} never used</span>
             </span>
           </div>
           <LiveTable.live_table
@@ -942,7 +942,7 @@ defmodule EmisarWeb.AgentsLive do
                      uses. A remote connector reports no bridge → nothing here. --%>
                   <span
                     :if={mcp_bridge_version(key)}
-                    class="font-mono text-[11px] text-zinc-500"
+                    class="font-mono text-[11px] text-zinc-400"
                   >
                     v{mcp_bridge_version(key)}
                   </span>
@@ -1153,7 +1153,7 @@ defmodule EmisarWeb.AgentsLive do
 
   defp status_word_class(:active), do: "text-brand-300"
   defp status_word_class(:revoked), do: "text-rose-300"
-  defp status_word_class(_), do: "text-zinc-500"
+  defp status_word_class(_), do: "text-zinc-400"
 
   attr :configs_for, :any, required: true
   attr :selected_client, :any, required: true
@@ -1308,7 +1308,7 @@ defmodule EmisarWeb.AgentsLive do
                 />
                 <%!-- Mechanical next step sits right under the snippet: paste or
                      run it, then restart. --%>
-                <p class="mt-3 text-xs text-zinc-500">
+                <p class="mt-3 text-xs text-zinc-400">
                   {if config_target_is_file?(@config),
                     do: "Restart #{client_label(@selected_client)} after saving.",
                     else: "Start a fresh #{client_label(@selected_client)} session to use it."}
@@ -1515,11 +1515,11 @@ defmodule EmisarWeb.AgentsLive do
     <.disclosure size={:md}>
       <:summary>
         <span class="font-medium">
-          Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
+          Skip the per-tool prompts <span class="text-zinc-400">(optional)</span>
         </span>
       </:summary>
       <.auto_permit_why client_label={@client_label} />
-      <p class="mt-3 text-[11px] text-zinc-500 font-mono">{@auto_permit.location}</p>
+      <p class="mt-3 text-[11px] text-zinc-400 font-mono">{@auto_permit.location}</p>
       <.code_panel
         id={"permit-#{@client_id}"}
         label={"#{@client_label}'s setting"}
@@ -1537,12 +1537,12 @@ defmodule EmisarWeb.AgentsLive do
     <.disclosure size={:md}>
       <:summary>
         <span class="font-medium">
-          Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
+          Skip the per-tool prompts <span class="text-zinc-400">(optional)</span>
         </span>
       </:summary>
       <.auto_permit_why client_label={@client_label} />
       <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
-      <p :if={@auto_permit.doc_url} class="mt-2 text-[11px] text-zinc-500">
+      <p :if={@auto_permit.doc_url} class="mt-2 text-[11px] text-zinc-400">
         <.link
           href={@auto_permit.doc_url}
           target="_blank"
@@ -1628,7 +1628,7 @@ defmodule EmisarWeb.AgentsLive do
         auto_permit={@auto_permit}
       />
 
-      <p class="text-xs text-zinc-500">
+      <p class="text-xs text-zinc-400">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom OAuth MCP servers. Connection refused or 401?
         <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
@@ -1675,7 +1675,7 @@ defmodule EmisarWeb.AgentsLive do
           type="datetime-local"
           label="Expires (UTC)"
         />
-        <p class="mt-1 text-xs text-zinc-500">
+        <p class="mt-1 text-xs text-zinc-400">
           Leave blank for the default 30-day expiry — a short-lived key limits the
           blast radius if it leaks. Pick a date to override.
         </p>

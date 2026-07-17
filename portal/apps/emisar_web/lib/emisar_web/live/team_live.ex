@@ -908,7 +908,7 @@ defmodule EmisarWeb.TeamLive do
 
             <fieldset>
               <legend class="text-sm font-medium text-zinc-300">Role</legend>
-              <p class="mt-0.5 text-xs text-zinc-500">
+              <p class="mt-0.5 text-xs text-zinc-400">
                 What this person can do once they join — you can change it later.
               </p>
               <.choice_cards
@@ -969,7 +969,7 @@ defmodule EmisarWeb.TeamLive do
                 </span>
                 <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
               </div>
-              <div class="mt-0.5 truncate text-xs text-zinc-500">
+              <div class="mt-0.5 truncate text-xs text-zinc-400">
                 <span :if={request.email}>{request.email}</span>
                 <span :if={request.email} class="text-zinc-500">·</span>
                 <span class="font-mono">{request.provider_identifier}</span>
@@ -1132,7 +1132,7 @@ defmodule EmisarWeb.TeamLive do
                        otherwise let HEEx trim before each component tag. --%>
                         <%!-- Wraps below sm — single-line truncation ate the
                          sign-in-recency tail on every long email. --%>
-                        <div class="text-xs text-zinc-500 sm:truncate">
+                        <div class="text-xs text-zinc-400 sm:truncate">
                           {membership.user && membership.user.email} · joined{" "}<.local_time
                             id={"member-joined-#{membership.id}"}
                             value={membership.inserted_at}
@@ -1148,7 +1148,7 @@ defmodule EmisarWeb.TeamLive do
                           <span class="text-[10px] uppercase tracking-wider text-zinc-400">
                             scope:
                           </span>
-                          <span :if={scopes == []} class="text-xs text-zinc-500">all runners</span>
+                          <span :if={scopes == []} class="text-xs text-zinc-400">all runners</span>
                           <.chip :for={scope <- scopes} tone={:neutral}>
                             {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
                           </.chip>
@@ -1252,7 +1252,7 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <.input field={@edit_form[:full_name]} type="text" label="Full name" />
-                      <p class="text-xs text-zinc-500">
+                      <p class="text-xs text-zinc-400">
                         Only display name can be changed from here. Members
                         update their own sign-in email on their Profile page.
                       </p>
@@ -1328,7 +1328,7 @@ defmodule EmisarWeb.TeamLive do
               </:empty>
             </LiveTable.live_table>
 
-            <p :if={not can_manage?(assigns)} class="mt-6 text-xs text-zinc-500">
+            <p :if={not can_manage?(assigns)} class="mt-6 text-xs text-zinc-400">
               Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
             </p>
           </section>
@@ -1338,7 +1338,7 @@ defmodule EmisarWeb.TeamLive do
              on the side: 2FA · SSO connections · Require SSO, each with its
              what-it-does copy + a confirm-modal control. --%>
         <aside class="space-y-4 lg:col-span-1">
-          <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Security</h3>
+          <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
           <%!-- ── Two-factor authentication ── --%>
           <% unenrolled = @mfa_stats.total - @mfa_stats.enrolled %>
@@ -1418,7 +1418,7 @@ defmodule EmisarWeb.TeamLive do
                   <div class="min-w-0 flex-1">
                     <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
                       <span class="truncate">{provider.name}</span>
-                      <span :if={not provider.enabled} class="shrink-0 text-[10px] text-zinc-500">
+                      <span :if={not provider.enabled} class="shrink-0 text-[10px] text-zinc-400">
                         Disabled
                       </span>
                     </span>
@@ -1428,7 +1428,7 @@ defmodule EmisarWeb.TeamLive do
                          provisions on sign-in and has nothing to show here. --%>
                     <span
                       :if={provider.scim_enabled}
-                      class="mt-0.5 block text-[11px] leading-tight text-zinc-500"
+                      class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
                     >
                       <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
                       {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
@@ -1454,7 +1454,7 @@ defmodule EmisarWeb.TeamLive do
             </ul>
             <p
               :if={@providers == [] and @enabled_sso_provider_count == 0}
-              class="mt-3 text-xs text-zinc-500"
+              class="mt-3 text-xs text-zinc-400"
             >
               Not configured — members sign in with a magic link.
             </p>
@@ -1480,7 +1480,7 @@ defmodule EmisarWeb.TeamLive do
                  connection to sign in through. --%>
             <div :if={@providers != []} class="mt-4 border-t border-zinc-800/70 pt-3">
               <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-500">
+              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
                 Share this — it opens this team's sign-in page with your SSO connections.
               </p>
               <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
@@ -1540,7 +1540,7 @@ defmodule EmisarWeb.TeamLive do
 
           <%!-- ===== Notifications ===== account-wide email preferences, distinct
                from the security knobs above (owner/admin, but not a security change). --%>
-          <h3 class="pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          <h3 class="pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
             Notifications
           </h3>
 

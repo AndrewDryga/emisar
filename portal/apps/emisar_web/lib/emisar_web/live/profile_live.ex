@@ -594,7 +594,7 @@ defmodule EmisarWeb.ProfileLive do
               <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
               <span :if={not @mfa_enabled?} class="flex items-center gap-1.5 text-xs">
                 <.status_dot tone={:neutral} size={:sm} />
-                <span class="text-zinc-500">off</span>
+                <span class="text-zinc-400">off</span>
               </span>
             </:actions>
           </.section_header>
@@ -639,7 +639,7 @@ defmodule EmisarWeb.ProfileLive do
               <% remaining = recovery_codes_remaining(@current_user) %>
               <p class={[
                 "mt-3 text-xs",
-                if(remaining <= 2, do: "font-medium text-amber-300", else: "text-zinc-500")
+                if(remaining <= 2, do: "font-medium text-amber-300", else: "text-zinc-400")
               ]}>
                 {remaining} recovery {if remaining == 1, do: "code", else: "codes"} remaining.<span :if={
                   remaining <= 2
