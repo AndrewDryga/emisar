@@ -167,11 +167,12 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
 
-      # Collapsed by default — the action list isn't rendered until opened.
-      assert render(lv) =~ "View contents"
+      # Collapsed by default — the action list isn't rendered until the row's
+      # leading chevron opens it.
       refute render(lv) =~ "acme.audit"
+      assert has_element?(lv, ~s(button[aria-expanded="false"][phx-click="inspect_pack"]))
 
-      # Opening the disclosure lazily loads + renders the action id + risk.
+      # Opening the expansion lazily loads + renders the action id + risk.
       html =
         render_click(lv, "inspect_pack", %{
           "id" => pack_version.id,
@@ -182,20 +183,19 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "acme.audit"
       assert html =~ "medium"
 
-      # The disclosure stays OPEN across the lazy-load re-render — the bug was the
-      # stream re-insert stripping the browser's native `<details open>` and
-      # snapping it shut on the first click. The server now tracks the open state.
-      assert has_element?(lv, "details[open]")
+      # The expansion stays OPEN across the stream re-insert — the server
+      # tracks the open state, so the lazy-load re-render can't snap it shut.
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
 
-      # Toggling again closes it — the server's open state mirrors the browser's
-      # native toggle, so they stay in sync instead of fighting.
+      # Toggling again closes it.
       render_click(lv, "inspect_pack", %{
         "id" => pack_version.id,
         "pack-id" => pack_version.pack_id,
         "version" => pack_version.version
       })
 
-      refute has_element?(lv, "details[open]")
+      refute render(lv) =~ "acme.audit"
+      refute has_element?(lv, ~s(button[aria-expanded="true"]))
     end
 
     test "a PUBLISHED pack's header links to its registry page; a custom pack's doesn't", %{
@@ -264,7 +264,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
-      assert render(lv) =~ "View contents"
+      assert has_element?(lv, ~s(button[aria-expanded="false"][phx-click="inspect_pack"]))
 
       html =
         render_click(lv, "inspect_pack", %{
@@ -880,8 +880,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # The pending pack is on the page (its banner explains the block)…
       assert html =~ "acme-tools"
       assert html =~ "needs trust review."
-      # …but the trusted-only disclosure is absent.
-      refute html =~ "View contents"
+      # …but the trusted-only contents chevron is absent.
       refute html =~ "inspect_pack"
     end
 
@@ -1017,7 +1016,8 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/packs")
 
       assert html =~ "Automatic cleanup"
-      assert html =~ "unseen pack versions are kept forever"
+      # Off is the default — the rail select shows it as the selected option.
+      assert has_element?(lv, ~s(#packs-cleanup option[value=""][selected]))
 
       html =
         lv
@@ -1025,7 +1025,7 @@ defmodule EmisarWeb.PacksLiveTest do
         |> render_change(%{"days" => "30"})
 
       assert html =~ "Automatic cleanup on — pack versions unseen for 30 days are removed daily."
-      assert html =~ "after 30 days unseen"
+      assert has_element?(lv, ~s(#packs-cleanup option[value="30"][selected]))
     end
 
     test "Clean up now removes versions past the window", %{
@@ -1152,7 +1152,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = filter(lv, "", "high")
       assert html =~ "postgres.kill_backend"
       refute html =~ "nginx.reload"
-      assert has_element?(lv, "details[open]")
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
     end
 
     test "search matches an action id and surfaces its pack, expanded", %{

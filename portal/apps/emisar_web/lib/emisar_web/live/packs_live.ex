@@ -28,14 +28,13 @@ defmodule EmisarWeb.PacksLive do
     socket = assign(socket, :page_title, "Packs")
 
     # Trusted versions' actions are loaded lazily, one query per opened
-    # "View contents" disclosure (see `inspect_pack`), keyed by version id —
-    # trusted versions can be many, so we never eagerly look them all up.
+    # contents expansion (see `inspect_pack`), keyed by version id — trusted
+    # versions can be many, so we never eagerly look them all up.
     socket = assign(socket, :inspected_actions, %{})
 
-    # Which "View contents" disclosures are open, keyed by version id. The rows
-    # are a stream, so opening one re-inserts its group; without tracking the open
-    # state server-side that re-render would strip the browser's native `<details
-    # open>` and snap the disclosure shut on the first click.
+    # Which contents expansions are open, keyed by version id. The rows are a
+    # stream (static once pushed), so the open state must live server-side for
+    # the chevron + expansion to survive each group re-insert.
     socket = assign(socket, :open_versions, MapSet.new())
 
     # Reject is IRREVERSIBLE-feeling (the trusted/pending decision flips
@@ -676,10 +675,11 @@ defmodule EmisarWeb.PacksLive do
   # (attacker-influenced); they render through escaped HEEx, never `raw/1`.
   attr :actions, :list, required: true
   attr :matched, :any, default: nil, doc: "MapSet of action_ids the active filter matched"
+  attr :class, :string, default: nil
 
   defp pack_action_list(assigns) do
     ~H"""
-    <ul class="mt-1 space-y-1">
+    <ul class={["space-y-1", @class]}>
       <li
         :for={action <- @actions}
         class={[
@@ -704,40 +704,39 @@ defmodule EmisarWeb.PacksLive do
   defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)
 
   attr :version, :map, required: true
-  attr :pack_id, :string, required: true
   attr :inspected, :any, required: true, doc: "nil (unloaded), [] (none), or the action list"
   attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
-  attr :open, :boolean, required: true
 
-  # A trusted version's auditable contents. Unfiltered it's the full set behind a
-  # "View contents" disclosure (one lazy query on first open — see `inspect_pack`).
-  # While a filter is active it auto-opens and shows ONLY the actions that matched
-  # (the pack's other actions are noise then), labelled with the count.
-  defp trusted_disclosure(assigns) do
+  # A trusted version's auditable contents, expanded by the row's leading
+  # chevron (one lazy query on first open — see `inspect_pack`). Carries the
+  # forensic detail the one-line row deliberately drops: first seen + the full
+  # hash. While a filter is active the row auto-opens and shows ONLY the
+  # actions that matched, labelled with the count.
+  defp version_contents(assigns) do
     assigns = assign(assigns, :shown, filtered_contents(assigns.inspected, assigns.matched))
 
     ~H"""
-    <details open={@open} class="group">
-      <summary
-        phx-click="inspect_pack"
-        phx-value-id={@version.id}
-        phx-value-pack-id={@pack_id}
-        phx-value-version={@version.version}
-        class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
-      >
-        <.icon name="hero-chevron-right" class="h-3 w-3 transition-transform group-open:rotate-90" />
-        <span :if={@matched} class="text-brand-300">{match_count_label(@shown)}</span>
-        <span :if={!@matched} class="group-open:hidden">View contents</span>
-        <span :if={!@matched} class="hidden group-open:inline">Trusted contents</span>
-      </summary>
-      <div class="mt-2 pl-4">
-        <p :if={is_nil(@inspected)} class="text-[11px] text-zinc-500">Loading…</p>
-        <p :if={@inspected == []} class="text-[11px] text-zinc-500">
-          No actions advertised for this version right now.
-        </p>
-        <.pack_action_list :if={@shown not in [nil, []]} actions={@shown} />
-      </div>
-    </details>
+    <div class="mt-2 pl-8">
+      <p class="text-[11px] text-zinc-500">
+        <span :if={@matched} class="font-medium text-brand-300">
+          {match_count_label(@shown)} ·
+        </span>
+        first seen
+        <.local_time
+          id={"pack-version-first-#{@version.id}"}
+          value={@version.first_seen_at}
+          mode={:relative}
+          class="inline text-zinc-400"
+        />
+        <span class="text-zinc-700">·</span>
+        <span class="break-all font-mono">{@version.hash || @version.pending_hash}</span>
+      </p>
+      <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-500">Loading…</p>
+      <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-500">
+        No actions advertised for this version right now.
+      </p>
+      <.pack_action_list :if={@shown not in [nil, []]} actions={@shown} class="mt-2" />
+    </div>
     """
   end
 
@@ -761,8 +760,10 @@ defmodule EmisarWeb.PacksLive do
   # A trusted version the shipped catalog RETIRED — a newer release marked every
   # version below a watermark unsafe (a critical fix). Dispatch fails closed
   # against it until the pack is updated on the runner OR an admin overrides the
-  # retirement here. An already-overridden row shows a muted, dated note instead
-  # of the block + CTA — the override is deliberate and audited, so it doesn't
+  # retirement here. Rendered as the shared icon-capped spine — the ONE house
+  # face for an operational alert; a hand-tinted box matches nothing else in
+  # the console. An already-overridden row shows a muted, dated note instead of
+  # the block + CTA — the override is deliberate and audited, so it doesn't
   # nag. Renders nothing for a version that isn't retired.
   defp retired_notice(assigns) do
     {retired?, current} =
@@ -778,29 +779,27 @@ defmodule EmisarWeb.PacksLive do
       |> assign(:overridden?, not is_nil(assigns.version.retirement_overridden_at))
 
     ~H"""
-    <div
+    <.event_block
       :if={@retired? and not @overridden?}
-      class="mt-2 rounded border border-rose-800/60 bg-rose-950/30 p-3"
+      icon="hero-shield-exclamation"
+      tone={:rose}
+      title="Retired by a newer release"
+      class="mt-3 pl-8"
     >
-      <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-100">
-        <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Retired by a newer release
-      </div>
-      <p class="mt-1 text-xs text-rose-100/90">
+      <:body>
         A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
         v{@version.version} until you update the pack on the runner.
-      </p>
-      <p class="mt-1 font-mono text-[11px] text-rose-100/80">
-        <span :if={@current_version} class="not-italic">→ v{@current_version}: </span>emisar pack install {@pack_id}
+      </:body>
+      <p class="mt-2 font-mono text-[11px] text-zinc-400">
+        <span :if={@current_version}>→ v{@current_version}: </span>emisar pack install {@pack_id}
       </p>
       <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
            confirm, admin-only. It re-enables dispatch for this exact retired
-           version; the audited context fn stays the server gate (IL-15).
-           Bordered rose is the house destructive face — a FILLED rose pair
-           deliberately doesn't exist in `button_face/2`. The version is
-           already trusted, so the CTA names what it actually does — override
-           the retirement — never "Trust". The quiet alternative (Revoke
-           trust, in the row's meta column) silences this warning by refusing
-           the version instead. --%>
+           version; the audited context fn stays the server gate (IL-15). The
+           version is already trusted, so the CTA names what it actually does —
+           override the retirement — never "Trust". The quiet alternative
+           (Revoke trust, in the row menu) silences this by refusing the
+           version instead. --%>
       <.confirm_button
         :if={@can_manage}
         id={"override-#{@version.id}"}
@@ -820,10 +819,10 @@ defmodule EmisarWeb.PacksLive do
         </:body>
         Override retirement
       </.confirm_button>
-    </div>
+    </.event_block>
     <p
       :if={@retired? and @overridden?}
-      class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500"
+      class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-500"
     >
       <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-600" />
       Retired by a newer release — overridden by {overrider_name(@version)}
@@ -877,159 +876,192 @@ defmodule EmisarWeb.PacksLive do
         <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 
-      <.callout
-        :if={@pending_count > 0}
-        tone={:amber}
-        icon="hero-shield-exclamation"
-        title={pending_review_title(@pending_count)}
-        class="mt-4"
-      >
-        Dispatch against these versions is blocked until an admin reviews the new hash.
-      </.callout>
-
-      <.loading_state :if={@loading?} />
-
-      <.empty_state
-        :if={@load_error? and not @loading?}
-        tone={:danger}
-        icon="hero-exclamation-triangle"
-        title="Couldn't load packs"
-        class="mt-8"
-      >
-        This is a load error, not an empty inventory — your runners may well be advertising
-        packs. Refresh the page; if it persists, your access to this account may have changed.
-      </.empty_state>
-
-      <.empty_state
-        :if={
-          @pack_count == 0 and @name_filter == "" and @risk_filter == "" and not @load_error? and
-            not @loading?
-        }
-        icon="hero-cube"
-        title="No packs reported yet."
-        class="mt-8"
-      >
-        A pack is the bundle of actions a runner can run.
-        <.link
-          navigate={~p"/app/#{@current_account}/runners"}
-          class="text-brand-400 hover:text-brand-300"
-        >
-          Connect a runner
-        </.link>
-        and the packs it loads appear here to trust or reject.
-      </.empty_state>
-
-      <%!-- Inline filter row (shared LiveTable field grammar: label + brand
-           active-state, sm:w-48). Search spans pack AND action ids; Risk keeps
-           packs advertising an action at that tier. --%>
-      <form
-        :if={
-          not @loading? and not @load_error? and
-            (@pack_count > 0 or @name_filter != "" or @risk_filter != "")
-        }
-        phx-change="filter"
-        class="mt-6 flex flex-wrap items-end gap-3"
-      >
-        <label class={[
-          "flex w-full flex-col text-xs font-medium sm:w-56",
-          (@name_filter != "" && "text-brand-300") || "text-zinc-400"
-        ]}>
-          <span class="mb-1">Pack or action</span>
-          <input
-            type="text"
-            name="name"
-            value={@name_filter}
-            phx-debounce="300"
-            placeholder="e.g. postgres.activity"
-            class={[
-              "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600",
-              (@name_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
-                "border-zinc-700"
-            ]}
-          />
-        </label>
-        <label class={[
-          "flex w-full flex-col text-xs font-medium sm:w-40",
-          (@risk_filter != "" && "text-brand-300") || "text-zinc-400"
-        ]}>
-          <span class="mb-1">Risk</span>
-          <select
-            name="risk"
-            class={[
-              "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200",
-              (@risk_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
-                "border-zinc-700"
-            ]}
+      <div class="mt-2 grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <div class="min-w-0">
+          <.callout
+            :if={@pending_count > 0}
+            tone={:amber}
+            icon="hero-shield-exclamation"
+            title={pending_review_title(@pending_count)}
+            class="mt-2"
           >
-            <option value="" selected={@risk_filter == ""}>All risk</option>
-            <option
-              :for={tier <- ~w(low medium high critical)}
-              value={tier}
-              selected={@risk_filter == tier}
+            Dispatch against these versions is blocked until an admin reviews the new hash.
+          </.callout>
+
+          <.loading_state :if={@loading?} />
+
+          <.empty_state
+            :if={@load_error? and not @loading?}
+            tone={:danger}
+            icon="hero-exclamation-triangle"
+            title="Couldn't load packs"
+            class="mt-8"
+          >
+            This is a load error, not an empty inventory — your runners may well be advertising
+            packs. Refresh the page; if it persists, your access to this account may have changed.
+          </.empty_state>
+
+          <.empty_state
+            :if={
+              @pack_count == 0 and @name_filter == "" and @risk_filter == "" and not @load_error? and
+                not @loading?
+            }
+            icon="hero-cube"
+            title="No packs reported yet."
+            class="mt-8"
+          >
+            A pack is the bundle of actions a runner can run.
+            <.link
+              navigate={~p"/app/#{@current_account}/runners"}
+              class="text-brand-400 hover:text-brand-300"
             >
-              {String.capitalize(tier)}
-            </option>
-          </select>
-        </label>
-      </form>
+              Connect a runner
+            </.link>
+            and the packs it loads appear here to trust or reject.
+          </.empty_state>
 
-      <%!-- Filter-empty ≠ account-empty: a quiet line, the filter stays live. --%>
-      <p
-        :if={
-          @pack_count == 0 and (@name_filter != "" or @risk_filter != "") and not @load_error? and
-            not @loading?
-        }
-        class="mt-6 text-sm text-zinc-500"
-      >
-        {no_match_copy(@name_filter, @risk_filter)}
-      </p>
+          <%!-- Inline filter row (shared LiveTable field grammar: label + brand
+               active-state, sm:w-48). Search spans pack AND action ids; Risk keeps
+               packs advertising an action at that tier. --%>
+          <form
+            :if={
+              not @loading? and not @load_error? and
+                (@pack_count > 0 or @name_filter != "" or @risk_filter != "")
+            }
+            phx-change="filter"
+            class="mt-4 flex flex-wrap items-end gap-3"
+          >
+            <label class={[
+              "flex w-full flex-col text-xs font-medium sm:w-56",
+              (@name_filter != "" && "text-brand-300") || "text-zinc-400"
+            ]}>
+              <span class="mb-1">Pack or action</span>
+              <input
+                type="text"
+                name="name"
+                value={@name_filter}
+                phx-debounce="300"
+                placeholder="e.g. postgres.activity"
+                class={[
+                  "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600",
+                  (@name_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
+                    "border-zinc-700"
+                ]}
+              />
+            </label>
+            <label class={[
+              "flex w-full flex-col text-xs font-medium sm:w-40",
+              (@risk_filter != "" && "text-brand-300") || "text-zinc-400"
+            ]}>
+              <span class="mb-1">Risk</span>
+              <select
+                name="risk"
+                class={[
+                  "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200",
+                  (@risk_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
+                    "border-zinc-700"
+                ]}
+              >
+                <option value="" selected={@risk_filter == ""}>All risk</option>
+                <option
+                  :for={tier <- ~w(low medium high critical)}
+                  value={tier}
+                  selected={@risk_filter == tier}
+                >
+                  {String.capitalize(tier)}
+                </option>
+              </select>
+            </label>
+          </form>
 
-      <ul id="packs" phx-update="stream" class="mt-4">
-        <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
-             naked group — mono pack id + version count on a hairline — with
-             its version rows below. The stream <li> wraps label + rows. --%>
-        <li :for={{dom_id, pack} <- @streams.packs} id={dom_id} class="pt-5 first:pt-0">
-          <header class="flex items-baseline gap-2 border-b border-zinc-800/70 pb-2">
-            <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
-            <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
-            <.registry_link pack_id={pack.id} />
-            <.status_badge
-              :if={any_pending?(pack.versions)}
-              status="pending"
-              class="ml-2 text-[11px]"
-            />
-            <%!-- Whole-pack removal — every version at once. Derived state:
-                 runners still advertising it re-insert it, which the modal
-                 says plainly. --%>
-            <.confirm_button
-              :if={Catalog.subject_can_manage_packs?(@current_subject)}
-              id={"delete-pack-#{pack.id}"}
-              variant={:ghost}
-              tone={:rose}
-              size={:sm}
-              class="ml-auto"
-              title={"Delete #{pack.id}?"}
-              confirm_label="Delete pack"
-              on_confirm={JS.push("delete_pack", value: %{pack_id: pack.id})}
-            >
-              <:body>
-                Removes every recorded version of <code>{pack.id}</code> — trust decisions
-                and advertised actions — from the catalog. Runners still advertising it
-                will re-insert it as a fresh trust decision. Audit history is kept.
-              </:body>
-              Delete pack
-            </.confirm_button>
-          </header>
+          <%!-- Filter-empty ≠ account-empty: a quiet line, the filter stays live. --%>
+          <p
+            :if={
+              @pack_count == 0 and (@name_filter != "" or @risk_filter != "") and
+                not @load_error? and not @loading?
+            }
+            class="mt-6 text-sm text-zinc-500"
+          >
+            {no_match_copy(@name_filter, @risk_filter)}
+          </p>
 
-          <ul class="divide-y divide-zinc-800/70">
-            <li :for={v <- pack.versions} class="flex flex-col gap-3 py-2.5">
-              <%!-- items-start: the one-line version/hash/registry sits at the TOP,
-                   in register with the meta column's trust badge, instead of
-                   floating in the vertical middle of its three lines (which read
-                   as a too-tall row). --%>
-              <div class="flex flex-wrap items-start gap-x-4 gap-y-1">
-                <div class="flex min-w-0 flex-col gap-2">
+          <ul id="packs" phx-update="stream" class="mt-2 space-y-8">
+            <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
+                 naked group — mono pack id + version count on a hairline — with
+                 its version rows below. The stream <li> wraps label + rows. All
+                 rare admin verbs live in the ⋯ menus (never a strip of visible
+                 buttons); their confirm dialogs render per row. --%>
+            <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
+              <header class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-zinc-800/70 pb-2">
+                <h2 class="font-mono text-sm font-semibold text-zinc-100">{pack.id}</h2>
+                <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
+                <.registry_link pack_id={pack.id} />
+                <.status_badge
+                  :if={any_pending?(pack.versions)}
+                  status="pending"
+                  class="ml-1 text-[11px]"
+                />
+                <.dropdown
+                  :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                  class="ml-auto inline-block text-left"
+                  summary_class="flex items-center rounded px-2 py-1 text-zinc-400 ring-1 ring-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                  panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                >
+                  <:trigger>
+                    <.icon name="hero-ellipsis-horizontal" class="h-4 w-4" />
+                    <span class="sr-only">Actions for {pack.id}</span>
+                  </:trigger>
+                  <.menu_item tone={:rose} phx-click={open_confirm("delete-pack-#{pack.id}")}>
+                    Delete pack…
+                  </.menu_item>
+                </.dropdown>
+              </header>
+
+              <.confirm_dialog
+                :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                id={"delete-pack-#{pack.id}"}
+                title={"Delete #{pack.id}?"}
+                confirm_label="Delete pack"
+                on_confirm={
+                  JS.push("delete_pack", value: %{pack_id: pack.id})
+                  |> close_confirm("delete-pack-#{pack.id}")
+                }
+              >
+                <:body>
+                  Removes every recorded version of <code>{pack.id}</code> — trust decisions
+                  and advertised actions — from the catalog. Runners still advertising it
+                  will re-insert it as a fresh trust decision. Audit history is kept.
+                </:body>
+              </.confirm_dialog>
+
+              <ul class="divide-y divide-zinc-800/70">
+                <li :for={v <- pack.versions} class="py-2.5">
+                  <%!-- ONE line per version: chevron (contents) · identity ·
+                       state — bound left, so the eye never crosses a gulf to
+                       pair them — then last-seen + the row menu at the end. --%>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <button
+                      :if={v.trust_state == :trusted}
+                      type="button"
+                      phx-click="inspect_pack"
+                      phx-value-id={v.id}
+                      phx-value-pack-id={pack.id}
+                      phx-value-version={v.version}
+                      aria-expanded={to_string(MapSet.member?(@open_versions, v.id))}
+                      aria-label={"Contents of #{pack.id} v#{v.version}"}
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:text-zinc-200"
+                    >
+                      <.icon
+                        name="hero-chevron-right"
+                        class={"h-3.5 w-3.5 transition-transform #{if MapSet.member?(@open_versions, v.id), do: "rotate-90"}"}
+                      />
+                    </button>
+                    <span
+                      :if={v.trust_state != :trusted}
+                      class="w-5 shrink-0"
+                      aria-hidden="true"
+                    >
+                    </span>
                     <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
                     <%!-- A rejected never-trusted row has no trusted hash — show the
                          refused bytes it remembers instead of a bare dash. --%>
@@ -1039,53 +1071,58 @@ defmodule EmisarWeb.PacksLive do
                     >
                       sha256:{short_hash(v.hash || v.pending_hash)}
                     </span>
-                    <%!-- A trusted version a newer release RETIRED — a scannable
-                         rose flag in the list; the full warning + admin override
-                         renders below via `retired_notice`. --%>
                     <.chip :if={pack_version_retired?(v)} upcase tone={:rose}>Retired</.chip>
+                    <.status_badge status={to_string(v.trust_state)} class="text-xs" />
+                    <span class="ml-auto shrink-0 text-[11px] text-zinc-500">
+                      last seen
+                      <.local_time
+                        id={"pack-version-last-#{v.id}"}
+                        value={v.last_seen_at}
+                        mode={:relative}
+                        class="text-zinc-300"
+                      />
+                    </span>
+                    <.dropdown
+                      :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                      class="inline-block shrink-0 text-left"
+                      summary_class="flex items-center rounded px-1.5 py-1 text-zinc-500 ring-1 ring-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                      panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                    >
+                      <:trigger>
+                        <.icon name="hero-ellipsis-horizontal" class="h-4 w-4" />
+                        <span class="sr-only">Actions for v{v.version}</span>
+                      </:trigger>
+                      <.menu_item
+                        :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
+                        tone={:amber}
+                        phx-click={open_confirm("trust-#{v.id}")}
+                      >
+                        Trust…
+                      </.menu_item>
+                      <.menu_item
+                        :if={v.trust_state == :trusted}
+                        phx-click={open_confirm("revoke-#{v.id}")}
+                      >
+                        Revoke trust…
+                      </.menu_item>
+                      <.menu_item tone={:rose} phx-click={open_confirm("delete-version-#{v.id}")}>
+                        Delete version…
+                      </.menu_item>
+                    </.dropdown>
                   </div>
-                  <%!-- "View contents" sits directly under the version line (in
-                       the left column), NOT below the taller trust/timestamps
-                       column — otherwise it floated at the row bottom, detached
-                       from the version it belongs to. A trusted version's
-                       contents stay auditable via this collapsed disclosure (one
-                       lazy query on first open — see `inspect_pack`). --%>
-                  <.trusted_disclosure
-                    :if={v.trust_state == :trusted}
-                    version={v}
-                    pack_id={pack.id}
-                    inspected={@inspected_actions[v.id]}
-                    matched={@matched_actions[v.id]}
-                    open={MapSet.member?(@open_versions, v.id)}
-                  />
-                  <.retired_notice
-                    :if={v.trust_state == :trusted}
-                    version={v}
-                    pack_id={pack.id}
-                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
-                  />
-                  <%!-- A rejected version stays listed quietly — no alert, no
-                       pending count — with Trust as the fix-admin-mistake path
-                       (adopt the refused bytes, or restore revoked trust). --%>
-                  <div
-                    :if={v.trust_state == :rejected}
-                    class="flex flex-wrap items-center gap-3"
-                  >
-                    <p class="text-xs text-zinc-500">
-                      Rejected — dispatch refuses this version until you trust it.
-                    </p>
-                    <.confirm_button
-                      :if={
-                        Catalog.subject_can_manage_packs?(@current_subject) and
-                          (v.pending_hash || v.hash) != nil
-                      }
+
+                  <%!-- The row menu's confirm dialogs — per row, plain (client-side)
+                       modals; the pushed events stay server-authz-gated (IL-15). --%>
+                  <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
+                    <.confirm_dialog
+                      :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
                       id={"trust-#{v.id}"}
-                      variant={:secondary}
                       tone={:amber}
-                      size={:sm}
                       title={"Trust #{pack.id} v#{v.version}?"}
                       confirm_label="Trust pack"
-                      on_confirm={JS.push("trust", value: %{id: v.id})}
+                      on_confirm={
+                        JS.push("trust", value: %{id: v.id}) |> close_confirm("trust-#{v.id}")
+                      }
                     >
                       <:body>
                         <span :if={not is_nil(v.pending_hash)}>
@@ -1102,317 +1139,308 @@ defmodule EmisarWeb.PacksLive do
                           overrides that retirement, so its actions run despite the fix.
                         </span>
                       </:body>
-                      Trust
-                    </.confirm_button>
-                  </div>
-                </div>
-                <%!-- The meta column caps with the trust state (dot + word, not a
-                     filled pill — the run/runner status grammar), then the
-                     first→last chronology beneath it. Relative like every peer
-                     list ("1d ago"); absolute rides the local_time hover. --%>
-                <div class="ml-auto shrink-0 text-right text-xs text-zinc-500">
-                  <div class="mb-1 flex justify-end">
-                    <.status_badge status={to_string(v.trust_state)} />
-                  </div>
-                  <div :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}>
-                    first seen
-                    <.local_time
-                      id={"pack-version-first-#{v.id}"}
-                      value={v.first_seen_at}
-                      mode={:relative}
-                      class="inline"
-                    />
-                  </div>
-                  <div>
-                    last seen
-                    <.local_time
-                      id={"pack-version-last-#{v.id}"}
-                      value={v.last_seen_at}
-                      mode={:relative}
-                      class="text-zinc-300"
-                    />
-                  </div>
-                  <%!-- Quiet per-version admin controls, kept next to the badge
-                       they act on. Revoke trust is the undo for an accidental
-                       Trust (BLOCKS dispatch — the safe direction — and is
-                       reversible from the rejected row); Delete removes the
-                       observation entirely (derived state: a runner still
-                       advertising it re-inserts it). --%>
-                  <div
-                    :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                    class="mt-1.5 flex justify-end gap-1"
-                  >
-                    <.confirm_button
+                    </.confirm_dialog>
+                    <.confirm_dialog
                       :if={v.trust_state == :trusted}
                       id={"revoke-#{v.id}"}
-                      variant={:ghost}
-                      tone={:neutral}
-                      size={:sm}
                       title={"Revoke trust in #{pack.id} v#{v.version}?"}
                       confirm_label="Revoke trust"
-                      on_confirm={JS.push("revoke_trust", value: %{id: v.id})}
+                      on_confirm={
+                        JS.push("revoke_trust", value: %{id: v.id})
+                        |> close_confirm("revoke-#{v.id}")
+                      }
                     >
                       <:body>
                         Dispatch refuses this version until it's trusted again. It stays
                         listed as rejected, so you can restore trust later.
                       </:body>
-                      Revoke trust
-                    </.confirm_button>
-                    <.confirm_button
+                    </.confirm_dialog>
+                    <.confirm_dialog
                       id={"delete-version-#{v.id}"}
-                      variant={:ghost}
-                      tone={:rose}
-                      size={:sm}
                       title={"Delete #{pack.id} v#{v.version}?"}
                       confirm_label="Delete version"
-                      on_confirm={JS.push("delete_version", value: %{id: v.id})}
+                      on_confirm={
+                        JS.push("delete_version", value: %{id: v.id})
+                        |> close_confirm("delete-version-#{v.id}")
+                      }
                     >
                       <:body>
                         Removes this version and its advertised actions from the catalog.
                         If a runner still advertises it, it will reappear as a fresh trust
                         decision on its next connection or reload. Audit history is kept.
                       </:body>
-                      Delete
-                    </.confirm_button>
-                  </div>
-                </div>
-              </div>
+                    </.confirm_dialog>
+                  <% end %>
 
-              <div
-                :if={v.trust_state == :pending}
-                class="rounded border border-amber-800/60 bg-amber-950/30 p-3"
-              >
-                <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
-                  A runner advertised <code>{pack.id}</code> v{v.version} — a
-                  pack we don't ship a baseline for. Dispatch is blocked
-                  until you trust its contents.
-                </p>
-                <p :if={not is_nil(v.hash)} class="text-xs text-amber-100/90">
-                  A runner is advertising a different hash. Dispatch is blocked
-                  for <code>{pack.id}</code> v{v.version} until you decide.
-                </p>
-                <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                  <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
-                  <%!-- Amber flags the hash that CHANGED — the reason dispatch is blocked. --%>
-                  <.kv layout={:grid} label="advertising:">
-                    <span class="text-amber-300">{v.pending_hash || "—"}</span>
-                  </.kv>
-                </dl>
-                <%!-- Blast radius — which hosts this trust click unblocks.
-                     One canary box vs the whole fleet is the difference
-                     between a safe and a scary Trust. --%>
-                <div
-                  :if={@advertising[v.id] not in [nil, []]}
-                  class="mt-2 text-[11px] leading-relaxed text-amber-100/80"
-                >
-                  <span class="font-semibold">{length(@advertising[v.id])}</span>
-                  runner(s) advertise this — trusting unblocks dispatch on:
-                  <.chip :for={r <- @advertising[v.id]} tone={:amber} mono class="ml-1">
-                    {r.name}<span class="text-amber-400/70"> · {r.group}</span>
-                  </.chip>
-                </div>
-                <%!-- What CHANGED since this hash was last trusted — diffed
-                     against the action set snapshotted at that Trust
-                     (`trusted_manifest`). Only shown when a manifest exists
-                     (a re-advertised hash, not a first-time pending). An added
-                     critical action or a low→critical escalation is the
-                     headline danger an operator must see before re-trusting. --%>
-                <div
-                  :if={diff_has_changes?(@pack_diffs[v.id])}
-                  class="mt-3 rounded border border-rose-800/60 bg-rose-950/30 p-3"
-                >
-                  <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-100">
-                    <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
-                    Changes since you last trusted this pack:
-                  </div>
-                  <ul class="mt-2 space-y-1">
-                    <li
-                      :for={a <- @pack_diffs[v.id].added}
-                      class="flex items-center gap-2 text-[11px]"
-                    >
-                      <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
-                        + added
-                      </span>
-                      <.risk_pill risk={a.risk} class="flex-none" />
-                      <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
-                    </li>
-                    <li
-                      :for={c <- @pack_diffs[v.id].changed}
-                      class="flex items-center gap-2 text-[11px]"
-                    >
-                      <span class={[
-                        "w-12 flex-none font-semibold uppercase tracking-wide",
-                        if(c.risk_escalated?, do: "text-rose-300", else: "text-amber-300")
-                      ]}>
-                        ~ changed
-                      </span>
-                      <span class="flex items-center gap-1">
-                        <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
-                        <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
-                        <.risk_pill risk={c.new_risk} class="flex-none" />
-                      </span>
-                      <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
-                      <span
-                        :if={c.old_kind != c.new_kind}
-                        class="flex-none text-zinc-500"
-                      >
-                        {c.old_kind} → {c.new_kind}
-                      </span>
-                    </li>
-                    <li
-                      :for={r <- @pack_diffs[v.id].removed}
-                      class="flex items-center gap-2 text-[11px] text-zinc-500"
-                    >
-                      <span class="w-12 flex-none font-semibold uppercase tracking-wide">
-                        − removed
-                      </span>
-                      <.risk_pill risk={r.risk} class="flex-none opacity-50" />
-                      <span class="truncate font-mono line-through">{r.action_id}</span>
-                    </li>
-                  </ul>
-                </div>
-                <%!-- What trusting this authorizes — the FULL advertised action
-                     set + risk (the diff above shows only what moved), so
-                     "Trust new contents" isn't a blind click. --%>
-                <div :if={@pack_actions[v.id] not in [nil, []]} class="mt-3">
-                  <div class="text-[11px] font-semibold text-amber-100/80">
-                    Trusting authorizes {length(@pack_actions[v.id])} action(s):
-                  </div>
-                  <.pack_action_list actions={@pack_actions[v.id]} matched={@matched_actions[v.id]} />
-                </div>
-                <%!-- Trust/Reject mutate authorization state — owner/admin
-                     only. The context gate (manage_catalog) is defense in
-                     depth; hide the buttons for viewers/operators too so
-                     they aren't offered an action that always denies. The
-                     pending banner above stays visible to everyone — it
-                     explains WHY dispatch is blocked. --%>
-                <div
-                  :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                  class="mt-3 flex flex-wrap gap-2"
-                >
-                  <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
-                       not a destruction, so the modal is amber, not rose. --%>
-                  <.confirm_button
-                    id={"trust-#{v.id}"}
-                    variant={:primary}
+                  <.version_contents
+                    :if={v.trust_state == :trusted and MapSet.member?(@open_versions, v.id)}
+                    version={v}
+                    inspected={@inspected_actions[v.id]}
+                    matched={@matched_actions[v.id]}
+                  />
+
+                  <.retired_notice
+                    :if={v.trust_state == :trusted}
+                    version={v}
+                    pack_id={pack.id}
+                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
+                  />
+
+                  <%!-- A rejected version stays listed quietly — no alert, no
+                       pending count; the row menu carries Trust, the
+                       fix-admin-mistake path. --%>
+                  <p :if={v.trust_state == :rejected} class="mt-1.5 pl-8 text-xs text-zinc-500">
+                    Rejected — dispatch refuses this version until you trust it again.
+                  </p>
+
+                  <%!-- The one state that earns real weight: a live trust
+                       decision, on the shared spine like every operational
+                       alert — what changed, who it unblocks, and the decision
+                       buttons inside one contained unit. --%>
+                  <.event_block
+                    :if={v.trust_state == :pending}
+                    icon="hero-shield-exclamation"
                     tone={:amber}
-                    size={:sm}
-                    title={
-                      if is_nil(v.hash),
-                        do: "Trust #{pack.id} v#{v.version}?",
-                        else: "Adopt the new hash for #{pack.id} v#{v.version}?"
-                    }
-                    confirm_label={if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
-                    on_confirm={JS.push("trust", value: %{id: v.id})}
+                    title="Pending trust review"
+                    class="mt-3 pl-8"
                   >
                     <:body>
-                      Cloud will allow its actions to run on {length(@advertising[v.id] || [])} advertising
-                      runner(s). Trusting adopts this exact code fleet-wide.
-                      <span :if={pack_version_retired?(v)} class="text-rose-300">
-                        This version was retired by a newer release — trusting it also overrides
-                        that retirement, so its actions run despite the fix.
+                      <span :if={is_nil(v.hash)}>
+                        A runner advertised <code>{pack.id}</code> v{v.version} —
+                        a pack we don't ship a baseline for. Dispatch is blocked until
+                        you trust its contents.
+                      </span>
+                      <span :if={not is_nil(v.hash)}>
+                        A runner is advertising a different hash. Dispatch is blocked for
+                        <code>{pack.id}</code>
+                        v{v.version} until you decide.
                       </span>
                     </:body>
-                    {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
-                  </.confirm_button>
-                  <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
-                       data-confirm. The button only OPENS the page-level dialog
-                       (stashing this version as the target); `reject` still fires
-                       from Confirm and stays server-authz-gated (manage_catalog). --%>
-                  <.button
-                    variant={:secondary}
-                    size={:sm}
-                    type="button"
-                    phx-click={
-                      JS.push("open_reject",
-                        value: %{id: v.id, pack_id: pack.id, version: v.version}
-                      )
-                      |> show_confirm_dialog("reject-pack")
-                    }
-                  >
-                    Reject
-                  </.button>
-                </div>
-              </div>
+                    <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
+                      <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
+                      <%!-- Amber flags the hash that CHANGED — the reason dispatch is blocked. --%>
+                      <.kv layout={:grid} label="advertising:">
+                        <span class="text-amber-300">{v.pending_hash || "—"}</span>
+                      </.kv>
+                    </dl>
+                    <%!-- Blast radius — which hosts this trust click unblocks.
+                         One canary box vs the whole fleet is the difference
+                         between a safe and a scary Trust. --%>
+                    <div
+                      :if={@advertising[v.id] not in [nil, []]}
+                      class="mt-2 text-[11px] leading-relaxed text-zinc-400"
+                    >
+                      <span class="font-semibold text-zinc-300">{length(@advertising[v.id])}</span>
+                      runner(s) advertise this — trusting unblocks dispatch on:
+                      <.chip :for={r <- @advertising[v.id]} tone={:amber} mono class="ml-1">
+                        {r.name}<span class="text-amber-400/70"> · {r.group}</span>
+                      </.chip>
+                    </div>
+                    <%!-- What CHANGED since this hash was last trusted — diffed
+                         against the action set snapshotted at that Trust
+                         (`trusted_manifest`). Only shown when a manifest exists
+                         (a re-advertised hash, not a first-time pending). An added
+                         critical action or a low→critical escalation is the
+                         headline danger an operator must see before re-trusting. --%>
+                    <div :if={diff_has_changes?(@pack_diffs[v.id])} class="mt-3">
+                      <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-300">
+                        <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
+                        Changes since you last trusted this pack:
+                      </div>
+                      <ul class="mt-2 space-y-1">
+                        <li
+                          :for={a <- @pack_diffs[v.id].added}
+                          class="flex items-center gap-2 text-[11px]"
+                        >
+                          <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
+                            + added
+                          </span>
+                          <.risk_pill risk={a.risk} class="flex-none" />
+                          <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
+                        </li>
+                        <li
+                          :for={c <- @pack_diffs[v.id].changed}
+                          class="flex items-center gap-2 text-[11px]"
+                        >
+                          <span class={[
+                            "w-12 flex-none font-semibold uppercase tracking-wide",
+                            if(c.risk_escalated?, do: "text-rose-300", else: "text-amber-300")
+                          ]}>
+                            ~ changed
+                          </span>
+                          <span class="flex items-center gap-1">
+                            <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
+                            <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
+                            <.risk_pill risk={c.new_risk} class="flex-none" />
+                          </span>
+                          <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
+                          <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
+                            {c.old_kind} → {c.new_kind}
+                          </span>
+                        </li>
+                        <li
+                          :for={r <- @pack_diffs[v.id].removed}
+                          class="flex items-center gap-2 text-[11px] text-zinc-500"
+                        >
+                          <span class="w-12 flex-none font-semibold uppercase tracking-wide">
+                            − removed
+                          </span>
+                          <.risk_pill risk={r.risk} class="flex-none opacity-50" />
+                          <span class="truncate font-mono line-through">{r.action_id}</span>
+                        </li>
+                      </ul>
+                    </div>
+                    <%!-- What trusting this authorizes — the FULL advertised action
+                         set + risk (the diff above shows only what moved), so
+                         "Trust new contents" isn't a blind click. --%>
+                    <div :if={@pack_actions[v.id] not in [nil, []]} class="mt-3">
+                      <div class="text-[11px] font-semibold text-zinc-300">
+                        Trusting authorizes {length(@pack_actions[v.id])} action(s):
+                      </div>
+                      <.pack_action_list
+                        actions={@pack_actions[v.id]}
+                        matched={@matched_actions[v.id]}
+                        class="mt-1"
+                      />
+                    </div>
+                    <%!-- Trust/Reject mutate authorization state — owner/admin
+                         only. The context gate (manage_catalog) is defense in
+                         depth; hide the buttons for viewers/operators too so
+                         they aren't offered an action that always denies. The
+                         pending spine above stays visible to everyone — it
+                         explains WHY dispatch is blocked. --%>
+                    <div
+                      :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                      class="mt-3 flex flex-wrap gap-2"
+                    >
+                      <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
+                           not a destruction, so the modal is amber, not rose. --%>
+                      <.confirm_button
+                        id={"trust-#{v.id}"}
+                        variant={:primary}
+                        tone={:amber}
+                        size={:sm}
+                        title={
+                          if is_nil(v.hash),
+                            do: "Trust #{pack.id} v#{v.version}?",
+                            else: "Adopt the new hash for #{pack.id} v#{v.version}?"
+                        }
+                        confirm_label={
+                          if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"
+                        }
+                        on_confirm={JS.push("trust", value: %{id: v.id})}
+                      >
+                        <:body>
+                          Cloud will allow its actions to run on {length(@advertising[v.id] || [])} advertising
+                          runner(s). Trusting adopts this exact code fleet-wide.
+                          <span :if={pack_version_retired?(v)} class="text-rose-300">
+                            This version was retired by a newer release — trusting it also overrides
+                            that retirement, so its actions run despite the fix.
+                          </span>
+                        </:body>
+                        {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
+                      </.confirm_button>
+                      <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
+                           data-confirm. The button only OPENS the page-level dialog
+                           (stashing this version as the target); `reject` still fires
+                           from Confirm and stays server-authz-gated (manage_catalog). --%>
+                      <.button
+                        variant={:secondary}
+                        size={:sm}
+                        type="button"
+                        phx-click={
+                          JS.push("open_reject",
+                            value: %{id: v.id, pack_id: pack.id, version: v.version}
+                          )
+                          |> show_confirm_dialog("reject-pack")
+                        }
+                      >
+                        Reject
+                      </.button>
+                    </div>
+                  </.event_block>
+                </li>
+              </ul>
             </li>
           </ul>
-        </li>
-      </ul>
 
-      <%!-- Family-standard count footer (runners/runs/approvals/audit all
-           carry one). --%>
-      <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-600">
-        {count_footer(@pack_count, @version_count)}
-      </p>
+          <%!-- Family-standard count footer (runners/runs/approvals/audit all
+               carry one). --%>
+          <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-600">
+            {count_footer(@pack_count, @version_count)}
+          </p>
+        </div>
 
-      <%!-- Housekeeping: the catalog is derived state, so versions nothing
-           advertises anymore only pile up. Same grammar as the approvals
-           grant cap — the current setting rides in the header, the control
-           expands below; Clean up now runs the sweep immediately. --%>
-      <.collapsible_section id="packs-cleanup" title="Automatic cleanup" class="mt-8">
-        <:summary>
-          <span
-            :if={is_nil(@current_account.settings.pack_unseen_retention_days)}
-            class="flex items-center gap-1.5 text-xs"
-          >
-            <.status_dot tone={:neutral} size={:sm} />
-            <span class="text-zinc-400">off</span>
-            <span class="hidden text-zinc-500 sm:inline">
-              — unseen pack versions are kept forever
-            </span>
-          </span>
-          <span
-            :if={@current_account.settings.pack_unseen_retention_days}
-            class="text-xs text-zinc-400"
-          >
-            {retention_days_label(@current_account.settings.pack_unseen_retention_days)}
-          </span>
-        </:summary>
-
-        <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
-          Remove pack versions no runner has advertised for the selected period. A daily
-          sweep deletes them — trust decisions included — and a runner advertising one
-          again re-inserts it as a fresh trust decision.
-        </p>
-
-        <%= cond do %>
-          <% not Accounts.subject_can_manage_account?(@current_subject) -> %>
-            <p class="text-[11px] text-zinc-600">
-              Owner/admin only — the current setting is shown above.
-            </p>
-          <% true -> %>
-            <div class="flex flex-wrap items-center gap-3">
-              <form phx-change="set_pack_retention" class="w-full max-w-xs">
-                <.select
-                  name="days"
-                  aria-label="Remove pack versions not seen for"
-                  options={
-                    pack_retention_options(@current_account.settings.pack_unseen_retention_days)
-                  }
-                />
-              </form>
-              <%!-- :lg matches the select's control height (px-3 py-2.5
-                   text-sm) so the pair shares one row line. --%>
-              <.confirm_button
-                :if={@current_account.settings.pack_unseen_retention_days}
-                id="packs-cleanup-now"
-                variant={:secondary}
-                tone={:neutral}
-                size={:lg}
-                title="Clean up unseen pack versions?"
-                confirm_label="Clean up now"
-                on_confirm={JS.push("cleanup_now")}
-              >
-                <:body>
-                  Deletes every pack version no runner has advertised in the last {@current_account.settings.pack_unseen_retention_days} days
-                  — trust decisions included. Runners still advertising one will
-                  re-insert it as a fresh trust decision.
-                </:body>
-                Clean up now
-              </.confirm_button>
+        <aside class="space-y-6">
+          <div>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Housekeeping
+            </h3>
+            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
+            <div id="packs-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
+              <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+                Remove pack versions no runner has advertised for the selected period. A daily
+                sweep deletes them — trust decisions included — and a runner advertising one
+                again re-inserts it as a fresh trust decision.
+              </p>
+              <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
+                <form phx-change="set_pack_retention" class="mt-3">
+                  <.select
+                    name="days"
+                    aria-label="Remove pack versions not seen for"
+                    options={
+                      pack_retention_options(@current_account.settings.pack_unseen_retention_days)
+                    }
+                  />
+                </form>
+                <.confirm_button
+                  :if={@current_account.settings.pack_unseen_retention_days}
+                  id="packs-cleanup-now"
+                  variant={:secondary}
+                  tone={:neutral}
+                  size={:sm}
+                  class="mt-3 w-full"
+                  title="Clean up unseen pack versions?"
+                  confirm_label="Clean up now"
+                  on_confirm={JS.push("cleanup_now")}
+                >
+                  <:body>
+                    Deletes every pack version no runner has advertised in the last {@current_account.settings.pack_unseen_retention_days} days
+                    — trust decisions included. Runners still advertising one will
+                    re-insert it as a fresh trust decision.
+                  </:body>
+                  Clean up now
+                </.confirm_button>
+              <% else %>
+                <p class="mt-2 text-[11px] text-zinc-600">
+                  Owner/admin only — currently {(@current_account.settings.pack_unseen_retention_days &&
+                                                   retention_days_label(
+                                                     @current_account.settings.pack_unseen_retention_days
+                                                   )) || "off"}.
+                </p>
+              <% end %>
             </div>
-        <% end %>
-      </.collapsible_section>
+          </div>
+
+          <.docs_rail
+            title="What's a pack?"
+            doc_href="/docs/action-packs"
+            doc_label="Action pack docs"
+          >
+            <p>
+              A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
+              a runner may execute — the runner advertises what it has installed, and this
+              page is your account's trust ledger over it.
+            </p>
+            <p>
+              Every version is pinned to an exact content hash. A runner advertising
+              different bytes flips the version to <span class="text-amber-300">pending</span>, and dispatch refuses it until an
+              admin reviews the change.
+            </p>
+          </.docs_rail>
+        </aside>
+      </div>
 
       <%!-- One page-level reject dialog (the rows are a stream, so it can't be
            per-row). It's always in the DOM so the trigger's `show` finds it;
