@@ -196,20 +196,21 @@ defmodule EmisarWeb.ProfileLiveTest do
           "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # Exactly one row is badged the current device; the second device renders
-      # its IP + parsed label.
+      # The current row is pinned first; the second device renders its IP + parsed
+      # label in its own row.
       assert html =~ "this device"
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome on Linux"
+      assert has_element?(lv, "#active-sessions > li:first-child", "this device")
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       assert length(sessions) == 2
     end
 
-    test "groups same-device sessions and signs out the whole group", %{
+    test "renders and revokes same-device sessions independently", %{
       conn: conn,
       user: user,
       account: account
@@ -217,31 +218,36 @@ defmodule EmisarWeb.ProfileLiveTest do
       user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
 
       first =
-        Emisar.Auth.create_session_token!(user, :magic_link, false, %{"user_agent" => user_agent})
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
+          "ip_address" => "203.0.113.10",
+          "user_agent" => user_agent
+        })
 
       second =
-        Emisar.Auth.create_session_token!(user, :magic_link, false, %{"user_agent" => user_agent})
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
+          "ip_address" => "203.0.113.11",
+          "user_agent" => user_agent
+        })
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      first_session = Enum.find(sessions, &(&1.token == Emisar.Crypto.hash(first)))
+      second_session = Enum.find(sessions, &(&1.token == Emisar.Crypto.hash(second)))
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert html =~ "2 sessions"
-      assert has_element?(lv, "#active-sessions li", "Chrome on Linux")
+      refute html =~ "2 sessions"
+      assert has_element?(lv, "#active-sessions > li", "203.0.113.10")
+      assert has_element?(lv, "#active-sessions > li", "203.0.113.11")
 
-      first_digest = Emisar.Crypto.hash(first)
-      second_digest = Emisar.Crypto.hash(second)
-      subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      html = render_click(lv, "revoke_session", %{"id" => first_session.id})
 
-      grouped_ids =
-        sessions
-        |> Enum.filter(&(&1.token in [first_digest, second_digest]))
-        |> Enum.map(& &1.id)
-
-      html = render_click(lv, "revoke_session", %{"ids" => grouped_ids})
-
-      assert html =~ "2 sessions revoked."
-      refute html =~ "Chrome on Linux"
-      assert {:ok, [_], _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      assert html =~ "Session revoked."
+      refute html =~ "203.0.113.10"
+      assert html =~ "203.0.113.11"
+      assert {:ok, remaining, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      refute Enum.any?(remaining, &(&1.id == first_session.id))
+      assert Enum.any?(remaining, &(&1.id == second_session.id))
     end
 
     test "revoking one non-current session removes exactly that row", %{
@@ -327,15 +333,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Sign out everywhere else"
     end
 
-    test "the disconnected (dead) render reads no sessions and shows the empty state", %{
+    test "the disconnected (dead) render reads no session metadata", %{
       conn: conn,
       user: user,
       account: account
     } do
       # IL-18: the session list is the only DB read on this page, gated behind
-      # connected?/1 — so the dead render a plain GET produces must show "No
-      # active sessions." with no rows, even though a real session exists. A
-      # second device is seeded so "no rows on the dead render" is meaningful.
+      # connected?/1 — so the dead render a plain GET produces must not include
+      # session rows, even though a real session exists. A second device is seeded
+      # so "no rows on the dead render" is meaningful.
       _other =
         Emisar.Auth.create_session_token!(user, :magic_link, false, %{
           "ip_address" => "203.0.113.9",
@@ -344,7 +350,6 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       dead = conn |> get(~p"/app/#{account}/settings/profile") |> html_response(200)
 
-      assert dead =~ "No active sessions."
       # The seeded device's metadata is NOT read on the dead pass.
       refute dead =~ "203.0.113.9"
       refute dead =~ "This device"

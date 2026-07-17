@@ -49,12 +49,25 @@ defmodule EmisarWeb.ProfileLive do
       end
 
     current_digest = current_session_digest(socket.assigns.current_session_token)
-    grouped = group_sessions(sessions, current_digest)
+
+    presented =
+      sessions
+      |> Enum.sort_by(&(not current_session?(&1, current_digest)))
+      |> Enum.map(fn session ->
+        %{
+          id: session.id,
+          device_label: session_device_label(session),
+          icon: session_device_icon(session),
+          current?: current_session?(session, current_digest),
+          ip_address: session_ip(session),
+          inserted_at: session.inserted_at
+        }
+      end)
 
     socket
     |> assign(:current_session_digest, current_digest)
     |> assign(:session_count, length(sessions))
-    |> stream(:sessions, grouped, reset: true)
+    |> stream(:sessions, presented, reset: true)
   end
 
   defp current_session_digest(nil), do: nil
@@ -145,12 +158,15 @@ defmodule EmisarWeb.ProfileLive do
      |> reset_email_step()}
   end
 
-  def handle_event("revoke_session", %{"ids" => ids}, socket) when is_list(ids) do
-    revoke_sessions(socket, ids)
-  end
+  def handle_event("revoke_session", %{"id" => id}, socket) do
+    case Auth.revoke_session(id, socket.assigns.current_subject) do
+      :ok ->
+        {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
 
-  def handle_event("revoke_session", %{"id" => id}, socket),
-    do: revoke_sessions(socket, [id])
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Session no longer exists.")}
+    end
+  end
 
   def handle_event("revoke_other_sessions", _params, socket) do
     keep = socket.assigns.current_session_token
@@ -734,9 +750,6 @@ defmodule EmisarWeb.ProfileLive do
                 <.chip :if={session.current?} tone={:neutral}>
                   this device
                 </.chip>
-                <.chip :if={session.count > 1} tone={:neutral}>
-                  {session.count} sessions
-                </.chip>
               </:chips>
               <:meta>
                 Started
@@ -759,20 +772,13 @@ defmodule EmisarWeb.ProfileLive do
                   tone={:neutral}
                   size={:sm}
                   class="shrink-0"
-                  on_confirm={JS.push("revoke_session", value: %{ids: session.session_ids})}
+                  on_confirm={JS.push("revoke_session", value: %{id: session.id})}
                 >
                   <:body>That browser or device will need to sign in again.</:body>
                   Sign out
                 </.confirm_button>
               </:actions>
             </.list_row>
-            <li
-              :if={@session_count == 0}
-              id="active-sessions-empty"
-              class="py-6 text-xs text-zinc-500"
-            >
-              No active sessions.
-            </li>
           </ul>
         </section>
       </div>
@@ -784,44 +790,4 @@ defmodule EmisarWeb.ProfileLive do
   # makes the row visually scannable instead of "wall of identical text".
   defp session_device_icon(%{metadata: %{"user_agent" => ua}}), do: UserAgent.icon(ua)
   defp session_device_icon(_), do: "hero-globe-alt"
-
-  defp group_sessions(sessions, current_digest) do
-    sessions
-    |> Enum.group_by(&session_device_label/1)
-    |> Enum.map(fn {device_label, device_sessions} ->
-      representative = hd(device_sessions)
-
-      %{
-        id: representative.id,
-        session_ids: Enum.map(device_sessions, & &1.id),
-        device_label: device_label,
-        icon: session_device_icon(representative),
-        current?: Enum.any?(device_sessions, &current_session?(&1, current_digest)),
-        count: length(device_sessions),
-        inserted_at: representative.inserted_at,
-        ip_address: session_ip(representative)
-      }
-    end)
-    |> Enum.sort_by(fn session ->
-      {if(session.current?, do: 0, else: 1), -DateTime.to_unix(session.inserted_at, :microsecond)}
-    end)
-  end
-
-  defp revoke_sessions(socket, ids) do
-    subject = socket.assigns.current_subject
-
-    revoked_count =
-      Enum.count(ids, &(Auth.revoke_session(&1, subject) == :ok))
-
-    case revoked_count do
-      0 ->
-        {:noreply, put_flash(socket, :error, "Session no longer exists.")}
-
-      1 ->
-        {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
-
-      count ->
-        {:noreply, socket |> put_flash(:info, "#{count} sessions revoked.") |> load_sessions()}
-    end
-  end
 end
