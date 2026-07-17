@@ -2393,7 +2393,7 @@ defmodule EmisarWeb.CoreComponents do
       s when s in ~w[success connected approved published running sent cancelling] ->
         :pass
 
-      s when s in ~w[pending_approval refused] ->
+      s when s in ~w[pending_approval refused rejected] ->
         :pending
 
       s
@@ -2416,6 +2416,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec("refused"), do: {:amber, false}
   defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("pending"), do: {:amber, false}
+  defp status_dot_spec("rejected"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
   defp status_dot_spec("retired"), do: {:rose, false}
 

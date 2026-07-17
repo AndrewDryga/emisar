@@ -1007,9 +1007,10 @@ defmodule EmisarWeb.PacksLive do
           <ul id="packs" phx-update="stream" class="mt-10 space-y-10">
             <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
                  naked group — mono pack id + version count on a hairline — with
-                 its version rows below. The stream <li> wraps label + rows. All
-                 rare admin verbs live in the ⋯ menus (never a strip of visible
-                 buttons); their confirm dialogs render per row. --%>
+                 its version rows below. The stream <li> wraps label + rows. The
+                 1-2 rare admin verbs per row are small bordered buttons (the
+                 LLM-agents grammar — a menu earns its click only at 3+ verbs);
+                 their confirm dialogs render per row. --%>
             <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
               <header class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-zinc-800/70 pb-2.5">
                 <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
@@ -1020,20 +1021,17 @@ defmodule EmisarWeb.PacksLive do
                   status="pending"
                   class="ml-1 text-[11px]"
                 />
-                <.dropdown
+                <.button
                   :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                  class="ml-auto inline-block self-center text-left"
-                  summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                  panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  type="button"
+                  class="ml-auto self-center"
+                  phx-click={open_confirm("delete-pack-#{pack.id}")}
                 >
-                  <:trigger>
-                    Actions
-                    <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                  </:trigger>
-                  <.menu_item tone={:rose} phx-click={open_confirm("delete-pack-#{pack.id}")}>
-                    Delete pack…
-                  </.menu_item>
-                </.dropdown>
+                  Delete pack
+                </.button>
               </header>
 
               <.confirm_dialog
@@ -1103,37 +1101,44 @@ defmodule EmisarWeb.PacksLive do
                       status={(retired_blocked?(v) && "retired") || to_string(v.trust_state)}
                       class="text-xs"
                     />
-                    <.dropdown
+                    <div
                       :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                      class="ml-auto inline-block shrink-0 text-left"
-                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                      panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                      class="ml-auto flex shrink-0 items-center gap-2"
                     >
-                      <:trigger>
-                        Actions
-                        <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                      </:trigger>
-                      <.menu_item
+                      <.button
                         :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
+                        variant={:secondary}
                         tone={:amber}
+                        size={:sm}
+                        type="button"
                         phx-click={open_confirm("trust-#{v.id}")}
                       >
-                        Trust…
-                      </.menu_item>
-                      <.menu_item
+                        Trust
+                      </.button>
+                      <.button
                         :if={v.trust_state == :trusted}
+                        variant={:secondary}
+                        size={:sm}
+                        type="button"
                         phx-click={open_confirm("revoke-#{v.id}")}
                       >
-                        Revoke trust…
-                      </.menu_item>
-                      <.menu_item tone={:rose} phx-click={open_confirm("delete-version-#{v.id}")}>
-                        Delete version…
-                      </.menu_item>
-                    </.dropdown>
+                        Revoke trust
+                      </.button>
+                      <.button
+                        variant={:secondary}
+                        tone={:rose}
+                        size={:sm}
+                        type="button"
+                        phx-click={open_confirm("delete-version-#{v.id}")}
+                      >
+                        Delete
+                      </.button>
+                    </div>
                   </div>
 
-                  <%!-- The row menu's confirm dialogs — per row, plain (client-side)
-                       modals; the pushed events stay server-authz-gated (IL-15). --%>
+                  <%!-- The row buttons' confirm dialogs — per row, plain
+                       (client-side) modals; the pushed events stay
+                       server-authz-gated (IL-15). --%>
                   <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
                     <.confirm_dialog
                       :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
@@ -1404,9 +1409,18 @@ defmodule EmisarWeb.PacksLive do
               page is your account's trust ledger over it.
             </p>
             <p>
-              Every version is pinned to an exact content hash. A runner advertising
-              different bytes flips the version to <span class="text-amber-300">pending</span>, and dispatch refuses it until an
-              admin reviews the change.
+              Packs published by emisar are <span class="text-brand-300">trusted automatically</span>
+              — every version is
+              pinned to the exact content hash of the signed registry build. When a
+              security fix supersedes a version, the older release is
+              <span class="text-rose-300">retired</span>
+              and dispatch to it is blocked until you update the runner or decide
+              otherwise.
+            </p>
+            <p>
+              Everything else — your own packs, third-party builds, or contents that
+              changed on a host — waits as <span class="text-amber-300">pending</span>
+              until an admin reviews and trusts it.
             </p>
           </.docs_rail>
 
