@@ -1093,14 +1093,14 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
-                    <%!-- ONE row-state marker: the RETIRED chip REPLACES the trust
-                         badge on a blocked row — "RETIRED · trusted" side by side
-                         read as a contradiction. An overridden row is trusted
-                         again (the quiet note below says why). --%>
-                    <.chip :if={retired_blocked?(v)} upcase tone={:rose}>Retired</.chip>
+                    <%!-- ONE row-state marker in ONE grammar (dot + word): a
+                         blocked row reads "retired" INSTEAD of "trusted" —
+                         side by side they contradicted, and a chip beside
+                         dot-word badges was a second visual language. An
+                         overridden row is trusted again (the note below says
+                         why). --%>
                     <.status_badge
-                      :if={not retired_blocked?(v)}
-                      status={to_string(v.trust_state)}
+                      status={(retired_blocked?(v) && "retired") || to_string(v.trust_state)}
                       class="text-xs"
                     />
                     <.dropdown
@@ -1536,12 +1536,14 @@ defmodule EmisarWeb.PacksLive do
     assigns = assign(assigns, :url, registry_pack_url(assigns.pack_id))
 
     ~H"""
+    <%!-- Muted on purpose: a rarely-used reference link must not outshine
+         the pack identity it sits beside. --%>
     <.link
       :if={@url}
       href={@url}
       target="_blank"
       rel="noopener"
-      class="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-brand-400 hover:text-brand-300"
+      class="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
       title="Published in emisar's public pack registry — opens in a new tab"
     >
       Registry <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3" />

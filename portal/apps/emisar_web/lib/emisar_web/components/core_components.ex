@@ -447,12 +447,14 @@ defmodule EmisarWeb.CoreComponents do
   defp menu_item_base,
     do: "flex w-full items-center gap-2 rounded px-3 py-2 text-left"
 
-  # Tone mirrors button_variant("ghost", tone) — same hover tints, so a menu row
-  # and an inline ghost button of the same tone are visually identical.
+  # Toned rows tint like their ghost-button siblings. Neutral steps to
+  # zinc-800: menu rows sit on the dropdown's zinc-900 panel, so the ghost
+  # button's zinc-900 hover would paint the panel's own color — no visible
+  # hover at all (the packs row menu's "Revoke trust" was the correction).
   defp menu_item_tone(:rose), do: "text-rose-300 hover:bg-rose-500/10"
   defp menu_item_tone(:amber), do: "text-amber-300 hover:bg-amber-500/10"
   defp menu_item_tone(:brand), do: "text-brand-300 hover:bg-brand-500/10"
-  defp menu_item_tone(:neutral), do: "text-zinc-300 hover:bg-zinc-900"
+  defp menu_item_tone(:neutral), do: "text-zinc-300 hover:bg-zinc-800"
 
   @doc """
   Renders an input with label and error messages.
@@ -2395,7 +2397,7 @@ defmodule EmisarWeb.CoreComponents do
         :pending
 
       s
-      when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed denied] ->
+      when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed denied retired] ->
         :deny
 
       _ ->
@@ -2415,6 +2417,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("pending"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
+  defp status_dot_spec("retired"), do: {:rose, false}
 
   defp status_dot_spec(s)
        when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed],
