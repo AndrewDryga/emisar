@@ -2135,6 +2135,25 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "count_pending_dispatches/0" do
+    test "an empty queue is zero" do
+      assert Runs.count_pending_dispatches() == 0
+    end
+
+    test "counts only pending runs, fleet-wide across accounts" do
+      Fixtures.Runs.create_run(status: :pending)
+      Fixtures.Runs.create_run(status: :pending)
+
+      # Excluded from the backlog depth: sent (already handed to a runner),
+      # pending_approval (blocked on a human, not a dispatch queue), and terminal.
+      Fixtures.Runs.create_run(status: :sent)
+      Fixtures.Runs.create_run(status: :pending_approval)
+      Fixtures.Runs.create_run(status: :success)
+
+      assert Runs.count_pending_dispatches() == 2
+    end
+  end
+
   describe "RunDispatchTimeout sweep (worker over list_stale_dispatches/1)" do
     setup do
       account = Fixtures.Accounts.create_account()

@@ -21,7 +21,8 @@ defmodule Emisar.Runs do
     children = [
       job_module("DispatchTimeout"),
       job_module("EventRetention"),
-      job_module("ActionRunRetention")
+      job_module("ActionRunRetention"),
+      job_module("FleetObservability")
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -1457,6 +1458,21 @@ defmodule Emisar.Runs do
     |> ActionRun.Query.queued_before(cutoff)
     |> ActionRun.Query.ordered_by_oldest()
     |> Repo.all()
+  end
+
+  @doc """
+  Internal — telemetry/ops. FLEET-WIDE (no subject, every account) count of runs
+  awaiting dispatch to a runner (`:pending`) — the dispatch-backlog depth.
+  Excludes `:pending_approval` (blocked on a human, not a dispatch queue) and
+  `:sent` (already handed to a runner). No `account_id`: this is the aggregate ops
+  gauge behind `Emisar.Runs.Jobs.FleetObservability`, the counterpart to
+  `Runners.connection_counts/0` (series cardinality + tenant enumeration).
+  """
+  @spec count_pending_dispatches() :: non_neg_integer()
+  def count_pending_dispatches do
+    ActionRun.Query.all()
+    |> ActionRun.Query.status_in([:pending])
+    |> Repo.aggregate(:count, :id)
   end
 
   @doc """

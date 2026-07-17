@@ -113,7 +113,9 @@ config :logger, :console,
     :reason,
     :error,
     :count,
-    :job
+    :job,
+    :connected_runners,
+    :pending_dispatch_depth
   ]
 
 # Status-page URL surfaced as a "Status" link in the marketing footer
