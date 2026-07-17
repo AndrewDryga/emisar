@@ -1188,7 +1188,7 @@ defmodule EmisarWeb.AgentsLive do
         <div>
           <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
             Cloud
-            <span class="ml-1 normal-case tracking-normal text-zinc-600">
+            <span class="ml-1 normal-case tracking-normal text-zinc-400">
               — hosted LLMs: no install, OAuth
             </span>
           </p>
@@ -1203,7 +1203,7 @@ defmodule EmisarWeb.AgentsLive do
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
             Local / IDE clients
-            <span class="ml-1 normal-case tracking-normal text-zinc-600">
+            <span class="ml-1 normal-case tracking-normal text-zinc-400">
               — uses the stdio bridge
             </span>
           </p>

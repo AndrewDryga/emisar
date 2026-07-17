@@ -657,7 +657,7 @@ defmodule EmisarWeb.BillingLive do
     <li class="flex items-center gap-2">
       <.icon
         name={if @enabled, do: "hero-check-circle-mini", else: "hero-minus-circle-mini"}
-        class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-600")}
+        class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-500")}
       />
       <span class={(@enabled && "text-zinc-300") || "text-zinc-500"}>{@label}</span>
     </li>

@@ -40,7 +40,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Enrollment keys</h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Two key models.</strong>
             An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-auth-…</code>
@@ -53,7 +53,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Shown once, traded for a token.</strong>
             The raw key appears once, at creation. On first connect the runner trades it for its
@@ -64,7 +64,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Mint at install time.</strong>
             <strong>Runners → Connect a runner</strong> generates the install one-liner with a
@@ -74,7 +74,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Revocation is cloud-side.</strong>
             Revoking a key blocks new registrations; hosts already enrolled keep running on
@@ -167,7 +167,7 @@ execution:
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Troubleshooting</h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Never shows up:</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">journalctl -u emisar -f</code>.
@@ -178,7 +178,7 @@ execution:
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Service is "failed":</strong> after five crashes in
             five minutes systemd stops retrying (deliberate — a revoked key shouldn't hammer the
@@ -186,7 +186,7 @@ execution:
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Action won't dispatch:</strong> check the Packs page
             first — a pending (untrusted) or drifted pack hash blocks dispatch by design. Then
@@ -194,7 +194,7 @@ execution:
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Pack refuses to load:</strong>
             the journal names the

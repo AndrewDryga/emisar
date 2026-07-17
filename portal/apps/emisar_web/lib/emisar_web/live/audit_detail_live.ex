@@ -266,7 +266,7 @@ defmodule EmisarWeb.AuditDetailLive do
                 <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">
                   {from || "—"}
                 </code>
-                <span class="text-zinc-600">→</span>
+                <span class="text-zinc-500">→</span>
                 <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-[11px] text-brand-300">
                   {to || "—"}
                 </code>
@@ -319,7 +319,7 @@ defmodule EmisarWeb.AuditDetailLive do
                 <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-300">
                   {c["from"]["decision"]}
                 </code>
-                <span class="text-zinc-600">→</span>
+                <span class="text-zinc-500">→</span>
                 <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-brand-300">
                   {c["to"]["decision"]}
                 </code>
@@ -356,7 +356,7 @@ defmodule EmisarWeb.AuditDetailLive do
     <div class="min-w-0" data-audit-entity={@role}>
       <.entity_heading role={@role} kind={@kind} />
       <p class="mt-2 text-sm text-zinc-400">
-        same as actor <span class="text-zinc-600">(self)</span>
+        same as actor <span class="text-zinc-400">(self)</span>
       </p>
     </div>
     """

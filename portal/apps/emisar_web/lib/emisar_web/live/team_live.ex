@@ -971,7 +971,7 @@ defmodule EmisarWeb.TeamLive do
               </div>
               <div class="mt-0.5 truncate text-xs text-zinc-500">
                 <span :if={request.email}>{request.email}</span>
-                <span :if={request.email} class="text-zinc-600">·</span>
+                <span :if={request.email} class="text-zinc-500">·</span>
                 <span class="font-mono">{request.provider_identifier}</span>
               </div>
               <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
@@ -1389,7 +1389,7 @@ defmodule EmisarWeb.TeamLive do
               <% end %>
               <span
                 :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
-                class="text-[11px] text-zinc-600"
+                class="text-[11px] text-zinc-400"
               >
                 Owner/admin only
               </span>
@@ -1447,7 +1447,7 @@ defmodule EmisarWeb.TeamLive do
                   </div>
                   <.icon
                     name="hero-chevron-right"
-                    class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-zinc-400"
+                    class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
                   />
                 </.link>
               </li>
@@ -1470,7 +1470,7 @@ defmodule EmisarWeb.TeamLive do
                     Add provider
                   </.button>
                 <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="text-[11px] text-zinc-600">
+                  <span class="text-[11px] text-zinc-400">
                     Available on the Team and Enterprise plans
                   </span>
                 <% true -> %>
@@ -1501,7 +1501,7 @@ defmodule EmisarWeb.TeamLive do
             <div class="mt-4">
               <%= cond do %>
                 <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="text-[11px] text-zinc-600">Owner/admin only</span>
+                  <span class="text-[11px] text-zinc-400">Owner/admin only</span>
                 <% @current_account.settings.require_sso -> %>
                   <.confirm_button
                     id="require-sso"
@@ -1533,7 +1533,7 @@ defmodule EmisarWeb.TeamLive do
                     Require SSO
                   </.confirm_button>
                 <% true -> %>
-                  <span class="text-[11px] text-zinc-600">Add an enabled connection first</span>
+                  <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
               <% end %>
             </div>
           </div>
@@ -1564,7 +1564,7 @@ defmodule EmisarWeb.TeamLive do
               />
               <span
                 :if={not Accounts.subject_can_manage_account?(@current_subject)}
-                class="text-[11px] text-zinc-600"
+                class="text-[11px] text-zinc-400"
               >
                 Owner/admin only
               </span>

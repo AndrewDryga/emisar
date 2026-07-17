@@ -835,7 +835,7 @@ defmodule EmisarWeb.PacksLive do
       :if={@retired? and @overridden?}
       class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-500"
     >
-      <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-600" />
+      <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-500" />
       Retired by a newer release — overridden by {overrider_name(@version)}
       <.local_time
         id={"pack-version-override-#{@version.id}"}
@@ -1455,7 +1455,7 @@ defmodule EmisarWeb.PacksLive do
 
           <%!-- Family-standard count footer (runners/runs/approvals/audit all
                carry one). --%>
-          <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-600">
+          <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-400">
             {count_footer(@pack_count, @version_count)}
           </p>
         </div>
@@ -1523,7 +1523,7 @@ defmodule EmisarWeb.PacksLive do
                   Clean up now
                 </.confirm_button>
               <% else %>
-                <p class="mt-2 text-[11px] text-zinc-600">
+                <p class="mt-2 text-[11px] text-zinc-400">
                   Owner/admin only — currently {(@current_account.settings.pack_unseen_retention_days &&
                                                    retention_days_label(
                                                      @current_account.settings.pack_unseen_retention_days

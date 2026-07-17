@@ -342,7 +342,7 @@ defmodule EmisarWeb.DashboardLive do
                 <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
               </div>
             </div>
-            <.cta_arrow class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-brand-400" />
+            <.cta_arrow class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-brand-400" />
           </.link>
         </li>
       </ul>
@@ -614,7 +614,7 @@ defmodule EmisarWeb.DashboardLive do
           ]}>
             {@title}
           </span>
-          <span :if={@optional} class="text-[11px] text-zinc-600">optional</span>
+          <span :if={@optional} class="text-[11px] text-zinc-400">optional</span>
         </div>
         <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
           <%= if @done do %>

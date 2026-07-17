@@ -106,7 +106,7 @@
             <p class="mt-1.5">Back on the emisar form, set:</p>
             <ul class="mt-2 space-y-2">
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Provider type</strong>
                   and a <strong class="text-zinc-200">Display name</strong>
@@ -114,7 +114,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Issuer URL</strong>
                   — your provider's OIDC issuer (must be HTTPS). emisar fetches the discovery
@@ -124,7 +124,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Client ID</strong>
                   and <strong class="text-zinc-200">Client secret</strong>
@@ -134,7 +134,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">New-user provisioning</strong>
                   — <span class="text-zinc-300">Auto-provision</span>
@@ -144,7 +144,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Identifier claim</strong>
                   — leave as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
@@ -155,7 +155,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Default role for new users</strong>
                   — the role a newly provisioned member lands at (viewer / operator / billing manager / admin). Sync
@@ -167,7 +167,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Allowed email domain</strong>
                   (optional) — restricts sign-in to verified addresses on that domain and routes
@@ -176,7 +176,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   Click <strong class="text-zinc-200">Test connection</strong>
                   before you save. emisar runs a live OIDC discovery round-trip against the issuer
@@ -185,7 +185,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   Decide whether <strong class="text-zinc-200">this provider satisfies your 2FA
                     requirement</strong>
@@ -273,7 +273,7 @@
             </p>
             <ul class="mt-2 space-y-2">
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   the <strong class="text-zinc-200">SCIM base URL</strong>
                   — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
@@ -281,7 +281,7 @@
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-600">—</span>
+                <span class="flex-none text-zinc-500">—</span>
                 <span>
                   a <strong class="text-zinc-200">bearer token</strong>, shown
                   <strong class="text-zinc-200">once</strong>
@@ -339,7 +339,7 @@
       </p>
       <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Provisioning</strong>
             creates the user and their membership at the connection's default role — so access is
@@ -347,7 +347,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Deprovisioning</strong>
             — when the IdP marks a user inactive or removes them — <strong class="text-zinc-200">suspends
@@ -403,7 +403,7 @@
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Security notes</h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Identities are bound by
             <strong class="text-zinc-200">issuer + subject, not email</strong>
@@ -411,7 +411,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             The
             <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
@@ -421,7 +421,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Deprovisioning <strong class="text-zinc-200">suspends, never deletes</strong>
             — to keep
@@ -429,7 +429,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Every SSO and directory-sync action lands in the
             <.link

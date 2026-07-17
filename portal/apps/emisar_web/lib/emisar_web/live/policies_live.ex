@@ -959,7 +959,7 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
       <p
         :if={@stat.examples != []}
-        class="mt-1 truncate pl-4 font-mono text-[10px] text-zinc-600"
+        class="mt-1 truncate pl-4 font-mono text-[10px] text-zinc-400"
         title={Enum.join(@stat.examples, ", ")}
       >
         {Enum.join(@stat.examples, ", ")}

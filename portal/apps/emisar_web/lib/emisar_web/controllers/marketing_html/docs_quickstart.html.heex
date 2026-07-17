@@ -78,11 +78,11 @@
       </p>
       <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>verifies the download's SHA-256;</span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             creates a dedicated <code class="font-mono">emisar</code>
             system user and an <code class="font-mono">emisar.service</code>
@@ -90,19 +90,19 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             bakes the key and URL into <code class="font-mono">/etc/emisar/runner.env</code>;
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>);
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>starts the service, which dials out to the control plane over WSS.</span>
         </li>
       </ul>
@@ -185,7 +185,7 @@
         </p>
         <ul class="mt-3 space-y-2">
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Claude Code</strong>
               — add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
@@ -194,7 +194,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Gemini CLI</strong>
               — set <code class="font-mono text-brand-300">"trust": true</code>
@@ -203,7 +203,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Grok CLI</strong>
               — add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
@@ -212,7 +212,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Cursor, Codex CLI</strong>
               — Cursor approves globally through agent auto-run; Codex can trust only emisar with

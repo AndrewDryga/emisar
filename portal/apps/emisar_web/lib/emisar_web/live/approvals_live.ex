@@ -649,7 +649,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     />
                   </form>
                 <% else %>
-                  <p class="mt-2 text-[11px] text-zinc-600">Owner/admin only.</p>
+                  <p class="mt-2 text-[11px] text-zinc-400">Owner/admin only.</p>
                 <% end %>
               </div>
             </div>

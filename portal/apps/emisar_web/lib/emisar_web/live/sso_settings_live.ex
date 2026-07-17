@@ -1123,7 +1123,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
                 <div class="mt-0.5 truncate text-xs text-zinc-500">
                   <span :if={request.email}>{request.email}</span>
-                  <span :if={request.email} class="text-zinc-600">·</span>
+                  <span :if={request.email} class="text-zinc-500">·</span>
                   <span class="font-mono">{request.provider_identifier}</span>
                 </div>
                 <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
@@ -1191,7 +1191,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     stats={Map.get(@sync_stats, provider.id, %{users: 0, groups: 0})}
                   />
                 </div>
-                <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-600" />
+                <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-500" />
               </.link>
             </li>
           </ul>

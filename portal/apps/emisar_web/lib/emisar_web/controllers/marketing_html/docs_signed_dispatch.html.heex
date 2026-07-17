@@ -144,7 +144,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       </p>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA public key is config, not a secret.</strong>
             Ship it the way you already ship the rest of
@@ -156,7 +156,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">
               The control plane is deliberately not the distributor.
@@ -168,7 +168,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">
               Scope each cert to match how you operate.
@@ -184,7 +184,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA private key is the crown jewel.</strong>
             The CA seed is what mints authority — whoever holds it can sign a cert for any leaf key on
@@ -229,7 +229,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       </p>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Short TTLs are the revocation story.</strong>
             There is no certificate revocation list yet — a leaked leaf key keeps working until its
@@ -239,7 +239,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA is the immediate lever.</strong>
             To revoke before a cert expires, rotate the CA:
@@ -255,7 +255,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Best practices</h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Short cert TTLs, scoped to the target.</strong>
             A 24h cert scoped
@@ -266,7 +266,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Keep the CA public key in your infra repo.</strong>
             Let config management own it next to the host's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>; never
@@ -275,7 +275,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Set the window against your real SLAs.</strong>
             If you combine signing with approvals, a parked run is re-dispatched with its
@@ -291,7 +291,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Scope, don't share blindly.</strong>
             An empty-scope cert lets a signed call target any runner that trusts the CA. The exact
@@ -306,7 +306,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       </h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Integrity, not availability.</strong>
             A compromised control plane can still withhold or refuse to relay your signed dispatch.
@@ -314,7 +314,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Names are discovery metadata.</strong>
             The signature binds suffixes derived from durable runner ids; it does not make the
@@ -324,7 +324,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Replay survives a restart.</strong>
             Enforcement requires a data directory. Every accepted nonce is appended and synced
@@ -336,7 +336,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Queued while offline.</strong>
             A dispatch that sits queued longer than
@@ -354,7 +354,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       </p>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
             — the dispatch carried no signed certificate (it came from the portal, a runbook, or an
@@ -365,7 +365,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_mismatch</code>
             — this runner generation is absent or appears more than once in the signed target set.
@@ -373,7 +373,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_untrusted</code>
             — the cert's CA isn't in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, or its CA signature
@@ -382,7 +382,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_expired</code>
             — the certificate is outside its validity window. Mint a fresh one with
@@ -392,7 +392,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_scope</code>
             — the cert is scoped to a group/labels this runner doesn't satisfy. The cert was issued
@@ -400,7 +400,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stale</code>
             — the timestamp is outside the freshness window (clock skew, a long-queued run, or a
@@ -411,7 +411,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bad_signature</code>
             — the signature doesn't verify against the action, exact args, targets, nonce, and time.
@@ -419,7 +419,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">replayed</code>
             — this nonce was already used. The client double-sent; re-issue with a fresh dispatch.

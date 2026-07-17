@@ -434,7 +434,7 @@ defmodule EmisarWeb.AuditLive do
              (8px dot + gap-3), so the fold sits on the table's rail. --%>
         <.icon
           name="hero-chevron-right"
-          class={"h-3 w-3 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-600 group-hover:text-zinc-400"}"}
+          class={"h-3 w-3 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-500 group-hover:text-zinc-400"}"}
         />
         <span class={[
           "font-medium",
@@ -631,7 +631,7 @@ defmodule EmisarWeb.AuditLive do
       >
         {@value}
       </span>
-      <span :if={!@value} class="block text-sm leading-5 text-zinc-600" data-audit-cell-primary>
+      <span :if={!@value} class="block text-sm leading-5 text-zinc-500" data-audit-cell-primary>
         {@placeholder}
       </span>
     </div>
@@ -670,7 +670,7 @@ defmodule EmisarWeb.AuditLive do
       >
         {@credential}
       </span>
-      <span :if={!@who} class="block text-sm leading-5 text-zinc-600" data-audit-primary>—</span>
+      <span :if={!@who} class="block text-sm leading-5 text-zinc-500" data-audit-primary>—</span>
     </div>
     """
   end

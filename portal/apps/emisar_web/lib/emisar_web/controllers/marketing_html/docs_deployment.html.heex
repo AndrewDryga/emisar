@@ -35,7 +35,7 @@
       </p>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">One runner per host.</strong>
             A runner's identity is its account plus a stable id; names are unique within an
@@ -43,7 +43,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Group by tier, not by host.</strong>
             A group is the unit that policy, runbooks, member scopes, and agent fan-out all target.
@@ -55,7 +55,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Labels for the cross-cutting facts.</strong>
             Free-form <code class="font-mono">key=value</code>
@@ -65,7 +65,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Keep policy and access aligned.</strong>
             Policy decides what a runner will <em>run</em>; access decides who can <em>reach</em>
@@ -175,7 +175,7 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Runners &amp; the network</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             The installer already runs the binary as a dedicated non-root
             <code class="font-mono">emisar</code>
@@ -184,7 +184,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Runners dial <strong class="text-zinc-200">out</strong>
             over <code class="font-mono">:443</code>. Nothing listens on the host — there's no
@@ -192,7 +192,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Give packs their secrets through the runner's environment, never through call
             arguments. Put them in <code class="font-mono">/etc/emisar/runner.env</code>
@@ -201,7 +201,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Set a local admission ceiling as a backstop.
             <code class="font-mono">admission.max_risk: medium</code>
@@ -214,7 +214,7 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Policy</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Leave <code class="font-mono">critical</code>
             denied. It's default-closed on purpose. Opt a single action out with a per-action
@@ -222,14 +222,14 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Gate <code class="font-mono">high</code>, don't allow it. A restart, a kill, a drain —
             one approval is cheap insurance against a bad call, human or model.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Reach for per-action overrides sparingly and specifically
             (<code class="font-mono">nomad.job_stop</code> → <code class="font-mono">require_approval</code>), most specific first. The tier
@@ -237,7 +237,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Use a targeted ruleset to <em>lock</em>
             a group, not to loosen one broadly. A ruleset replaces the default for its target;
@@ -252,14 +252,14 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Approvals</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Four-eyes for anything destructive: <code class="font-mono">min_approvals</code>
             of 2, self-approval off. The person who asked can't wave through their own change.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Standing grants are a scalpel, not a blanket. When you approve a repeat action, scope
             it tight — exact arguments, a use cap, the shortest window that fits the job. A 90-day
@@ -267,7 +267,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Let expiry do the cleanup. An undecided request cancels after 24 hours; a grant lapses
             on schedule. You don't have to remember to revoke — but you can, in one click, from the
@@ -279,7 +279,7 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Access &amp; identity</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Least-privilege roles: <strong class="text-zinc-300">viewer</strong>
             to watch, <strong class="text-zinc-300">operator</strong>
@@ -289,21 +289,21 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Scope every member and every key to the hosts they own. "The DBA agent only reaches <code class="font-mono">db-*</code>" is one setting on the key — and out-of-scope hosts
             never appear.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Require MFA account-wide — TOTP with one-time recovery codes; a replayed code is
             rejected. On Team and up, an SSO session can satisfy it when your IdP enforces MFA.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Wire your directory.</strong>
             SSO binds people to your IdP by issuer and subject, never by email. On Enterprise, SCIM
@@ -316,7 +316,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Scope MCP keys per action and rotate them. A key carries
             <code class="font-mono">actions:read</code>
@@ -331,7 +331,7 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Packs</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Trust is deliberate, and that's the point. A pack runs only when its on-disk SHA-256
             matches the hash you trusted on the Packs page; edit it and it goes
@@ -340,7 +340,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Ship a host only the packs it needs. A web box has no use for the
             <code class="font-mono">postgres</code>
@@ -348,7 +348,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Keep the <code class="font-mono">shell</code>
             break-glass pack off production. It's the one action where the operator supplies the
@@ -362,7 +362,7 @@
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">Audit</h3>
       <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Stream it to your SIEM. <code class="font-mono">GET /api/audit</code>
             is forward-only NDJSON with cursor paging; an
@@ -371,7 +371,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Keep the host journal too. <code class="font-mono">/var/log/emisar/events.jsonl</code>
             is hash-chained — each line sealed by the one before it — so a cut or an edit is
@@ -381,7 +381,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             Alert on signal, not noise: <code class="font-mono">policy.updated</code>
             (someone changed the rules), pack-trust transitions (new bytes approved), and the most
@@ -408,7 +408,7 @@
         </p>
         <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Fleet:</strong>
               the ten web hosts share group <code class="font-mono">web</code>, packs
@@ -418,7 +418,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Policy:</strong>
               the defaults already fit — log tails and status reads are <code class="font-mono">low</code>/<code class="font-mono">medium</code> (allow);
@@ -428,7 +428,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Access:</strong>
               one MCP key, <code class="font-mono">actions:read</code>
@@ -458,7 +458,7 @@
         </p>
         <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Fleet:</strong>
               group <code class="font-mono">db-prod</code>, three hosts, packs
@@ -467,7 +467,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Policy + approvals:</strong>
               a targeted ruleset for the group — <code class="font-mono">critical</code>
@@ -476,7 +476,7 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-600">—</span>
+            <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Signing:</strong>
               each DBA holds a 24-hour leaf certificate from your offline CA in their MCP client;
@@ -581,7 +581,7 @@
       </p>
       <ul class="mt-4 space-y-2.5 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Not a sandbox.</strong>
             A restart still restarts the service. emisar bounds what can be <em>called</em>
@@ -589,7 +589,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Not an EDR.</strong>
             It won't spot a malicious binary or lateral movement. It will refuse a pack whose bytes
@@ -597,7 +597,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Signed dispatch is integrity, not availability.</strong>
             A compromised control plane can refuse to relay a signed call; it can't forge one. And
@@ -606,7 +606,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Redaction is pattern-bound.</strong>
             Built-in rules mask tokens and keys before output leaves the host, but a secret in a
@@ -615,7 +615,7 @@
           </span>
         </li>
         <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
+          <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The cloud audit is searchable and append-only, not
               tamper-evident.</strong>

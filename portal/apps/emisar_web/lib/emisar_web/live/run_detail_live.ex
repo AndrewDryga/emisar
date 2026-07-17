@@ -512,7 +512,7 @@ defmodule EmisarWeb.RunDetailLive do
                be coming). --%>
           <p
             :if={not @output_present? and @run.status not in [:sent, :running, :cancelling]}
-            class="bg-black/60 p-4 font-mono text-xs text-zinc-600"
+            class="bg-black/60 p-4 font-mono text-xs text-zinc-400"
           >
             No output captured.
           </p>
