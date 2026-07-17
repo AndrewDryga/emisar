@@ -462,11 +462,7 @@ defmodule EmisarWeb.ApprovalsLive do
             </LiveTable.live_table>
           </div>
 
-          <.docs_rail
-            title="What needs approval?"
-            doc_href="/docs/policies-and-approvals"
-            doc_label="Approvals docs"
-          >
+          <.docs_rail title="What needs approval?">
             <p>
               A run lands here when
               <.link
@@ -599,61 +595,69 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
+          </div>
 
-            <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
-               standing grant can keep skipping the prompt; single-use ("once") is
-               always exempt. Server-enforced in Approvals.create_grant. BELOW the
-               grants it governs (list first, settings after); collapsed — the
-               current cap rides in the header. Choice→consequence: an UNCAPPED
-               account wears amber with what that means; a set cap is quiet.
-               mt-8 groups it INTO this section (the wrapper's 48px stays for
-               real section breaks). --%>
-            <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime" class="mt-8">
-              <:summary>
-                <%!-- Status = dot + word; the explanation rides as quiet prose
-                   (a sentence-long amber pill shouted, and read as contradicting
-                   the per-grant "expires …" rows below — this is the ACCOUNT
-                   cap, not those grants). --%>
-                <span
+          <aside class="space-y-6">
+            <.docs_rail title="What's a standing grant?">
+              <p>
+                Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
+                action by the same API key — optionally pinned to one runner and exact
+                arguments — auto-approve for that window instead of re-asking.
+              </p>
+              <p>
+                Grants are bounded by the account's
+                <span class="text-zinc-200">Maximum grant lifetime</span>
+                beside, can carry a use limit, and are revocable here at any time — every
+                use is logged.
+              </p>
+            </.docs_rail>
+
+            <div>
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Guardrails
+              </h3>
+              <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
+                   standing grant can keep skipping the prompt; single-use ("once") is
+                   always exempt. Server-enforced in Approvals.create_grant.
+                   Choice→consequence: an UNCAPPED account wears amber with what that
+                   means; disabled wears brand; a set cap is quiet. --%>
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
+              <div id="approvals-grant-cap" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
+                <h4 class="text-sm font-medium text-zinc-100">Maximum grant lifetime</h4>
+                <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+                  Cap how long an approved grant can keep skipping the prompt. Single-use
+                  ("once") approvals are always allowed; the limit is enforced server-side.
+                </p>
+                <p
                   :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
-                  class="flex items-center gap-1.5 text-xs"
+                  class="mt-2 flex items-start gap-1.5 text-xs"
                 >
-                  <.status_dot tone={:amber} size={:sm} />
-                  <span class="text-amber-300">no cap</span>
-                  <span class="hidden text-zinc-500 sm:inline">
-                    — each grant keeps the lifetime it was approved with
+                  <.status_dot tone={:amber} size={:sm} class="mt-1" />
+                  <span>
+                    <span class="whitespace-nowrap text-amber-300">no cap</span>
+                    <span class="text-zinc-500">
+                      — each grant keeps the lifetime it was approved with
+                    </span>
                   </span>
-                </span>
-                <span
+                </p>
+                <p
                   :if={grants_disabled?(@current_account)}
-                  class="flex items-center gap-1.5 text-xs"
+                  class="mt-2 flex items-start gap-1.5 text-xs"
                 >
-                  <.status_dot tone={:brand} size={:sm} />
-                  <span class="text-brand-300">disabled</span>
-                  <span class="hidden text-zinc-500 sm:inline">
-                    — every approval is single-use
+                  <.status_dot tone={:brand} size={:sm} class="mt-1" />
+                  <span>
+                    <span class="whitespace-nowrap text-brand-300">disabled</span>
+                    <span class="text-zinc-500">— every approval is single-use</span>
                   </span>
-                </span>
-                <span
+                </p>
+                <p
                   :if={(@current_account.settings.max_grant_lifetime_seconds || 0) > 0}
-                  class="text-xs text-zinc-400"
+                  class="mt-2 text-xs text-zinc-400"
                 >
                   {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
-                </span>
-              </:summary>
-
-              <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
-                Cap how long an approved grant can keep skipping the prompt. Single-use
-                ("once") approvals are always allowed; the limit is enforced server-side.
-              </p>
-
-              <%= cond do %>
-                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <p class="text-[11px] text-zinc-600">
-                    Owner/admin only — the current cap is shown above.
-                  </p>
-                <% true -> %>
-                  <form phx-change="set_max_grant_lifetime" class="max-w-xs">
+                </p>
+                <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
+                  <form phx-change="set_max_grant_lifetime" class="mt-3">
                     <.select
                       name="seconds"
                       aria-label="Maximum grant lifetime"
@@ -662,27 +666,12 @@ defmodule EmisarWeb.ApprovalsLive do
                       }
                     />
                   </form>
-              <% end %>
-            </.collapsible_section>
-          </div>
-
-          <.docs_rail
-            title="What's a standing grant?"
-            doc_href="/docs/policies-and-approvals"
-            doc_label="Approvals docs"
-          >
-            <p>
-              Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
-              action by the same API key — optionally pinned to one runner and exact
-              arguments — auto-approve for that window instead of re-asking.
-            </p>
-            <p>
-              Grants are bounded by the account's
-              <span class="text-zinc-200">Maximum grant lifetime</span>
-              below, can carry a use limit, and are revocable here at any time — every
-              use is logged.
-            </p>
-          </.docs_rail>
+                <% else %>
+                  <p class="mt-2 text-[11px] text-zinc-600">Owner/admin only.</p>
+                <% end %>
+              </div>
+            </div>
+          </aside>
         </section>
 
         <%!-- 3. RECENT DECISIONS --%>
@@ -748,11 +737,7 @@ defmodule EmisarWeb.ApprovalsLive do
             </LiveTable.live_table>
           </div>
 
-          <.docs_rail
-            title="The decision log"
-            doc_href="/docs/policies-and-approvals"
-            doc_label="Approvals docs"
-          >
+          <.docs_rail title="The decision log">
             <p>
               Every decided request — <span class="text-brand-300">approved</span>, <span class="text-rose-300">denied</span>, or
               <span class="text-amber-300">expired</span>

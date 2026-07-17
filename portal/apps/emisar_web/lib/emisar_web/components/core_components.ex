@@ -3100,8 +3100,12 @@ defmodule EmisarWeb.CoreComponents do
       </.docs_rail>
   """
   attr :title, :string, required: true
-  attr :doc_href, :string, required: true
-  attr :doc_label, :string, required: true
+
+  attr :doc_href, :string,
+    default: nil,
+    doc: "omit (with doc_label) when the page intro already links the same docs"
+
+  attr :doc_label, :string, default: nil
   slot :inner_block, required: true
 
   def docs_rail(assigns) do
@@ -3117,7 +3121,7 @@ defmodule EmisarWeb.CoreComponents do
       <%!-- text-sm on the HOST, not the component: doc_link carries no text-*
            (so it adapts to context), and this <p> would otherwise inherit the
            dashboard's page-base 16px — bigger than the rail's text-sm prose. --%>
-      <p class="mt-4 text-sm">
+      <p :if={@doc_href} class="mt-4 text-sm">
         <.doc_link href={@doc_href}>{@doc_label}</.doc_link>
       </p>
     </aside>
