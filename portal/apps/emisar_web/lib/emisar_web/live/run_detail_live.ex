@@ -19,7 +19,9 @@ defmodule EmisarWeb.RunDetailLive do
     subject = socket.assigns.current_subject
 
     case Runs.fetch_run_by_id(id, subject, preload: [:runner, :api_key, :requested_by]) do
-      {:error, :not_found} ->
+      # A denied role and a missing run are indistinguishable — never leak
+      # existence, never crash on {:error, :unauthorized}.
+      {:error, _} ->
         {:ok,
          socket
          |> put_flash(:error, "Run not found.")

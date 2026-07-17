@@ -8,7 +8,9 @@ defmodule EmisarWeb.RunnerDetailLive do
     membership = socket.assigns.current_membership
 
     case Runners.fetch_runner_by_id(id, socket.assigns.current_subject) do
-      {:error, :not_found} ->
+      # A denied role and a missing runner are indistinguishable — never leak
+      # existence, never crash on {:error, :unauthorized}.
+      {:error, _} ->
         {:ok,
          socket
          |> put_flash(:error, "Runner not found.")

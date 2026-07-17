@@ -9,24 +9,31 @@ defmodule EmisarWeb.TeamLive do
   @roles Enum.map(Emisar.Auth.Role.all(), &Atom.to_string/1)
 
   def mount(_params, _session, socket) do
-    if connected?(socket),
-      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
+    if Runners.subject_can_view_runners?(socket.assigns.current_subject) do
+      if connected?(socket),
+        do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Team")
-     |> assign(:roles, @roles)
-     |> assign(:editing_id, nil)
-     |> assign(:edit_form, nil)
-     |> assign(:scope_editing_id, nil)
-     |> assign(:scope_draft, [])
-     # The branded sign-in link is a per-account constant to hand to members.
-     |> assign(
-       :sign_in_url,
-       Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
-     )
-     |> ConfirmDialog.init()
-     |> assign_form(invite_changeset())}
+      {:ok,
+       socket
+       |> assign(:page_title, "Team")
+       |> assign(:roles, @roles)
+       |> assign(:editing_id, nil)
+       |> assign(:edit_form, nil)
+       |> assign(:scope_editing_id, nil)
+       |> assign(:scope_draft, [])
+       # The branded sign-in link is a per-account constant to hand to members.
+       |> assign(
+         :sign_in_url,
+         Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
+       )
+       |> ConfirmDialog.init()
+       |> assign_form(invite_changeset())}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You don't have access to team.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}")}
+    end
   end
 
   def handle_params(params, _uri, socket) do
@@ -567,8 +574,13 @@ defmodule EmisarWeb.TeamLive do
             {:error, _} -> %{}
           end
 
-        {:ok, runners, _} =
-          Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
+        # A role without view_runners (billing_manager) gets no runners rather
+        # than a MatchError crash — mirror the identities load above.
+        runners =
+          case Emisar.Runners.list_runners_for_account(socket.assigns.current_subject) do
+            {:ok, runners, _} -> runners
+            {:error, _} -> []
+          end
 
         runners_by_id = Map.new(runners, &{&1.id, &1})
 

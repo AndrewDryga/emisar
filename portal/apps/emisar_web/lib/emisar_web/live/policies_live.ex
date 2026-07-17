@@ -33,7 +33,21 @@ defmodule EmisarWeb.PoliciesLive do
     socket =
       assign(socket, page_title: "Policy", loading?: not connected?(socket), load_error?: false)
 
-    {:ok, if(connected?(socket), do: load_all(socket), else: socket)}
+    # Gate BEFORE any policy read: a role without view_policies must see
+    # nothing, not the account posture with only the scoped read errored.
+    cond do
+      not Policies.subject_can_view_policies?(socket.assigns.current_subject) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "You don't have access to policies.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}")}
+
+      connected?(socket) ->
+        {:ok, load_all(socket)}
+
+      true ->
+        {:ok, socket}
+    end
   end
 
   # Load every editor the page needs: the default (account-scoped) policy, the existing

@@ -20,7 +20,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
     subject = socket.assigns.current_subject
 
     case Approvals.fetch_approval_request_by_id(id, subject) do
-      {:error, :not_found} ->
+      # A denied role and a missing approval are indistinguishable — never
+      # leak existence, never crash on {:error, :unauthorized}.
+      {:error, _} ->
         {:ok,
          socket
          |> put_flash(:error, "Approval not found.")
