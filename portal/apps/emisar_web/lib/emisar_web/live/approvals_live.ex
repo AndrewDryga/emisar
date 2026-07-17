@@ -79,9 +79,14 @@ defmodule EmisarWeb.ApprovalsLive do
   defp load(socket, params) do
     subject = socket.assigns.current_subject
 
-    pending_opts = LiveTable.params_to_opts(params, [], prefix: "pending_")
-    grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_")
-    decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_")
+    # Three tables share one page — compact 15-row pages keep every section
+    # scannable (the Paginator's 35/the decided read's 100 defaults let one
+    # busy section swallow the page); the pager takes over past that.
+    pending_opts =
+      LiveTable.params_to_opts(params, [], prefix: "pending_") |> put_page_limit(15)
+
+    grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_") |> put_page_limit(15)
+    decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_") |> put_page_limit(15)
 
     # Pending is the held-action danger: an {:error, _} (incl. :unauthorized)
     # collapsed to [] reads as "Nothing waiting", hiding a run awaiting a human.
@@ -131,6 +136,11 @@ defmodule EmisarWeb.ApprovalsLive do
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))
+  end
+
+  defp put_page_limit(opts, limit) do
+    page = opts |> Keyword.get(:page, []) |> Keyword.put_new(:limit, limit)
+    Keyword.put(opts, :page, page)
   end
 
   defp list_or_empty({:ok, _, _} = ok), do: ok
@@ -354,216 +364,243 @@ defmodule EmisarWeb.ApprovalsLive do
            air is what says "a new table starts here". --%>
       <div class="space-y-12">
         <%!-- 1. PENDING --%>
-        <section>
-          <.section_header title="Pending" />
+        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+          <div class="min-w-0">
+            <.section_header title="Pending" />
 
-          <LiveTable.live_table
-            layout={:cards}
-            id="pending"
-            path={~p"/app/#{@current_account}/approvals"}
-            prefix="pending_"
-            rows={@pending}
-            metadata={@pending_metadata}
-            filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70"
-          >
-            <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
+            <LiveTable.live_table
+              layout={:cards}
+              id="pending"
+              path={~p"/app/#{@current_account}/approvals"}
+              prefix="pending_"
+              rows={@pending}
+              metadata={@pending_metadata}
+              filter_params={@filter_params}
+              wrapper_class="divide-y divide-zinc-800/70"
+            >
+              <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
                  pending dot, the expiry), the dashboard's approvals grammar. --%>
-            <:item :let={request}>
-              <li>
-                <.link
-                  navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-                  class="group -mx-2 flex items-start gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
-                >
-                  <%!-- (20px title line − 8px dot) / 2 = 6px — measured to the FIRST
+              <:item :let={request}>
+                <li>
+                  <.link
+                    navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
+                    class="group -mx-2 flex items-start gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
+                  >
+                    <%!-- (20px title line − 8px dot) / 2 = 6px — measured to the FIRST
                        text line, not eyeballed. --%>
-                  <.status_dot tone={:amber} size={:md} class="mt-1.5" />
-                  <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="truncate font-mono text-sm text-zinc-200">
-                        {request.context["action_id"] || "—"}
-                      </span>
-                      <.risk_pill
-                        :if={@risk_labels[request.id]}
-                        risk={@risk_labels[request.id]}
-                        class="flex-none"
-                      />
+                    <.status_dot tone={:amber} size={:md} class="mt-1.5" />
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="truncate font-mono text-sm text-zinc-200">
+                          {request.context["action_id"] || "—"}
+                        </span>
+                        <.risk_pill
+                          :if={@risk_labels[request.id]}
+                          risk={@risk_labels[request.id]}
+                          class="flex-none"
+                        />
+                      </div>
+                      <div class="mt-0.5 text-xs text-zinc-500 sm:truncate">
+                        on {runner_label(request, @runner_labels)} · requested by {user_label(
+                          request.requested_by_id,
+                          @user_labels
+                        )}
+                      </div>
+                      <p
+                        :if={request.reason && request.reason != ""}
+                        class="mt-1 text-sm italic text-zinc-400"
+                      >
+                        "{request.reason}"
+                      </p>
                     </div>
-                    <div class="mt-0.5 text-xs text-zinc-500 sm:truncate">
-                      on {runner_label(request, @runner_labels)} · requested by {user_label(
-                        request.requested_by_id,
-                        @user_labels
-                      )}
-                    </div>
-                    <p
-                      :if={request.reason && request.reason != ""}
-                      class="mt-1 text-sm italic text-zinc-400"
-                    >
-                      "{request.reason}"
-                    </p>
-                  </div>
-                  <div class="shrink-0 text-right">
-                    <div class="text-xs text-zinc-500">
-                      <.local_time
-                        id={"pending-when-#{request.id}"}
-                        value={request.requested_at}
-                        mode={:relative}
-                      />
-                    </div>
-                    <%!-- Held runs auto-cancel at expiry — surface it so an
+                    <div class="shrink-0 text-right">
+                      <div class="text-xs text-zinc-500">
+                        <.local_time
+                          id={"pending-when-#{request.id}"}
+                          value={request.requested_at}
+                          mode={:relative}
+                        />
+                      </div>
+                      <%!-- Held runs auto-cancel at expiry — surface it so an
                          approver can triage by urgency, not just arrival. --%>
-                    <.approval_expiry
-                      id={"expiry-#{request.id}"}
-                      expires_at={request.expires_at}
-                      class="mt-0.5 justify-end"
-                    />
-                  </div>
-                </.link>
-              </li>
-            </:item>
-            <:empty>
-              <.empty_state
-                :if={@pending_error?}
-                tone={:danger}
-                icon="hero-exclamation-triangle"
-                title="Couldn't load pending approvals."
-              >
-                This is a load error, not an empty queue — a held action may be waiting.
-                Refresh the page; if it persists, your access may have changed.
-              </.empty_state>
-              <.empty_state
-                :if={not @pending_error?}
-                icon="hero-check-badge"
-                title="Nothing waiting."
-              >
-                Approvals show up here when
-                <.link
-                  navigate={~p"/app/#{@current_account}/policies"}
-                  class="text-brand-400 hover:text-brand-300"
+                      <.approval_expiry
+                        id={"expiry-#{request.id}"}
+                        expires_at={request.expires_at}
+                        class="mt-0.5 justify-end"
+                      />
+                    </div>
+                  </.link>
+                </li>
+              </:item>
+              <:empty>
+                <.empty_state
+                  :if={@pending_error?}
+                  tone={:danger}
+                  icon="hero-exclamation-triangle"
+                  title="Couldn't load pending approvals."
                 >
-                  policy
-                </.link>
-                gates a run as <code class="text-zinc-300">require_approval</code>
-                — for example a high-risk
-                mutating action from an LLM. You'll get an email too.
-              </.empty_state>
-            </:empty>
-          </LiveTable.live_table>
+                  This is a load error, not an empty queue — a held action may be waiting.
+                  Refresh the page; if it persists, your access may have changed.
+                </.empty_state>
+                <.empty_state
+                  :if={not @pending_error?}
+                  icon="hero-check-badge"
+                  title="Nothing waiting."
+                >
+                  Approvals show up here when
+                  <.link
+                    navigate={~p"/app/#{@current_account}/policies"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >
+                    policy
+                  </.link>
+                  gates a run as <code class="text-zinc-300">require_approval</code>
+                  — for example a high-risk
+                  mutating action from an LLM. You'll get an email too.
+                </.empty_state>
+              </:empty>
+            </LiveTable.live_table>
+          </div>
+
+          <.docs_rail
+            title="What needs approval?"
+            doc_href="/docs/policies-and-approvals"
+            doc_label="Approvals docs"
+          >
+            <p>
+              A run lands here when
+              <.link
+                navigate={~p"/app/#{@current_account}/policies"}
+                class="text-brand-400 hover:text-brand-300"
+              >
+                policy
+              </.link>
+              gates its action as
+              <span class="font-mono text-[13px] text-zinc-300">require_approval</span>
+              — the runner holds it and nothing executes until someone decides.
+            </p>
+            <p>
+              Approve releases the held run; deny cancels it. Either way your reason is
+              logged. A request nobody decides <span class="text-amber-300">expires</span>
+              on its own and its held run is cancelled.
+            </p>
+          </.docs_rail>
         </section>
 
         <%!-- 2. STANDING GRANTS --%>
-        <section>
-          <.section_header title="Standing grants">
-            <:subtitle :if={not grants_disabled?(@current_account)}>
-              Approvals that auto-allow follow-up calls for a bounded window.
-            </:subtitle>
-            <:subtitle :if={grants_disabled?(@current_account)}>
-              Disabled for this account — every approval is single-use.
-            </:subtitle>
-          </.section_header>
+        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+          <div class="min-w-0">
+            <.section_header title="Standing grants">
+              <:subtitle :if={not grants_disabled?(@current_account)}>
+                Approvals that auto-allow follow-up calls for a bounded window.
+              </:subtitle>
+              <:subtitle :if={grants_disabled?(@current_account)}>
+                Disabled for this account — every approval is single-use.
+              </:subtitle>
+            </.section_header>
 
-          <LiveTable.live_table
-            layout={:cards}
-            id="grants"
-            path={~p"/app/#{@current_account}/approvals"}
-            prefix="grants_"
-            rows={@grants}
-            metadata={@grants_metadata}
-            filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70"
-          >
-            <%!-- Canvas rows; the per-row key icon died with the island — every
+            <LiveTable.live_table
+              layout={:cards}
+              id="grants"
+              path={~p"/app/#{@current_account}/approvals"}
+              prefix="grants_"
+              rows={@grants}
+              metadata={@grants_metadata}
+              filter_params={@filter_params}
+              wrapper_class="divide-y divide-zinc-800/70"
+            >
+              <%!-- Canvas rows; the per-row key icon died with the island — every
                  row wearing the same glyph decorated nothing. --%>
-            <:item :let={g}>
-              <.list_row padding="py-4">
-                <:title>
-                  <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
-                </:title>
-                <:chips>
-                  <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
-                  <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
-                  <.chip :if={g.expires_at == nil} tone={:amber}>no expiry</.chip>
-                </:chips>
-                <:meta>
-                  <div
-                    :if={grant_args_line(g)}
-                    class="truncate font-mono text-zinc-400"
-                    title={grant_args_line(g)}
-                  >
-                    {grant_args_line(g)}
-                  </div>
+              <:item :let={g}>
+                <.list_row padding="py-4">
+                  <:title>
+                    <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
+                  </:title>
+                  <:chips>
+                    <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
+                    <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
+                    <.chip :if={g.expires_at == nil} tone={:amber}>no expiry</.chip>
+                  </:chips>
+                  <:meta>
+                    <div
+                      :if={grant_args_line(g)}
+                      class="truncate font-mono text-zinc-400"
+                      title={grant_args_line(g)}
+                    >
+                      {grant_args_line(g)}
+                    </div>
 
-                  <%!-- Line 1 = accountability: which key HOLDS the capability,
+                    <%!-- Line 1 = accountability: which key HOLDS the capability,
                        who granted it, and WHEN (an unexplained grant minted
                        during an incident window is exactly what an auditor
                        scans for). Line 2 = lifetime + usage. --%>
-                  <.meta_line class="mt-1">
-                    <:seg>via {grant_key_label(g)}</:seg>
-                    <:seg :if={g.granted_by}>
-                      granted by {g.granted_by.full_name || g.granted_by.email}
-                      <.local_time
-                        id={"grant-created-#{g.id}"}
-                        value={g.inserted_at}
-                        mode={:relative}
-                      />
-                    </:seg>
-                  </.meta_line>
+                    <.meta_line class="mt-1">
+                      <:seg>via {grant_key_label(g)}</:seg>
+                      <:seg :if={g.granted_by}>
+                        granted by {g.granted_by.full_name || g.granted_by.email}
+                        <.local_time
+                          id={"grant-created-#{g.id}"}
+                          value={g.inserted_at}
+                          mode={:relative}
+                        />
+                      </:seg>
+                    </.meta_line>
 
-                  <.meta_line class="mt-0.5">
-                    <:seg><.expiry_status grant={g} /></:seg>
-                    <:seg>{format_uses(g)}</:seg>
-                    <:seg>
-                      last used{" "}<.local_time
-                        id={"grant-used-#{g.id}"}
-                        value={g.last_used_at}
-                        mode={:relative}
-                        placeholder="never"
-                      />
-                    </:seg>
-                  </.meta_line>
-                </:meta>
-                <:actions>
-                  <.confirm_button
-                    :if={Approvals.subject_can_manage_grants?(@current_subject)}
-                    id={"revoke-grant-#{g.id}"}
-                    title="Revoke this grant?"
-                    confirm_label="Revoke grant"
-                    variant={:secondary}
-                    tone={:rose}
-                    size={:sm}
-                    on_confirm={JS.push("revoke_grant", value: %{id: g.id})}
-                  >
-                    <:body>
-                      Calls to {g.action_id} from {(g.api_key && g.api_key.name) || "the key"} will require fresh approval.
-                    </:body>
-                    Revoke
-                  </.confirm_button>
-                </:actions>
-              </.list_row>
-            </:item>
-            <:empty>
-              <.empty_state
-                :if={grants_disabled?(@current_account)}
-                icon="hero-no-symbol"
-                title="Standing grants are disabled."
-              >
-                Every approval is single-use — agents re-ask each time. An owner or
-                admin can re-enable them under Maximum grant lifetime below.
-              </.empty_state>
-              <.empty_state
-                :if={not grants_disabled?(@current_account)}
-                icon="hero-key"
-                title="No active grants."
-              >
-                Grants appear when you approve a run with a duration other than
-                <em>just this call</em>
-                — they let the same LLM client re-run the same action
-                inside the window without re-asking. Revocable here at any time.
-              </.empty_state>
-            </:empty>
-          </LiveTable.live_table>
+                    <.meta_line class="mt-0.5">
+                      <:seg><.expiry_status grant={g} /></:seg>
+                      <:seg>{format_uses(g)}</:seg>
+                      <:seg>
+                        last used{" "}<.local_time
+                          id={"grant-used-#{g.id}"}
+                          value={g.last_used_at}
+                          mode={:relative}
+                          placeholder="never"
+                        />
+                      </:seg>
+                    </.meta_line>
+                  </:meta>
+                  <:actions>
+                    <.confirm_button
+                      :if={Approvals.subject_can_manage_grants?(@current_subject)}
+                      id={"revoke-grant-#{g.id}"}
+                      title="Revoke this grant?"
+                      confirm_label="Revoke grant"
+                      variant={:secondary}
+                      tone={:rose}
+                      size={:sm}
+                      on_confirm={JS.push("revoke_grant", value: %{id: g.id})}
+                    >
+                      <:body>
+                        Calls to {g.action_id} from {(g.api_key && g.api_key.name) || "the key"} will require fresh approval.
+                      </:body>
+                      Revoke
+                    </.confirm_button>
+                  </:actions>
+                </.list_row>
+              </:item>
+              <:empty>
+                <.empty_state
+                  :if={grants_disabled?(@current_account)}
+                  icon="hero-no-symbol"
+                  title="Standing grants are disabled."
+                >
+                  Every approval is single-use — agents re-ask each time. An owner or
+                  admin can re-enable them under Maximum grant lifetime below.
+                </.empty_state>
+                <.empty_state
+                  :if={not grants_disabled?(@current_account)}
+                  icon="hero-key"
+                  title="No active grants."
+                >
+                  Grants appear when you approve a run with a duration other than
+                  <em>just this call</em>
+                  — they let the same LLM client re-run the same action
+                  inside the window without re-asking. Revocable here at any time.
+                </.empty_state>
+              </:empty>
+            </LiveTable.live_table>
 
-          <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
+            <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
                standing grant can keep skipping the prompt; single-use ("once") is
                always exempt. Server-enforced in Approvals.create_grant. BELOW the
                grants it governs (list first, settings after); collapsed — the
@@ -571,124 +608,165 @@ defmodule EmisarWeb.ApprovalsLive do
                account wears amber with what that means; a set cap is quiet.
                mt-8 groups it INTO this section (the wrapper's 48px stays for
                real section breaks). --%>
-          <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime" class="mt-8">
-            <:summary>
-              <%!-- Status = dot + word; the explanation rides as quiet prose
+            <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime" class="mt-8">
+              <:summary>
+                <%!-- Status = dot + word; the explanation rides as quiet prose
                    (a sentence-long amber pill shouted, and read as contradicting
                    the per-grant "expires …" rows below — this is the ACCOUNT
                    cap, not those grants). --%>
-              <span
-                :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
-                class="flex items-center gap-1.5 text-xs"
-              >
-                <.status_dot tone={:amber} size={:sm} />
-                <span class="text-amber-300">no cap</span>
-                <span class="hidden text-zinc-500 sm:inline">
-                  — each grant keeps the lifetime it was approved with
+                <span
+                  :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
+                  class="flex items-center gap-1.5 text-xs"
+                >
+                  <.status_dot tone={:amber} size={:sm} />
+                  <span class="text-amber-300">no cap</span>
+                  <span class="hidden text-zinc-500 sm:inline">
+                    — each grant keeps the lifetime it was approved with
+                  </span>
                 </span>
-              </span>
-              <span
-                :if={grants_disabled?(@current_account)}
-                class="flex items-center gap-1.5 text-xs"
-              >
-                <.status_dot tone={:brand} size={:sm} />
-                <span class="text-brand-300">disabled</span>
-                <span class="hidden text-zinc-500 sm:inline">
-                  — every approval is single-use
+                <span
+                  :if={grants_disabled?(@current_account)}
+                  class="flex items-center gap-1.5 text-xs"
+                >
+                  <.status_dot tone={:brand} size={:sm} />
+                  <span class="text-brand-300">disabled</span>
+                  <span class="hidden text-zinc-500 sm:inline">
+                    — every approval is single-use
+                  </span>
                 </span>
-              </span>
-              <span
-                :if={(@current_account.settings.max_grant_lifetime_seconds || 0) > 0}
-                class="text-xs text-zinc-400"
-              >
-                {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
-              </span>
-            </:summary>
+                <span
+                  :if={(@current_account.settings.max_grant_lifetime_seconds || 0) > 0}
+                  class="text-xs text-zinc-400"
+                >
+                  {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
+                </span>
+              </:summary>
 
-            <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
-              Cap how long an approved grant can keep skipping the prompt. Single-use
-              ("once") approvals are always allowed; the limit is enforced server-side.
+              <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
+                Cap how long an approved grant can keep skipping the prompt. Single-use
+                ("once") approvals are always allowed; the limit is enforced server-side.
+              </p>
+
+              <%= cond do %>
+                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                  <p class="text-[11px] text-zinc-600">
+                    Owner/admin only — the current cap is shown above.
+                  </p>
+                <% true -> %>
+                  <form phx-change="set_max_grant_lifetime" class="max-w-xs">
+                    <.select
+                      name="seconds"
+                      aria-label="Maximum grant lifetime"
+                      options={
+                        grant_lifetime_options(@current_account.settings.max_grant_lifetime_seconds)
+                      }
+                    />
+                  </form>
+              <% end %>
+            </.collapsible_section>
+          </div>
+
+          <.docs_rail
+            title="What's a standing grant?"
+            doc_href="/docs/policies-and-approvals"
+            doc_label="Approvals docs"
+          >
+            <p>
+              Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
+              action by the same API key — optionally pinned to one runner and exact
+              arguments — auto-approve for that window instead of re-asking.
             </p>
-
-            <%= cond do %>
-              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <p class="text-[11px] text-zinc-600">
-                  Owner/admin only — the current cap is shown above.
-                </p>
-              <% true -> %>
-                <form phx-change="set_max_grant_lifetime" class="max-w-xs">
-                  <.select
-                    name="seconds"
-                    aria-label="Maximum grant lifetime"
-                    options={
-                      grant_lifetime_options(@current_account.settings.max_grant_lifetime_seconds)
-                    }
-                  />
-                </form>
-            <% end %>
-          </.collapsible_section>
+            <p>
+              Grants are bounded by the account's
+              <span class="text-zinc-200">Maximum grant lifetime</span>
+              below, can carry a use limit, and are revocable here at any time — every
+              use is logged.
+            </p>
+          </.docs_rail>
         </section>
 
         <%!-- 3. RECENT DECISIONS --%>
-        <section>
-          <.section_header title="Recent decisions" />
+        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+          <div class="min-w-0">
+            <.section_header title="Recent decisions" />
 
-          <LiveTable.live_table
-            layout={:cards}
-            id="decided"
-            path={~p"/app/#{@current_account}/approvals"}
-            prefix="decided_"
-            rows={@decided}
-            metadata={@decided_metadata}
-            filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70"
-          >
-            <:item :let={request}>
-              <li>
-                <.link
-                  navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-                  class="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-3 text-sm transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate font-mono text-sm text-zinc-200">
-                      {request.context["action_id"] || "—"}
-                    </div>
-                    <div class="text-xs text-zinc-500 sm:truncate">
-                      on {runner_label(request, @runner_labels)}
-                      <%!-- The status badge on the right carries the outcome word
+            <LiveTable.live_table
+              layout={:cards}
+              id="decided"
+              path={~p"/app/#{@current_account}/approvals"}
+              prefix="decided_"
+              rows={@decided}
+              metadata={@decided_metadata}
+              filter_params={@filter_params}
+              wrapper_class="divide-y divide-zinc-800/70"
+            >
+              <:item :let={request}>
+                <li>
+                  <.link
+                    navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
+                    class="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-3 text-sm transition hover:bg-white/[0.04]"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate font-mono text-sm text-zinc-200">
+                        {request.context["action_id"] || "—"}
+                      </div>
+                      <div class="text-xs text-zinc-500 sm:truncate">
+                        on {runner_label(request, @runner_labels)}
+                        <%!-- The status badge on the right carries the outcome word
                            (approved / denied / expired); the meta just attributes
                            the decider. An expired request has none, so it shows
                            only the badge. --%>
-                      <span :if={request.requested_by_id}>
-                        · requested by {user_label(request.requested_by_id, @user_labels)}
-                      </span>
-                      <span :if={request.decided_by_id}>
-                        · decided by {user_label(request.decided_by_id, @user_labels)}
-                      </span>
+                        <span :if={request.requested_by_id}>
+                          · requested by {user_label(request.requested_by_id, @user_labels)}
+                        </span>
+                        <span :if={request.decided_by_id}>
+                          · decided by {user_label(request.decided_by_id, @user_labels)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-3">
-                    <.local_time
-                      id={"decided-when-#{request.id}"}
-                      value={request.decided_at || request.requested_at}
-                      mode={:relative}
-                      class="text-xs text-zinc-500"
-                    />
-                    <.status_badge status={request.status} />
-                  </div>
-                </.link>
-              </li>
-            </:item>
-            <:empty>
-              <.empty_state
-                icon="hero-clipboard-document-check"
-                title="No decided approvals yet."
+                    <div class="flex shrink-0 items-center gap-3">
+                      <.local_time
+                        id={"decided-when-#{request.id}"}
+                        value={request.decided_at || request.requested_at}
+                        mode={:relative}
+                        class="text-xs text-zinc-500"
+                      />
+                      <.status_badge status={request.status} />
+                    </div>
+                  </.link>
+                </li>
+              </:item>
+              <:empty>
+                <.empty_state
+                  icon="hero-clipboard-document-check"
+                  title="No decided approvals yet."
+                >
+                  When you approve or deny a pending request, the decision lands here.
+                  Useful for re-checking who approved what, and when.
+                </.empty_state>
+              </:empty>
+            </LiveTable.live_table>
+          </div>
+
+          <.docs_rail
+            title="The decision log"
+            doc_href="/docs/policies-and-approvals"
+            doc_label="Approvals docs"
+          >
+            <p>
+              Every decided request — <span class="text-brand-300">approved</span>, <span class="text-rose-300">denied</span>, or
+              <span class="text-amber-300">expired</span>
+              — with who decided it and when.
+            </p>
+            <p>
+              The full forensic trail — request context, the resolved command, reasons —
+              lives in the <.link
+                navigate={~p"/app/#{@current_account}/audit"}
+                class="text-brand-400 hover:text-brand-300"
               >
-                When you approve or deny a pending request, the decision lands here.
-                Useful for re-checking who approved what, and when.
-              </.empty_state>
-            </:empty>
-          </LiveTable.live_table>
+                audit log</.link>.
+            </p>
+          </.docs_rail>
         </section>
       </div>
     </.dashboard_shell>

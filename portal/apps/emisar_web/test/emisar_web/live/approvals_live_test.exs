@@ -378,6 +378,28 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, [%{revoked_at: nil}], _meta} = Approvals.list_grants_for_account(subject)
   end
 
+  describe "pagination" do
+    setup %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "the decided table pages at 15 rows with a live pager", %{
+      conn: conn,
+      account: account
+    } do
+      for _ <- 1..16 do
+        Fixtures.Approvals.create_request(account_id: account.id, status: :approved)
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+      # 15 of 16 render; the pager offers the next cursor page.
+      assert has_element?(lv, "#decided-pager", "15 / 16")
+      assert has_element?(lv, ~s(a[href*="decided_after="]))
+    end
+  end
+
   describe "max grant-lifetime cap" do
     setup %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
