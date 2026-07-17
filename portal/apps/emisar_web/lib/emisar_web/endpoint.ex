@@ -57,7 +57,15 @@ defmodule EmisarWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
-  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+
+  # The GCP load balancer probes /readyz and the auto-healer probes /healthz on
+  # every instance every few seconds; logging each request's start/stop at :info
+  # buried the app log in health-check noise. The :log hook skips just those two
+  # paths (endpoint_log_level/1 below) — every other request still logs at :info,
+  # so we keep the operational/audit signal a lower global level would discard.
+  plug Plug.Telemetry,
+    event_prefix: [:phoenix, :endpoint],
+    log: {__MODULE__, :endpoint_log_level, []}
 
   # We use a path-bounded body reader where a security boundary needs exact
   # bytes: Paddle verifies its HMAC, while MCP rejects ambiguous JSON and checks
@@ -76,6 +84,12 @@ defmodule EmisarWeb.Endpoint do
   plug Plug.Head
   plug :session
   plug EmisarWeb.Router
+
+  # Plug.Telemetry :log hook (see the plug above). false skips request logging
+  # for the health probes; every other path logs at :info.
+  def endpoint_log_level(%Plug.Conn{path_info: ["healthz"]}), do: false
+  def endpoint_log_level(%Plug.Conn{path_info: ["readyz"]}), do: false
+  def endpoint_log_level(%Plug.Conn{}), do: :info
 
   defp session(conn, _opts) do
     session_config = Plug.Session.init(session_options())
