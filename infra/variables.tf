@@ -186,7 +186,7 @@ variable "livebook_enabled" {
 
 variable "livebook_running" {
   type        = bool
-  description = "Desired power state of the provisioned Livebook workbench. false parks it: the VM stops, ending compute and license billing, while its disks (notebooks), secret, database principal, and LB/IAP wiring remain so resuming is a restart, not a rebuild. Only read when livebook_enabled is true."
+  description = "Whether the provisioned Livebook workbench's VM exists. false parks it: the VM and its boot disk are deleted, ending all compute billing, while the data disk (notebooks), secret, database principal, and LB/IAP wiring remain; resuming re-provisions the VM from cloud-init against the surviving data disk. Only read when livebook_enabled is true."
   default     = true
 }
 

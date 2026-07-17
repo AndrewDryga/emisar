@@ -121,6 +121,7 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 
 - **Content:** [plain, specific prose](.agent/rules/content-plain-specific-prose.md) — write for one known reader, make every sentence earn its place, and adapt the density and tone to the surface instead of falling back to corporate or generated language.
 - **Content:** [bounded autonomy leads the positioning](.agent/rules/content-position-bounded-autonomy.md) — lead with the agent work the operator can safely leave running; earn that promise with declared actions, the pack catalog, and enforcement, while keeping approvals and audit in their supporting role.
+- **Infra:** [optional-resource refs use splat, never a hard index](.agent/rules/infra-optional-resource-splat-refs.md) — a consumer that can outlive a count-gated resource references it as `A[*].attr` so absence degrades to `[]`; `A[0].attr` bakes in existence and turns a lifecycle flip into graph surgery.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 
