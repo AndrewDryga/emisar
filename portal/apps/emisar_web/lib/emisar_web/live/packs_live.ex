@@ -865,16 +865,24 @@ defmodule EmisarWeb.PacksLive do
     assigns = assign(assigns, :successor, successor)
 
     ~H"""
-    <p
+    <%!-- The same icon-capped spine as the retired block, but NEUTRAL: a newer
+         version shipped, yet this one is still safe and dispatches — a heads-up,
+         not a warning, so it never wears rose. --%>
+    <.event_block
       :if={@successor}
-      class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 pl-8 text-xs text-zinc-400"
+      icon="hero-arrow-up-circle"
+      tone={:neutral}
+      title="Update available"
+      class="mt-3 pl-8"
     >
-      <span class="inline-flex items-center gap-1.5">
-        <.icon name="hero-arrow-up-circle" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-        v{@successor} available
-      </span>
-      <span class="font-mono text-[11px]">emisar pack install {@pack_id}</span>
-    </p>
+      <:body>
+        v{@successor} has shipped. This version still runs fine — update the pack on the runner
+        when it's convenient.
+      </:body>
+      <p class="mt-2 font-mono text-[11px] text-zinc-400">
+        → v{@successor}: emisar pack install {@pack_id}
+      </p>
+    </.event_block>
     """
   end
 
@@ -1349,10 +1357,10 @@ defmodule EmisarWeb.PacksLive do
                       <div class="mt-1.5 flex flex-wrap gap-1">
                         <span
                           :for={r <- @advertising[v.id]}
-                          class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/70"
+                          class="inline-flex items-stretch overflow-hidden rounded bg-zinc-900/40 font-mono text-[11px] ring-1 ring-zinc-800/70"
                         >
-                          <span class="bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{r.group}</span>
-                          <span class="border-l border-zinc-700/70 bg-zinc-900 px-1.5 py-0.5 text-zinc-200">
+                          <span class="px-1.5 py-0.5 text-zinc-400">{r.group}</span>
+                          <span class="border-l border-zinc-800/70 px-1.5 py-0.5 text-zinc-300">
                             {r.name}
                           </span>
                         </span>

@@ -413,9 +413,10 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "v#{current} available"
+      assert html =~ "Update available"
+      assert html =~ "v#{current} has shipped"
       assert html =~ "emisar pack install #{pack_id}"
-      # A nudge, not a warning — no rose retired block on this row.
+      # A neutral nudge, not a warning — no rose retired block on this row.
       refute html =~ "Retired by a newer release"
     end
 
@@ -433,7 +434,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      refute html =~ "v#{current} available"
+      refute html =~ "Update available"
     end
 
     test "a retired version shows the rose retired block and NOT the update-available note",
@@ -442,8 +443,6 @@ defmodule EmisarWeb.PacksLiveTest do
       # gentle hint stays silent and never stacks on top of it.
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
-
-      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
 
       Fixtures.Catalog.create_trusted_pack_version(
         account_id: account.id,
@@ -455,7 +454,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "Retired by a newer release"
-      refute html =~ "v#{current} available"
+      refute html =~ "Update available"
     end
 
     test "a retired trusted version renders the rose warning with the admin override CTA",
