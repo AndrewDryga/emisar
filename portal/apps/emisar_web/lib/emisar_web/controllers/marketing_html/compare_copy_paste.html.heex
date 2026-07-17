@@ -24,7 +24,7 @@
             <.icon name="hero-clipboard-document" class="h-4 w-4 text-amber-300" />
             <h2 class="text-xs font-semibold text-zinc-200">The copy-paste loop</h2>
           </div>
-          <span class="hidden text-xs text-zinc-500 sm:inline">You carry every step</span>
+          <span class="hidden text-xs text-zinc-400 sm:inline">You carry every step</span>
         </div>
 
         <ol class="grid lg:grid-cols-5">
@@ -34,7 +34,7 @@
               <span class="font-mono text-xs text-zinc-500">1</span>
             </div>
             <h3 class="mt-5 text-sm font-semibold text-zinc-100">Find</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-500">
+            <p class="mt-1 text-xs leading-5 text-zinc-400">
               Find the log, graph, or terminal output that might explain the problem.
             </p>
           </li>
@@ -44,7 +44,7 @@
               <span class="font-mono text-xs text-zinc-500">2</span>
             </div>
             <h3 class="mt-5 text-sm font-semibold text-zinc-100">Copy</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-500">
+            <p class="mt-1 text-xs leading-5 text-zinc-400">
               Copy the useful lines or take a screenshot.
             </p>
           </li>
@@ -54,7 +54,7 @@
               <span class="font-mono text-xs text-zinc-500">3</span>
             </div>
             <h3 class="mt-5 text-sm font-semibold text-zinc-100">Ask</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-500">
+            <p class="mt-1 text-xs leading-5 text-zinc-400">
               Paste it into the LLM and ask what to do.
             </p>
           </li>
@@ -64,7 +64,7 @@
               <span class="font-mono text-xs text-zinc-500">4</span>
             </div>
             <h3 class="mt-5 text-sm font-semibold text-zinc-100">Run</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-500">
+            <p class="mt-1 text-xs leading-5 text-zinc-400">
               Read the suggested command, then run it yourself.
             </p>
           </li>
@@ -74,7 +74,7 @@
               <span class="font-mono text-xs text-zinc-500">5</span>
             </div>
             <h3 class="mt-5 text-sm font-semibold text-zinc-100">Repeat</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-500">
+            <p class="mt-1 text-xs leading-5 text-zinc-400">
               Paste the result back and keep going.
             </p>
           </li>
@@ -172,7 +172,7 @@
             <p class="text-zinc-300">Paste it into the terminal and run it.</p>
             <p class="text-zinc-400">You again</p>
             <p class="text-zinc-300">Paste the output back into the chat.</p>
-            <p class="col-span-2 border-t border-zinc-800 pt-4 text-zinc-500">
+            <p class="col-span-2 border-t border-zinc-800 pt-4 text-zinc-400">
               The command and result cross the clipboard. The reason stays in the chat.
             </p>
           </div>
@@ -189,7 +189,7 @@
             <p class="text-zinc-400">You</p>
             <p class="text-zinc-300">
               Approve this run once.
-              <span class="text-zinc-500">Policy asked because a restart changes the host.</span>
+              <span class="text-zinc-400">Policy asked because a restart changes the host.</span>
             </p>
             <p class="text-zinc-400">emisar</p>
             <p class="text-brand-300">Succeeded. The result goes back to the LLM.</p>
@@ -200,7 +200,7 @@
         </div>
       </div>
 
-      <p class="mt-16 text-xs font-semibold text-zinc-500">Side by side</p>
+      <p class="mt-16 text-xs font-semibold text-zinc-400">Side by side</p>
       <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
         Where the paths differ
       </h2>
@@ -223,7 +223,7 @@
 
       <div class="mt-5 hidden overflow-hidden rounded-lg ring-1 ring-white/10 md:block">
         <table class="w-full text-sm">
-          <thead class="bg-black/40 text-xs text-zinc-500">
+          <thead class="bg-black/40 text-xs text-zinc-400">
             <tr>
               <th class="w-[22%] px-4 py-3 text-left font-medium">Concern</th>
               <th class="w-[39%] px-4 py-3 text-left font-semibold text-amber-200">
@@ -293,7 +293,7 @@
             alt="The emisar audit log filtered to successful runs, showing the actor, action target, source IP, and time for each run."
             class="w-full"
           />
-          <figcaption class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 text-xs leading-5 text-zinc-500">
+          <figcaption class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 text-xs leading-5 text-zinc-400">
             Filtered to successes and approvals. Open any row to see who asked, what ran, where it
             ran, and how it ended.
           </figcaption>
@@ -310,7 +310,7 @@
           <h2 class="mt-2 text-xl font-semibold text-zinc-100 text-balance">
             Copy-paste may be enough
           </h2>
-          <p class="mt-4 max-w-md text-sm leading-7 text-zinc-500 text-pretty">
+          <p class="mt-4 max-w-md text-sm leading-7 text-zinc-400 text-pretty">
             For a low-risk change in dev, with one operator and no audit requirement, the manual
             loop may be enough. Check what you upload and what you run.
           </p>
@@ -332,7 +332,7 @@
               <.icon name="hero-arrow-path" class="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
               <div>
                 <h3 class="text-sm font-semibold text-zinc-100">Routine checks keep moving</h3>
-                <p class="mt-1 text-sm leading-6 text-zinc-500 text-pretty">
+                <p class="mt-1 text-sm leading-6 text-zinc-400 text-pretty">
                   Read-only actions can return current results without stopping for approval.
                 </p>
               </div>
@@ -341,7 +341,7 @@
               <.icon name="hero-hand-raised" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <div>
                 <h3 class="text-sm font-semibold text-zinc-100">Risky changes wait for you</h3>
-                <p class="mt-1 text-sm leading-6 text-zinc-500 text-pretty">
+                <p class="mt-1 text-sm leading-6 text-zinc-400 text-pretty">
                   Policy can require approval of the exact run before it changes a host.
                 </p>
               </div>
@@ -362,13 +362,13 @@
         </.link>
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex min-h-10 items-center gap-1 font-medium text-zinc-500 hover:text-zinc-300"
+          class="inline-flex min-h-10 items-center gap-1 font-medium text-zinc-400 hover:text-zinc-300"
         >
           Read the security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/compare/raw-ssh-for-ai"}
-          class="inline-flex min-h-10 items-center gap-1 font-medium text-zinc-500 hover:text-zinc-300"
+          class="inline-flex min-h-10 items-center gap-1 font-medium text-zinc-400 hover:text-zinc-300"
         >
           Compare with raw SSH <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>

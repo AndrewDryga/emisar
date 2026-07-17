@@ -60,13 +60,13 @@
 
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
           <div class="grid border-b border-zinc-900 sm:grid-cols-[10rem_1fr] sm:items-center">
-            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-500 sm:py-3">
+            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
               connector name
             </div>
             <code class="break-all px-3 pb-3 text-xs text-zinc-300 sm:py-3">Emisar</code>
           </div>
           <div class="grid sm:grid-cols-[10rem_1fr] sm:items-center">
-            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-500 sm:py-3">
+            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
               remote MCP server URL
             </div>
             <code class="break-all px-3 pb-3 text-xs text-brand-300 sm:py-3">
@@ -115,7 +115,7 @@
                 → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
               </li>
             </ol>
-            <p class="mt-3 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+            <p class="mt-3 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
               <strong class="text-zinc-400">Team / Enterprise:</strong>
               only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
               Members then open <strong>Customize → Connectors</strong>
@@ -178,7 +178,7 @@
                 choose <strong>Refresh</strong> before testing again.
               </li>
             </ol>
-            <p class="mt-3 text-xs leading-relaxed text-zinc-500">
+            <p class="mt-3 text-xs leading-relaxed text-zinc-400">
               ChatGPT connects to remote HTTPS MCP servers only — there is
               no stdio option. The emisar endpoint is already remote, so
               nothing extra to host.
@@ -234,7 +234,7 @@
           action. The dashboard reveals the raw key once; copy and store it.
         </p>
 
-        <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+        <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
           The cloud connectors in step 1 do <strong>not</strong>
           need an API key — they authenticate with OAuth. Mint a key only
           for the stdio bridge or plain-HTTP clients below.
@@ -282,7 +282,7 @@
           </div>
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
         </div>
-        <p class="mt-2 text-xs leading-5 text-zinc-500">
+        <p class="mt-2 text-xs leading-5 text-zinc-400">
           Rather verify first? The bridge release carries SLSA provenance + a
           <code class="font-mono">SHA256SUMS-MCP</code>
           checksum file — see <.link
@@ -450,7 +450,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           </section>
         </div>
 
-        <p class="mt-6 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+        <p class="mt-6 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
           <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>
           If a runner enforces <.link
             navigate={~p"/docs/signed-dispatch"}
