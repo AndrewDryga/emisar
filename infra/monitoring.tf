@@ -573,6 +573,16 @@ resource "google_monitoring_alert_policy" "recurrent_job_failures" {
   display_name = "Emisar: Recurrent Job Failed"
   combiner     = "OR"
 
+  documentation {
+    content   = "A supervised recurrent job crashed at the executor boundary (the `recurrent_job.failed` log line names the `job`). These sweeps drive dispatch timeouts, event/run retention, and the fleet-observability signal, so a crash-looping one silently stops that housekeeping. Check the failing job's error and whether it is a one-off or looping, plus any recent deploy touching that context's jobs/."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "background-jobs"
+    signal    = "errors"
+  }
+
   conditions {
     display_name = "Any recurrent job crash in 5 minutes"
     condition_threshold {
@@ -595,6 +605,16 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
   display_name = "Emisar: Paddle Reconciliation Failed"
   combiner     = "OR"
 
+  documentation {
+    content   = "A Paddle reconciliation failed (`billing_sync.retrieve_failed` / `billing_sync.upsert_failed`), so a subscription or entitlement change from Paddle may not have persisted and an account's plan gating can read stale. Check the log's error, the Paddle webhook delivery and signature, and whether the affected account's subscription row matches Paddle; replay the webhook if the failure was transient."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "billing"
+    signal    = "errors"
+  }
+
   conditions {
     display_name = "Any Paddle reconciliation failure in 5 minutes"
     condition_threshold {
@@ -616,6 +636,16 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
 resource "google_monitoring_alert_policy" "cluster_failures" {
   display_name = "Emisar: Application Cluster Formation Failed"
   combiner     = "OR"
+
+  documentation {
+    content   = "BEAM peer discovery or node distribution is failing (`cluster discovery failed` / `cluster: can't connect`), so the portal nodes may not have formed a cluster — PubSub fan-out and every cluster-singleton job (dispatch timeout, fleet observability) then run on the wrong node count or not at all. Check the log's error, whether instances resolve each other through GCE discovery (EMISAR_CLUSTER_PROJECT + the cluster tag), and any recent firewall or MIG change. A single node still serves; this is a degraded-coordination signal, not an outage."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "clustering"
+    signal    = "availability"
+  }
 
   conditions {
     display_name = "Persistent peer discovery or distribution failures in 5 minutes"
