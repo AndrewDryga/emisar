@@ -4406,11 +4406,11 @@ defmodule EmisarWeb.CoreComponents do
   defp stat_value_class(_), do: "text-zinc-50"
 
   @doc """
-  Install-a-runner wizard for the standalone `/app/runners/install` page.
-  The caller pre-mints the install command and passes it as a string (or
-  `:mint_failed` to render the fallback); after a grace period with no
-  runner it flips `show_troubleshooting` to reveal a checklist (the host
-  must reach `base_url`).
+  Install-a-runner wizard — the standalone `/app/runners/install` page and
+  the runners-list empty state. The caller pre-mints the install command and
+  passes it as a string (or `:mint_failed` to render the fallback); after a
+  grace period with no runner it flips `show_troubleshooting` to reveal a
+  checklist (the host must reach `base_url`).
 
       <.install_wizard install_command={@install_command} />
   """
@@ -4424,14 +4424,17 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <%!-- CONTENT ON CANVAS, task + rail: the DOING (command, credential note,
-         wait line) owns the left column; the READING (what the script does,
+    <%!-- CONTENT ON CANVAS, task + rail: the left column follows the
+         operator's own timeline — act (command + credential), wait (the live
+         ping line), recover (troubleshooting, revealed in place) — then the
+         script's trust facts as reference; the READING (what's a runner,
          resources) is a right rail at lg, stacking below on mobile. Columns
          separate by AIR alone — hairlines are row-lattice grammar, never
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
-         eyebrow as a section title. The command is the only contained artifact;
-         credential and connection alerts use the shared icon-capped spine. --%>
+         eyebrow as a section title. The command is the only contained
+         artifact; amber is reserved for the ONE overdue state — the
+         credential note and the normal wait stay neutral/brand. --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
@@ -4458,11 +4461,13 @@ defmodule EmisarWeb.CoreComponents do
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
                        only here. Keeping it out of chat/tickets is an operator
-                       action, so it uses the same alert spine as every other
-                       copy-now credential warning. --%>
+                       action — but the note is a permanent property of the
+                       command, not an exceptional state, so the spine stays
+                       NEUTRAL: amber on this page belongs to the overdue
+                       escalation alone. --%>
                   <.event_block
                     icon="hero-key"
-                    tone={:amber}
+                    tone={:neutral}
                     title="Live credential — won't be shown again"
                     class="mt-5"
                   >
@@ -4473,22 +4478,59 @@ defmodule EmisarWeb.CoreComponents do
                       paste it straight onto the host, never into a chat or ticket.
                     </:body>
                   </.event_block>
-                  <%!-- The alternate path is routing, not warning — it lives
-                         outside the credential note, right after the one-time
-                         story it forks from. --%>
-                  <p :if={@show_keys_link} class="mt-4 text-sm leading-relaxed text-zinc-400">
-                    Baking an image, or enrolling a whole fleet with cloud-init? Mint a
-                    <span class="font-medium text-zinc-400">multi-use</span>
-                    key under
-                    <.link
-                      navigate={@keys_path}
-                      class="group inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-                    >
-                      Enrollment keys <.cta_arrow />
-                    </.link>
-                  </p>
                 </section>
 
+                <%!-- The page's live status — the naked dot-led wait line
+                     (the wait-room grammar sso_pending copies), directly
+                     under the act it follows so the operator's eye never has
+                     to jump static content to find the page's one live
+                     element. Waiting is this page's NORMAL state: a quiet
+                     brand ping (channel open, listening), never an alert. --%>
+                <div>
+                  <div class="flex items-start gap-3">
+                    <%!-- mt-[6px]: optically centers the 10px dot on the first
+                         text line (text-sm/relaxed ≈ 23px line box). --%>
+                    <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
+                    <p class="text-sm leading-relaxed text-zinc-400">
+                      <span class="font-medium text-zinc-300">Waiting for a runner to connect</span>
+                      — this page advances on its own; you can leave, and the runner will appear in
+                      Runners either way.
+                    </p>
+                  </div>
+
+                  <%!-- After the grace period with no join (the install
+                       page's watchdog flips show_troubleshooting) the likely
+                       funnel failure is a wrong/truncated key, :443
+                       firewalled, or a non-systemd host. Escalates HERE —
+                       beside the wait line the operator is already watching —
+                       and only THIS overdue state wears amber. --%>
+                  <.event_block
+                    :if={@show_troubleshooting}
+                    icon="hero-signal"
+                    tone={:amber}
+                    title="Not seeing it yet?"
+                    class="mt-5"
+                  >
+                    <:body>Check the host:</:body>
+                    <.steps class="mt-3">
+                      <:step>
+                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                        over outbound HTTPS (nothing needs to listen on it).
+                      </:step>
+                      <:step>
+                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                        and the key wasn't truncated on paste.
+                      </:step>
+                      <:step>
+                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                      </:step>
+                    </.steps>
+                  </.event_block>
+                </div>
+
+                <%!-- Reference, not task — reads AFTER the wait line so the
+                     act→wait pair stays adjacent; a first-run skeptic scans
+                     here before pasting. --%>
                 <section>
                   <.section_header title="What the script does" />
                   <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
@@ -4539,44 +4581,6 @@ defmodule EmisarWeb.CoreComponents do
                     </.link>
                   </div>
                 </section>
-
-                <%!-- The page's live status uses the shared alert spine. The
-                     credential note above remains quieter because it describes
-                     the command; this block describes what the system is waiting
-                     on. Troubleshooting stays inside the same spine. --%>
-                <.event_block
-                  icon="hero-signal"
-                  tone={:amber}
-                  title="Waiting for a runner to connect"
-                >
-                  <:body>
-                    This page advances on its own — you can leave; the runner will appear
-                    in Runners either way.
-                  </:body>
-
-                  <%!-- After the grace period with no join (the install
-                       page's watchdog flips show_troubleshooting) the likely
-                       funnel failure is a wrong/truncated key, :443 firewalled,
-                       or a non-systemd host. --%>
-                  <div :if={@show_troubleshooting} class="mt-5">
-                    <div class="text-sm font-medium text-zinc-300">
-                      Not seeing it yet? Check the host:
-                    </div>
-                    <.steps class="mt-3">
-                      <:step>
-                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                        over outbound HTTPS (nothing needs to listen on it).
-                      </:step>
-                      <:step>
-                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                        and the key wasn't truncated on paste.
-                      </:step>
-                      <:step>
-                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                      </:step>
-                    </.steps>
-                  </div>
-                </.event_block>
               </div>
             <% @install_command == :mint_failed -> %>
               <.event_block
@@ -4600,10 +4604,10 @@ defmodule EmisarWeb.CoreComponents do
           <% end %>
         </div>
 
-        <%!-- The reading rail — the script's trust facts + other ways in,
-             true for every wizard state (a failed mint still deserves the
-             manual-install door). Quiet rows on the canvas, never island
-             cards competing with the task. --%>
+        <%!-- The reading rail — what a runner is + the other ways in (docs,
+             multi-use keys, packs), true for every wizard state (a failed
+             mint still deserves the manual-install door). Quiet rows on the
+             canvas, never island cards competing with the task. --%>
         <aside class="mt-10 space-y-8 lg:mt-0">
           <%!-- Beginner framing first — someone installing their first runner
                needs "what is this and why" before "what the script does". --%>
@@ -4644,6 +4648,27 @@ defmodule EmisarWeb.CoreComponents do
                   </div>
                   <.icon
                     name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
+              <%!-- The docs row above covers image-bake/cloud-init; this is
+                   its in-product twin — those paths need a multi-use key,
+                   not the one-shot key baked into the command. Routing for a
+                   different journey lives HERE, off the act→wait timeline. --%>
+              <li :if={@show_keys_link}>
+                <.link
+                  navigate={@keys_path}
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Enrollment keys</div>
+                    <div class="mt-0.5 text-xs text-zinc-400">
+                      Mint a multi-use key for cloud-init fleets and baked images.
+                    </div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-right"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>

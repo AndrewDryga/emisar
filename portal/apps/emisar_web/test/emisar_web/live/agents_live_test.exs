@@ -261,6 +261,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "emk-"
       assert html =~ "New key minted"
 
+      # The live wait line follows the setup; pre-connect the page carries NO
+      # amber spine — the minted note is neutral and the wait is a brand ping.
+      assert html =~ "Waiting for your agent"
+      refute html =~ "bg-amber-300/40"
+
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))

@@ -33,14 +33,20 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert html =~ ~s(data-copy-text=" curl -sSL)
     end
 
-    test "puts the script details in the main install flow", %{conn: conn, account: account} do
+    test "puts the live wait status directly after the command, before the script details", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
-      {script_pos, _} = :binary.match(html, "What the script does")
       {waiting_pos, _} = :binary.match(html, "Waiting for a runner to connect")
+      {script_pos, _} = :binary.match(html, "What the script does")
 
-      assert script_pos < waiting_pos
-      assert html =~ "bg-amber-300/40"
+      assert waiting_pos < script_pos
+      # Pre-grace the page carries NO amber spine — the credential note is
+      # neutral and the wait is a brand ping; amber belongs to the overdue
+      # "Not seeing it yet?" escalation alone.
+      refute html =~ "bg-amber-300/40"
       refute html =~ "border-dashed border-amber"
     end
 

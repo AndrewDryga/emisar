@@ -301,6 +301,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Not seeing it yet?"
       assert html =~ "truncated on paste"
       assert html =~ "journalctl -u emisar -f"
+      # The overdue escalation is the ONE amber state on the page.
+      assert html =~ "bg-amber-300/40"
     end
 
     test "redirects anonymous users to /sign_in", %{conn: conn} do

@@ -1322,20 +1322,18 @@ defmodule EmisarWeb.AgentsLive do
                   again. Lost it later? Pick this client again for a fresh key.
                 </.minted_note>
               </div>
-
-              <.auto_permit_block
-                client_id={@selected_client}
-                client_label={client_label(@selected_client)}
-                auto_permit={Map.get(@config, :auto_permit)}
-              />
             </div>
         <% end %>
 
         <%!-- Live connection status for the just-minted key — the agents analog
-             of the runner-install "waiting → connected" watchdog. Keyed to THIS
-             key's id (the api_key.first_used handler), so a different agent
-             connecting can't flip it. Amber pending → brand once its first call
-             lands (instant via the broadcast, tick as the fallback). --%>
+             of the runner-install "waiting → connected" watchdog, sitting
+             directly after the setup it follows (the optional auto-permit
+             disclosure reads below it). Keyed to THIS key's id (the
+             api_key.first_used handler), so a different agent connecting
+             can't flip it. Waiting is the page's NORMAL state, so it stays
+             the quiet dot-led wait line (the wait-room grammar) — the brand
+             connected block takes over once its first call lands (instant
+             via the broadcast, tick as the fallback). --%>
         <%= cond do %>
           <% is_nil(@quick_key_id) -> %>
             <span></span>
@@ -1361,18 +1359,28 @@ defmodule EmisarWeb.AgentsLive do
               </:body>
             </.event_block>
           <% true -> %>
-            <.event_block
-              icon="hero-signal"
-              tone={:amber}
-              title="Waiting for your agent's first call"
-              class="mt-8"
-            >
-              <:body>
-                This updates on its own the moment your agent connects — you can leave; it'll
-                show in the agents list either way.
-              </:body>
-            </.event_block>
+            <div class="mt-8 flex items-start gap-3">
+              <%!-- mt-[6px]: optically centers the 10px dot on the first
+                   text line (text-sm/relaxed ≈ 23px line box). --%>
+              <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
+              <p class="text-sm leading-relaxed text-zinc-400">
+                <span class="font-medium text-zinc-300">Waiting for your agent's first call</span>
+                — this updates on its own; you can leave, and the agent will show in the
+                agents list either way.
+              </p>
+            </div>
         <% end %>
+
+        <%!-- Optional, off the act→wait timeline — reads after the live
+             status for local clients (remote keeps its copy inside
+             remote_mcp_panel, which has no wait status). --%>
+        <div :if={@config && @config.kind != :remote && Map.get(@config, :auto_permit)} class="mt-8">
+          <.auto_permit_block
+            client_id={@selected_client}
+            client_label={client_label(@selected_client)}
+            auto_permit={Map.get(@config, :auto_permit)}
+          />
+        </div>
       </div>
 
       <%!-- The reading rail — how agent keys work, so the operator minting a
@@ -1421,9 +1429,11 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # Thin wrapper over the shared alert spine so the "New key minted"
-  # phrase + its key/amber identity live in ONE place for the three quick-mint
-  # branches.
+  # Thin wrapper over the shared alert spine so the "New key minted" phrase +
+  # its key identity live in ONE place for the three quick-mint branches.
+  # NEUTRAL, not amber — the copy-now caution is a permanent property of a
+  # fresh mint, not an exceptional state (the install-wizard grammar); amber
+  # stays reserved for a state that needs the operator's attention.
   attr :class, :string, default: nil
   slot :inner_block, required: true
 
@@ -1431,7 +1441,7 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <.event_block
       icon="hero-key"
-      tone={:amber}
+      tone={:neutral}
       title="New key minted — it's live now"
       class={@class}
     >
