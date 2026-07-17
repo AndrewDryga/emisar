@@ -130,7 +130,7 @@ defmodule EmisarWeb.MarketingController do
               "url" => @base,
               "logo" => @base <> "/images/brand/emisar-logo.png",
               "description" =>
-                "Give AI tools approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
+                "Give AI agents approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
             },
             %{
               "@type" => "SoftwareApplication",
@@ -162,9 +162,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "Give AI tools approved infrastructure actions, not SSH",
+      page_title: "Give AI agents safe production access — approved actions, not SSH",
       meta_description:
-        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
+        "One MCP server gives Claude, Cursor, ChatGPT — any AI agent — declared, policy-gated actions on your infrastructure instead of SSH. Safe work runs unattended; every call is audited.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: EmisarWeb.PacksRegistry.pack_count(),

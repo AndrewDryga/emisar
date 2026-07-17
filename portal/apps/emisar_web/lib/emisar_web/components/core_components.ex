@@ -5879,7 +5879,7 @@ defmodule EmisarWeb.CoreComponents do
               <.brand size={:md} />
             </.link>
             <p class="mt-4 max-w-xs text-sm text-zinc-500">
-              Give AI tools approved infrastructure actions, not SSH.
+              Give AI agents approved infrastructure actions, not SSH.
             </p>
             <p class="mt-3 max-w-xs text-xs leading-relaxed text-zinc-600">
               The runner, MCP bridge, and packs are Apache-2.0 open source; the control-plane
