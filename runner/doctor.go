@@ -100,6 +100,10 @@ func runDoctor(ctx context.Context) []checkResult {
 		results = append(results, checkActionBinaries(registry))
 	}
 
+	if service := checkService(ctx); service != nil {
+		results = append(results, *service)
+	}
+
 	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout})
 	results = append(results, checkCloud(ctx, cfg, client))
 
