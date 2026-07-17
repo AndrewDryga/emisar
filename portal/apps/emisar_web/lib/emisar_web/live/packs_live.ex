@@ -992,6 +992,7 @@ defmodule EmisarWeb.PacksLive do
           <header class="flex items-baseline gap-2 border-b border-zinc-800/70 pb-2">
             <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
             <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
+            <.registry_link pack_id={pack.id} />
             <.status_badge
               :if={any_pending?(pack.versions)}
               status="pending"
@@ -1038,9 +1039,6 @@ defmodule EmisarWeb.PacksLive do
                     >
                       sha256:{short_hash(v.hash || v.pending_hash)}
                     </span>
-                    <%!-- If this exact trusted hash is a published pack version,
-                         link out to its public registry page (opens in a new tab). --%>
-                    <.registry_link version={v} />
                     <%!-- A trusted version a newer release RETIRED — a scannable
                          rose flag in the list; the full warning + admin override
                          renders below via `retired_notice`. --%>
@@ -1483,15 +1481,14 @@ defmodule EmisarWeb.PacksLive do
     hash |> String.replace_prefix("sha256:", "") |> String.slice(0, 12)
   end
 
-  attr :version, :map, required: true
+  attr :pack_id, :string, required: true
 
-  # A link out to the public pack-registry page — but ONLY when this trusted
-  # version's hash is the currently-published one, so the link always lands on
-  # exactly the version the operator trusted (a `computePackHash` match, the same
-  # algorithm both sides). Renders nothing for a custom pack, or a version that
-  # isn't what the registry currently ships.
+  # A link out to the public pack-registry page. The registry page is
+  # pack-scoped (one page per pack id), so the link lives on the pack header
+  # — riding a version row implied it was version-specific and confused the
+  # placement. Renders nothing for a custom pack the registry doesn't ship.
   defp registry_link(assigns) do
-    assigns = assign(assigns, :url, registry_pack_url(assigns.version))
+    assigns = assign(assigns, :url, registry_pack_url(assigns.pack_id))
 
     ~H"""
     <.link
@@ -1500,22 +1497,16 @@ defmodule EmisarWeb.PacksLive do
       target="_blank"
       rel="noopener"
       class="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-brand-400 hover:text-brand-300"
-      title="This exact version is published in emisar's public pack registry — opens in a new tab"
+      title="Published in emisar's public pack registry — opens in a new tab"
     >
       Registry <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3" />
     </.link>
     """
   end
 
-  defp registry_pack_url(%{trust_state: :trusted, pack_id: pack_id, hash: hash})
-       when is_binary(pack_id) and is_binary(hash) do
-    case EmisarWeb.PacksRegistry.get(pack_id) do
-      %{content_hash: ^hash} -> ~p"/packs/#{pack_id}"
-      _ -> nil
-    end
+  defp registry_pack_url(pack_id) when is_binary(pack_id) do
+    if EmisarWeb.PacksRegistry.get(pack_id), do: ~p"/packs/#{pack_id}", else: nil
   end
-
-  defp registry_pack_url(_), do: nil
 
   # The diff block renders only when there's something to show — a re-advertised
   # hash whose action set moved vs the stored `trusted_manifest`. nil (dead
