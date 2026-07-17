@@ -1572,7 +1572,11 @@ defmodule Emisar.Accounts do
   token — the presented raw token is re-hashed for the lookup (only its digest
   is at rest) and invitations lapse after
   `Membership.Query.invitation_not_expired/1`'s window. Returns the membership
-  with the requested preloads, or `{:error, :not_found}`.
+  with the requested preloads, `{:error, :expired}` for a real pending
+  invitation past its window (the bearer holds the emailed token, so naming
+  the state is not an enumeration oracle), or `{:error, :not_found}` for
+  everything else — garbage, revoked, and accepted-then-burned tokens are
+  deliberately indistinguishable (acceptance clears the digest).
 
   Options: `preload:` — associations the caller renders (`:account`,
   `:user`); omit when only the row itself is needed.
@@ -1581,16 +1585,35 @@ defmodule Emisar.Accounts do
 
   def fetch_invitation_by_token(token, opts) when is_binary(token) and byte_size(token) > 0 do
     {preloads, _opts} = Keyword.pop(opts, :preload, [])
+    digest = Crypto.user_invite_token_digest(token)
 
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_invitation_token_digest(Crypto.user_invite_token_digest(token))
-    |> Membership.Query.pending_invitation()
-    |> Membership.Query.invitation_not_expired()
-    |> apply_membership_preloads(preloads)
-    |> Repo.fetch(Membership.Query)
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_invitation_token_digest(digest)
+      |> Membership.Query.pending_invitation()
+      |> Membership.Query.invitation_not_expired()
+      |> apply_membership_preloads(preloads)
+
+    case Repo.fetch(queryable, Membership.Query) do
+      {:ok, membership} -> {:ok, membership}
+      {:error, :not_found} -> classify_dead_invitation(digest)
+    end
   end
 
   def fetch_invitation_by_token(_, _opts), do: {:error, :not_found}
+
+  # The happy-path fetch above missed: tell a lapsed-but-real pending invitation
+  # apart from a token that resolves to nothing actionable.
+  defp classify_dead_invitation(digest) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_invitation_token_digest(digest)
+
+    case Repo.peek(queryable) do
+      %Membership{invitation_accepted_at: nil} -> {:error, :expired}
+      _ -> {:error, :not_found}
+    end
+  end
 
   @doc """
   Internal — invitation-accept flow: takes the `%Users.User{}` (not a

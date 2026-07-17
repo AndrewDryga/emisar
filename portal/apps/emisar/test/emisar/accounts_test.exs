@@ -2886,7 +2886,9 @@ defmodule Emisar.AccountsTest do
         |> Ecto.Changeset.change(inserted_at: expired_at, updated_at: expired_at)
         |> Repo.update!()
 
-      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
+      # Still pending, past the window: :expired (the digest is only burned by
+      # acceptance or replaced by the resend below — after which :not_found).
+      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :expired}
 
       assert {:ok,
               %{

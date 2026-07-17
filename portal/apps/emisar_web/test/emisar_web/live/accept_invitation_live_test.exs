@@ -16,27 +16,47 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
   end
 
   describe "token gate" do
-    test "a bogus token bounces to sign-in with cause-neutral copy", %{conn: _conn} do
-      assert {:error, {:live_redirect, %{to: "/sign_in", flash: flash}}} =
-               live(build_conn(), ~p"/accept_invitation/not-a-real-token")
-
-      # Cause-neutral: a mistyped/garbage token shouldn't claim "expired".
-      assert flash["error"] =~ "isn't valid"
-      refute flash["error"] =~ "expired"
-    end
-
-    test "a blank (whitespace-only) token resolves to nothing and bounces to sign-in", %{
+    test "a bogus token renders the Invitation-unavailable page with cause-neutral copy", %{
       conn: _conn
     } do
+      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/not-a-real-token")
+
+      # The state renders ON the page (inline-errors house rule) with a
+      # recovery action. Cause-neutral: a mistyped/garbage token shouldn't
+      # claim "expired", and the page names no account.
+      assert html =~ "Invitation unavailable"
+      assert html =~ "isn&#39;t valid or is no longer available"
+      assert html =~ "Go to sign in"
+      refute html =~ "expired"
+    end
+
+    test "a blank (whitespace-only) token renders the same unavailable page", %{conn: _conn} do
       # the route carries the token as a path segment, so the
       # empty case is a whitespace-only token: `fetch_invitation_by_token` requires a
-      # real (non-empty) binary and never matches one, so the mount bounces to
-      # /sign_in with the same cause-neutral "isn't valid" copy — no invite is
-      # resolvable from a blank token.
-      assert {:error, {:live_redirect, %{to: "/sign_in", flash: flash}}} =
-               live(build_conn(), ~p"/accept_invitation/#{"   "}")
+      # real (non-empty) binary and never matches one — same cause-neutral page,
+      # no invite resolvable from a blank token.
+      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/#{"   "}")
 
-      assert flash["error"] =~ "isn't valid"
+      assert html =~ "Invitation unavailable"
+    end
+
+    test "an expired invitation names the state and asks for a fresh one", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
+
+      {:ok, _} =
+        membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Emisar.Repo.update()
+
+      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      # The bearer holds the real emailed token, so naming the expiry is not an
+      # enumeration oracle — but the page still names no account.
+      assert html =~ "Invitation expired"
+      assert html =~ "send a fresh one"
+      refute html =~ account.name
     end
   end
 

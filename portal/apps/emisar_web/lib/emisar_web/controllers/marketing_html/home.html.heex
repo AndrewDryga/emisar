@@ -168,9 +168,9 @@
   <%!-- "Your AI is brilliant. And blind." — the canonical "what your agent
        gains with production access" section: the brilliant-and-blind framing,
        the read-everything breadth, and the act-only-behind-approval line.
-       Unshaded so the page alternates cleanly after the dark hero + proof
-       strip. --%>
-  <section class="py-24 sm:py-32">
+       Shaded: it takes the alternation slot the removed pain section held —
+       the alternatives argument now lives with the comparison table below. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <%!-- Asymmetric layout (left pitch / right capability list), deliberately
            NOT the centered card-grid the page uses elsewhere — it gives the top
@@ -225,65 +225,9 @@
     </div>
   </section>
 
-  <%!-- Pain section. Shaded — it takes the slot the (now-removed) dark
-       Assume-Breach panel used to separate, keeping the section rhythm
-       alternating. --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-brand-400">How it's done today</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Today, your AI agent is either:
-        </p>
-        <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Three common setups for letting an agent act — and each fails the same way: no gate
-          before the action, no trustworthy record after.
-        </p>
-      </div>
-
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 lg:max-w-none lg:grid-cols-3">
-        <div class="rounded-2xl border border-red-900/40 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-red-900/60">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/10 text-red-400">
-            <.icon name="hero-command-line" class="h-5 w-5" />
-          </div>
-          <h3 class="mt-6 text-xl font-semibold text-white">Given a raw SSH key</h3>
-          <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Full shell on prod. The model is "creative." A malformed request can become
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs text-red-300">
-              rm&nbsp;-rf&nbsp;/var/lib/postgresql
-            </code>
-            with no policy gate and no durable record of why it happened.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-amber-900/40 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-amber-900/60">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
-            <.icon name="hero-puzzle-piece" class="h-5 w-5" />
-          </div>
-          <h3 class="mt-6 text-xl font-semibold text-white">Wired to a custom tool server</h3>
-          <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Two engineers built a custom MCP server in a weekend. It hardcodes one cluster,
-            swallows stderr, has no approval flow, and lives in a repo nobody dares touch.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-500/10 text-zinc-400">
-            <.icon name="hero-chat-bubble-left-right" class="h-5 w-5" />
-          </div>
-          <h3 class="mt-6 text-xl font-semibold text-white">Asked to "/runbook" in Slack</h3>
-          <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Twenty-three slash commands, three owners, two of whom left in 2024.
-            Write-only output, lost in channel scrollback, and the audit trail is whatever
-            you remember from the postmortem.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <%!-- Three-pillar deep-dive — the mechanism, placed right after the pain it
-       answers: the alternatives leave "no gate before, no record after"; emisar's
-       answer is a catalog, a gate, and a ledger. Unshaded, so it alternates
-       between the shaded pain above and the shaded demo below. --%>
+  <%!-- Three-pillar deep-dive — the mechanism: a catalog, a gate, and a ledger.
+       Unshaded, so it alternates between the shaded capabilities above and the
+       shaded demo below. --%>
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
@@ -468,38 +412,6 @@
       </div>
 
       <.emisar_demo />
-
-      <%!-- The four guarantees the demo just exercised, kept as scannable
-           value props (and crawlable copy). --%>
-      <dl class="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-        <%= for {icon, term, desc} <- [
-          {"hero-cpu-chip", "Any MCP client",
-           "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
-          {"hero-shield-exclamation", "Pack trust",
-           "New or changed packs stop running until an admin trusts the contents."},
-          {"hero-hand-raised", "Approvals & grants",
-           "Approve one call, or hand out a revocable pass — limited by time, arguments, runner, and number of uses."},
-          {"hero-document-check", "Searchable audit",
-           "See who ran what, and on whose behalf, in the portal — or stream it to your SIEM."}
-        ] do %>
-          <div>
-            <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <.icon name={icon} class="h-4 w-4 flex-none text-brand-400" />{term}
-            </dt>
-            <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
-          </div>
-        <% end %>
-      </dl>
-
-      <p class="mt-10 text-center text-sm">
-        <.link
-          navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Read the full post-mortem — the multipath race, the dmesg window, and the Terraform fix
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </p>
     </div>
   </section>
 
@@ -510,6 +422,12 @@
         <h2 class="text-base font-semibold text-brand-400">Why not just&hellip;</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
           The alternatives, honestly.
+        </p>
+        <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
+          A raw SSH key gives a "creative" model full shell on prod — no gate before the action,
+          no trustworthy record after. The weekend-built MCP server hardcodes one cluster,
+          swallows stderr, and lives in a repo nobody dares touch. Slack slash-commands lose
+          their output to scrollback and their owners to attrition. The comparison, honestly:
         </p>
       </div>
 
@@ -682,20 +600,6 @@
           can edit. emisar enforces exactly that. And the controls the framework reserves for its
           top tiers ship on emisar's Free plan.
         </p>
-      </div>
-
-      <div class="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <%= for {principle, detail} <- [
-          {"Least agency", "The agent only sees the actions you declared"},
-          {"Human in the loop", "High-risk actions stop for a one-click approval"},
-          {"Full audit trail", "Searchable portal audit, a tamper-evident hash-chained host journal, and SIEM export"},
-          {"Assume breach", "Even a jailbroken agent can't get past the catalog"}
-        ] do %>
-          <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-left">
-            <h3 class="text-sm font-semibold text-brand-300">{principle}</h3>
-            <p class="mt-2 text-sm leading-6 text-zinc-400">{detail}</p>
-          </div>
-        <% end %>
       </div>
 
       <div class="mt-10 text-center">

@@ -18,14 +18,21 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
   def mount(%{"token" => token}, _session, socket) do
     case Accounts.fetch_invitation_by_token(token, preload: [:account, :user]) do
-      {:error, :not_found} ->
+      # A dead link renders its state ON the page (never redirect + flash —
+      # the inline-errors house rule) with a heading that names what happened.
+      # The two states deliberately share one render: acceptance burns the
+      # token digest, so "already used" is indistinguishable from garbage and
+      # the copy says "no longer available" instead of guessing. Neither state
+      # names the account — a stale link's bearer learns nothing.
+      {:error, reason} when reason in [:not_found, :expired] ->
+        {title, body} = invitation_error_copy(reason)
+
         {:ok,
          socket
-         |> put_flash(
-           :error,
-           "That invitation link isn't valid. Ask whoever invited you to send a fresh one."
-         )
-         |> push_navigate(to: ~p"/sign_in")}
+         |> assign(:page_title, title)
+         |> assign(:error_title, title)
+         |> assign(:error_body, body)
+         |> assign(:state, :invitation_unavailable)}
 
       {:ok, membership} ->
         {:ok,
@@ -37,6 +44,17 @@ defmodule EmisarWeb.AcceptInvitationLive do
          |> assign_form(Users.change_user(membership.user))
          |> assign(:state, derive_state(socket, membership))}
     end
+  end
+
+  defp invitation_error_copy(:expired) do
+    {"Invitation expired",
+     "This invitation's link has expired. Ask whoever invited you to send a fresh one."}
+  end
+
+  defp invitation_error_copy(:not_found) do
+    {"Invitation unavailable",
+     "This invitation link isn't valid or is no longer available. " <>
+       "Ask whoever invited you to send a fresh one."}
   end
 
   # Three possible states for the page render.
@@ -51,6 +69,20 @@ defmodule EmisarWeb.AcceptInvitationLive do
       %{} ->
         :signed_in_mismatch
     end
+  end
+
+  def render(%{state: :invitation_unavailable} = assigns) do
+    ~H"""
+    <.auth_layout title={@error_title}>
+      <div class="space-y-4 text-sm text-zinc-400">
+        <p>{@error_body}</p>
+
+        <.button navigate={~p"/sign_in"} class="mt-2 w-full">
+          Go to sign in
+        </.button>
+      </div>
+    </.auth_layout>
+    """
   end
 
   def render(%{state: :anonymous} = assigns) do

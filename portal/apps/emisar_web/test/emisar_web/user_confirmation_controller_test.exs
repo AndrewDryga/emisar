@@ -32,6 +32,25 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       assert Repo.reload!(user).confirmed_at
     end
 
+    test "a signed-in, already-confirmed user re-clicking a dead link gets 'all set', not an error",
+         %{conn: conn} do
+      # The common re-click: the first click confirmed and burned the token.
+      # The session's own confirmed state (no token oracle) turns the false
+      # alarm into an accurate info flash — UI-022.
+      user = unconfirmed_user()
+      token = Auth.issue_confirmation_token!(user)
+      {:ok, _} = Auth.confirm_user_by_token(token)
+
+      conn =
+        conn
+        |> log_in_user(Repo.reload!(user))
+        |> get(~p"/confirm/#{token}")
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "already confirmed"
+      refute Phoenix.Flash.get(conn.assigns.flash, :error)
+    end
+
     test "rejects an invalid or already-used token", %{conn: conn} do
       conn = get(conn, ~p"/confirm/this-is-not-a-real-token")
 

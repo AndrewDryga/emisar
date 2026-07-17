@@ -4,7 +4,7 @@ defmodule EmisarWeb.UserConfirmationController do
   `users.confirmed_at`.
   """
   use EmisarWeb, :controller
-  alias Emisar.Auth
+  alias Emisar.{Auth, Users}
   alias EmisarWeb.RequestContext
 
   def confirm(conn, %{"token" => token}) do
@@ -23,10 +23,23 @@ defmodule EmisarWeb.UserConfirmationController do
         |> redirect(to: post_confirm_path(signed_in?))
 
       {:error, :invalid_or_expired} ->
-        conn
-        |> put_flash(:error, "That confirmation link expired or was already used.")
-        |> redirect(to: post_confirm_path(signed_in?))
+        dead_confirm_link(conn, conn.assigns[:current_user])
     end
+  end
+
+  # The common re-click: the session's own user is already confirmed (usually
+  # by this very link's first click), so an accurate "all set" beats a false
+  # alarm — the session state is the user's own, no token oracle involved.
+  defp dead_confirm_link(conn, %Users.User{confirmed_at: %DateTime{}}) do
+    conn
+    |> put_flash(:info, "Your email is already confirmed — you're all set.")
+    |> redirect(to: ~p"/app")
+  end
+
+  defp dead_confirm_link(conn, current_user) do
+    conn
+    |> put_flash(:error, "That confirmation link expired or was already used.")
+    |> redirect(to: post_confirm_path(not is_nil(current_user)))
   end
 
   defp post_confirm_path(true), do: ~p"/app"

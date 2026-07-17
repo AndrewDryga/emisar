@@ -123,19 +123,20 @@ defmodule Emisar.InvitationTest do
       # the lookup's head requires a non-empty binary
       # (`is_binary(token) and byte_size(token) > 0`); a nil or "" token falls to
       # the catch-all `:not_found` clause rather than scanning. So an empty token
-      # param can never resolve an invite — the accept LV mount turns that
-      # `:not_found` into the cause-neutral bounce to /sign_in.
+      # param can never resolve an invite — the accept LV renders that
+      # `:not_found` as the cause-neutral "Invitation unavailable" page.
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(nil)
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
     end
 
-    test "an expired invitation no longer resolves", %{membership: membership, token: token} do
+    test "an expired invitation reports :expired (the bearer holds the real token)",
+         %{membership: membership, token: token} do
       # inserted_at IS the invite time (re-invites insert fresh rows) —
       # backdate it past the validity window.
       nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
       {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
 
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
+      assert {:error, :expired} = Accounts.fetch_invitation_by_token(token)
     end
 
     # the 7-day window (Membership.Query.invitation_not_expired).
@@ -146,13 +147,13 @@ defmodule Emisar.InvitationTest do
       assert {:ok, _} = Accounts.fetch_invitation_by_token(token)
     end
 
-    test "an invite just past 7 days no longer resolves", %{membership: membership, token: token} do
+    test "an invite just past 7 days reports :expired", %{membership: membership, token: token} do
       just_over_seven = DateTime.add(DateTime.utc_now(), -(7 * 24 * 3600 + 3600), :second)
 
       {:ok, _} =
         membership |> Ecto.Changeset.change(inserted_at: just_over_seven) |> Repo.update()
 
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
+      assert {:error, :expired} = Accounts.fetch_invitation_by_token(token)
     end
   end
 
