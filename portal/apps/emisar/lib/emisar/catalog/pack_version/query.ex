@@ -23,6 +23,9 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def pending(queryable \\ all()),
     do: where(queryable, [packs: p], p.trust_state == :pending)
 
+  def last_seen_before(queryable \\ all(), cutoff),
+    do: where(queryable, [packs: p], p.last_seen_at < ^cutoff)
+
   def ordered_by_pack(queryable \\ all()),
     do: order_by(queryable, [packs: p], asc: p.pack_id, asc: p.version)
 

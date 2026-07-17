@@ -27,12 +27,28 @@ defmodule Emisar.Catalog do
       trust keeps `hash`), so re-advertising the same bytes stays
       quiet; only a genuinely new hash re-opens the `:pending` review.
   """
+  use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo, Runners}
+  alias Emisar.{Accounts, Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline}
   alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    children = [
+      job_module("PackVersionRetention")
+    ]
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # The 1.0 catalog contains 80 packs and 1,270 actions. These limits leave
   # substantial growth headroom while bounding the per-advertisement DB work
@@ -766,6 +782,111 @@ defmodule Emisar.Catalog do
       [] -> {:error, :not_found}
       versions -> {:ok, versions}
     end
+  end
+
+  # -- Retention ---------------------------------------------------------
+
+  @doc """
+  Run the pack-retention sweep for the subject's account right now — the
+  packs page "Clean up now" button. Uses the account's configured window
+  (`settings.pack_unseen_retention_days`); `{:error, :retention_disabled}`
+  when automatic cleanup is off. Requires `manage_catalog`. Returns
+  `{:ok, deleted_count}`.
+  """
+  def sweep_unseen_pack_versions(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ),
+         {:ok, days} <- fetch_retention_days(subject) do
+      delete_unseen_pack_versions(subject.account.id, days, subject)
+    end
+  end
+
+  # The subject's account struct is a socket snapshot — read the setting fresh.
+  defp fetch_retention_days(%Subject{account: %{id: account_id}}) do
+    case Accounts.fetch_account_settings(account_id) do
+      {:ok, %{pack_unseen_retention_days: days}} when is_integer(days) and days > 0 ->
+        {:ok, days}
+
+      {:ok, _settings} ->
+        {:error, :retention_disabled}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Internal — the pack-retention sweep for one account: the daily
+  `Catalog.Jobs.PackVersionRetention` tick (no subject → system audit actor)
+  and `sweep_unseen_pack_versions/1` (operator actor). Deletes every pack
+  version no runner has advertised for `days` days — pin rows and their
+  advertised action rows — and records ONE `pack_retention_swept` audit
+  event only when something was removed. Returns `{:ok, deleted_count}`.
+  """
+  def delete_unseen_pack_versions(account_id, days, subject \\ nil)
+      when is_binary(account_id) and is_integer(days) and days > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
+
+    Multi.new()
+    |> Multi.run(:versions, fn repo, _changes ->
+      queryable =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_account_id(account_id)
+        |> PackVersion.Query.last_seen_before(cutoff)
+        |> PackVersion.Query.lock_for_update()
+
+      {:ok, repo.all(queryable)}
+    end)
+    |> Multi.run(:actions, fn repo, %{versions: versions} ->
+      {:ok, delete_advertised_actions(repo, account_id, versions)}
+    end)
+    |> Multi.run(:deleted, fn repo, %{versions: versions} ->
+      queryable =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_ids(Enum.map(versions, & &1.id))
+
+      {count, _} = repo.delete_all(queryable)
+      {:ok, count}
+    end)
+    |> Multi.run(:audit, fn repo, %{versions: versions} ->
+      record_retention_sweep(repo, versions, days, subject)
+    end)
+    |> Repo.commit_multi(
+      after_commit: fn %{deleted: deleted} ->
+        if deleted > 0, do: broadcast_pack_trust(account_id)
+        :ok
+      end
+    )
+    |> case do
+      {:ok, %{deleted: deleted}} -> {:ok, deleted}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp delete_advertised_actions(_repo, _account_id, []), do: 0
+
+  defp delete_advertised_actions(repo, account_id, versions) do
+    Enum.reduce(versions, 0, fn %PackVersion{} = version, total ->
+      queryable =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_account_id(account_id)
+        |> RunnerAction.Query.by_pack(version.pack_id, version.version)
+
+      {count, _} = repo.delete_all(queryable)
+      total + count
+    end)
+  end
+
+  # No marker when nothing was removed — scheduled housekeeping must not
+  # manufacture audit noise on inactive accounts.
+  defp record_retention_sweep(_repo, [], _days, _subject), do: {:ok, :nothing_removed}
+
+  defp record_retention_sweep(repo, versions, days, subject) do
+    actor = subject || hd(versions).account_id
+    repo.insert(Audit.Events.pack_retention_swept(actor, versions, days))
   end
 
   # The complete descriptors advertised for the exact pending hash — read

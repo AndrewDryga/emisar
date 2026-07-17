@@ -31,6 +31,7 @@ defmodule Emisar.Application do
       Emisar.Approvals,
       Emisar.Audit,
       Emisar.Billing,
+      Emisar.Catalog,
       Emisar.OAuth,
       Emisar.MCPOperations,
       Emisar.Runs

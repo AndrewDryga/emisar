@@ -21,7 +21,7 @@ defmodule EmisarWeb.PacksLive do
     * Hash later changes → pending.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runners}
+  alias Emisar.{Accounts, Catalog, Runners}
   alias EmisarWeb.ConfirmDialog
 
   def mount(_params, _session, socket) do
@@ -409,6 +409,37 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  def handle_event("set_pack_retention", %{"days" => raw}, socket) do
+    apply_pack_retention(socket, parse_retention_days(raw))
+  end
+
+  def handle_event("cleanup_now", _params, socket) do
+    case Catalog.sweep_unseen_pack_versions(socket.assigns.current_subject) do
+      {:ok, 0} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "Nothing to remove — every pack version was seen within the window."
+         )}
+
+      {:ok, count} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, cleanup_flash(count))
+         |> load_packs()}
+
+      {:error, :retention_disabled} ->
+        {:noreply, put_flash(socket, :error, "Turn on automatic cleanup first.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to clean up the catalog.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not clean up — try again.")}
+    end
+  end
+
   # Override the retirement of a trusted version — the deliberate, audited
   # admin decision that unblocks dispatch again. `override_pack_retirement/2`
   # re-checks manage_catalog (IL-15), so a crafted event from a viewer denies.
@@ -506,6 +537,66 @@ defmodule EmisarWeb.PacksLive do
 
   defp reject_flash(%Catalog.PackVersion{} = pack_version) do
     "Rejected #{pack_version.pack_id} v#{pack_version.version}. It stays listed as rejected — a runner advertising different contents will re-open the review."
+  end
+
+  defp apply_pack_retention(socket, :error),
+    do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
+
+  defp apply_pack_retention(socket, {:ok, days_or_nil}) do
+    case Accounts.update_account(
+           socket.assigns.current_account,
+           %{settings: %{pack_unseen_retention_days: days_or_nil}},
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> put_flash(:info, retention_set_flash(days_or_nil))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+    end
+  end
+
+  defp parse_retention_days(""), do: {:ok, nil}
+
+  defp parse_retention_days(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {days, ""} when days > 0 -> {:ok, days}
+      _ -> :error
+    end
+  end
+
+  defp retention_set_flash(nil), do: "Automatic cleanup turned off — pack versions are kept."
+
+  defp retention_set_flash(days),
+    do: "Automatic cleanup on — pack versions unseen for #{days} days are removed daily."
+
+  defp cleanup_flash(1), do: "Removed 1 pack version no runner has advertised recently."
+
+  defp cleanup_flash(count),
+    do: "Removed #{count} pack versions no runner has advertised recently."
+
+  defp retention_days_label(days), do: "after #{days} days unseen"
+
+  defp pack_retention_options(current) do
+    [
+      %{
+        value: "",
+        label: "Off — keep unseen versions",
+        selected: is_nil(current),
+        disabled: false
+      },
+      %{value: "7", label: "After 7 days unseen", selected: current == 7, disabled: false},
+      %{value: "14", label: "After 14 days unseen", selected: current == 14, disabled: false},
+      %{value: "30", label: "After 30 days unseen", selected: current == 30, disabled: false},
+      %{value: "60", label: "After 60 days unseen", selected: current == 60, disabled: false},
+      %{value: "90", label: "After 90 days unseen", selected: current == 90, disabled: false}
+    ]
   end
 
   # Re-render one pack group's stream item against the current assigns (a
@@ -1249,6 +1340,73 @@ defmodule EmisarWeb.PacksLive do
       <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-600">
         {count_footer(@pack_count, @version_count)}
       </p>
+
+      <%!-- Housekeeping: the catalog is derived state, so versions nothing
+           advertises anymore only pile up. Same grammar as the approvals
+           grant cap — the current setting rides in the header, the control
+           expands below; Clean up now runs the sweep immediately. --%>
+      <.collapsible_section id="packs-cleanup" title="Automatic cleanup" class="mt-8">
+        <:summary>
+          <span
+            :if={is_nil(@current_account.settings.pack_unseen_retention_days)}
+            class="flex items-center gap-1.5 text-xs"
+          >
+            <.status_dot tone={:neutral} size={:sm} />
+            <span class="text-zinc-400">off</span>
+            <span class="hidden text-zinc-500 sm:inline">
+              — unseen pack versions are kept forever
+            </span>
+          </span>
+          <span
+            :if={@current_account.settings.pack_unseen_retention_days}
+            class="text-xs text-zinc-400"
+          >
+            {retention_days_label(@current_account.settings.pack_unseen_retention_days)}
+          </span>
+        </:summary>
+
+        <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
+          Remove pack versions no runner has advertised for the selected period. A daily
+          sweep deletes them — trust decisions included — and a runner advertising one
+          again re-inserts it as a fresh trust decision.
+        </p>
+
+        <%= cond do %>
+          <% not Accounts.subject_can_manage_account?(@current_subject) -> %>
+            <p class="text-[11px] text-zinc-600">
+              Owner/admin only — the current setting is shown above.
+            </p>
+          <% true -> %>
+            <div class="flex flex-wrap items-center gap-3">
+              <form phx-change="set_pack_retention" class="w-full max-w-xs">
+                <.select
+                  name="days"
+                  aria-label="Remove pack versions not seen for"
+                  options={
+                    pack_retention_options(@current_account.settings.pack_unseen_retention_days)
+                  }
+                />
+              </form>
+              <.confirm_button
+                :if={@current_account.settings.pack_unseen_retention_days}
+                id="packs-cleanup-now"
+                variant={:secondary}
+                tone={:neutral}
+                size={:sm}
+                title="Clean up unseen pack versions?"
+                confirm_label="Clean up now"
+                on_confirm={JS.push("cleanup_now")}
+              >
+                <:body>
+                  Deletes every pack version no runner has advertised in the last {@current_account.settings.pack_unseen_retention_days} days
+                  — trust decisions included. Runners still advertising one will
+                  re-insert it as a fresh trust decision.
+                </:body>
+                Clean up now
+              </.confirm_button>
+            </div>
+        <% end %>
+      </.collapsible_section>
 
       <%!-- One page-level reject dialog (the rows are a stream, so it can't be
            per-row). It's always in the DOM so the trigger's `show` finds it;

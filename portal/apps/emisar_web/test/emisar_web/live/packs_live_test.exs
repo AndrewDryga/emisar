@@ -994,6 +994,94 @@ defmodule EmisarWeb.PacksLiveTest do
     end
   end
 
+  describe "automatic cleanup" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    defp stale_pack_version!(account) do
+      pack_version = observe_pending_pack!(account)
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(pack_version, forty_days_ago)
+    end
+
+    test "an owner turns the retention window on from the select", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert html =~ "Automatic cleanup"
+      assert html =~ "unseen pack versions are kept forever"
+
+      html =
+        lv
+        |> element("#packs-cleanup form")
+        |> render_change(%{"days" => "30"})
+
+      assert html =~ "Automatic cleanup on — pack versions unseen for 30 days are removed daily."
+      assert html =~ "after 30 days unseen"
+    end
+
+    test "Clean up now removes versions past the window", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      _account =
+        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      _stale = stale_pack_version!(account)
+      _subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      html = render_click(lv, "cleanup_now", %{})
+
+      assert html =~ "Removed 1 pack version no runner has advertised recently."
+      refute has_element?(lv, "#packs li", "acme-tools")
+    end
+
+    test "Clean up now with cleanup off explains the prerequisite", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert render_click(lv, "cleanup_now", %{}) =~ "Turn on automatic cleanup first."
+    end
+
+    test "a viewer sees the read-only note and crafted events are denied", %{account: account} do
+      _account =
+        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      stale = stale_pack_version!(account)
+
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+
+      assert html =~ "Owner/admin only"
+      refute has_element?(lv, "#packs-cleanup form")
+
+      assert render_click(lv, "set_pack_retention", %{"days" => "7"}) =~
+               "Only owners and admins can change this setting."
+
+      assert render_click(lv, "cleanup_now", %{}) =~ "Admin required to clean up the catalog."
+
+      # The stale row survived both crafted attempts.
+      assert Emisar.Repo.reload(stale)
+    end
+  end
+
   describe "filtering by action" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

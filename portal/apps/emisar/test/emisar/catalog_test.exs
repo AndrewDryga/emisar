@@ -1458,6 +1458,139 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "sweep_unseen_pack_versions/1" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "stale" => %{"version" => "1.0", "hash" => "sha256:STALE"},
+              "fresh" => %{"version" => "2.0", "hash" => "sha256:FRESH"}
+            },
+            actions: [
+              action("stale.check", pack_id: "stale"),
+              action("fresh.check", pack_id: "fresh")
+            ]
+          )
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      stale = Enum.find(versions, &(&1.pack_id == "stale"))
+
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(stale, forty_days_ago)
+
+      account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      %{user: user, account: account, subject: subject, runner: runner, stale: stale}
+    end
+
+    test "removes versions unseen past the window (and their action rows), audits the operator",
+         %{user: user, account: account, subject: subject, stale: stale} do
+      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+
+      {:ok, remaining, _} = Catalog.list_pack_versions(subject)
+      assert Enum.map(remaining, & &1.pack_id) == ["fresh"]
+      refute Repo.reload(stale)
+
+      remaining_action = Repo.one(Emisar.Catalog.RunnerAction)
+      assert remaining_action.action_id == "fresh.check"
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_retention_swept"))
+
+      assert audit, "expected a pack_retention_swept audit row"
+      assert audit.account_id == account.id
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert audit.payload["count"] == 1
+      assert audit.payload["unseen_days"] == 30
+      assert audit.payload["versions"] == ["stale@1.0"]
+    end
+
+    test "another account's stale versions survive this account's sweep", %{subject: subject} do
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      stale_b =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account_b.id,
+          pack_id: "b-tools",
+          version: "1.0"
+        )
+
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(stale_b, forty_days_ago)
+
+      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+
+      assert {:ok, [survivor], _} = Catalog.list_pack_versions(subject_b)
+      assert survivor.pack_id == "b-tools"
+    end
+
+    test "is :retention_disabled when automatic cleanup is off", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: nil})
+
+      assert {:error, :retention_disabled} = Catalog.sweep_unseen_pack_versions(subject)
+    end
+
+    test "a viewer subject is denied", %{account: account} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Catalog.sweep_unseen_pack_versions(viewer_subject)
+    end
+  end
+
+  describe "delete_unseen_pack_versions/3" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"stale" => %{"version" => "1.0", "hash" => "sha256:STALE"}})
+        )
+
+      {:ok, [stale], _} = Catalog.list_pack_versions(subject)
+
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(stale, forty_days_ago)
+
+      %{user: user, account: account, subject: subject, stale: stale}
+    end
+
+    test "the system sweep audits with a system actor", %{account: account, subject: subject} do
+      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_retention_swept"))
+
+      assert audit, "expected a pack_retention_swept audit row"
+      assert audit.actor_kind == "system"
+      assert audit.payload["count"] == 1
+    end
+
+    test "leaves no audit marker when nothing was removed", %{
+      account: account,
+      subject: subject
+    } do
+      # A 90-day window keeps the 40-day-old version — housekeeping that
+      # removes nothing must not manufacture audit noise.
+      assert {:ok, 0} = Catalog.delete_unseen_pack_versions(account.id, 90)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      refute Enum.any?(events, &(&1.event_type == "pack_retention_swept"))
+    end
+  end
+
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

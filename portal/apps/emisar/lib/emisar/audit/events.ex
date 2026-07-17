@@ -660,6 +660,45 @@ defmodule Emisar.Audit.Events do
   end
 
   @doc """
+  Pack retention removed versions no runner advertised within the account's
+  window — the daily sweep (system actor) or the packs page "Clean up now"
+  (operator actor). One event per sweep that removed anything.
+  """
+  def pack_retention_swept(%Subject{account: %{id: account_id}} = subject, versions, days)
+      when is_list(versions) do
+    Audit.changeset(
+      account_id,
+      "pack_retention_swept",
+      actor(subject) ++
+        [
+          target_kind: "pack_catalog",
+          target_label: "Pack catalog",
+          payload: pack_retention_payload(versions, days)
+        ]
+    )
+  end
+
+  def pack_retention_swept(account_id, versions, days)
+      when is_binary(account_id) and is_list(versions) do
+    Audit.changeset(account_id, "pack_retention_swept",
+      actor_kind: "system",
+      target_kind: "pack_catalog",
+      target_label: "Pack catalog",
+      payload: pack_retention_payload(versions, days)
+    )
+  end
+
+  # `count` is the truth; the label list is capped so one huge sweep can't
+  # balloon a payload row.
+  defp pack_retention_payload(versions, days) do
+    %{
+      count: length(versions),
+      unseen_days: days,
+      versions: versions |> Enum.take(100) |> Enum.map(&"#{&1.pack_id}@#{&1.version}")
+    }
+  end
+
+  @doc """
   Admin explicitly re-trusted an already-trusted pack version whose version
   was retired — the deliberate override that re-enables dispatch.
   """

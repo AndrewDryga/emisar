@@ -69,6 +69,16 @@ defmodule Emisar.Fixtures.Catalog do
     pack_version
   end
 
+  @doc "Test helper: backdate a pack version's `last_seen_at` (retention sweeps)."
+  def backdate_pack_version_last_seen(
+        %Catalog.PackVersion{} = pack_version,
+        %DateTime{} = seen_at
+      ) do
+    pack_version
+    |> Ecto.Changeset.change(last_seen_at: seen_at)
+    |> Repo.update!()
+  end
+
   @doc """
   Inserts a REJECTED pack version row with NOTHING recorded — the legacy
   shape a pre-revoke-era reject left behind (it cleared both hashes).
