@@ -95,6 +95,7 @@
           {Emisar.Checks.NoDateTimeTruncate, []},
           {Emisar.Checks.NoIfOnArgField, []},
           {Emisar.Checks.NoIslandContainers, []},
+          {Emisar.Checks.NoLowContrastText, []},
           {Emisar.Checks.NoPipeInBranchHead, []},
           {Emisar.Checks.NoPreloadInRepoOpts, []},
           {Emisar.Checks.NoProcessDictionary, []},

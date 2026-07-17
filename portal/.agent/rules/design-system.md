@@ -156,12 +156,20 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 | Eyebrow / meta label | `text-zinc-400` | the canonical small uppercase label (read below) |
 | Faint / decorative | `text-zinc-500` / `text-zinc-600` | a divider word ("or"), a purely decorative caption |
 
-> **Contrast (WCAG AA).** `zinc-400` body/intro text clears AA on the `zinc-950`
-> ground (~7.8:1); `zinc-500` (~4:1) and `zinc-600` (~2.5:1) do **not**. So reserve
-> `zinc-500`/`zinc-600` for genuinely de-emphasized or decorative bits, and use
-> **`zinc-400` for any SMALL essential secondary text** — a `text-[10px]`/`text-xs`
-> label, scope, count, or timestamp an operator actually has to read. When in doubt
-> at a small size, go `zinc-400`.
+> **Contrast (WCAG AA).** On the near-black grounds (`zinc-950` / black / `zinc-900`)
+> `zinc-400` clears AA at every size (~7.8:1) — the AA-safe muted tier for any
+> essential secondary text, and quieter than the `zinc-300` body / `zinc-100`
+> headings, so it keeps the de-emphasis register. `zinc-500` (~4:1) is
+> **size-dependent**: it FAILS AA for normal text but PASSES AA-large (≥24px, or
+> ≥18.66px bold), so keep it only on a large eyebrow/heading or a genuinely
+> decorative glyph/icon (where it also clears the 3:1 non-text bar); a **small**
+> `text-[10px]`/`text-xs`/`text-sm` label, scope, count, or timestamp an operator has
+> to read goes `zinc-400`. `zinc-600` (~2.3–2.7:1) **fails AA at every size** — never
+> on text; a decorative glyph/icon that must stay quiet uses `zinc-500`, not
+> `zinc-600`. The resting `text-zinc-600` rule is mechanically enforced
+> (`Emisar.Checks.NoLowContrastText`, which exempts `placeholder:`/`marker:`/`hover:`
+> variants); `zinc-500` stays a review rule — a static check can't judge its
+> size-dependence. When in doubt at a small size, go `zinc-400`.
 
 > **The eyebrow is ONE shape — don't re-tune it per page.** Every small uppercase
 > label (a meta-strip key, a section eyebrow like "REASON"/"ARGUMENTS", a stat tile
