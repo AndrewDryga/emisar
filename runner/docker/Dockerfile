@@ -73,6 +73,19 @@ RUN apt-get update -y \
     && chown root:root /opt/emisar/packs \
     && chmod 0755 /opt/emisar/packs
 
+# DEV-ONLY: the docker-compose demo stack flips DEV_TOOLS=true to add the
+# client binaries the seeded demo packs shell out to (postgres -> psql,
+# caddy / HTTP reads -> curl). Off by default so a real or self-hosted
+# runner image stays minimal — operators install only the binaries the
+# packs they actually run require.
+ARG DEV_TOOLS=false
+RUN if [ "$DEV_TOOLS" = "true" ]; then \
+        apt-get update -y \
+        && apt-get install -y --no-install-recommends postgresql-client curl \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 COPY --from=builder /out/emisar /usr/local/bin/emisar
 COPY --chown=root:root packs /opt/emisar/packs
 COPY --chown=root:emisar runner/docker/config.yaml /etc/emisar/config.yaml

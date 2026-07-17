@@ -263,6 +263,10 @@ services:
       dockerfile: runner/docker/Dockerfile
       args:
         RUNNER_VERSION: "0.10.0"
+        # Bake the demo packs' client binaries (psql, curl) into the dev
+        # image so seeded postgres/caddy actions execute instead of erroring
+        # "executable not found". Off in a real build (see runner/docker/Dockerfile).
+        DEV_TOOLS: "true"
     image: emisar/runner:dev
     hostname: edge-fra-01.northstar.example
     depends_on:
@@ -296,6 +300,17 @@ services:
   runner-3:
     <<: *runner
     hostname: pg-primary-iad.northstar.example
+    # Point the postgres demo pack at the dev `db` service so its read-only
+    # diagnostics execute for real (psql reads these libpq vars, forwarded to
+    # the action via inherit_env in pg-primary-iad.yaml). An explicit
+    # environment: replaces the anchor's, so the bootstrap vars are repeated.
+    environment:
+      EMISAR_URL: "http://portal:4000"
+      EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      PGHOST: "db"
+      PGUSER: "postgres"
+      PGPASSWORD: "postgres"
+      PGDATABASE: "emisar_dev"
     volumes:
       - runner_3_data:/var/lib/emisar
       - ./dev/runners/pg-primary-iad.yaml:/etc/emisar/config.yaml:ro

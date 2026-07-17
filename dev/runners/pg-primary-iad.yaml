@@ -25,16 +25,18 @@ paths:
   data_dir: "/var/lib/emisar"
   work_dir: "/tmp/emisar"
   # Database host: the postgres pack (read-only diagnostics + a couple of
-  # high-risk write actions) + linux-core. No Postgres backs this demo
-  # runner, so the postgres actions advertise + sit in the trusted catalog
-  # (and carry seeded run history) but a fresh LIVE dispatch fails cleanly
-  # with a connection error. linux-core runs for real off the container.
+  # high-risk write actions) + linux-core. The compose stack points this
+  # runner at the dev `db` service (PG* env below), so the read-only postgres
+  # diagnostics execute for real against emisar_dev; the high-risk writes stay
+  # approval-gated. linux-core runs for real off the container.
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/postgres"
 
 execution:
-  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
+  # PG* forward the libpq connection to the psql actions (the postgres pack's
+  # documented mechanism); the compose stack sets them to reach `db`.
+  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM", "PGHOST", "PGUSER", "PGPASSWORD", "PGDATABASE"]
   cancel_grace: "30s"
 
 events:
