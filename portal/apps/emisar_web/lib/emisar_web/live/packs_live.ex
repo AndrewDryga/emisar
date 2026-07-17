@@ -1391,12 +1391,14 @@ defmodule EmisarWeb.PacksLive do
                   }
                 />
               </form>
+              <%!-- :lg matches the select's control height (px-3 py-2.5
+                   text-sm) so the pair shares one row line. --%>
               <.confirm_button
                 :if={@current_account.settings.pack_unseen_retention_days}
                 id="packs-cleanup-now"
                 variant={:secondary}
                 tone={:neutral}
-                size={:sm}
+                size={:lg}
                 title="Clean up unseen pack versions?"
                 confirm_label="Clean up now"
                 on_confirm={JS.push("cleanup_now")}

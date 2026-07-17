@@ -725,13 +725,19 @@ defmodule EmisarWeb.CoreComponents do
       <select
         id={@id}
         name={@name}
-        class={[
-          "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
-          "ring-1 ring-inset placeholder:text-zinc-600",
-          "focus:ring-2 focus:ring-inset",
-          @errors == [] && "ring-zinc-800 focus:ring-brand-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
-        ]}
+        class={
+          [
+            # The top margin is the label gap — a label-less select (aria-label
+            # callers) must sit flush, or it reads vertically misaligned beside
+            # sibling controls in the same row.
+            @label && "mt-2",
+            "block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
+            "ring-1 ring-inset placeholder:text-zinc-600",
+            "focus:ring-2 focus:ring-inset",
+            @errors == [] && "ring-zinc-800 focus:ring-brand-500",
+            @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+          ]
+        }
         multiple={@multiple}
         {@rest}
       >
