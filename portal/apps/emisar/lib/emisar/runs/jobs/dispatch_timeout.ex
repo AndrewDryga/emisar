@@ -51,10 +51,10 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
 
   defp resolve_stale_pending_dispatches([], _redispatch_deadline), do: :ok
 
-  defp resolve_stale_pending_dispatches(runs, runner, oldest, redispatch_deadline) do
+  defp resolve_stale_pending_dispatches(runs, runner, oldest, _redispatch_deadline) do
     case Runners.current_connection_generation(runner.account_id, runner.id) do
       {:ok, _generation} ->
-        resolve_stale_dispatch(oldest, runner, redispatch_deadline)
+        Runs.dispatch_to_runner(oldest)
 
       {:error, :not_connected} ->
         Enum.each(runs, &Runs.mark_errored(&1, unreachable_reason(&1, runner)))
@@ -68,13 +68,6 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
 
       nil ->
         mark_stale_dispatch_errored(run, removed_runner_reason(run))
-    end
-  end
-
-  defp resolve_stale_dispatch(%{status: :pending} = run, runner, _redispatch_deadline) do
-    case Runners.current_connection_generation(runner.account_id, runner.id) do
-      {:ok, _generation} -> Runs.dispatch_to_runner(run)
-      {:error, :not_connected} -> Runs.mark_errored(run, unreachable_reason(run, runner))
     end
   end
 
