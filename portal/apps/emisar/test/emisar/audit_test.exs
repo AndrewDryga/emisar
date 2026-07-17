@@ -727,6 +727,50 @@ defmodule Emisar.AuditTest do
       assert Enum.map(one, & &1.event_type) == ["approval.approved"]
     end
 
+    test "the Category filter focuses a review lens and composes, never dropping churn from the record",
+         %{account: account, subject: subject} do
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
+      {:ok, _} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      # "Decisions" keeps the approval — not the runner churn or the sign-in.
+      {:ok, decisions, _} = Audit.list_events(subject, filter: [category: ["decisions"]])
+      assert Enum.map(decisions, & &1.event_type) == ["approval.approved"]
+
+      # "Fleet" IS the churn lens — the connect event, nothing else.
+      {:ok, fleet, _} = Audit.list_events(subject, filter: [category: ["fleet"]])
+      assert Enum.map(fleet, & &1.event_type) == ["runner.connected"]
+
+      # Categories compose (decisions + access), still stepping around fleet.
+      {:ok, combined, _} = Audit.list_events(subject, filter: [category: ["decisions", "access"]])
+
+      assert Enum.map(combined, & &1.event_type) |> Enum.sort() ==
+               ["approval.approved", "user.signed_in"]
+
+      # The lens is a VIEW: with no category filter the churn is still on record.
+      {:ok, all, _} = Audit.list_events(subject, [])
+      assert "runner.connected" in Enum.map(all, & &1.event_type)
+    end
+
+    test "every event-type group maps to a category, so no event is orphaned from the lens", %{
+      account: account,
+      subject: subject
+    } do
+      # One representative event per group — filtering by ALL categories must
+      # return every one; a new group with no category mapping would drop its
+      # events here (that's the total-coverage guard the query module cites).
+      reps =
+        for {_group, [{type, _label} | _]} <- Audit.Event.Query.grouped_event_type_values() do
+          {:ok, _} = Audit.log(account.id, type, actor_kind: "system")
+          type
+        end
+
+      all_categories = Enum.map(Audit.Event.Query.category_values(), &elem(&1, 0))
+      {:ok, rows, _} = Audit.list_events(subject, filter: [category: all_categories])
+
+      assert Enum.map(rows, & &1.event_type) |> Enum.sort() == Enum.sort(reps)
+    end
+
     test "each event-type group leads with its selectable '<Group> — all events' header" do
       options = Audit.Event.Query.event_type_filter_options()
 

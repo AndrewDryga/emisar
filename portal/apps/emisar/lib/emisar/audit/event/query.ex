@@ -289,6 +289,43 @@ defmodule Emisar.Audit.Event.Query do
 
   def grouped_event_type_values, do: @grouped_event_types
 
+  # Each domain group belongs to exactly ONE review CATEGORY — the coarse lens
+  # the audit page's quick-filter chips + panel facet narrow by. Deriving from
+  # the existing groups (not a second per-type taxonomy) keeps it low-drift: a
+  # new event type inherits its category from the group it already joins; only a
+  # brand-new GROUP needs a line here (the query test asserts total coverage).
+  # "Fleet" is the runner connect/disconnect churn the decisions/access/activity
+  # lenses let a reviewer step around (UI-017) — de-emphasized as a VIEW, never
+  # dropped from the append-only record.
+  @category_of_group %{
+    "Approval" => "decisions",
+    "Policy" => "decisions",
+    "Pack trust" => "decisions",
+    "Account" => "access",
+    "Auth key" => "access",
+    "API key" => "access",
+    "Sign-in" => "access",
+    "User security" => "access",
+    "Team" => "access",
+    "SSO / Directory" => "access",
+    "Runbook" => "activity",
+    "Run" => "activity",
+    "Runner" => "fleet",
+    "Audit" => "admin",
+    "Billing" => "admin"
+  }
+
+  @categories [
+    {"decisions", "Decisions"},
+    {"access", "Access"},
+    {"activity", "Activity"},
+    {"fleet", "Fleet"},
+    {"admin", "Admin"}
+  ]
+
+  @doc "The review-category filter's `{value, label}` options — also drives the audit page's category chips."
+  def category_values, do: @categories
+
   @doc """
   The Type filter's grouped options, uniform across every group: the CATEGORY
   itself is the selectable header — a `group:<label>` sentinel rendered as
@@ -505,6 +542,21 @@ defmodule Emisar.Audit.Event.Query do
       # event types that never carry a request context / a sign-in (see
       # applicable_filters/2), so they show only when they can actually match.
       # Inclusive date bounds (a "From 10:00" pick includes 10:00:00).
+      # Category is the COARSEST lens — its own full-width row at the top of the
+      # panel, and the audit page's quick chips drive this same facet — so a
+      # reviewer can focus decisions/access/activity out of the runner-connect
+      # churn without hunting the 90-option Type combobox (UI-017).
+      %Filter{
+        name: :category,
+        title: "Category",
+        type: {:list, :string},
+        span: :full,
+        values: category_values(),
+        fun: fn queryable, categories ->
+          types = event_types_for_categories(categories)
+          {queryable, dynamic([events: e], e.event_type in ^types)}
+        end
+      },
       %Filter{
         name: :from,
         title: "From (UTC)",
@@ -883,5 +935,15 @@ defmodule Emisar.Audit.Event.Query do
   # exactly the rows the audit dots color rose/amber.
   defp event_types_for_outcomes(outcomes) do
     for {type, _label} <- @known_event_types, Atom.to_string(outcome(type)) in outcomes, do: type
+  end
+
+  # The event types in any of the selected review `categories` — each domain
+  # group maps to exactly one category (@category_of_group), so this composes
+  # every type of every group that falls in the chosen categories.
+  defp event_types_for_categories(categories) do
+    for {group_label, options} <- @grouped_event_types,
+        @category_of_group[group_label] in categories,
+        {value, _label} <- options,
+        do: value
   end
 end

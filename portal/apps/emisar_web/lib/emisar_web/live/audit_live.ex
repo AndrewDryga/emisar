@@ -122,6 +122,22 @@ defmodule EmisarWeb.AuditLive do
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
 
+  # A category chip is a single-select TOGGLE onto the `category` panel facet:
+  # click one to focus that lens (replacing any prior category), click the
+  # active one to clear it. It only narrows the VIEW — the append-only trail is
+  # never trimmed. Other active filters are preserved.
+  def handle_event("category", %{"category" => category}, socket) do
+    params = socket.assigns.filter_params
+
+    merged =
+      if category in List.wrap(params["category"]),
+        do: Map.delete(params, "category"),
+        else: Map.put(params, "category", [category])
+
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
+  end
+
   # The download hands over exactly what the operator is looking at — the
   # active filter params ride the href; cursors don't (the download walks the
   # whole filtered set itself).
@@ -374,6 +390,30 @@ defmodule EmisarWeb.AuditLive do
           ]}
         >
           Problems only
+        </button>
+        <span aria-hidden="true" class="px-0.5 text-zinc-700">·</span>
+        <%!-- Event-category chips — the coarse review lens (UI-017): one click
+             focuses decisions / access / activity out of the runner connect-
+             disconnect churn (Fleet), or onto it. They drive the same `category`
+             panel facet below; the append-only record is only ever narrowed as a
+             VIEW, never trimmed. An active chip wears the brand active-filter tint
+             like every other control — an engaged lens is a filter state, not an
+             alarm (the problem ROWS carry their own rose/amber). --%>
+        <button
+          :for={{value, label} <- Audit.Event.Query.category_values()}
+          type="button"
+          phx-click="category"
+          phx-value-category={value}
+          aria-pressed={to_string(value in List.wrap(@filter_params["category"]))}
+          class={[
+            "rounded-md px-2 py-1 font-medium ring-1 transition",
+            if(value in List.wrap(@filter_params["category"]),
+              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
+              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+            )
+          ]}
+        >
+          {label}
         </button>
       </div>
 
