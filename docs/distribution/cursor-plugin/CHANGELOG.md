@@ -10,7 +10,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Initial plugin: registers the hosted emisar MCP server
   (`https://emisar.dev/api/mcp/rpc`) with Cursor over OAuth (Dynamic Client
-  Registration — no API key required).
+  Registration — no API key required). The server is declared in `.mcp.json`.
+- Marketplace manifest (`.cursor-plugin/marketplace.json`) so Cursor installs the
+  plugin from its Plugins panel — the Marketplace or **+ Add → From Local Repo**.
 - README, license (Apache-2.0), and listing icon.
 
 No rules, skills, agents, hooks, or subagents are bundled — the plugin is an MCP

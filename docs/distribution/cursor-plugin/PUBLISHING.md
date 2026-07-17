@@ -1,13 +1,15 @@
 # Publishing the emisar Cursor plugin
 
 This directory is a self-contained public Cursor Marketplace plugin. It contains
-only the manifest, remote MCP config, logo, user documentation, changelog, and
-Apache-2.0 license. It ships no credentials, rules, hooks, skills, or agents.
+only the plugin and marketplace manifests, the remote MCP config, logo, user
+documentation, changelog, and Apache-2.0 license. It ships no credentials, rules,
+hooks, skills, or agents.
 
 ## Release checklist
 
 1. Recheck Cursor's current plugin and remote MCP documentation.
-2. Verify `.cursor-plugin/plugin.json` and `mcp.json` against the current schema.
+2. Verify `.cursor-plugin/marketplace.json`, `.cursor-plugin/plugin.json`, and
+   `.mcp.json` against the current schema.
 3. Test a clean local install and OAuth connection to
    `https://emisar.dev/api/mcp/rpc` in a current Cursor build.
 4. Exercise one allowed action, one approval-required action, and one policy

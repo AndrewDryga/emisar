@@ -33,8 +33,14 @@ catalog, policy, approvals, and audit — lives in your emisar account.
 **From the Cursor Marketplace:** search for **emisar** and click Install, then run
 any tool once to trigger the OAuth sign-in.
 
-**Manually:** copy `mcp.json` into your project (or Cursor's global MCP config).
-It declares one remote server:
+**From a local checkout:** in Cursor's **Plugins** panel, choose **+ Add → From
+Local Repo** and point it at this directory. Cursor reads the marketplace manifest
+(`.cursor-plugin/marketplace.json`), installs the plugin, and registers the emisar
+MCP server from `.mcp.json`; run any tool once to trigger the OAuth sign-in.
+
+**Manually (no plugin):** add the config below to your project's
+`.cursor/mcp.json` (or Cursor's global MCP config) — the same one remote server
+the plugin registers:
 
 ```json
 {

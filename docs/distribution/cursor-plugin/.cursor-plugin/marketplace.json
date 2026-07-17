@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "emisar",
+  "version": "0.1.0",
+  "description": "The emisar plugin: one governed MCP endpoint for infrastructure actions — gated by policy, approval, and audit.",
+  "owner": {
+    "name": "emisar",
+    "email": "support@emisar.dev"
+  },
+  "plugins": [
+    {
+      "name": "emisar",
+      "source": ".",
+      "description": "One governed MCP endpoint for infrastructure actions — gated by policy, approval, and audit.",
+      "category": "devops",
+      "tags": ["devops", "infrastructure", "security", "mcp", "approvals", "audit"]
+    }
+  ]
+}
