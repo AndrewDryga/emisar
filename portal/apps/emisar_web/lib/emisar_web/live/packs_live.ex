@@ -245,10 +245,11 @@ defmodule EmisarWeb.PacksLive do
     |> assign(:pack_diffs, Map.new(details, fn {id, {_actions, diff}} -> {id, diff} end))
   end
 
-  # Blast radius of a trust decision: which runners advertise each version
-  # awaiting one (so the operator sees one canary box vs the whole fleet).
-  # Keyed by pack_version id; pending reviews and rejected rows (whose Trust
-  # modal quotes the same count) are looked up.
+  # Which runners advertise each version that needs a "who's on it" readout, so
+  # the operator sees one canary box vs the whole fleet. Keyed by pack_version
+  # id, looked up for the rows that use it: pending/rejected reviews (the trust-
+  # decision blast radius) and trusted-but-RETIRED rows (whose fix depends on
+  # whether any runner is still on the old version — see `retired_notice`).
   defp advertising_runners(rows, subject) do
     runners_by_id =
       case Runners.list_runners_for_account(subject) do
@@ -257,7 +258,7 @@ defmodule EmisarWeb.PacksLive do
       end
 
     rows
-    |> Enum.filter(&(&1.trust_state in [:pending, :rejected]))
+    |> Enum.filter(&advertising_lookup_needed?/1)
     |> Map.new(fn version ->
       ids =
         case Catalog.runner_ids_advertising_pack(version.pack_id, version.version, subject) do
@@ -268,6 +269,18 @@ defmodule EmisarWeb.PacksLive do
       {version.id, ids |> Enum.map(&Map.get(runners_by_id, &1)) |> Enum.reject(&is_nil/1)}
     end)
   end
+
+  # Rows that need the per-version "who advertises this" lookup: pending/rejected
+  # rows show the trust-decision blast radius, and a trusted-but-RETIRED row uses
+  # it to recommend the right fix — update the runners still on it, or (if none)
+  # just remove the dead version. A plain trusted or overridden row skips the query.
+  defp advertising_lookup_needed?(%{trust_state: state}) when state in [:pending, :rejected],
+    do: true
+
+  defp advertising_lookup_needed?(%{trust_state: :trusted} = version),
+    do: pack_version_retired?(version)
+
+  defp advertising_lookup_needed?(_), do: false
 
   defp fetch_rows(socket) do
     case Catalog.list_pack_versions(socket.assigns.current_subject,
@@ -755,16 +768,19 @@ defmodule EmisarWeb.PacksLive do
 
   attr :version, :map, required: true
   attr :pack_id, :string, required: true
+  attr :runners, :list, required: true
   attr :can_manage, :boolean, required: true
 
   # A trusted version the shipped catalog RETIRED — a newer release marked every
-  # version below a watermark unsafe (a critical fix). Dispatch fails closed
-  # against it until the pack is updated on the runner OR an admin overrides the
-  # retirement here. Rendered as the shared icon-capped spine — the ONE house
-  # face for an operational alert; a hand-tinted box matches nothing else in
-  # the console. An already-overridden row shows a muted, dated note instead of
-  # the block + CTA — the override is deliberate and audited, so it doesn't
-  # nag. Renders nothing for a version that isn't retired.
+  # version below a watermark unsafe (a critical fix). The recommendation tracks
+  # reality: runners STILL on it → update them (or, only if you truly can't yet,
+  # override the retirement to keep them running); NO runner on it → it's dead
+  # weight the fix already routed around, so just remove it — there's nothing to
+  # update, nothing to keep running, and re-enabling it for a FUTURE runner is
+  # exactly what override must not do, so that escape hatch is gone. Rendered as
+  # the shared icon-capped rose spine — the retired marker, the ONE house face
+  # for an operational alert. An already-overridden row shows a muted, dated note
+  # instead. Renders nothing for a version that isn't retired.
   defp retired_notice(assigns) do
     {retired?, current} =
       case Catalog.pack_version_retirement(assigns.version) do
@@ -777,6 +793,7 @@ defmodule EmisarWeb.PacksLive do
       |> assign(:retired?, retired?)
       |> assign(:current_version, current)
       |> assign(:overridden?, not is_nil(assigns.version.retirement_overridden_at))
+      |> assign(:on_runners?, assigns.runners != [])
 
     ~H"""
     <.event_block
@@ -787,24 +804,41 @@ defmodule EmisarWeb.PacksLive do
       class="mt-3 pl-8"
     >
       <:body>
-        A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
-        v{@version.version} until you update the pack on the runner.
+        <span :if={@on_runners?}>
+          A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
+          v{@version.version} until you update the runners still on it.
+        </span>
+        <span :if={not @on_runners?}>
+          A critical fix superseded this version, and no runner is on it anymore. Remove it to
+          clear it from the catalog — there's nothing to update.
+        </span>
       </:body>
+      <%!-- Runners on it → the fix is to update them; name which hosts, so the
+           operator knows where to go. --%>
       <.install_command
+        :if={@on_runners?}
         id={"retired-cmd-#{@version.id}"}
         pack_id={@pack_id}
         successor={@current_version}
         hash={Catalog.shipped_hash(@pack_id, @current_version)}
       />
-      <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
-           confirm, admin-only. It re-enables dispatch for this exact retired
-           version; the audited context fn stays the server gate (IL-15). The
-           version is already trusted, so the CTA names what it actually does —
-           override the retirement — never "Trust". The quiet alternative
-           (Revoke trust, in the row menu) silences this by refusing the
-           version instead. --%>
+      <div :if={@on_runners?} class="mt-3 text-[11px] leading-relaxed text-zinc-400">
+        <p>
+          <span class="font-semibold text-zinc-300">{length(@runners)}</span>
+          runner(s) still on this version:
+        </p>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <.runner_tag :for={runner <- @runners} runner={runner} />
+        </div>
+      </div>
       <div :if={@can_manage} class="mt-3 flex flex-wrap gap-2">
+        <%!-- Runners on it, and you genuinely can't update yet: override to let its
+             actions run despite the fix. Deliberate bypass — rose confirm, admin-
+             only, audited (the context fn stays the server gate, IL-15). Gone once
+             no runner is on it: nothing to keep running, and re-enabling a retired
+             version for a future runner is the opposite of the goal. --%>
         <.confirm_button
+          :if={@on_runners?}
           id={"override-#{@version.id}"}
           variant={:secondary}
           tone={:rose}
@@ -816,16 +850,19 @@ defmodule EmisarWeb.PacksLive do
           <:body>
             This version was retired by a newer release. Overriding lets its actions run again
             despite the fix — do this only if you can't yet update the pack on the runner. The
-            override is audited. To silence this warning without allowing dispatch, remove the
-            version instead.
+            override is audited. To silence this without allowing dispatch, remove the version.
           </:body>
           Override retirement
         </.confirm_button>
-        <%!-- The other resolution: clear the alert WITHOUT allowing dispatch —
-             remove the version (opens the row menu's delete dialog; a runner
-             still advertising it re-inserts it). --%>
+        <%!-- No runner on it → removal is the clean, durable resolution (nothing
+             re-advertises it), so it's the recommended action here — the house
+             destructive face (bordered rose, never a filled "go" green). With
+             runners it's futile (a runner re-inserts it), so it's dropped for
+             update/override. --%>
         <.button
+          :if={not @on_runners?}
           variant={:secondary}
+          tone={:rose}
           size={:sm}
           type="button"
           phx-click={open_confirm("delete-version-#{@version.id}")}
@@ -847,6 +884,20 @@ defmodule EmisarWeb.PacksLive do
         class="inline"
       />
     </p>
+    """
+  end
+
+  # A neutral two-tone tag for one advertising runner — the group (muted, left)
+  # then the runner name (brighter, right), split by a divider. WHICH hosts is
+  # informative, not a warning, so it stays zinc even inside a rose retired block.
+  attr :runner, :map, required: true
+
+  defp runner_tag(assigns) do
+    ~H"""
+    <span class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60">
+      <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{@runner.group}</span>
+      <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">{@runner.name}</span>
+    </span>
     """
   end
 
@@ -1296,6 +1347,7 @@ defmodule EmisarWeb.PacksLive do
                     :if={v.trust_state == :trusted}
                     version={v}
                     pack_id={pack.id}
+                    runners={@advertising[v.id] || []}
                     can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
                   />
 
@@ -1406,15 +1458,7 @@ defmodule EmisarWeb.PacksLive do
                            dozens, and a comprehension renders them with no whitespace
                            between — an inline run would overflow the page). --%>
                       <div class="mt-2 flex flex-wrap gap-1.5">
-                        <span
-                          :for={r <- @advertising[v.id]}
-                          class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60"
-                        >
-                          <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{r.group}</span>
-                          <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">
-                            {r.name}
-                          </span>
-                        </span>
+                        <.runner_tag :for={r <- @advertising[v.id]} runner={r} />
                       </div>
                     </div>
                     <%!-- What CHANGED since this hash was last trusted — diffed

@@ -456,13 +456,47 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "Update available"
     end
 
-    test "a retired trusted version renders the rose warning with the admin override CTA",
+    test "a retired trusted version WITH runners still on it shows the update fix + override CTA",
          %{conn: conn, account: account} do
       # The prod-shaped row: trusted under an older release, then a newer
       # release raised the pack's watermark — trusted + retired + NO override
-      # stamp. The trust API can't arrange it (trusting a retired version IS
-      # the override), so the fixture inserts the row directly against a real
-      # shipped watermark; "0.0.0" sits strictly below every one.
+      # stamp — and a runner is STILL advertising the old version. The trust API
+      # can't arrange trusted+retired (trusting a retired version IS the
+      # override), so the fixture inserts the row directly against a real shipped
+      # watermark ("0.0.0" sits strictly below every one); the RunnerAction row
+      # is what makes a runner "still on it". The fix is to update those runners;
+      # override is the escape hatch only for when you genuinely can't yet.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      Fixtures.Catalog.create_action(runner: runner, pack_id: pack_id, pack_version: "0.0.0")
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      assert html =~ "update the runners still on it"
+      assert html =~ "Override retirement"
+      assert has_element?(lv, "#override-#{pack_version.id}")
+      # Removal is futile while a runner re-advertises it, so it's dropped here.
+      refute html =~ "Remove version"
+    end
+
+    test "a retired trusted version with NO runners recommends removal, not override",
+         %{conn: conn, account: account} do
+      # Same trusted+retired row, but every runner has updated away — nothing
+      # advertises it (no RunnerAction). There's nothing to update and nothing to
+      # keep running, so the block recommends removing the dead version and drops
+      # the override escape hatch entirely.
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
 
@@ -477,8 +511,10 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "Retired by a newer release"
-      assert html =~ "Override retirement"
-      assert has_element?(lv, "#override-#{pack_version.id}")
+      assert html =~ "no runner is on it"
+      assert html =~ "Remove version"
+      refute html =~ "Override retirement"
+      refute has_element?(lv, "#override-#{pack_version.id}")
     end
 
     test "a first-seen retired version reads as retired (upgrade the runner), not an unknown pack",
@@ -517,9 +553,12 @@ defmodule EmisarWeb.PacksLiveTest do
       account: account
     } do
       # The retired fleet state had NO nav signal — the badge counted only
-      # pending trust reviews, not retired versions awaiting a decision.
+      # pending trust reviews, not retired versions awaiting a decision. A runner
+      # is still on the old version, so override is the offered resolution.
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       pack_version =
         Fixtures.Catalog.create_trusted_pack_version(
@@ -527,6 +566,8 @@ defmodule EmisarWeb.PacksLiveTest do
           pack_id: pack_id,
           version: "0.0.0"
         )
+
+      Fixtures.Catalog.create_action(runner: runner, pack_id: pack_id, pack_version: "0.0.0")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
