@@ -38,7 +38,7 @@ defmodule EmisarWeb.CheckoutController do
     account = conn.assigns.current_account
 
     conn
-    |> put_flash(:info, "Payment received — your subscription updates in a few seconds.")
+    |> put_flash(:info, "We're finishing your checkout — your plan updates here in a moment.")
     |> redirect(to: ~p"/app/#{account}/settings/billing")
   end
 

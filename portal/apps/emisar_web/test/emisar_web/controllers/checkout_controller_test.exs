@@ -71,7 +71,11 @@ defmodule EmisarWeb.CheckoutControllerTest do
       conn = get(conn, ~p"/app/checkout/success")
 
       assert redirected_to(conn) == "/app/#{account.slug}/settings/billing"
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Payment received"
+      # Never claim money was received on a bare redirect — the webhook-backed
+      # subscription on the billing page is the source of truth.
+      flash = Phoenix.Flash.get(conn.assigns.flash, :info)
+      assert flash =~ "finishing your checkout"
+      refute flash =~ "Payment received"
     end
 
     test "an anonymous return bounces to sign-in", %{conn: conn} do

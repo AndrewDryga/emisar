@@ -11,9 +11,23 @@ defmodule EmisarWeb.SSORequiredController do
   alias EmisarWeb.UserAuth
 
   def show(conn, _params) do
-    form = Phoenix.Component.to_form(%{}, as: "sso_required")
+    account = conn.assigns.current_account
 
-    render(conn, :show, account: conn.assigns.current_account, form: form)
+    # Re-check compliance on GET: a compliant session — or one whose account no
+    # longer mandates SSO — reaching this shim from a stale/copied link must not
+    # be shown a false "SSO required" state and pushed to sign out.
+    case UserAuth.account_compliance(
+           account,
+           conn.assigns[:current_auth],
+           conn.assigns[:current_user]
+         ) do
+      :sso_required ->
+        form = Phoenix.Component.to_form(%{}, as: "sso_required")
+        render(conn, :show, account: account, form: form)
+
+      _ ->
+        redirect(conn, to: ~p"/app/#{account}")
+    end
   end
 
   def revoke(conn, _params) do
