@@ -38,7 +38,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!path || !flags.label) {
   console.error(
-    'usage: node shot.mjs <path> --label <before|after> [--select CSS] [--heading "TEXT"] [--class-contains a,b] [--climb SEL] [--width 1440] [--settle 1200] [--out DIR]',
+    'usage: node shot.mjs <path> --label <before|after> [--select CSS] [--heading "TEXT"] [--class-contains a,b] [--climb SEL] [--click SEL] [--width 1440] [--settle 1200] [--out DIR]',
   );
   process.exit(1);
 }
@@ -126,6 +126,13 @@ try {
     // (an /oauth/authorize consent URL bounces back to itself).
     await page.waitForFunction(() => !location.pathname.startsWith("/sign_in"));
     await go(target);
+  }
+
+  // Reveal a click-gated state (a tab, a disclosure, a menu) before capturing.
+  if (flags.click) {
+    await page.waitForSelector(flags.click);
+    await page.click(flags.click);
+    await settle();
   }
 
   const full = join(OUT, `${flags.label}-full.png`);
