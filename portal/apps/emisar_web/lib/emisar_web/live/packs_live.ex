@@ -1258,11 +1258,20 @@ defmodule EmisarWeb.PacksLive do
                       :if={@advertising[v.id] not in [nil, []]}
                       class="mt-2 text-[11px] leading-relaxed text-zinc-400"
                     >
-                      <span class="font-semibold text-zinc-300">{length(@advertising[v.id])}</span>
-                      runner(s) advertise this — trusting unblocks dispatch on:
-                      <.chip :for={r <- @advertising[v.id]} tone={:amber} mono class="ml-1">
-                        {r.name}<span class="text-amber-400/70"> · {r.group}</span>
-                      </.chip>
+                      <p>
+                        <span class="font-semibold text-zinc-300">
+                          {length(@advertising[v.id])}
+                        </span>
+                        runner(s) advertise this — trusting unblocks dispatch on:
+                      </p>
+                      <%!-- The chips wrap: a fleet can advertise dozens of runners, and a
+                           comprehension renders them with no whitespace between, so an inline
+                           run would be one unbreakable line that overflows the page. --%>
+                      <div class="mt-1.5 flex flex-wrap gap-1">
+                        <.chip :for={r <- @advertising[v.id]} tone={:amber} mono>
+                          {r.name}<span class="text-amber-400/70"> · {r.group}</span>
+                        </.chip>
+                      </div>
                     </div>
                     <%!-- What CHANGED since this hash was last trusted — diffed
                          against the action set snapshotted at that Trust
