@@ -80,7 +80,7 @@ defmodule EmisarWeb.MarketingController do
      "How emisar decides allow / require-approval / deny per action: risk-tier defaults, ordered per-action overrides, human approvals with a 24-hour TTL, and revocable standing grants scoped to a key, action, runner, and arguments."},
     {"/docs/runbooks", :docs_runbooks, :docs_runbooks,
      "Runbooks — saved, gated operational sequences",
-     "Author versioned runbooks in a form editor, target runners or groups per step, dispatch with per-step policy gating and halt-on-failure — and let your LLM read them as playbooks over MCP."},
+     "Author versioned runbooks in a form editor, target runners or groups per step, dispatch with per-step policy gating and halt-on-failure — and let your LLM read and run them over MCP."},
     {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
      "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
     {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on & directory sync",

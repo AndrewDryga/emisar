@@ -248,7 +248,7 @@ defmodule EmisarWeb.Changelog do
       title: "Pack catalog expansion, runbooks over MCP, and security hardening",
       tag: "v0.6.0",
       summary:
-        "The catalog grows by fifteen packs (iscsi, multipath, bonding, frr, nic, victoriametrics, victorialogs, pfsense, traefik, tailscale, pure-flasharray, vector, typesense, zot), and emisar pack suggest recommends the ones a host actually runs. Runbooks become readable over MCP through list_runbooks and get_runbook, so an agent can fetch a saved playbook and run it step by step. Security hardening lands across the runner and bridge: an OAuth-consent privilege escalation closed, streaming output redacted across line boundaries, the script hash re-verified at exec time, and credentials streamed over stdin instead of argv."
+        "The catalog grows by fifteen packs (iscsi, multipath, bonding, frr, nic, victoriametrics, victorialogs, pfsense, traefik, tailscale, pure-flasharray, vector, typesense, zot), and emisar pack suggest recommends the ones a host actually runs. Runbooks become readable over MCP through list_runbooks and get_runbook, so an agent can fetch a saved runbook and run it step by step. Security hardening lands across the runner and bridge: an OAuth-consent privilege escalation closed, streaming output redacted across line boundaries, the script hash re-verified at exec time, and credentials streamed over stdin instead of argv."
     },
     %{
       date: ~D[2026-06-06],

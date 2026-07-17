@@ -25,8 +25,9 @@
           agent — to your infrastructure. One server covers production access, debugging, alerting,
           runbooks, and internal ops — so a new capability is another pack, not another MCP server
           to roll out to every client. Your agent reads real production state to debug what it
-          shipped and help work incidents. Safe reads run on their own. A risky change waits for a
-          human to approve it. No SSH key, no always-on access, every call on the record.
+          shipped and help work incidents. Safe reads run on their own. Risky changes clear your
+          policy first — allowed, denied, or held for approval. No SSH key, no always-on access,
+          every call on the record.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -118,7 +119,7 @@
         </div>
 
         <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-500">
-          Safe reads run on their own · risky changes wait for approval · every call audited
+          Safe reads run on their own · risky changes are policy-gated · every call audited
         </div>
       </div>
     </div>
@@ -343,8 +344,8 @@
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Set allow, ask-for-approval, or deny for each risk tier, then override specific actions.
-            Risky calls wait for a human. Or hand out a limited, revocable pass so routine ones
-            don't ask every time.
+            Approvals can require one person or several — or hand out a limited, revocable pass so
+            routine calls don't ask every time.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">

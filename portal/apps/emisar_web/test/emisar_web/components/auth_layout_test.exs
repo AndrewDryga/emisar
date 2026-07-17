@@ -24,7 +24,12 @@ defmodule EmisarWeb.Components.AuthLayoutTest do
 
       assert html =~ "Sign in via email"
       assert html =~ "&lt;the form slot&gt;"
-      assert html =~ "approved infrastructure actions, not SSH"
+
+      # Bounded autonomy leads; approvals are a conditional policy outcome, and
+      # the product term is runbooks (UI-018 — content-position-bounded-autonomy).
+      assert html =~ "inside bounds you set"
+      assert html =~ "allowed, denied, or held for approval"
+      refute html =~ "playbook"
     end
 
     test "carries the compliance footer — legal links + the legal-name copyright" do

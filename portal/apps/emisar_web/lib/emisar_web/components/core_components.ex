@@ -1355,16 +1355,16 @@ defmodule EmisarWeb.CoreComponents do
         <div class="flex flex-1 items-center">
           <div class="max-w-md">
             <p class="text-2xl font-semibold leading-snug tracking-tight text-zinc-100">
-              Give AI tools approved infrastructure actions, not SSH.
+              Your agent keeps working in production — inside bounds you set.
             </p>
             <ul class="mt-6 space-y-3 text-sm text-zinc-400">
               <li class="flex items-start gap-2.5">
                 <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-                <span>Pre-approved playbooks instead of arbitrary shell</span>
+                <span>Declared actions and runbooks instead of arbitrary shell</span>
               </li>
               <li class="flex items-start gap-2.5">
                 <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-                <span>Fine-grained policy with human approvals for risky ops</span>
+                <span>Policy decides per action: allowed, denied, or held for approval</span>
               </li>
               <li class="flex items-start gap-2.5">
                 <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
