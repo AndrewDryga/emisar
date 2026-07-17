@@ -782,6 +782,7 @@ defmodule EmisarWeb.AgentsLive do
         :if={@live_action == :connect and ApiKeys.subject_can_issue_quick_key?(@current_subject)}
         configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
         selected_client={@selected_client}
+        base_url={@base_url}
         quick_secret={@quick_secret}
         quick_key_id={@quick_key_id}
         quick_connected?={@quick_connected?}
@@ -840,6 +841,7 @@ defmodule EmisarWeb.AgentsLive do
           <.connect_panel
             configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
             selected_client={@selected_client}
+            base_url={@base_url}
             quick_secret={@quick_secret}
             quick_key_id={@quick_key_id}
             quick_connected?={@quick_connected?}
@@ -1103,32 +1105,42 @@ defmodule EmisarWeb.AgentsLive do
           </LiveTable.live_table>
         </div>
 
-        <.docs_rail
-          title="What's an LLM agent?"
-          doc_href="/docs/connect-an-llm"
-          doc_label="Connect an agent docs"
-        >
-          <p>
-            An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
-              Codex</span>
-            — connected to emisar over <span class="text-zinc-200">MCP</span>, the Model Context
-            Protocol.
-          </p>
-          <p>
-            emisar exposes your runners and their action catalog as an MCP server, so an agent can
-            only request actions that are <span class="text-zinc-200">in the catalog</span>
-            — never a raw shell. Every call is gated by policy, may need an approval, and lands in
-            the audit trail.
-          </p>
-          <p>
-            Each connection gets its own key, revocable in one click. A key reaches only the runners
-            the operator who created it can reach — it never outgrows the person behind it, and
-            narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
-            Claude.ai and ChatGPT connect from the server URL over OAuth — no token to manage.
-          </p>
-        </.docs_rail>
+        <.agent_docs_rail />
       </section>
     </.dashboard_shell>
+    """
+  end
+
+  # The "what's an agent + how its key behaves" explainer, shared by the agents
+  # list (below the table) and the connect page (right rail): one copy, one place.
+  # Kept concise — one section, three paragraphs — so the rail never overshoots a
+  # short local-client install panel on the connect page.
+  defp agent_docs_rail(assigns) do
+    ~H"""
+    <.docs_rail
+      title="What's an LLM agent?"
+      doc_href="/docs/connect-an-llm"
+      doc_label="Connect an agent docs"
+    >
+      <p>
+        An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
+          Codex</span>
+        — connected to emisar over <span class="text-zinc-200">MCP</span>, the Model Context
+        Protocol.
+      </p>
+      <p>
+        emisar exposes your runners and their action catalog as an MCP server, so an agent can
+        only request actions that are <span class="text-zinc-200">in the catalog</span>
+        — never a raw shell. Every call is gated by policy, may need an approval, and lands in
+        the audit trail.
+      </p>
+      <p>
+        Each connection gets its own key, revocable in one click. A key reaches only the runners
+        the operator who created it can reach — it never outgrows the person behind it, and
+        narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
+        Claude.ai and ChatGPT connect from the server URL over OAuth — no token to manage.
+      </p>
+    </.docs_rail>
     """
   end
 
@@ -1161,6 +1173,7 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :configs_for, :any, required: true
   attr :selected_client, :any, required: true
+  attr :base_url, :string, required: true
   attr :quick_secret, :string, default: nil
   attr :quick_key_id, :string, default: nil
   attr :quick_connected?, :boolean, default: false
@@ -1279,7 +1292,7 @@ defmodule EmisarWeb.AgentsLive do
             </div>
           <% @config -> %>
             <div class="mt-10 space-y-8">
-              <.local_install_block />
+              <.local_install_block base_url={@base_url} />
 
               <div>
                 <%!-- Two shapes, and the header must not lie about which: a
@@ -1387,51 +1400,14 @@ defmodule EmisarWeb.AgentsLive do
         </div>
       </div>
 
-      <%!-- The reading rail — how agent keys work, so the operator minting a
-           credential understands its reach and lifecycle before handing it to
-           an LLM (the keys-new explainer pattern). Hidden below lg (where the
-           grid collapses to one column): the connect steps lead, and the
-           explainer is supporting context, not something to scroll past on a
-           phone. --%>
-      <aside class="hidden lg:block">
-        <%!-- Beginner framing first — connecting your first agent needs "what is
-             this" before "how keys work". --%>
-        <div class="mb-10">
-          <.section_header title="What's an LLM agent?" />
-          <div class="space-y-3 text-sm leading-relaxed text-zinc-400">
-            <p>
-              An agent is any LLM client — <span class="text-zinc-300">Claude, ChatGPT, Cursor,
-                Codex</span>
-              — you connect to emisar over <span class="text-zinc-300">MCP</span>, the Model Context
-              Protocol.
-            </p>
-            <p>
-              emisar exposes your runners and their action catalog as an MCP server, so the agent
-              can only request actions that are <span class="text-zinc-300">in the catalog</span>
-              — never a raw shell. Every call is gated by policy, may need an approval, and lands in
-              the audit trail.
-            </p>
-          </div>
-          <p class="mt-4 text-sm">
-            <.doc_link href={~p"/docs/connect-an-llm"}>Connect an agent docs</.doc_link>
-          </p>
-        </div>
-        <.section_header title="How agent keys work" />
-        <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
-          <p>
-            Each key is a bearer credential for <span class="font-medium text-zinc-300">one MCP client</span>. Every call it
-            makes lands in Runs and the audit trail under the key's name, so you can
-            always see exactly what each agent did.
-          </p>
-          <p>
-            A key can never do more than the member who mints it: your
-            <span class="font-medium text-zinc-300">policy</span>
-            still gates risky actions for approval, and it reaches only that member's
-            runners. To scope an agent tightly, mint it under a member whose reach is
-            already narrow — and revoke it anytime from the agents list.
-          </p>
-        </div>
-      </aside>
+      <%!-- The reading rail — the shared what's-an-agent + how-its-key-behaves
+           explainer (the same one the agents list shows below its table). Hidden
+           below lg (where the grid collapses to one column) so the connect steps
+           lead; condensed to one section, it no longer overshoots a short
+           local-client install panel. --%>
+      <div class="hidden lg:block">
+        <.agent_docs_rail />
+      </div>
     </div>
     """
   end
@@ -1483,7 +1459,11 @@ defmodule EmisarWeb.AgentsLive do
   # Renders only AFTER a local client is picked. The install line is the
   # same for every local client — extracting it keeps the per-client
   # snippet focused on just the config the operator needs to paste, and
-  # cloud-LLM users never see it at all.
+  # cloud-LLM users never see it at all. The command comes from
+  # UrlHelpers.mcp_install_command/1, so a dev or self-hosted portal's
+  # base URL rides along as EMISAR_URL.
+  attr :base_url, :string, required: true
+
   defp local_install_block(assigns) do
     ~H"""
     <div>
@@ -1507,8 +1487,13 @@ defmodule EmisarWeb.AgentsLive do
         id="install-mcp-cmd"
         label="macOS / Linux"
         copy
-        code="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+        code={UrlHelpers.mcp_install_command(@base_url)}
       />
+      <p class="mt-2 text-xs leading-5 text-zinc-400">
+        The installer offers to add emisar to the LLM clients it finds on the machine —
+        when it asks for a key, paste the <span class="font-mono">emk-…</span> value from
+        the snippet below.
+      </p>
     </div>
     """
   end
