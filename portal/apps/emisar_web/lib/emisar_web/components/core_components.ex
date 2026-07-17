@@ -974,16 +974,20 @@ defmodule EmisarWeb.CoreComponents do
       {@rest}
     >
       <:body>{render_slot(@inner_block)}</:body>
-      <div :if={@action != []} class="mt-3">{render_slot(@action)}</div>
+      <%!-- text-sm on the wrapper: a bare-text action would otherwise inherit
+           the page-base 16px and tower over the text-sm body (buttons carry
+           their own size and are unaffected). --%>
+      <div :if={@action != []} class="mt-3 text-sm">{render_slot(@action)}</div>
     </.event_block>
     """
   end
 
   def callout(%{variant: :spine} = assigns) do
     ~H"""
+    <%!-- `group` lets an action's <.cta_arrow> nudge on the card hover. --%>
     <.link
       navigate={@navigate}
-      class={["block rounded-md p-2 transition-colors hover:bg-white/[0.04]", @class]}
+      class={["group block rounded-md p-2 transition-colors hover:bg-white/[0.04]", @class]}
       {@rest}
     >
       <.event_block
@@ -992,7 +996,7 @@ defmodule EmisarWeb.CoreComponents do
         title={@title}
       >
         <:body>{render_slot(@inner_block)}</:body>
-        <div :if={@action != []} class="mt-3">{render_slot(@action)}</div>
+        <div :if={@action != []} class="mt-3 text-sm">{render_slot(@action)}</div>
       </.event_block>
     </.link>
     """

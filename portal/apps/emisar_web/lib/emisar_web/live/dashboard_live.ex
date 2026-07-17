@@ -742,7 +742,14 @@ defmodule EmisarWeb.DashboardLive do
     >
       Dispatch is blocked against these until an admin reviews the advertised hash or
       resolves the retired version.
-      <:action>Review packs →</:action>
+      <%!-- The whole callout is the link — this line is its affordance, in the
+           pillar CTA grammar (quiet brand + the house arrow), never a bare
+           16px text row. --%>
+      <:action>
+        <span class="flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
+          Review packs <.cta_arrow class="h-3.5 w-3.5" />
+        </span>
+      </:action>
     </.callout>
     """
   end
