@@ -437,4 +437,61 @@ defmodule EmisarWeb.LiveTableTest do
       assert html =~ "SECTION: g2"
     end
   end
+
+  describe "live_table :responsive render" do
+    test "renders the authored :card row in the sm:hidden mobile <ul>, not an auto label/value dump" do
+      assigns = %{rows: [%{id: 1, action: "postgres.uptime", status: "success"}]}
+
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          id="runs"
+          path="/runs"
+          rows={@rows}
+          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
+          filter_params={%{}}
+          responsive
+        >
+          <:col :let={r} label="Action">{r.action}</:col>
+          <:col :let={r} label="Status">{r.status}</:col>
+          <:card :let={r}>
+            <span data-card-action>{r.action}</span>
+          </:card>
+        </LiveTable.live_table>
+        """)
+
+      # The desktop/tablet table (hidden below sm) still renders the :col headers.
+      assert html =~ ~s(<table id="runs")
+      assert html =~ "Action"
+      assert html =~ "Status"
+      # The phone card <ul> is sm:hidden and renders the authored :card slot —
+      # no auto-dumped `w-24` uppercase label per column (the old runs wall).
+      assert html =~ ~s(id="runs-cards")
+      assert html =~ "sm:hidden"
+      assert html =~ "data-card-action"
+      refute html =~ "w-24 shrink-0"
+    end
+
+    test "card_accent colours the mobile card's left spine by row" do
+      assigns = %{rows: [%{id: 1}]}
+
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          id="runs"
+          path="/runs"
+          rows={@rows}
+          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
+          filter_params={%{}}
+          responsive
+          card_accent={fn _ -> :deny end}
+        >
+          <:col :let={_r} label="Status">x</:col>
+          <:card :let={_r}>row</:card>
+        </LiveTable.live_table>
+        """)
+
+      assert html =~ "border-l-rose-500"
+    end
+  end
 end

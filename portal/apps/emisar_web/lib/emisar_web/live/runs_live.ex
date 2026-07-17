@@ -243,6 +243,30 @@ defmodule EmisarWeb.RunsLive do
               </.empty_state>
           <% end %>
         </:empty>
+        <%!-- The phone card (below sm): a compact TWO-LINE scan row, not the old
+             five-labeled-rows dump. Line 1 is the scan line — action id + its
+             status, the two facts an operator compares down the list; line 2 is
+             subordinate origin · runner · time (the source badge keeps an agent
+             run reading distinctly from a human one, the product's point). The
+             left spine (card_accent) already carries the status colour. --%>
+        <:card :let={run}>
+          <div class="flex items-start justify-between gap-3">
+            <.link
+              navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
+              class="min-w-0 flex-1 break-all font-mono text-sm leading-5 text-zinc-100 hover:text-brand-300"
+            >
+              {run.action_id}
+            </.link>
+            <.status_badge status={run.status} class="shrink-0" />
+          </div>
+          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-500">
+            <.source_badge source={run.source} label={run_actor(run)} class="max-w-[60vw] text-xs" />
+            <span aria-hidden="true">·</span>
+            <span>{(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}</span>
+            <span aria-hidden="true">·</span>
+            <.local_time value={run.inserted_at} mode={:relative} />
+          </div>
+        </:card>
         <%!-- No row-stable id: this responsive table renders each :col TWICE
              (desktop <td> + mobile card), so a value-based id would duplicate.
              local_time falls back to a per-render unique id; dropping
@@ -276,9 +300,9 @@ defmodule EmisarWeb.RunsLive do
             {(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}
           </span>
         </:col>
-        <%!-- card={false}: the mobile card already carries the origin via the
-             in-cell badge under the action — a labeled SOURCE row doubled it. --%>
-        <:col :let={run} label="Dispatched by" card={false} class="w-40 hidden lg:table-cell">
+        <%!-- Desktop/tablet table only — the phone card renders the origin in
+             its own line 2 (the responsive table is hidden below sm). --%>
+        <:col :let={run} label="Dispatched by" class="w-40 hidden lg:table-cell">
           <.source_badge
             source={run.source}
             label={run_actor(run)}

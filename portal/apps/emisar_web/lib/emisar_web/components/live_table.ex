@@ -76,7 +76,7 @@ defmodule EmisarWeb.LiveTable do
   attr :responsive, :boolean,
     default: false,
     doc:
-      "`:table` only. Below `sm`, re-render each row as a label/value card (reusing the same `:col` slots + their labels) instead of letting a dense table overflow and clip. The card shows ALL columns — including the ones the table hides on small screens — since it has the vertical room. Enable on wide tables (runs, audit)."
+      "`:table` only. Below `sm`, replace the dense (overflowing) table with a compact card per row rendered from the REQUIRED `:card` slot — a deliberate scan row, not an auto-dump of every column as a labeled line (that repeated five uppercase labels per row, the runs wall). The shared card `<li>` carries the status spine (`card_accent`), inset, and row click. Enable on wide tables (runs)."
 
   attr :card_accent, :any,
     default: nil,
@@ -104,15 +104,16 @@ defmodule EmisarWeb.LiveTable do
   slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
     attr :label, :string
     attr :class, :string
-
-    attr :card, :boolean,
-      doc:
-        "set false to skip this column in the responsive mobile card — for a " <>
-          "column whose value the card already carries elsewhere (runs' in-cell " <>
-          "source badge) or that earns no phone space (audit's IP)"
   end
 
   slot :item, doc: "`:cards` layout row body — receives `row`. Required when `layout == :cards`."
+
+  slot :card,
+    doc:
+      "`:responsive` only — the compact mobile row rendered below `sm` in place of " <>
+        "the desktop `:col` table. Author a deliberate two-line scan card (a dense " <>
+        "table's columns don't dump into a good phone row); the shared `<li>` already " <>
+        "carries the status spine (`card_accent`), inset, and row click."
 
   slot :group_header,
     doc: "`:cards` + `:group_by` only — receives the group label, renders the divider"
@@ -271,9 +272,9 @@ defmodule EmisarWeb.LiveTable do
         </div>
 
         <%!-- Below sm a dense table overflows and clips (status badges, long
-             action ids). Re-render each row as a label/value card reusing the
-             same :col slots + labels — so the page authors the table once, and
-             the card restores the columns the table hides on small screens. --%>
+             action ids). Instead of auto-dumping every column as a labeled row
+             (five repeated uppercase labels per row — the 7011px runs wall), the
+             page authors ONE compact scan card in the :card slot. --%>
         <%!-- NAKED hairline rows (§8.1 — the gray island wrapper is dead);
              the status spine keeps a small left inset so its color reads. --%>
         <ul :if={@responsive} id={"#{@id}-cards"} class="divide-y divide-zinc-800/70 sm:hidden">
@@ -282,25 +283,13 @@ defmodule EmisarWeb.LiveTable do
             id={@row_id && "#{@row_id.(row)}-card"}
             phx-click={@row_click && @row_click.(row)}
             class={[
-              "space-y-2 border-l-2 py-3.5 pl-3",
+              "border-l-2 py-3 pl-3",
               card_spine_class(@card_accent && @card_accent.(row)),
               @row_click && "cursor-pointer hover:bg-white/[0.04]"
             ]}
           >
-            <div
-              :for={col <- @col}
-              :if={col[:card] != false}
-              class="flex items-baseline gap-3"
-            >
-              <span
-                :if={col[:label] not in [nil, ""]}
-                class="w-24 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
-              >
-                {col.label}
-              </span>
-              <div class="min-w-0 flex-1 text-sm text-zinc-200">{render_slot(col, row)}</div>
-            </div>
-            <div :if={@action != []} class="flex justify-end gap-2 pt-1">
+            {render_slot(@card, row)}
+            <div :if={@action != []} class="flex justify-end gap-2 pt-2">
               {render_slot(@action, row)}
             </div>
           </li>
