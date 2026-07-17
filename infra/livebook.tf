@@ -67,20 +67,19 @@ resource "google_compute_disk" "livebook_data" {
 }
 
 resource "google_compute_instance" "livebook" {
-  count = var.livebook_enabled ? 1 : 0
+  # Existence is the park dial: parking (livebook_running = false) deletes the
+  # VM and its auto_delete boot disk, so a parked workbench bills only the data
+  # disk. Notebooks/config live on that disk and cloud-init rebuilds the rest,
+  # so resume is a clean re-provision — while retiring the workbench outright
+  # (livebook_enabled = false) deliberately remains a reviewed destroy guarded
+  # by prevent_destroy on the durable pieces.
+  count = var.livebook_enabled && var.livebook_running ? 1 : 0
 
   name                      = "emisar-livebook"
   zone                      = var.zones[0]
   machine_type              = var.livebook_machine_type
   tags                      = ["emisar-livebook"]
   allow_stopping_for_update = true
-
-  # Park dial: TERMINATED stops compute + license billing while the disks,
-  # secret, database principal, and LB/IAP wiring all survive, so turning the
-  # workbench off day-to-day is a one-attribute stop — retiring it outright
-  # (livebook_enabled = false) deliberately remains a reviewed destroy guarded
-  # by prevent_destroy on the durable pieces.
-  desired_status = var.livebook_running ? "RUNNING" : "TERMINATED"
 
   # Deliberately omit cluster_name: portal libcluster must never auto-discover
   # this full-trust debugging node.
@@ -156,9 +155,12 @@ resource "google_compute_instance" "livebook" {
 resource "google_compute_instance_group" "livebook" {
   count = var.livebook_enabled ? 1 : 0
 
-  name      = "emisar-livebook"
-  zone      = var.zones[0]
-  instances = [google_compute_instance.livebook[0].self_link]
+  name = "emisar-livebook"
+  zone = var.zones[0]
+  # Splat, not [0]: the group (and the LB graph above it) outlives the parked
+  # instance, so membership must degrade to empty rather than dangle a hard
+  # reference (.agent/rules/infra-optional-resource-splat-refs.md).
+  instances = google_compute_instance.livebook[*].self_link
 
   named_port {
     name = "livebook"
