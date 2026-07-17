@@ -677,7 +677,7 @@ resource "google_monitoring_alert_policy" "fleet_no_connected_runners" {
   combiner     = "OR"
 
   documentation {
-    content   = "Every runner is disconnected fleet-wide while the site stays up, so all dispatches are stranded and no customer action can execute. /readyz and lb_5xx do not catch this (a WebSocket close is not a 5xx and the database is healthy). Check for a recent portal deploy or an LB backend-timeout change, the runner WebSocket ingress path, and whether runners are reconnecting; the emisar.runners.connection.* gauges and the runner audit trail carry per-account detail."
+    content   = "Every runner is disconnected fleet-wide while the site stays up, so all dispatches are stranded and no customer action can execute. /readyz and lb_5xx do not catch this (a WebSocket close is not a 5xx and the database is healthy). Check for a recent portal deploy or an LB backend-timeout change, the runner WebSocket ingress path, and whether runners are reconnecting; the emisar.runners.connection.* gauges carry the fleet-wide trend (deliberately not per-account), and the runner audit trail's connect/disconnect events carry the per-account detail."
     mime_type = "text/markdown"
   }
 
