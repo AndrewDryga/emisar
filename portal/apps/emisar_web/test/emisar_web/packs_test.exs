@@ -35,6 +35,31 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
+    test "renders each action's operator docs, crawlable while collapsed", %{conn: conn} do
+      pack = hd(PacksRegistry.list())
+      action = Enum.find(pack.actions, &(&1.description != ""))
+      html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
+
+      # The docs live in the server-rendered DOM (inside <details>), so
+      # crawlers index them without JS or interaction.
+      escaped_description =
+        action.description |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+
+      assert html =~ escaped_description
+      assert html =~ "<details"
+      assert html =~ "Side effects"
+    end
+
+    test "the capability chips read as one parallel by-default trio", %{conn: conn} do
+      # linux-core spans all three tiers, so every chip renders.
+      html = conn |> get(~p"/packs/linux-core") |> html_response(200)
+
+      assert html =~ "allowed by default"
+      assert html =~ "need approval by default"
+      assert html =~ "denied by default"
+      refute html =~ ~r/\d+ need approval</
+    end
+
     test "returns a branded 404 for an unknown pack id", %{conn: conn} do
       conn = get(conn, ~p"/packs/this-pack-does-not-exist")
       assert html_response(conn, 404) =~ "Page not found"

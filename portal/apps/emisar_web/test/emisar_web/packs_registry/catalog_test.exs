@@ -162,6 +162,32 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
       assert [%{kind: "script", command: nil}] = redis.actions
     end
 
+    test "decodes an action's operator docs; missing or malformed docs read as empty" do
+      documented = %{
+        "id" => "redis.info",
+        "title" => "Info",
+        "kind" => "exec",
+        "risk" => "low",
+        "description" => "Redis INFO snapshot — read-only.",
+        "side_effects" => ["One redis-cli invocation.", 42, "Read-only."]
+      }
+
+      docless = %{"id" => "redis.bare", "title" => "Bare", "kind" => "exec", "risk" => "low"}
+
+      catalog = put_in_pack(valid_catalog(), 0, "actions", [documented, docless])
+
+      assert {:ok, packs} = Catalog.parse(catalog)
+      redis = Enum.find(packs, &(&1.id == "redis"))
+      [with_docs, without_docs] = redis.actions
+
+      assert with_docs.description == "Redis INFO snapshot — read-only."
+      # Docs are presentation-only: a non-string entry is dropped, not fatal.
+      assert with_docs.side_effects == ["One redis-cli invocation.", "Read-only."]
+
+      assert without_docs.description == ""
+      assert without_docs.side_effects == []
+    end
+
     test "rejects invalid JSON" do
       assert {:error, message} = Catalog.parse("{not json")
       assert message =~ "not valid JSON"

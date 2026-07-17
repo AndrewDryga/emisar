@@ -123,7 +123,17 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
          {:ok, kind} <- fetch_enum(raw, "kind", @kinds, pack_id),
          {:ok, risk} <- fetch_enum(raw, "risk", @risks, pack_id),
          {:ok, command} <- fetch_command(raw, id) do
-      {:ok, %Action{id: id, title: title, kind: kind, risk: risk, command: command}}
+      action = %Action{
+        id: id,
+        title: title,
+        kind: kind,
+        risk: risk,
+        command: command,
+        description: string_field(raw, "description"),
+        side_effects: string_list_field(raw, "side_effects")
+      }
+
+      {:ok, action}
     end
   end
 
@@ -261,6 +271,15 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
     case Map.get(raw, key) do
       value when is_binary(value) -> value
       _ -> ""
+    end
+  end
+
+  # Lenient like `string_field/2` — presentation-only docs; a malformed or
+  # absent list reads as no entries, never a parse failure.
+  defp string_list_field(raw, key) do
+    case Map.get(raw, key) do
+      values when is_list(values) -> Enum.filter(values, &is_binary/1)
+      _ -> []
     end
   end
 
