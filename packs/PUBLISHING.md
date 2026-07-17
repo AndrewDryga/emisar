@@ -93,10 +93,16 @@ curl -fsS "$(curl -fsS .../v1/catalog.json | jq -r '.packs[]|select(.id=="redis"
   | tar -xz -C /tmp/redis && emisar pack validate /tmp/redis
 ```
 
-## Retiring older versions (critical fix)
+## Retiring older versions (security / critical fix)
 
-When a shipped pack version carries a critical defect, retire **every** older
-version so a runner still advertising an old version fails closed at dispatch.
+Retirement is for a **security or critical-correctness fix ONLY — never a
+routine version bump.** A safe-but-outdated version keeps working (operators
+update at their own pace, nudged non-blockingly by the portal); retiring it
+needlessly fails the whole fleet closed and buries operators in reviews.
+
+When a shipped pack version carries a genuine security hole or critical defect,
+retire **every** older version so a runner still advertising an old version
+fails closed at dispatch.
 Retirement is authored in the pack itself — a `retired_below` floor in
 `pack.yaml` — so the decision and its exact floor live in the pack's git
 history, get reviewed in the PR, and ship through the normal publish. It is
