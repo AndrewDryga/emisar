@@ -75,6 +75,13 @@ resource "google_compute_instance" "livebook" {
   tags                      = ["emisar-livebook"]
   allow_stopping_for_update = true
 
+  # Park dial: TERMINATED stops compute + license billing while the disks,
+  # secret, database principal, and LB/IAP wiring all survive, so turning the
+  # workbench off day-to-day is a one-attribute stop — retiring it outright
+  # (livebook_enabled = false) deliberately remains a reviewed destroy guarded
+  # by prevent_destroy on the durable pieces.
+  desired_status = var.livebook_running ? "RUNNING" : "TERMINATED"
+
   # Deliberately omit cluster_name: portal libcluster must never auto-discover
   # this full-trust debugging node.
   labels = {
