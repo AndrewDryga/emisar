@@ -444,14 +444,14 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, badge)
     end
 
-    test "a rejected retired version shows the Retired chip but no rose warning block", %{
+    test "a rejected retired version shows neither the chip nor the rose warning", %{
       conn: conn,
       user: user,
       account: account
     } do
-      # Revoking trust in a retired version is the quiet path — the version
-      # stays flagged Retired in the list, but the blocking alert (and its
-      # override CTA) stops nagging: the operator already refused it.
+      # Revoking trust in a retired version is the quiet path: rejected already
+      # means dispatch-blocked, so stacking a RETIRED marker on it would be
+      # noise — the alert (and chip) return only if it's trusted again.
       subject = Fixtures.Subjects.subject_for(user, account)
 
       {pack_id, _watermark} =
@@ -469,7 +469,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired"
+      refute html =~ "RETIRED"
       refute html =~ "Retired by a newer release"
       refute has_element?(lv, "#override-#{pack_version.id}")
       assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")

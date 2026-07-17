@@ -800,25 +800,36 @@ defmodule EmisarWeb.PacksLive do
            override the retirement — never "Trust". The quiet alternative
            (Revoke trust, in the row menu) silences this by refusing the
            version instead. --%>
-      <.confirm_button
-        :if={@can_manage}
-        id={"override-#{@version.id}"}
-        variant={:secondary}
-        tone={:rose}
-        size={:sm}
-        class="mt-3"
-        title={"Override the retirement of #{@pack_id} v#{@version.version}?"}
-        confirm_label="Override retirement"
-        on_confirm={JS.push("override_retirement", value: %{id: @version.id})}
-      >
-        <:body>
-          This version was retired by a newer release. Overriding lets its actions run again
-          despite the fix — do this only if you can't yet update the pack on the runner. The
-          override is audited. To silence this warning without allowing dispatch, revoke the
-          version's trust instead.
-        </:body>
-        Override retirement
-      </.confirm_button>
+      <div :if={@can_manage} class="mt-3 flex flex-wrap gap-2">
+        <.confirm_button
+          id={"override-#{@version.id}"}
+          variant={:secondary}
+          tone={:rose}
+          size={:sm}
+          title={"Override the retirement of #{@pack_id} v#{@version.version}?"}
+          confirm_label="Override retirement"
+          on_confirm={JS.push("override_retirement", value: %{id: @version.id})}
+        >
+          <:body>
+            This version was retired by a newer release. Overriding lets its actions run again
+            despite the fix — do this only if you can't yet update the pack on the runner. The
+            override is audited. To silence this warning without allowing dispatch, remove the
+            version instead.
+          </:body>
+          Override retirement
+        </.confirm_button>
+        <%!-- The other resolution: clear the alert WITHOUT allowing dispatch —
+             remove the version (opens the row menu's delete dialog; a runner
+             still advertising it re-inserts it). --%>
+        <.button
+          variant={:secondary}
+          size={:sm}
+          type="button"
+          phx-click={open_confirm("delete-version-#{@version.id}")}
+        >
+          Remove version
+        </.button>
+      </div>
     </.event_block>
     <p
       :if={@retired? and @overridden?}
@@ -840,6 +851,14 @@ defmodule EmisarWeb.PacksLive do
   # not a trust_state — so it's a pure per-row check, not a row field.
   defp pack_version_retired?(version),
     do: match?({:retired, _}, Catalog.pack_version_retirement(version))
+
+  # Dispatch-blocked by retirement: trusted, unoverridden, and below the
+  # watermark — the one row state the RETIRED chip marks (replacing the trust
+  # badge, which would contradict it side by side).
+  defp retired_blocked?(version) do
+    version.trust_state == :trusted and is_nil(version.retirement_overridden_at) and
+      pack_version_retired?(version)
+  end
 
   # The admin who overrode a retirement, human-first (name, then email). The
   # user is preloaded; a soft-deleted overrider reads as "an admin".
@@ -929,7 +948,7 @@ defmodule EmisarWeb.PacksLive do
                 (@pack_count > 0 or @name_filter != "" or @risk_filter != "")
             }
             phx-change="filter"
-            class="mt-4 flex flex-wrap items-end gap-3"
+            class="mt-6 flex flex-wrap items-end gap-3"
           >
             <label class={[
               "flex w-full flex-col text-xs font-medium sm:w-56",
@@ -985,15 +1004,15 @@ defmodule EmisarWeb.PacksLive do
             {no_match_copy(@name_filter, @risk_filter)}
           </p>
 
-          <ul id="packs" phx-update="stream" class="mt-2 space-y-8">
+          <ul id="packs" phx-update="stream" class="mt-10 space-y-10">
             <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
                  naked group — mono pack id + version count on a hairline — with
                  its version rows below. The stream <li> wraps label + rows. All
                  rare admin verbs live in the ⋯ menus (never a strip of visible
                  buttons); their confirm dialogs render per row. --%>
             <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
-              <header class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-zinc-800/70 pb-2">
-                <h2 class="font-mono text-sm font-semibold text-zinc-100">{pack.id}</h2>
+              <header class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-zinc-800/70 pb-2.5">
+                <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
                 <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
                 <.registry_link pack_id={pack.id} />
                 <.status_badge
@@ -1003,13 +1022,13 @@ defmodule EmisarWeb.PacksLive do
                 />
                 <.dropdown
                   :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                  class="ml-auto inline-block text-left"
-                  summary_class="flex items-center rounded px-2 py-1 text-zinc-400 ring-1 ring-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                  class="ml-auto inline-block self-center text-left"
+                  summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                   panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
                 >
                   <:trigger>
-                    <.icon name="hero-ellipsis-horizontal" class="h-4 w-4" />
-                    <span class="sr-only">Actions for {pack.id}</span>
+                    Actions
+                    <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
                   </:trigger>
                   <.menu_item tone={:rose} phx-click={open_confirm("delete-pack-#{pack.id}")}>
                     Delete pack…
@@ -1063,34 +1082,36 @@ defmodule EmisarWeb.PacksLive do
                     >
                     </span>
                     <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
-                    <%!-- A rejected never-trusted row has no trusted hash — show the
-                         refused bytes it remembers instead of a bare dash. --%>
-                    <span
-                      class="truncate font-mono text-[11px] text-zinc-500"
-                      title={v.hash || v.pending_hash}
-                    >
-                      sha256:{short_hash(v.hash || v.pending_hash)}
-                    </span>
-                    <.chip :if={pack_version_retired?(v)} upcase tone={:rose}>Retired</.chip>
-                    <.status_badge status={to_string(v.trust_state)} class="text-xs" />
-                    <span class="ml-auto shrink-0 text-[11px] text-zinc-500">
+                    <%!-- The hash said nothing at browse altitude — the full hash
+                         lives in the contents expansion; last-seen takes its slot. --%>
+                    <span class="text-[11px] text-zinc-500">
                       last seen
                       <.local_time
                         id={"pack-version-last-#{v.id}"}
                         value={v.last_seen_at}
                         mode={:relative}
-                        class="text-zinc-300"
+                        class="text-zinc-400"
                       />
                     </span>
+                    <%!-- ONE row-state marker: the RETIRED chip REPLACES the trust
+                         badge on a blocked row — "RETIRED · trusted" side by side
+                         read as a contradiction. An overridden row is trusted
+                         again (the quiet note below says why). --%>
+                    <.chip :if={retired_blocked?(v)} upcase tone={:rose}>Retired</.chip>
+                    <.status_badge
+                      :if={not retired_blocked?(v)}
+                      status={to_string(v.trust_state)}
+                      class="text-xs"
+                    />
                     <.dropdown
                       :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                      class="inline-block shrink-0 text-left"
-                      summary_class="flex items-center rounded px-1.5 py-1 text-zinc-500 ring-1 ring-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                      class="ml-auto inline-block shrink-0 text-left"
+                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                       panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
                     >
                       <:trigger>
-                        <.icon name="hero-ellipsis-horizontal" class="h-4 w-4" />
-                        <span class="sr-only">Actions for v{v.version}</span>
+                        Actions
+                        <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
                       </:trigger>
                       <.menu_item
                         :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
@@ -1372,6 +1393,23 @@ defmodule EmisarWeb.PacksLive do
         </div>
 
         <aside class="space-y-6">
+          <.docs_rail
+            title="What's a pack?"
+            doc_href="/docs/action-packs"
+            doc_label="Action pack docs"
+          >
+            <p>
+              A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
+              a runner may execute — the runner advertises what it has installed, and this
+              page is your account's trust ledger over it.
+            </p>
+            <p>
+              Every version is pinned to an exact content hash. A runner advertising
+              different bytes flips the version to <span class="text-amber-300">pending</span>, and dispatch refuses it until an
+              admin reviews the change.
+            </p>
+          </.docs_rail>
+
           <div>
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
               Housekeeping
@@ -1422,23 +1460,6 @@ defmodule EmisarWeb.PacksLive do
               <% end %>
             </div>
           </div>
-
-          <.docs_rail
-            title="What's a pack?"
-            doc_href="/docs/action-packs"
-            doc_label="Action pack docs"
-          >
-            <p>
-              A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
-              a runner may execute — the runner advertises what it has installed, and this
-              page is your account's trust ledger over it.
-            </p>
-            <p>
-              Every version is pinned to an exact content hash. A runner advertising
-              different bytes flips the version to <span class="text-amber-300">pending</span>, and dispatch refuses it until an
-              admin reviews the change.
-            </p>
-          </.docs_rail>
         </aside>
       </div>
 
@@ -1505,12 +1526,6 @@ defmodule EmisarWeb.PacksLive do
   # The stored hash already carries the "sha256:" prefix the template
   # labels — strip it before slicing, or the row reads "sha256:sha256:…"
   # and shows five useful hex chars of the value operators verify.
-  defp short_hash(nil), do: "—"
-
-  defp short_hash(hash) when is_binary(hash) do
-    hash |> String.replace_prefix("sha256:", "") |> String.slice(0, 12)
-  end
-
   attr :pack_id, :string, required: true
 
   # A link out to the public pack-registry page. The registry page is
