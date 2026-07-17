@@ -849,8 +849,14 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "emisar pack validate"
       assert html =~ "emisar pack install"
-      assert html =~ "systemctl reload emisar"
       assert html =~ "--hash"
+
+      # Keeping a pack private still scales to a fleet — packctl + a --registry install.
+      assert html =~ "packctl"
+      assert html =~ "--registry"
+
+      # install SIGHUP-reloads a running daemon, so the guide drops the redundant manual reload.
+      refute html =~ "systemctl reload"
     end
 
     test "the pack-registry guide renders the packctl flow and the BYO install flags",

@@ -146,13 +146,13 @@ examples:
             <h2 class="text-xl font-semibold text-zinc-50">Validate, install, and trust it</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Validate locally first — the same checks the runner runs at load — then install the
-            directory into the runner's packs dir and reload:
+            Validate locally first — the same checks the runner runs at load — then install it.
+            Install writes to the runner's configured packs dir and reloads the running daemon
+            itself, so there's no restart and no dropped runs:
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
 emisar pack validate ./my-pack
-sudo emisar pack install ./my-pack --dest /etc/emisar/packs
-sudo systemctl reload emisar</pre>
+sudo emisar pack install ./my-pack</pre>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             Because your pack isn't one emisar publishes, it has no baseline hash — so it lands in
             the dashboard's <strong class="text-zinc-200">Packs</strong>
@@ -179,11 +179,11 @@ sudo systemctl reload emisar</pre>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             To put the pack on another runner, install it pinned to the hash you trusted, so every
-            host runs identical bytes — or let your config management (Ansible, Chef, a base image)
-            drop the directory and reload:
+            host runs identical bytes — the install reloads the runner for you. (Config management
+            like Ansible, Chef, or a base image can drop the directory itself instead, then reload
+            the runner.)
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt; --dest /etc/emisar/packs
-sudo systemctl reload emisar</pre>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</pre>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             When you change the pack, bump its <code>version</code>, re-validate, re-deploy, and
             re-trust the new hash once in the dashboard — the same review you'd give any production
@@ -221,6 +221,17 @@ sudo systemctl reload emisar</pre>
         A pack that hardcodes your service names, your hostnames, or your internal CLIs is more
         useful private — and you keep control of its lifecycle. Self-maintained is the default
         here, not a fallback.
+      </p>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        And keeping a pack private still scales to a whole fleet — no copying files host to host. <code class="rounded bg-zinc-900 px-1 py-0.5">packctl</code>, the same tool that builds
+        emisar's own registry, publishes yours from a
+        <code class="rounded bg-zinc-900 px-1 py-0.5">packs/</code>
+        directory to any bucket or web server you control, and every runner installs from it with <code class="rounded bg-zinc-900 px-1 py-0.5">emisar pack install &lt;pack&gt; --registry &lt;your-url&gt;</code>.
+        Same hash-pinned review-and-trust flow as the public registry — your packs never touch ours.
+        <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">
+          Host your own pack registry
+        </.link>
+        walks it end to end.
       </p>
       <p class="mt-4 text-sm leading-relaxed text-zinc-400">
         If your pack really is generic — useful to teams who've never heard of yours, with no
