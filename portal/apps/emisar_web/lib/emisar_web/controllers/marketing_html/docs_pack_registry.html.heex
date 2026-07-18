@@ -163,8 +163,10 @@ emisar pack update --dry-run</pre>
             enforces the registry's core guarantee: a pack that changed bytes for an
             already-published <code>id@version</code>
             <strong class="text-zinc-200">fails the build</strong>
-            — bump the version instead. On a critical fix, <code>--retire-older</code>
-            retires everything older than the version you're publishing in one operation.
+            — bump the version instead. On a critical fix, set <code>retired_below</code>
+            in <code>pack.yaml</code>
+            to the fixed version: the build carries that floor forward,
+            and runners still on an older version fail closed at dispatch.
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \
@@ -196,9 +198,9 @@ packctl catalog build --packs ./packs --out ./dist \
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">No CRL-style revocation.</strong>
-          Retire versions with <code>--retire-older</code>
-          and republish; hash pinning means an already-reviewed install never changes underneath
-          you.
+          Retire versions by raising <code>retired_below</code>
+          and republishing; hash pinning means an already-reviewed install never changes
+          underneath you.
         </li>
       </ul>
 
