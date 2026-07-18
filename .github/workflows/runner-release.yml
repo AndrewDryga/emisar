@@ -329,7 +329,7 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: "emisar runner ${{ steps.ver.outputs.version }}"
+          name: "Runner v${{ steps.ver.outputs.version }}"
           # `make_latest: legacy` — only this release is marked Latest
           # on GitHub if it's the newest by semver. The MCP bridge has
           # its own release stream (mcp-v*) and shouldn't compete for
