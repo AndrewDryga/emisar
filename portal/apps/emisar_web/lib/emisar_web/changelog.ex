@@ -11,12 +11,20 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-17],
+      slug: "browser-approved-connect-and-pack-lifecycle",
+      title: "Browser-approved agent connect and pack lifecycle control",
+      tag: "v0.31.0",
+      summary:
+        "Connecting a local agent no longer moves an API key by hand. The installer opens a browser approval, you approve the connection on a consent page, and per-client keys are written straight into the agent's config — the secret never touches the clipboard, shell history, or a process argument, and the copy-the-key step is gone. The same installer now sets up thirteen MCP clients. The pack catalog becomes something operators run, not just watch: delete a pack or a single version, revoke trust on a version, auto-remove versions no runner has advertised for a set number of days, and see a quiet update-available hint on outdated ones. A runner still lagging on a version a security fix retired now reads as retired and points at the upgrade, instead of posing as an unknown pack asking to be trusted — approving it would have re-authorized the vulnerable bytes. Essential text on every marketing and console page is raised to WCAG AA contrast, kept there by a new check. Five pack actions that could read a leading-dash value as a command flag are fixed and their old versions retired, and three that dump container or process environment now require approval. Nomad reaches 0.2.0 with deployment control and metadata-filtered discovery, the runner CLI reloads the daemon on its own after a pack change, and under-permissioned roles now get a clean denial instead of a server error. One upgrade step for self-hosted runners: rename the config key auth_key_env to enrollment_key_env and re-mint any keys that were never enrolled — connected runners keep working."
+    },
+    %{
       date: ~D[2026-07-16],
       slug: "database-enforced-tenant-isolation-and-steadier-dispatch",
       title: "Database-enforced tenant isolation and steadier dispatch",
       tag: "v0.30.0",
       summary:
-        "Tenant isolation now lives in the database itself: every runner-owned child row carries a composite foreign key to its account, and CHECK constraints backstop the security-relevant enums, so a cross-tenant or out-of-range write is refused at the row rather than only in application code. A retired pack's re-trust control no longer crashes the packs page. Dispatch recovers more of its own edge cases: a runner at capacity redelivers the dispatches it refused, the stale-dispatch sweep drains the oldest queued first, and stuck pending runs advance instead of stranding. Active sessions each render as their own row with their own address, sign-in time, and revoke. Public pages and error responses now carry the same Content-Security-Policy as the rest of the site, Sentry is disclosed as a subprocessor with its events scrubbed of personal data before they leave, and a runner that requires signed packs announces it over MCP. Operators also get faster run search on large accounts and direct paging for severe database and load-balancer alarms."
+        "Tenant isolation now lives in the database itself: every runner-owned child row carries a composite foreign key to its account, and CHECK constraints backstop the security-relevant enums, so a cross-tenant or out-of-range write is refused at the row rather than only in application code. A retired pack's re-trust control no longer crashes the packs page. Dispatch recovers more of its own edge cases: a runner at capacity redelivers the dispatches it refused, the stale-dispatch sweep drains the oldest queued first, and stuck pending runs advance instead of stranding. Active sessions each render as their own row with their own address, sign-in time, and revoke. Public pages and error responses now carry the same Content-Security-Policy as the rest of the site, Sentry is disclosed as a subprocessor with its events scrubbed of personal data before they leave, and a runner that requires signed dispatch announces it over MCP. Operators also get faster run search on large accounts and direct paging for severe database and load-balancer alarms."
     },
     %{
       date: ~D[2026-07-16],
@@ -32,7 +40,7 @@ defmodule EmisarWeb.Changelog do
       title: "Upgrade-safe runners and honest fleet alarms",
       tag: "v0.28.0",
       summary:
-        "Runner upgrades now migrate the durable dispatch log across format and location changes instead of silently refusing every dispatch afterwards, and one broken installed pack degrades just that pack — named on the runner page and in MCP diagnostics with its load error — rather than crash-looping the whole runner. An offline runner now wears its connection story instead of tamper-flavored trust alarms about a stale advertisement. The installer verifies dispatch state with the staged binary before touching a running service, and emisar doctor explains a corrupt dispatch log, a degraded pack, and the last cloud rejection offline. Sign-in enforcement for SSO and MFA requirements now covers every controller route, SCIM and other machine endpoints are rate-limited, runner connections assert a TLS 1.2 floor, and operators get direct alerts for database-down and no-healthy-backend conditions."
+        "Runner upgrades now migrate the durable dispatch log across format and location changes instead of silently refusing every dispatch afterwards, and one broken installed pack degrades just that pack — named on the runner page and in MCP diagnostics with its load error — rather than crash-looping the whole runner. An offline runner now shows its real connection status instead of tamper-flavored trust alarms about a stale advertisement. The installer verifies dispatch state with the staged binary before touching a running service, and emisar doctor explains a corrupt dispatch log, a degraded pack, and the last cloud rejection offline. Sign-in enforcement for SSO and MFA requirements now covers every controller route, SCIM and other machine endpoints are rate-limited, runner connections assert a TLS 1.2 floor, and operators get direct alerts for database-down and no-healthy-backend conditions."
     },
     %{
       date: ~D[2026-07-16],
@@ -112,7 +120,7 @@ defmodule EmisarWeb.Changelog do
       title: "More reliable background work and a cleaner runner setup",
       tag: "v0.23.0",
       summary:
-        "Routine product work is now more predictable: approval expiry, audit retention, billing sync, sign-in cleanup, and timed-out runs are handled by the control plane itself. Billing contact sync keeps customer records tied to active account owners, and runner setup now puts the install script details where operators need them while avoiding noisy host suggestions for binary-only installs."
+        "Routine product work is now more predictable: approval expiry, audit retention, billing sync, sign-in cleanup, and timed-out runs are handled by the control plane itself. Billing contact sync keeps customer records tied to active account owners, and runner setup now puts the install script details where operators need them."
     },
     %{
       date: ~D[2026-07-06],
@@ -136,7 +144,7 @@ defmodule EmisarWeb.Changelog do
       title: "Audit and approvals read like records",
       tag: "v0.20.0",
       summary:
-        "The audit trail is easier to scan during an incident: each row makes the actor, target, action, and outcome clearer, and CSV export has its own Team-gated surface for larger investigations. Approval detail pages now open with the decision state, then show the command, arguments, reason, policy evidence, reviewer note, and timestamps in one record instead of scattered panels."
+        "The audit trail is easier to scan during an incident: each row makes the actor, target, action, and outcome clearer, and streaming audit events to a SIEM moved to its own managers-only page, off the browse view. Approval detail pages now open with the decision state, then show the command, arguments, reason, policy evidence, reviewer note, and timestamps in one record instead of scattered panels."
     },
     %{
       date: ~D[2026-07-02],
@@ -144,7 +152,7 @@ defmodule EmisarWeb.Changelog do
       title: "Checkout, 2FA sign-in, and cleaner account forms",
       tag: "v0.19.0",
       summary:
-        "Checkout now follows the selected plan and billing cycle, and billing-manager seats can manage invoices and plans without receiving broader admin powers. Accounts that require 2FA can challenge after a magic-link sign-in with TOTP or a recovery code. Code entry, secret reveal, enrollment steps, switches, cards, and mobile list rows now share the same console patterns, so repeated workflows feel familiar instead of rebuilt per page."
+        "Checkout now follows the selected plan, and billing-manager seats can manage billing without receiving broader admin powers. Accounts that require 2FA can challenge after a magic-link sign-in with TOTP or a recovery code. Code entry, secret reveal, enrollment steps, switches, cards, and mobile list rows now share the same console patterns, so repeated workflows feel familiar instead of rebuilt per page."
     },
     %{
       date: ~D[2026-07-01],
@@ -160,7 +168,7 @@ defmodule EmisarWeb.Changelog do
       title: "SSO setup and audit retention become inspectable",
       tag: "v0.17.0",
       summary:
-        "SSO setup now has dedicated connection pages with pending access requests, a test-connection step, synced users and groups, sync health, and read-only provider fields after creation. Audit retention is easier to reason about: plan changes affect retention going forward rather than silently erasing existing rows, exports record that they happened, and important identity, plan, retention, and action-run events carry the details an operator needs later."
+        "SSO setup now has dedicated connection pages with pending access requests, a test-connection step, synced users, sync health, and read-only provider fields after creation. Audit retention is easier to reason about: plan changes affect retention going forward rather than silently erasing existing rows, exports record that they happened, and important identity, plan, retention, and action-run events carry the details an operator needs later."
     },
     %{
       date: ~D[2026-06-26],
@@ -168,7 +176,7 @@ defmodule EmisarWeb.Changelog do
       title: "Passwordless sign-in, signed dispatch, and verified packs",
       tag: "v0.16.0",
       summary:
-        "emisar now signs users in with magic links or SSO only. Email changes require a fresh verification step, and invite and confirmation emails carry sign-in links instead of asking for a password. Signed dispatch gives runners a way to reject requests that were not made by a configured client, MCP keys gained action scopes, expiry, kind labels, and rotation, and the pack test harness expanded across the database, Kubernetes, routing, Redis, Nomad, Traefik, and firewall packs."
+        "emisar now signs users in with magic links or SSO only. Email changes require a fresh verification step, and invite and confirmation emails carry sign-in links instead of asking for a password. Signed dispatch gives runners a way to reject requests that were not made by a configured client, MCP keys gained action scopes, expiry, kind labels, and rotation, and the pack test harness expanded across the database, Kubernetes, routing, Nomad, and firewall packs."
     },
     %{
       date: ~D[2026-06-25],
@@ -240,7 +248,7 @@ defmodule EmisarWeb.Changelog do
       title: "The runbook engine, scoped policy, and a reliability pass",
       tag: "v0.7.0",
       summary:
-        "The runbook execution engine arrives with grouped targets, parallel waves, and a live results page, and policy gains per-runner and per-group overrides. The safety rails tighten: approval expiry enforced at decision time, pack trust re-gated at approval, the policy and grant audit committed in the same transaction as the run, and rate limits on the unauthenticated and MCP endpoints. Runs stuck running on a dead runner now time out and re-dispatch on reconnect, and an opt-in shell break-glass pack ships for staging, over a top-to-bottom correctness, authorization-shape, and test-coverage pass."
+        "The runbook execution engine arrives with grouped targets, parallel waves, and a live results page, and policy gains per-runner and per-group overrides. The safety rails tighten: approval expiry enforced at decision time, pack trust re-gated at approval, the policy and grant audit committed in the same transaction as the run, and rate limits on the unauthenticated and MCP endpoints. Runs stuck running on a dead runner now time out instead of hanging forever, and an opt-in shell break-glass pack ships for staging, over a top-to-bottom correctness, authorization-shape, and test-coverage pass."
     },
     %{
       date: ~D[2026-06-08],
@@ -248,7 +256,7 @@ defmodule EmisarWeb.Changelog do
       title: "Pack catalog expansion, runbooks over MCP, and security hardening",
       tag: "v0.6.0",
       summary:
-        "The catalog grows by fifteen packs (iscsi, multipath, bonding, frr, nic, victoriametrics, victorialogs, pfsense, traefik, tailscale, pure-flasharray, vector, typesense, zot), and emisar pack suggest recommends the ones a host actually runs. Runbooks become readable over MCP through list_runbooks and get_runbook, so an agent can fetch a saved runbook and run it step by step. Security hardening lands across the runner and bridge: an OAuth-consent privilege escalation closed, streaming output redacted across line boundaries, the script hash re-verified at exec time, and credentials streamed over stdin instead of argv."
+        "The catalog grows by fourteen packs (iscsi, multipath, bonding, frr, nic, victoriametrics, victorialogs, pfsense, traefik, tailscale, pure-flasharray, vector, typesense, zot), and emisar pack suggest recommends the ones a host actually runs. Runbooks become readable over MCP through list_runbooks and get_runbook, so an agent can fetch a saved runbook and run it step by step. Security hardening lands across the runner and bridge: an OAuth-consent privilege escalation closed, streaming output redacted across line boundaries, the script hash re-verified at exec time, and credentials streamed over stdin instead of argv."
     },
     %{
       date: ~D[2026-06-06],
