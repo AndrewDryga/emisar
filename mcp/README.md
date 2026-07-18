@@ -19,9 +19,14 @@ curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
 
 Drops `emisar-mcp` into `/usr/local/bin` (checksum-verified from
 GitHub releases; `INSTALL_DIR=$HOME/.local/bin` for a no-sudo
-install). The bridge is configured per client via env vars in the
-launcher's JSON/TOML config — the portal's **/app/agents** page
-generates the exact snippet per client:
+install). An interactive run then offers to add emisar to the LLM
+clients it finds on the machine (Claude Code, Claude Desktop, Cursor,
+Gemini CLI, Codex CLI), asking per client and reading the API key from
+the terminal; `--yes` and non-interactive runs skip that. A self-hosted
+portal's install command passes `EMISAR_URL` so those configs point at
+it. The bridge is configured per client via env vars in the launcher's
+JSON/TOML config — the portal's **/app/agents** page generates the
+exact snippet per client:
 
 Run `emisar-mcp --help` for compact registration instructions for Claude
 Desktop, Claude Code, Cursor, Codex, and Grok, including complete JSON for the

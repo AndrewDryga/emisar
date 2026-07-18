@@ -271,6 +271,12 @@ defmodule EmisarWeb.Router do
     # no-membership/suspended user), so this just forwards to the canonical URL.
     get "/", AccountRedirectController, :show
 
+    # Slugless deep-link shorthands — URLs the MCP installer, `emisar-mcp
+    # --help`, and docs print without knowing the account. Literal segments
+    # here shadow account slugs, so each is reserved in Account.Changeset.
+    get "/agents", AccountRedirectController, :agents
+    get "/agents/connect", AccountRedirectController, :connect_agent
+
     # Paddle's post-payment redirect. The checkout page can't know the account
     # slug at render time, so this resolves the session's current account and
     # lands on its billing page. Before the slug scope so "checkout" never

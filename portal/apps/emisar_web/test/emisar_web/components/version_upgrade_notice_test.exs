@@ -92,7 +92,29 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       assert html =~ "MCP bridge update available"
       assert html =~ "then restart its LLM client"
-      assert html =~ "curl -sSL https://control.example/install-mcp.sh | sudo bash"
+
+      # A non-hosted base URL rides into the installer as EMISAR_URL so its
+      # LLM-client setup writes configs that target this portal.
+      assert html =~
+               "curl -sSL https://control.example/install-mcp.sh | sudo EMISAR_URL=https://control.example bash"
+    end
+
+    test "the hosted portal's MCP upgrade command stays minimal" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.version_upgrade_notice
+          id="mcp-upgrade"
+          kind={:mcp}
+          versions={["0.0.5"]}
+          base_url="https://emisar.dev"
+        />
+        """)
+
+      # The installer already defaults to the hosted portal — no env noise.
+      assert html =~ "curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+      refute html =~ "EMISAR_URL="
     end
 
     test "renders nothing when versions are current or unknown" do

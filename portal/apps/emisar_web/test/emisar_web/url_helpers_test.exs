@@ -37,4 +37,19 @@ defmodule EmisarWeb.UrlHelpersTest do
       assert UrlHelpers.derive_base_url(%{}) == "https://emisar.dev"
     end
   end
+
+  describe "mcp_install_command/1" do
+    test "the hosted portal keeps the minimal command" do
+      assert UrlHelpers.mcp_install_command("https://emisar.dev") ==
+               "curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+
+      assert UrlHelpers.mcp_install_command("https://emisar.dev/") ==
+               "curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+    end
+
+    test "any other portal rides its base URL in as EMISAR_URL" do
+      assert UrlHelpers.mcp_install_command("http://localhost:4000") ==
+               "curl -sSL http://localhost:4000/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
+    end
+  end
 end

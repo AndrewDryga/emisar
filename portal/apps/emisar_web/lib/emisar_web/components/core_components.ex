@@ -22,7 +22,7 @@ defmodule EmisarWeb.CoreComponents do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
-  alias EmisarWeb.{MailTo, TimeHelpers}
+  alias EmisarWeb.{MailTo, TimeHelpers, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -3744,8 +3744,7 @@ defmodule EmisarWeb.CoreComponents do
   defp version_upgrade_command(:runner, base_url),
     do: "curl -sSL #{String.trim_trailing(base_url, "/")}/install.sh | sudo bash"
 
-  defp version_upgrade_command(:mcp, base_url),
-    do: "curl -sSL #{String.trim_trailing(base_url, "/")}/install-mcp.sh | sudo bash"
+  defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
 
   @doc """
   Wraps a trigger element with a styled hover/focus tooltip — a dark bubble

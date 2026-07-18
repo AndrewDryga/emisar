@@ -78,7 +78,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
       assert html =~ "unsupported"
       assert html =~ "MCP bridge update required"
-      assert html =~ "/install-mcp.sh | sudo bash"
+
+      # The test host isn't the hosted portal, so the command carries
+      # EMISAR_URL back to this deployment for the installer's client setup.
+      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
       assert html =~ "then restart its LLM client"
       assert has_element?(lv, "#mcp-upgrade.mb-10")
 
@@ -97,7 +100,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
       refute html =~ "unsupported"
       refute html =~ "outdated"
-      refute html =~ "/install-mcp.sh | sudo bash"
+      refute html =~ "install-mcp.sh"
     end
 
     test "the same client clears its upgrade prompt after reconnecting on the current bridge",
@@ -137,7 +140,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
       assert html =~ "unsupported"
       refute html =~ "MCP bridge update required"
-      refute html =~ "/install-mcp.sh | sudo bash"
+      refute html =~ "install-mcp.sh"
     end
 
     test "the list has status/name filters + the custom tab opens the key-builder form",
@@ -261,7 +264,21 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "EMISAR_CLIENT"
       assert html =~ "claude-desktop"
       assert html =~ "emk-"
-      assert html =~ "New key minted"
+
+      # The install one-liner targets THIS portal (the test host isn't the
+      # hosted default, so EMISAR_URL rides along), and the block says the
+      # installer can finish the client setup itself.
+      assert html =~ "Install the bridge"
+      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
+      assert html =~ "offers to add emisar to the LLM clients it finds"
+
+      # The key is its own copyable step (the installer prompts for it), and
+      # the manual config collapses to the disclosure fallback.
+      assert html =~ "Copy your API key"
+      assert html =~ "Shown only once"
+      assert html =~ "Set up Claude Desktop manually"
+      assert html =~ "Open"
+      refute html =~ "New key minted"
 
       # The live wait line follows the setup; pre-connect the page carries NO
       # amber spine — the minted note is neutral and the wait is a brand ping.

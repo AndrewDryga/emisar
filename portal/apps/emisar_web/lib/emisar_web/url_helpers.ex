@@ -22,6 +22,24 @@ defmodule EmisarWeb.UrlHelpers do
 
   def derive_base_url(_), do: @fallback_url
 
+  @doc """
+  The copy-pasteable one-liner that installs (or upgrades) the MCP bridge
+  from this deployment. The hosted portal keeps the minimal
+  `curl | sudo bash` (the installer already defaults to it); any other
+  base URL — dev, self-hosted — rides along as `EMISAR_URL` so the
+  installer's LLM-client setup writes configs that point back at the
+  portal that issued the command.
+  """
+  def mcp_install_command(base_url) do
+    base = String.trim_trailing(base_url, "/")
+
+    if base == @fallback_url do
+      "curl -sSL #{base}/install-mcp.sh | sudo bash"
+    else
+      "curl -sSL #{base}/install-mcp.sh | sudo EMISAR_URL=#{base} bash"
+    end
+  end
+
   defp port_suffix(_scheme, nil), do: ""
   defp port_suffix("https", 443), do: ""
   defp port_suffix("http", 80), do: ""

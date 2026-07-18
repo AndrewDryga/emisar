@@ -59,6 +59,10 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> validate_format(:slug, ~r/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/,
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
+    # The router serves literal /app/<segment> paths at these names (the
+    # slugless agents shorthands + checkout/accounts), so an account carrying
+    # one could never reach its own pages.
+    |> validate_exclusion(:slug, ~w[accounts agents checkout], message: "is reserved")
     |> unique_constraint(:slug)
   end
 end

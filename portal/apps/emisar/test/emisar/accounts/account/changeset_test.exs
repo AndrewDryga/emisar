@@ -31,6 +31,12 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       end
     end
 
+    test "rejects slugs the router serves as literal /app/<segment> paths" do
+      for reserved <- ["accounts", "agents", "checkout"] do
+        assert "is reserved" in errors_on(changeset(slug: reserved)).slug
+      end
+    end
+
     test "installs default settings and validates the grant-lifetime cap" do
       assert %Account.Settings{
                require_mfa: false,

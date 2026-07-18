@@ -411,6 +411,142 @@ FAILING_MV
     test "$(cat "$tx_b/emisar-mcp")" = new
     test "$installed_paths" = "$(printf '%s\n%s' "$tx_a/emisar-mcp" "$tx_b/emisar-mcp")"
     test -z "$(find "$tx_a" "$tx_b" -name '.emisar-mcp.old.*' -print)"
+
+    # The LLM-client config engine: extract the real functions, fake only
+    # the TTY layer, and drive genuine writes — an existing config keeps
+    # its other servers, a rerun is a hands-off no-op, escaped JSON text
+    # never reads as "already configured", and ASSUME_YES skips everything.
+    clients_lib="$tmp/configure-clients.sh"
+    for fn in tty_available ask_tty prompt_tty json_config_has_emisar \
+      toml_config_has_emisar file_has_content write_fresh_json_config \
+      merge_json_config append_codex_toml own_config_file \
+      install_client_config configure_client configure_llm_clients; do
+      extract_shell_function install-mcp.sh "$fn" >>"$clients_lib"
+    done
+    bash -n "$clients_lib"
+
+    clients_home="$tmp/clients-home"
+    mkdir -p "$clients_home/.cursor" "$clients_home/.codex" "$clients_home/.claude"
+    printf '{\n  "mcpServers": {\n    "other": { "command": "other-mcp" }\n  }\n}\n' \
+      >"$clients_home/.cursor/mcp.json"
+    printf '[model]\nname = "gpt"\n' >"$clients_home/.codex/config.toml"
+
+    (
+      # shellcheck disable=SC1090
+      source "$clients_lib"
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      warn() { printf '%s\n' "$*" >&2; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      ask_tty() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      prompt_tty() { tty_reply="emk-smoke-key"; }
+      EMISAR_URL="https://portal.example"
+      ASSUME_YES=0
+      OS=linux
+      first_bin=/usr/local/bin/emisar-mcp
+      CONFIGURED_CLIENTS=""
+      tty_reply=""
+      configure_llm_clients "$clients_home"
+      test "$(printf '%s\n' "$CONFIGURED_CLIENTS" | wc -l)" -eq 3
+    )
+    python3 - "$clients_home" <<'CHECK_CONFIGS'
+import json, sys
+
+home = sys.argv[1]
+entry_env = {
+    "EMISAR_URL": "https://portal.example",
+    "EMISAR_API_KEY": "emk-smoke-key",
+    "EMISAR_CLIENT": "cursor",
+}
+with open(home + "/.cursor/mcp.json") as handle:
+    cursor = json.load(handle)
+assert cursor["mcpServers"]["other"] == {"command": "other-mcp"}, cursor
+assert cursor["mcpServers"]["emisar"]["env"] == entry_env, cursor
+with open(home + "/.claude.json") as handle:
+    claude = json.load(handle)
+assert claude["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "claude-code", claude
+assert claude["mcpServers"]["emisar"]["command"] == "/usr/local/bin/emisar-mcp", claude
+CHECK_CONFIGS
+    grep -Fq '[mcp_servers.emisar]' "$clients_home/.codex/config.toml"
+    grep -Fq 'name = "gpt"' "$clients_home/.codex/config.toml"
+    test "$(grep -Fc 'mcp_servers.emisar' "$clients_home/.codex/config.toml")" -eq 1
+
+    # Rerun: every client already carries emisar, so nothing may prompt or
+    # change — the portal's upgrade one-liner must stay hands-off.
+    cursor_before=$(sha256 "$clients_home/.cursor/mcp.json")
+    codex_before=$(sha256 "$clients_home/.codex/config.toml")
+    (
+      # shellcheck disable=SC1090
+      source "$clients_lib"
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      warn() { printf '%s\n' "$*" >&2; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      ask_tty() { echo "unexpected client prompt on rerun" >&2; exit 9; }
+      # shellcheck disable=SC2317,SC2329
+      prompt_tty() { tty_reply=""; }
+      EMISAR_URL="https://portal.example"
+      ASSUME_YES=0
+      OS=linux
+      first_bin=/usr/local/bin/emisar-mcp
+      CONFIGURED_CLIENTS=""
+      tty_reply=""
+      configure_llm_clients "$clients_home"
+      test -z "$CONFIGURED_CLIENTS"
+    )
+    test "$cursor_before" = "$(sha256 "$clients_home/.cursor/mcp.json")"
+    test "$codex_before" = "$(sha256 "$clients_home/.codex/config.toml")"
+
+    # JSON-escaped prose (`\"emisar\"` in ~/.claude.json chat history) must
+    # not read as an existing server entry, while a real entry must.
+    escaped_probe="$tmp/escaped-claude.json"
+    printf '{"history": ["say \\"emisar\\" now"], "projects": {"/u/os/emisar": {}}}\n' \
+      >"$escaped_probe"
+    real_probe="$tmp/real-claude.json"
+    printf '{"mcpServers": {"emisar": {"command": "emisar-mcp"}}}\n' >"$real_probe"
+    (
+      # shellcheck disable=SC1090
+      source "$clients_lib"
+      if json_config_has_emisar "$escaped_probe"; then
+        echo "escaped JSON text misread as a configured server" >&2
+        exit 1
+      fi
+      json_config_has_emisar "$real_probe"
+    )
+
+    # --yes / ASSUME_YES is automation: no scanning, no prompts, no writes.
+    quiet_home="$tmp/quiet-home"
+    mkdir -p "$quiet_home/.cursor"
+    (
+      # shellcheck disable=SC1090
+      source "$clients_lib"
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      warn() { :; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      ask_tty() { echo "unexpected prompt under ASSUME_YES" >&2; exit 9; }
+      # shellcheck disable=SC2317,SC2329
+      prompt_tty() { tty_reply=""; }
+      EMISAR_URL="https://portal.example"
+      ASSUME_YES=1
+      OS=linux
+      first_bin=/usr/local/bin/emisar-mcp
+      CONFIGURED_CLIENTS=""
+      tty_reply=""
+      export EMISAR_URL ASSUME_YES OS first_bin CONFIGURED_CLIENTS tty_reply
+      configure_llm_clients "$quiet_home"
+    )
+    test ! -e "$quiet_home/.cursor/mcp.json"
     ;;
   *)
     echo "unknown installer module: $module" >&2
