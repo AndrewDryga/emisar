@@ -261,6 +261,15 @@ defmodule EmisarWeb.Router do
 
   # -- Authenticated product surface ----------------------------------
 
+  # The device-grant approval URL the MCP installer prints (…/activate) —
+  # top-level so the printed URL stays short; forwards into the current
+  # account's slugged page, preserving ?code=.
+  scope "/", EmisarWeb do
+    pipe_through [:browser, :noindex, :require_authenticated_user]
+
+    get "/activate", AccountRedirectController, :activate
+  end
+
   scope "/app", EmisarWeb do
     pipe_through [:browser, :noindex, :require_authenticated_user]
 
@@ -351,6 +360,7 @@ defmodule EmisarWeb.Router do
 
         live "/agents", AgentsLive, :index
         live "/agents/connect", AgentsLive, :connect
+        live "/activate", ActivateLive, :show
         live "/settings/team", TeamLive, :index
         live "/settings/team/invite", TeamLive, :new
         live "/settings/sso", SSOSettingsLive, :index
@@ -403,6 +413,12 @@ defmodule EmisarWeb.Router do
     post "/rpc", MCPRpcController, :handle
     get "/rpc", MCPRpcController, :reject_stream
     delete "/rpc", MCPRpcController, :reject_termination
+
+    # Device authorization for the MCP installer (RFC 8628 shape) — the
+    # unauthenticated open + poll pair; the approval itself happens on the
+    # authed /app/…/activate page. IP rate limits live on the controller.
+    post "/device_authorization", MCPDeviceGrantController, :authorize
+    post "/device_token", MCPDeviceGrantController, :token
   end
 
   scope "/api", EmisarWeb do

@@ -372,6 +372,45 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # Grant rows are minutes-lived and swept within a day, so the label is baked
+  # in at write time (the requested clients) rather than resolved by reference.
+  def device_grant_approved(%Subject{} = subject, %ApiKeys.DeviceGrant{} = grant) do
+    Audit.changeset(
+      grant.account_id,
+      "api_key.device_grant_approved",
+      actor(subject) ++
+        [
+          target_kind: "device_grant",
+          target_id: grant.id,
+          target_label: device_grant_label(grant),
+          payload: %{
+            requested_clients: grant.requested_clients,
+            requester_ip: grant.requester_ip
+          }
+        ]
+    )
+  end
+
+  def device_grant_denied(%Subject{} = subject, %ApiKeys.DeviceGrant{} = grant) do
+    Audit.changeset(
+      grant.account_id,
+      "api_key.device_grant_denied",
+      actor(subject) ++
+        [
+          target_kind: "device_grant",
+          target_id: grant.id,
+          target_label: device_grant_label(grant),
+          payload: %{
+            requested_clients: grant.requested_clients,
+            requester_ip: grant.requester_ip
+          }
+        ]
+    )
+  end
+
+  defp device_grant_label(%ApiKeys.DeviceGrant{} = grant),
+    do: Enum.map_join(grant.requested_clients, ", ", &ApiKeys.DeviceGrant.client_label/1)
+
   def api_key_revoked(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
     api_key_revoked_with_source_id(subject, key, nil)
   end

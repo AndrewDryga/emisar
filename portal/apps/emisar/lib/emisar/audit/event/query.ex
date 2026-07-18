@@ -36,6 +36,8 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.bound", "API key first use"},
     {"api_key.auto_rotated", "API key auto-rotated"},
     {"api_key.retired_by_rotation", "API key retired by rotation"},
+    {"api_key.device_grant_approved", "Agent connect approved"},
+    {"api_key.device_grant_denied", "Agent connect denied"},
     {"oauth.consent_granted", "OAuth client authorized"},
     {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
     {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
@@ -192,6 +194,8 @@ defmodule Emisar.Audit.Event.Query do
        {"api_key.bound", "First use"},
        {"api_key.auto_rotated", "Auto-rotated"},
        {"api_key.retired_by_rotation", "Retired by rotation"},
+       {"api_key.device_grant_approved", "Agent connect approved"},
+       {"api_key.device_grant_denied", "Agent connect denied"},
        {"oauth.consent_granted", "OAuth client authorized"}
      ]},
     {"Sign-in",

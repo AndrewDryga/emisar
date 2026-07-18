@@ -19,10 +19,14 @@
 #
 # The script is idempotent. It does not register a service. After
 # installing, an interactive run scans for local LLM clients (Claude
-# Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI) and offers to
-# add emisar to each — asking per client; a non-interactive or --yes
-# run skips that entirely. Per-client config snippets stay available
-# on the portal's /app/agents page.
+# Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, OpenClaw,
+# OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes, Goose) and offers
+# to add emisar to each — asking per client; a non-interactive or --yes
+# run skips that entirely. The API keys come from a browser approval
+# (the script prints an approval link; no key is ever typed or copied)
+# and land straight in the client configs, pointed at EMISAR_URL.
+# Manual per-client snippets stay available on the portal's
+# /app/agents page.
 
 set -Eeuo pipefail
 
@@ -471,15 +475,24 @@ activate_installations || die "installation failed; rolling back previous instal
 # ---------------------------------------------------------------------
 # Offer to add emisar to local LLM clients
 # ---------------------------------------------------------------------
-# Interactive-only: each client is offered individually, a client that
+# Interactive-only: each client is offered individually and a client that
 # already carries an emisar entry is left untouched (so the portal's
-# upgrade one-liner stays quiet), and the API key is read from the TTY —
-# never argv/env — so it cannot land in shell history or sudo's syslog.
+# upgrade one-liner stays quiet). The API keys come from a device-grant
+# approval (RFC 8628 shape): the operator approves the printed link in
+# the portal and the poll delivers the keys straight into the configs —
+# no secret ever touches argv, env, history, or sudo's syslog.
 # The file shapes mirror the portal's /app/agents snippets exactly.
 
-tty_reply=""
 CONFIGURED_CLIENTS=""
 clients_phase_ran=0
+CLIENTS_FOUND=0
+SCANNED=""
+CONSENTED=""
+DEVICE_CODE=""
+DEVICE_USER_CODE=""
+DEVICE_VERIFY_URI=""
+DEVICE_INTERVAL=5
+DEVICE_EXPIRES_IN=900
 
 tty_available() {
   [ -t 0 ] && return 0
@@ -507,15 +520,66 @@ ask_tty() {
   case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
 }
 
-prompt_tty() {
-  tty_reply=""
-  if [ -t 0 ]; then
-    printf '%s' "$1"
-    read -r tty_reply || tty_reply=""
-  elif { exec 3</dev/tty; } 2>/dev/null; then
-    printf '%s' "$1" >/dev/tty
-    read -r tty_reply <&3 || tty_reply=""
-    exec 3<&-
+# Plain human-facing output for the interactive phases — no log prefix.
+# (Named `out`, and never `say` — macOS ships a text-to-speech /usr/bin/say
+# that would win if the function definition were ever missed.)
+out() {
+  printf '%s\n' "$*"
+}
+
+# Bold section line when stdout is a terminal; plain otherwise.
+hdr() {
+  if [ -t 1 ]; then
+    printf '\033[1m%s\033[0m\n' "$*"
+  else
+    printf '%s\n' "$*"
+  fi
+}
+
+# The success moment — bold green on a terminal, plain otherwise.
+ok() {
+  if [ -t 1 ]; then
+    printf '\033[1;32m%s\033[0m\n' "$*"
+  else
+    printf '%s\n' "$*"
+  fi
+}
+
+# Secondary/reference lines (the verify/uninstall footer) — faint on a
+# terminal, plain otherwise.
+dim() {
+  if [ -t 1 ]; then
+    printf '\033[2m%s\033[0m\n' "$*"
+  else
+    printf '%s\n' "$*"
+  fi
+}
+
+# One aligned client row; `style` is an SGR code for the status column
+# ("2" faint, "1;32" green) or empty for plain.
+client_row() {
+  local label="$1" style="$2" text="$3"
+  if [ -t 1 ] && [ -n "${style}" ]; then
+    printf '  %-15s \033[%sm%s\033[0m\n' "${label}" "${style}" "${text}"
+  else
+    printf '  %-15s %s\n' "${label}" "${text}"
+  fi
+}
+
+# Best-effort: open the approval URL in the invoking user's browser (never
+# root's). Failure is fine — the link is already printed.
+open_browser() {
+  local url="$1" opener=""
+  case "${OS}" in
+    darwin) opener="open" ;;
+    linux) opener="xdg-open" ;;
+  esac
+  [ -n "${opener}" ] || return 1
+  command -v "${opener}" >/dev/null 2>&1 || return 1
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    sudo -u "${SUDO_USER}" "${opener}" "${url}" >/dev/null 2>&1
+  else
+    "${opener}" "${url}" >/dev/null 2>&1
   fi
 }
 
@@ -528,6 +592,10 @@ json_config_has_emisar() {
 
 toml_config_has_emisar() {
   [ -e "$1" ] && grep -Fq 'mcp_servers.emisar' "$1" 2>/dev/null
+}
+
+yaml_config_has_emisar() {
+  [ -e "$1" ] && grep -Eq '^[[:space:]]+emisar:' "$1" 2>/dev/null
 }
 
 file_has_content() {
@@ -556,15 +624,24 @@ write_fresh_json_config() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
-# Merge into an existing JSON config, preserving every other key. python3
-# first, jq second; no tool → fail so the caller prints the manual path.
+# Merge into an existing JSON config, preserving every other key, writing
+# the client's exact upstream schema (`shape`). python3 first; jq covers only
+# the standard mcpServers shape; no tool → fail so the caller prints the
+# manual path.
 merge_json_config() {
-  local file="$1" bin="$2" url="$3" key="$4" client="$5"
+  local file="$1" bin="$2" url="$3" key="$4" client="$5" shape="${6:-std}"
   local status=0
   if command -v python3 >/dev/null 2>&1; then
     MCP_FILE="${file}" MCP_BIN="${bin}" MCP_URL="${url}" MCP_KEY="${key}" \
-      MCP_CLIENT="${client}" python3 - 2>/dev/null <<'PY' || status=1
+      MCP_CLIENT="${client}" MCP_SHAPE="${shape}" python3 - 2>/dev/null <<'PY' || status=1
 import json, os, tempfile
+
+def container(data, *keys):
+    for key in keys:
+        data = data.setdefault(key, {})
+        if not isinstance(data, dict):
+            raise SystemExit("existing config key is not an object: " + key)
+    return data
 
 def main():
     path = os.environ["MCP_FILE"]
@@ -573,17 +650,41 @@ def main():
     data = json.loads(raw) if raw.strip() else {}
     if not isinstance(data, dict):
         raise SystemExit("top-level JSON is not an object")
-    servers = data.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise SystemExit("mcpServers is not an object")
-    servers["emisar"] = {
-        "command": os.environ["MCP_BIN"],
-        "env": {
-            "EMISAR_URL": os.environ["MCP_URL"],
-            "EMISAR_API_KEY": os.environ["MCP_KEY"],
-            "EMISAR_CLIENT": os.environ["MCP_CLIENT"],
-        },
+    bin_path = os.environ["MCP_BIN"]
+    entry_env = {
+        "EMISAR_URL": os.environ["MCP_URL"],
+        "EMISAR_API_KEY": os.environ["MCP_KEY"],
+        "EMISAR_CLIENT": os.environ["MCP_CLIENT"],
     }
+    shape = os.environ["MCP_SHAPE"]
+    if shape == "std":
+        container(data, "mcpServers")["emisar"] = {"command": bin_path, "env": entry_env}
+    elif shape == "openclaw":
+        container(data, "mcp", "servers")["emisar"] = {"command": bin_path, "env": entry_env}
+    elif shape == "opencode":
+        container(data, "mcp")["emisar"] = {
+            "type": "local",
+            "command": [bin_path],
+            "enabled": True,
+            "environment": entry_env,
+        }
+    elif shape == "copilot":
+        container(data, "mcpServers")["emisar"] = {
+            "type": "local",
+            "command": bin_path,
+            "args": [],
+            "env": entry_env,
+            "tools": ["*"],
+        }
+    elif shape == "zed":
+        container(data, "context_servers")["emisar"] = {
+            "source": "custom",
+            "command": bin_path,
+            "args": [],
+            "env": entry_env,
+        }
+    else:
+        raise SystemExit("unknown shape: " + shape)
     fd, tmp = tempfile.mkstemp(prefix=".emisar-mcp.", dir=os.path.dirname(path) or ".")
     with os.fdopen(fd, "w") as handle:
         json.dump(data, handle, indent=2)
@@ -594,6 +695,7 @@ main()
 PY
     return "${status}"
   fi
+  [ "${shape}" = "std" ] || return 1
   if command -v jq >/dev/null 2>&1; then
     local tmp_out="${file}.emisar-new.$$"
     jq --arg cmd "${bin}" --arg url "${url}" --arg key "${key}" --arg client "${client}" \
@@ -630,6 +732,57 @@ append_codex_toml() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
+# Hermes/Goose configs are YAML. A safe bash append needs the top-level key
+# absent — merging INTO existing YAML risks duplicate keys, so that case
+# falls back to the portal snippet. Field names are each client's own
+# schema (hermes: command/env; goose: cmd/envs/type/timeout).
+append_yaml_config() {
+  local kind="$1" file="$2" bin="$3" url="$4" key="$5" client="$6"
+  local top tmp_out
+  case "${kind}" in
+    hermes) top="mcp_servers" ;;
+    goose) top="extensions" ;;
+    *) return 1 ;;
+  esac
+  if [ -e "${file}" ] && grep -Eq "^${top}:" "${file}" 2>/dev/null; then
+    return 1
+  fi
+  tmp_out="${file}.emisar-new.$$"
+  if [ -e "${file}" ]; then
+    cp -p "${file}" "${tmp_out}" || return 1
+  else
+    : >"${tmp_out}" || return 1
+  fi
+  if file_has_content "${tmp_out}"; then
+    printf '\n' >>"${tmp_out}"
+  fi
+  {
+    if [ "${kind}" = "hermes" ]; then
+      printf 'mcp_servers:\n'
+      printf '  emisar:\n'
+      printf '    command: %s\n' "${bin}"
+      printf '    env:\n'
+      printf '      EMISAR_URL: "%s"\n' "${url}"
+      printf '      EMISAR_API_KEY: "%s"\n' "${key}"
+      printf '      EMISAR_CLIENT: %s\n' "${client}"
+    else
+      printf 'extensions:\n'
+      printf '  emisar:\n'
+      printf '    name: emisar\n'
+      printf '    cmd: %s\n' "${bin}"
+      printf '    args: []\n'
+      printf '    enabled: true\n'
+      printf '    envs:\n'
+      printf '      EMISAR_URL: "%s"\n' "${url}"
+      printf '      EMISAR_API_KEY: "%s"\n' "${key}"
+      printf '      EMISAR_CLIENT: %s\n' "${client}"
+      printf '    type: stdio\n'
+      printf '    timeout: 300\n'
+    fi
+  } >>"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
+}
+
 # A sudo run writes as root into the invoking user's home — hand the
 # file back so the client (running as the user) can read it.
 own_config_file() {
@@ -643,6 +796,12 @@ own_config_file() {
 
 install_client_config() {
   local kind="$1" config_file="$2" key="$3" client_id="$4"
+  local config_dir
+  config_dir=$(dirname "${config_file}")
+  if [ ! -d "${config_dir}" ]; then
+    mkdir -p "${config_dir}" || return 1
+    own_config_file "${config_dir}"
+  fi
   case "${kind}" in
     json)
       if file_has_content "${config_file}"; then
@@ -652,85 +811,300 @@ install_client_config() {
         write_fresh_json_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}"
       fi
       ;;
+    opencode|openclaw|copilot|zed)
+      # Non-standard JSON schemas need the real merge — python3 only.
+      command -v python3 >/dev/null 2>&1 || return 1
+      if file_has_content "${config_file}"; then
+        cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
+      else
+        printf '{}\n' >"${config_file}" || return 1
+      fi
+      merge_json_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}" "${kind}"
+      ;;
     toml)
       if file_has_content "${config_file}"; then
         cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
       fi
       append_codex_toml "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}"
       ;;
+    hermes|goose)
+      if file_has_content "${config_file}"; then
+        cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
+      fi
+      append_yaml_config "${kind}" "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}"
+      ;;
     *) return 1 ;;
   esac
 }
 
-configure_client() {
-  local label="$1" client_id="$2" kind="$3" config_file="$4"
-  local key
-  if [ "${kind}" = "json" ] && json_config_has_emisar "${config_file}"; then
-    log "${label}: emisar already configured — leaving ${config_file} unchanged"
-    return 0
+# JSON response field readers — the same python3-then-jq ladder as config
+# merging; a machine with neither falls back to the portal's manual snippets.
+json_string_field() {
+  local file="$1" key="$2"
+  local status=0
+  if command -v python3 >/dev/null 2>&1; then
+    MCP_JSON_FILE="${file}" MCP_JSON_KEY="${key}" python3 - 2>/dev/null <<'PY' || status=1
+import json, os
+
+def main():
+    with open(os.environ["MCP_JSON_FILE"]) as handle:
+        data = json.load(handle)
+    value = data[os.environ["MCP_JSON_KEY"]]
+    if isinstance(value, (dict, list)):
+        raise SystemExit(1)
+    print(value)
+
+main()
+PY
+    return "${status}"
   fi
-  if [ "${kind}" = "toml" ] && toml_config_has_emisar "${config_file}"; then
-    log "${label}: emisar already configured — leaving ${config_file} unchanged"
-    return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -er --arg key "${key}" '.[$key] // empty | tostring' "${file}" 2>/dev/null
+    return "$?"
   fi
-  ask_tty "found ${label} — add emisar to it?" || return 0
-  prompt_tty "  API key for this agent (mint one at ${EMISAR_URL}/app/agents/connect): "
-  key=$(printf '%s' "${tty_reply}" | tr -d '[:space:]')
-  if [ -z "${key}" ]; then
-    log "no key entered — skipped ${label}"
-    return 0
+  return 1
+}
+
+json_client_key() {
+  local file="$1" client="$2"
+  local status=0
+  if command -v python3 >/dev/null 2>&1; then
+    MCP_JSON_FILE="${file}" MCP_JSON_CLIENT="${client}" python3 - 2>/dev/null <<'PY' || status=1
+import json, os
+
+def main():
+    with open(os.environ["MCP_JSON_FILE"]) as handle:
+        data = json.load(handle)
+    value = data["client_keys"][os.environ["MCP_JSON_CLIENT"]]
+    if not isinstance(value, str):
+        raise SystemExit(1)
+    print(value)
+
+main()
+PY
+    return "${status}"
   fi
-  if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}"; then
-    own_config_file "${config_file}"
-    CONFIGURED_CLIENTS="${CONFIGURED_CLIENTS}${CONFIGURED_CLIENTS:+
-}${label}: ${config_file}"
-    log "${label}: emisar added (${config_file}) — restart ${label} to pick it up"
+  if command -v jq >/dev/null 2>&1; then
+    jq -er --arg client "${client}" '.client_keys[$client] // empty' "${file}" 2>/dev/null
+    return "$?"
+  fi
+  return 1
+}
+
+# Opens the device grant for the consented clients. Sets DEVICE_* from the
+# response; any failure means "use the portal's manual snippets instead".
+request_device_grant() {
+  local ids="$1" id json_ids="" body status
+  for id in ${ids}; do
+    json_ids="${json_ids}${json_ids:+,}\"${id}\""
+  done
+  body="{\"requested_clients\":[${json_ids}]}"
+  status=$(curl -sS -m 15 -H 'Content-Type: application/json' -d "${body}" \
+    -o "${DEVICE_RESP}" -w '%{http_code}' \
+    "${EMISAR_URL}/api/mcp/device_authorization") || return 1
+  [ "${status}" = "200" ] || return 1
+  DEVICE_CODE=$(json_string_field "${DEVICE_RESP}" device_code) || return 1
+  DEVICE_USER_CODE=$(json_string_field "${DEVICE_RESP}" user_code) || return 1
+  DEVICE_VERIFY_URI=$(json_string_field "${DEVICE_RESP}" verification_uri_complete) || return 1
+  DEVICE_INTERVAL=$(json_string_field "${DEVICE_RESP}" interval) || DEVICE_INTERVAL=5
+  DEVICE_EXPIRES_IN=$(json_string_field "${DEVICE_RESP}" expires_in) || DEVICE_EXPIRES_IN=900
+}
+
+# Polls the token endpoint until approval (0; TOKEN_RESP holds the keys),
+# denial, or expiry. Network blips and rate limits just keep polling.
+await_device_approval() {
+  local deadline now status error
+  deadline=$(($(date +%s) + DEVICE_EXPIRES_IN))
+  out ""
+  hdr "Approve this machine in your browser"
+  out ""
+  out "  ${DEVICE_VERIFY_URI}"
+  out ""
+  if open_browser "${DEVICE_VERIFY_URI}"; then
+    out "Opened your browser — approve there, or use the link above."
   else
-    warn "${label}: could not update ${config_file} — paste its snippet from ${EMISAR_URL}/app/agents/connect instead"
+    out "Or enter code ${DEVICE_USER_CODE} by hand at ${EMISAR_URL}/activate."
   fi
+  out "Waiting for approval (Ctrl-C skips client setup)…"
+  while :; do
+    now=$(date +%s)
+    if [ "${now}" -ge "${deadline}" ]; then
+      warn "approval code expired — re-run the installer to try again"
+      return 1
+    fi
+    sleep "${DEVICE_INTERVAL}"
+    status=$(curl -sS -m 15 -H 'Content-Type: application/json' \
+      -d "{\"device_code\":\"${DEVICE_CODE}\"}" \
+      -o "${TOKEN_RESP}" -w '%{http_code}' \
+      "${EMISAR_URL}/api/mcp/device_token") || continue
+    if [ "${status}" = "200" ]; then
+      out ""
+      out ""
+      ok "Approved."
+      return 0
+    fi
+    error=$(json_string_field "${TOKEN_RESP}" error) || error=""
+    case "${error}" in
+      access_denied)
+        warn "the request was denied in the portal — no clients configured"
+        return 1
+        ;;
+      expired_token)
+        warn "approval code expired — re-run the installer to try again"
+        return 1
+        ;;
+      *) : ;;
+    esac
+  done
+}
+
+# Detection for one client: records `label|id|kind|file|state`, where state
+# is "connected" (already carries emisar — left untouched, so the portal's
+# upgrade one-liner stays quiet) or "candidate".
+scan_client() {
+  local label="$1" client_id="$2" kind="$3" config_file="$4" state="candidate"
+  case "${kind}" in
+    toml)
+      toml_config_has_emisar "${config_file}" && state="connected"
+      ;;
+    hermes|goose)
+      yaml_config_has_emisar "${config_file}" && state="connected"
+      ;;
+    *)
+      json_config_has_emisar "${config_file}" && state="connected"
+      ;;
+  esac
+  CLIENTS_FOUND=$((CLIENTS_FOUND + 1))
+  SCANNED="${SCANNED}${SCANNED:+
+}${label}|${client_id}|${kind}|${config_file}|${state}"
 }
 
 configure_llm_clients() {
-  local user_home="$1" desktop_dir found=0
+  local user_home="$1" desktop_dir ids="" label client_id kind config_file state key
   CONFIGURED_CLIENTS=""
+  CLIENTS_FOUND=0
+  SCANNED=""
+  CONSENTED=""
   [ "${ASSUME_YES}" = "1" ] && return 0
   tty_available || return 0
   clients_phase_ran=1
-  log "scanning for LLM clients on this machine"
+  DEVICE_RESP="${DEVICE_RESP:-${tmp}/device-authorization.json}"
+  TOKEN_RESP="${TOKEN_RESP:-${tmp}/device-token.json}"
+
   if [ -e "${user_home}/.claude.json" ] || [ -d "${user_home}/.claude" ]; then
-    found=1
-    configure_client "Claude Code" claude-code json "${user_home}/.claude.json"
+    scan_client "Claude Code" claude-code json "${user_home}/.claude.json"
   fi
   desktop_dir="${user_home}/Library/Application Support/Claude"
   [ "${OS}" = "linux" ] && desktop_dir="${user_home}/.config/Claude"
   if [ -d "${desktop_dir}" ]; then
-    found=1
-    configure_client "Claude Desktop" claude-desktop json "${desktop_dir}/claude_desktop_config.json"
+    scan_client "Claude Desktop" claude-desktop json "${desktop_dir}/claude_desktop_config.json"
   fi
   if [ -d "${user_home}/.cursor" ]; then
-    found=1
-    configure_client "Cursor" cursor json "${user_home}/.cursor/mcp.json"
+    scan_client "Cursor" cursor json "${user_home}/.cursor/mcp.json"
   fi
   if [ -d "${user_home}/.gemini" ]; then
-    found=1
-    configure_client "Gemini CLI" gemini json "${user_home}/.gemini/settings.json"
+    scan_client "Gemini CLI" gemini json "${user_home}/.gemini/settings.json"
   fi
   if [ -d "${user_home}/.codex" ]; then
-    found=1
-    configure_client "Codex CLI" codex toml "${user_home}/.codex/config.toml"
+    scan_client "Codex CLI" codex toml "${user_home}/.codex/config.toml"
   fi
-  if [ "${found}" -eq 0 ]; then
-    log "no supported LLM clients found — connect yours from ${EMISAR_URL}/app/agents"
+  if [ -d "${user_home}/.openclaw" ]; then
+    scan_client "OpenClaw" openclaw openclaw "${user_home}/.openclaw/openclaw.json"
   fi
+  if [ -d "${user_home}/.config/opencode" ]; then
+    scan_client "OpenCode" opencode opencode "${user_home}/.config/opencode/opencode.json"
+  fi
+  if [ -d "${user_home}/.codeium/windsurf" ]; then
+    scan_client "Windsurf" windsurf json "${user_home}/.codeium/windsurf/mcp_config.json"
+  fi
+  if [ -d "${user_home}/.pi" ]; then
+    scan_client "Pi" pi json "${user_home}/.pi/agent/mcp.json"
+  fi
+  if [ -d "${user_home}/.copilot" ]; then
+    scan_client "Copilot CLI" copilot-cli copilot "${user_home}/.copilot/mcp-config.json"
+  fi
+  if [ -d "${user_home}/.config/zed" ]; then
+    scan_client "Zed" zed zed "${user_home}/.config/zed/settings.json"
+  fi
+  if [ -d "${user_home}/.hermes" ]; then
+    scan_client "Hermes" hermes hermes "${user_home}/.hermes/config.yaml"
+  fi
+  if [ -d "${user_home}/.config/goose" ]; then
+    scan_client "Goose" goose goose "${user_home}/.config/goose/config.yaml"
+  fi
+
+  if [ "${CLIENTS_FOUND}" -eq 0 ]; then
+    out ""
+    out "No supported LLM clients found on this machine — connect one from"
+    out "${EMISAR_URL}/app/agents whenever you're ready."
+    return 0
+  fi
+
+  # The scan as one aligned table, then the questions — never interleaved.
+  out ""
+  hdr "Connect your LLM clients"
+  out ""
+  while IFS='|' read -r label client_id kind config_file state; do
+    [ -n "${client_id}" ] || continue
+    if [ "${state}" = "connected" ]; then
+      client_row "${label}" 2 "already connected"
+    else
+      client_row "${label}" 33 "not connected"
+    fi
+  done <<<"${SCANNED}"
+  out ""
+
+  while IFS='|' read -r label client_id kind config_file state; do
+    [ "${state}" = "candidate" ] || continue
+    if ask_tty "Add emisar to ${label}?"; then
+      CONSENTED="${CONSENTED}${CONSENTED:+
+}${label}|${client_id}|${kind}|${config_file}"
+    fi
+  done <<<"${SCANNED}"
+  [ -n "${CONSENTED}" ] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
+    warn "python3 or jq is needed to finish setup here — use the manual snippets at ${EMISAR_URL}/app/agents/connect"
+    return 0
+  fi
+
+  while IFS='|' read -r label client_id kind config_file; do
+    [ -n "${client_id}" ] && ids="${ids}${ids:+ }${client_id}"
+  done <<<"${CONSENTED}"
+
+  if ! request_device_grant "${ids}"; then
+    warn "could not start connection approval against ${EMISAR_URL} — use the manual snippets at ${EMISAR_URL}/app/agents/connect"
+    return 0
+  fi
+
+  await_device_approval || return 0
+
+  out ""
+  while IFS='|' read -r label client_id kind config_file; do
+    [ -n "${client_id}" ] || continue
+    if ! key=$(json_client_key "${TOKEN_RESP}" "${client_id}"); then
+      warn "${label}: no key was delivered — use its snippet at ${EMISAR_URL}/app/agents/connect"
+      continue
+    fi
+    if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}"; then
+      own_config_file "${config_file}"
+      CONFIGURED_CLIENTS="${CONFIGURED_CLIENTS}${CONFIGURED_CLIENTS:+
+}${label}: ${config_file}"
+      client_row "${label}" "1;32" "connected → ${config_file}"
+    else
+      warn "${label}: could not update ${config_file} — paste its snippet from ${EMISAR_URL}/app/agents/connect instead"
+    fi
+  done <<<"${CONSENTED}"
 }
 
 # ---------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------
 
-log "installed:"
+out ""
+hdr "${expected_version} installed"
 while IFS= read -r bin_dst; do
-  log "${bin_dst}: ${expected_version}"
+  out "  ${bin_dst}"
 done <<<"${installed_paths}"
 
 first_bin=${installed_paths%%$'\n'*}
@@ -738,27 +1112,24 @@ first_bin=${installed_paths%%$'\n'*}
 configure_llm_clients "$(invoking_user_home)" || \
   warn "client setup did not complete — per-client snippets: ${EMISAR_URL}/app/agents/connect"
 
-# After an interactive run the per-client lines above have already said
-# everything (configured / already configured / skipped / none found) — no
+# After an interactive run the aligned client lines above have already said
+# everything (connected / already connected / declined / none found) — no
 # trailing how-to block. Only a run that never offered setup (--yes or no
 # TTY) still owes the one pointer.
 if [ -n "${CONFIGURED_CLIENTS}" ]; then
-  cat <<NEXT
-
-Configured LLM clients — restart each to pick up emisar:
-$(while IFS= read -r line; do printf '  %s\n' "${line}"; done <<<"${CONFIGURED_CLIENTS}")
-
-Manage agents and their keys: ${EMISAR_URL}/app/agents
-NEXT
+  out ""
+  out "Restart each connected client to pick up emisar."
+  out "Manage agents and their keys: ${EMISAR_URL}/app/agents"
 elif [ "${clients_phase_ran}" = "0" ]; then
-  printf '\nConnect an LLM client: %s/app/agents/connect\n' "${EMISAR_URL}"
+  out ""
+  out "Connect an LLM client: ${EMISAR_URL}/app/agents/connect"
 fi
 
-cat <<NEXT
-
-Verify install:
-  ${first_bin} --help
-
-Uninstall:
-$(while IFS= read -r path; do printf '  rm %s\n' "${path}"; done <<<"${installed_paths}")
-NEXT
+out ""
+dim "Verify install:"
+dim "  ${first_bin} --help"
+out ""
+dim "Uninstall:"
+while IFS= read -r path; do
+  dim "  rm ${path}"
+done <<<"${installed_paths}"

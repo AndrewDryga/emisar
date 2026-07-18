@@ -1,106 +1,94 @@
-<div class="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-12">
-  <div class="w-full max-w-md">
-    <div class="mb-8 flex justify-center">
-      <img src={~p"/images/brand/emisar-logo.svg"} alt="emisar" class="h-8 w-auto" />
-    </div>
-
-    <div class="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
-      <div class="border-b border-zinc-800 px-6 py-5">
-        <h1 class="text-lg font-semibold text-zinc-50">
-          Authorize <span class="text-brand-400">{@client_name}</span>
-        </h1>
-        <%!-- With one account the header names it outright; with several the
+<.auth_card>
+  <div class="border-b border-zinc-800 px-6 py-5">
+    <h1 class="text-lg font-semibold text-zinc-50">
+      Authorize <span class="text-brand-400">{@client_name}</span>
+    </h1>
+    <%!-- With one account the header names it outright; with several the
              picker in the form below owns the choice — a static name here
              would go stale the moment the operator picks another. --%>
-        <p :if={length(@accounts) == 1} class="mt-1 text-sm text-zinc-400">
-          wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
-        </p>
-        <p :if={length(@accounts) > 1} class="mt-1 text-sm text-zinc-400">
-          wants to connect to one of your accounts
-        </p>
-        <p :if={@callback_origin} class="mt-2 text-xs text-zinc-500">
-          Authorization codes go to
-          <span class="font-mono text-zinc-400">{@callback_origin}</span>
-        </p>
-      </div>
+    <p :if={length(@accounts) == 1} class="mt-1 text-sm text-zinc-400">
+      wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
+    </p>
+    <p :if={length(@accounts) > 1} class="mt-1 text-sm text-zinc-400">
+      wants to connect to one of your accounts
+    </p>
+    <p :if={@callback_origin} class="mt-2 text-xs text-zinc-500">
+      Authorization codes go to
+      <span class="font-mono text-[0.92em] text-zinc-400">{@callback_origin}</span>
+    </p>
+  </div>
 
-      <div class="px-6 py-5">
-        <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
-          This will allow it to
-        </p>
-        <ul class="mt-3 space-y-3">
-          <li :for={scope <- @scopes} class="flex items-start gap-3">
-            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-            <span class="text-sm leading-snug text-zinc-300">{scope_label(scope)}</span>
-          </li>
-        </ul>
+  <div class="px-6 py-5">
+    <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
+      This will allow it to
+    </p>
+    <ul class="mt-3 space-y-3">
+      <li :for={scope <- @scopes} class="flex items-start gap-3">
+        <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
+        <span class="text-sm leading-snug text-zinc-300">{scope_label(scope)}</span>
+      </li>
+    </ul>
 
-        <div class="mt-5 rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
-          <p class="text-xs leading-relaxed text-zinc-500">
-            The client can only run actions your policy already permits, and
-            every call is attributed to you and recorded in the audit log.
-            Anything requiring approval still waits for a human.
-          </p>
-        </div>
+    <.consent_note class="mt-5">
+      The client can only run actions your policy already permits, and
+      every call is attributed to you and recorded in the audit log.
+      Anything requiring approval still waits for a human.
+    </.consent_note>
 
-        <.form for={%{}} action={~p"/oauth/authorize"} method="post" class="mt-6">
-          <input
-            :for={{key, value} <- @params}
-            :if={value not in [nil, ""]}
-            type="hidden"
-            name={key}
-            value={value}
-          />
+    <.form for={%{}} action={~p"/oauth/authorize"} method="post" class="mt-6">
+      <input
+        :for={{key, value} <- @params}
+        :if={value not in [nil, ""]}
+        type="hidden"
+        name={key}
+        value={value}
+      />
 
-          <%!-- Which account the grant lands in. A member of several accounts
+      <%!-- Which account the grant lands in. A member of several accounts
                picks at the point of decision (preselected to the session's
                current one); a single-account member just carries it as a
                hidden field — the POST validates the choice against their real
                memberships either way. --%>
-          <div :if={length(@accounts) > 1} class="mb-5">
-            <.input
-              type="select"
-              id="consent-account"
-              name="account_id"
-              label="Grant access to"
-              label_variant={:eyebrow}
-              value={@selected_account_id}
-              options={Enum.map(@accounts, &{&1.name, &1.id})}
-            />
-          </div>
-          <input
-            :if={length(@accounts) == 1}
-            type="hidden"
-            name="account_id"
-            value={@selected_account_id}
-          />
-
-          <div class="flex flex-col gap-3">
-            <button
-              type="submit"
-              name="decision"
-              value="approve"
-              class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
-            >
-              Authorize
-            </button>
-            <button
-              type="submit"
-              name="decision"
-              value="deny"
-              class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-            >
-              Deny
-            </button>
-          </div>
-        </.form>
+      <div :if={length(@accounts) > 1} class="mb-5">
+        <.input
+          type="select"
+          id="consent-account"
+          name="account_id"
+          label="Grant access to"
+          label_variant={:eyebrow}
+          value={@selected_account_id}
+          options={Enum.map(@accounts, &{&1.name, &1.id})}
+        />
       </div>
+      <input
+        :if={length(@accounts) == 1}
+        type="hidden"
+        name="account_id"
+        value={@selected_account_id}
+      />
 
-      <div :if={@user_email} class="border-t border-zinc-800 px-6 py-3">
-        <p class="text-center text-xs text-zinc-500">
-          Signed in as <span class="text-zinc-400">{@user_email}</span>
-        </p>
+      <div class="flex flex-col gap-3">
+        <button
+          type="submit"
+          name="decision"
+          value="approve"
+          class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+        >
+          Authorize
+        </button>
+        <button
+          type="submit"
+          name="decision"
+          value="deny"
+          class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+        >
+          Deny
+        </button>
       </div>
-    </div>
+    </.form>
   </div>
-</div>
+
+  <:footer :if={@user_email}>
+    Signed in as <span class="text-zinc-400">{@user_email}</span>
+  </:footer>
+</.auth_card>

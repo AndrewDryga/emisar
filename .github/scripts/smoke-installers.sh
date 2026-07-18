@@ -412,25 +412,46 @@ FAILING_MV
     test "$installed_paths" = "$(printf '%s\n%s' "$tx_a/emisar-mcp" "$tx_b/emisar-mcp")"
     test -z "$(find "$tx_a" "$tx_b" -name '.emisar-mcp.old.*' -print)"
 
-    # The LLM-client config engine: extract the real functions, fake only
-    # the TTY layer, and drive genuine writes — an existing config keeps
-    # its other servers, a rerun is a hands-off no-op, escaped JSON text
-    # never reads as "already configured", and ASSUME_YES skips everything.
+    # The LLM-client device flow: extract the real functions, fake only the
+    # TTY + network, and drive genuine writes — one grant covers the consent
+    # batch, each client gets ITS key, an existing config keeps its other
+    # servers, a rerun is a hands-off no-op, denial writes nothing, escaped
+    # JSON text never reads as "already configured", and ASSUME_YES skips
+    # everything.
     clients_lib="$tmp/configure-clients.sh"
-    for fn in tty_available ask_tty prompt_tty json_config_has_emisar \
-      toml_config_has_emisar file_has_content write_fresh_json_config \
-      merge_json_config append_codex_toml own_config_file \
-      install_client_config configure_client configure_llm_clients; do
+    for fn in tty_available ask_tty json_config_has_emisar \
+      toml_config_has_emisar yaml_config_has_emisar file_has_content \
+      write_fresh_json_config merge_json_config append_codex_toml \
+      append_yaml_config own_config_file \
+      install_client_config json_string_field json_client_key \
+      request_device_grant await_device_approval scan_client out hdr ok dim client_row \
+      open_browser configure_llm_clients; do
       extract_shell_function install-mcp.sh "$fn" >>"$clients_lib"
     done
     bash -n "$clients_lib"
 
     clients_home="$tmp/clients-home"
-    mkdir -p "$clients_home/.cursor" "$clients_home/.codex" "$clients_home/.claude"
+    mkdir -p "$clients_home/.cursor" "$clients_home/.codex" "$clients_home/.claude" \
+      "$clients_home/.openclaw" "$clients_home/.config/opencode" \
+      "$clients_home/.codeium/windsurf" "$clients_home/.pi" "$clients_home/.copilot" \
+      "$clients_home/.config/zed" "$clients_home/.hermes" "$clients_home/.config/goose"
     printf '{\n  "mcpServers": {\n    "other": { "command": "other-mcp" }\n  }\n}\n' \
       >"$clients_home/.cursor/mcp.json"
     printf '[model]\nname = "gpt"\n' >"$clients_home/.codex/config.toml"
+    # Existing configs that the shape-aware merges must PRESERVE:
+    printf '{\n  "mcp": {\n    "other": { "type": "local", "command": ["other-mcp"] }\n  }\n}\n' \
+      >"$clients_home/.config/opencode/opencode.json"
+    printf '{\n  "theme": "One Dark",\n  "context_servers": {\n    "other": { "source": "custom", "command": "other-mcp" }\n  }\n}\n' \
+      >"$clients_home/.config/zed/settings.json"
+    # Hermes config WITHOUT an mcp_servers key → the YAML append is safe.
+    printf 'model: hermes-4\n' >"$clients_home/.hermes/config.yaml"
+    # Goose config WITH an extensions key → append must refuse (snippet path).
+    printf 'extensions:\n  developer:\n    enabled: true\n' >"$clients_home/.config/goose/config.yaml"
+    goose_before=$(sha256 "$clients_home/.config/goose/config.yaml")
 
+    # Independent subshell environments on purpose (each drives its own
+    # scenario) — the SC2030/SC2031 cross-subshell pairing is noise here.
+    # shellcheck disable=SC2030,SC2031
     (
       # shellcheck disable=SC1090
       source "$clients_lib"
@@ -443,40 +464,137 @@ FAILING_MV
       # shellcheck disable=SC2317,SC2329
       ask_tty() { return 0; }
       # shellcheck disable=SC2317,SC2329
-      prompt_tty() { tty_reply="emk-smoke-key"; }
+      sleep() { :; }
+      # shellcheck disable=SC2317,SC2329
+      out() { :; }
+      # shellcheck disable=SC2317,SC2329
+      ok() { :; }
+      # shellcheck disable=SC2317,SC2329
+      dim() { :; }
+      # shellcheck disable=SC2317,SC2329
+      client_row() { :; }
+      # shellcheck disable=SC2317,SC2329
+      hdr() { :; }
+      # shellcheck disable=SC2317,SC2329
+      open_browser() { return 1; }
+      # Fake portal: authorize, then pending once, then the per-client keys.
+      # shellcheck disable=SC2317,SC2329
+      curl() {
+        local out="" url=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -o) out="$2"; shift 2 ;;
+            http*) url="$1"; shift ;;
+            *) shift ;;
+          esac
+        done
+        case "$url" in
+          */device_authorization)
+            printf '{"device_code":"emdg-smoke","user_code":"FKZQ-2418","verification_uri":"https://portal.example/activate","verification_uri_complete":"https://portal.example/activate?code=FKZQ-2418","expires_in":60,"interval":0}' >"$out"
+            printf '200'
+            ;;
+          */device_token)
+            polls=0
+            test ! -e "$SMOKE_POLLS" || read -r polls <"$SMOKE_POLLS"
+            polls=$((polls + 1))
+            printf '%s\n' "$polls" >"$SMOKE_POLLS"
+            if [ "$polls" -lt 2 ]; then
+              printf '{"error":"authorization_pending"}' >"$out"
+              printf '400'
+            else
+              printf '{"client_keys":{"claude-code":"emk-cc","cursor":"emk-cur","codex":"emk-cod","openclaw":"emk-claw","opencode":"emk-oc","windsurf":"emk-ws","pi":"emk-pi","copilot-cli":"emk-cop","zed":"emk-zed","hermes":"emk-her","goose":"emk-goo"}}' >"$out"
+              printf '200'
+            fi
+            ;;
+        esac
+      }
+      SMOKE_POLLS="$tmp/smoke-polls"
       EMISAR_URL="https://portal.example"
       ASSUME_YES=0
       OS=linux
       first_bin=/usr/local/bin/emisar-mcp
       CONFIGURED_CLIENTS=""
-      tty_reply=""
-      configure_llm_clients "$clients_home"
-      test "$(printf '%s\n' "$CONFIGURED_CLIENTS" | wc -l)" -eq 3
+      clients_phase_ran=0
+      CLIENTS_FOUND=0
+      SCANNED=""
+      CONSENTED=""
+      DEVICE_CODE=""
+      DEVICE_USER_CODE=""
+      DEVICE_VERIFY_URI=""
+      DEVICE_INTERVAL=5
+      DEVICE_EXPIRES_IN=900
+      export SMOKE_POLLS EMISAR_URL ASSUME_YES OS first_bin
+      configure_llm_clients "$clients_home" 2>"$tmp/full-flow-warnings.log"
+      test "$(printf '%s\n' "$CONFIGURED_CLIENTS" | wc -l)" -eq 10
     )
+    # Goose was the one refusal (existing extensions: key → snippet pointer).
+    grep -Fq "Goose" "$tmp/full-flow-warnings.log"
+    test "$goose_before" = "$(sha256 "$clients_home/.config/goose/config.yaml")"
     python3 - "$clients_home" <<'CHECK_CONFIGS'
 import json, sys
 
 home = sys.argv[1]
-entry_env = {
-    "EMISAR_URL": "https://portal.example",
-    "EMISAR_API_KEY": "emk-smoke-key",
-    "EMISAR_CLIENT": "cursor",
-}
 with open(home + "/.cursor/mcp.json") as handle:
     cursor = json.load(handle)
 assert cursor["mcpServers"]["other"] == {"command": "other-mcp"}, cursor
-assert cursor["mcpServers"]["emisar"]["env"] == entry_env, cursor
+assert cursor["mcpServers"]["emisar"]["env"]["EMISAR_API_KEY"] == "emk-cur", cursor
+assert cursor["mcpServers"]["emisar"]["env"]["EMISAR_URL"] == "https://portal.example", cursor
 with open(home + "/.claude.json") as handle:
     claude = json.load(handle)
+assert claude["mcpServers"]["emisar"]["env"]["EMISAR_API_KEY"] == "emk-cc", claude
 assert claude["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "claude-code", claude
-assert claude["mcpServers"]["emisar"]["command"] == "/usr/local/bin/emisar-mcp", claude
-CHECK_CONFIGS
-    grep -Fq '[mcp_servers.emisar]' "$clients_home/.codex/config.toml"
-    grep -Fq 'name = "gpt"' "$clients_home/.codex/config.toml"
-    test "$(grep -Fc 'mcp_servers.emisar' "$clients_home/.codex/config.toml")" -eq 1
 
-    # Rerun: every client already carries emisar, so nothing may prompt or
-    # change — the portal's upgrade one-liner must stay hands-off.
+# OpenClaw nests under mcp.servers.
+with open(home + "/.openclaw/openclaw.json") as handle:
+    claw = json.load(handle)
+assert claw["mcp"]["servers"]["emisar"]["command"] == "/usr/local/bin/emisar-mcp", claw
+assert claw["mcp"]["servers"]["emisar"]["env"]["EMISAR_API_KEY"] == "emk-claw", claw
+
+# OpenCode: existing server preserved; array command + environment key.
+with open(home + "/.config/opencode/opencode.json") as handle:
+    oc = json.load(handle)
+assert oc["mcp"]["other"] == {"type": "local", "command": ["other-mcp"]}, oc
+assert oc["mcp"]["emisar"]["command"] == ["/usr/local/bin/emisar-mcp"], oc
+assert oc["mcp"]["emisar"]["environment"]["EMISAR_CLIENT"] == "opencode", oc
+assert oc["mcp"]["emisar"]["enabled"] is True, oc
+
+# Windsurf + Pi: the standard shape (Pi under its agent/ subdir).
+with open(home + "/.codeium/windsurf/mcp_config.json") as handle:
+    ws = json.load(handle)
+assert ws["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "windsurf", ws
+with open(home + "/.pi/agent/mcp.json") as handle:
+    pi = json.load(handle)
+assert pi["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "pi", pi
+
+# Copilot CLI: type/args/tools wildcard.
+with open(home + "/.copilot/mcp-config.json") as handle:
+    cop = json.load(handle)
+assert cop["mcpServers"]["emisar"]["type"] == "local", cop
+assert cop["mcpServers"]["emisar"]["tools"] == ["*"], cop
+assert cop["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "copilot-cli", cop
+
+# Zed: existing keys preserved; source: custom required.
+with open(home + "/.config/zed/settings.json") as handle:
+    zed = json.load(handle)
+assert zed["theme"] == "One Dark", zed
+assert zed["context_servers"]["other"]["command"] == "other-mcp", zed
+assert zed["context_servers"]["emisar"]["source"] == "custom", zed
+assert zed["context_servers"]["emisar"]["env"]["EMISAR_CLIENT"] == "zed", zed
+CHECK_CONFIGS
+    # Hermes YAML: appended once, existing content preserved, goose grammar
+    # (cmd/envs) never leaks into hermes (command/env).
+    grep -Fq 'model: hermes-4' "$clients_home/.hermes/config.yaml"
+    grep -Fq 'mcp_servers:' "$clients_home/.hermes/config.yaml"
+    grep -Fq 'command: /usr/local/bin/emisar-mcp' "$clients_home/.hermes/config.yaml"
+    grep -Fq 'EMISAR_API_KEY: "emk-her"' "$clients_home/.hermes/config.yaml"
+    grep -Fq '[mcp_servers.emisar]' "$clients_home/.codex/config.toml"
+    grep -Fq 'EMISAR_API_KEY = "emk-cod"' "$clients_home/.codex/config.toml"
+    grep -Fq 'name = "gpt"' "$clients_home/.codex/config.toml"
+
+    # Rerun: every client already carries emisar — nothing may prompt, poll,
+    # or change; the portal's upgrade one-liner must stay hands-off. Goose
+    # (deliberately left unconfigured above) leaves the machine first.
+    rm -rf "$clients_home/.config/goose"
     cursor_before=$(sha256 "$clients_home/.cursor/mcp.json")
     codex_before=$(sha256 "$clients_home/.codex/config.toml")
     (
@@ -491,18 +609,97 @@ CHECK_CONFIGS
       # shellcheck disable=SC2317,SC2329
       ask_tty() { echo "unexpected client prompt on rerun" >&2; exit 9; }
       # shellcheck disable=SC2317,SC2329
-      prompt_tty() { tty_reply=""; }
+      curl() { echo "unexpected network call on rerun" >&2; exit 9; }
       EMISAR_URL="https://portal.example"
       ASSUME_YES=0
       OS=linux
       first_bin=/usr/local/bin/emisar-mcp
       CONFIGURED_CLIENTS=""
-      tty_reply=""
+      clients_phase_ran=0
+      CLIENTS_FOUND=0
+      SCANNED=""
+      CONSENTED=""
+      export EMISAR_URL ASSUME_YES OS first_bin CONFIGURED_CLIENTS clients_phase_ran \
+        CLIENTS_FOUND SCANNED CONSENTED
       configure_llm_clients "$clients_home"
       test -z "$CONFIGURED_CLIENTS"
     )
     test "$cursor_before" = "$(sha256 "$clients_home/.cursor/mcp.json")"
     test "$codex_before" = "$(sha256 "$clients_home/.codex/config.toml")"
+
+    # A portal denial configures nothing.
+    denied_home="$tmp/denied-home"
+    mkdir -p "$denied_home/.cursor"
+    # Independent subshell environments on purpose (each drives its own
+    # scenario) — the SC2030/SC2031 cross-subshell pairing is noise here.
+    # shellcheck disable=SC2030,SC2031
+    (
+      # shellcheck disable=SC1090
+      source "$clients_lib"
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      warn() { printf '%s\n' "$*" >&2; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      ask_tty() { return 0; }
+      # shellcheck disable=SC2317,SC2329
+      sleep() { :; }
+      # shellcheck disable=SC2317,SC2329
+      out() { :; }
+      # shellcheck disable=SC2317,SC2329
+      ok() { :; }
+      # shellcheck disable=SC2317,SC2329
+      dim() { :; }
+      # shellcheck disable=SC2317,SC2329
+      client_row() { :; }
+      # shellcheck disable=SC2317,SC2329
+      hdr() { :; }
+      # shellcheck disable=SC2317,SC2329
+      open_browser() { return 1; }
+      # shellcheck disable=SC2317,SC2329
+      curl() {
+        local out="" url=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -o) out="$2"; shift 2 ;;
+            http*) url="$1"; shift ;;
+            *) shift ;;
+          esac
+        done
+        case "$url" in
+          */device_authorization)
+            printf '{"device_code":"emdg-denied","user_code":"AAAA-BBBB","verification_uri":"https://portal.example/activate","verification_uri_complete":"https://portal.example/activate?code=AAAA-BBBB","expires_in":60,"interval":0}' >"$out"
+            printf '200'
+            ;;
+          */device_token)
+            printf '{"error":"access_denied"}' >"$out"
+            printf '400'
+            ;;
+        esac
+      }
+      EMISAR_URL="https://portal.example"
+      ASSUME_YES=0
+      OS=linux
+      first_bin=/usr/local/bin/emisar-mcp
+      CONFIGURED_CLIENTS=""
+      clients_phase_ran=0
+      CLIENTS_FOUND=0
+      SCANNED=""
+      CONSENTED=""
+      DEVICE_CODE=""
+      DEVICE_USER_CODE=""
+      DEVICE_VERIFY_URI=""
+      DEVICE_INTERVAL=5
+      DEVICE_EXPIRES_IN=900
+      export EMISAR_URL ASSUME_YES OS first_bin CONFIGURED_CLIENTS clients_phase_ran \
+        CLIENTS_FOUND CONSENTED DEVICE_CODE DEVICE_USER_CODE DEVICE_VERIFY_URI \
+        DEVICE_INTERVAL DEVICE_EXPIRES_IN
+      configure_llm_clients "$denied_home" 2>/dev/null
+      test -z "$CONFIGURED_CLIENTS"
+    )
+    test ! -e "$denied_home/.cursor/mcp.json"
 
     # JSON-escaped prose (`\"emisar\"` in ~/.claude.json chat history) must
     # not read as an existing server entry, while a real entry must.
@@ -521,6 +718,29 @@ CHECK_CONFIGS
       json_config_has_emisar "$real_probe"
     )
 
+    # The jq branch of the response readers agrees with the python3 branch —
+    # exercised under a jq-only PATH so `command -v python3` genuinely misses.
+    if command -v jq >/dev/null 2>&1; then
+      printf '{"device_code":"emdg-x","interval":7,"client_keys":{"claude-code":"emk-jq"}}' \
+        >"$tmp/jq-probe.json"
+      mkdir -p "$tmp/jq-only-bin"
+      ln -s "$(command -v jq)" "$tmp/jq-only-bin/jq"
+      (
+        # shellcheck disable=SC1090
+        source "$clients_lib"
+        # Deliberate: hide python3 from `command -v` so the jq branch runs.
+        # shellcheck disable=SC2123
+        PATH="$tmp/jq-only-bin"
+        test "$(json_string_field "$tmp/jq-probe.json" device_code)" = "emdg-x"
+        test "$(json_string_field "$tmp/jq-probe.json" interval)" = "7"
+        test "$(json_client_key "$tmp/jq-probe.json" claude-code)" = "emk-jq"
+        if json_string_field "$tmp/jq-probe.json" missing_key; then
+          echo "missing key unexpectedly resolved" >&2
+          exit 1
+        fi
+      )
+    fi
+
     # --yes / ASSUME_YES is automation: no scanning, no prompts, no writes.
     quiet_home="$tmp/quiet-home"
     mkdir -p "$quiet_home/.cursor"
@@ -536,14 +756,18 @@ CHECK_CONFIGS
       # shellcheck disable=SC2317,SC2329
       ask_tty() { echo "unexpected prompt under ASSUME_YES" >&2; exit 9; }
       # shellcheck disable=SC2317,SC2329
-      prompt_tty() { tty_reply=""; }
+      curl() { echo "unexpected network call under ASSUME_YES" >&2; exit 9; }
       EMISAR_URL="https://portal.example"
       ASSUME_YES=1
       OS=linux
       first_bin=/usr/local/bin/emisar-mcp
       CONFIGURED_CLIENTS=""
-      tty_reply=""
-      export EMISAR_URL ASSUME_YES OS first_bin CONFIGURED_CLIENTS tty_reply
+      clients_phase_ran=0
+      CLIENTS_FOUND=0
+      SCANNED=""
+      CONSENTED=""
+      export EMISAR_URL ASSUME_YES OS first_bin CONFIGURED_CLIENTS clients_phase_ran \
+        CLIENTS_FOUND SCANNED CONSENTED
       configure_llm_clients "$quiet_home"
     )
     test ! -e "$quiet_home/.cursor/mcp.json"

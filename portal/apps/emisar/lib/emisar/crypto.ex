@@ -180,6 +180,46 @@ defmodule Emisar.Crypto do
     encode_code(div(n, base), base, remaining - 1, [Enum.at(@code_alphabet, rem(n, base)) | acc])
   end
 
+  @device_user_code_length 8
+
+  @doc """
+  The MCP device-grant poll credential — the long secret the installer holds
+  and presents on each poll. Returns `{code, digest}`; only the digest is
+  stored, for the grant-row lookup.
+  """
+  def mcp_device_code do
+    code = "emdg-" <> random_secret()
+    {code, mcp_device_code_digest(code)}
+  end
+
+  @doc "Digest of a presented device code, for the grant-row lookup."
+  def mcp_device_code_digest(raw) when is_binary(raw), do: encode_digest(hash(raw))
+
+  @doc """
+  The short human approval code the installer prints and the operator enters
+  (or clicks) in the portal — #{@device_user_code_length} chars over the
+  unambiguous alphabet, shown `XXXX-XXXX` (30^8 ≈ 2^39 values, paired with a
+  short expiry and rate-limited entry). Returns `{code, digest}`.
+  """
+  def mcp_device_user_code do
+    code = typable_code(@device_user_code_length)
+    formatted = String.slice(code, 0, 4) <> "-" <> String.slice(code, 4, 4)
+    {formatted, mcp_device_user_code_digest(formatted)}
+  end
+
+  @doc """
+  Digest of a presented device-grant user code for the pending-grant lookup —
+  normalizes case, separators, and whitespace first so `fkzq 2418` and
+  `FKZQ-2418` digest identically.
+  """
+  def mcp_device_user_code_digest(raw) when is_binary(raw) do
+    raw
+    |> String.upcase()
+    |> String.replace(~r/[\s-]/, "")
+    |> hash()
+    |> encode_digest()
+  end
+
   @doc """
   Url-safe-base64 (no padding) of a digest — for embedding a digest in
   a PubSub topic or similar identifier without the call site inlining

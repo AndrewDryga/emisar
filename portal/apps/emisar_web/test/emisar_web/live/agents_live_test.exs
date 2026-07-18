@@ -66,7 +66,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
-    test "a client on a below-minimum emisar-mcp bridge shows an 'unsupported' chip",
+    test "a below-minimum emisar-mcp bridge reads 'unsupported' in the status, not a chip",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
@@ -76,7 +76,13 @@ defmodule EmisarWeb.AgentsLiveTest do
         ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "0.0.0"})
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
-      assert html =~ "unsupported"
+
+      # The status pill (text-rose-300) leads with the block itself, and the
+      # separate stale-version chip is suppressed so the row never carries two
+      # red labels for the one fact.
+      assert has_element?(lv, "span.text-rose-300", "unsupported")
+      refute has_element?(lv, "#mcp-version-#{key.id}")
+
       assert html =~ "MCP bridge update required"
 
       # The test host isn't the hosted portal, so the command carries
@@ -87,6 +93,33 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert text_position(html, "MCP bridge update required") <
                text_position(html, "0 active now")
+    end
+
+    test "an idle client on an unsupported bridge reads 'unsupported', not 'idle'",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "StaleBot"}, subject)
+
+      # Called 2 h ago (idle by recency) but on a below-minimum bridge — the
+      # block is what matters, so the pill leads with rose "unsupported" in
+      # place of the neutral "idle", the way the packs page reads "retired"
+      # instead of "trusted". (The activity counter still buckets it under
+      # "idle" — that strip measures recency, a different axis from support.)
+      {:ok, key} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "0.0.0"})
+
+      key
+      |> Ecto.Changeset.change(last_used_at: DateTime.add(DateTime.utc_now(), -2 * 3600, :second))
+      |> Repo.update!()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      # A rose-300 pill word is the override itself: a revert would render a
+      # zinc "idle" pill and no rose "unsupported", failing this. The chip is
+      # suppressed so the block reads once.
+      assert has_element?(lv, "span.text-rose-300", "unsupported")
+      refute has_element?(lv, "#mcp-version-#{key.id}")
     end
 
     test "a client on a current emisar-mcp bridge shows no staleness chip", %{conn: conn} do
@@ -246,55 +279,85 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "Authorization: Bearer emk-"
     end
 
-    test "selecting a client mints a key named after the client + inlines snippet", %{conn: conn} do
+    test "selecting a client mints nothing; the manual disclosure mints on reveal", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_desktop"})
 
-      # The mint happened.
+      # Picking is inert: the installer path mints its keys at grant approval,
+      # and the manual snippet's key doesn't exist until someone reveals it.
+      assert Repo.all(ApiKey) == []
+      refute html =~ "EMISAR_API_KEY"
+
+      # The install one-liner targets THIS portal (the test host isn't the
+      # hosted default, so EMISAR_URL rides along), and the block says the
+      # installer finishes the setup with a browser approval — no key copying.
+      assert html =~ "Install the bridge"
+      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
+      assert html =~ "offers to add emisar to the LLM clients it finds"
+      assert html =~ "approve the connection in your browser"
+      refute html =~ "Copy your API key"
+
+      # The manual fallback is collapsed; the wait line already tracks the
+      # installer path, and pre-connect the page carries NO amber spine.
+      assert html =~ "Set up Claude Desktop manually instead"
+      assert html =~ "Waiting for your agent"
+      refute html =~ "bg-amber-300/40"
+
+      # Revealing the manual snippet mints the client-named key lazily.
+      revealed = render_click(lv, "reveal_snippet", %{})
       [auto] = Repo.all(ApiKey)
       assert auto.account_id == account.id
       assert auto.name == "Claude Desktop"
       assert ApiKey.auto_unused?(auto)
 
-      # Snippet shows the bridge config with EMISAR_CLIENT stamped so
-      # the audit trail can attribute calls back to this client.
-      assert html =~ "EMISAR_API_KEY"
-      assert html =~ "EMISAR_CLIENT"
-      assert html =~ "claude-desktop"
-      assert html =~ "emk-"
-
-      # The install one-liner targets THIS portal (the test host isn't the
-      # hosted default, so EMISAR_URL rides along), and the block says the
-      # installer can finish the client setup itself.
-      assert html =~ "Install the bridge"
-      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
-      assert html =~ "offers to add emisar to the LLM clients it finds"
-
-      # The key is its own copyable step (the installer prompts for it), and
-      # the manual config collapses to the disclosure fallback.
-      assert html =~ "Copy your API key"
-      assert html =~ "Shown only once"
-      assert html =~ "Set up Claude Desktop manually"
-      assert html =~ "Open"
-      refute html =~ "New key minted"
-
-      # The live wait line follows the setup; pre-connect the page carries NO
-      # amber spine — the minted note is neutral and the wait is a brand ping.
-      assert html =~ "Waiting for your agent"
-      refute html =~ "bg-amber-300/40"
+      assert revealed =~ "EMISAR_API_KEY"
+      assert revealed =~ "claude-desktop"
+      assert revealed =~ "emk-"
+      assert revealed =~ "Open"
 
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
     end
 
-    test "an MCP call promotes the picked-key to a visible Connected LLM", %{conn: conn} do
+    test "the installer path flips waiting→connected on a grant-minted key's first call",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # A pre-existing key minted BEFORE this page opened: its later first
+      # call must never flip this page's watchdog (scoped-advance negative).
+      {:ok, old_raw, _old_key} = ApiKeys.create_key(%{name: "old-bot"}, subject)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+      html = render_click(lv, "select_client", %{"client" => "claude_code"})
+      assert html =~ "Waiting for your agent"
+      refute html =~ "Connected — your agent is live"
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(old_raw)
+      refute render(lv) =~ "Connected — your agent is live"
+
+      # The installer's device grant mints the key on approval; its first MCP
+      # call promotes it and broadcasts to this page.
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %Emisar.RequestContext{})
+
+      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
+
+      assert render(lv) =~ "Connected — your agent is live"
+    end
+
+    test "an MCP call promotes the revealed-snippet key to a visible Connected LLM",
+         %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+      lv |> render_click("select_client", %{"client" => "claude_code"})
+      html = render_click(lv, "reveal_snippet", %{})
 
       [_, raw] = Regex.run(~r/EMISAR_API_KEY=(emk-[A-Za-z0-9_-]+)/, html)
       [%ApiKey{} = auto] = Repo.all(ApiKey)
@@ -605,23 +668,25 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     # picking a real client mints + shows a quick_secret;
     # switching to the Custom tab clears that shown secret (one-time-secret
-    # hygiene), and re-picking a real client re-enters the quick-mint clause.
+    # hygiene), and re-picking + re-revealing mints a fresh secret.
     test "switching to Custom clears a previously-shown quick secret", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
-      # Pick a local client → quick_secret shown in its snippet. Claude Code's
-      # snippet is the docker `-e EMISAR_API_KEY=emk-…` form (bare equals).
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+      # Pick a local client and reveal its manual snippet → quick_secret shown.
+      lv |> render_click("select_client", %{"client" => "claude_code"})
+      html = render_click(lv, "reveal_snippet", %{})
       [_, raw] = Regex.run(~r/EMISAR_API_KEY=(emk-[A-Za-z0-9_-]+)/, html)
 
       # Switch to Custom → the previously-revealed secret is gone from the page.
       custom = lv |> render_click("select_client", %{"client" => "custom"})
       refute custom =~ raw
 
-      # Re-picking a real client re-enters the quick-mint clause (a fresh secret).
-      again = lv |> render_click("select_client", %{"client" => "claude_code"})
+      # Re-picking + revealing again mints a FRESH secret, never the old one.
+      lv |> render_click("select_client", %{"client" => "claude_code"})
+      again = render_click(lv, "reveal_snippet", %{})
       assert again =~ ~r/EMISAR_API_KEY=emk-[A-Za-z0-9_-]+/
+      refute again =~ raw
     end
 
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
@@ -644,7 +709,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
-      html = lv |> render_click("select_client", %{"client" => "codex"})
+      lv |> render_click("select_client", %{"client" => "codex"})
+      html = render_click(lv, "reveal_snippet", %{})
 
       assert html =~ "Skip the per-tool prompts"
       assert html =~ "default_tools_approval_mode = &quot;approve&quot;"
@@ -652,12 +718,38 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "emisar still applies its own policies and approvals"
     end
 
+    test "each new local client tab reveals its exact config shape", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      # One distinctive marker per verified upstream schema — a wrong key
+      # name (mcpServers vs mcp.servers, env vs envs) breaks the client.
+      shape_markers = %{
+        "windsurf" => {"~/.codeium/windsurf/mcp_config.json", "&quot;windsurf&quot;"},
+        "pi" => {"~/.pi/agent/mcp.json", "&quot;pi&quot;"},
+        "openclaw" => {"~/.openclaw/openclaw.json", "&quot;servers&quot;"},
+        "opencode" => {"~/.config/opencode/opencode.json", "&quot;environment&quot;"},
+        "copilot" => {"~/.copilot/mcp-config.json", "&quot;tools&quot;"},
+        "zed" => {"~/.config/zed/settings.json", "&quot;source&quot;: &quot;custom&quot;"},
+        "hermes" => {"~/.hermes/config.yaml", "mcp_servers:"},
+        "goose" => {"~/.config/goose/config.yaml", "cmd: /usr/local/bin/emisar-mcp"}
+      }
+
+      for {client, {location, marker}} <- shape_markers do
+        lv |> render_click("select_client", %{"client" => client})
+        html = render_click(lv, "reveal_snippet", %{})
+        assert html =~ location, "#{client}: missing location #{location}"
+        assert html =~ marker, "#{client}: missing shape marker #{marker}"
+      end
+    end
+
     test "Grok setup registers the bridge and offers its server-scoped allow rule",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
-      html = lv |> render_click("select_client", %{"client" => "grok"})
+      lv |> render_click("select_client", %{"client" => "grok"})
+      html = render_click(lv, "reveal_snippet", %{})
 
       assert html =~ "grok mcp add emisar"
       assert html =~ "EMISAR_CLIENT=grok"
@@ -783,8 +875,9 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       denial = "You don&#39;t have permission to do that."
 
-      # quick-mint via a client tile → the operator's legit flow succeeds.
-      refute render_click(lv, "select_client", %{"client" => "claude_code"}) =~ denial
+      # quick-mint via the manual-snippet reveal → the operator's legit flow.
+      render_click(lv, "select_client", %{"client" => "claude_code"})
+      refute render_click(lv, "reveal_snippet", %{}) =~ denial
       assert Enum.count(Repo.all(ApiKey)) == 2
       # custom create → still manage-gated, no third key.
       assert render_click(lv, "create", %{"api_key" => %{"name" => "sneaky"}}) =~ denial

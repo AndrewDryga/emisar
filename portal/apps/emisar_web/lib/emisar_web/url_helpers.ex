@@ -10,10 +10,16 @@ defmodule EmisarWeb.UrlHelpers do
 
   @doc """
   Returns the operator-facing base URL — `scheme://host[:port]` — for
-  the LiveView socket. Falls back to a hardcoded production URL when
+  the LiveView socket or a `Plug.Conn` (API controllers building
+  copy-paste/poll URLs). Falls back to a hardcoded production URL when
   the socket has no `host_uri` (e.g. tests that don't go through a
   real HTTP request).
   """
+  def derive_base_url(%Plug.Conn{scheme: scheme, host: host, port: port}) do
+    scheme = to_string(scheme)
+    "#{scheme}://#{host}#{port_suffix(scheme, port)}"
+  end
+
   def derive_base_url(%{host_uri: %URI{scheme: scheme, host: host, port: port}})
       when is_binary(host) do
     scheme = scheme || "http"

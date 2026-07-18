@@ -16,12 +16,16 @@ defmodule EmisarWeb.AgentsLive do
     * `:dormant`   — call > 24 h ago
     * `:never_used`— issued but no MCP call has ever landed
 
+  A live key whose emisar-mcp bridge is below the minimum supported
+  version reads rose "unsupported" in place of that liveness word — a
+  version-blocked client isn't merely quiet (see `pill_status/1`).
+
   We re-render every #{5} s via a self-scheduled `:tick` so "Last call"
   + the status badge stay fresh without a full PubSub subscription on
   every MCP request.
   """
   use EmisarWeb, :live_view
-  alias Emisar.ApiKeys
+  alias Emisar.{ApiKeys, Compat}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
@@ -40,21 +44,22 @@ defmodule EmisarWeb.AgentsLive do
       ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
-    # The operator first picks which LLM client they're connecting.
-    # Local clients get a quick API key + snippet. Cloud clients use
-    # OAuth, so their backing key is minted only after the user consents
-    # in the OAuth flow.
-    #
-    # `ApiKeys.mint_quick_key/2` ring-evicts unused autos at 42 per
-    # account, so opening many tabs can't accumulate dangling keys.
+    # The operator first picks which LLM client they're connecting. For local
+    # clients the INSTALLER does the setup (device-grant approval mints the
+    # keys); the manual snippet's key is minted lazily, only when its
+    # disclosure is opened. Cloud clients use OAuth, so their backing key is
+    # minted only after the user consents in the OAuth flow.
     {:ok,
      socket
      |> assign(:page_title, "LLM agents")
      |> assign(:quick_secret, nil)
-     # The just-minted quick key we're watching for its first call, and whether
-     # it has connected — drives the connect flow's "waiting → connected" state.
+     # The snippet/custom paths watch their just-minted key for its first
+     # call; the installer path (key ids minted at grant approval, unknown
+     # here) watches for ANY key minted after this page opened connecting.
      |> assign(:quick_key_id, nil)
      |> assign(:quick_connected?, false)
+     |> assign(:watch_since, DateTime.utc_now())
+     |> assign(:snippet_open?, false)
      |> assign(:selected_client, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
@@ -98,33 +103,32 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   def handle_event("select_client", %{"client" => id}, socket) do
-    # Local-client first-pick mints a quick key whose name matches the client
-    # (so it shows up as e.g. "Claude Desktop" on the agents list and
-    # in audit rows). Switching local clients re-mints — the previous
-    # un-bound auto-key gets ring-evicted naturally.
+    # Picking a local client mints NOTHING — the installer's device-grant
+    # approval mints the keys, and the manual snippet mints its own lazily on
+    # reveal. Switching clients resets the lazy snippet state.
+    {:noreply,
+     socket
+     |> assign(:selected_client, id)
+     |> assign(:quick_secret, nil)
+     |> assign(:quick_key_id, nil)
+     |> assign(:quick_connected?, false)
+     |> assign(:snippet_open?, false)}
+  end
+
+  def handle_event("reveal_snippet", _params, socket) do
+    # Quick-mint is the ISSUE tier (operators and above) — gating it on
+    # manage broke the flow for the very role the picker rendered for.
     Permissions.gated(
       socket,
-      # Quick-mint is the ISSUE tier (operators and above) — gating it on
-      # manage broke the flow for the very role the picker rendered for.
       ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
       fn socket ->
-        name = client_label(id)
+        socket = assign(socket, :snippet_open?, not socket.assigns.snippet_open?)
 
-        case ApiKeys.mint_quick_key(socket.assigns.current_subject, name: name) do
-          {:ok, raw, key} ->
-            {:noreply,
-             socket
-             |> assign(:selected_client, id)
-             |> assign(:quick_secret, raw)
-             |> assign(:quick_key_id, key.id)
-             |> assign(:quick_connected?, false)
-             |> reload()}
-
-          {:error, _} ->
-            {:noreply,
-             socket
-             |> assign(:selected_client, id)
-             |> put_flash(:error, "Could not mint a quick key.")}
+        if socket.assigns.snippet_open? and is_nil(socket.assigns.quick_secret) and
+             local_client?(socket.assigns.selected_client) do
+          mint_snippet_key(socket)
+        else
+          {:noreply, socket}
         end
       end
     )
@@ -173,15 +177,9 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply, reload(socket)}
   end
 
-  # The agent's first call landed. If it's the specific key the connect flow is
-  # watching, flip its "waiting" state to "connected" — keyed to THAT key's id,
-  # never an account-wide key event (a different agent connecting mustn't flip
-  # this one).
-  def handle_info({:list_changed, :api_key, "api_key.first_used", id}, socket) do
-    connected? = socket.assigns.quick_connected? or id == socket.assigns.quick_key_id
-    {:noreply, socket |> assign(:quick_connected?, connected?) |> reload()}
-  end
-
+  # Every api_key change (including `api_key.first_used`) reloads the list;
+  # `quick_key_connected?/2` derives the waiting→connected flip from the
+  # reloaded keys, so the broadcast and the tick fallback share one judgment.
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
     do: {:noreply, reload(socket)}
 
@@ -190,6 +188,28 @@ defmodule EmisarWeb.AgentsLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   # -- Internals -------------------------------------------------------
+
+  # The manual snippet's lazy mint (reveal_snippet): named after the client so
+  # it lands on the agents list and audit rows as e.g. "Claude Desktop".
+  defp mint_snippet_key(socket) do
+    name = client_label(socket.assigns.selected_client)
+
+    case ApiKeys.mint_quick_key(socket.assigns.current_subject, name: name) do
+      {:ok, raw, key} ->
+        {:noreply,
+         socket
+         |> assign(:quick_secret, raw)
+         |> assign(:quick_key_id, key.id)
+         |> assign(:quick_connected?, false)
+         |> reload()}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:snippet_open?, false)
+         |> put_flash(:error, "Could not mint a key for the snippet.")}
+    end
+  end
 
   defp do_create(socket, params) do
     # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
@@ -258,14 +278,23 @@ defmodule EmisarWeb.AgentsLive do
     assign(socket, :show_connect_inline?, inline?)
   end
 
-  # Tick fallback for the `api_key.first_used` broadcast: if the watched key
-  # already shows a first call in the loaded list, it connected. Once true it
-  # stays true; nil watch = nothing to watch.
+  # Derives the connect flow's waiting→connected flip from the loaded keys —
+  # sticky once true. Two watch modes: the snippet/custom paths watch their
+  # just-minted key's id; the installer path — whose key ids are minted by the
+  # device-grant approval and unknown to this page — watches for any key
+  # minted AFTER this page opened making its first call (a pre-existing
+  # agent's activity can never flip it; scoped-advance discipline).
   defp quick_key_connected?(%{assigns: %{quick_connected?: true}}, _keys), do: true
-  defp quick_key_connected?(%{assigns: %{quick_key_id: nil}}, _keys), do: false
 
-  defp quick_key_connected?(%{assigns: %{quick_key_id: id}}, keys),
+  defp quick_key_connected?(%{assigns: %{quick_key_id: id}}, keys) when is_binary(id),
     do: Enum.any?(keys, &(&1.id == id and &1.last_used_at))
+
+  defp quick_key_connected?(%{assigns: assigns}, keys) do
+    local_client?(assigns.selected_client) and
+      Enum.any?(keys, fn key ->
+        key.last_used_at && DateTime.compare(key.inserted_at, assigns.watch_since) == :gt
+      end)
+  end
 
   # Fill the static Owner filter's options with the account's real key creators
   # (the filter's SQL still comes from the Query module's `fun`).
@@ -424,6 +453,24 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
+  # The status the row LEADS with. A bridge below the minimum emisar-mcp
+  # version is blocked by version policy, so its recency is moot — the pill
+  # reads rose "unsupported" in place of "idle"/"active", the way the packs
+  # page reads "retired" instead of "trusted". A revoked key stays "revoked"
+  # (operator intent wins, as "rejected" wins over "retired" there); an
+  # outdated-but-usable bridge keeps its real liveness with the amber version
+  # chip beside it.
+  defp pill_status(%ApiKeys.ApiKey{} = key) do
+    status = client_status(key)
+    bridge_status = Compat.mcp_status(mcp_bridge_version(key))
+
+    if status != :revoked and bridge_status == :unsupported do
+      :unsupported
+    else
+      status
+    end
+  end
+
   # The MCP client a key reported at `initialize` (clientInfo): the human-readable
   # "title", else the machine "name". Name only — the client's own version is
   # detail material, not row meta. nil until a client has connected.
@@ -469,9 +516,7 @@ defmodule EmisarWeb.AgentsLive do
   defp status_label(:dormant), do: "dormant"
   defp status_label(:never_used), do: "never used"
   defp status_label(:revoked), do: "revoked"
-
-  # Maps to the colour palette `core_components.status_badge/1` uses
-  # elsewhere — green for active, amber for idle/never, zinc for dormant.
+  defp status_label(:unsupported), do: "unsupported"
 
   # -- Client configs --------------------------------------------------
   #
@@ -487,15 +532,23 @@ defmodule EmisarWeb.AgentsLive do
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor gemini codex grok custom)
+  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom)
   @client_labels %{
     "claude_web" => "Claude.ai",
     "chatgpt" => "ChatGPT",
     "claude_code" => "Claude Code",
     "claude_desktop" => "Claude Desktop",
     "cursor" => "Cursor",
+    "windsurf" => "Windsurf",
+    "zed" => "Zed",
+    "openclaw" => "OpenClaw",
+    "opencode" => "OpenCode",
+    "pi" => "Pi",
+    "copilot" => "Copilot CLI",
     "gemini" => "Gemini CLI",
     "codex" => "Codex CLI",
+    "goose" => "Goose",
+    "hermes" => "Hermes",
     "grok" => "Grok CLI",
     "custom" => "Custom"
   }
@@ -507,6 +560,9 @@ defmodule EmisarWeb.AgentsLive do
   # than a global toggle because the operator's question is "which
   # client am I connecting" first; transport falls out of the answer.
   defp remote_client?(id), do: id in @remote_client_ids
+
+  defp local_client?(id),
+    do: is_binary(id) and id != "custom" and not remote_client?(id)
 
   defp client_label(id), do: Map.get(@client_labels, id, "MCP client")
 
@@ -666,6 +722,158 @@ defmodule EmisarWeb.AgentsLive do
     }
   end
 
+  defp client_config("windsurf", url, key) do
+    %{
+      kind: :local,
+      location: "~/.codeium/windsurf/mcp_config.json",
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "windsurf")
+    }
+  end
+
+  # Pi reads the Claude-Code-shaped mcpServers file from its own agent dir.
+  defp client_config("pi", url, key) do
+    %{
+      kind: :local,
+      location: "~/.pi/agent/mcp.json",
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "pi")
+    }
+  end
+
+  # OpenClaw nests stdio servers under mcp.servers (NOT top-level mcpServers).
+  defp client_config("openclaw", url, key) do
+    %{
+      kind: :local,
+      location: "~/.openclaw/openclaw.json",
+      body: """
+      {
+        "mcp": {
+          "servers": {
+            "emisar": {
+              "command": "/usr/local/bin/emisar-mcp",
+              "env": {
+                "EMISAR_URL": "#{url}",
+                "EMISAR_API_KEY": "#{key}",
+                "EMISAR_CLIENT": "openclaw"
+              }
+            }
+          }
+        }
+      }\
+      """
+    }
+  end
+
+  # OpenCode: top-level `mcp`, command as an ARRAY, `environment` (not env).
+  defp client_config("opencode", url, key) do
+    %{
+      kind: :local,
+      location: "~/.config/opencode/opencode.json",
+      body: """
+      {
+        "mcp": {
+          "emisar": {
+            "type": "local",
+            "command": ["/usr/local/bin/emisar-mcp"],
+            "enabled": true,
+            "environment": {
+              "EMISAR_URL": "#{url}",
+              "EMISAR_API_KEY": "#{key}",
+              "EMISAR_CLIENT": "opencode"
+            }
+          }
+        }
+      }\
+      """
+    }
+  end
+
+  defp client_config("copilot", url, key) do
+    %{
+      kind: :local,
+      location: "~/.copilot/mcp-config.json",
+      body: """
+      {
+        "mcpServers": {
+          "emisar": {
+            "type": "local",
+            "command": "/usr/local/bin/emisar-mcp",
+            "args": [],
+            "env": {
+              "EMISAR_URL": "#{url}",
+              "EMISAR_API_KEY": "#{key}",
+              "EMISAR_CLIENT": "copilot-cli"
+            },
+            "tools": ["*"]
+          }
+        }
+      }\
+      """
+    }
+  end
+
+  # Zed calls them context_servers; `source: "custom"` is required or the
+  # entry is silently skipped.
+  defp client_config("zed", url, key) do
+    %{
+      kind: :local,
+      location: "~/.config/zed/settings.json",
+      body: """
+      {
+        "context_servers": {
+          "emisar": {
+            "source": "custom",
+            "command": "/usr/local/bin/emisar-mcp",
+            "args": [],
+            "env": {
+              "EMISAR_URL": "#{url}",
+              "EMISAR_API_KEY": "#{key}",
+              "EMISAR_CLIENT": "zed"
+            }
+          }
+        }
+      }\
+      """
+    }
+  end
+
+  defp client_config("hermes", url, key) do
+    %{
+      kind: :local,
+      location: "~/.hermes/config.yaml",
+      body: """
+      mcp_servers:
+        emisar:
+          command: /usr/local/bin/emisar-mcp
+          env:
+            EMISAR_URL: "#{url}"
+            EMISAR_API_KEY: "#{key}"
+            EMISAR_CLIENT: hermes\
+      """
+    }
+  end
+
+  # Goose's stdio extension grammar: `cmd`/`envs` (not command/env).
+  defp client_config("goose", url, key) do
+    %{
+      kind: :local,
+      location: "~/.config/goose/config.yaml",
+      body: """
+      extensions:
+        emisar:
+          name: emisar
+          cmd: /usr/local/bin/emisar-mcp
+          args: []
+          enabled: true
+          envs:
+            EMISAR_URL: "#{url}"
+            EMISAR_API_KEY: "#{key}"
+            EMISAR_CLIENT: goose
+          type: stdio
+          timeout: 300\
+      """
+    }
+  end
+
   defp client_config("grok", url, key) do
     %{
       kind: :local,
@@ -786,6 +994,7 @@ defmodule EmisarWeb.AgentsLive do
         quick_secret={@quick_secret}
         quick_key_id={@quick_key_id}
         quick_connected?={@quick_connected?}
+        snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
       />
@@ -845,6 +1054,7 @@ defmodule EmisarWeb.AgentsLive do
             quick_secret={@quick_secret}
             quick_key_id={@quick_key_id}
             quick_connected?={@quick_connected?}
+            snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
           />
@@ -953,7 +1163,12 @@ defmodule EmisarWeb.AgentsLive do
                     v{mcp_bridge_version(key)}
                   </span>
                   <.client_status_pill key={key} />
+                  <%!-- The pill already leads with rose "unsupported" when the
+                       bridge is below the minimum (a blocked client isn't
+                       "idle"), so the chip here only surfaces the softer amber
+                       "outdated" — never a second, redundant red label. --%>
                   <.version_chip
+                    :if={pill_status(key) != :unsupported}
                     kind={:mcp}
                     version={mcp_bridge_version(key)}
                     id={"mcp-version-#{key.id}"}
@@ -1148,9 +1363,10 @@ defmodule EmisarWeb.AgentsLive do
 
   # Sanctioned page-local status (composes the shared `<.status_dot>` + a toned
   # word — the status_badge grammar): the words are the agents-specific activity
-  # ladder, and :active carries the live ping status_badge can't express.
+  # ladder overridden by a blocked bridge (see `pill_status/1`), and :active
+  # carries the live ping status_badge can't express.
   defp client_status_pill(assigns) do
-    status = client_status(assigns.key)
+    status = pill_status(assigns.key)
     assigns = assign(assigns, status: status)
 
     ~H"""
@@ -1165,10 +1381,12 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp status_dot_tone(:active), do: :brand
+  defp status_dot_tone(:unsupported), do: :rose
   defp status_dot_tone(_), do: :neutral
 
   defp status_word_class(:active), do: "text-brand-300"
   defp status_word_class(:revoked), do: "text-rose-300"
+  defp status_word_class(:unsupported), do: "text-rose-300"
   defp status_word_class(_), do: "text-zinc-400"
 
   attr :configs_for, :any, required: true
@@ -1177,6 +1395,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :quick_secret, :string, default: nil
   attr :quick_key_id, :string, default: nil
   attr :quick_connected?, :boolean, default: false
+  attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
 
@@ -1300,81 +1519,75 @@ defmodule EmisarWeb.AgentsLive do
             <div class="mt-10 space-y-8">
               <.local_install_block base_url={@base_url} />
 
-              <%!-- The key is its own step — the installer's prompt wants JUST
-                   the key, so it gets a one-line copy row (code_line, the
-                   compact-value grammar), not a buried value inside the config
-                   snippet. The shown-once caution lives here with the key. --%>
-              <div :if={@quick_secret}>
-                <.step_header step={2} title="Copy your API key">
-                  <:subtitle>the installer asks for it</:subtitle>
-                </.step_header>
-                <.code_line
-                  id={"quick-key-#{@selected_client}"}
-                  value={@quick_secret}
-                  copy_label="Copy key"
-                />
-                <p class="mt-3 text-xs text-zinc-400">
-                  Shown only once — it's live already. Lost it later? Pick this client again for
-                  a fresh key.
-                </p>
-              </div>
-
-              <%!-- Manual setup is the fallback now that the installer writes
-                   the config itself — collapsed by default (the auto_permit
-                   disclosure grammar). Two body shapes, and the lead-in must
+              <%!-- Manual setup is the fallback — the installer writes the
+                   config itself, so this stays collapsed and mints its key
+                   LAZILY on reveal (no key exists until someone actually
+                   wants the snippet). `open` is server-owned: the summary
+                   click round-trips, mints once, and re-renders the details
+                   in its true state. Two body shapes, and the lead-in must
                    not lie about which: a config-file client (Claude Desktop,
                    Cursor, …) pastes the snippet INTO a file — the path is the
                    load-bearing step — while a command client (Claude Code)
                    RUNS the snippet in a terminal. --%>
-              <.disclosure size={:md}>
+              <.disclosure
+                id="manual-setup"
+                size={:md}
+                open={@snippet_open?}
+                summary_click="reveal_snippet"
+              >
                 <:summary>
                   <span class="font-medium">
-                    Set up {client_label(@selected_client)} manually
-                    <span class="text-zinc-400">(if you skipped the installer's offer)</span>
+                    Set up {client_label(@selected_client)} manually instead
+                    <span class="text-zinc-400">(shows a config snippet with a fresh key)</span>
                   </span>
                 </:summary>
-                <%= if config_target_is_file?(@config) do %>
-                  <p class="text-sm text-zinc-400">
-                    Open
-                    <code class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[13px] text-zinc-200 ring-1 ring-white/10">
-                      {@config.location}
-                    </code>
-                    and add:
+                <%= if @quick_secret do %>
+                  <%= if config_target_is_file?(@config) do %>
+                    <p class="text-sm text-zinc-400">
+                      Open
+                      <code class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[13px] text-zinc-200 ring-1 ring-white/10">
+                        {@config.location}
+                      </code>
+                      and add:
+                    </p>
+                  <% else %>
+                    <p class="text-sm text-zinc-400">Run this in your terminal:</p>
+                  <% end %>
+                  <.code_panel
+                    id={"snippet-#{@selected_client}"}
+                    label="Snippet"
+                    annotation="contains your API key"
+                    copy
+                    copy_label="Copy snippet"
+                    code={@config.body}
+                    class="mt-3"
+                  />
+                  <%!-- Mechanical next step sits right under the snippet: paste
+                       or run it, then restart. --%>
+                  <p class="mt-3 text-xs text-zinc-400">
+                    {if config_target_is_file?(@config),
+                      do: "Restart #{client_label(@selected_client)} after saving.",
+                      else: "Start a fresh #{client_label(@selected_client)} session to use it."} Shown once — pick the client again for a fresh key if you lose it.
+                    <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
                   </p>
                 <% else %>
-                  <p class="text-sm text-zinc-400">Run this in your terminal:</p>
+                  <p class="text-sm text-zinc-400">One moment — minting this client's key…</p>
                 <% end %>
-                <.code_panel
-                  id={"snippet-#{@selected_client}"}
-                  label="Snippet"
-                  annotation="contains your API key"
-                  copy
-                  copy_label="Copy snippet"
-                  code={@config.body}
-                  class="mt-3"
-                />
-                <%!-- Mechanical next step sits right under the snippet: paste or
-                     run it, then restart. --%>
-                <p class="mt-3 text-xs text-zinc-400">
-                  {if config_target_is_file?(@config),
-                    do: "Restart #{client_label(@selected_client)} after saving.",
-                    else: "Start a fresh #{client_label(@selected_client)} session to use it."}
-                  <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
-                </p>
               </.disclosure>
             </div>
         <% end %>
 
-        <%!-- Step 3 — Connect your agent: the live connection status for the
-             just-minted key (the agents analog of the runner-install "waiting →
-             connected" watchdog). Keyed to THIS key's id (the api_key.first_used
-             handler), so a different agent connecting can't flip it. Waiting is
-             the NORMAL state — the quiet dot-led wait line (wait-room grammar) —
-             and the brand connected block takes over on the first call (instant
-             via the broadcast, tick as the fallback). Shown once a key is minted
-             (picking a local client mints one), so it completes the 1-2-3. --%>
-        <section :if={@quick_key_id} class="mt-8">
-          <.step_header step={3} title="Connect your agent">
+        <%!-- Step 2 — Connect your agent: the live connection status (the
+             agents analog of the runner-install "waiting → connected"
+             watchdog). The snippet/custom paths watch their minted key's id;
+             the installer path watches for any key minted after this page
+             opened making its first call (quick_key_connected?/2 — a
+             pre-existing agent can't flip it). Waiting is the NORMAL state —
+             the quiet dot-led wait line (wait-room grammar) — and the brand
+             connected block takes over on the first call (instant via the
+             broadcast, tick as the fallback). --%>
+        <section :if={@quick_key_id || local_client?(@selected_client)} class="mt-8">
+          <.step_header step={2} title="Connect your agent">
             <:subtitle>
               start {client_label(@selected_client)} — its first call lands it here
             </:subtitle>
@@ -1465,11 +1678,12 @@ defmodule EmisarWeb.AgentsLive do
   slot :subtitle
   slot :actions
 
-  # A numbered section header for the local-client connect flow — a circled step
-  # number + the `section_header` title/subtitle/actions shape — so the three
-  # sections read as an explicit sequence: 1 Install the bridge, 2 Copy your API
-  # key, 3 Connect your agent. (Cloud clients get numbered `<.steps>` in the
-  # remote panel; local clients are richer sections, so they number the headers.)
+  # A numbered section header for the local-client connect flow — a quiet step
+  # number + the `section_header` title/subtitle/actions shape — so the flow
+  # reads as an explicit sequence: 1 Install the bridge (it configures the
+  # client and asks for browser approval), 2 Connect your agent. (Cloud
+  # clients get numbered `<.steps>` in the remote panel; local clients are
+  # richer sections, so they number the headers.)
   defp step_header(assigns) do
     ~H"""
     <header class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -1529,7 +1743,7 @@ defmodule EmisarWeb.AgentsLive do
       />
       <p class="mt-2 text-xs leading-5 text-zinc-400">
         The installer offers to add emisar to the LLM clients it finds on the machine —
-        paste the key below when it asks.
+        approve the connection in your browser when it asks. No key to copy.
       </p>
     </div>
     """

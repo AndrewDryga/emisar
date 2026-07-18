@@ -28,6 +28,7 @@ defmodule Emisar.Application do
 
       # Contexts
       Emisar.Accounts,
+      Emisar.ApiKeys,
       Emisar.Approvals,
       Emisar.Audit,
       Emisar.Billing,

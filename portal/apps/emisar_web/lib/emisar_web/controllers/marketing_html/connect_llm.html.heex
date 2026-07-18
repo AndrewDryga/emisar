@@ -22,7 +22,8 @@
         </li>
         <li>
           <strong>Stdio bridge or static key</strong> (Claude Desktop,
-          Claude Code, Cursor, Codex CLI, Gemini CLI, Grok CLI, plain HTTP) — a tiny
+          Claude Code, Cursor, Windsurf, Zed, OpenClaw, OpenCode, Pi, Copilot CLI,
+          Codex CLI, Gemini CLI, Goose, Hermes, Grok CLI, plain HTTP) — a tiny
           binary on your machine, or a raw bearer token, authenticated with
           an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code> API key.
         </li>
@@ -31,7 +32,7 @@
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
           src="/images/screenshots/connect-llm-agents.webp"
-          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT Apps) and local or IDE clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, Grok CLI). Cloud setup shows copyable connector-name and OAuth MCP server URL fields; local setup mints a bearer key and shows per-client setup steps."
+          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT Apps) and local or IDE clients (Claude Code, Claude Desktop, Cursor, Windsurf, Zed, OpenClaw, OpenCode, Pi, Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI). Cloud setup shows copyable connector-name and OAuth MCP server URL fields; local setup mints a bearer key and shows per-client setup steps."
           loading="lazy"
           class="w-full"
         />
@@ -226,10 +227,13 @@
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           The clients in steps 3 and 4 authenticate with a raw key instead
-          of OAuth. In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>.
-          Pick your LLM client from the tab strip — we mint a key named
-          after it and drop a prefilled snippet you can paste into the
-          client's config.
+          of OAuth — but you rarely handle the key yourself. The installer in
+          step 3 asks to add emisar to the clients it finds; you approve the
+          connection in your browser and the keys are minted and written into
+          the client configs for you. Setting up by hand instead? In the
+          dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>,
+          pick your client from the tab strip, and reveal the manual snippet —
+          it mints a key named after the client, prefilled and ready to paste.
         </p>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
@@ -266,7 +270,8 @@
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           For clients that only speak stdio MCP — Claude Desktop, Claude
-          Code, Cursor (local mode), Gemini CLI, Codex CLI, Grok CLI — install the
+          Code, Cursor (local mode), Windsurf, Zed, OpenClaw, OpenCode, Pi,
+          Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI — install the
           tiny <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
           binary. It's a thin shim that forwards stdio JSON-RPC frames
           to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
@@ -292,6 +297,12 @@
           </div>
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
         </div>
+        <p class="mt-2 text-xs leading-5 text-zinc-400">
+          The installer then offers to add emisar to the LLM clients on the
+          machine — approve the connection in your browser and it writes each
+          client's config itself. The manual per-client configs below remain
+          the by-hand path.
+        </p>
         <p class="mt-2 text-xs leading-5 text-zinc-400">
           Rather verify first? The bridge release carries SLSA provenance + a
           <code class="font-mono">SHA256SUMS-MCP</code>

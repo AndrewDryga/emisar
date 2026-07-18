@@ -1,7 +1,7 @@
 defmodule Emisar.ApiKeysTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{ApiKeys, Audit, Crypto, Repo}
-  alias Emisar.ApiKeys.ApiKey
+  alias Emisar.{ApiKeys, Audit, Crypto, Repo, RequestContext}
+  alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
@@ -1202,6 +1202,313 @@ defmodule Emisar.ApiKeysTest do
       subject = Subject.for_runner(runner, account)
 
       refute ApiKeys.no_agents?(subject)
+    end
+  end
+
+  describe "device_grant_ttl_s/0" do
+    test "reports the grant lifetime the API layer advertises as expires_in" do
+      assert ApiKeys.device_grant_ttl_s() == 15 * 60
+    end
+  end
+
+  describe "open_device_grant/2" do
+    test "opens a pending, account-less grant and returns the raw codes exactly once" do
+      context = %RequestContext{ip_address: "203.0.113.9"}
+
+      assert {:ok, device_code, user_code, grant} =
+               ApiKeys.open_device_grant(["claude-code", "cursor"], context)
+
+      assert String.starts_with?(device_code, "emdg-")
+      assert user_code =~ ~r/^[2-9ABCDEFGHJKMNPQRSTVWXYZ]{4}-[2-9ABCDEFGHJKMNPQRSTVWXYZ]{4}$/
+      assert grant.status == :pending
+      assert grant.requested_clients == ["claude-code", "cursor"]
+      assert grant.requester_ip == "203.0.113.9"
+      assert is_nil(grant.account_id)
+
+      # Only digests persist — the row can never reproduce the codes.
+      assert grant.device_code_digest == Crypto.mcp_device_code_digest(device_code)
+      assert grant.user_code_digest == Crypto.mcp_device_user_code_digest(user_code)
+      assert DateTime.compare(grant.expires_at, DateTime.utc_now()) == :gt
+    end
+
+    test "rejects unknown clients and an empty client list" do
+      assert {:error, changeset} = ApiKeys.open_device_grant(["netscape"], %RequestContext{})
+      assert "has an invalid entry" in errors_on(changeset).requested_clients
+
+      assert {:error, changeset} = ApiKeys.open_device_grant([], %RequestContext{})
+      assert "can't be blank" in errors_on(changeset).requested_clients
+    end
+
+    test "duplicate client entries collapse to one" do
+      assert {:ok, _device_code, _user_code, grant} =
+               ApiKeys.open_device_grant(["codex", "codex"], %RequestContext{})
+
+      assert grant.requested_clients == ["codex"]
+    end
+  end
+
+  describe "fetch_pending_device_grant_by_user_code/2" do
+    test "finds the pending grant, normalizing case and separators" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      typed = user_code |> String.replace("-", " ") |> String.downcase()
+      grant_id = grant.id
+
+      assert {:ok, %DeviceGrant{id: ^grant_id}} =
+               ApiKeys.fetch_pending_device_grant_by_user_code(typed, subject)
+    end
+
+    test "an expired or unknown code is :not_found" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      Fixtures.ApiKeys.backdate_device_grant_expiry(grant)
+
+      assert ApiKeys.fetch_pending_device_grant_by_user_code(user_code, subject) ==
+               {:error, :not_found}
+
+      assert ApiKeys.fetch_pending_device_grant_by_user_code("XXXX-XXXX", subject) ==
+               {:error, :not_found}
+    end
+
+    test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert ApiKeys.fetch_pending_device_grant_by_user_code("XXXX-XXXX", subject) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "approve_device_grant/2" do
+    test "binds the approver's account + identity and writes the audit event" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      assert {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      assert approved.status == :approved
+      assert approved.account_id == account.id
+      assert approved.approved_by_id == user.id
+      assert approved.approved_by_membership_id == subject.membership_id
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.device_grant_approved"]])
+
+      assert [event] = events
+      assert event.target_kind == "device_grant"
+      assert event.target_id == approved.id
+      assert event.target_label == "Claude Code"
+      assert event.payload["requested_clients"] == ["claude-code"]
+    end
+
+    test "a grant approves exactly once — a second approve (or after deny) is :not_found" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      assert {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+    end
+
+    test "an expired grant cannot be approved" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      Fixtures.ApiKeys.backdate_device_grant_expiry(grant)
+
+      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+    end
+
+    test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert ApiKeys.approve_device_grant("XXXX-XXXX", subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "deny_device_grant/2" do
+    test "records the denier and writes the audit event" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["cursor"], %RequestContext{})
+
+      assert {:ok, denied} = ApiKeys.deny_device_grant(user_code, subject)
+      assert denied.status == :denied
+      assert denied.account_id == account.id
+      assert denied.approved_by_id == user.id
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.device_grant_denied"]])
+
+      assert [event] = events
+      assert event.target_id == denied.id
+      assert event.target_label == "Cursor"
+    end
+
+    test "a denied grant cannot then be approved" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["cursor"], %RequestContext{})
+
+      assert {:ok, _denied} = ApiKeys.deny_device_grant(user_code, subject)
+      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+    end
+
+    test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert ApiKeys.deny_device_grant("XXXX-XXXX", subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "claim_device_grant/1" do
+    test "an approved grant mints one auto key per client in the approver's account — once" do
+      {_user, account, subject} = owner_subject_pair()
+      # A second tenant proves account scoping: nothing may land there.
+      other_account = Fixtures.Accounts.create_account()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code", "cursor"], %RequestContext{})
+
+      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+
+      assert {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
+      assert client_keys |> Map.keys() |> Enum.sort() == ["claude-code", "cursor"]
+
+      keys = Repo.all(ApiKey)
+      assert length(keys) == 2
+      assert Enum.all?(keys, &(&1.account_id == account.id))
+      refute Enum.any?(keys, &(&1.account_id == other_account.id))
+      assert Enum.all?(keys, &ApiKey.auto_unused?/1)
+      assert keys |> Enum.map(& &1.name) |> Enum.sort() == ["Claude Code", "Cursor"]
+
+      # The delivered secrets authenticate (first use promotes the key).
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
+
+      # Delivery is single-shot — a second poll never re-issues secrets.
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :invalid_grant}
+    end
+
+    test "a pending grant polls as :authorization_pending; unknown codes as :invalid_grant" do
+      {:ok, device_code, _user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :authorization_pending}
+      assert ApiKeys.claim_device_grant("emdg-unknown") == {:error, :invalid_grant}
+    end
+
+    test "a denied grant polls as :access_denied" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, _denied} = ApiKeys.deny_device_grant(user_code, subject)
+
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+    end
+
+    test "an expired grant polls as :expired_token — even after approval" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      Fixtures.ApiKeys.backdate_device_grant_expiry(approved)
+
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :expired_token}
+      # No keys minted for the dead grant.
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "a removed approver membership kills the claim" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+      assert Repo.all(ApiKey) == []
+    end
+  end
+
+  describe "cleanup_device_grants/1" do
+    test "expires overdue pending grants and deletes rows past retention" do
+      {:ok, _device_code, _user_code, overdue} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, _device_code, _user_code, fresh} =
+        ApiKeys.open_device_grant(["cursor"], %RequestContext{})
+
+      {:ok, _device_code, _user_code, ancient} =
+        ApiKeys.open_device_grant(["codex"], %RequestContext{})
+
+      Fixtures.ApiKeys.backdate_device_grant_expiry(overdue)
+
+      two_days_ago = DateTime.add(DateTime.utc_now(), -2 * 24 * 3_600, :second)
+      Fixtures.ApiKeys.backdate_device_grant_inserted_at(ancient, two_days_ago)
+
+      assert ApiKeys.cleanup_device_grants() == {1, 1}
+
+      assert Repo.reload(overdue).status == :expired
+      assert Repo.reload(fresh).status == :pending
+      refute Repo.reload(ancient)
+    end
+
+    test "an idle sweep is a no-op" do
+      assert ApiKeys.cleanup_device_grants() == {0, 0}
     end
   end
 

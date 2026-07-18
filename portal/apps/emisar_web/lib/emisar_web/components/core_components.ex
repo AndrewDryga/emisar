@@ -2339,16 +2339,24 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc "Run/runner status — a tone dot + the plain word (no pill). String or Ecto.Enum atom."
   attr :status, :any, required: true
+
+  attr :tone, :atom,
+    default: nil,
+    values: [nil, :brand, :amber, :rose, :neutral],
+    doc:
+      "override the word-derived tone for a status that is TRUE but degraded — " <>
+        "a connected runner on an unsupported version reads amber, not emerald"
+
   attr :class, :string, default: ""
 
   def status_badge(assigns) do
     status = to_string(assigns.status)
-    {dot_tone, dot_pulse?} = status_dot_spec(status)
+    {derived_tone, dot_pulse?} = status_dot_spec(status)
 
     assigns =
       assigns
       |> assign(:status, status)
-      |> assign(:dot_tone, dot_tone)
+      |> assign(:dot_tone, assigns.tone || derived_tone)
       |> assign(:dot_pulse?, dot_pulse?)
 
     ~H"""
@@ -2357,7 +2365,7 @@ defmodule EmisarWeb.CoreComponents do
          text. The dot carries the semantics for color-blind scanning too. --%>
     <span class={[
       "inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium",
-      status_word_class(@status),
+      (@tone && tone_text_class(@tone)) || status_word_class(@status),
       @class
     ]}>
       <.status_dot tone={@dot_tone} pulse={@dot_pulse?} />
@@ -2389,6 +2397,13 @@ defmodule EmisarWeb.CoreComponents do
       :neutral -> "text-zinc-400"
     end
   end
+
+  # The word tone for an EXPLICIT `status_badge` tone override (bypassing the
+  # word-derived bucket above) — same 300-tier palette, keyed by the dot tone.
+  defp tone_text_class(:brand), do: "text-brand-300"
+  defp tone_text_class(:amber), do: "text-amber-300"
+  defp tone_text_class(:rose), do: "text-rose-300"
+  defp tone_text_class(:neutral), do: "text-zinc-400"
 
   @doc """
   The coarse semantic bucket for a status string — `:pass | :pending | :deny |
@@ -2456,6 +2471,38 @@ defmodule EmisarWeb.CoreComponents do
   def connection_status(:disabled), do: "disabled"
   def connection_status(:pending), do: "pending"
 
+  @doc """
+  A runner's connection `status_badge`, toned to caution when the runner is up
+  but on an unsupported version. "connected" stays the word — the primary fact
+  is that it's reachable (and, warn-only by default, still dispatching) — while
+  the amber tone plus the rose version chip beside it flag that it needs
+  upgrading. Below-minimum is advisory on a runner, unlike a hard-blocked MCP
+  bridge (which the agents page reads as "unsupported" outright), so here we
+  degrade the tone, never the word.
+  """
+  attr :state, :atom, required: true, values: [:online, :offline, :disabled, :pending]
+  attr :version, :string, default: nil
+  attr :class, :string, default: ""
+
+  def runner_status_badge(assigns) do
+    ~H"""
+    <.status_badge
+      status={connection_status(@state)}
+      tone={runner_status_tone(@state, @version)}
+      class={@class}
+    />
+    """
+  end
+
+  # Only an ONLINE runner earns the caution recolor: offline/pending already
+  # read amber and disabled reads neutral, so a stale version adds no new alarm
+  # there — and nil lets the badge keep the word's own tone.
+  defp runner_status_tone(:online, version) do
+    if Emisar.Compat.runner_status(version) == :unsupported, do: :amber
+  end
+
+  defp runner_status_tone(_state, _version), do: nil
+
   # -- Generic page primitives ---------------------------------------
 
   # `.card`/`.panel` are GONE (§8.1 content-on-canvas): every console surface
@@ -2463,6 +2510,57 @@ defmodule EmisarWeb.CoreComponents do
   # (`secret_reveal`), code artifacts (`code_panel`), or actionable warnings
   # (`callout`). The stat tile below keeps the one sanctioned island surface
   # inline (the dashboard pillar grammar).
+
+  @doc """
+  The centered auth/consent card — the focused, chrome-less decision surface
+  shared by the OAuth consent screen and the device-grant approval page: a
+  full-viewport centered column, the emisar logo, and ONE rounded card. The
+  card's sections are the caller's content; `:footer` renders in the bordered
+  bottom band (the "Signed in as …" line).
+
+      <.auth_card>
+        <div class="border-b border-zinc-800 px-6 py-5">…header…</div>
+        <div class="px-6 py-5">…body…</div>
+        <:footer>Signed in as {@current_user.email}</:footer>
+      </.auth_card>
+  """
+  slot :inner_block, required: true
+  slot :footer
+
+  def auth_card(assigns) do
+    ~H"""
+    <div class="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-12">
+      <div class="w-full max-w-md">
+        <div class="mb-8 flex justify-center">
+          <img src={~p"/images/brand/emisar-logo.svg"} alt="emisar" class="h-8 w-auto" />
+        </div>
+
+        <div class="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
+          {render_slot(@inner_block)}
+          <div :if={@footer != []} class="border-t border-zinc-800 px-6 py-3">
+            <p class="text-center text-xs text-zinc-500">{render_slot(@footer)}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  The quiet reassurance/caution band inside an auth card — the bordered black
+  note under a consent's scope list ("policy still applies", "only approve a
+  request you started yourself").
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def consent_note(assigns) do
+    ~H"""
+    <div class={["rounded-lg border border-zinc-800 bg-black/40 px-4 py-3", @class]}>
+      <p class="text-xs leading-relaxed text-zinc-500">{render_slot(@inner_block)}</p>
+    </div>
+    """
+  end
 
   @doc """
   The ONE `<details>` disclosure — a bordered box whose summary row toggles a
@@ -2488,6 +2586,13 @@ defmodule EmisarWeb.CoreComponents do
   attr :open, :boolean, default: false
   attr :size, :atom, default: :sm, values: [:sm, :md]
   attr :class, :string, default: nil
+
+  attr :summary_click, :any,
+    default: nil,
+    doc:
+      "phx-click fired by the SUMMARY row only (body clicks never toggle) — " <>
+        "pair with server-owned `open` when expanding has a side effect (a lazy mint)"
+
   attr :rest, :global
   slot :summary, required: true
   slot :inner_block, required: true
@@ -2500,10 +2605,13 @@ defmodule EmisarWeb.CoreComponents do
       class={["group/disc rounded-lg bg-zinc-900/40 ring-1 ring-white/[0.08]", @class]}
       {@rest}
     >
-      <summary class={[
-        "flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden",
-        disclosure_summary_class(@size)
-      ]}>
+      <summary
+        phx-click={@summary_click}
+        class={[
+          "flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden",
+          disclosure_summary_class(@size)
+        ]}
+      >
         <span class="flex min-w-0 flex-wrap items-center gap-2">{render_slot(@summary)}</span>
         <.icon
           name="hero-chevron-down"

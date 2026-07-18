@@ -584,7 +584,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ "Authorization codes go to"
       # The bare origin is surfaced to the operator (the full callback path is
       # only echoed in the hidden redirect_uri field the POST carries back).
-      assert html =~ ~s(<span class="font-mono text-zinc-400">https://chatgpt.com</span>)
+      assert html =~
+               ~s(<span class="font-mono text-[0.92em] text-zinc-400">https://chatgpt.com</span>)
     end
 
     test "scope_label falls back to the raw token for unknown scopes" do

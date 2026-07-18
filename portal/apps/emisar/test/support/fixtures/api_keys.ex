@@ -6,6 +6,20 @@ defmodule Emisar.Fixtures.ApiKeys do
 
   alias Emisar.Accounts.Account
   alias Emisar.{ApiKeys, Fixtures, Repo, Users}
+  alias Emisar.ApiKeys.DeviceGrant
+
+  @doc "Backdates a device grant's expiry (default: a minute ago), returning the updated row."
+  def backdate_device_grant_expiry(%DeviceGrant{} = grant, expires_at \\ nil) do
+    expires_at = expires_at || DateTime.add(DateTime.utc_now(), -60, :second)
+    {:ok, updated} = grant |> Ecto.Changeset.change(expires_at: expires_at) |> Repo.update()
+    updated
+  end
+
+  @doc "Backdates a device grant's inserted_at (for retention sweeps), returning the updated row."
+  def backdate_device_grant_inserted_at(%DeviceGrant{} = grant, inserted_at) do
+    {:ok, updated} = grant |> Ecto.Changeset.change(inserted_at: inserted_at) |> Repo.update()
+    updated
+  end
 
   @doc """
   Creates an API key. Returns `{raw, key}`.

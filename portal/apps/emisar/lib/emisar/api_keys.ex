@@ -14,11 +14,25 @@ defmodule Emisar.ApiKeys do
   lists until an LLM actually authenticates with one. Ring-evicted at
   #{@quick_ring_cap} unused entries per account.
   """
+  use Supervisor
   alias Ecto.Multi
-  alias Emisar.ApiKeys.{ApiKey, Authorizer}
-  alias Emisar.{Audit, Auth, Crypto, Repo}
+  alias Emisar.ApiKeys.{ApiKey, Authorizer, DeviceGrant}
+  alias Emisar.{Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    children = [job_module("DeviceGrantCleanup")]
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
@@ -847,6 +861,250 @@ defmodule Emisar.ApiKeys do
   end
 
   def no_agents?(%Subject{}), do: false
+
+  # -- Device grants ---------------------------------------------------
+
+  @device_grant_ttl_s 15 * 60
+  @device_grant_retention_s 24 * 3_600
+
+  @doc "Device-grant lifetime in seconds — the API layer reports it as `expires_in`."
+  def device_grant_ttl_s, do: @device_grant_ttl_s
+
+  @doc """
+  Internal — the unauthenticated device-authorization endpoint (RFC 8628
+  shape). Opens a pending grant for the installer's requested clients and
+  returns `{:ok, device_code, user_code, grant}` — the raw codes exist only
+  in this return; the row keeps digests. Retries once when the minted user
+  code collides with another live pending grant.
+  """
+  def open_device_grant(requested_clients, %RequestContext{} = context) do
+    do_open_device_grant(requested_clients, context, _retry? = true)
+  end
+
+  defp do_open_device_grant(requested_clients, context, retry?) do
+    {device_code, device_code_digest} = Crypto.mcp_device_code()
+    {user_code, user_code_digest} = Crypto.mcp_device_user_code()
+    expires_at = DateTime.add(DateTime.utc_now(), @device_grant_ttl_s, :second)
+    attrs = %{requested_clients: requested_clients, requester_ip: context.ip_address}
+
+    changeset =
+      DeviceGrant.Changeset.create(device_code_digest, user_code_digest, attrs, expires_at)
+
+    case Repo.insert(changeset) do
+      {:ok, grant} ->
+        {:ok, device_code, user_code, grant}
+
+      {:error, %Ecto.Changeset{} = failed} ->
+        if retry? and user_code_collision?(failed) do
+          do_open_device_grant(requested_clients, context, false)
+        else
+          {:error, failed}
+        end
+    end
+  end
+
+  defp user_code_collision?(%Ecto.Changeset{errors: errors} = changeset) do
+    Repo.Changeset.unique_constraint_error?(changeset) and
+      Keyword.has_key?(errors, :user_code_digest)
+  end
+
+  @doc """
+  The pending grant behind a typed user code — the approval page's read.
+  Requires `issue_quick_key`. Deliberately not account-scoped (no
+  `for_subject`): a pending grant carries no account until an approver binds
+  one at approval — the documented IL-4 exception.
+  Returns `{:ok, grant}` or `{:error, :unauthorized | :not_found}`.
+  """
+  def fetch_pending_device_grant_by_user_code(user_code, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.issue_quick_key_permission()
+           ) do
+      digest = Crypto.mcp_device_user_code_digest(user_code)
+
+      DeviceGrant.Query.by_user_code_digest(digest)
+      |> DeviceGrant.Query.by_status(:pending)
+      |> DeviceGrant.Query.not_expired(DateTime.utc_now())
+      |> Repo.fetch(DeviceGrant.Query)
+    end
+  end
+
+  @doc """
+  Approves a pending grant into the subject's CURRENT account: binds the
+  approver's identity — which is what later authorizes the claim-time mint —
+  and flips the grant to `approved` under a row lock, so a concurrent
+  approve/deny/sweep loses cleanly as `:not_found`. Requires
+  `issue_quick_key`. Returns `{:ok, grant}` or
+  `{:error, :unauthorized | :not_found}`.
+  """
+  def approve_device_grant(user_code, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.issue_quick_key_permission()
+           ) do
+      account_id = account.id
+      user_id = Subject.actor_id(subject)
+      membership_id = subject.membership_id
+      digest = Crypto.mcp_device_user_code_digest(user_code)
+
+      DeviceGrant.Query.by_user_code_digest(digest)
+      |> DeviceGrant.Query.by_status(:pending)
+      |> DeviceGrant.Query.not_expired(DateTime.utc_now())
+      |> DeviceGrant.Query.lock_for_update()
+      |> Repo.fetch_and_update(DeviceGrant.Query,
+        with: &DeviceGrant.Changeset.approve(&1, account_id, user_id, membership_id),
+        audit: &Audit.Events.device_grant_approved(subject, &1)
+      )
+    end
+  end
+
+  @doc """
+  Denies a pending grant — the poll then reports `access_denied` and the
+  installer stops. Records the denier for the audit trail. Requires
+  `issue_quick_key`. Returns `{:ok, grant}` or
+  `{:error, :unauthorized | :not_found}`.
+  """
+  def deny_device_grant(user_code, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.issue_quick_key_permission()
+           ) do
+      account_id = account.id
+      user_id = Subject.actor_id(subject)
+      membership_id = subject.membership_id
+      digest = Crypto.mcp_device_user_code_digest(user_code)
+
+      DeviceGrant.Query.by_user_code_digest(digest)
+      |> DeviceGrant.Query.by_status(:pending)
+      |> DeviceGrant.Query.not_expired(DateTime.utc_now())
+      |> DeviceGrant.Query.lock_for_update()
+      |> Repo.fetch_and_update(DeviceGrant.Query,
+        with: &DeviceGrant.Changeset.deny(&1, account_id, user_id, membership_id),
+        audit: &Audit.Events.device_grant_denied(subject, &1)
+      )
+    end
+  end
+
+  @doc """
+  Internal — the device-token poll (RFC 8628 semantics). Redeems an approved
+  grant EXACTLY once: locks the row, mints one auto-generated `:mcp` key per
+  requested client on behalf of the recorded approver (the approval is the
+  authorization — this path has no subject by design, like magic-link
+  redemption), flips the grant to `claimed`, and returns `{:ok, client_keys}`
+  as a `client id => raw secret` map — the only time the secrets exist.
+  Every other state maps to its poll error:
+  `{:error, :authorization_pending | :access_denied | :expired_token | :invalid_grant}`.
+  """
+  def claim_device_grant(device_code) when is_binary(device_code) do
+    digest = Crypto.mcp_device_code_digest(device_code)
+
+    Multi.new()
+    |> Multi.run(:grant, fn repo, _changes ->
+      queryable =
+        DeviceGrant.Query.by_device_code_digest(digest)
+        |> DeviceGrant.Query.lock_for_update()
+
+      judge_claimable(repo.peek(queryable), repo)
+    end)
+    |> Multi.run(:client_keys, fn repo, %{grant: grant} ->
+      mint_grant_keys(repo, grant)
+    end)
+    |> Multi.run(:claimed, fn repo, %{grant: grant} ->
+      repo.update(DeviceGrant.Changeset.claim(grant))
+    end)
+    |> Multi.run(:evicted, fn _repo, %{grant: grant} ->
+      evict_quick_ring_overflow(
+        grant.account_id,
+        @quick_ring_cap,
+        @quick_eviction_grace_seconds,
+        DateTime.utc_now()
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{client_keys: client_keys}} -> {:ok, client_keys}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The poll-state machine: only an unexpired approved grant whose approver
+  # still exists yields keys; every other state is its RFC 8628 poll error.
+  defp judge_claimable(nil, _repo), do: {:error, :invalid_grant}
+  defp judge_claimable(%DeviceGrant{status: :claimed}, _repo), do: {:error, :invalid_grant}
+  defp judge_claimable(%DeviceGrant{status: :denied}, _repo), do: {:error, :access_denied}
+  defp judge_claimable(%DeviceGrant{status: :expired}, _repo), do: {:error, :expired_token}
+
+  defp judge_claimable(%DeviceGrant{} = grant, repo) do
+    cond do
+      DeviceGrant.expired?(grant) -> {:error, :expired_token}
+      grant.status == :pending -> {:error, :authorization_pending}
+      true -> ensure_approver_still_valid(grant, repo)
+    end
+  end
+
+  # A removed approver or deleted account kills the grant — the recorded
+  # identity IS the claim-time authorization, so it must still exist. The
+  # struct preload on an internal, already-authorized path is the sanctioned
+  # IL-10 exception (the assocs' `where: [deleted_at: nil]` does the vetting).
+  defp ensure_approver_still_valid(%DeviceGrant{} = grant, repo) do
+    grant = repo.preload(grant, [:account, :approved_by_membership])
+
+    if is_nil(grant.account) or is_nil(grant.approved_by_membership) do
+      {:error, :access_denied}
+    else
+      {:ok, grant}
+    end
+  end
+
+  # Deliberate per-row inserts: each key mints its own secret via a
+  # `mint_quick` changeset (auto-generated, invisible until first use — the
+  # quick-mint semantics), and the whole loop aborts atomically inside the
+  # claim transaction on the first failure. N is bounded by the client list.
+  defp mint_grant_keys(repo, %DeviceGrant{} = grant) do
+    Enum.reduce_while(grant.requested_clients, {:ok, %{}}, fn client, {:ok, acc} ->
+      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+
+      changeset =
+        ApiKey.Changeset.mint_quick(
+          grant.account_id,
+          grant.approved_by_id,
+          grant.approved_by_membership_id,
+          prefix,
+          hash,
+          %{name: DeviceGrant.client_label(client)}
+        )
+
+      case repo.insert(changeset) do
+        {:ok, _key} -> {:cont, {:ok, Map.put(acc, client, raw)}}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  @doc """
+  Internal — the DeviceGrantCleanup job's sweep. Expires overdue pending
+  grants (freeing their user codes for reuse) and hard-deletes rows older
+  than a day — grants are minutes-lived operational state, not audit history
+  (approval/denial already wrote durable audit events). Returns
+  `{expired, deleted}`.
+  """
+  def cleanup_device_grants(now \\ DateTime.utc_now()) do
+    {expired, _} =
+      DeviceGrant.Query.by_status(:pending)
+      |> DeviceGrant.Query.expired_before(now)
+      |> Repo.update_all(set: [status: :expired, updated_at: now])
+
+    retention_cutoff = DateTime.add(now, -@device_grant_retention_s, :second)
+
+    {deleted, _} =
+      DeviceGrant.Query.older_than(retention_cutoff)
+      |> Repo.delete_all()
+
+    {expired, deleted}
+  end
 
   # -- Authorization ---------------------------------------------------
 

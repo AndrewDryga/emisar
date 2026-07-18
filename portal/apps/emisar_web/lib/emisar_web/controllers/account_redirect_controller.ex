@@ -23,4 +23,14 @@ defmodule EmisarWeb.AccountRedirectController do
   def connect_agent(conn, _params) do
     redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/agents/connect")
   end
+
+  # /activate — the device-grant approval URL the MCP installer prints,
+  # keeping the ?code= deep link through the forward.
+  def activate(conn, %{"code" => code}) when is_binary(code) do
+    redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/activate?code=#{code}")
+  end
+
+  def activate(conn, _params) do
+    redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/activate")
+  end
 end

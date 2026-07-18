@@ -252,9 +252,16 @@ includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
 `EMISAR_URL`, and `EMISAR_ENROLLMENT_KEY`.
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, and `--yes`. It accepts
-`VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, and `ASSUME_YES`.
-The current release tags are `runner-v0.13.0` and `mcp-v0.3.0`. The bridge
-installer also requires the selected GitHub release to be marked immutable.
+`VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
+and `EMISAR_URL` (the portal its interactive LLM-client setup talks to and
+writes into configs; default `https://emisar.dev`). The interactive setup
+drives the portal's device-authorization pair —
+`POST /api/mcp/device_authorization` and `POST /api/mcp/device_token`, RFC
+8628-shaped fields and poll errors with an emisar-specific success payload
+(per-client API keys) — which freezes at 1.0 alongside the other public API
+surfaces. The current release tags are `runner-v0.13.0` and `mcp-v0.3.0`. The
+bridge installer also requires the selected GitHub release to be marked
+immutable.
 
 **What happens on skew.** A renamed installer flag or environment variable
 fails the one-liner with an unknown-option or missing-configuration error. A

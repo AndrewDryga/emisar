@@ -154,8 +154,11 @@ CLIENT SETUP
   Install the bridge:
     curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
 
-  Replace emk-... below with a key from https://emisar.dev/app/agents.
-  These examples assume the bridge is installed in /usr/local/bin.
+  An interactive install offers to configure the clients below itself —
+  you approve the connection in the portal and it writes the configs.
+  The manual forms follow. Replace emk-... below with a key from
+  https://emisar.dev/app/agents. These examples assume the bridge is
+  installed in /usr/local/bin.
 
   Claude Desktop (macOS)
     Add this to:
