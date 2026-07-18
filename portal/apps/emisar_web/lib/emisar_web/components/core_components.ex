@@ -4800,6 +4800,25 @@ defmodule EmisarWeb.CoreComponents do
                   />
                 </.link>
               </li>
+              <li>
+                <.link
+                  href="https://github.com/andrewdryga/emisar/tree/main/skills"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Use your coding agent</div>
+                    <div class="mt-0.5 text-xs text-zinc-400">
+                      The install-emisar skill walks Claude Code or Codex through this setup.
+                    </div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
             </ul>
           </section>
         </aside>
@@ -5544,6 +5563,39 @@ defmodule EmisarWeb.CoreComponents do
       {render_slot(@inner_block)}
       <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
     </a>
+    """
+  end
+
+  @doc """
+  "Use your coding agent" cross-sell — points at the customer skills
+  (`skills/` on GitHub) that run an Emisar flow end to end. One recognizable
+  shape on the marketing docs pages and the console rails: border-only card
+  (§8.1 — no wash), sparkles title, one caller-written sentence, one link.
+
+      <.agent_skill_cta class="mt-8">
+        The <code>install-emisar</code> skill walks Claude Code or Codex
+        through this whole page.
+      </.agent_skill_cta>
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, required: true, doc: "one sentence: what the agent will do"
+
+  def agent_skill_cta(assigns) do
+    ~H"""
+    <div class={["rounded-xl border border-zinc-800/80 p-4", @class]}>
+      <h3 class="flex items-center gap-2 text-sm font-medium text-zinc-100">
+        <.icon name="hero-sparkles" class="h-4 w-4 text-brand-300" /> Use your coding agent
+      </h3>
+      <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">
+        {render_slot(@inner_block)}
+      </p>
+      <.external_link
+        href="https://github.com/andrewdryga/emisar/tree/main/skills"
+        class="mt-3 text-sm font-medium text-brand-300 hover:text-brand-200"
+      >
+        Get the skill
+      </.external_link>
+    </div>
     """
   end
 
