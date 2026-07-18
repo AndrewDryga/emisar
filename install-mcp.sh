@@ -624,71 +624,252 @@ write_fresh_json_config() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
-# Merge into an existing JSON config, preserving every other key, writing
-# the client's exact upstream schema (`shape`). python3 first; jq covers only
-# the standard mcpServers shape; no tool → fail so the caller prints the
-# manual path.
+# Merge into an existing JSON config, preserving every other key — and, for a
+# JSONC file (Zed and VS Code ship commented settings), its comments and
+# trailing commas, via a textual insert since json.dump would reformat them
+# away. Writes the client's exact upstream schema (`shape`). python3 first; jq
+# covers only the standard mcpServers shape on comment-free JSON; no tool, or a
+# commented multi-level config → fail so the caller prints the manual path.
 merge_json_config() {
   local file="$1" bin="$2" url="$3" key="$4" client="$5" shape="${6:-std}"
   local status=0
   if command -v python3 >/dev/null 2>&1; then
     MCP_FILE="${file}" MCP_BIN="${bin}" MCP_URL="${url}" MCP_KEY="${key}" \
       MCP_CLIENT="${client}" MCP_SHAPE="${shape}" python3 - 2>/dev/null <<'PY' || status=1
-import json, os, tempfile
+import json, os, re, tempfile
 
-def container(data, *keys):
-    for key in keys:
-        data = data.setdefault(key, {})
-        if not isinstance(data, dict):
-            raise SystemExit("existing config key is not an object: " + key)
-    return data
+# A rich editor config (Zed, VS Code) is JSONC — it carries // and /* */
+# comments and trailing commas. Strict json.loads dies on it, and json.dump
+# would strip the user's comments even if it parsed. So: parse+dump for plain
+# JSON (unchanged, all shapes), and a comment-preserving textual insert for a
+# file that actually has comments.
+
+def strip_jsonc(text):
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == '\\' and i + 1 < n:
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r',(\s*[}\]])', r'\1', ''.join(out))
+
+def has_comments(text):
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            i += 1
+            while i < n:
+                if text[i] == '\\':
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] in '/*':
+            return True
+        i += 1
+    return False
+
+def skip_ws_comments(raw, i, n):
+    while i < n:
+        c = raw[i]
+        if c in ' \t\r\n':
+            i += 1
+        elif c == '/' and i + 1 < n and raw[i + 1] == '/':
+            while i < n and raw[i] != '\n':
+                i += 1
+        elif c == '/' and i + 1 < n and raw[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (raw[i] == '*' and raw[i + 1] == '/'):
+                i += 1
+            i += 2
+        else:
+            break
+    return i
+
+def match_string(raw, i, n):
+    i += 1
+    while i < n:
+        if raw[i] == '\\':
+            i += 2
+            continue
+        if raw[i] == '"':
+            return i + 1
+        i += 1
+    return i
+
+def find_close(raw, i, n, open_ch, close_ch):
+    depth = 0
+    while i < n:
+        c = raw[i]
+        if c == '"':
+            i = match_string(raw, i, n)
+            continue
+        if c == '/' and i + 1 < n and raw[i + 1] in '/*':
+            i = skip_ws_comments(raw, i, n)
+            continue
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+def skip_value(raw, i, n):
+    i = skip_ws_comments(raw, i, n)
+    if i >= n:
+        return i
+    c = raw[i]
+    if c == '"':
+        return match_string(raw, i, n)
+    if c == '{':
+        return find_close(raw, i, n, '{', '}') + 1
+    if c == '[':
+        return find_close(raw, i, n, '[', ']') + 1
+    while i < n and raw[i] not in ',}]':
+        i += 1
+    return i
+
+def find_key_value_brace(raw, obj_brace, n, key):
+    end = find_close(raw, obj_brace, n, '{', '}')
+    if end < 0:
+        return None
+    i = obj_brace + 1
+    target = '"' + key + '"'
+    while i < end:
+        c = raw[i]
+        if c in ' \t\r\n,':
+            i += 1
+            continue
+        if c == '/' and i + 1 < n and raw[i + 1] in '/*':
+            i = skip_ws_comments(raw, i, n)
+            continue
+        if c == '"':
+            key_end = match_string(raw, i, n)
+            member = raw[i:key_end]
+            j = skip_ws_comments(raw, key_end, n)
+            if j < n and raw[j] == ':':
+                j = skip_ws_comments(raw, j + 1, n)
+                if member == target:
+                    return j if (j < n and raw[j] == '{') else -1
+                i = skip_value(raw, j, n)
+                continue
+            i = key_end
+            continue
+        i += 1
+    return None
+
+def member_indent(raw, brace):
+    ls = raw.rfind('\n', 0, brace) + 1
+    base = re.match(r'[ \t]*', raw[ls:brace]).group(0)
+    return base + '  '
+
+def render_member(name, value, indent):
+    lines = json.dumps(value, indent=2).split('\n')
+    rendered = lines[0] + ''.join('\n' + indent + ln for ln in lines[1:])
+    return '"' + name + '": ' + rendered
+
+def insert_1level(raw, container, name, value):
+    n = len(raw)
+    root = skip_ws_comments(raw, 0, n)
+    if root >= n or raw[root] != '{':
+        raise SystemExit('top-level JSON is not an object')
+    vb = find_key_value_brace(raw, root, n, container)
+    if vb == -1:
+        raise SystemExit('container key is not an object: ' + container)
+    if vb is not None:
+        if find_key_value_brace(raw, vb, n, name) is not None:
+            return raw
+        indent = member_indent(raw, vb)
+        j = skip_ws_comments(raw, vb + 1, n)
+        empty = j < n and raw[j] == '}'
+        block = '\n' + indent + render_member(name, value, indent) + ('' if empty else ',')
+        return raw[:vb + 1] + block + raw[vb + 1:]
+    indent = member_indent(raw, root)
+    inner = indent + '  '
+    j = skip_ws_comments(raw, root + 1, n)
+    empty = j < n and raw[j] == '}'
+    entry = render_member(name, value, inner)
+    block = '\n' + indent + '"' + container + '": {\n' + inner + entry + '\n' + indent + '}' + ('' if empty else ',')
+    return raw[:root + 1] + block + raw[root + 1:]
+
+def shape_target(shape, bin_path, entry_env):
+    if shape == 'std':
+        return ['mcpServers'], {'command': bin_path, 'env': entry_env}
+    if shape == 'openclaw':
+        return ['mcp', 'servers'], {'command': bin_path, 'env': entry_env}
+    if shape == 'opencode':
+        return ['mcp'], {'type': 'local', 'command': [bin_path], 'enabled': True, 'environment': entry_env}
+    if shape == 'copilot':
+        return ['mcpServers'], {'type': 'local', 'command': bin_path, 'args': [], 'env': entry_env, 'tools': ['*']}
+    if shape == 'zed':
+        return ['context_servers'], {'source': 'custom', 'command': bin_path, 'args': [], 'env': entry_env}
+    raise SystemExit('unknown shape: ' + shape)
 
 def main():
-    path = os.environ["MCP_FILE"]
+    path = os.environ['MCP_FILE']
     with open(path) as handle:
         raw = handle.read()
-    data = json.loads(raw) if raw.strip() else {}
-    if not isinstance(data, dict):
-        raise SystemExit("top-level JSON is not an object")
-    bin_path = os.environ["MCP_BIN"]
     entry_env = {
-        "EMISAR_URL": os.environ["MCP_URL"],
-        "EMISAR_API_KEY": os.environ["MCP_KEY"],
-        "EMISAR_CLIENT": os.environ["MCP_CLIENT"],
+        'EMISAR_URL': os.environ['MCP_URL'],
+        'EMISAR_API_KEY': os.environ['MCP_KEY'],
+        'EMISAR_CLIENT': os.environ['MCP_CLIENT'],
     }
-    shape = os.environ["MCP_SHAPE"]
-    if shape == "std":
-        container(data, "mcpServers")["emisar"] = {"command": bin_path, "env": entry_env}
-    elif shape == "openclaw":
-        container(data, "mcp", "servers")["emisar"] = {"command": bin_path, "env": entry_env}
-    elif shape == "opencode":
-        container(data, "mcp")["emisar"] = {
-            "type": "local",
-            "command": [bin_path],
-            "enabled": True,
-            "environment": entry_env,
-        }
-    elif shape == "copilot":
-        container(data, "mcpServers")["emisar"] = {
-            "type": "local",
-            "command": bin_path,
-            "args": [],
-            "env": entry_env,
-            "tools": ["*"],
-        }
-    elif shape == "zed":
-        container(data, "context_servers")["emisar"] = {
-            "source": "custom",
-            "command": bin_path,
-            "args": [],
-            "env": entry_env,
-        }
+    keys, value = shape_target(os.environ['MCP_SHAPE'], os.environ['MCP_BIN'], entry_env)
+    if has_comments(raw):
+        # Only a 1-level container merges textually; a commented multi-level
+        # config is rare and falls back to the manual snippet.
+        if len(keys) != 1:
+            raise SystemExit('cannot merge a commented multi-level config')
+        out = insert_1level(raw, keys[0], 'emisar', value)
+        check = json.loads(strip_jsonc(out))
+        for k in keys:
+            check = check[k]
+        if check.get('emisar') != value:
+            raise SystemExit('validation failed after insert')
     else:
-        raise SystemExit("unknown shape: " + shape)
-    fd, tmp = tempfile.mkstemp(prefix=".emisar-mcp.", dir=os.path.dirname(path) or ".")
-    with os.fdopen(fd, "w") as handle:
-        json.dump(data, handle, indent=2)
-        handle.write("\n")
+        data = json.loads(raw) if raw.strip() else {}
+        if not isinstance(data, dict):
+            raise SystemExit('top-level JSON is not an object')
+        node = data
+        for k in keys:
+            node = node.setdefault(k, {})
+            if not isinstance(node, dict):
+                raise SystemExit('existing config key is not an object: ' + k)
+        node['emisar'] = value
+        out = json.dumps(data, indent=2) + '\n'
+    fd, tmp = tempfile.mkstemp(prefix='.emisar-mcp.', dir=os.path.dirname(path) or '.')
+    with os.fdopen(fd, 'w') as handle:
+        handle.write(out)
     os.replace(tmp, path)
 
 main()

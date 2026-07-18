@@ -441,7 +441,9 @@ FAILING_MV
     # Existing configs that the shape-aware merges must PRESERVE:
     printf '{\n  "mcp": {\n    "other": { "type": "local", "command": ["other-mcp"] }\n  }\n}\n' \
       >"$clients_home/.config/opencode/opencode.json"
-    printf '{\n  "theme": "One Dark",\n  "context_servers": {\n    "other": { "source": "custom", "command": "other-mcp" }\n  }\n}\n' \
+    # Zed ships a JSONC settings file (// comments, trailing commas). The merge
+    # must preserve them and the other keys, never reformat the file away.
+    printf '{\n  // my editor\n  "theme": "One Dark",\n  "context_servers": {\n    "other": { "source": "custom", "command": "other-mcp" },\n  },\n}\n' \
       >"$clients_home/.config/zed/settings.json"
     # Hermes config WITHOUT an mcp_servers key → the YAML append is safe.
     printf 'model: hermes-4\n' >"$clients_home/.hermes/config.yaml"
@@ -531,7 +533,36 @@ FAILING_MV
     grep -Fq "Goose" "$tmp/full-flow-warnings.log"
     test "$goose_before" = "$(sha256 "$clients_home/.config/goose/config.yaml")"
     python3 - "$clients_home" <<'CHECK_CONFIGS'
-import json, sys
+import json, re, sys
+
+
+def strip_jsonc(text):  # string-aware: // inside a URL must not be stripped
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == '\\' and i + 1 < n:
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r',(\s*[}\]])', r'\1', ''.join(out))
+
 
 home = sys.argv[1]
 with open(home + "/.cursor/mcp.json") as handle:
@@ -573,13 +604,16 @@ assert cop["mcpServers"]["emisar"]["type"] == "local", cop
 assert cop["mcpServers"]["emisar"]["tools"] == ["*"], cop
 assert cop["mcpServers"]["emisar"]["env"]["EMISAR_CLIENT"] == "copilot-cli", cop
 
-# Zed: existing keys preserved; source: custom required.
+# Zed: JSONC merged in place — existing keys preserved, comments intact,
+# source: custom required.
 with open(home + "/.config/zed/settings.json") as handle:
-    zed = json.load(handle)
+    zed_raw = handle.read()
+zed = json.loads(strip_jsonc(zed_raw))
 assert zed["theme"] == "One Dark", zed
 assert zed["context_servers"]["other"]["command"] == "other-mcp", zed
 assert zed["context_servers"]["emisar"]["source"] == "custom", zed
 assert zed["context_servers"]["emisar"]["env"]["EMISAR_CLIENT"] == "zed", zed
+assert "// my editor" in zed_raw, "Zed comment was reformatted away"
 CHECK_CONFIGS
     # Hermes YAML: appended once, existing content preserved, goose grammar
     # (cmd/envs) never leaks into hermes (command/env).
