@@ -1,137 +1,178 @@
 <.guide_page
   title="How to give an AI agent safe access to production"
-  dek="You don't hand it your SSH key. You give it a small, declared catalog of actions, gate the risky ones behind a human, and audit every call. Here's the pattern — and why it's the one that holds up."
-  date="June 2026"
-  read_time="8 min read"
+  dek="Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up."
+  date="July 2026"
+  read_time="7 min read"
 >
   <p>
-    AI agents have gotten genuinely good at operations work. Point one at a misbehaving service
-    and it will read the logs, correlate the metrics, form a hypothesis, and tell you what it
-    thinks is wrong — often faster than you would. The hard part was never the reasoning. It's
-    the <strong>access</strong>: how do you let a model touch production without handing it the
-    keys to set the building on fire?
+    AI agents are at their best when you stop babysitting them. Anyone who has used one for real
+    work knows the shape: approve every command one at a time and you've bought a very slow
+    autocomplete. Let it run and it reads the logs, chases a hypothesis, tries three things, hits a
+    dead end, tries a fourth — and comes back with an answer while you were in a meeting. The value
+    is in the letting go.
   </p>
   <p>
-    The tempting answer is to give it a shell. It's one line of config, and the agent already
-    knows how to use SSH. It's also the answer you'll regret. Below is the pattern that actually
-    holds up under a security review — and under a live incident.
+    Unfortunately, letting go is also where the risk is. You come back and see the agent has deleted
+    a database, wiped a volume, or "cleaned up" the wrong directory. Proof of that is posted all
+    over the internet on a daily basis.
+  </p>
+  <p>
+    For coding, the safe way to let go is isolation. Tools like
+    <a href="https://coop.dryga.com" target="_blank" rel="noopener noreferrer">coop</a>
+    <i>(our founder built it, so we're biased)</i>
+    run the agent inside a disposable container with full
+    permissions and nothing valuable in reach: the worst it can do is wreck one repo you restore
+    from git. The container is the boundary and git is the undo button. That's the whole trick, and
+    it works.
+  </p>
+  <p>
+    Production is where the trick stops working. There is no disposable copy of production —
+    production is the thing itself — and there is no undo button for <code>DROP TABLE</code>. If
+    you want an agent's help operating real infrastructure, you can't sandbox the infrastructure.
+    You need a different kind of boundary. Here's what teams actually do today, and where each
+    approach cracks.
   </p>
 
-  <h2>Why a shell is the wrong door</h2>
+  <h2>You start by copy-pasting</h2>
   <p>
-    A shell is unbounded by construction. The moment an agent has <code>ssh you@prod</code>, it can
-    run anything the account can run, and "anything" includes the commands you never meant it to
-    reach. A model that is even slightly wrong — or one that's been
-    <a
-      href="https://owasp.org/www-project-top-10-for-large-language-model-applications/"
+    The first version of "AI for ops" at most teams involves no access at all: you paste a log or a
+    screenshot into the chat, the model suggests a command, you copy it into a terminal, run it,
+    and paste the result back. In fairness, the model never touches your servers this way, and
+    nothing runs unless you run it. For one-off troubleshooting, it's fine.
+  </p>
+  <p>
+    But you are the whole loop. You ferry the context one way and the commands the other, and the
+    model only knows what you remembered to paste. You are also the only check, and that check
+    decays: the first unfamiliar command gets read carefully, the tenth gets skimmed, and
+    eventually "review" is just paste-and-Enter on a script you didn't really read. Now generated
+    code is reaching your shell through a reflex — the worst of both worlds. And it's still the
+    babysitting mode from the top of this page: slow, manual, and capped by your patience. Here's
+    the <.link navigate={~p"/compare/copy-paste-ai-ops"}>full side-by-side</.link> if you want it.
+  </p>
+
+  <h2>Give it SSH (the reckless default)</h2>
+  <p>
+    The obvious upgrade is a shell. And when agents run without a sandbox, sometimes you grant it
+    without knowing: the agent finds your <code>gcloud</code>
+    already authenticated — or your SSH keys — and just connects to your production. At first, it
+    feels like magic. But it comes with that adrenaline kick every time you watch it happen.
+  </p>
+  <p>
+    It works because the agent already knows how to use SSH, it's one line of setup, and it works
+    immediately. It's also where those deleted-database posts come from, and the postmortem always
+    has the same shape: the agent had a shell, the shell could do everything, and one wrong
+    sentence connected the two.
+  </p>
+  <p>
+    A shell has no boundary in it anywhere. "Tail the logs" and "delete the data directory" travel
+    down the same pipe with the same authority; the only thing separating them is the model's
+    judgment at that particular moment. And judgment can be steered — a
+    <.link navigate={~p"/guides/prompt-injection-for-ops-teams"}>prompt-injected</.link>
+    log line the agent just read is enough. When something does go wrong, your record of what
+    happened is a shell history written by the process you're now investigating. We put <.link navigate={
+      ~p"/compare/raw-ssh-for-ai"
+    }>raw SSH side by side with the gated alternative</.link>;
+    the short version is that "be careful" is an instruction, not a control.
+  </p>
+
+  <h2>An MCP server per tool (better, until you count them)</h2>
+  <p>
+    The better instinct is <a
+      href="https://modelcontextprotocol.io/"
       target="_blank"
       rel="noopener noreferrer"
-    >
-      prompt-injected
-    </a>
-    by a malicious log line it just read — can turn a request to "clean up old data" into a
-    <code>DROP</code>
-    on the wrong database. There is no gate before the action, and no trustworthy
-    record after it. We wrote a longer
-    <.link navigate={~p"/guides/ai-agents-and-ssh-the-risks"}>breakdown of the SSH risks</.link>
-    if you want the full version.
+    >MCP</a>: give the agent typed
+    tools instead of a text pipe into bash. There's an MCP server for Postgres, one for Kubernetes,
+    one for your cloud — install the ones you need and the agent gets structured tools with real
+    arguments and real limits. This genuinely beats SSH.
   </p>
   <p>
-    The fix isn't to make the agent "more careful." Careful is not a control. The fix is to change
-    the shape of what the agent can ask for in the first place.
+    Then you live with it for a month. Every server is its own install, its own credentials, its
+    own upgrade cycle, and its own idea of what "safe" means. Ten tools means ten configs and ten
+    permission models, and no single place to ask the two questions that matter: what exactly can
+    the agent do right now, and what did it do last Tuesday? Policy lives in ten places, the audit
+    trail in none.
   </p>
-
-  <h2>The pattern that holds: a gated catalog</h2>
   <p>
-    Borrow the idea from how you already ship code. You don't give your CI system a root shell on
-    prod; you give it a reviewed artifact, an explicit gate, and a durable history. Apply the same
-    three ideas to every operational command an agent is allowed to request. Concretely, that's
-    four properties working together.
+    And there's a coverage problem nobody mentions until 2 a.m. MCP servers exist for products with
+    developer-relations budgets; your infrastructure is mostly not that. Nobody has written an MCP
+    server for your LACP bond, your systemd units, your RAID controller, or the vendor appliance in
+    rack 4 — and those unglamorous corners are exactly where incidents like to happen. So the agent
+    works the shiny parts through MCP, you keep SSH around "just for the rest," and you're back
+    where you started.
   </p>
 
-  <h3>1. A declared, typed catalog of actions</h3>
+  <h2>One MCP for all of infrastructure</h2>
   <p>
-    Instead of a shell, the agent gets a list of <em>declared</em>
-    actions: <code>read service
-    logs</code>, <code>check replication lag</code>, <code>revert this deploy</code>. Each one is
-    defined ahead of time with typed arguments and validation — a unit name must match a pattern, a
-    namespace must be in an allowed set. The agent literally cannot request a command that isn't in
-    the catalog, because it can't see one. This is the single most important property: it converts
-    "what could the model possibly do?" from an open question into a finite, reviewable list.
+    Follow that progression to its end and you get the idea behind emisar: not a server per
+    product, but one MCP whose vocabulary is <strong>actions</strong>
+    — commands declared ahead of
+    time, with typed arguments and validation. Read the service logs. Check replication lag.
+    Restart this unit. An action is just a declared, validated command a host can run, so anything
+    a host can do can be in the catalog: your databases, your metrics and logs, your queues,
+    proxies, and containers, down to ZFS pools, WireGuard tunnels, and whether the clock is
+    actually synced. <.link navigate={~p"/packs"}>The pack catalog</.link>
+    covers the common ground; you declare your own actions for the rest.
+  </p>
+  <p>
+    Because everything goes through one door, you get the two things the server-per-tool world
+    couldn't give you: one policy in front of every call — allowed, denied, or held for a human, by
+    rules you set once — and one record behind it, where every call lands with its inputs, outputs,
+    and who asked, including the calls that were denied. The agent connects the way it connects to
+    any other MCP tool. On your side, a small runner on each host dials out, re-validates every
+    argument, and redacts secrets before output leaves the machine; the
+    <.link navigate={~p"/security"}>security model</.link>
+    goes deep on why the host, not the cloud, gets the last word.
+  </p>
+  <p>
+    The agent gets breadth: your whole fleet through one connection. You get one place to set the
+    rules and one place to read what happened.
   </p>
 
-  <h3>2. A policy gate in front of every call</h3>
+  <h2>Read production, write code</h2>
   <p>
-    Declaring an action doesn't mean auto-running it. Each call passes a policy that returns <strong>allow</strong>, <strong>require approval</strong>, or <strong>deny</strong>. The
-    obvious default is to tier by risk: reading logs and metrics runs freely, because a read can't
-    hurt you; a write that mutates state stops. You set this once, then add narrower overrides — a
-    specific destructive action denied outright, a whole family of actions routed to approval.
+    Here's where this lands day to day, at least for teams running infrastructure as code (we use Terraform a lot) — and
+    it's our favorite part of the whole design.
   </p>
-
-  <h3>3. Human approval for the handful of risky writes</h3>
   <p>
-    The reads are where the agent spends almost all its time, and they run without you. The rare
-    mutating action — restart this, revert that, terminate the wedged backend — is the one moment a
-    human steps in. A good approval shows the actor, the exact arguments, the target host, and the
-    policy rule that triggered the gate, so the decision takes one read and one click. That's the
-    whole trade: the agent moves fast on everything safe, and you stay in the loop for the few
-    things that aren't.
+    Give the agent the read actions freely. Policy allows them without ceremony because a read
+    can't hurt you, and reading is most of the job: tail the logs, check the failing unit, compare
+    replication lag across replicas, watch the error rate move. The agent keeps its eyes on real
+    production the whole time it investigates — no stale dashboards, no "can you paste me the
+    output."
   </p>
-
-  <h3>4. A complete audit of everything</h3>
   <p>
-    Every call — allowed, approved, or denied — lands in an audit trail with its inputs, outputs,
-    exit code, and who asked. For this to be worth anything during an incident, it has to be hard
-    to quietly edit. A hash-chained journal on the host, mirrored to a searchable system of record
-    and streamable to your SIEM, means a missing or altered line is detectable rather than invisible.
-    The audit is what turns "the AI did something" into "here is exactly what it did, and why."
+    Then the fix is code, not a live mutation. The agent writes the Terraform diff or the Ansible
+    change back in its own sandbox, opens a pull request, and the fix ships through review and your
+    pipeline like any other change. Production stays declarative and reproducible — you don't wake
+    up to a prod that an agent hand-patched into a snowflake nobody can rebuild.
   </p>
-
-  <h3>5. Don't trust the control plane either</h3>
   <p>
-    The four properties above assume the thing issuing actions is trustworthy. A serious design
-    assumes it might not be. The strongest version of this pattern lets the host <strong>verify for itself</strong>: a local allow/deny list the host enforces regardless of
-    what the cloud says, and a signature on each dispatch that's minted on the operator's own
-    machine. A compromised control plane can then relay a signed request but never forge, alter, or
-    originate one. The host gets the last word. We go deep on this in the <.link navigate={
-      ~p"/security"
-    }>security model</.link>.
+    That leaves the dangerous verbs for exactly two moments. Stopping the bleed: restart the wedged
+    service, fail over, kill the runaway query — actions policy holds for approval, so mid-incident
+    you read the exact command and its target and tap Approve, instead of being the person who has
+    to find a laptop and type it. And proving the fix: let the agent run the risky action against
+    staging to show the change works before it ships to prod.
   </p>
-
-  <h2>This is just Zero Trust, applied to agents</h2>
   <p>
-    If this feels familiar, it should. It's the same control set Anthropic describes in <a
-      href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
-      target="_blank"
-      rel="noopener noreferrer"
-    >Zero Trust for AI Agents</a>:
-    least agency (the agent sees only declared tools), deny-by-default, human approval for high-risk
-    actions, and an immutable audit trail. The declared catalog is least agency. The policy gate is
-    deny-by-default. The approval step and the audit are the other two. See the
-    <.link navigate={~p"/zero-trust"}>control-by-control mapping</.link>
-    if you want to check the work.
-  </p>
-
-  <h2>Where emisar fits</h2>
-  <p>
-    emisar is one implementation of this pattern, built as an
-    <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">MCP</a>
-    server so any agent — Claude, Cursor, ChatGPT — connects to it the same way it connects to any
-    other tool. You install a small runner on each host, choose which packs of actions it exposes,
-    set your policy, and point your agent at it. The runner dials out (no inbound port on your
-    hosts), re-validates every argument, redacts secrets before output leaves the machine, and
-    writes the hash-chained journal. You don't have to use emisar to follow the pattern — but if you
-    don't want to build and maintain all five properties yourself, that's the trade it's making.
+    So the agent investigates through the catalog, fixes things in code, and touches the scary
+    verbs only with a human in the loop — which means it stays unleashed the whole time, and the
+    blast radius stays the size you chose.
   </p>
 
   <h2>Start small</h2>
   <p>
-    You don't have to hand over your whole fleet on day one. Start read-only: give an agent the
-    logs-and-metrics actions on one non-critical service and watch how it investigates. Add the
-    first gated write only when you trust the loop. The point of the pattern is that you can grow
-    the agent's reach one declared action at a time, with a gate and a record at every step —
-    instead of the all-or-nothing of a shell. When you're ready, the
+    First, isolate your agents and run them in a sandbox — a throwaway container with nothing
+    valuable inside. That alone prevents most of the stories above: an agent can't delete your home
+    directory or accidentally find your production credentials when neither is in reach.
+  </p>
+  <p>
+    Then open the door to production the narrow way. You don't have to sign your fleet over on day
+    one: give the agent the read-only actions on one non-critical service and watch how it
+    investigates; add the first gated write when you trust the loop. The point of the pattern is
+    that the agent's reach grows one declared action at a time, with a rule and a record at every
+    step — instead of the all-or-nothing of a shell. The
     <.link navigate={~p"/docs/quickstart"}>quickstart</.link>
-    takes about five minutes.
+    takes about five minutes, which is less time than reading this week's postmortem.
   </p>
 </.guide_page>

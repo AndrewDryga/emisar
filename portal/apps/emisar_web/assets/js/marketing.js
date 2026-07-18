@@ -15,6 +15,7 @@
 // `root.html.heex` picks the bundle from the `@app_js?` assign, which the
 // global LiveView `on_mount` hook sets on every live render.
 import {setupCopyToClipboardDelegation} from "./copy.js"
+import {initDocsToc} from "./docs-toc.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initLegalToc} from "./legal_toc.js"
 import {initMobileNav} from "./mobile_nav.js"
@@ -25,7 +26,14 @@ import {initScrollFocusable} from "./scroll_focusable.js"
 
 setupCopyToClipboardDelegation()
 initEmisarDemo()
-initLegalToc()
+// The docs shell and the legal pages share the [data-toc-link] TOC contract but
+// drive the active state differently, so run exactly one scroll-spy per page —
+// the docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
+if (document.querySelector('nav[aria-label="Docs"]')) {
+  initDocsToc()
+} else {
+  initLegalToc()
+}
 initMobileNav()
 initPackSearch()
 initPricingCycle()

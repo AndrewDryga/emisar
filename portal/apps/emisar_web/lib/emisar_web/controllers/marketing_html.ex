@@ -352,7 +352,7 @@ defmodule EmisarWeb.MarketingHTML do
       </section>
 
       <.marketing_cta
-        headline="Give your AI agent production access — without the panic."
+        headline="Give your AI agent production access — without the risks."
         subcopy="Start free on the Free plan, or book a walkthrough on your own infrastructure."
         secondary_label="Talk to sales"
         secondary_path={EmisarWeb.MailTo.sales()}

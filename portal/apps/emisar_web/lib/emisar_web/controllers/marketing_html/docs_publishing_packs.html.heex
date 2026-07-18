@@ -6,35 +6,46 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Authoring packs", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Author your own pack
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        A pack is a directory of YAML you write and maintain yourself — no SDK, no compiler, no
-        signing keys, nothing uploaded to anyone. Drop it on the runners you control, trust it
-        once, and your model can call it. Most packs stay private to your fleet, and that's by
-        design: the public
-        <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
-          registry
-        </.link>
-        is curated, not a free-for-all (more on that <a
-          href="#registry"
-          class="text-brand-300 hover:text-brand-200"
-        >below</a>).
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="publishing-packs"
+      toc={[
+        {"layout", "Lay out the directory"},
+        {"manifest", "Write pack.yaml"},
+        {"declare", "Declare each action"},
+        {"install", "Validate & trust"},
+        {"rollout", "Roll it out"},
+        {"registry", "Keep it yours"}
+      ]}
+    >
+      <.docs_header current="publishing-packs">
+        <:dek>
+          A pack is a directory of YAML you write and maintain yourself — no SDK, no compiler, no
+          signing keys, nothing uploaded to anyone. Drop it on the runners you control, trust it
+          once, and your model can call it. Most packs stay private to your fleet, and that's by
+          design: the public
+          <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
+            registry
+          </.link>
+          is curated, not a free-for-all (more on that <a
+            href="#registry"
+            class="text-brand-300 hover:text-brand-200"
+          >below</a>).
+        </:dek>
+      </.docs_header>
 
-      <.agent_skill_cta class="mt-8">
-        Or have your coding agent do it: the <code class="text-zinc-300">author-pack</code>
-        skill walks Claude Code, Codex, or any agent that reads Markdown skills through
-        writing, validating, testing, and trusting a pack of your own.
+      <.agent_skill_cta
+        class="mt-8"
+        skill="author-pack"
+        prompt="Write an emisar action pack for the tool I name, validate and test it, and get it trusted on my runner. Use the author-pack skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/author-pack/SKILL.md"
+      >
+        Or have your coding agent do it — the <code class="text-zinc-300">author-pack</code>
+        skill walks it through writing, validating, testing, and trusting a pack of your own.
       </.agent_skill_cta>
 
       <%!-- Steps --%>
       <ol class="mt-12 space-y-8">
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li id="layout" class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               1
@@ -48,16 +59,19 @@
             holds packaged shell scripts for <code>kind: script</code>
             actions. Keep the whole thing in your own git repo.
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
+          <.docs_code phx-no-format>my-pack/
   pack.yaml                    # pack manifest (see step 2)
   actions/
     do_thing.yaml              # one declared action per file
     do_other_thing.yaml
   scripts/                     # only when you have script actions
-    do_thing.sh</pre>
+    do_thing.sh</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="manifest"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               2
@@ -70,7 +84,7 @@
             is the pack slug (used in the install path and, for self-maintained packs, however you
             reference it internally).
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+          <.docs_code phx-no-format label="yaml">schema_version: 1
 id: my-pack
 name: My ops pack
 version: 0.1.0
@@ -84,10 +98,13 @@ requires:
 
 actions:
   - actions/do_thing.yaml
-  - actions/do_other_thing.yaml</pre>
+  - actions/do_other_thing.yaml</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="declare"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               3
@@ -105,7 +122,7 @@ actions:
             </.link>
             for every field.
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+          <.docs_code phx-no-format label="yaml">schema_version: 1
 id: my.do_thing
 title: Do the thing
 kind: exec
@@ -142,10 +159,13 @@ output:
 examples:
   - title: Tail myapp's error log
     args:
-      file: /var/log/myapp/error.log</pre>
+      file: /var/log/myapp/error.log</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="install"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               4
@@ -157,9 +177,9 @@ examples:
             Install writes to the runner's configured packs dir and reloads the running daemon
             itself, so there's no restart and no dropped runs:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
+          <.docs_code phx-no-format label="shell"># on the runner host
 emisar pack validate ./my-pack
-sudo emisar pack install ./my-pack</pre>
+sudo emisar pack install ./my-pack</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             Because your pack isn't one emisar publishes, it has no baseline hash — so it lands in
             the dashboard's <strong class="text-zinc-200">Packs</strong>
@@ -177,7 +197,10 @@ sudo emisar pack install ./my-pack</pre>
           </p>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="rollout"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               5
@@ -190,7 +213,7 @@ sudo emisar pack install ./my-pack</pre>
             like Ansible, Chef, or a base image can drop the directory itself instead, then reload
             the runner.)
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</pre>
+          <.docs_code phx-no-format label="shell">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             When you change the pack, bump its <code>version</code>, re-validate, re-deploy, and
             re-trust the new hash once in the dashboard — the same review you'd give any production
@@ -207,9 +230,7 @@ sudo emisar pack install ./my-pack</pre>
       </ol>
 
       <%!-- The curated registry --%>
-      <h2 id="registry" class="mt-16 scroll-mt-8 text-2xl font-semibold text-zinc-50 text-balance">
-        Keep it yours — or propose it to the registry
-      </h2>
+      <.docs_h2 id="registry">Keep it yours — or propose it to the registry</.docs_h2>
       <p class="mt-4 text-sm leading-relaxed text-zinc-400">
         The public registry behind the
         <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
@@ -298,7 +319,7 @@ sudo emisar pack install ./my-pack</pre>
           </.external_link>
         </div>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

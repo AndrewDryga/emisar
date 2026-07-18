@@ -36,6 +36,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem
+    /docs/containers
     /changelog
     /about
     /privacy
@@ -57,6 +58,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/mcp-reference
     /guides
     /guides/give-ai-agents-safe-production-access
+    /guides/prompt-injection-for-ops-teams
   )
 
   # The pages that emit a BreadcrumbList block. Home and /pricing carry

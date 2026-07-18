@@ -1,9 +1,9 @@
 ---
 name: install-emisar
-description: Install, configure, repair, and certify Emisar runner and MCP environments end to end for customer onboarding. Use for first-run setup, runner or MCP installation, pack selection and credentials, client registration, upgrades, supervised-service migration, or any request to diagnose and report Emisar health across the host, control plane, registry, fleet, MCP client, action execution, and audit trail.
+description: Install, configure, repair, and certify the Emisar runner on a host end to end for customer onboarding. Use for first-run setup, runner installation, pack selection and credentials, upgrades, supervised-service migration, or any request to diagnose and report runner health across the host, control plane, registry, action execution, and audit trail. For connecting an LLM or MCP client, use the connect-llm skill.
 ---
 
-# Install and certify Emisar
+# Install and certify the Emisar runner
 
 Execute this workflow on the customer's target environment. Do not require an
 Emisar source checkout, fork, build toolchain, repository instructions, or
@@ -23,16 +23,12 @@ Default to the hosted control plane at `https://emisar.dev`. Use a different
 Verify commands before running them:
 
 - Download `${EMISAR_URL%/}/install.sh` and run its local copy with `--help`.
-- Download `${EMISAR_URL%/}/install-mcp.sh` and run its local copy with
-  `--help`.
-- After installation, use `emisar --help`, `emisar pack --help`, `emisar
-  doctor --help`, and `emisar-mcp --help` as the installed-version contracts.
-- Use the signed-in **Runners > Install** and **Agents** pages for current
-  enrollment credentials and client configuration snippets.
-- Use the public guides at `https://emisar.dev/docs/quickstart`,
-  `https://emisar.dev/docs/connect-an-llm`,
-  `https://emisar.dev/docs/action-packs`, and
-  `https://emisar.dev/docs/mcp-reference` when more detail is needed.
+- After installation, use `emisar --help`, `emisar pack --help`, and `emisar
+  doctor --help` as the installed-version contracts.
+- Use the signed-in **Runners > Install** page for current enrollment
+  credentials.
+- Use the public guides at `https://emisar.dev/docs/quickstart` and
+  `https://emisar.dev/docs/action-packs` when more detail is needed.
 
 Never reconstruct a flag or config shape from memory when current help or a
 portal-generated snippet is available. If installed help differs from public
@@ -47,7 +43,7 @@ installed artifact's contract unless this is an explicit upgrade.
 - Use only HTTPS installers from the operator-approved `EMISAR_URL`. They verify
   release checksums and activate binaries atomically. Do not silently build from
   source, write another installer, or use an untrusted mirror.
-- Prefer pinned `runner-vX.Y.Z` and `mcp-vX.Y.Z` tags for repeatable automation.
+- Prefer a pinned `runner-vX.Y.Z` tag for repeatable automation.
   Verify a requested tag exists. For an interactive latest install, report the
   exact installed versions.
 - Inventory an existing installation before changing it. Record versions,
@@ -56,8 +52,6 @@ installed artifact's contract unless this is an explicit upgrade.
 - Never install the `shell` pack on a production runner. Never broaden
   `execution.inherit_env`, OS privileges, policies, approvals, scopes, or pack
   trust merely to make a check pass.
-- Do not reuse a production `emk-` API key in a throwaway bridge probe. Test MCP
-  through the persistent configured client and its normal credential store.
 - Never claim a skipped, intermittent, or unsupported check is healthy. Do not
   bypass a denial with SSH, copied shell commands, or a wider credential.
 
@@ -72,7 +66,6 @@ id
 command -v systemctl || true
 command -v launchctl || true
 command -v emisar || true
-command -v emisar-mcp || true
 ```
 
 Inspect `/run/systemd/system`, existing Emisar units, launchd services, external
@@ -94,7 +87,6 @@ Collect without echoing secret values:
 - control-plane origin and a fresh portal-generated runner enrollment key;
 - runner group, role, and environment labels;
 - desired packs, private registry origin if any, and pack credentials;
-- selected MCP client and a scoped operator credential or OAuth flow;
 - whether signed dispatch is intentionally required.
 
 Ask only for inputs that cannot be discovered safely.
@@ -167,65 +159,16 @@ and pack paths.
 6. Run `emisar pack update --dry-run`. Report drift; do not update outside an
    explicit install or upgrade scope.
 
-Use each selected pack's `setup.verify` action as its functional check. Resolve
-the action with MCP `get_action`, use the exact returned refs and argument
-schema, and dispatch it only when it is low risk and every required argument is
+Use each selected pack's `setup.verify` action as its functional check.
+Dispatch it from the signed-in portal — open the runner, pick the action,
+supply a clear onboarding reason — or, when the operator already has a
+connected MCP client, resolve it with `get_action` and dispatch with the exact
+returned refs. Run it only when it is low risk and every required argument is
 known. Never invent arguments. A pack is healthy only when its verify action
 succeeds on its intended runner; otherwise report the failure or exact reason
 the check was skipped.
 
-## 4. Install and register MCP
-
-Install into a protected system directory or a user-writable directory already
-on the MCP client's executable path:
-
-```sh
-EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
-installer="$(mktemp)"
-trap 'rm -f "$installer"' EXIT HUP INT TERM
-curl --fail --silent --show-error --location \
-  "${EMISAR_URL%/}/install-mcp.sh" -o "$installer"
-bash "$installer" --help
-bash "$installer" --version "$MCP_VERSION" --install-dir "$INSTALL_DIR"
-"$INSTALL_DIR/emisar-mcp" --version
-rm -f "$installer"
-trap - EXIT HUP INT TERM
-```
-
-This example assumes `MCP_VERSION` is a verified, nonempty pin. Omit the
-complete `--version "$MCP_VERSION"` pair when installing latest was an explicit
-interactive choice.
-
-Use `sudo` only for a protected system directory. Configure the chosen client
-from its portal-generated **Agents** snippet or the installed `emisar-mcp
---help`. Use the absolute binary path and set `EMISAR_CLIENT` accurately. Do not
-copy another client's config shape or add client-maintained action allowlists;
-the server owns the MCP catalog and runner scope.
-
-Keep the client's `emisar/credentials` directory durable and owner-only so key
-rotation survives restarts. Containerized clients must persist `/config`.
-Restart or reload the actual client, then test through that client:
-
-1. Confirm `tools/list` matches the fixed catalog in
-   `https://emisar.dev/docs/mcp-reference`.
-2. Call `list_runners` with issues included. Require the new runner to be
-   `connected` with no unexplained issues.
-3. Call `list_packs` with `availability: "all"`. Reconcile every local pack and
-   require intended packs/actions to be executable without trust, retirement,
-   descriptor, or deployment issues.
-4. Call `find_actions` for a low-risk host check, then `get_action` for the
-   exact action, pack ref, schema, and runner ref. Prefer `setup.verify`.
-5. Call `run_action` with those exact values and a clear onboarding reason.
-   Follow `wait_for_run` through approval or delivery to a terminal state.
-   Never auto-approve or widen policy. A denial proves enforcement but fails the
-   onboarding functional check.
-6. Use `recent_runs` to prove the run belongs to this client and target.
-
-If MCP credentials or a client are intentionally absent, bridge installation
-may pass but authenticated MCP and action checks are `SKIPPED`; the environment
-is not certified end to end.
-
-## 5. Verify every health plane
+## 4. Verify every health plane
 
 Run every applicable row independently. Liveness, readiness, registry access,
 runner connectivity, and action execution are distinct checks:
@@ -241,12 +184,11 @@ runner connectivity, and action execution are distinct checks:
 | Portal readiness | Independent bounded `GET ${EMISAR_URL%/}/readyz` returns healthy JSON |
 | Registry | `${EMISAR_URL%/}/packs.json`, `${EMISAR_URL%/}/packs/suggest.json`, and the configured registry catalog return valid bounded JSON |
 | Local packs | Pack state, hashes, required tools/env allowlist, dry-run drift |
-| Fleet state | MCP `list_runners`; connected runner and issue list |
-| Pack trust | MCP `list_packs availability=all`; intended refs executable, no issues |
-| MCP artifact/client | Bridge version, durable registration, documented tool catalog |
-| Functional action | Low-risk verify run reaches terminal success through MCP |
-| Audit | `emisar audit verify` passes and `recent_runs` contains the same run |
-| Signed dispatch | When configured: intended signed client succeeds and unsigned dispatch is rejected |
+| Fleet state | The runner shows connected in the portal, with no unexplained issues |
+| Pack trust | The Packs page shows the intended versions trusted, nothing pending or retired unexplained |
+| Functional action | Low-risk verify run reaches terminal success |
+| Audit | `emisar audit verify` passes and the portal audit shows the same run |
+| Signed dispatch | When configured: a signed client's call succeeds and unsigned dispatch is rejected (needs a connected client — see the connect-llm skill) |
 
 Use bounded HTTP timeouts and a structured JSON parser. Retain only non-secret
 evidence. For a binary-only runner, prove its external supervisor or foreground
@@ -278,7 +220,7 @@ target             PASS        ...
 runner artifact    PASS        ...
 ...
 
-Installed: runner <version>; MCP <version>; packs <id@version/hash, ...>
+Installed: runner <version>; packs <id@version/hash, ...>
 Functional proof: <action, runner_ref, run_id, terminal status>
 Remediated: <what changed and why, or none>
 Open items: <owner + exact next action, or none>
@@ -287,8 +229,11 @@ Open items: <owner + exact next action, or none>
 Overall is `PASS` only when every applicable required row passes. A required
 `FAIL` makes it `FAIL`; a required `SKIPPED` or `UNSUPPORTED` makes it `NOT
 CERTIFIED`. Use `DEGRADED` only for optional pack capabilities after runner,
-portal, registry, MCP, functional execution, and audit all pass.
+portal, registry, functional execution, and audit all pass.
 
 Include exact versions, paths, endpoint origins, pack and runner refs, run IDs,
 timestamps, and sanitized errors. Never include credential values, complete
 environment dumps, signing material, or raw logs that may contain secrets.
+
+When the runner is certified, connect the operator's LLM client next with the
+`connect-llm` skill.

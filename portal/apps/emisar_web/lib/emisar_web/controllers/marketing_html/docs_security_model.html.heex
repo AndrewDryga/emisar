@@ -1,26 +1,30 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Security", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Security model
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        The precise mechanics behind every control — exactly what each layer checks, and what it
-        deliberately doesn't. For the pitch and the trust-boundary picture, start with the <.link
-          navigate={~p"/security"}
-          class="text-brand-300 hover:text-brand-200"
-        >security overview</.link>; this page is the reference your security team reads next.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="security-model"
+      toc={[
+        {"trust-boundary", "The trust boundary"},
+        {"what-its-not", "What emisar is not"}
+      ]}
+    >
+      <.docs_header current="security-model">
+        <:dek>
+          The precise mechanics behind every control — exactly what each layer checks, and what it
+          deliberately doesn't. For the pitch and the trust-boundary picture, start with the <.link
+            navigate={~p"/security"}
+            class="text-brand-300 hover:text-brand-200"
+          >security overview</.link>; this page is the reference your security team reads next.
+        </:dek>
+      </.docs_header>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         The short version: emisar is a curated allowlist with an audit envelope, not a sandbox.
         Restarting Cassandra still restarts Cassandra — the value is the narrow attack surface and
         the audit trail, not process isolation.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The trust boundary</h2>
+      <.docs_h2 id="trust-boundary">The trust boundary</.docs_h2>
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
           <strong>Pre-approved actions only.</strong>
@@ -36,7 +40,8 @@
         </li>
         <li>
           <strong>Bootstrap key + per-runner token.</strong> The enrollment key
-          (<code>emkey-enroll-…</code>) is a one-time secret. The runner exchanges it
+          (<code>emkey-enroll-…</code>) is a bootstrap secret — single-use by default,
+          or reusable with a use cap for fleet templates. The runner exchanges it
           for a long-lived per-runner token (<code>rnrtok-…</code>) on first connect.
           Single-use keys are atomically consumed: two concurrent registrations
           can never both succeed.
@@ -115,7 +120,9 @@
           / <code>admission.deny</code>
           list of
           glob patterns over action ids
-          (e.g. <code>cassandra.*</code>, <code>*.repair</code>). Blocked
+          (e.g. <code>cassandra.*</code>, <code>*.repair</code>), plus a risk ceiling —
+          <code>admission.max_risk: medium</code>
+          on a read-only box drops every <code>high</code>/<code>critical</code> action whatever the cloud policy allows. Blocked
           actions are hidden from the catalog this runner advertises to cloud
           AND refused at execution time, so even a compromised portal cannot
           push something the host operator did not sanction. Refusals land in
@@ -156,7 +163,7 @@
         </li>
       </ol>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">What emisar is not</h2>
+      <.docs_h2 id="what-its-not">What emisar is not</.docs_h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
         <li>
           <strong>Not a VM, container, or kernel sandbox.</strong> Process isolation
@@ -203,7 +210,7 @@
           <.icon name="hero-arrow-up-right" class="h-3.5 w-3.5" />
         </.external_link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

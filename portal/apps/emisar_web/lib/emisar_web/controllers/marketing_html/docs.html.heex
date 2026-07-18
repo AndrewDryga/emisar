@@ -1,5 +1,5 @@
 <%!-- ============================================================
-  Docs index — entry cards into deeper docs
+  Docs index — the map of the documentation tree
 ============================================================ --%>
 
 <div class="bg-zinc-950 text-zinc-100">
@@ -21,98 +21,88 @@
     </div>
   </section>
 
-  <%!-- Cards, grouped by what the reader is trying to do --%>
-  <section class="pb-24 sm:pb-32">
+  <%!-- The docs tree, sourced from EmisarWeb.DocsNav so the index, the shell
+       sidebar, and prev/next never drift. The first group (Get started) is the
+       featured band; the rest render as dense grouped link lists. --%>
+  <section class="pb-16 sm:pb-20">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <%!-- Docs whose feature isn't on every plan get a plan badge on their card,
-           so the paywall is visible before the click. Keyed by href; only the
-           plan-gated topics appear. --%>
-      <% plan_tiers = %{"/docs/sso" => :team} %>
-      <%= for {section, cards} <- [
-        {"Get started",
-         [
-           {~p"/docs/quickstart", "hero-rocket-launch", "Quickstart",
-            "Sign up, install a runner, run your first action in under five minutes."},
-           {~p"/docs/connect-an-llm", "hero-puzzle-piece", "Connect an LLM",
-            "Claude.ai and ChatGPT over remote MCP, or Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, and Grok CLI via the stdio bridge."}
-         ]},
-        {"Operate",
-         [
-           {~p"/docs/deployment", "hero-clipboard-document-check", "Deploying in production",
-            "From one runner to a governed fleet — reference architecture, a phased rollout, best practices by layer, worked examples, and a go-live checklist."},
-           {~p"/docs/policies-and-approvals", "hero-scale", "Policies & approvals",
-            "Risk-tier defaults, per-action overrides, human approvals, and revocable standing grants — control what runs."},
-           {~p"/docs/runbooks", "hero-queue-list", "Runbooks",
-            "Saved, versioned action sequences — policy-gated per step, readable and runnable by your LLM over MCP."},
-           {~p"/docs/teams-and-access", "hero-user-group", "Teams & access",
-            "Roles, invitations, per-member runner scopes, account-wide MFA, sessions, and API key scopes."},
-           {~p"/docs/sso", "hero-identification", "Single sign-on & directory sync",
-            "OIDC sign-in (Team and Enterprise) with Google Workspace, Okta, Keycloak, plus Enterprise SCIM directory sync — offboarding revokes access automatically, with group-to-role mapping."},
-           {~p"/docs/runners", "hero-server-stack", "Runner fleet",
-            "Groups and labels, enrollment keys, pack credentials, updates, troubleshooting, and clean removal."},
-           {~p"/docs/signed-dispatch", "hero-finger-print", "Signed dispatch",
-            "Make a runner run only actions a real person signed in their MCP client — generate keys, configure both ends, and rotate or revoke them across a fleet."},
-           {~p"/docs/audit-and-siem", "hero-document-magnifying-glass", "Audit & SIEM",
-            "What gets recorded, the dashboard view, NDJSON export with a read-only key, and the runner journal."}
-         ]},
-        {"Build packs",
-         [
-           {~p"/docs/action-packs", "hero-cube-transparent", "Pack reference",
-            "Action YAML reference: declared args + validation, limits, redaction, side-effects, examples."},
-           {~p"/docs/publishing-packs", "hero-arrow-up-tray", "Author your own pack",
-            "Write, validate, install, and trust a pack you maintain — and when to propose one to the registry."},
-           {~p"/docs/pack-registry", "hero-server-stack", "Host your own registry",
-            "Run a private pack registry on GCS, S3, or any static host with packctl — hash-pinned installs, air-gap friendly."}
-         ]},
-        {"Reference",
-         [
-           {~p"/docs/mcp-reference", "hero-code-bracket", "MCP reference",
-            "The methods, parameters, idempotency, and error taxonomy of the emisar MCP server — the contract once you're connected."},
-           {~p"/docs/security-model", "hero-shield-check", "Security model",
-            "Trust boundary, searchable cloud audit, hash-chained runner journal, redaction-before-egress."},
-           {~p"/pricing", "hero-credit-card", "Hosting & plans",
-            "The supported product is the hosted emisar control plane today; the repo — Apache-2.0 runner and packs, source-available control plane — can be evaluated in your own environment. Plans and audit retention are on the pricing page."}
-         ]}
-      ] do %>
-        <div class="mt-12 first:mt-0">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">
-            {section}
-          </h2>
-          <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <%= for {href, icon, title, desc} <- cards do %>
-              <.link
-                href={href}
-                class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-brand-500/50"
-              >
-                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-                  <.icon name={icon} class="h-6 w-6" />
-                </div>
-                <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
-                    {title}
-                  </h3>
-                  <.plan_note :if={plan_tiers[href]} tier={plan_tiers[href]} link={false} />
-                </div>
-                <p class="mt-2 text-sm text-zinc-400">{desc}</p>
-                <p class="mt-4 text-sm font-semibold text-brand-300">
-                  Read it
-                  <span
-                    aria-hidden="true"
-                    class="inline-block transition-transform group-hover:translate-x-0.5"
-                  >
-                    &rarr;
-                  </span>
-                </p>
-              </.link>
-            <% end %>
+      <% [{_get_started, featured} | rest_groups] = EmisarWeb.DocsNav.groups() %>
+      <% last_index = length(rest_groups) - 1 %>
+
+      <%!-- Start here: the two get-started pages, featured by SCALE (big icon
+           tile, xl title) but on the same flush-left row grammar as every
+           other section — the -mx/px pair cancels at rest, so the tile's left
+           edge lands exactly on the eyebrow line like the group rows' icons. --%>
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">Start here</h2>
+      <div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2">
+        <.link
+          :for={page <- featured}
+          href={page.path}
+          class="group -mx-4 flex items-start gap-4 rounded-xl px-4 py-4 transition-colors hover:bg-zinc-900/50"
+        >
+          <div class="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+            <.icon name={page.icon} class="h-6 w-6" />
           </div>
+          <div class="min-w-0">
+            <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
+              {page.title}
+            </h3>
+            <p class="mt-1 text-sm leading-relaxed text-zinc-400">{page.desc}</p>
+            <p class="mt-2 text-sm font-semibold text-brand-300">
+              Read it
+              <span
+                aria-hidden="true"
+                class="inline-block transition-transform group-hover:translate-x-0.5"
+              >
+                &rarr;
+              </span>
+            </p>
+          </div>
+        </.link>
+      </div>
+
+      <%!-- Everything else, dense: eyebrow + a two-column list of linked rows --%>
+      <div :for={{{label, pages}, group_index} <- Enum.with_index(rest_groups)} class="mt-14">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">{label}</h2>
+        <div class="mt-5 grid gap-x-8 gap-y-1 md:grid-cols-2">
+          <.link
+            :for={page <- pages}
+            href={page.path}
+            class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+          >
+            <.icon name={page.icon} class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
+            <div>
+              <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
+                {page.title}
+              </span>
+              <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">{page.desc}</p>
+            </div>
+          </.link>
+
+          <%!-- One extra, non-DocsNav row after Reference: hosting + plans. --%>
+          <.link
+            :if={group_index == last_index}
+            href="/pricing"
+            class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+          >
+            <.icon name="hero-credit-card" class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
+            <div>
+              <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
+                Hosting &amp; plans
+              </span>
+              <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">
+                The supported product is the hosted emisar control plane today; plans and audit
+                retention are on the pricing page.
+              </p>
+            </div>
+          </.link>
         </div>
-      <% end %>
+      </div>
     </div>
   </section>
 
   <%!-- Guides --%>
-  <section class="border-t border-zinc-900 py-24 sm:py-32">
+  <section class="border-t border-zinc-900 py-16 sm:py-20">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-zinc-50 text-balance sm:text-4xl">
@@ -143,7 +133,7 @@
   </section>
 
   <%!-- Use cases --%>
-  <section class="border-t border-zinc-900 py-24 sm:py-32">
+  <section class="border-t border-zinc-900 py-16 sm:py-20">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl text-balance">
@@ -187,7 +177,7 @@
   </section>
 
   <%!-- Help CTA --%>
-  <section class="border-t border-zinc-900 py-24 sm:py-32">
+  <section class="border-t border-zinc-900 py-16 sm:py-20">
     <div class="mx-auto max-w-4xl px-6 text-center lg:px-8">
       <.marketing_heading tag="h2" scale={:section}>
         Stuck on something?

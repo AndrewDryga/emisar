@@ -1,20 +1,30 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Runners", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Operating your runner fleet
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        The quickstart gets one runner online. This page is the rest of its life: organizing a
-        fleet with groups and labels, handing packs their credentials, updating, troubleshooting,
-        and removing a host cleanly. (Installation itself is covered in the <.link
-          navigate={~p"/docs/quickstart"}
-          class="text-brand-400 hover:text-brand-300"
-        >quickstart</.link>.)
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="runners"
+      toc={[
+        {"groups-labels", "Groups and labels"},
+        {"enrollment-keys", "Enrollment keys"},
+        {"pack-credentials", "Giving packs their credentials"},
+        {"connectivity", "Online, offline, and stuck runs"},
+        {"updating", "Updating"},
+        {"toolbox", "The host-side toolbox"},
+        {"troubleshooting", "Troubleshooting"},
+        {"removing", "Removing a runner"}
+      ]}
+    >
+      <.docs_header current="runners">
+        <:dek>
+          The quickstart gets one runner online. This page is the rest of its life: organizing a
+          fleet with groups and labels, handing packs their credentials, updating, troubleshooting,
+          and removing a host cleanly. (Installation itself is covered in the <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>.)
+        </:dek>
+      </.docs_header>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
@@ -25,7 +35,7 @@
         />
       </figure>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Groups and labels</h2>
+      <.docs_h2 id="groups-labels">Groups and labels</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Every runner declares a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group</code>
         (one string — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>) and free-form
@@ -37,7 +47,7 @@
         fine for one box, worth changing the moment you have a second.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Enrollment keys</h2>
+      <.docs_h2 id="enrollment-keys">Enrollment keys</.docs_h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -85,16 +95,13 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Giving packs their credentials
-      </h2>
+      <.docs_h2 id="pack-credentials">Giving packs their credentials</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
         runner's <em>environment</em>, never from call arguments, so secrets never transit the
         cloud. Two steps on the host:
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># 1. /etc/emisar/runner.env (mode 0600) — the values</span>
+      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># 1. /etc/emisar/runner.env (mode 0600) — the values</span>
 NOMAD_ADDR=http://127.0.0.1:4646
 NOMAD_TOKEN=&lt;acl-token&gt;
 
@@ -102,17 +109,14 @@ NOMAD_TOKEN=&lt;acl-token&gt;
 execution:
   inherit_env:
     - NOMAD_ADDR
-    - NOMAD_TOKEN</pre>
-      </div>
+    - NOMAD_TOKEN</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Only allowlisted names reach an action's process (on top of the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>/locale baseline) — the
         runner's own environment and its token never leak through. Restart the service after
         editing; what each pack needs is in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Online, offline, and stuck runs
-      </h2>
+      <.docs_h2 id="connectivity">Online, offline, and stuck runs</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The runner heartbeats every 30 seconds; the dashboard's online badge reflects it, and
         either side closes a connection that goes quiet. Disconnects are normal — the runner
@@ -122,14 +126,12 @@ execution:
         with an explanation — nothing sits "running" forever.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Updating</h2>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
+      <.docs_h2 id="updating">Updating</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
 
 <span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
-<span class="text-zinc-500">$</span> sudo emisar pack update linux-core</pre>
-      </div>
+<span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The installer verifies the download's checksum; to check before you run it, verify the
         release's SLSA provenance + checksum yourself first — see <.link
@@ -143,16 +145,12 @@ execution:
         page until someone trusts it — updates are visible, never silent.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        The host-side toolbox
-      </h2>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
+      <.docs_h2 id="toolbox">The host-side toolbox</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
 <span class="text-zinc-500">$</span> sudo emisar action list           <span class="text-zinc-500"># what this host advertises</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list             <span class="text-zinc-500"># loaded packs + hashes</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f        <span class="text-zinc-500"># the local JSONL journal, live</span>
-<span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></pre>
-      </div>
+<span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         (The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
         so these work as-is on an installed host.) For defense-in-depth controls on the
@@ -163,7 +161,7 @@ execution:
         >security model</.link>.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Troubleshooting</h2>
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -208,13 +206,11 @@ execution:
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Removing a runner</h2>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># on the host — remove binary + service (keep config/data/logs)</span>
+      <.docs_h2 id="removing">Removing a runner</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the host — remove binary + service (keep config/data/logs)</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
-<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</pre>
-      </div>
+<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Then delete the runner in the dashboard. Its run history and audit events stay — history
         survives the host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
@@ -241,7 +237,7 @@ execution:
           Pack trust + drift <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

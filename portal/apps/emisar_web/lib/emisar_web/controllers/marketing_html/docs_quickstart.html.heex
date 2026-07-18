@@ -1,33 +1,49 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Quickstart", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">Quickstart</.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        Zero to your first audited action in about five minutes. You'll install the runner on a
-        Linux host, watch it connect, run
-        <code class="font-mono text-brand-300">linux.uptime</code>
-        — gated by policy, recorded in the audit trail — and then point your LLM at the same
-        catalog.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="quickstart"
+      toc={[
+        {"create-account", "Create your account"},
+        {"install-runner", "Install the runner"},
+        {"watch-connect", "Watch it connect"},
+        {"first-action", "Run your first action"},
+        {"connect-llm", "Point your LLM at it"},
+        {"workflow", "The workflow we recommend"}
+      ]}
+    >
+      <.docs_header current="quickstart">
+        <:dek>
+          Zero to your first audited action in about five minutes. You'll install the runner on a
+          Linux host, watch it connect, run
+          <code class="font-mono text-brand-300">linux.uptime</code>
+          — gated by policy, recorded in the audit trail — and then point your LLM at the same
+          catalog.
+        </:dek>
+      </.docs_header>
 
-      <.agent_skill_cta class="mt-8">
-        Or have your coding agent do it: the <code class="text-zinc-300">install-emisar</code>
-        skill walks Claude Code, Codex, or any agent that reads Markdown skills through this
-        whole page — install, verify, evidence report.
+      <.agent_skill_cta
+        class="mt-8"
+        skill="install-emisar"
+        prompt="Install the emisar runner and verify it connects. First ask me which host to install it on and how you can reach it (local shell, SSH, or something else). My enrollment key: emkey-enroll-… (I can mint one at Connect a runner in the emisar dashboard). Use the install-emisar skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/install-emisar/SKILL.md"
+      >
+        Or have your coding agent do it — the <code class="text-zinc-300">install-emisar</code>
+        skill walks it through this whole page: install, verify, evidence report.
       </.agent_skill_cta>
 
-      <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
-        <strong class="text-zinc-100">Before you start, you need:</strong>
+      <.docs_callout kind={:note} title="Before you start, you need:">
         <ul class="mt-3 space-y-2">
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
               A Linux host with <strong class="text-zinc-300">systemd</strong>
-              — a VM, a cloud instance, or bare metal. (Not a bare container; the installer needs
-              an init.)
+              — a VM, a cloud instance, or bare metal. (The default installer sets up a systemd
+              service; containers work too — see <.link
+                navigate={~p"/docs/containers"}
+                class="text-brand-400 hover:text-brand-300"
+              >
+                Containers &amp; Kubernetes</.link>.)
             </span>
           </li>
           <li class="flex items-start gap-2.5">
@@ -42,34 +58,31 @@
             </span>
           </li>
         </ul>
-      </div>
+      </.docs_callout>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        1 · Create your account
-      </h2>
+      <.docs_h2 id="create-account">1 · Create your account</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Sign up at <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">/sign_up</.link>. Free covers
         <strong class="text-zinc-300">3 runners and 1 user</strong>
         — no credit card.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        2 · Install the runner
-      </h2>
+      <.docs_h2 id="install-runner">2 · Install the runner</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         In the dashboard, click <strong>Connect a runner</strong>. emisar shows a one-line command
         carrying a single-use enrollment key
         (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
         — copy it now). Run it on your host:
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
-    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</pre>
-      </div>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
+      ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
+    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        That leading space keeps the key out of your shell history if you have
-        <code class="font-mono">HISTCONTROL=ignorespace</code>
-        set. It's a plain, readable shell script —
+        The key is single-use, so a copy in your shell history goes stale the moment it's used.
+        It's a plain, readable shell script —
         <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
           read it first
         </.link>
@@ -113,15 +126,13 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">3 · Watch it connect</h2>
+      <.docs_h2 id="watch-connect">3 · Watch it connect</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Refresh the dashboard — your host appears under <strong>Runners</strong>, online,
         advertising its action catalog. On the host you can watch the same thing:
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> journalctl -u emisar -f
-<span class="text-zinc-500">level=INFO msg="runner online" group=default packs=3 actions=89</span></pre>
-      </div>
+      <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
+<span class="text-zinc-500">level=INFO msg="runner online" group=default packs=3 actions=89</span></.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash
@@ -132,17 +143,13 @@
         you change a pack.)
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        4 · Run your first action
-      </h2>
+      <.docs_h2 id="first-action">4 · Run your first action</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Open the runner, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
         required <strong>reason</strong>
         (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</pre>
-      </div>
+      <.docs_code phx-no-format label="output"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <code class="font-mono">linux.uptime</code>
         is <code class="text-brand-300">low</code>
@@ -152,14 +159,14 @@
         audit and the runner's hash-chained journal, tagged with your reason.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        5 · Point your LLM at it
-      </h2>
+      <.docs_h2 id="connect-llm">5 · Point your LLM at it</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         A runner on its own is just a safer way to click buttons. The payoff is handing the catalog
-        to a model. In the dashboard open <strong>LLM agents</strong>, pick your client — Claude Code,
-        Claude Desktop, Cursor, Gemini CLI, Codex CLI, Grok CLI, or remote MCP for Claude.ai and ChatGPT —
-        and emisar mints a scoped API key with a prefilled config snippet to paste in.
+        to a model. In the dashboard open <strong>LLM agents</strong> and pick your client:
+        Claude.ai and ChatGPT connect over remote MCP with OAuth, and local clients — Claude Code,
+        Cursor, Zed, Copilot CLI, and ten more — use a one-line installer that opens a browser
+        approval and writes a scoped key straight into the client's config, so the secret never
+        touches your clipboard.
       </p>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Now your model gets twelve stable tools and discovers only the packs, actions, and runners
@@ -176,9 +183,8 @@
            per call. Because emisar gates server-side, that client prompt is
            redundant for emisar's tools and safe to silence — the framing the
            agents page uses, repeated here for the public docs/SEO surface. --%>
-      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
-        <h3 class="text-base font-semibold text-zinc-100">Optional: stop the per-tool prompts</h3>
-        <p class="mt-2">
+      <.docs_callout kind={:note} title="Optional: stop the per-tool prompts">
+        <p>
           Most clients ask <em>"allow this tool?"</em>
           the first time a model calls one. emisar already gates every action
           <strong class="text-zinc-200">server-side</strong>
@@ -231,11 +237,9 @@
             </span>
           </li>
         </ul>
-      </div>
+      </.docs_callout>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        6 · The workflow we recommend
-      </h2>
+      <.docs_h2 id="workflow">6 · The workflow we recommend</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         emisar is built for the incident, not the steady state. Use it to
         <strong class="text-zinc-200">investigate fast</strong>
@@ -282,20 +286,18 @@
         approval, then fixed in a Terraform PR the agent wrote.
       </p>
 
-      <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm leading-6 text-zinc-300">
-        <strong class="text-zinc-100">What you just built.</strong>
+      <.docs_callout kind={:tip} title="What you just built.">
         A finite, reviewed action catalog sitting between an AI agent and your host — instead of an
         SSH key and a prayer. The model can only call what you declared, risky calls stop for a
         human, secrets are redacted before they leave the box, and there's a searchable audit — with
         a tamper-evident, hash-chained journal on the host — of who ran what, and why.
-      </div>
+      </.docs_callout>
 
-      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
-        <strong class="text-zinc-100">Runner not showing up?</strong>
+      <.docs_callout kind={:warn} title="Runner not showing up?">
         Check <code class="font-mono text-xs">journalctl -u emisar -f</code>
         on the host. The two usual causes are a stale enrollment key (the Connect-a-runner key is
         single-use — mint a fresh one) and an outbound firewall blocking <code class="font-mono">emisar.dev:443</code>.
-      </div>
+      </.docs_callout>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
@@ -317,7 +319,7 @@
           Is this safe? The security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

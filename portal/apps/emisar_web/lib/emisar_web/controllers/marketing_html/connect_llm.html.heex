@@ -1,16 +1,22 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Integration", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Connect an LLM
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        emisar exposes your runners and their action catalog as a Model
-        Context Protocol server. Two ways to plug an LLM in:
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-an-llm"
+      toc={[
+        {"cloud-llm", "Connect a cloud LLM"},
+        {"api-key", "Mint an API key"},
+        {"stdio-bridge", "Desktop & CLI clients"},
+        {"direct-http", "Direct MCP over HTTP"}
+      ]}
+    >
+      <.docs_header current="connect-an-llm">
+        <:dek>
+          emisar exposes your runners and their action catalog as a Model
+          Context Protocol server. Two ways to plug an LLM in:
+        </:dek>
+      </.docs_header>
 
       <ul class="mt-4 list-disc space-y-2 pl-6 text-sm text-zinc-300">
         <li>
@@ -29,10 +35,14 @@
         </li>
       </ul>
 
-      <.agent_skill_cta class="mt-8">
-        Or have your coding agent do it: the <code class="text-zinc-300">install-emisar</code>
-        skill walks Claude Code, Codex, or any agent that reads Markdown skills through
-        installing the bridge, registering your client, and proving a run end to end.
+      <.agent_skill_cta
+        class="mt-8"
+        skill="connect-llm"
+        prompt="Connect this machine's coding agent to my emisar account over MCP — install the emisar-mcp bridge, register the client, and prove a run end to end. First ask me which client I use. Use the connect-llm skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/connect-llm/SKILL.md"
+      >
+        Or have your coding agent do it — the <code class="text-zinc-300">connect-llm</code>
+        skill walks it through installing the bridge, registering your client, and proving a run
+        end to end.
       </.agent_skill_cta>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
@@ -47,15 +57,8 @@
       <%!-- ============================================================ --%>
       <%!-- Step 1: Remote MCP (OAuth)                                    --%>
       <%!-- ============================================================ --%>
-      <section class="mt-12">
-        <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Connect a cloud LLM (recommended)
-          </h2>
-        </div>
+      <section>
+        <.docs_h2 id="cloud-llm">1 · Connect a cloud LLM (recommended)</.docs_h2>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
@@ -85,7 +88,7 @@
         <div class="mt-8 space-y-10">
           <%!-- Claude.ai (cloud) --%>
           <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Claude (claude.ai)</h3>
+            <.docs_h3 id="claude-ai">Claude (claude.ai)</.docs_h3>
             <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
               <li>
                 Open <strong>Settings → Connectors</strong>
@@ -122,18 +125,20 @@
                 → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
               </li>
             </ol>
-            <p class="mt-3 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
-              <strong class="text-zinc-400">Team / Enterprise:</strong>
-              only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
-              Members then open <strong>Customize → Connectors</strong>
-              and click <strong>Connect</strong>
-              to run the same sign-in.
-            </p>
+            <.docs_callout kind={:note}>
+              <p>
+                <strong class="text-zinc-400">Team / Enterprise:</strong>
+                only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
+                Members then open <strong>Customize → Connectors</strong>
+                and click <strong>Connect</strong>
+                to run the same sign-in.
+              </p>
+            </.docs_callout>
           </section>
 
           <%!-- ChatGPT --%>
           <section>
-            <h3 class="text-xl font-semibold text-zinc-50">ChatGPT</h3>
+            <.docs_h3 id="chatgpt">ChatGPT</.docs_h3>
             <p class="mt-2 text-sm text-zinc-400">
               ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on
               Plus, Pro, Business, Enterprise, and Education.
@@ -204,7 +209,7 @@
 
           <%!-- What you're authorizing --%>
           <section>
-            <h3 class="text-xl font-semibold text-zinc-50">What the sign-in grants</h3>
+            <.docs_h3 id="sign-in-grants">What the sign-in grants</.docs_h3>
             <p class="mt-2 text-sm leading-relaxed text-zinc-400">
               The consent screen mints a key bound to <em>your</em>
               membership. The connector can only run actions your policy
@@ -221,15 +226,8 @@
       <%!-- ============================================================ --%>
       <%!-- Step 2: API key (bridge + direct MCP)                        --%>
       <%!-- ============================================================ --%>
-      <section class="mt-12">
-        <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Mint an API key (desktop, CLI &amp; direct MCP)
-          </h2>
-        </div>
+      <section>
+        <.docs_h2 id="api-key">2 · Mint an API key (desktop, CLI &amp; direct MCP)</.docs_h2>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           The clients in steps 3 and 4 authenticate with a raw key instead
@@ -254,25 +252,20 @@
           action. The dashboard reveals the raw key once; copy and store it.
         </p>
 
-        <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
-          The cloud connectors in step 1 do <strong>not</strong>
-          need an API key — they authenticate with OAuth. Mint a key only
-          for the stdio bridge or plain-HTTP clients below.
-        </p>
+        <.docs_callout kind={:note}>
+          <p>
+            The cloud connectors in step 1 do <strong>not</strong>
+            need an API key — they authenticate with OAuth. Mint a key only
+            for the stdio bridge or plain-HTTP clients below.
+          </p>
+        </.docs_callout>
       </section>
 
       <%!-- ============================================================ --%>
       <%!-- Step 3: Stdio bridge                                          --%>
       <%!-- ============================================================ --%>
-      <section class="mt-12">
-        <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Desktop &amp; CLI clients (stdio bridge)
-          </h2>
-        </div>
+      <section>
+        <.docs_h2 id="stdio-bridge">3 · Desktop &amp; CLI clients (stdio bridge)</.docs_h2>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           For clients that only speak stdio MCP — Claude Desktop, Claude
@@ -289,7 +282,7 @@
           redownloading it.
         </p>
 
-        <h3 class="mt-6 text-xl font-semibold text-zinc-50">Install</h3>
+        <.docs_h3 id="install-bridge">Install</.docs_h3>
         <p class="mt-2 text-sm text-zinc-300">
           One-liner — auto-resolves the latest
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
@@ -297,12 +290,11 @@
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
           into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>:
         </p>
-        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-            terminal
-          </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
-        </div>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
         <p class="mt-2 text-xs leading-5 text-zinc-400">
           The installer is automated: it finds the LLM clients on the machine,
           and once you approve the connection in your browser it mints each
@@ -318,21 +310,6 @@
             class="text-brand-400 hover:text-brand-300"
           >Release integrity</.link>.
         </p>
-
-        <p class="mt-4 text-sm text-zinc-300">
-          <strong>
-            Or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install</code>
-          </strong>
-          (Go 1.26+):
-        </p>
-        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-            terminal
-          </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># go install drops the binary at ~/go/bin/mcp; symlink it as emisar-mcp:</span>
-<span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
-<span class="text-zinc-500">$</span> sudo ln -sf ~/go/bin/mcp /usr/local/bin/emisar-mcp</pre>
-        </div>
 
         <details class="group mt-8">
           <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
@@ -516,34 +493,29 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           </div>
         </details>
 
-        <p class="mt-6 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
-          <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>
-          If a runner enforces <.link
-            navigate={~p"/docs/signed-dispatch"}
-            class="text-brand-400 hover:text-brand-300"
-          >signed dispatch</.link>, add
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
-          and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
-          (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
-          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
-          block — the bridge signs every action dispatch so an enforcing runner will run it. Keep both secret,
-          never on the portal. The cloud connectors in step&nbsp;1 sign nothing, so they can't reach an
-          enforcing runner.
-        </p>
+        <.docs_callout kind={:note}>
+          <p>
+            <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>
+            If a runner enforces <.link
+              navigate={~p"/docs/signed-dispatch"}
+              class="text-brand-400 hover:text-brand-300"
+            >signed dispatch</.link>, add
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+            (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
+            to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
+            block — the bridge signs every action dispatch so an enforcing runner will run it. Keep both secret,
+            never on the portal. The cloud connectors in step&nbsp;1 sign nothing, so they can't reach an
+            enforcing runner.
+          </p>
+        </.docs_callout>
       </section>
 
       <%!-- ============================================================ --%>
       <%!-- Step 4: Direct Streamable HTTP MCP                            --%>
       <%!-- ============================================================ --%>
-      <section class="mt-12">
-        <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50 text-balance">
-            Direct MCP over HTTP
-          </h2>
-        </div>
+      <section>
+        <.docs_h2 id="direct-http">4 · Direct MCP over HTTP</.docs_h2>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           A custom MCP client can call the same Streamable HTTP endpoint with
@@ -552,16 +524,11 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           the standard JSON-RPC MCP contract.
         </p>
 
-        <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-            terminal
-          </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
+        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
 <span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
     -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
     -H <span class="text-brand-300">"Content-Type: application/json"</span> \
-    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></pre>
-        </div>
+    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
 
         <p class="mt-4 text-sm text-zinc-400">
           Send <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
@@ -574,7 +541,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           contract; clients do not invent a second retry key.
         </p>
       </section>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_cta

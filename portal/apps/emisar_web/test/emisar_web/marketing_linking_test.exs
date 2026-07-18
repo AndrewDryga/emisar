@@ -55,7 +55,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
     # behind /guides alone. Assert each is linked from a page other than /guides.
     guides = ~w(
       /guides/give-ai-agents-safe-production-access
-      /guides/ai-agents-and-ssh-the-risks
+      /guides/prompt-injection-for-ops-teams
     )
 
     sources = hub_paths() -- ["/guides"]

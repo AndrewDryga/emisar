@@ -7,21 +7,30 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Host your own registry", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Host your own pack registry
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        An emisar pack registry is not a service — it's a <strong class="text-zinc-200">static
-          file layout over HTTPS</strong>. Anything that serves files can be one: a GCS or S3
-        bucket, MinIO, plain nginx, an artifact store behind your VPN. Author packs for your own
-        tooling, publish them to infrastructure you control, and install them across your fleet
-        with the same hash-pinned flow the public registry uses. This isn't a side door — the
-        public registry is built and published by the exact tool documented here, from our CI, on
-        every packs change.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="pack-registry"
+      toc={[
+        {"author", "Author & validate"},
+        {"get-packctl", "Get packctl"},
+        {"build", "Build the tree"},
+        {"host", "Host it anywhere"},
+        {"install", "Install fleet-wide"},
+        {"publish", "Publish safely"},
+        {"tradeoffs", "What changes"}
+      ]}
+    >
+      <.docs_header current="pack-registry">
+        <:dek>
+          An emisar pack registry is not a service — it's a <strong class="text-zinc-200">static
+            file layout over HTTPS</strong>. Anything that serves files can be one: a GCS or S3
+          bucket, MinIO, plain nginx, an artifact store behind your VPN. Author packs for your own
+          tooling, publish them to infrastructure you control, and install them across your fleet
+          with the same hash-pinned flow the public registry uses. This isn't a side door — the
+          public registry is built and published by the exact tool documented here, from our CI, on
+          every packs change.
+        </:dek>
+      </.docs_header>
       <p class="mt-4 text-sm leading-relaxed text-zinc-400">
         Distribution and trust are deliberately separate: <strong class="text-zinc-200">trust never
           rests on the registry</strong>. Installs pin a
@@ -31,15 +40,18 @@
         per account before its actions can run. A registry — ours or yours — only moves bytes.
       </p>
 
-      <.agent_skill_cta class="mt-8">
-        Or have your coding agent do it: the <code class="text-zinc-300">author-pack</code>
-        skill walks Claude Code, Codex, or any agent that reads Markdown skills through
-        authoring, publishing, and installing from your own registry.
+      <.agent_skill_cta
+        class="mt-8"
+        skill="author-pack"
+        prompt="Author an emisar action pack, publish it to my own pack registry, and install it hash-pinned on a runner. Use the author-pack skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/author-pack/SKILL.md"
+      >
+        Or have your coding agent do it — the <code class="text-zinc-300">author-pack</code>
+        skill walks it through authoring, publishing, and installing from your own registry.
       </.agent_skill_cta>
 
       <%!-- Steps --%>
       <ol class="mt-12 space-y-8">
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li id="author" class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               1
@@ -60,10 +72,13 @@
             </.link>
             covers every field. Validation runs the same loader and hash path the runner enforces:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">emisar pack validate ./billing-tools</pre>
+          <.docs_code phx-no-format label="shell" copy_text="emisar pack validate ./billing-tools">emisar pack validate ./billing-tools</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="get-packctl"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               2
@@ -81,10 +96,14 @@
             <code>emisar pack validate</code>
             byte-for-byte.
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest</pre>
+          <.docs_code
+            phx-no-format
+            label="shell"
+            copy_text="go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest"
+          >go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li id="build" class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               3
@@ -95,20 +114,20 @@
             <code>--base-url</code>
             is wherever you'll host it; tarball URLs in the catalog join onto it:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">packctl catalog build --packs ./packs --out ./dist \
-  --base-url https://packs.acme.internal</pre>
+          <.docs_code phx-no-format label="shell">packctl catalog build --packs ./packs --out ./dist \
+  --base-url https://packs.acme.internal</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             The output is the whole registry — immutable versioned or content-addressed artifacts,
             plus two mutable pointers:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">v1/catalog.json                                  latest catalog (mutable pointer)
+          <.docs_code phx-no-format>v1/catalog.json                                  latest catalog (mutable pointer)
 v1/catalog/&lt;sha256&gt;.json                         immutable catalog snapshot
 v1/suggest.json                                  lean suggest index (mutable pointer)
 v1/schemas/*.vN.schema.json                      immutable versioned schemas
-v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pack tarball</pre>
+v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pack tarball</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li id="host" class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               4
@@ -119,19 +138,22 @@ v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pac
             GCS is native — immutable objects upload precondition-protected so existing bytes are
             never overwritten, and the pointers flip last:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
-  packctl catalog publish --dir ./dist --bucket acme-pack-registry</pre>
+          <.docs_code phx-no-format label="shell">GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
+  packctl catalog publish --dir ./dist --bucket acme-pack-registry</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             S3, MinIO, nginx, or anything else: the tree is plain files — sync it with any tool.
             Upload the immutable objects first, then the two pointers:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">aws s3 sync ./dist s3://acme-pack-registry \
+          <.docs_code phx-no-format label="shell">aws s3 sync ./dist s3://acme-pack-registry \
   --exclude "v1/catalog.json" --exclude "v1/suggest.json"
 aws s3 cp ./dist/v1/suggest.json s3://acme-pack-registry/v1/suggest.json
-aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</pre>
+aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_code>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="install"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               5
@@ -142,12 +164,12 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</pre>
             Per install with <code>--registry</code>, or set the default for a host once with <code>EMISAR_PACKS_REGISTRY</code>. Pin the hash you reviewed — a tampered or
             mismatched copy is rejected before it reaches the runner:
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">sudo emisar pack install billing-tools \
+          <.docs_code phx-no-format label="shell">sudo emisar pack install billing-tools \
   --registry https://packs.acme.internal --hash sha256:&lt;reviewed&gt;
 
 # or fleet-wide via the environment:
 export EMISAR_PACKS_REGISTRY=https://packs.acme.internal
-emisar pack update --dry-run</pre>
+emisar pack update --dry-run</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             Then trust the pack once on the dashboard's
             <strong class="text-zinc-200">Packs</strong>
@@ -156,7 +178,10 @@ emisar pack update --dry-run</pre>
           </p>
         </li>
 
-        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <li
+          id="publish"
+          class="scroll-mt-24 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
           <header class="flex items-center gap-3">
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               6
@@ -174,16 +199,14 @@ emisar pack update --dry-run</pre>
             to the fixed version: the build carries that floor forward,
             and runners still on an older version fail closed at dispatch.
           </p>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
+          <.docs_code phx-no-format label="shell">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \
-  --base-url https://packs.acme.internal --previous current.json</pre>
+  --base-url https://packs.acme.internal --previous current.json</.docs_code>
         </li>
       </ol>
 
       <%!-- What it does / doesn't change --%>
-      <h2 class="mt-16 text-2xl font-semibold text-zinc-50 text-balance">
-        What your registry does — and doesn't — change
-      </h2>
+      <.docs_h2 id="tradeoffs">What your registry does — and doesn't — change</.docs_h2>
       <ul class="mt-4 space-y-2 pl-5 text-sm text-zinc-400">
         <li class="list-disc">
           <strong class="text-zinc-200">The cloud works unchanged.</strong>
@@ -224,7 +247,7 @@ packctl catalog build --packs ./packs --out ./dist \
           </.link>
         </div>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

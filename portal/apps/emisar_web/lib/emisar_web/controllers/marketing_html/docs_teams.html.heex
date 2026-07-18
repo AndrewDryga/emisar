@@ -1,18 +1,27 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Teams & access", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Teams, roles &amp; access
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        Who can see what, who can run what, who can approve what — and how to narrow any of it
-        down to specific runners. emisar's access model has three dials: the member's <strong class="text-zinc-200">role</strong>, optional <strong class="text-zinc-200">per-member runner scopes</strong>, and the
-        <strong class="text-zinc-200">scopes on each API key</strong>
-        an LLM connects with.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="teams-and-access"
+      toc={[
+        {"roles", "Roles"},
+        {"inviting", "Inviting your team"},
+        {"runner-scopes", "Per-member runner scopes"},
+        {"mfa", "MFA"},
+        {"sessions", "Sessions & credentials"}
+      ]}
+    >
+      <.docs_header current="teams-and-access">
+        <:dek>
+          Who can see what, who can run what, who can approve what — and how to narrow any of it
+          down to specific runners. emisar's access model has two dials: the member's
+          <strong class="text-zinc-200">role</strong>
+          and optional <strong class="text-zinc-200">per-member runner scopes</strong>. An API key
+          an LLM connects with carries no scope of its own — it inherits its owner's, so scoping
+          the person scopes their agent.
+        </:dek>
+      </.docs_header>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
@@ -23,7 +32,7 @@
         />
       </figure>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Roles</h2>
+      <.docs_h2 id="roles">Roles</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Four ordered roles plus one specialist seat. Authorization is permission-based under
         the hood, so this table is the contract:
@@ -79,9 +88,7 @@
         </table>
       </div>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Inviting your team
-      </h2>
+      <.docs_h2 id="inviting">Inviting your team</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <strong>Team → Invite</strong>: enter an email, pick the role, send. The invite link is a
         one-time token (hashed at rest like every credential here); accepting it creates the
@@ -92,9 +99,7 @@
         blocked) and unsuspended without losing their history. <.plan_note tier={:team} />
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Per-member runner scopes
-      </h2>
+      <.docs_h2 id="runner-scopes">Per-member runner scopes</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Roles answer <em>what</em> someone can do; runner scopes answer <em>where</em>. By
         default a member sees every runner in the account. Add scopes on the member's team page
@@ -120,12 +125,13 @@
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Scoping is treated as <strong class="text-zinc-200">existence-hiding</strong>, not just
         permission-denying: out-of-scope runners don't appear in lists, their detail pages 404,
-        and their actions vanish from the member's dispatch surface. The same scoping applies to
-        API keys, so "the DBA team's agent only reaches <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>" is one key
-        setting, not a policy convention. Scope changes are audited.
+        and their actions vanish from the member's dispatch surface. An API key inherits its
+        owner's scope, so "the DBA's agent only reaches <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>" falls out
+        of scoping the DBA — not a policy convention, and not a per-key setting to keep in sync.
+        Scope changes are audited.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">MFA</h2>
+      <.docs_h2 id="mfa">MFA</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         TOTP (any standard authenticator app) with one-time recovery codes — codes are shown
         once, stored hashed, and each works exactly once. Replayed TOTP codes are rejected.
@@ -142,9 +148,7 @@
         session can satisfy that requirement when your IdP enforces MFA.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Sessions &amp; credentials
-      </h2>
+      <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -171,6 +175,14 @@
             are shown once, only hashes are stored.
           </span>
         </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Keys self-rotate near expiry — the client installs a successor and swaps to it with no
+            interruption — and revoking or suspending the member who minted a key revokes it. A key
+            never outlives the person behind it.
+          </span>
+        </li>
       </ul>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
@@ -178,7 +190,7 @@
           navigate={~p"/docs/connect-an-llm"}
           class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
-          Scoped keys for LLMs <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          Connect an LLM <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/policies-and-approvals"}
@@ -199,7 +211,7 @@
           SSO &amp; directory sync <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

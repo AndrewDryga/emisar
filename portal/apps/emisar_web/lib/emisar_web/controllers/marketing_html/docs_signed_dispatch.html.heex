@@ -1,21 +1,31 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Signed dispatch", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Signed dispatch
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        By default a runner trusts the control plane to tell it what to run. Signed dispatch
-        removes that trust: with enforcement on, a runner executes an action only when it carries a
-        valid Ed25519 signature produced by a customer-authorized MCP client. The control plane
-        relays that signature — it holds no private key, so it can't forge or alter the signed
-        action, immutable pack, exact arguments, reason, operation, or selected runner generations;
-        replay it on a selected runner; or
-        originate a run. The signature, not the cloud, is the authority.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="signed-dispatch"
+      toc={[
+        {"how-it-works", "How it works"},
+        {"turn-on", "Turn it on"},
+        {"distributing-ca", "Distributing the CA across a fleet"},
+        {"rotating", "Rotating operators"},
+        {"revoking", "Revoking"},
+        {"best-practices", "Best practices"},
+        {"guarantees", "What it does and doesn't guarantee"},
+        {"troubleshooting", "Troubleshooting a refusal"}
+      ]}
+    >
+      <.docs_header current="signed-dispatch">
+        <:dek>
+          By default a runner trusts the control plane to tell it what to run. Signed dispatch
+          removes that trust: with enforcement on, a runner executes an action only when it carries a
+          valid Ed25519 signature produced by a customer-authorized MCP client. The control plane
+          relays that signature — it holds no private key, so it can't forge or alter the signed
+          action, immutable pack, exact arguments, reason, operation, or selected runner generations;
+          replay it on a selected runner; or
+          originate a run. The signature, not the cloud, is the authority.
+        </:dek>
+      </.docs_header>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
         runbooks, scheduled runs, and API keys can't dispatch to that host — only a signed MCP call
@@ -23,7 +33,7 @@
         cryptographically true, not merely asserted by the control plane.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">How it works</h2>
+      <.docs_h2 id="how-it-works">How it works</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Three parties, one of them untrusted. Here is the path a signed dispatch takes:
       </p>
@@ -53,10 +63,7 @@
           the nonce. Only then does it run.
         </li>
       </ol>
-      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
-        <strong class="text-zinc-100">
-          The trust anchor is an offline certificate authority.
-        </strong>
+      <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
         A runner trusts a CA's public key, not every operator key — so onboarding someone is one
         signature and zero runner-config edits. The offline CA signs short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
@@ -65,9 +72,9 @@
         Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
         matched against the runner's local identity. The CA private key stays offline and never
         touches a runner or the portal.
-      </div>
+      </.docs_callout>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Turn it on</h2>
+      <.docs_h2 id="turn-on">Turn it on</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         One command mints a CA, an operator key, and a certificate, and prints everything to wire up
         — the runner config block (the CA public key), the CA private key to store offline, and the
@@ -84,9 +91,11 @@
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
         per operator.)
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h</pre>
-      </div>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"
+      ><span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h</.docs_code>
 
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-200">2. Install the CA public key</strong>
@@ -94,15 +103,13 @@
         on every runner. The CA public key is safe to commit; ship it the way you ship the rest of
         your config.
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
+      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
 signing:
   enforce_signatures: true
   max_attestation_age: 24h
   trusted_cas:
     - ca_id: acme-2026
-      public_key: &lt;CA public key from signing init&gt;</pre>
-      </div>
+      public_key: &lt;CA public key from signing init&gt;</.docs_code>
 
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP client</strong>
@@ -112,20 +119,16 @@ signing:
           class="text-brand-400 hover:text-brand-300"
         >connect an LLM</.link>). Store the CA private key offline; you re-sign certs with it as they expire.
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># on the machine running your MCP client — not the portal, not git</span>
+      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP client — not the portal, not git</span>
 EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
-EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
-      </div>
+EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-200">4. Apply it.</strong>
         Reload the runner — it rebuilds the verifier from config and re-advertises, so enforcement
         (and every later rotation) takes effect live, no restart and no dropped runs.
       </p>
-      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> sudo systemctl reload emisar</pre>
-      </div>
+      <.docs_code phx-no-format label="shell" copy_text="sudo systemctl reload emisar"><span class="text-zinc-500">$</span> sudo systemctl reload emisar</.docs_code>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Then check it landed: the Runner page shows <strong class="text-zinc-200">Signed dispatch
           only</strong>
@@ -134,9 +137,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         runs, and an operator or runbook dispatch is refused with a clear message.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Distributing the CA across a fleet
-      </h2>
+      <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The hard part of any signing scheme isn't the math — it's getting the right trust anchor onto
         every host and keeping it current. The CA model keeps that boring: it's one public key per
@@ -196,7 +197,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Rotating operators</h2>
+      <.docs_h2 id="rotating">Rotating operators</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Rotating an operator's key never touches a single runner: certs are short-lived and the CA
         already lives in every runner's config. Mint a fresh cert and swap the client's env vars.
@@ -221,7 +222,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         </li>
       </ol>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Revoking</h2>
+      <.docs_h2 id="revoking">Revoking</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The short cert TTL is the everyday revocation lever — a leaked leaf key is dead once its cert
         expires, with no fleet operation at all. To kill a leaked key <em>now</em>, or to revoke a
@@ -252,7 +253,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Best practices</h2>
+      <.docs_h2 id="best-practices">Best practices</.docs_h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -301,9 +302,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        What it does and doesn't guarantee
-      </h2>
+      <.docs_h2 id="guarantees">What it does and doesn't guarantee</.docs_h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -346,9 +345,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Troubleshooting a refusal
-      </h2>
+      <.docs_h2 id="troubleshooting">Troubleshooting a refusal</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         A refused dispatch comes back as a failed run whose error names the cause:
       </p>
@@ -454,7 +451,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <.icon name="hero-arrow-up-right" class="h-3.5 w-3.5" />
         </.external_link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

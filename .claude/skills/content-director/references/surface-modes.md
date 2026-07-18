@@ -101,6 +101,13 @@ be wished away. Let the product appear as an implementation of principles the
 reader already understands. Test the draft by asking whether the reader could
 re-derive why the product exists from the explanation alone.
 
+In `/guides/*` pieces, hold the stricter bar in
+`.agent/rules/content-guides-teach-not-sell.md`: zero product mentions in the
+body (or one clearly designated section), no product-docs links standing in as
+proof, and let the page chrome carry the conversion. A product drop inside the
+section that is winning the reader's trust flips the genre from teaching to
+brochure.
+
 Use more narrative and rhythm than website copy, but keep the argument visible.
 Headings should mark turns in thought, not satisfy a template. End when the idea
 lands; do not add a recap because articles are expected to have conclusions.

@@ -1,18 +1,25 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Runbooks", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Runbooks
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        A runbook is a saved, versioned sequence of actions — the "how we restart the cache
-        tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
-        each step is a declared action with its arguments and target, every run of it is
-        policy-gated and audited, and your LLM can read and run it over MCP.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="runbooks"
+      toc={[
+        {"made-of", "What a runbook is made of"},
+        {"authoring", "Authoring"},
+        {"running", "Running one"},
+        {"worked-example", "Worked example: a fleet health-check"},
+        {"llm", "Runbooks and your LLM"}
+      ]}
+    >
+      <.docs_header current="runbooks">
+        <:dek>
+          A runbook is a saved, versioned sequence of actions — the "how we restart the cache
+          tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
+          each step is a declared action with its arguments and target, every run of it is
+          policy-gated and audited, and your LLM can read and run it over MCP.
+        </:dek>
+      </.docs_header>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
@@ -23,9 +30,7 @@
         />
       </figure>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        What a runbook is made of
-      </h2>
+      <.docs_h2 id="made-of">What a runbook is made of</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         An ordered list of steps. Each step names an action from your catalog, the arguments to
         pass, and where it runs — a <strong class="text-zinc-200">specific runner</strong>
@@ -35,7 +40,7 @@
         anything your packs don't already declare — it's composition, not new capability.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Authoring</h2>
+      <.docs_h2 id="authoring">Authoring</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <strong>Runbooks → New</strong> in the dashboard. The editor is a form, not a YAML
         textarea: pick an action from the catalog, fill its declared arguments, choose the
@@ -61,7 +66,7 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Running one</h2>
+      <.docs_h2 id="running">Running one</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Dispatch from the runbook's page with a required reason — same as any single action.
         Execution is sequential with a small wave of parallelism: up to five runs in flight at a
@@ -87,9 +92,7 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Worked example: a fleet health-check
-      </h2>
+      <.docs_h2 id="worked-example">Worked example: a fleet health-check</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The classic case for your first runbook is the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">health-check.sh</code>
@@ -146,9 +149,7 @@
         keep flowing.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Runbooks and your LLM
-      </h2>
+      <.docs_h2 id="llm">Runbooks and your LLM</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Connected agents see four runbook tools:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
@@ -167,12 +168,11 @@
         and dispatch steps itself when it needs to stop, reassess, or escalate between them.
       </p>
 
-      <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
-        <strong class="text-zinc-100">What to put in a runbook.</strong>
+      <.docs_callout kind={:note} title="What to put in a runbook.">
         Diagnostics-then-remediation sequences you run more than twice: drain-and-restart a
         service tier, rotate a stuck consumer group, the standard triage ladder for a noisy
         alert. Keep one-off investigation ad-hoc — that's what the catalog itself is for.
-      </div>
+      </.docs_callout>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
@@ -194,7 +194,7 @@
           The actions steps are made of <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

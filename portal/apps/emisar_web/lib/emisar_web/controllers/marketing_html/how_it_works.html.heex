@@ -1,47 +1,55 @@
 <%!-- ============================================================
-  How it works — the standalone, linkable explainer of the model.
-  The home page exercises this inline; this is the focused version
-  for the evaluator who wants the shape before the pitch.
+  How it works — the standalone, linkable explainer of the model,
+  written for a first-time evaluator: the simplest true version of
+  the product, one request traced start to finish.
+
+  The example is the same story the /security hero shows — Maya
+  Chen's Claude Code restarting checkout-api.service on api-iad-02,
+  approved by Jordan Lee (both from the demo seed) — so the story
+  holds across pages. Payload braces are HTML-escaped (&#123;/&#125;)
+  because HEEx treats literal braces as interpolation; the colored
+  spans follow the home page's code idiom (sky keys, brand strings,
+  amber numbers/pending, rose deny).
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:how_it_works} />
 
   <%!-- Hero --%>
   <section class="border-b border-zinc-900 bg-[#07080a]">
-    <div class="mx-auto max-w-4xl px-6 py-20 sm:py-24 lg:px-8">
+    <div class="mx-auto max-w-4xl px-6 py-24 sm:py-32 lg:px-8">
       <p class="text-base font-semibold text-brand-400">How it works</p>
-      <.marketing_heading
-        tag="h1"
-        scale={:display}
-        class="mt-2 !text-4xl/[1.1] sm:!text-5xl/[1.1] md:!text-6xl/[1.1]"
-      >
-        From intent to verified receipt.
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
+        Your agent never touches a server.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-        An agent never gets a shell. It asks for one declared action, and that request passes five
-        gates before anything happens on your host — and lands in an audit you can verify after.
+        When your agent needs something done — say a service is failing and it wants to investigate
+        it — it doesn't run a command. It sends emisar a request: this action, on this server,
+        for this reason. Depending on your rules, that request runs right away, gets refused, or
+        waits for a person to approve it. A small program on your server called the runner does
+        the actual work, and every step is written down in the audit log.
       </p>
     </div>
   </section>
 
-  <%!-- The shape — a three-box flow --%>
+  <%!-- The three parts --%>
   <section class="py-20 sm:py-24">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
-          The shape: nothing listens on your hosts.
+          The three pieces.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The runner dials out to the control plane over an outbound connection. The cloud is the
-          control plane and the durable system of record; your hosts open no inbound port.
+          Your agent talks to emisar, and emisar talks to a small program you install on your
+          servers — the runner. The runner only ever connects outward, the way a browser does,
+          so there's no open port and nothing on the internet can reach into your hosts.
         </p>
       </div>
 
       <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
         <%= for {icon, label, sub} <- [
-          {"hero-cpu-chip", "Your AI agent", "Claude, Cursor, ChatGPT — over MCP"},
-          {"hero-cloud", "emisar cloud", "Catalog, policy, approvals, audit"},
-          {"hero-server", "Runner", "On your host, dials out"}
+          {"hero-cpu-chip", "Your AI agent", "Claude, Cursor, ChatGPT — anything that speaks MCP"},
+          {"hero-cloud", "Emisar cloud", "Your catalog, your rules, approvals, and the audit trail"},
+          {"hero-server", "The runner", "A small program on your server that does the work"}
         ] do %>
           <div class="flex flex-col items-center rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-center">
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
@@ -50,7 +58,7 @@
             <h3 class="mt-4 text-sm font-semibold text-zinc-50">{label}</h3>
             <p class="mt-1 text-xs leading-5 text-zinc-400">{sub}</p>
           </div>
-          <div :if={label != "Runner"} class="flex items-center justify-center text-zinc-700">
+          <div :if={label != "The runner"} class="flex items-center justify-center text-zinc-700">
             <.icon name="hero-arrow-right" class="hidden h-5 w-5 sm:block" />
             <.icon name="hero-arrow-down" class="h-5 w-5 sm:hidden" />
           </div>
@@ -59,56 +67,157 @@
     </div>
   </section>
 
-  <%!-- The five gates, traced with the REAL payloads from one action
-       (nomad.alloc_stop, from the CSI incident). The shapes match the code:
-       the MCP tools/call request, the policy decision recorded on the run, the
-       runner run_action protocol, and the hash-chained journal line
-       (runner/internal/audit/event.go). Payloads are interpolated strings
-       so their JSON braces are data, not HEEx syntax. --%>
+  <%!-- One request, start to finish --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
-          Every request passes five gates.
+          One request, start to finish.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          One real action — halting writes after a CSI driver reformatted a live volume — traced
-          through all five, with the actual payload at each step.
+          Here's a real one: checkout is failing, and the agent wants to restart the service.
         </p>
       </div>
 
-      <ol class="mt-14 space-y-4">
-        <%= for {step, title, desc, payload} <- [
-          {"01", "The agent asks for one declared action",
-           "No shell, ever. The model calls one MCP tool with typed arguments, a target runner, and a required reason — it can only request what's in the catalog.",
-           "{\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"nomad.alloc_stop\",\n    \"arguments\": {\n      \"alloc\": \"a1b2c3d4\",\n      \"reason\": \"CSI reformatted a live LUN — halt writes\",\n      \"runners\": [\"nomad-hvn03\"]\n    }\n  }\n}"},
-          {"02", "The pack hash and arguments are checked",
-           "The action must come from a trusted, content-addressed pack — a changed hash blocks dispatch until an admin re-trusts it — and every argument is validated against the declared schema.",
-           "pack    nomad@8f34c2e9…   trusted ✓\nalloc   \"a1b2c3d4\"         ✓  matches /^[a-z0-9-]+$/\nreason  present            ✓  required\nrunner  nomad-hvn03        ✓  in your scope"},
-          {"03", "Policy returns allow, approval, or deny",
-           "Risk-tier defaults plus ordered per-action overrides decide. Reads usually run free; this mutating action stops for a one-click human approval — recorded as its own audit event.",
-           "{\n  \"event_type\": \"action_run.pending_approval\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"policy_decision\": \"require_approval\",\n  \"matched_rules\": [\"nomad.* → require approval\"]\n}"},
-          {"04", "The runner re-validates and executes",
-           "The outbound-only runner owns execution. It recomputes the pack hash and re-validates the arguments on the host, then runs the command and redacts secrets before any output leaves the machine.",
-           "runner nomad-hvn03  receives run_action  request=7c2a9f…\n  pack hash 8f34c2e9…   recomputed on the host  ✓\n  arguments             re-validated            ✓\n  exec  nomad alloc stop a1b2c3d4\n  exit 0  ·  0.38s  ·  stdout redacted before egress"},
-          {"05", "The audit makes it recoverable",
-           "Every step lands in a SHA-256 hash-chained journal on the host (and the searchable cloud audit). Each line carries the previous line's hash, so any edit or gap is caught by emisar audit verify — and the whole thing streams to your SIEM as NDJSON.",
-           "{\n  \"event_id\": \"01JZ8F2K…\",\n  \"event_type\": \"execution_completed\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"request\": { \"reason\": \"CSI reformatted a live LUN — halt writes\", \"args_sha256\": \"5e8c1f…\" },\n  \"execution\": { \"exit_code\": 0 },\n  \"prev_hash\": \"9a72d4…\"\n}"}
-        ] do %>
-          <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-            <div class="flex gap-5">
-              <span class="font-mono text-sm font-semibold text-brand-400">{step}</span>
-              <div>
-                <h3 class="text-base font-semibold text-zinc-50">{title}</h3>
-                <p class="mt-2 text-sm leading-relaxed text-zinc-400">{desc}</p>
+      <ol class="mt-14">
+        <li class="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 pb-12 sm:gap-x-6">
+          <div class="absolute bottom-0 left-5 top-10 w-px bg-zinc-800" aria-hidden="true"></div>
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/10 font-mono text-sm font-semibold text-brand-400">
+            01
+          </span>
+          <div class="min-w-0">
+            <h3 class="flex min-h-10 items-center text-base font-semibold text-zinc-50 sm:text-lg">
+              The agent asks
+            </h3>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              The agent can't run commands — asking is all it can do. The ask is one action from
+              your catalog, the arguments to fill it in, and a reason a human can read later.
+            </p>
+            <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+              <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                the request
               </div>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300">&#123;
+  <span class="text-sky-300">"tool"</span>: <span class="text-brand-300">"run_action"</span>,
+  <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"systemd.unit_restart"</span>,
+  <span class="text-sky-300">"args"</span>: &#123; <span class="text-sky-300">"unit"</span>: <span class="text-brand-300">"checkout-api.service"</span> &#125;,
+  <span class="text-sky-300">"reason"</span>: <span class="text-brand-300">"checkout-api is returning 502s — restart it"</span>,
+  <span class="text-sky-300">"runner"</span>: <span class="text-brand-300">"api-iad-02"</span>
+&#125;</pre>
             </div>
-            <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-900 bg-black/40 p-4 font-mono text-[11.5px] leading-5 text-zinc-300">{payload}</pre>
-          </li>
-        <% end %>
+          </div>
+        </li>
+
+        <li class="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 pb-12 sm:gap-x-6">
+          <div class="absolute bottom-0 left-5 top-10 w-px bg-zinc-800" aria-hidden="true"></div>
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/10 font-mono text-sm font-semibold text-brand-400">
+            02
+          </span>
+          <div class="min-w-0">
+            <h3 class="flex min-h-10 items-center text-base font-semibold text-zinc-50 sm:text-lg">
+              emisar checks it
+            </h3>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              Before your rules even come into it, emisar checks the basics: the action really
+              is in your catalog, it comes from a pack your admin trusts — a pack whose content
+              changed is blocked until someone re-approves it — the arguments fit the schema,
+              and this agent is allowed to touch that server.
+            </p>
+            <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+              <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                the checks
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-brand-400">✓</span> <span class="text-zinc-500">action</span>   systemd.unit_restart <span class="text-zinc-500">— in your catalog</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">pack</span>     linux @ 4e91ab27… <span class="text-zinc-500">— trusted by your admin</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">args</span>     unit = <span class="text-brand-300">"checkout-api.service"</span> <span class="text-zinc-500">— fits the schema</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">runner</span>   api-iad-02 <span class="text-zinc-500">— allowed for this agent</span></pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 pb-12 sm:gap-x-6">
+          <div class="absolute bottom-0 left-5 top-10 w-px bg-zinc-800" aria-hidden="true"></div>
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/10 font-mono text-sm font-semibold text-brand-400">
+            03
+          </span>
+          <div class="min-w-0">
+            <h3 class="flex min-h-10 items-center text-base font-semibold text-zinc-50 sm:text-lg">
+              Your rules decide
+            </h3>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              This is where your policy comes in: it can let an action run freely, refuse it
+              outright, or require a person to sign off. A service restart is disruptive enough
+              that it waits — Jordan gets the approval, reads the reason, and taps Approve.
+            </p>
+            <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+              <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                the decision
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">policy</span>     Service restarts require approval
+<span class="text-zinc-500">decision</span>   <span class="text-amber-300">require_approval</span> → waiting for a person
+<span class="text-zinc-500">approved</span>   <span class="text-brand-300">Jordan Lee · 41 seconds later ✓</span></pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 pb-12 sm:gap-x-6">
+          <div class="absolute bottom-0 left-5 top-10 w-px bg-zinc-800" aria-hidden="true"></div>
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/10 font-mono text-sm font-semibold text-brand-400">
+            04
+          </span>
+          <div class="min-w-0">
+            <h3 class="flex min-h-10 items-center text-base font-semibold text-zinc-50 sm:text-lg">
+              The runner does the work
+            </h3>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              The runner doesn't blindly trust the cloud. It re-checks the pack and the
+              arguments on your own server, runs that one command — there's no shell involved —
+              and scrubs anything that looks like a secret from the output before it leaves the
+              machine.
+            </p>
+            <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+              <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                on your server
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">runner</span>   api-iad-02
+<span class="text-zinc-500">check</span>    pack hash + arguments — verified again on the host <span class="text-brand-400">✓</span>
+<span class="text-zinc-500">run</span>      <span class="text-zinc-600">$</span> <span class="text-zinc-100">systemctl restart checkout-api.service</span>
+<span class="text-zinc-500">result</span>   exit <span class="text-amber-300">0</span> · 0.38s · secrets scrubbed from the output</pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 sm:gap-x-6">
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/10 font-mono text-sm font-semibold text-brand-400">
+            05
+          </span>
+          <div class="min-w-0">
+            <h3 class="flex min-h-10 items-center text-base font-semibold text-zinc-50 sm:text-lg">
+              Everything is on the record
+            </h3>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              The whole story — who asked, why, who approved, what ran, and what came back —
+              lands in the audit trail. Each entry carries a hash of the one before it, so
+              tampering shows. You can search it in the console or stream it to your SIEM.
+            </p>
+            <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+              <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                the audit entry
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300">&#123;
+  <span class="text-sky-300">"event"</span>: <span class="text-brand-300">"execution_completed"</span>,
+  <span class="text-sky-300">"action"</span>: <span class="text-brand-300">"systemd.unit_restart"</span>,
+  <span class="text-sky-300">"requested_by"</span>: <span class="text-brand-300">"Maya Chen · Claude Code"</span>,
+  <span class="text-sky-300">"approved_by"</span>: <span class="text-brand-300">"Jordan Lee"</span>,
+  <span class="text-sky-300">"exit_code"</span>: <span class="text-amber-300">0</span>,
+  <span class="text-sky-300">"prev_hash"</span>: <span class="text-brand-300">"9a72d4…"</span>
+&#125;</pre>
+            </div>
+          </div>
+        </li>
       </ol>
 
-      <p class="mt-10 text-center text-sm">
+      <p class="mt-12 text-center text-sm">
         <.link
           navigate={~p"/security"}
           class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
@@ -122,7 +231,7 @@
 
   <.marketing_cta
     headline="Run your first gated action in five minutes."
-    subcopy="Install the runner, point your agent at the catalog, and watch a request walk the five gates."
+    subcopy="Install the runner, connect your agent, and put a real request through."
     secondary_label="Talk to sales"
     secondary_path={EmisarWeb.MailTo.sales()}
   />

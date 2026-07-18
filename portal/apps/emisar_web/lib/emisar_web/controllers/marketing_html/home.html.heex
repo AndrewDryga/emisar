@@ -13,21 +13,17 @@
 
     <div class="relative mx-auto w-full max-w-7xl px-6 py-12 sm:py-20 lg:px-8">
       <div class="max-w-5xl">
-        <.marketing_heading
-          tag="h1"
-          scale={:display}
-          class="rise-1 max-w-4xl !text-4xl/[1.1] sm:!text-6xl/[1.1] md:!text-7xl/[1.1]"
-        >
-          Your AI agent needs production access&nbsp;— not your SSH key.
+        <.marketing_heading tag="h1" scale={:display} class="rise-1 max-w-4xl">
+          The best way to give your AI agents access to production.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          emisar is one governed MCP server that connects Claude, Cursor, ChatGPT — any AI
-          agent — to your infrastructure. One server covers production access, debugging, alerting,
-          runbooks, and internal ops — so a new capability is another pack, not another MCP server
-          to roll out to every client. Your agent reads real production state to debug what it
-          shipped and help work incidents. Safe reads run on their own. Risky changes clear your
-          policy first — allowed, denied, or held for approval. No SSH key, no always-on access,
-          every call on the record.
+          Emisar is the last MCP server you’ll need to install: a Zero-Trust gateway connecting
+          Claude, Cursor, ChatGPT, and any AI agent to your infrastructure. One server handles
+          production access, debugging, alerts, and internal operations, with new capabilities
+          added as packs. Agents can inspect real production state, debug what they shipped,
+          and help resolve incidents. Safe reads run automatically; policy allows, blocks,
+          or routes risky actions for approval. No SSH keys, VPNs, remote shells, or
+          standing access — and every call is recorded.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -38,7 +34,7 @@
           </.marketing_button>
         </div>
         <p class="rise-4 mt-6 text-xs text-zinc-400">
-          Free for 3 runners &middot; No credit card &middot;
+          Free for 3 runners &middot; No credit card required &middot;
           <a
             href="https://github.com/andrewdryga/emisar/blob/main/runner/LICENSE"
             target="_blank"
@@ -146,8 +142,8 @@
         <div class="mt-1 text-xs text-zinc-400">built to Anthropic's control set</div>
       </.link>
       <div class="px-4 py-6 text-center sm:py-7">
-        <div class="text-base font-semibold text-zinc-100">Hash-chained journal</div>
-        <div class="mt-1 text-xs text-zinc-400">every action, tamper-evident on the host</div>
+        <div class="text-base font-semibold text-zinc-100">Audit logged</div>
+        <div class="mt-1 text-xs text-zinc-400">with a tamper-evident copy on the host</div>
       </div>
       <a
         href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -159,7 +155,7 @@
           Open code
         </div>
         <div class="mt-1 text-xs text-zinc-400">
-          Apache-2.0 runner &middot; read the whole control plane
+          Apache-2.0 runner and MCP bridge.
         </div>
       </a>
     </div>
@@ -183,9 +179,9 @@
           </p>
           <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
             Claude, Cursor, and ChatGPT reason about your stack all day — but they can't see it
-            running. emisar gives your agent eyes on production. It reads live logs, metrics, hosts,
+            running. Emisar gives your agent eyes on production. It reads live logs, metrics, hosts,
             datastores, and the network, so its plan matches what's actually running. It catches its
-            own mistakes. It works incidents beside you. And it stops for you only when a change is
+            own mistakes. It works incidents beside you. And it stops for your approval only when a change is
             actually risky.
           </p>
           <p class="mt-8 text-sm">
@@ -236,8 +232,10 @@
           A catalog, a gate, and a ledger.
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Every request is handled the same way. Each action declares what it can do and carries a
-          risk tier — low, medium, high, or critical. The policy you set decides which tiers need a
+          Every request is handled the same way.
+          Emisar builds on top of <b>vetted actions</b> groupped in packs.
+          Each action declares what it can do, carries a
+          risk tier — low, medium, high, or critical, and validates the input. The policy you set decides which tiers need a
           human to approve. The runner re-checks the request before it runs. Then every call is
           recorded twice — to the searchable audit in the portal, and to a hash-chained journal on
           the runner host.
@@ -287,7 +285,7 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Set allow, ask-for-approval, or deny for each risk tier, then override specific actions.
+            Set allow, ask-for-approval, or deny for each risk tier, then override specific actions or policy for a runner group.
             Approvals can require one person or several — or hand out a limited, revocable pass so
             routine calls don't ask every time.
           </p>
@@ -605,7 +603,7 @@
       <div class="mt-10 text-center">
         <.link
           navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-400 hover:text-brand-300"
+          class="inline-flex items-center gap-1.5 text-m font-semibold text-brand-400 hover:text-brand-300"
         >
           See emisar mapped to the framework, control by control
           <.icon name="hero-arrow-right" class="h-4 w-4" />

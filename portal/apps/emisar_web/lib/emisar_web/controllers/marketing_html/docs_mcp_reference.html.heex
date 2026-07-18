@@ -1,22 +1,32 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"MCP reference", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        MCP reference
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        The fixed tools, identifiers, and recovery semantics of the emisar MCP server. For client
-        setup, see <.link
-          navigate={~p"/docs/connect-an-llm"}
-          class="font-medium text-brand-300 hover:text-brand-200"
-        >Connect an LLM</.link>.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="mcp-reference"
+      toc={[
+        {"protocol-methods", "Protocol methods"},
+        {"tools", "Twelve fixed tools"},
+        {"discovery", "Discovery"},
+        {"running-an-action", "Running an action"},
+        {"operations", "Operations and recovery"},
+        {"waits", "Waits and cancellation"},
+        {"runbooks-signing", "Runbooks and signing"},
+        {"errors", "Errors"}
+      ]}
+    >
+      <.docs_header current="mcp-reference">
+        <:dek>
+          The fixed tools, identifiers, and recovery semantics of the emisar MCP server. For client
+          setup, see <.link
+            navigate={~p"/docs/connect-an-llm"}
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >Connect an LLM</.link>.
+        </:dek>
+      </.docs_header>
 
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
-        <h2>Protocol methods</h2>
+        <h2 id="protocol-methods">Protocol methods</h2>
         <p>
           emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP. The current negotiated protocol is <code>2025-11-25</code>;
           <code>2025-06-18</code>
@@ -40,7 +50,7 @@
           a request ID so its operation can be recovered safely.
         </p>
 
-        <h2>Twelve fixed tools</h2>
+        <h2 id="tools">Twelve fixed tools</h2>
         <p>
           Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
           results, so clients never need a hand-maintained action allowlist and never load hundreds
@@ -78,7 +88,7 @@
           </table>
         </div>
 
-        <h2>Discovery</h2>
+        <h2 id="discovery">Discovery</h2>
         <p>
           Start broad only when the task needs it. <code>list_packs</code>
           gives a bounded overview; <code>find_actions</code>
@@ -103,7 +113,7 @@
           rename, or pack change can make an earlier selection stale.
         </p>
 
-        <h2>Running an action</h2>
+        <h2 id="running-an-action">Running an action</h2>
         <p><code>run_action</code> accepts one explicit execution intent:</p>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
           <table class="w-full min-w-[680px] text-left text-sm">
@@ -141,7 +151,7 @@
           pending-approval, and denied runs inside the accepted operation.
         </p>
 
-        <h2>Operations and recovery</h2>
+        <h2 id="operations">Operations and recovery</h2>
         <p>
           Every <code>run_action</code>, <code>execute_runbook</code>, and
           <code>create_runbook_draft</code>
@@ -161,7 +171,7 @@
           recovery.
         </p>
 
-        <h2>Waits and cancellation</h2>
+        <h2 id="waits">Waits and cancellation</h2>
         <p>
           <code>run_action</code>
           waits up to 60 seconds. <code>wait_for_run</code>
@@ -172,7 +182,7 @@
           back committed infrastructure work.
         </p>
 
-        <h2>Runbooks and signing</h2>
+        <h2 id="runbooks-signing">Runbooks and signing</h2>
         <p>
           Published runbooks are immutable <code>slug@version</code> records. Inspect the frozen
           steps with <code>get_runbook</code> before calling <code>execute_runbook</code>. Draft
@@ -192,7 +202,7 @@
           execute its steps as individually signed actions instead.
         </p>
 
-        <h2>Errors</h2>
+        <h2 id="errors">Errors</h2>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
           <table class="w-full min-w-[680px] text-left text-sm">
             <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
@@ -227,7 +237,7 @@
           and <.link navigate={~p"/docs/policies-and-approvals"}>policies &amp; approvals</.link>.
         </p>
       </article>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

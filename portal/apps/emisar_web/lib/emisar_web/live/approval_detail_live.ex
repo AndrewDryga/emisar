@@ -36,7 +36,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         run =
           case Runs.fetch_run_by_id(request.run_id, socket.assigns.current_subject,
-                 preload: [:runner]
+                 preload: [:runner, :api_key]
                ) do
             {:ok, r} -> r
             {:error, _} -> nil
@@ -451,6 +451,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp dispatch_source_title(:scheduled), do: "Dispatched by a schedule"
   defp dispatch_source_title(_), do: nil
 
+  # The dispatch channel qualifier: name the actual MCP client (its API-key
+  # name, e.g. "Claude Code") when we have it, so an agent's request reads as
+  # who it was, not a generic "LLM agent" — the attribution house rule. Falls
+  # back to the source noun for non-MCP dispatch or an unnamed/absent key.
+  defp approval_channel(%{source: :mcp, api_key: %{name: name}})
+       when is_binary(name) and name != "",
+       do: name
+
+  defp approval_channel(%{source: source}), do: format_source(source)
+
   # First 12 chars of a runner UUID + "…" trailer when one exists, or
   # an em-dash if the context didn't carry a runner_id at all. Kept as
   # a helper so the template stays single-expression — mixing a slice
@@ -575,7 +585,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   class="text-zinc-400"
                   title={dispatch_source_title(@run.source)}
                 >
-                  · {format_source(@run.source)}
+                  · {approval_channel(@run)}
                 </span>
               </span>
             </.meta_field>

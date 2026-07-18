@@ -5567,20 +5567,33 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  "Use your coding agent" cross-sell — points at the customer skills
-  (`skills/` on GitHub) that run an Emisar flow end to end. One recognizable
-  shape on the marketing docs pages and the console rails: border-only card
-  (§8.1 — no wash), sparkles title, one caller-written sentence, one link.
+  "Use your coding agent" cross-sell — a paste-ready prompt that makes the
+  reader's agent run this page's flow via the customer skill (`skills/` on
+  GitHub). One recognizable shape on the marketing docs pages and the console
+  rails: border-only card (§8.1 — no wash), sparkles title, one caller-written
+  sentence, then the copyable prompt box and a quiet read-the-skill link.
 
-      <.agent_skill_cta class="mt-8">
-        The <code>install-emisar</code> skill walks Claude Code or Codex
-        through this whole page.
+  `prompt` is ONE line (it soft-wraps in the box; a single-line attribute
+  string survives `mix format`, where escape sequences in attrs would not) and
+  reads like something the operator would type: the task, any credential
+  placeholder, and the skill's raw SKILL.md URL.
+
+      <.agent_skill_cta
+        skill="install-emisar"
+        prompt="Install the emisar runner … Use the install-emisar skill: https://…/SKILL.md"
+      >
+        Or have your coding agent do it — the <code>install-emisar</code>
+        skill walks it through this whole page.
       </.agent_skill_cta>
   """
+  attr :skill, :string, required: true, doc: "skill directory name under skills/"
+  attr :prompt, :string, required: true, doc: "one-line paste-ready prompt, incl. the skill URL"
   attr :class, :string, default: nil
   slot :inner_block, required: true, doc: "one sentence: what the agent will do"
 
   def agent_skill_cta(assigns) do
+    assigns = assign(assigns, :prompt_id, "skill-prompt-" <> assigns.skill)
+
     ~H"""
     <div class={["rounded-xl border border-zinc-800/80 p-4", @class]}>
       <h3 class="flex items-center gap-2 text-sm font-medium text-zinc-100">
@@ -5589,12 +5602,32 @@ defmodule EmisarWeb.CoreComponents do
       <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">
         {render_slot(@inner_block)}
       </p>
-      <.external_link
-        href="https://github.com/andrewdryga/emisar/tree/main/skills"
-        class="mt-3 text-sm font-medium text-brand-300 hover:text-brand-200"
-      >
-        Get the skill
-      </.external_link>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/80 px-3.5 py-1.5">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            paste into your agent
+          </span>
+          <button
+            type="button"
+            data-copy={"#" <> @prompt_id}
+            class="font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+          >
+            Copy
+          </button>
+        </div>
+        <pre
+          id={@prompt_id}
+          class="whitespace-pre-wrap p-3.5 font-mono text-xs leading-5 text-zinc-300"
+        >{@prompt}</pre>
+      </div>
+      <p class="mt-2.5 text-xs text-zinc-500">
+        Works in Claude Code, Codex, or any agent that reads Markdown skills — <.external_link
+          href={"https://github.com/andrewdryga/emisar/tree/main/skills/" <> @skill}
+          class="font-medium text-brand-300/90 hover:text-brand-200"
+        >
+          read the skill first
+        </.external_link>.
+      </p>
     </div>
     """
   end
@@ -5773,7 +5806,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp marketing_heading_scale(:display),
-    do: "text-4xl tracking-[-0.035em] sm:text-6xl md:text-7xl"
+    do: "text-4xl/[1.1] tracking-[-0.035em] sm:text-6xl/[1.1] md:text-7xl/[1.1]"
 
   defp marketing_heading_scale(:hero), do: "text-4xl tracking-[-0.03em] md:text-5xl"
   # Big centered section header (CTA blocks, "How it works" section tops).

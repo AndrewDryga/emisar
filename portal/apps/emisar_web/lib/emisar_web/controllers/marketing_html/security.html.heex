@@ -262,7 +262,7 @@
           <.icon name="hero-user-group" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Roles for owner, admin, operator, and viewer, plus per-user runner and runner-group
+            Roles for owner, admin, billing manager, operator, and viewer, plus per-user runner and runner-group
             scopes.
           </p>
         </div>
@@ -270,11 +270,12 @@
           <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Governed LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            There are two key kinds: an MCP key, whose access is governed by account policy and
-            approvals and whose runner reach follows the minting member's runner scope at call time;
-            and a read-only audit-export key, which can stream the audit log but never execute
-            actions. Both are user-attributed and revocable — revoke the member and every key they
-            minted shrinks with them.
+            MCP bridge and Runner keys are short-lived and rotate themselves before they expire. All keys 
+            
+            Two kinds of key. An MCP key runs actions, gated by your policy and approvals and limited
+            to its owner's runner scope. An audit-export key only reads the audit log. Both are
+            short-lived and rotate themselves before they expire, and both belong to a member —
+            revoke the member, revoke their keys.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -366,7 +367,6 @@
             Guide: safe production access for AI <.icon name="hero-arrow-right" class="h-4 w-4" />
           </.link>
         </div>
-        <span class="text-xs text-zinc-400">Not affiliated with or endorsed by Anthropic.</span>
       </div>
     </div>
   </section>

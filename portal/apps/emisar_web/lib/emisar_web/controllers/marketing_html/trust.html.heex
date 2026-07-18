@@ -14,13 +14,9 @@
 
   <%!-- Hero --%>
   <section class="border-b border-zinc-900 bg-[#07080a]">
-    <div class="mx-auto max-w-4xl px-6 py-20 sm:py-24 lg:px-8">
+    <div class="mx-auto max-w-4xl px-6 py-24 sm:py-32 lg:px-8">
       <p class="text-base font-semibold text-brand-400">Trust &amp; compliance</p>
-      <.marketing_heading
-        tag="h1"
-        scale={:display}
-        class="mt-2 !text-4xl/[1.1] sm:!text-5xl/[1.1] md:!text-6xl/[1.1]"
-      >
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Security controls you can verify.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
@@ -53,7 +49,8 @@
              "Account-wide MFA enforcement (TOTP + recovery codes)",
              "Owner / admin / operator / viewer roles, least-privilege by default",
              "Per-user runner scopes — members never see out-of-scope hosts",
-             "Scoped, revocable API keys; full session management"
+             "Scoped, revocable API keys that auto-rotate before expiry; full session management",
+             "Agent connect by browser approval — the key is installed, never pasted or on a command line"
            ]},
           {"hero-document-check", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [

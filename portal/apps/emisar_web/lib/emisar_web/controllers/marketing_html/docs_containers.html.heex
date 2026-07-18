@@ -1,0 +1,207 @@
+<%!-- ============================================================
+  Containers & Kubernetes — the runner in a container: sidecar,
+  DaemonSet, Nomad system job. The honest core is namespace
+  visibility (a runner acts on what its namespace can reach);
+  the mechanics are --no-service (install.sh) and identity
+  persistence (cloud.token_path + runner.id, since containers
+  lack a stable /etc/machine-id). Facts verified against
+  install.sh, runner/docker/, and runner/internal/config.
+============================================================ --%>
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="containers"
+      toc={[
+        {"what-it-sees", "What a containerized runner sees"},
+        {"building-blocks", "The two mechanics every shape shares"},
+        {"sidecar", "A sidecar next to one app"},
+        {"daemonset", "A DaemonSet across Kubernetes nodes"},
+        {"nomad", "A Nomad system job"}
+      ]}
+    >
+      <.docs_header current="containers">
+        <:dek>
+          The runner is a plain foreground process — it runs fine in a container. What changes
+          isn't whether it runs; it's what it can see. This page covers the three container
+          shapes that work well — a sidecar next to one app, a DaemonSet across your Kubernetes
+          nodes, a Nomad system job — and the two mechanics they all share.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        A runner can only act on what its own namespace can reach. On a VM or bare metal that's
+        the whole machine — which is why the
+        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+          quickstart
+        </.link>
+        steers you there: most packs are host-oriented, and some literally require a systemd
+        host. Put the same runner in a bare container and those packs now see the container —
+        its processes, its filesystem, its network.
+      </p>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        That isn't a failure mode; it's a scoping decision. A sidecar that can only see one app
+        is a tightly scoped runner — the agent operating through it can't touch anything else,
+        no matter what it asks for. You just have to pick the shape that matches what you want
+        the agent to operate: one app, a node, or every node.
+      </p>
+
+      <.docs_h2 id="building-blocks">The two mechanics every shape shares</.docs_h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        <strong class="text-zinc-200">First, skip the service.</strong>
+        The default installer creates a systemd service, so on a host without a real init it
+        refuses with <em>"this looks like a container or cloud shell"</em>
+        — that check is about
+        the installer, not the binary. Pass
+        <code class="font-mono text-brand-300">--no-service</code>
+        and it skips init detection, the service user, and the unit, and just puts the binary in
+        place. Supervision then belongs to whatever runs the container: <code class="font-mono">docker run --restart</code>, a Kubernetes restart policy, or the
+        Nomad client.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service"
+      ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service</.docs_code>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        <strong class="text-zinc-200">Second, persist identity.</strong>
+        After the first connect, the per-runner token lands at
+        <code class="font-mono">cloud.token_path</code>
+        (<code class="font-mono">/var/lib/emisar/token.json</code> by default) — keep
+        <code class="font-mono">/var/lib/emisar</code>
+        in a volume and the runner keeps the same identity across restarts. The runner id is
+        otherwise derived from <code class="font-mono">/etc/machine-id</code>, which containers
+        often lack or regenerate, so set <code class="font-mono">runner.id</code>
+        yourself and the name stays stable no matter where the container lands:
+      </p>
+      <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">runner</span>:
+  <span class="text-sky-300">id</span>: <span class="text-brand-300">"payments-sidecar"</span>
+  <span class="text-sky-300">group</span>: <span class="text-brand-300">"sidecars"</span>
+<span class="text-sky-300">cloud</span>:
+  <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
+  <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        One more thing before a fleet: the dashboard's Connect-a-runner key is single-use —
+        right for one host, wrong for a template that scales. For DaemonSets and system jobs,
+        mint a <strong class="text-zinc-200">reusable enrollment key</strong>
+        (optionally capped at a number of uses) and hand that to the template — see <.link
+          navigate={~p"/docs/runners" <> "#enrollment-keys"}
+          class="text-brand-400 hover:text-brand-300"
+        >enrollment keys</.link>.
+      </p>
+
+      <.docs_h2 id="sidecar">A sidecar next to one app</.docs_h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        When the thing you want the agent to operate <em>is</em> the app — read its logs,
+        inspect its processes, poke its admin CLI — run the runner as a second container sharing
+        the app's world. The runner sees exactly that app and nothing else; policy, approvals,
+        and audit work unchanged.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> docker run -d --restart unless-stopped \
+    --name emisar-runner \
+    -e EMISAR_URL=https://emisar.dev \
+    -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
+    -v emisar-runner-data:/var/lib/emisar \
+    your-registry/emisar-runner</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        There's a working reference for this shape in the repo —
+        <.external_link href="https://github.com/andrewdryga/emisar/tree/main/runner/docker">
+          runner/docker
+        </.external_link>
+        builds and runs the runner as a container's foreground process, with the token volume
+        already wired.
+      </p>
+
+      <.docs_h2 id="daemonset">A DaemonSet across Kubernetes nodes</.docs_h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        To operate the nodes themselves, run one runner per node. The runner can only act on
+        what the pod spec grants, which makes the manifest your blast-radius dial — and the
+        manifest below is the observation-heavy variant: it can watch anything running on the
+        node, from processes to ports to journals.
+      </p>
+      <.docs_code phx-no-format label="yaml"><span class="text-sky-300">apiVersion</span>: apps/v1
+<span class="text-sky-300">kind</span>: DaemonSet
+<span class="text-sky-300">metadata</span>:
+  <span class="text-sky-300">name</span>: emisar-runner
+<span class="text-sky-300">spec</span>:
+  <span class="text-sky-300">selector</span>:
+    <span class="text-sky-300">matchLabels</span>:
+      <span class="text-sky-300">app</span>: emisar-runner
+  <span class="text-sky-300">template</span>:
+    <span class="text-sky-300">metadata</span>:
+      <span class="text-sky-300">labels</span>:
+        <span class="text-sky-300">app</span>: emisar-runner
+    <span class="text-sky-300">spec</span>:
+      <span class="text-sky-300">hostPID</span>: <span class="text-amber-300">true</span>      <span class="text-zinc-600"># see every process on the node</span>
+      <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
+      <span class="text-sky-300">containers</span>:
+        - <span class="text-sky-300">name</span>: runner
+          <span class="text-sky-300">image</span>: your-registry/emisar-runner
+          <span class="text-sky-300">env</span>:
+            - <span class="text-sky-300">name</span>: EMISAR_URL
+              <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
+            - <span class="text-sky-300">name</span>: EMISAR_ENROLLMENT_KEY
+              <span class="text-sky-300">valueFrom</span>:
+                <span class="text-sky-300">secretKeyRef</span>:
+                  <span class="text-sky-300">name</span>: emisar-runner
+                  <span class="text-sky-300">key</span>: enrollment-key
+          <span class="text-sky-300">volumeMounts</span>:
+            - <span class="text-sky-300">name</span>: state
+              <span class="text-sky-300">mountPath</span>: /var/lib/emisar
+            - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-600"># node filesystem, read-only, for file inspection</span>
+              <span class="text-sky-300">mountPath</span>: /host
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+            - <span class="text-sky-300">name</span>: journal        <span class="text-zinc-600"># journald logs on systemd nodes</span>
+              <span class="text-sky-300">mountPath</span>: /var/log/journal
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+            - <span class="text-sky-300">name</span>: systemd-run    <span class="text-zinc-600"># systemd state, for unit status reads</span>
+              <span class="text-sky-300">mountPath</span>: /run/systemd
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+      <span class="text-sky-300">volumes</span>:
+        - <span class="text-sky-300">name</span>: state
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /var/lib/emisar
+            <span class="text-sky-300">type</span>: DirectoryOrCreate
+        - <span class="text-sky-300">name</span>: host-root
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /
+        - <span class="text-sky-300">name</span>: journal
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /var/log/journal
+        - <span class="text-sky-300">name</span>: systemd-run
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /run/systemd</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        With this, process packs see every node process (<code class="font-mono">hostPID</code>),
+        network packs see the node's real ports (<code class="font-mono">hostNetwork</code>),
+        journal reads work against the mounted journal, and file-inspection actions reach node
+        paths under <code class="font-mono">/host</code>. Two honest limits: pack binaries run
+        from the container's image, so put the tools your packs call into it; and the mounts
+        above are read-only on purpose — a verb that <em>mutates</em>
+        the node (restarting a unit, say) needs its systemd/dbus socket writable, a grant you
+        make deliberately, not by default. You own the image (build it from the release tarball
+        or start from <code class="font-mono">runner/docker</code>) and every grant in it; the
+        Secret carries a reusable enrollment key, and the state volume keeps each node's runner
+        identity stable across pod restarts.
+      </p>
+
+      <.docs_h2 id="nomad">A Nomad system job</.docs_h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Same idea on Nomad: a <code class="font-mono">system</code>
+        job places one instance on every client node. Fetch the release tarball in an
+        <code class="font-mono">artifact</code>
+        stanza (or use a Docker image), pass <code class="font-mono">EMISAR_URL</code>
+        and the reusable enrollment key through the environment or Vault, and persist
+        <code class="font-mono">/var/lib/emisar</code>
+        with a host volume so identity survives reschedules. If the job runs with
+        <code class="font-mono">driver = "exec"</code>
+        directly on the client, the runner sees the node — same visibility as a host install,
+        supervised by Nomad instead of systemd.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

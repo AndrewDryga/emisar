@@ -710,7 +710,7 @@ database = Enum.find(runners, &(&1.name == "pg-primary-iad"))
 # drive the bridge with no manual minting. Locally (no env) it's a random
 # secret like any real key.
 
-agent_key_name = "Claude Code - on-call"
+agent_key_name = "Claude Code"
 
 agent_key_attrs = %{
   name: agent_key_name,

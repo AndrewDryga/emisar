@@ -134,9 +134,11 @@ await crop(p, { heading: "Default policy", climb: "section" }, "policy-editor");
 
 // The natural log leads with auth + runner-lifecycle noise; filter to the Run
 // group so the hero shows the audit trail's core — gated action dispatches with
-// their outcomes (Succeeded / Failed / Awaiting approval) — capped to a slice.
+// their outcomes (Awaiting approval / Succeeded / Failed) — capped to a slice.
+// An active filter auto-opens the facet panel; climb from #audit-events to the
+// live_table root (.space-y-4) so the crop leads with those expanded filters.
 await goRaw("/app/demo/audit?event_type[]=group:Run");
-await crop(p, { selector: "#audit-events" }, "audit-view"); // tall; conversion crops the top slice
+await crop(p, { selector: "#audit-events", climb: ".space-y-4" }, "audit-view"); // tall; conversion crops the top slice
 
 await go("/app/demo/runbooks");
 await crop(p, { selector: "#runbooks" }, "runbooks");
@@ -184,7 +186,7 @@ await b.close();
 const PAD = 40, WIDTH = 1600, Q = 82;
 const SHOTS = [
   { name: "policy-editor", out: "screenshots/policy-editor.webp" },
-  { name: "audit-view", out: "screenshots/audit-view.webp", topCss: 700 },
+  { name: "audit-view", out: "screenshots/audit-view.webp", topCss: 1180 },
   { name: "runbooks", out: "screenshots/runbooks.webp" },
   { name: "runner-fleet", out: "screenshots/runner-fleet.webp" },
   { name: "team-page", out: "screenshots/team-page.webp" },

@@ -1,19 +1,25 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Single sign-on", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Single sign-on &amp; directory sync
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        On Team and Enterprise plans, your team signs in to emisar with your own identity
-        provider — Google Workspace, Okta, Keycloak, or any compliant OIDC. On Enterprise, your
-        directory drives the rest: provision people from the IdP, and when someone is offboarded
-        there, their emisar access is revoked automatically — sessions ended, API keys revoked, no
-        manual cleanup.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="sso"
+      toc={[
+        {"sso-login", "Setting up SSO login"},
+        {"scim", "Directory sync (SCIM 2.0)"},
+        {"group-role", "Group → role mapping"},
+        {"security-notes", "Security notes"}
+      ]}
+    >
+      <.docs_header current="sso">
+        <:dek>
+          On Team and Enterprise plans, your team signs in to emisar with your own identity
+          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC. On Enterprise, your
+          directory drives the rest: provision people from the IdP, and when someone is offboarded
+          there, their emisar access is revoked automatically — sessions ended, API keys revoked, no
+          manual cleanup.
+        </:dek>
+      </.docs_header>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Two pieces, set up independently: <strong class="text-zinc-200">SSO login</strong>
         (sign in through your IdP) and
@@ -26,9 +32,8 @@
         pages.
       </p>
 
-      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm leading-6 text-zinc-400">
-        <p class="font-semibold text-zinc-200">Where these flows stand</p>
-        <p class="mt-1.5">
+      <.docs_callout kind={:note} title="Where these flows stand">
+        <p>
           emisar speaks standards-based OpenID Connect and SCIM 2.0, and the round-trip — OIDC
           discovery, ID-token validation, the full SCIM provision / update / deactivate / reactivate
           lifecycle, and group&nbsp;→&nbsp;role recompute — is verified end to end against a live
@@ -37,11 +42,9 @@
           read of each provider's UI, not a vendor-certified runbook. The emisar side — every step
           and screenshot on this page — is exactly what you'll see.
         </p>
-      </div>
+      </.docs_callout>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        Setting up SSO login
-      </h2>
+      <.docs_h2 id="sso-login">Setting up SSO login</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         You need an emisar owner or admin. Open
         <strong class="text-zinc-200">Team → Single sign-on</strong>
@@ -198,16 +201,16 @@
         </li>
       </ol>
 
-      <h3 class="mt-10 text-lg font-semibold text-zinc-100">How members sign in</h3>
+      <.docs_h3 id="signing-in">How members sign in</.docs_h3>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; if you set an
         allowed email domain, entering an address on it routes them straight to your provider. They
         authenticate at the IdP and come back signed in.
       </p>
 
-      <h3 class="mt-8 text-lg font-semibold text-zinc-100">
+      <.docs_h3 id="subject-not-email">
         Identities are matched by the IdP's subject, never by email
-      </h3>
+      </.docs_h3>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         emisar binds an SSO login to the provider plus the IdP's stable subject identifier (the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
@@ -224,9 +227,7 @@
         at the connection's default role (with the directory as the email authority).
       </p>
 
-      <h3 class="mt-8 text-lg font-semibold text-zinc-100">
-        SSO sessions and your MFA requirement
-      </h3>
+      <.docs_h3 id="sso-mfa">SSO sessions and your MFA requirement</.docs_h3>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Each connection has a per-provider toggle — <em>"sign-in through this provider satisfies
           the account's 2FA requirement."</em>
@@ -239,9 +240,7 @@
         as usual.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        Directory sync (SCIM 2.0)
-      </h2>
+      <.docs_h2 id="scim">Directory sync (SCIM 2.0)</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
@@ -359,9 +358,8 @@
           </span>
         </li>
       </ul>
-      <div class="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm leading-6 text-zinc-300">
-        <p class="font-semibold text-zinc-100">Using Google Workspace?</p>
-        <p class="mt-1.5 text-zinc-400">
+      <.docs_callout kind={:warn} title="Using Google Workspace?">
+        <p>
           Google Workspace is a first-class OIDC <em>login</em>
           provider here, but it has no outbound SCIM — it won't push the user lifecycle to
           emisar. On its own you get just-in-time provisioning on first login and <strong class="text-zinc-200">no automatic deprovisioning</strong>. To close that gap,
@@ -372,12 +370,9 @@
           federate Google through an IdP, so there's usually nothing new to stand up. (Native
           Google directory sync without an IdP is on our roadmap — talk to us if you need it.)
         </p>
-      </div>
-      <div class="mt-4 rounded-xl border border-brand-500/30 bg-brand-500/5 p-4 text-sm leading-6 text-zinc-300">
-        <p class="font-semibold text-zinc-100">
-          Setup note: match the SCIM externalId to the OIDC subject
-        </p>
-        <p class="mt-2">
+      </.docs_callout>
+      <.docs_callout kind={:tip} title="Setup note: match the SCIM externalId to the OIDC subject">
+        <p>
           Configure your IdP so the SCIM
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
           it sends is the same stable identifier as the OIDC
@@ -386,9 +381,9 @@
           record resolve to the same emisar identity — no email-matching anywhere. If the two sides
           can't be configured to share an identifier, that connection can't be reconciled this way.
         </p>
-      </div>
+      </.docs_callout>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Group → role mapping</h2>
+      <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
         — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
@@ -400,7 +395,7 @@
         — it stays a deliberate human assignment.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Security notes</h2>
+      <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -464,7 +459,7 @@
           Security overview <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

@@ -1,28 +1,36 @@
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
 
-  <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Action packs", nil}]} />
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Action packs
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        An action pack is a versioned, content-addressed directory of YAML
-        action declarations. The runner loads the pack at boot, advertises
-        every action to the control plane, and refuses anything not in this
-        catalog. This is the contract between your ops team and the LLM.
-      </p>
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="action-packs"
+      toc={[
+        {"layout", "Layout"},
+        {"pack-yaml", "pack.yaml"},
+        {"action-yaml", "An action YAML"},
+        {"field-reference", "Field reference"},
+        {"pack-trust", "Pack trust"},
+        {"drift-detection", "Drift detection"}
+      ]}
+    >
+      <.docs_header current="action-packs">
+        <:dek>
+          An action pack is a versioned, content-addressed directory of YAML
+          action declarations. The runner loads the pack at boot, advertises
+          every action to the control plane, and refuses anything not in this
+          catalog. This is the contract between your ops team and the LLM.
+        </:dek>
+      </.docs_header>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Layout</h2>
-      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
+      <.docs_h2 id="layout">Layout</.docs_h2>
+      <.docs_code phx-no-format>my-pack/
   pack.yaml              # pack-level metadata
   actions/
     disk_usage.yaml      # one declared action per file
-    nodetool_repair.yaml</pre>
+    nodetool_repair.yaml</.docs_code>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">pack.yaml</h2>
-      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+      <.docs_h2 id="pack-yaml">pack.yaml</.docs_h2>
+      <.docs_code phx-no-format label="yaml">schema_version: 1
 id: cassandra
 name: Cassandra operations
 version: 0.4.0
@@ -32,7 +40,7 @@ homepage: https://github.com/acme/cassandra-pack
 allow_symlinks: false
 actions:
   - actions/nodetool_status.yaml
-  - actions/nodetool_repair.yaml</pre>
+  - actions/nodetool_repair.yaml</.docs_code>
       <p class="mt-3 text-sm text-zinc-400">
         <code>allow_symlinks</code> defaults to <code>false</code>: the loader rejects
         symlinked action YAMLs and scripts unless you opt in. Together with the
@@ -40,8 +48,8 @@ actions:
         pack from being silently accepted.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">An action YAML</h2>
-      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+      <.docs_h2 id="action-yaml">An action YAML</.docs_h2>
+      <.docs_code phx-no-format label="yaml">schema_version: 1
 id: linux.grep_log
 title: Grep a log file
 kind: exec
@@ -87,9 +95,9 @@ examples:
   - title: Tail nginx access for 5xx
     args:
       file: /var/log/nginx/access.log
-      pattern: " 5\\d\\d "</pre>
+      pattern: " 5\\d\\d "</.docs_code>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Field reference</h2>
+      <.docs_h2 id="field-reference">Field reference</.docs_h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
         <li>
           <strong>kind</strong>
@@ -145,7 +153,7 @@ examples:
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Pack trust</h2>
+      <.docs_h2 id="pack-trust">Pack trust</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-300">
         Every pack is content-addressed by a SHA-256 over all its files. The control plane pins
         the hash an admin trusted; the runner recomputes it and refuses to run a pack whose
@@ -153,8 +161,29 @@ examples:
         trusts its hash — a tampered mirror is rejected, not silently run. This is content
         integrity, not publisher signing: the runner trusts the exact bytes you approved.
       </p>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Ship a host only the packs it needs.</strong>
+            A web box has no use for the <code class="font-mono">postgres</code>
+            pack; a smaller catalog is a smaller surface and a shorter list for an agent to reason
+            over.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Keep the break-glass pack off production.</strong>
+            The <code class="font-mono">shell</code>
+            pack is the one action where the operator supplies the whole command — <code class="font-mono">critical</code>-risk, default-denied — for verifying a fix on
+            staging before you encode it as a real action. Install it on staging; never on a prod
+            runner.
+          </span>
+        </li>
+      </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Drift detection</h2>
+      <.docs_h2 id="drift-detection">Drift detection</.docs_h2>
       <p class="mt-3 text-sm text-zinc-300">
         Once a pack is installed on at least one runner, the in-app Packs page groups every
         observed <code>(pack_id, version, hash)</code> in your account. Two runners on the same
@@ -174,7 +203,7 @@ examples:
           class="text-brand-400 hover:text-brand-300"
         >Author your own pack</.link>.
       </p>
-    </div>
+    </.docs_layout>
   </section>
 
   <.marketing_footer />

@@ -6,13 +6,13 @@
   <.marketing_nav current_user={@current_user} current={:packs} />
 
   <%!-- Hero --%>
-  <section class="py-16 sm:py-20">
+  <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-brand-400">Registry</p>
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+      <p class="text-base font-semibold text-brand-400">Registry</p>
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Action packs
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
         Packs are the catalog emisar runs from — versioned, content-hashed bundles of declared
         actions for the software you already run. Install the ones for your stack in one command;
         your agent can then call exactly those actions, and nothing else.
@@ -28,12 +28,12 @@
             <span class="select-none text-zinc-500">$ </span>sudo emisar pack install postgres --hash sha256:8f34c2&hellip;
           </p>
           <p class="text-zinc-500">
-            # verified against the pinned hash, then live — your agent can call them now
+            # verified against the pinned hash, then live for your agent to call them
           </p>
         </div>
       </div>
 
-      <p class="mt-5 text-sm text-zinc-500">
+      <p class="mt-5 max-w-2xl text-sm text-zinc-500">
         <span class="font-semibold text-zinc-300">
           {@pack_count} packs &middot; {@action_count} declared actions
         </span>
@@ -195,6 +195,16 @@
             YAML reference
           </.marketing_button>
         </div>
+        <p class="mx-auto mt-6 max-w-xl text-xs leading-5 text-zinc-500">
+          Missing a pack that more teams than yours would use?
+          <.external_link
+            href="https://github.com/andrewdryga/emisar/issues/new"
+            class="text-brand-300 hover:text-brand-200"
+          >
+            Open a GitHub issue
+          </.external_link>
+          — we'd rather add it to the catalog once than have every team write its own.
+        </p>
       </div>
     </div>
   </section>

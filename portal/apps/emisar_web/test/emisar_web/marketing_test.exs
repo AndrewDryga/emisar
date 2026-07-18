@@ -20,6 +20,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem
+    /docs/containers
     /changelog
     /about
     /privacy
@@ -41,6 +42,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/mcp-reference
     /guides
     /guides/give-ai-agents-safe-production-access
+    /guides/prompt-injection-for-ops-teams
   )
 
   for route <- @routes do
@@ -107,13 +109,14 @@ defmodule EmisarWeb.MarketingTest do
     # size class — the scale standardizes sizing without touching the tag.
     # marketing_heading leads every title with text-balance + the signature
     # font-display treatment, so the class begins "text-balance font-display
-    # font-bold …" then the scale (which now carries the tighter tracking).
-    # (Home appends page-specific responsive overrides after the scale, so
-    # match the class prefix, not a closed attribute — like the docs line.)
+    # font-bold …" then the scale (which carries the tighter tracking + the
+    # display leading). (Home appends layout classes — the rise-in animation
+    # + a max-width — after the scale, so match the class prefix, not a
+    # closed attribute — like the docs line.)
     home = conn |> get(~p"/") |> html_response(200)
 
     assert home =~
-             ~s(<h1 class="text-balance font-display font-bold text-zinc-50 text-4xl tracking-[-0.035em] sm:text-6xl md:text-7xl)
+             ~s(<h1 class="text-balance font-display font-bold text-zinc-50 text-4xl/[1.1] tracking-[-0.035em] sm:text-6xl/[1.1] md:text-7xl/[1.1])
 
     docs = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
@@ -242,6 +245,24 @@ defmodule EmisarWeb.MarketingTest do
 
     assert html =~ "supported product is the hosted emisar control plane today"
     refute html =~ "Run the control plane in your own VPC"
+  end
+
+  test "containers docs page covers visibility, --no-service, identity, and the fleet shapes",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/containers") |> html_response(200)
+
+    # The honest core: a containerized runner acts on its own namespace.
+    assert html =~ "act on what its own namespace can reach"
+    # The two mechanics: the installer flag and identity persistence.
+    assert html =~ "--no-service"
+    assert html =~ "/var/lib/emisar/token.json"
+    # Fleet templates need a reusable key, not the dashboard's single-use one.
+    assert html =~ "reusable enrollment key"
+    assert html =~ ~s(href="/docs/runners#enrollment-keys")
+    # The three shapes.
+    assert html =~ "DaemonSet"
+    assert html =~ "system"
+    assert html =~ "sidecar"
   end
 
   test "SSO docs page covers login, SCIM deprovisioning, and the subject-not-email binding",
@@ -567,9 +588,9 @@ defmodule EmisarWeb.MarketingTest do
       # framing is "we implement it", never "they endorse us").
       assert html =~ "Not affiliated with or endorsed by Anthropic"
 
-      # A REAL console screenshot, not only mocks — a security buyer sees the
-      # actual product (the audit they'd live in), countering "nothing to show".
-      assert html =~ "/images/screenshots/audit-view.webp"
+      # A REAL console moment, not only mocks — the approval where a human gates
+      # an LLM agent's high-risk action, countering "nothing to show".
+      assert html =~ "/images/screenshots/approval-decision.webp"
     end
 
     test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do
@@ -1099,10 +1120,14 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/pricing")
     end
 
-    test "the docs index flags the plan-gated SSO card before the click", %{conn: conn} do
+    test "the docs index and sidebar carry no plan tags — the gate lives on the page",
+         %{conn: conn} do
+      # Founder call (2026-07-18): nav surfaces are wayfinding; a verbatim
+      # plan label there wraps into noise. The SSO page itself (asserted
+      # above) is where the paywall is named.
       html = conn |> get(~p"/docs") |> html_response(200)
 
-      assert html =~ "Team &amp; Enterprise"
+      refute html =~ "Team &amp; Enterprise"
     end
   end
 

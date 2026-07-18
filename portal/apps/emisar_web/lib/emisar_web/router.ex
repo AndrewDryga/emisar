@@ -177,6 +177,7 @@ defmodule EmisarWeb.Router do
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/deployment", MarketingController, :docs_deployment
     get "/docs/audit-and-siem", MarketingController, :docs_audit
+    get "/docs/containers", MarketingController, :docs_containers
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show

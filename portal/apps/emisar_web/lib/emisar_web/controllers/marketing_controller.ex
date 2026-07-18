@@ -36,7 +36,7 @@ defmodule EmisarWeb.MarketingController do
      "MCP reference — methods, parameters, and errors",
      "The emisar MCP API reference for builders: twelve fixed discovery, action, operation, history, wait, and runbook tools; immutable pack and runner references; atomic mutation recovery; cancellation; signing; and actionable errors."},
     {"/docs/connect-an-llm", :connect_llm, :connect_llm, "Connect an LLM",
-     "Connect Claude.ai and ChatGPT with remote MCP and OAuth, or use the emisar-mcp stdio bridge with Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, and Grok CLI."},
+     "Connect Claude.ai and ChatGPT with remote MCP and OAuth, or use the emisar-mcp stdio bridge with Claude Code, Cursor, Zed, Copilot CLI, and ten more local clients."},
     {"/docs/quickstart", :docs_quickstart, :docs_quickstart,
      "Quickstart — install the runner + run your first action",
      "Zero to your first audited action in five minutes: install the emisar runner on a Linux host with one command, watch it connect, run linux.uptime gated by policy and recorded in the audit trail, then point your LLM at the same catalog over MCP."},
@@ -88,9 +88,12 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/runners", :docs_runners, :docs_runners, "Operating your runner fleet",
      "Groups and labels, single-use enrollment keys, pack credentials via inherit_env, updating the binary and packs, reconnect and stuck-run semantics, host-side troubleshooting, and clean removal."},
     {"/docs/deployment", :docs_deployment, :docs_deployment, "Deploying emisar in production",
-     "From one runner to a governed fleet: a reference architecture, a phased rollout, best practices by layer, two worked examples, and a go-live checklist your security review will recognize."},
+     "From one runner to a governed fleet: how to shape and scope the fleet, a reversible phased rollout, two worked examples, and a go-live checklist your security review will recognize."},
     {"/docs/audit-and-siem", :docs_audit, :docs_audit, "The audit trail & SIEM export",
-     "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."}
+     "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."},
+    {"/docs/containers", :docs_containers, :docs_containers,
+     "Containers & Kubernetes — sidecars, DaemonSets, Nomad",
+     "Run the emisar runner in containers: a sidecar scoped to one app, a Kubernetes DaemonSet per node, or a Nomad system job — the --no-service install, identity across restarts, and what a containerized runner can actually see."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ
@@ -103,13 +106,13 @@ defmodule EmisarWeb.MarketingController do
     {"What can it actually do?",
      "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, never a raw shell."},
     {"Where do approvals happen?",
-     "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
+     "In the web UI and your email inbox. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
     {"Do I have to approve every action?",
-     "No — you decide per action. Reads run automatically; you reserve approvals for the risky, mutating ones. Policy sets allow / require-approval / deny by risk tier, with per-action overrides, and the destructive verbs are deny-by-default."},
+     "No — you decide per action. We all know that agents are most useful when they are unleashed. Reads run automatically. You reserve approvals for the risky, mutating ones. Policy sets allow / require-approval / deny by risk tier, with per-action, per-runner or per-runner-group overrides, and the destructive verbs are deny-by-default."},
     {"What if my runner dies mid-run?",
      "On Linux, the runner kills the child and its process group when it exits (PR_SET_PDEATHSIG + setpgid), so a dead runner doesn't leave the action running. If the runner stays offline, the cloud's dispatch-timeout sweep marks its in-flight runs as errored with the reason within minutes, so nothing reads as running forever."},
     {"Is this MCP-compatible?",
-     "Yes. Claude.ai and ChatGPT connect to emisar's remote JSON-RPC MCP server through OAuth. Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, and Grok CLI can use the emisar-mcp stdio bridge."},
+     "Yes. Claude.ai and ChatGPT connect to emisar's remote JSON-RPC MCP server through OAuth. Fourteen local clients — Claude Code, Claude Desktop, Cursor, Windsurf, Zed, Copilot CLI, Gemini CLI, Codex CLI, and more — plus almost any other MCP agent can use the emisar stdio bridge."},
     {"Can I self-host the control plane?",
      "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if that boundary is a requirement."},
     {"What about secrets?",
@@ -292,7 +295,7 @@ defmodule EmisarWeb.MarketingController do
             <link>#{url}</link>
             <guid isPermaLink="true">#{url}</guid>
             <pubDate>#{EmisarWeb.Changelog.rss_date(entry.date)}</pubDate>
-            <description>#{xml_escape(entry.summary)}</description>
+            <description>#{xml_escape(EmisarWeb.Changelog.full_text(entry))}</description>
           </item>\
         """
       end)
@@ -374,18 +377,25 @@ defmodule EmisarWeb.MarketingController do
   @guides [
     {"give-ai-agents-safe-production-access", :guide_safe_access,
      "How to give an AI agent safe access to production",
-     "You don't hand it your SSH key. You give it a small, declared catalog of actions, gate the risky ones behind a human, and audit every call. Here's the pattern — and why it's the one that holds up.",
-     "June 2026", "8 min read",
-     "How to give an AI agent safe access to production infrastructure: why SSH is the wrong door, the declared-catalog + policy-gate + human-approval + audit pattern that actually holds, and how it maps to Anthropic's Zero-Trust for AI Agents controls."},
-    {"ai-agents-and-ssh-the-risks", :guide_ssh_risks,
-     "Should you give an AI agent SSH? The risks, and the alternative",
-     "Handing an agent a shell on prod is the fastest way to give it access — and the fastest way to regret it. The real risks, why \"just be careful\" doesn't hold, and the alternative that keeps the capability without the blast radius.",
-     "June 2026", "7 min read",
-     "The risks of giving an AI agent SSH access to production — full blast radius, prompt injection into arbitrary commands, no gate before the action and no durable record after — and the declared-action-catalog alternative that keeps the real commands but adds a policy gate, human approval, and a hash-chained audit journal on the host."}
+     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",
+     "July 2026", "7 min read",
+     "How to give an AI agent safe access to production: why SSH keeps ending in deleted-database postmortems, why an MCP server per tool becomes a maintenance and policy burden, and how one MCP with a declared action catalog lets an agent investigate production freely, ship fixes as code, and touch dangerous actions only behind human approval."},
+    {"prompt-injection-for-ops-teams", :guide_prompt_injection,
+     "Prompt injection for ops teams: your logs are prompts now",
+     "The moment an AI agent starts reading your production logs, everyone who can write to them can talk to it. How the trick works — and why the defense that holds isn't a smarter prompt but a shorter list of things the agent can do.",
+     "July 2026", "8 min read",
+     "Prompt injection for AI ops agents: how attacker-controlled text in logs, tickets, and telemetry can steer an agent with production access, why prompt-level defenses and read-only access aren't enough, and how a declared action catalog with policy, approvals, and audited denials turns a successful injection into a visible, refused request."}
   ]
   @guide_summaries Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->
                      %{slug: slug, title: title, dek: dek, date: date, read_time: read_time}
                    end)
+
+  @doc "Internal — the sitemap derives per-guide URLs from `@guides` so they can't drift."
+  def guide_paths do
+    Enum.map(@guides, fn {slug, _action, _title, _dek, _date, _read_time, _desc} ->
+      "/guides/" <> slug
+    end)
+  end
 
   def guides(conn, _params) do
     list_ld =

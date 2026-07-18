@@ -538,6 +538,13 @@ pre::-webkit-scrollbar-track,
   transform: none;
 }
 
+/* Docs "On this page" scroll-spy — docs-toc.js sets data-active on the entry
+   for the section in view; the brand-300 text + brand-400 left rail mark it. */
+[data-toc-link][data-active] {
+  color: #57ecb2;
+  border-color: #36e6a5;
+}
+
 /* ---------------------------------------------------------------------------
    Marketing mobile-nav — the full-screen "gate" menu. The drawer's #07080a fill covers
    the page (and the header's own logo behind it) from frame 0, so the menu's logo can't
@@ -569,6 +576,114 @@ pre::-webkit-scrollbar-track,
   [data-reveal] {
     opacity: 1 !important;
     transform: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The /security approval hero — a still product shot brought to life.
+
+   The screenshot IS the "pending request" state. Three quiet pins name what a
+   reviewer sees (the high-risk flag, the exact command, the human decision),
+   and a single ~5s loop shows the payoff: a cursor approves, and the action
+   lands in the audit trail. Every base state is the lit / at-rest frame and
+   each moving part resets to invisible between loops, so the global
+   reduced-motion override (near-zero duration) — reinforced below — leaves the
+   annotated still: the three labels, no cursor, no row.
+   --------------------------------------------------------------------------- */
+
+/* A callout pin: a brand dot with one slow ping ring. */
+.approval-pin {
+  animation: approval-ping 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes approval-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgb(54 230 165 / 0.5);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px rgb(54 230 165 / 0);
+  }
+}
+
+/* The decision loop. One shared 5s period: a cursor glides onto Approve
+   and presses, a ripple marks the click, and the audit row rises. Each part
+   ends invisible so the loop restarts clean on the still frame. */
+.approval-cursor {
+  animation: approval-cursor 5s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes approval-cursor {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translate(120px, 90px) scale(1);
+  }
+  26% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1); /* arrives on Approve */
+  }
+  30% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.82); /* presses */
+  }
+  35% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  46%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+}
+.approval-ripple {
+  animation: approval-ripple 5s ease-out infinite;
+}
+@keyframes approval-ripple {
+  0%,
+  28% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  32% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  46%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+}
+.approval-audit {
+  animation: approval-audit 5s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes approval-audit {
+  0%,
+  34% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  44%,
+  82% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  92%,
+  100% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Land on the annotated still: pins calm, no cursor / ripple / row. */
+  .approval-pin {
+    animation: none;
+  }
+  .approval-cursor,
+  .approval-ripple,
+  .approval-audit {
+    display: none;
   }
 }
 

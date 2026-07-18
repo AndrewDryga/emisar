@@ -29,6 +29,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/runners",
     "/docs/deployment",
     "/docs/audit-and-siem",
+    "/docs/containers",
     "/docs/security-model",
     "/docs/signed-dispatch",
     "/docs/connect-an-llm",
@@ -43,26 +44,26 @@ defmodule EmisarWeb.SitemapController do
     "/zero-trust",
     "/trust",
     "/how-it-works",
-    "/guides",
-    "/guides/give-ai-agents-safe-production-access",
-    "/guides/ai-agents-and-ssh-the-risks"
+    "/guides"
   ]
 
   @doc """
-  The canonical static marketing/docs paths. Also the source of truth for the
-  no-orphan link test, so a page added to the sitemap is automatically required
-  to be linked from somewhere.
+  The canonical marketing/docs paths: the static routes above plus one entry per
+  published guide (derived from the controller's guide list, so a new guide
+  can't be forgotten here). Also the source of truth for the no-orphan link
+  test, so a page added to the sitemap is automatically required to be linked
+  from somewhere.
   """
-  def paths, do: @paths
+  def paths, do: @paths ++ EmisarWeb.MarketingController.guide_paths()
 
   def show(conn, _params) do
-    # Static marketing routes + a synthesized entry per published pack
-    # (so /packs/linux-core etc. show up in search engines without
-    # having to hand-maintain a list here).
+    # Static marketing routes + derived guide paths + a synthesized entry per
+    # published pack (so /packs/linux-core etc. show up in search engines
+    # without having to hand-maintain a list here).
     pack_paths = Enum.map(EmisarWeb.PacksRegistry.list(), &"/packs/#{&1.id}")
 
     urls =
-      Enum.map_join(@paths ++ pack_paths, "\n", fn path ->
+      Enum.map_join(paths() ++ pack_paths, "\n", fn path ->
         """
           <url>
             <loc>#{@base}#{path}</loc>
