@@ -1,6 +1,6 @@
 # Emisar example packs
 
-80 packs / 1,270 actions covering Linux ops, web/proxy, databases,
+80 packs / 1,285 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-80 packs, 1,270 actions, sorted by id. **Risk** is the pack's ceiling —
+80 packs, 1,285 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -119,7 +119,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `nginx` | 22 | critical | local-host |
 | `nic` | 6 | low | local-host |
 | `nodejs-pm2` | 15 | high | local-host |
-| `nomad` | 60 | critical | NOMAD_* (opt) |
+| `nomad` | 75 | critical | NOMAD_* (opt) |
 | `pfsense` | 37 | critical | PFSENSE_* |
 | `php-fpm` | 10 | low | PHP_FPM_STATUS_URL (opt) |
 | `podman` | 12 | high | local-host |

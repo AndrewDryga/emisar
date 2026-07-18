@@ -7,11 +7,7 @@ description: 'Show the autopilot health view — leader health, follower lag, se
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/operator/autopilot/state\""
+  command: {binary: nomad, argv: ["operator", "api", "/v1/operator/autopilot/state"]}
   timeout: 15s
 output:
   parser: json

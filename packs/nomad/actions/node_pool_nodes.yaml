@@ -1,0 +1,37 @@
+schema_version: 1
+id: nomad.node_pool_nodes
+title: nomad node pool nodes <pool>
+kind: script
+risk: low
+description: >
+  List the client nodes in one node pool — ID, datacenter, status, drain and
+  eligibility (Nomad 1.6+). Use "all" to see every node regardless of pool.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: pool
+    type: string
+    required: true
+    description: Node pool name (from nomad.node_pool_list; "default" and "all" are built in).
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+execution:
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["", "{{ args.region }}", "node pool nodes", "{{ args.pool }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Nodes in the default pool
+    args:
+      pool: "default"

@@ -1,0 +1,31 @@
+schema_version: 1
+id: nomad.deployment_fail
+title: nomad deployment fail <id>
+kind: exec
+risk: high
+description: >
+  Manually fail an in-progress deployment — halts the rollout immediately and,
+  if the job's update stanza has auto_revert, rolls back to the last stable
+  version. The "abort this bad rollout now" verb. Get the deployment ID from
+  nomad.deployment_list or nomad.job_deployments.
+side_effects:
+  - The rollout stops; no further canaries or placements from this deployment.
+  - With auto_revert, the job rolls back to its last stable version.
+args:
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment ID or prefix (from nomad.deployment_list).
+    validation:
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+execution:
+  command: {binary: nomad, argv: ["deployment", "fail", "-detach", "{{ args.deployment_id }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Abort a rollout
+    args:
+      deployment_id: "abc12345"

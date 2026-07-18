@@ -1,0 +1,70 @@
+schema_version: 1
+id: nomad.job_restart
+title: nomad job restart <id>
+kind: script
+risk: high
+description: >
+  Restart one job's allocations in controlled batches, waiting for each batch
+  to come back up before the next — the safe whole-job restart that replaces N
+  hand-rolled per-alloc restarts. mode=in_place restarts tasks inside the
+  existing allocations; mode=migrate stops each batch and lets the scheduler
+  place replacements (possibly on other nodes). Runs non-interactively
+  (-yes -on-error=fail: aborts on the first failed batch).
+side_effects:
+  - Every targeted task is stopped and started again, batch by batch.
+  - In-flight requests on restarting allocs may drop (subject to shutdown_delay).
+  - mode=migrate reschedules allocations, possibly onto different nodes.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: batch_size
+    type: string
+    required: false
+    default: "1"
+    description: Allocations per batch — a count ("2") or a percentage of running allocs ("25%").
+    validation:
+      pattern: "^[1-9][0-9]{0,3}%?$"
+  - name: mode
+    type: string
+    required: false
+    default: "in_place"
+    description: in_place restarts tasks in the existing allocations; migrate stops them and schedules replacements.
+    validation:
+      enum: ["in_place", "migrate"]
+  - name: group
+    type: string
+    required: false
+    default: ""
+    description: Restrict the restart to one task group (empty = all groups).
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+  - name: task
+    type: string
+    required: false
+    default: ""
+    description: Restrict the restart to one task (empty = running tasks; only valid with mode=in_place).
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+execution:
+  script:
+    path: scripts/job_restart.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.job }}", "{{ args.batch_size }}", "{{ args.mode }}", "{{ args.group }}", "{{ args.task }}"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Rolling in-place restart, one alloc at a time
+    args:
+      job: "api"
+  - title: Migrate a quarter of the allocs per batch
+    args:
+      job: "api"
+      batch_size: "25%"
+      mode: "migrate"

@@ -2,20 +2,24 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.26
+version: 0.2.0
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
-  horizontally + vertically, dispatch, revert, promote, stop), per-task
-  CPU/memory resource read + set, allocation introspection + health checks +
-  filesystem ls/stat (metadata only, never file contents) + fixed in-container
-  Redis probes (ping/info via alloc exec, no freeform command) + restart +
-  signal + stop, native service discovery (no Consul) — the high-use reads
-  take optional namespace/region for cross-namespace incident debugging — node
-  fleet
-  management (drain, eligibility, purge), evaluation + deployment status,
-  operator raft + autopilot, CSI + host volumes, ACL policies + tokens,
-  namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the
-  runner host.
+  horizontally + vertically, dispatch, revert, promote, stop + start again,
+  batched whole-job restart, forced re-evaluation), meta-filtered discovery
+  (list jobs with their meta stanza, or every allocation of e.g.
+  managed_by=terraform jobs, filtered server-side), per-task CPU/memory
+  resource read + set, allocation introspection + health checks + filesystem
+  ls/stat (metadata only, never file contents) + fixed in-container Redis
+  probes (ping/info via alloc exec, no freeform command) + restart + signal +
+  stop, job-spec-declared actions (run a command the job author defined),
+  native service discovery (no Consul) — the high-use reads take optional
+  namespace/region for cross-namespace incident debugging — node fleet
+  management (drain, eligibility, purge), node pools, evaluation + deployment
+  status and control (pause, resume, fail/abort a rollout), operator raft +
+  autopilot, CSI volumes + plugin health, host volumes, variable metadata
+  (never values), ACL policies + tokens, namespaces + quotas. Authenticates
+  via NOMAD_ADDR + NOMAD_TOKEN (and the standard TLS env) on the runner host.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -34,25 +38,37 @@ detect:
 
 setup:
   summary: >
-    Both the nomad CLI and the curl-based API actions read the server
-    address and ACL token from NOMAD_ADDR and NOMAD_TOKEN on the runner
-    host.
+    Every action goes through the nomad CLI (the API reads via
+    `nomad operator api`), so the server address, ACL token, and TLS
+    material are read uniformly from the standard NOMAD_* env on the
+    runner host.
   env:
     - name: NOMAD_ADDR
       description: >
-        Server HTTP address, including scheme (the curl actions build
-        URLs directly from it).
+        Server HTTP address, including scheme.
       default: http://127.0.0.1:4646
       example: http://nomad.internal:4646
     - name: NOMAD_TOKEN
       description: >
         ACL token. Required when ACLs are enabled; its policy gates which
         actions succeed.
+    - name: NOMAD_CACERT
+      description: >
+        Path to a CA certificate for verifying an https:// server signed
+        by a private CA. Must be readable by the runner user.
+    - name: NOMAD_CLIENT_CERT
+      description: >
+        Path to a client certificate for mTLS-enabled servers (pair with
+        NOMAD_CLIENT_KEY).
+    - name: NOMAD_CLIENT_KEY
+      description: >
+        Path to the client certificate's private key for mTLS-enabled
+        servers.
   notes:
-    - "Any of NOMAD_ADDR / NOMAD_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
-    - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
-    - "The job_resources and task_resources_set actions also require jq on the runner host (they project / patch the inspect JSON locally)."
-    - "For TLS-enabled servers use an https:// NOMAD_ADDR; the nomad CLI also reads NOMAD_CACERT / NOMAD_CLIENT_CERT / NOMAD_CLIENT_KEY, but the curl actions do not."
+    - "Any NOMAD_* env you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth/TLS)."
+    - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, alloc-exec for job_action_run, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
+    - "The job_resources, task_resources_set, job_list_by_meta, and alloc_list_by_meta actions also require jq on the runner host (they project the API JSON locally)."
+    - "The API-read actions use `nomad operator api` (Nomad CLI 1.4+). Newer verbs degrade with a plain CLI error on older clusters: node pools need Nomad 1.6+, job-declared actions 1.7+, job_start 1.9+."
   verify: nomad.agent_info
 
 actions:
@@ -72,23 +88,33 @@ actions:
   - actions/node_eligibility_disable.yaml
   - actions/node_eligibility_enable.yaml
   - actions/node_purge.yaml
+  # Node pools
+  - actions/node_pool_list.yaml
+  - actions/node_pool_nodes.yaml
+  - actions/node_pool_jobs.yaml
   # Jobs
   - actions/job_status_all.yaml
   - actions/job_status_one.yaml
+  - actions/job_list_by_meta.yaml
   - actions/job_inspect.yaml
   - actions/job_history.yaml
   - actions/job_allocations.yaml
   - actions/job_evaluations.yaml
+  - actions/job_eval.yaml
   - actions/job_deployments.yaml
   - actions/job_periodic_force.yaml
   - actions/job_dispatch.yaml
+  - actions/job_action_run.yaml
   - actions/job_revert.yaml
   - actions/job_resources.yaml
   - actions/job_scale.yaml
   - actions/task_resources_set.yaml
   - actions/job_promote.yaml
+  - actions/job_restart.yaml
   - actions/job_stop.yaml
+  - actions/job_start.yaml
   # Allocations
+  - actions/alloc_list_by_meta.yaml
   - actions/alloc_status.yaml
   - actions/alloc_checks.yaml
   - actions/alloc_fs_ls.yaml
@@ -105,7 +131,11 @@ actions:
   # Evaluations / deployments
   - actions/eval_status.yaml
   - actions/eval_list.yaml
+  - actions/deployment_list.yaml
   - actions/deployment_status.yaml
+  - actions/deployment_pause.yaml
+  - actions/deployment_resume.yaml
+  - actions/deployment_fail.yaml
   # Operator (raft / autopilot / scheduler)
   - actions/operator_scheduler_get_config.yaml
   - actions/operator_raft_list_peers.yaml
@@ -116,6 +146,7 @@ actions:
   # Volumes
   - actions/csi_volume_list.yaml
   - actions/csi_volume_status.yaml
+  - actions/plugin_status.yaml
   - actions/host_volume_list.yaml
   # Services (native discovery — no Consul)
   - actions/service_list.yaml
@@ -126,5 +157,7 @@ actions:
   # Namespaces / quotas
   - actions/namespace_list.yaml
   - actions/quota_list.yaml
+  # Variables (metadata only — never values)
+  - actions/var_list.yaml
   # System
   - actions/system_gc.yaml

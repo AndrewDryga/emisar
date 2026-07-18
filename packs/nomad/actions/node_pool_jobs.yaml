@@ -1,22 +1,17 @@
 schema_version: 1
-id: nomad.job_inspect
-title: nomad job inspect <id>
+id: nomad.node_pool_jobs
+title: nomad node pool jobs <pool>
 kind: script
 risk: low
 description: >
-  Dump one job's full spec as JSON. This surfaces the job's `env` and
-  `template` blocks, which routinely carry injected secrets (DB URLs, API
-  keys, rendered Vault templates). The runner's redaction is a
-  fail-closed backstop, not a guarantee — it is pattern-bound and can
-  miss a bespoke secret whose name and value match no rule.
-side_effects:
-  - One API call.
-  - Read-only, but exposes the job's env/template blocks (may include secrets).
+  List the jobs scheduled into one node pool — which workloads land on that
+  segment of the fleet (Nomad 1.6+).
+side_effects: ["One API call.", "Read-only."]
 args:
-  - name: job
+  - name: pool
     type: string
     required: true
-    description: Job ID.
+    description: Node pool name (from nomad.node_pool_list; "default" and "all" are built in).
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: namespace
@@ -37,17 +32,13 @@ execution:
   script:
     path: scripts/read_nsr.sh
     interpreter: /bin/sh
-  argv: ["{{ args.namespace }}", "{{ args.region }}", "job inspect", "{{ args.job }}"]
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "node pool jobs", "{{ args.pool }}"]
   timeout: 30s
 output:
-  parser: json
-  max_stdout_bytes: 1048576
+  parser: text
+  max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
-  - title: Inspect job
+  - title: Jobs in the default pool
     args:
-      job: "api"
-  - title: Inspect a job in the "prod" namespace
-    args:
-      job: "api"
-      namespace: "prod"
+      pool: "default"

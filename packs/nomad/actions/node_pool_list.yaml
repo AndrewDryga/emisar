@@ -1,0 +1,31 @@
+schema_version: 1
+id: nomad.node_pool_list
+title: nomad node pool list
+kind: script
+risk: low
+description: >
+  List all node pools with their descriptions — the fleet-segmentation view
+  (Nomad 1.6+; the built-in pools are "default" and "all"). Use
+  nomad.node_pool_nodes / nomad.node_pool_jobs to see what is inside one pool.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+execution:
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["", "{{ args.region }}", "node pool list"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All node pools
+    args: {}

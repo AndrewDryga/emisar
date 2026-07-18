@@ -1,0 +1,29 @@
+schema_version: 1
+id: nomad.deployment_pause
+title: nomad deployment pause <id>
+kind: exec
+risk: medium
+description: >
+  Pause an in-progress deployment — placements stop where they are while you
+  investigate; already-placed allocations keep running. Resume with
+  nomad.deployment_resume or abort with nomad.deployment_fail.
+side_effects:
+  - No further placements from this deployment until resumed.
+args:
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment ID or prefix (from nomad.deployment_list).
+    validation:
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+execution:
+  command: {binary: nomad, argv: ["deployment", "pause", "{{ args.deployment_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause a rollout
+    args:
+      deployment_id: "abc12345"

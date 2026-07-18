@@ -1,0 +1,49 @@
+schema_version: 1
+id: nomad.var_list
+title: nomad var list [prefix]
+kind: script
+risk: low
+description: >
+  List Nomad variable METADATA — path, namespace, and modify time only, never
+  the values. Answers "does the variable exist and when did it change" during
+  a debugging session without touching secret material (there is deliberately
+  no variable-read action in this pack). Optionally restrict to a path prefix.
+side_effects: ["One API call.", "Read-only.", "Values are never fetched — metadata only."]
+args:
+  - name: prefix
+    type: string
+    required: false
+    default: ""
+    description: Path prefix to restrict the listing (empty = all variables).
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_/.\\-]{0,127})?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) = the default namespace; "*" = all namespaces.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+execution:
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "var list -out json", "{{ args.prefix }}"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All variable paths
+    args: {}
+  - title: Variables under nomad/jobs
+    args:
+      prefix: "nomad/jobs"

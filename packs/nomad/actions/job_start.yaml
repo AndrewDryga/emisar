@@ -1,0 +1,30 @@
+schema_version: 1
+id: nomad.job_start
+title: nomad job start <id>
+kind: exec
+risk: medium
+description: >
+  Start a stopped job — schedules a new version based on its most recent one.
+  The inverse of nomad.job_stop: the job must still be registered (stopped,
+  not purged). Requires Nomad 1.9+ on the server and CLI.
+side_effects:
+  - A new job version is created and its allocations are scheduled.
+  - Workload that was deliberately stopped starts running again.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID of a stopped (not purged) job.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+execution:
+  command: {binary: nomad, argv: ["job", "start", "-detach", "{{ args.job }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Start a stopped job
+    args:
+      job: "api"

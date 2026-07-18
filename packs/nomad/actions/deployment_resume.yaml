@@ -1,0 +1,28 @@
+schema_version: 1
+id: nomad.deployment_resume
+title: nomad deployment resume <id>
+kind: exec
+risk: medium
+description: >
+  Resume a paused deployment — placements continue from where
+  nomad.deployment_pause stopped them.
+side_effects:
+  - The rollout continues; new allocations are placed per the update stanza.
+args:
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment ID or prefix (from nomad.deployment_list).
+    validation:
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+execution:
+  command: {binary: nomad, argv: ["deployment", "resume", "-detach", "{{ args.deployment_id }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Resume a paused rollout
+    args:
+      deployment_id: "abc12345"

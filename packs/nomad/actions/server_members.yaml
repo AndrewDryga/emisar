@@ -7,11 +7,7 @@ description: List the server members as JSON. Use for programmatic consumption.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/agent/members\""
+  command: {binary: nomad, argv: ["operator", "api", "/v1/agent/members"]}
   timeout: 15s
 output:
   parser: json

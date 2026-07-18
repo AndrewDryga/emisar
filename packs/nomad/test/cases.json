@@ -88,6 +88,11 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.alloc_list_by_meta",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
       "action": "nomad.alloc_logs",
       "args": {
         "alloc_id": "abc12345",
@@ -166,6 +171,44 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.deployment_fail",
+      "args": {
+        "deployment_id": "abc12345"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "nomad.deployment_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nomad.deployment_pause",
+      "args": {
+        "deployment_id": "abc12345"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "nomad.deployment_resume",
+      "args": {
+        "deployment_id": "abc12345"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
       "action": "nomad.deployment_status",
       "args": {
         "deployment_id": "abc12345"
@@ -195,6 +238,20 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.job_action_run",
+      "args": {
+        "action_name": "reload-config",
+        "group": "web",
+        "job": "api",
+        "task": "app"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
       "action": "nomad.job_allocations",
       "args": {
         "job": "api"
@@ -221,6 +278,17 @@
       "skip": "mutator skipped by default (high)"
     },
     {
+      "action": "nomad.job_eval",
+      "args": {
+        "job": "api"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
       "action": "nomad.job_evaluations",
       "args": {
         "job": "api"
@@ -243,6 +311,11 @@
       "args": {
         "job": "api"
       },
+      "expect_exit": 0
+    },
+    {
+      "action": "nomad.job_list_by_meta",
+      "args": {},
       "expect_exit": 0
     },
     {
@@ -275,6 +348,17 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.job_restart",
+      "args": {
+        "job": "api"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
       "action": "nomad.job_revert",
       "args": {
         "job": "api",
@@ -291,6 +375,17 @@
       "args": {
         "count": 10,
         "group": "web",
+        "job": "api"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "nomad.job_start",
+      "args": {
         "job": "api"
       },
       "expect_exit": [
@@ -382,6 +477,25 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.node_pool_jobs",
+      "args": {
+        "pool": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "nomad.node_pool_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nomad.node_pool_nodes",
+      "args": {
+        "pool": "default"
+      },
+      "expect_exit": 0
+    },
+    {
       "action": "nomad.node_purge",
       "args": {
         "node_id": "deadbeef"
@@ -436,6 +550,11 @@
       "expect_exit": 0
     },
     {
+      "action": "nomad.plugin_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
       "action": "nomad.quota_list",
       "args": {},
       "expect_exit": 0
@@ -480,6 +599,11 @@
         1
       ],
       "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "nomad.var_list",
+      "args": {},
+      "expect_exit": 0
     }
   ]
 }

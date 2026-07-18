@@ -35406,13 +35406,13 @@
     {
       "id": "nomad",
       "name": "HashiCorp Nomad",
-      "version": "0.1.26",
-      "description": "Deep Nomad operations — full job lifecycle (inspect, history, scale horizontally + vertically, dispatch, revert, promote, stop), per-task CPU/memory resource read + set, allocation introspection + health checks + filesystem ls/stat (metadata only, never file contents) + fixed in-container Redis probes (ping/info via alloc exec, no freeform command) + restart + signal + stop, native service discovery (no Consul) — the high-use reads take optional namespace/region for cross-namespace incident debugging — node fleet management (drain, eligibility, purge), evaluation + deployment status, operator raft + autopilot, CSI + host volumes, ACL policies + tokens, namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the runner host.",
+      "version": "0.2.0",
+      "description": "Deep Nomad operations — full job lifecycle (inspect, history, scale horizontally + vertically, dispatch, revert, promote, stop + start again, batched whole-job restart, forced re-evaluation), meta-filtered discovery (list jobs with their meta stanza, or every allocation of e.g. managed_by=terraform jobs, filtered server-side), per-task CPU/memory resource read + set, allocation introspection + health checks + filesystem ls/stat (metadata only, never file contents) + fixed in-container Redis probes (ping/info via alloc exec, no freeform command) + restart + signal + stop, job-spec-declared actions (run a command the job author defined), native service discovery (no Consul) — the high-use reads take optional namespace/region for cross-namespace incident debugging — node fleet management (drain, eligibility, purge), node pools, evaluation + deployment status and control (pause, resume, fail/abort a rollout), operator raft + autopilot, CSI volumes + plugin health, host volumes, variable metadata (never values), ACL policies + tokens, namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN (and the standard TLS env) on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nomad",
-      "content_hash": "sha256:99a56f5ec55b6287d71dec133f8161f692926200267d5567f1b78d8a5a4d27ed",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/nomad/0.1.26/99a56f5ec55b6287d71dec133f8161f692926200267d5567f1b78d8a5a4d27ed/pack.tar.gz",
+      "content_hash": "sha256:5323a21ccc7ca41b2bdc62468ba0a700500ad91a1b4df01b7749d5b149a9f1ec",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nomad/0.2.0/5323a21ccc7ca41b2bdc62468ba0a700500ad91a1b4df01b7749d5b149a9f1ec/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -35603,10 +35603,11 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/agent/self\""
+              "operator",
+              "api",
+              "/v1/agent/self"
             ]
           }
         },
@@ -35916,6 +35917,64 @@
               "/v1/client/fs/stat/{{ args.alloc_id }}?path={{ args.path }}"
             ]
           }
+        },
+        {
+          "id": "nomad.alloc_list_by_meta",
+          "title": "List allocations by job meta (GET /v1/allocations?filter=Job.Meta[…])",
+          "summary": "List allocations cluster-wide whose JOB's `meta` stanza has a key equal to a value — e.g. every allocation of terraform-managed jobs (managed_by=terraform) in one call, instead of walking jobs one by one with nomad.job_allocations. The filter runs server-side against the job embedded in each allocation; alloc rows themselves carry no meta, so use nomad.job_list_by_meta to see the labels. Omit meta_key/meta_value to list every allocation. Requires jq on the runner host.",
+          "description": "List allocations cluster-wide whose JOB's `meta` stanza has a key equal to a value — e.g. every allocation of terraform-managed jobs (managed_by=terraform) in one call, instead of walking jobs one by one with nomad.job_allocations. The filter runs server-side against the job embedded in each allocation; alloc rows themselves carry no meta, so use nomad.job_list_by_meta to see the labels. Omit meta_key/meta_value to list every allocation. Requires jq on the runner host.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "meta_key",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Job meta key to filter on (empty = no filter, list all allocations).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-]{0,63})?$"
+              }
+            },
+            {
+              "name": "meta_value",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Exact value meta_key must equal (required when meta_key is set).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-/:]{0,255})?$"
+              }
+            },
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) = the default namespace; \"*\" = all namespaces.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All allocations (compact)",
+              "args": {}
+            },
+            {
+              "title": "Allocations of terraform-managed jobs",
+              "args": {
+                "meta_key": "managed_by",
+                "meta_value": "terraform"
+              }
+            }
+          ],
+          "search_terms": []
         },
         {
           "id": "nomad.alloc_logs",
@@ -36228,10 +36287,11 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/client/allocation/{{ args.alloc_id }}/stats\""
+              "operator",
+              "api",
+              "/v1/client/allocation/{{ args.alloc_id }}/stats"
             ]
           }
         },
@@ -36398,6 +36458,173 @@
               "volume",
               "status",
               "{{ args.volume_id }}"
+            ]
+          }
+        },
+        {
+          "id": "nomad.deployment_fail",
+          "title": "nomad deployment fail <id>",
+          "summary": "Manually fail an in-progress deployment — halts the rollout immediately and, if the job's update stanza has auto_revert, rolls back to the last stable version. The \"abort this bad rollout now\" verb. Get the deployment ID from nomad.deployment_list or nomad.job_deployments.",
+          "description": "Manually fail an in-progress deployment — halts the rollout immediately and, if the job's update stanza has auto_revert, rolls back to the last stable version. The \"abort this bad rollout now\" verb. Get the deployment ID from nomad.deployment_list or nomad.job_deployments.",
+          "kind": "exec",
+          "risk": "high",
+          "side_effects": [
+            "The rollout stops; no further canaries or placements from this deployment.",
+            "With auto_revert, the job rolls back to its last stable version."
+          ],
+          "args": [
+            {
+              "name": "deployment_id",
+              "type": "string",
+              "required": true,
+              "description": "Deployment ID or prefix (from nomad.deployment_list).",
+              "validation": {
+                "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Abort a rollout",
+              "args": {
+                "deployment_id": "abc12345"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "nomad",
+            "argv": [
+              "deployment",
+              "fail",
+              "-detach",
+              "{{ args.deployment_id }}"
+            ]
+          }
+        },
+        {
+          "id": "nomad.deployment_list",
+          "title": "nomad deployment list",
+          "summary": "List all deployments cluster-wide with their job, status, and description — the \"what is rolling out right now\" read. Use nomad.deployment_status for one deployment's full canary/health detail, or nomad.job_deployments for one job's history.",
+          "description": "List all deployments cluster-wide with their job, status, and description — the \"what is rolling out right now\" read. Use nomad.deployment_status for one deployment's full canary/health detail, or nomad.job_deployments for one job's history.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All deployments",
+              "args": {}
+            },
+            {
+              "title": "Deployments in the \"prod\" namespace",
+              "args": {
+                "namespace": "prod"
+              }
+            }
+          ],
+          "search_terms": []
+        },
+        {
+          "id": "nomad.deployment_pause",
+          "title": "nomad deployment pause <id>",
+          "summary": "Pause an in-progress deployment — placements stop where they are while you investigate; already-placed allocations keep running. Resume with nomad.deployment_resume or abort with nomad.deployment_fail.",
+          "description": "Pause an in-progress deployment — placements stop where they are while you investigate; already-placed allocations keep running. Resume with nomad.deployment_resume or abort with nomad.deployment_fail.",
+          "kind": "exec",
+          "risk": "medium",
+          "side_effects": [
+            "No further placements from this deployment until resumed."
+          ],
+          "args": [
+            {
+              "name": "deployment_id",
+              "type": "string",
+              "required": true,
+              "description": "Deployment ID or prefix (from nomad.deployment_list).",
+              "validation": {
+                "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Pause a rollout",
+              "args": {
+                "deployment_id": "abc12345"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "nomad",
+            "argv": [
+              "deployment",
+              "pause",
+              "{{ args.deployment_id }}"
+            ]
+          }
+        },
+        {
+          "id": "nomad.deployment_resume",
+          "title": "nomad deployment resume <id>",
+          "summary": "Resume a paused deployment — placements continue from where nomad.deployment_pause stopped them.",
+          "description": "Resume a paused deployment — placements continue from where nomad.deployment_pause stopped them.",
+          "kind": "exec",
+          "risk": "medium",
+          "side_effects": [
+            "The rollout continues; new allocations are placed per the update stanza."
+          ],
+          "args": [
+            {
+              "name": "deployment_id",
+              "type": "string",
+              "required": true,
+              "description": "Deployment ID or prefix (from nomad.deployment_list).",
+              "validation": {
+                "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Resume a paused rollout",
+              "args": {
+                "deployment_id": "abc12345"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "nomad",
+            "argv": [
+              "deployment",
+              "resume",
+              "-detach",
+              "{{ args.deployment_id }}"
             ]
           }
         },
@@ -36596,10 +36823,87 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/nodes\" | head -200"
+              "operator",
+              "api",
+              "/v1/nodes"
+            ]
+          }
+        },
+        {
+          "id": "nomad.job_action_run",
+          "title": "nomad action -job <job> -group <group> -task <task> <name>",
+          "summary": "Run a job-spec-defined action inside a running allocation (Nomad 1.7+).",
+          "description": "Run a job-spec-defined action inside a running allocation (Nomad 1.7+). Nomad job authors declare named commands in the task's `action` blocks; this executes ONE of them by name — whatever command the job spec declares, with the task's own environment and filesystem. The pack fixes nothing about the command itself, so treat this as remote execution bounded by the job author, not by this pack. List a job's declared actions via nomad.job_inspect (TaskGroups[].Tasks[].Actions). Requires a token with alloc-exec.",
+          "kind": "exec",
+          "risk": "high",
+          "side_effects": [
+            "The job-defined command runs inside the task's container/environment.",
+            "Effect depends entirely on what the job author declared."
+          ],
+          "args": [
+            {
+              "name": "job",
+              "type": "string",
+              "required": true,
+              "description": "Job ID.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "group",
+              "type": "string",
+              "required": true,
+              "description": "Task group name.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "task",
+              "type": "string",
+              "required": true,
+              "description": "Task name.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "action_name",
+              "type": "string",
+              "required": true,
+              "description": "The action name declared in the job spec's `action` block.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Run a job-declared action",
+              "args": {
+                "action_name": "reload-config",
+                "group": "web",
+                "job": "api",
+                "task": "app"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "nomad",
+            "argv": [
+              "action",
+              "-job",
+              "{{ args.job }}",
+              "-group",
+              "{{ args.group }}",
+              "-task",
+              "{{ args.task }}",
+              "--",
+              "{{ args.action_name }}"
             ]
           }
         },
@@ -36755,6 +37059,64 @@
           }
         },
         {
+          "id": "nomad.job_eval",
+          "title": "nomad job eval <id>",
+          "summary": "Force a new evaluation for one job — kick the scheduler to retry placement now. With force_reschedule=true, failed allocations are rescheduled even if they are not currently eligible (past their reschedule backoff) — the \"we fixed the cause, try again\" verb after an incident.",
+          "description": "Force a new evaluation for one job — kick the scheduler to retry placement now. With force_reschedule=true, failed allocations are rescheduled even if they are not currently eligible (past their reschedule backoff) — the \"we fixed the cause, try again\" verb after an incident.",
+          "kind": "exec",
+          "risk": "medium",
+          "side_effects": [
+            "A new evaluation is created; the scheduler may place or reschedule allocations."
+          ],
+          "args": [
+            {
+              "name": "job",
+              "type": "string",
+              "required": true,
+              "description": "Job ID.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "force_reschedule",
+              "type": "string",
+              "required": false,
+              "default": "false",
+              "description": "true also reschedules failed allocations that are past their reschedule limit.",
+              "validation": {
+                "enum": [
+                  "false",
+                  "true"
+                ]
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Re-evaluate a job",
+              "args": {
+                "job": "api"
+              }
+            },
+            {
+              "title": "Force failed allocs to reschedule",
+              "args": {
+                "force_reschedule": "true",
+                "job": "api"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "/bin/sh",
+            "argv": [
+              "-c",
+              "if [ '{{ args.force_reschedule }}' = 'true' ]; then exec nomad job eval -detach -force-reschedule -- '{{ args.job }}'; else exec nomad job eval -detach -- '{{ args.job }}'; fi"
+            ]
+          }
+        },
+        {
           "id": "nomad.job_evaluations",
           "title": "nomad job eval <id> (force re-evaluation)",
           "summary": "Forces a fresh evaluation of one job — the scheduler re-checks placement and constraints and may reschedule allocations. NOT read-only: the CLI `nomad job eval` creates a new evaluation, it does not just list them.",
@@ -36841,7 +37203,7 @@
           "title": "nomad job inspect <id>",
           "summary": "Dump one job's full spec as JSON. This surfaces the job's `env` and `template` blocks, which routinely carry injected secrets (DB URLs, API keys, rendered Vault templates). The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
           "description": "Dump one job's full spec as JSON. This surfaces the job's `env` and `template` blocks, which routinely carry injected secrets (DB URLs, API keys, rendered Vault templates). The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
-          "kind": "exec",
+          "kind": "script",
           "risk": "low",
           "side_effects": [
             "One API call.",
@@ -36856,6 +37218,26 @@
               "validation": {
                 "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
               }
+            },
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
             }
           ],
           "examples": [
@@ -36864,17 +37246,82 @@
               "args": {
                 "job": "api"
               }
+            },
+            {
+              "title": "Inspect a job in the \"prod\" namespace",
+              "args": {
+                "job": "api",
+                "namespace": "prod"
+              }
             }
           ],
-          "search_terms": [],
-          "command": {
-            "binary": "nomad",
-            "argv": [
-              "job",
-              "inspect",
-              "{{ args.job }}"
-            ]
-          }
+          "search_terms": []
+        },
+        {
+          "id": "nomad.job_list_by_meta",
+          "title": "List jobs with meta (GET /v1/jobs?meta=true [&filter])",
+          "summary": "List jobs together with their `meta` stanza (managed_by, application, part_of, image_tag, …), optionally filtered server-side to the jobs whose meta key equals a value — e.g. every job with managed_by=terraform. This is the label-aware job discovery read: nomad.job_status_all shows no meta at all, and without this the only way to see a job's meta is nomad.job_inspect, one job at a time. Omit meta_key/meta_value to list every job with its meta. Requires jq on the runner host.",
+          "description": "List jobs together with their `meta` stanza (managed_by, application, part_of, image_tag, …), optionally filtered server-side to the jobs whose meta key equals a value — e.g. every job with managed_by=terraform. This is the label-aware job discovery read: nomad.job_status_all shows no meta at all, and without this the only way to see a job's meta is nomad.job_inspect, one job at a time. Omit meta_key/meta_value to list every job with its meta. Requires jq on the runner host.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "meta_key",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Job meta key to filter on (empty = no filter, list all jobs).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-]{0,63})?$"
+              }
+            },
+            {
+              "name": "meta_value",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Exact value meta_key must equal (required when meta_key is set).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-/:]{0,255})?$"
+              }
+            },
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) = the default namespace; \"*\" = all namespaces.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All jobs with their meta",
+              "args": {}
+            },
+            {
+              "title": "Jobs managed by Terraform",
+              "args": {
+                "meta_key": "managed_by",
+                "meta_value": "terraform"
+              }
+            },
+            {
+              "title": "One application's jobs across all namespaces",
+              "args": {
+                "meta_key": "application",
+                "meta_value": "blitz-website",
+                "namespace": "*"
+              }
+            }
+          ],
+          "search_terms": []
         },
         {
           "id": "nomad.job_periodic_force",
@@ -36984,6 +37431,90 @@
               "title": "Show current resources per group/task",
               "args": {
                 "job": "api"
+              }
+            }
+          ],
+          "search_terms": []
+        },
+        {
+          "id": "nomad.job_restart",
+          "title": "nomad job restart <id>",
+          "summary": "Restart one job's allocations in controlled batches, waiting for each batch to come back up before the next — the safe whole-job restart that replaces N hand-rolled per-alloc restarts. mode=in_place restarts tasks inside the existing allocations; mode=migrate stops each batch and lets the scheduler place replacements (possibly on other nodes). Runs non-interactively (-yes -on-error=fail: aborts on the first failed batch).",
+          "description": "Restart one job's allocations in controlled batches, waiting for each batch to come back up before the next — the safe whole-job restart that replaces N hand-rolled per-alloc restarts. mode=in_place restarts tasks inside the existing allocations; mode=migrate stops each batch and lets the scheduler place replacements (possibly on other nodes). Runs non-interactively (-yes -on-error=fail: aborts on the first failed batch).",
+          "kind": "script",
+          "risk": "high",
+          "side_effects": [
+            "Every targeted task is stopped and started again, batch by batch.",
+            "In-flight requests on restarting allocs may drop (subject to shutdown_delay).",
+            "mode=migrate reschedules allocations, possibly onto different nodes."
+          ],
+          "args": [
+            {
+              "name": "job",
+              "type": "string",
+              "required": true,
+              "description": "Job ID.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "batch_size",
+              "type": "string",
+              "required": false,
+              "default": "1",
+              "description": "Allocations per batch — a count (\"2\") or a percentage of running allocs (\"25%\").",
+              "validation": {
+                "pattern": "^[1-9][0-9]{0,3}%?$"
+              }
+            },
+            {
+              "name": "mode",
+              "type": "string",
+              "required": false,
+              "default": "in_place",
+              "description": "in_place restarts tasks in the existing allocations; migrate stops them and schedules replacements.",
+              "validation": {
+                "enum": [
+                  "in_place",
+                  "migrate"
+                ]
+              }
+            },
+            {
+              "name": "group",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Restrict the restart to one task group (empty = all groups).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "task",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Restrict the restart to one task (empty = running tasks; only valid with mode=in_place).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Rolling in-place restart, one alloc at a time",
+              "args": {
+                "job": "api"
+              }
+            },
+            {
+              "title": "Migrate a quarter of the allocs per batch",
+              "args": {
+                "batch_size": "25%",
+                "job": "api",
+                "mode": "migrate"
               }
             }
           ],
@@ -37101,6 +37632,47 @@
               "{{ args.job }}",
               "{{ args.group }}",
               "{{ args.count }}"
+            ]
+          }
+        },
+        {
+          "id": "nomad.job_start",
+          "title": "nomad job start <id>",
+          "summary": "Start a stopped job — schedules a new version based on its most recent one. The inverse of nomad.job_stop: the job must still be registered (stopped, not purged). Requires Nomad 1.9+ on the server and CLI.",
+          "description": "Start a stopped job — schedules a new version based on its most recent one. The inverse of nomad.job_stop: the job must still be registered (stopped, not purged). Requires Nomad 1.9+ on the server and CLI.",
+          "kind": "exec",
+          "risk": "medium",
+          "side_effects": [
+            "A new job version is created and its allocations are scheduled.",
+            "Workload that was deliberately stopped starts running again."
+          ],
+          "args": [
+            {
+              "name": "job",
+              "type": "string",
+              "required": true,
+              "description": "Job ID of a stopped (not purged) job.",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Start a stopped job",
+              "args": {
+                "job": "api"
+              }
+            }
+          ],
+          "search_terms": [],
+          "command": {
+            "binary": "nomad",
+            "argv": [
+              "job",
+              "start",
+              "-detach",
+              "{{ args.job }}"
             ]
           }
         },
@@ -37271,10 +37843,11 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/status/leader\""
+              "operator",
+              "api",
+              "/v1/status/leader"
             ]
           }
         },
@@ -37511,6 +38084,131 @@
           }
         },
         {
+          "id": "nomad.node_pool_jobs",
+          "title": "nomad node pool jobs <pool>",
+          "summary": "List the jobs scheduled into one node pool — which workloads land on that segment of the fleet (Nomad 1.6+).",
+          "description": "List the jobs scheduled into one node pool — which workloads land on that segment of the fleet (Nomad 1.6+).",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "pool",
+              "type": "string",
+              "required": true,
+              "description": "Node pool name (from nomad.node_pool_list; \"default\" and \"all\" are built in).",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Jobs in the default pool",
+              "args": {
+                "pool": "default"
+              }
+            }
+          ],
+          "search_terms": []
+        },
+        {
+          "id": "nomad.node_pool_list",
+          "title": "nomad node pool list",
+          "summary": "List all node pools with their descriptions — the fleet-segmentation view (Nomad 1.6+; the built-in pools are \"default\" and \"all\"). Use nomad.node_pool_nodes / nomad.node_pool_jobs to see what is inside one pool.",
+          "description": "List all node pools with their descriptions — the fleet-segmentation view (Nomad 1.6+; the built-in pools are \"default\" and \"all\"). Use nomad.node_pool_nodes / nomad.node_pool_jobs to see what is inside one pool.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All node pools",
+              "args": {}
+            }
+          ],
+          "search_terms": []
+        },
+        {
+          "id": "nomad.node_pool_nodes",
+          "title": "nomad node pool nodes <pool>",
+          "summary": "List the client nodes in one node pool — ID, datacenter, status, drain and eligibility (Nomad 1.6+). Use \"all\" to see every node regardless of pool.",
+          "description": "List the client nodes in one node pool — ID, datacenter, status, drain and eligibility (Nomad 1.6+). Use \"all\" to see every node regardless of pool.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "pool",
+              "type": "string",
+              "required": true,
+              "description": "Node pool name (from nomad.node_pool_list; \"default\" and \"all\" are built in).",
+              "validation": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "Nodes in the default pool",
+              "args": {
+                "pool": "default"
+              }
+            }
+          ],
+          "search_terms": []
+        },
+        {
           "id": "nomad.node_purge",
           "title": "Purge a dead node (PUT /v1/node/<id>/purge)",
           "summary": "Removes a dead (down) node from the catalog; allocations on it are GC'd. There is no `nomad node purge` CLI subcommand — this is the HTTP API (PUT /v1/node/<id>/purge). Only valid for nodes that are down.",
@@ -37543,10 +38241,13 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- -X PUT \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/node/{{ args.node_id }}/purge\""
+              "operator",
+              "api",
+              "-X",
+              "PUT",
+              "/v1/node/{{ args.node_id }}/purge"
             ]
           }
         },
@@ -37667,10 +38368,11 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/operator/autopilot/state\""
+              "operator",
+              "api",
+              "/v1/operator/autopilot/state"
             ]
           }
         },
@@ -37774,6 +38476,53 @@
           }
         },
         {
+          "id": "nomad.plugin_status",
+          "title": "nomad plugin status [id]",
+          "summary": "Show CSI plugin health — controller/node instance counts and whether the plugin is healthy. When a CSI volume is stuck, the answer is usually here, not in the volume itself. Omit plugin_id to list every plugin; pass one for its detail (from the list, or nomad.csi_volume_status's \"Plugin ID\").",
+          "description": "Show CSI plugin health — controller/node instance counts and whether the plugin is healthy. When a CSI volume is stuck, the answer is usually here, not in the volume itself. Omit plugin_id to list every plugin; pass one for its detail (from the list, or nomad.csi_volume_status's \"Plugin ID\").",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only."
+          ],
+          "args": [
+            {
+              "name": "plugin_id",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Plugin ID or prefix (empty = list all plugins).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All CSI plugins",
+              "args": {}
+            },
+            {
+              "title": "One plugin's health",
+              "args": {
+                "plugin_id": "aws-ebs0"
+              }
+            }
+          ],
+          "search_terms": []
+        },
+        {
           "id": "nomad.quota_list",
           "title": "nomad quota list",
           "summary": "List resource quotas (Enterprise feature).",
@@ -37820,10 +38569,11 @@
           ],
           "search_terms": [],
           "command": {
-            "binary": "/bin/sh",
+            "binary": "nomad",
             "argv": [
-              "-c",
-              "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/agent/members\""
+              "operator",
+              "api",
+              "/v1/agent/members"
             ]
           }
         },
@@ -38050,9 +38800,2692 @@
             }
           ],
           "search_terms": []
+        },
+        {
+          "id": "nomad.var_list",
+          "title": "nomad var list [prefix]",
+          "summary": "List Nomad variable METADATA — path, namespace, and modify time only, never the values. Answers \"does the variable exist and when did it change\" during a debugging session without touching secret material (there is deliberately no variable-read action in this pack). Optionally restrict to a path prefix.",
+          "description": "List Nomad variable METADATA — path, namespace, and modify time only, never the values. Answers \"does the variable exist and when did it change\" during a debugging session without touching secret material (there is deliberately no variable-read action in this pack). Optionally restrict to a path prefix.",
+          "kind": "script",
+          "risk": "low",
+          "side_effects": [
+            "One API call.",
+            "Read-only.",
+            "Values are never fetched — metadata only."
+          ],
+          "args": [
+            {
+              "name": "prefix",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Path prefix to restrict the listing (empty = all variables).",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_/.\\-]{0,127})?$"
+              }
+            },
+            {
+              "name": "namespace",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad namespace to target. Empty (default) = the default namespace; \"*\" = all namespaces.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+              }
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+              "validation": {
+                "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+              }
+            }
+          ],
+          "examples": [
+            {
+              "title": "All variable paths",
+              "args": {}
+            },
+            {
+              "title": "Variables under nomad/jobs",
+              "args": {
+                "prefix": "nomad/jobs"
+              }
+            }
+          ],
+          "search_terms": []
         }
       ],
       "previous_versions": [
+        {
+          "version": "0.1.26",
+          "content_hash": "sha256:99a56f5ec55b6287d71dec133f8161f692926200267d5567f1b78d8a5a4d27ed",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/nomad/0.1.26/99a56f5ec55b6287d71dec133f8161f692926200267d5567f1b78d8a5a4d27ed/pack.tar.gz",
+          "actions": [
+            {
+              "id": "nomad.acl_policies",
+              "title": "nomad acl policy list",
+              "summary": "List all ACL policy names.",
+              "description": "List all ACL policy names.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Policies",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "acl",
+                  "policy",
+                  "list"
+                ]
+              }
+            },
+            {
+              "id": "nomad.acl_token_self",
+              "title": "nomad acl token self",
+              "summary": "Show the runner's own token — name, type, policies, expiration. The Secret ID the CLI prints is redacted from the output.",
+              "description": "Show the runner's own token — name, type, policies, expiration. The Secret ID the CLI prints is redacted from the output.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only; the Secret ID field printed by the CLI is redacted before output."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Self",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "acl",
+                  "token",
+                  "self"
+                ]
+              }
+            },
+            {
+              "id": "nomad.agent_force_leave",
+              "title": "nomad server force-leave <node>",
+              "summary": "Forces a server out of the gossip pool. Use when a dead server can't leave on its own.",
+              "description": "Forces a server out of the gossip pool. Use when a dead server can't leave on its own.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "The named server is marked left in serf.",
+                "Raft membership unaffected — use operator raft remove-peer for that."
+              ],
+              "args": [
+                {
+                  "name": "node_name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Server node name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Force one server out",
+                  "args": {
+                    "node_name": "nomad-server-3"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "server",
+                  "force-leave",
+                  "{{ args.node_name }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.agent_info",
+              "title": "nomad agent-info",
+              "summary": "Show per-agent stats — runtime, raft, serf, vault, consul subsystems.",
+              "description": "Show per-agent stats — runtime, raft, serf, vault, consul subsystems.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Agent info",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "agent-info"
+                ]
+              }
+            },
+            {
+              "id": "nomad.agent_members",
+              "title": "nomad server members",
+              "summary": "List the Serf gossip pool members.",
+              "description": "List the Serf gossip pool members.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Members",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "server",
+                  "members",
+                  "-detailed"
+                ]
+              }
+            },
+            {
+              "id": "nomad.agent_self",
+              "title": "GET /v1/agent/self",
+              "summary": "Show this agent's effective config (member name, region, datacenter, tags).",
+              "description": "Show this agent's effective config (member name, region, datacenter, tags).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Self config",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/agent/self\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_checks",
+              "title": "nomad alloc checks <id>",
+              "summary": "Show the Nomad-native service health-check results for one allocation — each check's name, group/task/service, status (success | failure | pending), and output. This is the Nomad-side health view with no Consul: is the alloc's service actually passing its checks, or failing one? Needs the allocation ID (get it from nomad.job_allocations or nomad.alloc_status). Requires a Nomad token with the read-job capability on the namespace.",
+              "description": "Show the Nomad-native service health-check results for one allocation — each check's name, group/task/service, status (success | failure | pending), and output. This is the Nomad-side health view with no Consul: is the alloc's service actually passing its checks, or failing one? Needs the allocation ID (get it from nomad.job_allocations or nomad.alloc_status). Requires a Nomad token with the read-job capability on the namespace.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Health checks for one alloc",
+                  "args": {
+                    "alloc_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.alloc_exec_redis_info",
+              "title": "Show Redis INFO inside an allocation (nomad alloc exec redis-cli info)",
+              "summary": "Show one section of Redis INFO from inside an allocation's task — runs the fixed command `redis-cli info <section>` via `nomad alloc exec`, with section bounded to the INFO enum.",
+              "description": "Show one section of Redis INFO from inside an allocation's task — runs the fixed command `redis-cli info <section>` via `nomad alloc exec`, with section bounded to the INFO enum. This is for the incident where Redis is only reachable inside the alloc (no direct REDIS_URL from the runner); use the redis pack's redis.info when you can reach it directly. The command is fixed except the enum section — no freeform command, shell, host, port, or password is accepted, so it reads the task's local redis-cli default (127.0.0.1:6379) and returns NOAUTH on a password-protected instance. risk:medium, not low: `nomad alloc exec` runs inside the running container and INFO exposes memory/stats/ replication topology, so it is policy-gated even though the command only reads. Requires the alloc-exec namespace capability (alloc-node-exec for raw_exec/ raw-driver tasks).",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Executes the fixed read-only command `redis-cli info <section>` inside the task container.",
+                "Does not mutate Redis."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task name inside the allocation that runs Redis.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "section",
+                  "type": "string",
+                  "required": false,
+                  "default": "default",
+                  "description": "INFO section (bounded enum).",
+                  "validation": {
+                    "enum": [
+                      "default",
+                      "all",
+                      "server",
+                      "clients",
+                      "memory",
+                      "persistence",
+                      "stats",
+                      "replication",
+                      "cpu",
+                      "commandstats",
+                      "latencystats",
+                      "cluster",
+                      "keyspace",
+                      "errorstats"
+                    ]
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Default INFO of Redis in the cache task",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "task": "redis"
+                  }
+                },
+                {
+                  "title": "Replication topology",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "section": "replication",
+                    "task": "redis"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "alloc",
+                  "exec",
+                  "-i=false",
+                  "-t=false",
+                  "-task",
+                  "{{ args.task }}",
+                  "{{ args.alloc_id }}",
+                  "redis-cli",
+                  "info",
+                  "{{ args.section }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_exec_redis_ping",
+              "title": "Ping Redis inside an allocation (nomad alloc exec redis-cli ping)",
+              "summary": "Check whether the Redis inside one allocation's task is alive — runs the fixed command `redis-cli ping` via `nomad alloc exec` and returns PONG.",
+              "description": "Check whether the Redis inside one allocation's task is alive — runs the fixed command `redis-cli ping` via `nomad alloc exec` and returns PONG. This is for the incident where Redis is only reachable inside the alloc (no direct REDIS_URL from the runner); use the redis pack's redis.ping when you can reach it directly. The command is fixed — no freeform command, shell, host, port, or password is accepted, so it connects to the task's local redis-cli default (127.0.0.1:6379) and returns NOAUTH on a password-protected instance (itself a signal). risk:medium, not low: `nomad alloc exec` runs inside the running container and can expose internal state, so it is policy-gated even though the command only reads. Requires the alloc-exec namespace capability (alloc-node-exec for raw_exec/raw-driver tasks).",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Executes the fixed read-only command `redis-cli ping` inside the task container.",
+                "Does not mutate Redis."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task name inside the allocation that runs Redis.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Ping Redis in the cache task",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "task": "redis"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "alloc",
+                  "exec",
+                  "-i=false",
+                  "-t=false",
+                  "-task",
+                  "{{ args.task }}",
+                  "{{ args.alloc_id }}",
+                  "redis-cli",
+                  "ping"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_fs_ls",
+              "title": "List a directory in an allocation (nomad fs/ls API)",
+              "summary": "List a directory inside one allocation's filesystem — each entry's name, IsDir, size, file mode, and modtime.",
+              "description": "List a directory inside one allocation's filesystem — each entry's name, IsDir, size, file mode, and modtime. This is the \"what files did my task write to local/ or alloc/logs\" read for debugging, with no local CLI session. It calls Nomad's fs/ls API endpoint, which returns directory metadata only and NEVER streams file contents, so it cannot leak a rendered-secret template the way `nomad alloc fs <file>` (cat) would. path defaults to the alloc root (/), is relative to it (Nomad contains it to the alloc dir), and rejects \"..\", absolute host paths, and shell metacharacters. Requires a Nomad token with the read-fs capability on the namespace.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only (directory metadata only — no file contents)."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "path",
+                  "type": "string",
+                  "required": false,
+                  "default": "/",
+                  "description": "Directory to list, relative to the alloc root (e.g. local, alloc/logs, secrets). Defaults to the alloc root \"/\". No \"..\", absolute host paths, or shell metacharacters.",
+                  "validation": {
+                    "pattern": "^(/|\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*)$",
+                    "max_length": 256
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "List the alloc root",
+                  "args": {
+                    "alloc_id": "abc12345"
+                  }
+                },
+                {
+                  "title": "List the task's local/ directory",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "path": "local"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "api",
+                  "/v1/client/fs/ls/{{ args.alloc_id }}?path={{ args.path }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_fs_stat",
+              "title": "Stat a path in an allocation (nomad fs/stat API)",
+              "summary": "Show the stat metadata of one path inside an allocation's filesystem — name, IsDir, size, file mode, modtime, and content type.",
+              "description": "Show the stat metadata of one path inside an allocation's filesystem — name, IsDir, size, file mode, modtime, and content type. This is the \"does this file exist / how big is it / when was it written\" read. It calls Nomad's fs/stat API endpoint, which returns metadata only and NEVER streams file contents, so it cannot leak a rendered-secret template the way `nomad alloc fs <file>` (cat) would. path is relative to the alloc root (Nomad contains it to the alloc dir) and rejects \"..\", absolute host paths, and shell metacharacters. Requires a Nomad token with the read-fs capability on the namespace.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only (file metadata only — no file contents)."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "path",
+                  "type": "string",
+                  "required": true,
+                  "description": "Path to stat, relative to the alloc root (e.g. local/app.log, secrets/.env). No \"..\", absolute host paths, or shell metacharacters.",
+                  "validation": {
+                    "pattern": "^(/|\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*)$",
+                    "max_length": 256
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Stat a task's log file",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "path": "alloc/logs/app.stdout.0"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "api",
+                  "/v1/client/fs/stat/{{ args.alloc_id }}?path={{ args.path }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_logs",
+              "title": "Tail a task's application logs — stdout (nomad alloc logs)",
+              "summary": "Tail application logs (stdout) from one task in a Nomad allocation — the last N lines the app/service/container wrote to stdout.",
+              "description": "Tail application logs (stdout) from one task in a Nomad allocation — the last N lines the app/service/container wrote to stdout. This is the read for \"show me the app logs\" or \"tail the service output\" during an incident or cutover preflight, instead of a local CLI session. Needs the allocation ID and task name: when you only have the job name, call nomad.job_allocations first to list its allocations and pick the running one. Use nomad.alloc_logs_stderr for the stderr stream (errors, stack traces, panics).",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations when you only have the job name).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "tail",
+                  "type": "integer",
+                  "required": false,
+                  "default": 200,
+                  "description": "Lines.",
+                  "validation": {
+                    "min": 1,
+                    "max": 10000
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 200 stdout lines from the web task",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "task": "web"
+                  }
+                },
+                {
+                  "title": "Last 500 stdout lines while chasing a restart",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "tail": 500,
+                    "task": "redis"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.alloc_logs_stderr",
+              "title": "Tail a task's application logs — stderr (nomad alloc logs -stderr)",
+              "summary": "Tail application error logs (stderr) from one task in a Nomad allocation — the last N lines the app/service/container wrote to stderr (errors, stack traces, panics, crash output).",
+              "description": "Tail application error logs (stderr) from one task in a Nomad allocation — the last N lines the app/service/container wrote to stderr (errors, stack traces, panics, crash output). This is the read for \"show me the error logs\" or \"why did it crash\" during an incident or cutover preflight, instead of a local CLI session. Needs the allocation ID and task name: when you only have the job name, call nomad.job_allocations first to list its allocations and pick the running one. Use nomad.alloc_logs for the stdout stream.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix (from nomad.job_allocations when you only have the job name).",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task name.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "tail",
+                  "type": "integer",
+                  "required": false,
+                  "default": 200,
+                  "description": "Lines.",
+                  "validation": {
+                    "min": 1,
+                    "max": 10000
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Last 200 stderr lines from the web task",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "task": "web"
+                  }
+                },
+                {
+                  "title": "Last 500 stderr lines after a crash",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "tail": 500,
+                    "task": "redis"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.alloc_restart",
+              "title": "nomad alloc restart <id> [task]",
+              "summary": "Restarts one task (or all tasks if not specified) in one allocation.",
+              "description": "Restarts one task (or all tasks if not specified) in one allocation.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Task(s) receive SIGTERM then SIGKILL after kill_timeout.",
+                "In-flight requests drop unless shutdown_delay is set."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Specific task (empty = all tasks).",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Restart one task",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "task": "web"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "if [ -n \"{{ args.task }}\" ]; then nomad alloc restart -task {{ args.task }} {{ args.alloc_id }}; else nomad alloc restart {{ args.alloc_id }}; fi"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_signal",
+              "title": "nomad alloc signal -s <signal> <id> [task]",
+              "summary": "Send a UNIX signal to one task (or all tasks). Common uses: SIGHUP to reload config, SIGUSR1 for app-specific behavior.",
+              "description": "Send a UNIX signal to one task (or all tasks). Common uses: SIGHUP to reload config, SIGUSR1 for app-specific behavior.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Targeted task(s) receive the signal.",
+                "Effect depends on the application's signal handling."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "signal",
+                  "type": "string",
+                  "required": true,
+                  "description": "Signal name (HUP, USR1, USR2, etc).",
+                  "validation": {
+                    "enum": [
+                      "HUP",
+                      "USR1",
+                      "USR2",
+                      "INT",
+                      "TERM",
+                      "QUIT"
+                    ]
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Specific task (empty = all).",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "SIGHUP to reload",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "signal": "HUP",
+                    "task": "web"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "if [ -n \"{{ args.task }}\" ]; then nomad alloc signal -s {{ args.signal }} -task {{ args.task }} {{ args.alloc_id }}; else nomad alloc signal -s {{ args.signal }} {{ args.alloc_id }}; fi"
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_stats",
+              "title": "GET /v1/client/allocation/<id>/stats",
+              "summary": "Show CPU + memory + network stats for one allocation.",
+              "description": "Show CPU + memory + network stats for one allocation.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Stats",
+                  "args": {
+                    "alloc_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/client/allocation/{{ args.alloc_id }}/stats\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.alloc_status",
+              "title": "nomad alloc status <id>",
+              "summary": "Show one allocation's full state — task states, restarts, last events.",
+              "description": "Show one allocation's full state — task states, restarts, last events.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "One alloc",
+                  "args": {
+                    "alloc_id": "abc12345"
+                  }
+                },
+                {
+                  "title": "One alloc in the \"prod\" namespace",
+                  "args": {
+                    "alloc_id": "abc12345",
+                    "namespace": "prod"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.alloc_stop",
+              "title": "nomad alloc stop <id>",
+              "summary": "Stops one allocation. The scheduler reschedules it (per the job's reschedule stanza).",
+              "description": "Stops one allocation. The scheduler reschedules it (per the job's reschedule stanza).",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Allocation is stopped + replaced.",
+                "Brief unavailability for the running container."
+              ],
+              "args": [
+                {
+                  "name": "alloc_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Allocation ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Force-reschedule",
+                  "args": {
+                    "alloc_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "alloc",
+                  "stop",
+                  "{{ args.alloc_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.csi_volume_list",
+              "title": "nomad volume status",
+              "summary": "List all registered CSI volumes with claim count + state.",
+              "description": "List all registered CSI volumes with claim count + state.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "CSI volumes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "volume",
+                  "status"
+                ]
+              }
+            },
+            {
+              "id": "nomad.csi_volume_status",
+              "title": "nomad volume status <id>",
+              "summary": "Show one CSI volume's full state — claims, allocations using it, plugin status.",
+              "description": "Show one CSI volume's full state — claims, allocations using it, plugin status.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "volume_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Volume ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "One volume",
+                  "args": {
+                    "volume_id": "data-volume-1"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "volume",
+                  "status",
+                  "{{ args.volume_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.deployment_status",
+              "title": "nomad deployment status <id>",
+              "summary": "Show one deployment's state — per-task-group desired/placed/healthy/unhealthy.",
+              "description": "Show one deployment's state — per-task-group desired/placed/healthy/unhealthy.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "deployment_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Deployment ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Deployment status",
+                  "args": {
+                    "deployment_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "deployment",
+                  "status",
+                  "-verbose",
+                  "{{ args.deployment_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.eval_list",
+              "title": "nomad eval list",
+              "summary": "List all recent evaluations across the cluster.",
+              "description": "List all recent evaluations across the cluster.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Recent evals",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "eval",
+                  "list",
+                  "-verbose"
+                ]
+              }
+            },
+            {
+              "id": "nomad.eval_status",
+              "title": "nomad eval status <id>",
+              "summary": "Show one evaluation's status — placement failures, queued allocations, blocked count.",
+              "description": "Show one evaluation's status — placement failures, queued allocations, blocked count.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "eval_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Evaluation ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Eval status",
+                  "args": {
+                    "eval_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "eval",
+                  "status",
+                  "-verbose",
+                  "{{ args.eval_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.event_snapshot",
+              "title": "Snapshot recent Nomad events (bounded /v1/event/stream)",
+              "summary": "Show a bounded snapshot of the Nomad event stream — recent Job, Allocation, Evaluation, Deployment, and Node events for incident triage, with no local CLI session.",
+              "description": "Show a bounded snapshot of the Nomad event stream — recent Job, Allocation, Evaluation, Deployment, and Node events for incident triage, with no local CLI session. Nomad has no \"last N events\" query: /v1/event/stream is a forward feed whose only history is the broker's replay buffer (~100 events). This reads it from index=1 (replays the buffer, then live events) for `seconds` seconds, capped at 256 KiB, then returns — so it never hangs. Optionally filter to one `topic` or one `namespace`. Output is NDJSON: one {Index, Events:[...]} batch per line. Requires a token that can read the event stream.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "Opens the Nomad event stream for a bounded time window.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "seconds",
+                  "type": "integer",
+                  "required": false,
+                  "default": 5,
+                  "description": "How long to read the stream — the snapshot window, in seconds.",
+                  "validation": {
+                    "min": 1,
+                    "max": 15
+                  }
+                },
+                {
+                  "name": "topic",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Filter to one event topic (empty = all topics). One of Job, Allocation, Evaluation, Deployment, Node, Service, or an ACL topic.",
+                  "validation": {
+                    "pattern": "^(Job|Allocation|Evaluation|Deployment|Node|Service|ACLToken|ACLPolicy|ACLRole|ACLAuthMethod|ACLBindingRule|NodePool)?$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Filter to one namespace (empty = the runner's ambient/default).",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Recent events across all topics (5s window)",
+                  "args": {}
+                },
+                {
+                  "title": "Recent allocation events only",
+                  "args": {
+                    "topic": "Allocation"
+                  }
+                },
+                {
+                  "title": "Recent events in one namespace, 10s window",
+                  "args": {
+                    "namespace": "production",
+                    "seconds": 10
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.host_volume_list",
+              "title": "Host volumes from /v1/nodes",
+              "summary": "List host-volume declarations across all client nodes.",
+              "description": "List host-volume declarations across all client nodes.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Host volumes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/nodes\" | head -200"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_allocations",
+              "title": "nomad job allocs <id>",
+              "summary": "List all allocations for one job.",
+              "description": "List all allocations for one job.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Allocations",
+                  "args": {
+                    "job": "api"
+                  }
+                },
+                {
+                  "title": "Allocations in the \"prod\" namespace",
+                  "args": {
+                    "job": "api",
+                    "namespace": "prod"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.job_deployments",
+              "title": "nomad job deployments <id>",
+              "summary": "List deployment history for one job (rolling updates, canary, blue-green).",
+              "description": "List deployment history for one job (rolling updates, canary, blue-green).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Deployments",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "deployments",
+                  "-verbose",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_dispatch",
+              "title": "nomad job dispatch <id>",
+              "summary": "Dispatches a parameterized job with optional meta variables.",
+              "description": "Dispatches a parameterized job with optional meta variables.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "A new dispatched job instance is created and scheduled.",
+                "Counts toward job history."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Parameterized job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "meta_kv",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Optional meta as 'k=v,k2=v2' (no spaces around =).",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256}(,[a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256})*)?$",
+                    "max_length": 1024
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Dispatch with meta",
+                  "args": {
+                    "job": "batch-processor",
+                    "meta_kv": "input=/tmp/data,priority=high"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "M=''; if [ -n '{{ args.meta_kv }}' ]; then for kv in $(echo '{{ args.meta_kv }}' | tr ',' ' '); do M=\"$M -meta $kv\"; done; fi; nomad job dispatch $M {{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_evaluations",
+              "title": "nomad job eval <id> (force re-evaluation)",
+              "summary": "Forces a fresh evaluation of one job — the scheduler re-checks placement and constraints and may reschedule allocations. NOT read-only: the CLI `nomad job eval` creates a new evaluation, it does not just list them.",
+              "description": "Forces a fresh evaluation of one job — the scheduler re-checks placement and constraints and may reschedule allocations. NOT read-only: the CLI `nomad job eval` creates a new evaluation, it does not just list them.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Creates a new evaluation for the job.",
+                "The scheduler reconciles the job; allocations may be moved or restarted."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Force a re-evaluation",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "eval",
+                  "-verbose",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_history",
+              "title": "nomad job history <id>",
+              "summary": "List all versions of one job with submitter + timestamp.",
+              "description": "List all versions of one job with submitter + timestamp.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "History",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "history",
+                  "-p",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_inspect",
+              "title": "nomad job inspect <id>",
+              "summary": "Dump one job's full spec as JSON. This surfaces the job's `env` and `template` blocks, which routinely carry injected secrets (DB URLs, API keys, rendered Vault templates). The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
+              "description": "Dump one job's full spec as JSON. This surfaces the job's `env` and `template` blocks, which routinely carry injected secrets (DB URLs, API keys, rendered Vault templates). The runner's redaction is a fail-closed backstop, not a guarantee — it is pattern-bound and can miss a bespoke secret whose name and value match no rule.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only, but exposes the job's env/template blocks (may include secrets)."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Inspect job",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "inspect",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_periodic_force",
+              "title": "nomad job periodic force <id>",
+              "summary": "Force-runs one periodic job NOW, ignoring schedule.",
+              "description": "Force-runs one periodic job NOW, ignoring schedule.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "A new periodic child job is created and dispatched.",
+                "Counts toward normal job history."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Periodic job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Force-run",
+                  "args": {
+                    "job": "nightly-backup"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "periodic",
+                  "force",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_promote",
+              "title": "nomad job promote <id>",
+              "summary": "Promotes a canary deployment — replaces the rest of the allocations with the new version.",
+              "description": "Promotes a canary deployment — replaces the rest of the allocations with the new version.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Old allocations are gradually replaced per the update stanza.",
+                "In-flight requests on replaced allocs may drop (subject to shutdown_delay)."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID with an in-progress canary.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Promote canary",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "promote",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_resources",
+              "title": "nomad job inspect <id> (resource summary)",
+              "summary": "List the CPU and memory reservation and the replica count for every task group and task in a job — the compact read companion to nomad.task_resources_set, so you can see current limits before vertical-scaling. Projects only the resource fields from the full jobspec: per task the CPU (MHz), cores, MemoryMB, and MemoryMaxMB, and per group the count.",
+              "description": "List the CPU and memory reservation and the replica count for every task group and task in a job — the compact read companion to nomad.task_resources_set, so you can see current limits before vertical-scaling. Projects only the resource fields from the full jobspec: per task the CPU (MHz), cores, MemoryMB, and MemoryMaxMB, and per group the count.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One read-only API call (job inspect).",
+                "Read-only — never writes or mutates job state."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Show current resources per group/task",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.job_revert",
+              "title": "nomad job revert <id> <version>",
+              "summary": "Reverts a job to a prior version. Equivalent to re-submitting that version.",
+              "description": "Reverts a job to a prior version. Equivalent to re-submitting that version.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Job spec replaced with the prior version.",
+                "Triggers a rolling update (per the new/old spec's update stanza)."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "version",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Version number to revert to.",
+                  "validation": {
+                    "min": 0,
+                    "max": 1000000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Roll back one version",
+                  "args": {
+                    "job": "api",
+                    "version": 7
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "revert",
+                  "{{ args.job }}",
+                  "{{ args.version }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_scale",
+              "title": "nomad job scale <id> <group> <count>",
+              "summary": "Adjusts the count for one task group.",
+              "description": "Adjusts the count for one task group.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Scheduler creates or stops allocations to reach the target count.",
+                "Stopped allocations follow the kill_timeout / shutdown_delay stanzas."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "group",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task group.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "count",
+                  "type": "integer",
+                  "required": true,
+                  "description": "Target count.",
+                  "validation": {
+                    "min": 0,
+                    "max": 10000
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Scale api group to 10",
+                  "args": {
+                    "count": 10,
+                    "group": "web",
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "scale",
+                  "{{ args.job }}",
+                  "{{ args.group }}",
+                  "{{ args.count }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.job_status_all",
+              "title": "nomad job status (all)",
+              "summary": "List all jobs with their type, priority, status, and submit time.",
+              "description": "List all jobs with their type, priority, status, and submit time.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "All jobs",
+                  "args": {}
+                },
+                {
+                  "title": "All jobs in the \"prod\" namespace",
+                  "args": {
+                    "namespace": "prod"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.job_status_one",
+              "title": "nomad job status <id>",
+              "summary": "Show one job's full status — task groups, allocations, deployment.",
+              "description": "Show one job's full status — task groups, allocations, deployment.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "One job",
+                  "args": {
+                    "job": "api"
+                  }
+                },
+                {
+                  "title": "One job in the \"prod\" namespace",
+                  "args": {
+                    "job": "api",
+                    "namespace": "prod"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.job_stop",
+              "title": "nomad job stop <id>",
+              "summary": "Stops one job. All its allocations are stopped + GC'd. Use -purge to also remove from history.",
+              "description": "Stops one job. All its allocations are stopped + GC'd. Use -purge to also remove from history.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "All allocations of the job receive a shutdown signal.",
+                "Job marked dead in catalog.",
+                "History retained unless --purge is used (this action does NOT purge)."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Stop one job",
+                  "args": {
+                    "job": "api"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "job",
+                  "stop",
+                  "{{ args.job }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.leader",
+              "title": "GET /v1/status/leader",
+              "summary": "Show the current Raft leader address (host:port).",
+              "description": "Show the current Raft leader address (host:port).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Leader",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/status/leader\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.namespace_list",
+              "title": "nomad namespace list",
+              "summary": "List all namespaces in the cluster.",
+              "description": "List all namespaces in the cluster.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Namespaces",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "namespace",
+                  "list"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_drain",
+              "title": "nomad node drain -enable",
+              "summary": "Enables drain mode on one node. Allocations migrate; new ones are blocked.",
+              "description": "Enables drain mode on one node. Allocations migrate; new ones are blocked.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Node stops accepting new allocations.",
+                "Existing allocations are migrated according to job spec (Migrate stanza).",
+                "May take minutes to complete depending on workload."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                },
+                {
+                  "name": "deadline",
+                  "type": "string",
+                  "required": false,
+                  "default": "1h",
+                  "description": "Force-eject after this duration if migration hasn't completed.",
+                  "validation": {
+                    "pattern": "^[0-9]{1,4}[smh]$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Drain one client",
+                  "args": {
+                    "node_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "drain",
+                  "-enable",
+                  "-deadline",
+                  "{{ args.deadline }}",
+                  "-yes",
+                  "{{ args.node_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_drain_done",
+              "title": "nomad node drain -disable",
+              "summary": "Disables drain on one node. The node becomes eligible again (assuming eligibility wasn't separately disabled).",
+              "description": "Disables drain on one node. The node becomes eligible again (assuming eligibility wasn't separately disabled).",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Drain mode disabled.",
+                "Node may immediately receive new allocations."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "End drain",
+                  "args": {
+                    "node_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "drain",
+                  "-disable",
+                  "-yes",
+                  "{{ args.node_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_eligibility_disable",
+              "title": "nomad node eligibility -disable",
+              "summary": "Marks one node ineligible for new allocations. Existing allocations are not migrated.",
+              "description": "Marks one node ineligible for new allocations. Existing allocations are not migrated.",
+              "kind": "exec",
+              "risk": "high",
+              "side_effects": [
+                "Node refuses new allocations.",
+                "Existing allocations stay running."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Cordon one",
+                  "args": {
+                    "node_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "eligibility",
+                  "-disable",
+                  "{{ args.node_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_eligibility_enable",
+              "title": "nomad node eligibility -enable",
+              "summary": "Re-enables a node for new allocations.",
+              "description": "Re-enables a node for new allocations.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Node may immediately receive new allocations."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Uncordon",
+                  "args": {
+                    "node_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "eligibility",
+                  "-enable",
+                  "{{ args.node_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_eligibility_show",
+              "title": "Nodes with eligibility != eligible",
+              "summary": "List nodes that are ineligible for new allocations (drained or manually disabled).",
+              "description": "List nodes that are ineligible for new allocations (drained or manually disabled).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Ineligible nodes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "nomad node status -json | grep -E '\"Name\"|\"SchedulingEligibility\"|\"Drain\"' | head -200"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_purge",
+              "title": "Purge a dead node (PUT /v1/node/<id>/purge)",
+              "summary": "Removes a dead (down) node from the catalog; allocations on it are GC'd. There is no `nomad node purge` CLI subcommand — this is the HTTP API (PUT /v1/node/<id>/purge). Only valid for nodes that are down.",
+              "description": "Removes a dead (down) node from the catalog; allocations on it are GC'd. There is no `nomad node purge` CLI subcommand — this is the HTTP API (PUT /v1/node/<id>/purge). Only valid for nodes that are down.",
+              "kind": "exec",
+              "risk": "critical",
+              "side_effects": [
+                "Node entry removed permanently (one API PUT).",
+                "Allocations on it are GC'd.",
+                "Only valid for nodes that are down — running nodes refuse purge."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Purge a dead node",
+                  "args": {
+                    "node_id": "deadbeef"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- -X PUT \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/node/{{ args.node_id }}/purge\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_status_all",
+              "title": "nomad node status",
+              "summary": "List all clients (nodes) with status, datacenter, drain state, eligibility.",
+              "description": "List all clients (nodes) with status, datacenter, drain state, eligibility.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Cluster nodes",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "status",
+                  "-verbose"
+                ]
+              }
+            },
+            {
+              "id": "nomad.node_status_one",
+              "title": "nomad node status <id>",
+              "summary": "Show one node's full detail — resources, allocations, events, drivers.",
+              "description": "Show one node's full detail — resources, allocations, events, drivers.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "node_id",
+                  "type": "string",
+                  "required": true,
+                  "description": "Node ID or prefix.",
+                  "validation": {
+                    "pattern": "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "One node",
+                  "args": {
+                    "node_id": "abc12345"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "node",
+                  "status",
+                  "-verbose",
+                  "{{ args.node_id }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.operator_autopilot_get_config",
+              "title": "nomad operator autopilot get-config",
+              "summary": "Show the autopilot configuration (dead-server cleanup, redundancy zones, server stabilization).",
+              "description": "Show the autopilot configuration (dead-server cleanup, redundancy zones, server stabilization).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Autopilot config",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "autopilot",
+                  "get-config"
+                ]
+              }
+            },
+            {
+              "id": "nomad.operator_autopilot_state",
+              "title": "GET /v1/operator/autopilot/state",
+              "summary": "Show the autopilot health view — leader health, follower lag, server stabilization.",
+              "description": "Show the autopilot health view — leader health, follower lag, server stabilization.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Autopilot state",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/operator/autopilot/state\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.operator_raft_list_peers",
+              "title": "nomad operator raft list-peers",
+              "summary": "List the Raft peers — voter status, suffrage, address.",
+              "description": "List the Raft peers — voter status, suffrage, address.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Raft peers",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "raft",
+                  "list-peers"
+                ]
+              }
+            },
+            {
+              "id": "nomad.operator_raft_remove_peer",
+              "title": "nomad operator raft remove-peer",
+              "summary": "Forcibly removes a server from Raft. Use ONLY when a server is permanently gone and autopilot hasn't cleaned it up.",
+              "description": "Forcibly removes a server from Raft. Use ONLY when a server is permanently gone and autopilot hasn't cleaned it up.",
+              "kind": "exec",
+              "risk": "critical",
+              "side_effects": [
+                "Raft membership changes immediately.",
+                "Quorum size adjusts.",
+                "Wrong target = lost quorum / split brain."
+              ],
+              "args": [
+                {
+                  "name": "address",
+                  "type": "string",
+                  "required": true,
+                  "description": "Raft address (host:port).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,127}:[0-9]{1,5}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Remove dead server",
+                  "args": {
+                    "address": "10.0.0.5:4647"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "raft",
+                  "remove-peer",
+                  "-peer-address",
+                  "{{ args.address }}"
+                ]
+              }
+            },
+            {
+              "id": "nomad.operator_scheduler_get_config",
+              "title": "nomad operator scheduler get-config",
+              "summary": "Show the cluster's scheduler configuration — the scheduler algorithm (binpack/spread), memory oversubscription, preemption settings (system/batch/ service/sysbatch), job-registration rejection, and eval-broker pause state. This is the \"why is placement behaving this way / is preemption on\" read for incident triage. Read-only; requires a Nomad token with the operator:read capability.",
+              "description": "Show the cluster's scheduler configuration — the scheduler algorithm (binpack/spread), memory oversubscription, preemption settings (system/batch/ service/sysbatch), job-registration rejection, and eval-broker pause state. This is the \"why is placement behaving this way / is preemption on\" read for incident triage. Read-only; requires a Nomad token with the operator:read capability.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Cluster scheduler configuration",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "operator",
+                  "scheduler",
+                  "get-config"
+                ]
+              }
+            },
+            {
+              "id": "nomad.quota_list",
+              "title": "nomad quota list",
+              "summary": "List resource quotas (Enterprise feature).",
+              "description": "List resource quotas (Enterprise feature).",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Quotas",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "quota",
+                  "list"
+                ]
+              }
+            },
+            {
+              "id": "nomad.server_members",
+              "title": "nomad server members (json)",
+              "summary": "List the server members as JSON. Use for programmatic consumption.",
+              "description": "List the server members as JSON. Use for programmatic consumption.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Members JSON",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/agent/members\""
+                ]
+              }
+            },
+            {
+              "id": "nomad.service_info",
+              "title": "nomad service info <name>",
+              "summary": "Show the live instances of one service in Nomad's native service discovery (no Consul) — each instance's address, port, node, and allocation ID. This is the \"where is this service running, on what address\" read for a registered service name (list them with nomad.service_list). Requires a Nomad token with the read-job capability on the namespace.",
+              "description": "Show the live instances of one service in Nomad's native service discovery (no Consul) — each instance's address, port, node, and allocation ID. This is the \"where is this service running, on what address\" read for a registered service name (list them with nomad.service_list). Requires a Nomad token with the read-job capability on the namespace.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "service",
+                  "type": "string",
+                  "required": true,
+                  "description": "Registered service name (from nomad.service_list).",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Instances of the \"redis\" service",
+                  "args": {
+                    "service": "redis"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.service_list",
+              "title": "nomad service list",
+              "summary": "List the services registered in Nomad's native service discovery (no Consul) — the registered service names and their tags in the current namespace. This is the \"what services does Nomad know about\" read; use nomad.service_info to see the live instances (address, port, node, alloc) behind one service. Requires a Nomad token with the read-job capability on the namespace.",
+              "description": "List the services registered in Nomad's native service discovery (no Consul) — the registered service names and their tags in the current namespace. This is the \"what services does Nomad know about\" read; use nomad.service_info to see the live instances (address, port, node, alloc) behind one service. Requires a Nomad token with the read-job capability on the namespace.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "One API call.",
+                "Read-only."
+              ],
+              "args": [
+                {
+                  "name": "namespace",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "region",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "All Nomad-registered services",
+                  "args": {}
+                },
+                {
+                  "title": "Services in the \"prod\" namespace",
+                  "args": {
+                    "namespace": "prod"
+                  }
+                }
+              ],
+              "search_terms": []
+            },
+            {
+              "id": "nomad.system_gc",
+              "title": "nomad system gc",
+              "summary": "Forces a system-wide GC of jobs, allocations, evaluations, and deployments past their GC threshold.",
+              "description": "Forces a system-wide GC of jobs, allocations, evaluations, and deployments past their GC threshold.",
+              "kind": "exec",
+              "risk": "medium",
+              "side_effects": [
+                "Old dead jobs/evals/allocs/deployments are removed from the catalog.",
+                "Frees Raft / state-store space."
+              ],
+              "args": [],
+              "examples": [
+                {
+                  "title": "Trigger GC",
+                  "args": {}
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "nomad",
+                "argv": [
+                  "system",
+                  "gc"
+                ]
+              }
+            },
+            {
+              "id": "nomad.task_resources_set",
+              "title": "nomad job inspect | set task CPU/memory | job run",
+              "summary": "Vertical-scale one task: set its CPU and/or memory limits and re-register the job. Nomad has no atomic resource-change command, so this fetches the live jobspec, patches only the named task's CPU (MHz), MemoryMB, and MemoryMaxMB, and re-registers it with an optimistic JobModifyIndex check. The cloud never supplies jobspec JSON — only the bounded ids and integers below. Pair with nomad.job_resources to read current limits first, and nomad.job_scale to change the replica count.",
+              "description": "Vertical-scale one task: set its CPU and/or memory limits and re-register the job. Nomad has no atomic resource-change command, so this fetches the live jobspec, patches only the named task's CPU (MHz), MemoryMB, and MemoryMaxMB, and re-registers it with an optimistic JobModifyIndex check. The cloud never supplies jobspec JSON — only the bounded ids and integers below. Pair with nomad.job_resources to read current limits first, and nomad.job_scale to change the replica count.",
+              "kind": "script",
+              "risk": "high",
+              "side_effects": [
+                "Re-registers the job with the patched task resources (one read + one write API call).",
+                "Triggers a rolling update of the task group — allocations are replaced per its update stanza.",
+                "Setting memory below the task's real working set can cause OOM kills on the new allocations.",
+                "Refuses to write if the job changed since it was read (JobModifyIndex mismatch)."
+              ],
+              "args": [
+                {
+                  "name": "job",
+                  "type": "string",
+                  "required": true,
+                  "description": "Job ID.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "group",
+                  "type": "string",
+                  "required": true,
+                  "description": "Task group.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+                  }
+                },
+                {
+                  "name": "task",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Task name. Empty selects the group's only task (errors if the group has more than one).",
+                  "validation": {
+                    "pattern": "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+                  }
+                },
+                {
+                  "name": "cpu",
+                  "type": "integer",
+                  "required": false,
+                  "default": 0,
+                  "description": "New CPU reservation in MHz. 0 leaves it unchanged.",
+                  "validation": {
+                    "min": 0,
+                    "max": 1000000
+                  }
+                },
+                {
+                  "name": "memory",
+                  "type": "integer",
+                  "required": false,
+                  "default": 0,
+                  "description": "New memory reservation (MemoryMB). 0 leaves it unchanged.",
+                  "validation": {
+                    "min": 0,
+                    "max": 4194304
+                  }
+                },
+                {
+                  "name": "memory_max",
+                  "type": "integer",
+                  "required": false,
+                  "default": 0,
+                  "description": "New memory oversubscription cap (MemoryMaxMB). 0 leaves it unchanged.",
+                  "validation": {
+                    "min": 0,
+                    "max": 4194304
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Bump web/server to 1 vCPU + 1 GiB",
+                  "args": {
+                    "cpu": 1000,
+                    "group": "web",
+                    "job": "api",
+                    "memory": 1024,
+                    "task": "server"
+                  }
+                },
+                {
+                  "title": "Raise memory only on a single-task group (auto-select)",
+                  "args": {
+                    "group": "redis",
+                    "job": "cache",
+                    "memory": 2048
+                  }
+                }
+              ],
+              "search_terms": []
+            }
+          ]
+        },
         {
           "version": "0.1.25",
           "content_hash": "sha256:eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6",

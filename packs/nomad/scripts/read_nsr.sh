@@ -19,6 +19,10 @@
 #          the head (after the subcommand, before any positional) because Go's
 #          flag parser stops at the first positional.
 #   $4...  the action's already-validated positionals (job id, alloc id, task, …)
+#          An EMPTY positional is dropped entirely — that's how an action offers
+#          an OPTIONAL trailing positional (a var prefix, a plugin id): the argv
+#          template always fills the slot, and "" means "not given", never a
+#          literal empty argument.
 #
 # An empty namespace/region drops the whole flag (POSIX ${var:+…}) rather than
 # passing "-namespace=" — so we never clobber the operator's ambient value with
@@ -28,5 +32,9 @@ ns=$1
 rg=$2
 head=$3
 shift 3
+for a in "$@"; do
+	shift
+	[ -n "$a" ] && set -- "$@" "$a"
+done
 set -- $head ${ns:+-namespace=$ns} ${rg:+-region=$rg} "$@"
 exec nomad "$@"

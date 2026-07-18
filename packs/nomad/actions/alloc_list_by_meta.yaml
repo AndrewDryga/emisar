@@ -1,0 +1,53 @@
+schema_version: 1
+id: nomad.alloc_list_by_meta
+title: List allocations by job meta (GET /v1/allocations?filter=Job.Meta[…])
+kind: script
+risk: low
+description: >
+  List allocations cluster-wide whose JOB's `meta` stanza has a key equal to a
+  value — e.g. every allocation of terraform-managed jobs
+  (managed_by=terraform) in one call, instead of walking jobs one by one with
+  nomad.job_allocations. The filter runs server-side against the job embedded
+  in each allocation; alloc rows themselves carry no meta, so use
+  nomad.job_list_by_meta to see the labels. Omit meta_key/meta_value to list
+  every allocation. Requires jq on the runner host.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: meta_key
+    type: string
+    required: false
+    default: ""
+    description: Job meta key to filter on (empty = no filter, list all allocations).
+    validation:
+      pattern: "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-]{0,63})?$"
+  - name: meta_value
+    type: string
+    required: false
+    default: ""
+    description: Exact value meta_key must equal (required when meta_key is set).
+    validation:
+      pattern: "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-/:]{0,255})?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) = the default namespace; "*" = all namespaces.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+execution:
+  script:
+    path: scripts/by_meta.sh
+    interpreter: /bin/sh
+  argv: ["allocations", "{{ args.namespace }}", "{{ args.meta_key }}", "{{ args.meta_value }}"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All allocations (compact)
+    args: {}
+  - title: Allocations of terraform-managed jobs
+    args:
+      meta_key: "managed_by"
+      meta_value: "terraform"

@@ -1,0 +1,45 @@
+schema_version: 1
+id: nomad.job_eval
+title: nomad job eval <id>
+kind: exec
+risk: medium
+description: >
+  Force a new evaluation for one job — kick the scheduler to retry placement
+  now. With force_reschedule=true, failed allocations are rescheduled even if
+  they are not currently eligible (past their reschedule backoff) — the "we
+  fixed the cause, try again" verb after an incident.
+side_effects:
+  - A new evaluation is created; the scheduler may place or reschedule allocations.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: force_reschedule
+    type: string
+    required: false
+    default: "false"
+    description: "true also reschedules failed allocations that are past their reschedule limit."
+    validation:
+      enum: ["false", "true"]
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.force_reschedule }}' = 'true' ]; then exec nomad job eval -detach -force-reschedule -- '{{ args.job }}'; else exec nomad job eval -detach -- '{{ args.job }}'; fi"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Re-evaluate a job
+    args:
+      job: "api"
+  - title: Force failed allocs to reschedule
+    args:
+      job: "api"
+      force_reschedule: "true"

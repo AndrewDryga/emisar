@@ -13,11 +13,7 @@ args:
     validation:
       pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/client/allocation/{{ args.alloc_id }}/stats\""
+  command: {binary: nomad, argv: ["operator", "api", "/v1/client/allocation/{{ args.alloc_id }}/stats"]}
   timeout: 15s
 output:
   parser: json

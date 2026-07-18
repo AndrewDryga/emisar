@@ -1,0 +1,42 @@
+schema_version: 1
+id: nomad.plugin_status
+title: nomad plugin status [id]
+kind: script
+risk: low
+description: >
+  Show CSI plugin health — controller/node instance counts and whether the
+  plugin is healthy. When a CSI volume is stuck, the answer is usually here,
+  not in the volume itself. Omit plugin_id to list every plugin; pass one for
+  its detail (from the list, or nomad.csi_volume_status's "Plugin ID").
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: plugin_id
+    type: string
+    required: false
+    default: ""
+    description: Plugin ID or prefix (empty = list all plugins).
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,127})?$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
+execution:
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["", "{{ args.region }}", "plugin status", "{{ args.plugin_id }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All CSI plugins
+    args: {}
+  - title: One plugin's health
+    args:
+      plugin_id: "aws-ebs0"

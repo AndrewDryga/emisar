@@ -19,11 +19,7 @@ args:
     validation:
       pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- -X PUT \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/node/{{ args.node_id }}/purge\""
+  command: {binary: nomad, argv: ["operator", "api", "-X", "PUT", "/v1/node/{{ args.node_id }}/purge"]}
   timeout: 30s
 output:
   parser: json

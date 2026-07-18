@@ -1,0 +1,58 @@
+schema_version: 1
+id: nomad.job_list_by_meta
+title: List jobs with meta (GET /v1/jobs?meta=true [&filter])
+kind: script
+risk: low
+description: >
+  List jobs together with their `meta` stanza (managed_by, application,
+  part_of, image_tag, …), optionally filtered server-side to the jobs whose
+  meta key equals a value — e.g. every job with managed_by=terraform. This is
+  the label-aware job discovery read: nomad.job_status_all shows no meta at
+  all, and without this the only way to see a job's meta is
+  nomad.job_inspect, one job at a time. Omit meta_key/meta_value to list
+  every job with its meta. Requires jq on the runner host.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: meta_key
+    type: string
+    required: false
+    default: ""
+    description: Job meta key to filter on (empty = no filter, list all jobs).
+    validation:
+      pattern: "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-]{0,63})?$"
+  - name: meta_value
+    type: string
+    required: false
+    default: ""
+    description: Exact value meta_key must equal (required when meta_key is set).
+    validation:
+      pattern: "^([a-zA-Z0-9_][a-zA-Z0-9_.\\-/:]{0,255})?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) = the default namespace; "*" = all namespaces.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
+execution:
+  script:
+    path: scripts/by_meta.sh
+    interpreter: /bin/sh
+  argv: ["jobs", "{{ args.namespace }}", "{{ args.meta_key }}", "{{ args.meta_value }}"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All jobs with their meta
+    args: {}
+  - title: Jobs managed by Terraform
+    args:
+      meta_key: "managed_by"
+      meta_value: "terraform"
+  - title: One application's jobs across all namespaces
+    args:
+      meta_key: "application"
+      meta_value: "blitz-website"
+      namespace: "*"
