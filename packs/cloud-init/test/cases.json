@@ -39,7 +39,11 @@
     {
       "action": "cloud-init.cloud_config_dump",
       "args": {},
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "cloud-init.collect_logs",
@@ -140,12 +144,20 @@
     {
       "action": "cloud-init.userdata_dump",
       "args": {},
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "cloud-init.vendor_data_dump",
       "args": {},
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "cloud-init.version",

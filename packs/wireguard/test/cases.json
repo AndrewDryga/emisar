@@ -21,7 +21,7 @@
       "action": "wg.set_peer_remove",
       "args": {
         "iface": "wg0",
-        "pubkey": "abcDEF1234567890abcDEF1234567890abcDEF1234="
+        "pubkey": "abcDEF1234567890abcDEF1234567890abcDEF12345="
       },
       "skip": "mutator skipped by default (high); set --include=wg.set_peer_remove to run"
     },

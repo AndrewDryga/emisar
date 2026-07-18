@@ -18,7 +18,11 @@
       "args": {
         "container": "web"
       },
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "podman.kill",

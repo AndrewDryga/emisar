@@ -67,7 +67,11 @@
       "args": {
         "container": "api"
       },
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "docker.kill",

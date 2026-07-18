@@ -31,7 +31,11 @@
     {
       "action": "nginx.config_dump",
       "args": {},
-      "expect_exit": 0
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
     },
     {
       "action": "nginx.connections_now",

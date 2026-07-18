@@ -142,7 +142,7 @@
     {
       "action": "linux.reboot_host",
       "args": {
-        "note": "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"
+        "note": "kernel upgrade to 5.15.140 - pending /var/run/reboot-required"
       },
       "expect_exit": [
         0,
