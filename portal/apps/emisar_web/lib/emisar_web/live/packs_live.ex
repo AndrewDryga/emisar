@@ -1636,12 +1636,6 @@ defmodule EmisarWeb.PacksLive do
             </p>
           </.docs_rail>
 
-          <.agent_skill_cta>
-            The <code class="text-zinc-300">author-pack</code>
-            skill walks Claude Code, Codex, or any agent that reads Markdown skills through
-            writing, validating, and shipping a pack of your own.
-          </.agent_skill_cta>
-
           <div>
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
               Housekeeping
