@@ -263,7 +263,10 @@ defmodule EmisarWeb.RunnerDetailLive do
                hostname's `wrap` spans both columns so it reads in one line. --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-16">
             <.meta_field label="Status">
-              <.status_badge status={connection_status(Runners.connection_state(@runner))} />
+              <.runner_status_badge
+                state={Runners.connection_state(@runner)}
+                version={@runner.runner_version}
+              />
             </.meta_field>
             <.meta_field label="Hostname" wrap>
               <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />

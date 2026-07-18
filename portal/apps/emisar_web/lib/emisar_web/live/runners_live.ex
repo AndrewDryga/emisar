@@ -317,7 +317,8 @@ defmodule EmisarWeb.RunnersLive do
                 </:group_header>
 
                 <:item :let={runner}>
-                  <% state = connection_status(Runners.connection_state(runner)) %>
+                  <% connection = Runners.connection_state(runner) %>
+                  <% state = connection_status(connection) %>
                   <li>
                     <.link
                       navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
@@ -376,7 +377,11 @@ defmodule EmisarWeb.RunnersLive do
                             {runner.action_load} active runs
                           </span>
                         </div>
-                        <.status_badge status={state} class="shrink-0" />
+                        <.runner_status_badge
+                          state={connection}
+                          version={runner.runner_version}
+                          class="shrink-0"
+                        />
                       </div>
                     </.link>
                   </li>

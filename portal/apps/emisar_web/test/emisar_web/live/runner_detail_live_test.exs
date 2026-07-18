@@ -91,6 +91,9 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     assert html =~ "unsupported"
     assert has_element?(lv, "#runner-version-#{runner.id}-tt", "unsupported")
+    # Status leads with a caution-toned "connected" (amber, not emerald): up
+    # and reachable, but the version chip flags the required upgrade.
+    assert has_element?(lv, "span.text-amber-300", "connected")
     assert html =~ "col-span-2 sm:col-span-1"
     assert html =~ "Runner update required"
     assert html =~ "/install.sh | sudo bash"
@@ -102,10 +105,12 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   test "a current runner shows no version chip", %{conn: conn, account: account} do
     runner = Fixtures.Runners.create_runner(account_id: account.id, runner_version: "1.0.0")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     refute html =~ "unsupported"
     refute html =~ "outdated"
     refute html =~ "/install.sh | sudo bash"
+    # A supported, connected runner reads emerald "connected" in the Status field.
+    assert has_element?(lv, "span.text-brand-300", "connected")
   end
 
   # a runner that has reported no catalog renders the

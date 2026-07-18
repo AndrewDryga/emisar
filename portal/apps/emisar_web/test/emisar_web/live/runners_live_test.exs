@@ -379,6 +379,11 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "unsupported"
+      # Up but below-minimum: the connection badge is toned to caution — amber
+      # "connected", not emerald — so it reads "reachable, but the rose chip
+      # beside it needs acting on". It keeps the word (unlike the agents pill),
+      # because a warn-only unsupported runner still connects and dispatches.
+      assert has_element?(lv, "span.text-amber-300.shrink-0", "connected")
       assert html =~ "Runner update required"
       assert html =~ "/install.sh | sudo bash"
       assert has_element?(lv, "#runner-upgrade-command + button", "Copy")
@@ -393,10 +398,13 @@ defmodule EmisarWeb.RunnersLiveTest do
         runner_version: "0.0.5"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "outdated"
       assert html =~ "Runner update available"
       assert html =~ "/install.sh | sudo bash"
+      # Outdated is advisory — the badge stays emerald "connected"; only a
+      # below-minimum version degrades the connection tone.
+      assert has_element?(lv, "span.text-brand-300.shrink-0", "connected")
     end
 
     test "a current runner shows no staleness chip", %{conn: conn, account: account} do
@@ -411,6 +419,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "outdated"
       refute html =~ "/install.sh | sudo bash"
       refute has_element?(lv, "#fleet-attention")
+      # A supported, connected runner reads emerald "connected" — no caution tone.
+      assert has_element?(lv, "span.text-brand-300.shrink-0", "connected")
     end
 
     test "the same runner clears its upgrade prompt after reconnecting on the current binary",
