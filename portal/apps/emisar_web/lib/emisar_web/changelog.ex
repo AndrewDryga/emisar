@@ -12,6 +12,14 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-17],
+      slug: "installer-preserves-commented-zed-config",
+      title: "The MCP installer preserves a commented Zed config",
+      tag: "v0.31.1",
+      summary:
+        "Connecting Zed through the installer no longer drops to a manual step. Zed ships a settings.json with comments and trailing commas that the installer's strict JSON parser refused; it now adds the emisar server while keeping those comments, the trailing commas, and any servers already configured. The same comment-safe merge covers any editor that keeps a commented JSON config."
+    },
+    %{
+      date: ~D[2026-07-17],
       slug: "browser-approved-connect-and-pack-lifecycle",
       title: "Browser-approved agent connect and pack lifecycle control",
       tag: "v0.31.0",

@@ -298,10 +298,11 @@
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
         </div>
         <p class="mt-2 text-xs leading-5 text-zinc-400">
-          The installer then offers to add emisar to the LLM clients on the
-          machine — approve the connection in your browser and it writes each
-          client's config itself. The manual per-client configs below remain
-          the by-hand path.
+          The installer is automated: it finds the LLM clients on the machine,
+          and once you approve the connection in your browser it mints each
+          client its own key and writes its config for you — your existing
+          comments and other servers preserved. You shouldn't need the by-hand
+          configs below; they're there for reference or an unattended setup.
         </p>
         <p class="mt-2 text-xs leading-5 text-zinc-400">
           Rather verify first? The bridge release carries SLSA provenance + a
@@ -327,15 +328,23 @@
 <span class="text-zinc-500">$</span> sudo ln -sf ~/go/bin/mcp /usr/local/bin/emisar-mcp</pre>
         </div>
 
-        <div class="mt-8 space-y-8">
-          <%!-- Claude Desktop --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+        <details class="group mt-8">
+          <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
+            Set up a client by hand
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
+          </summary>
+          <div class="mt-6 space-y-8">
+            <%!-- Claude Desktop --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -347,21 +356,21 @@
     &#125;
   &#125;
 &#125;</pre>
-            </div>
-            <p class="mt-3 text-sm text-zinc-400">
-              Restart Claude Desktop. Tools appear under the tool icon
-              as "emisar".
-            </p>
-          </section>
+              </div>
+              <p class="mt-3 text-sm text-zinc-400">
+                Restart Claude Desktop. Tools appear under the tool icon
+                as "emisar".
+              </p>
+            </section>
 
-          <%!-- Cursor --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+            <%!-- Cursor --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -373,43 +382,72 @@
     &#125;
   &#125;
 &#125;</pre>
-            </div>
-            <p class="mt-3 text-sm text-zinc-400">
-              Recent Cursor builds also speak remote MCP — point them at
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-              directly (step 1) if you'd rather skip the bridge.
-            </p>
-          </section>
-
-          <%!-- Claude Code (CLI) --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              One-line register, user scope (every project):
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                terminal
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
+              <p class="mt-3 text-sm text-zinc-400">
+                Recent Cursor builds also speak remote MCP — point them at
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+                directly (step 1) if you'd rather skip the bridge.
+              </p>
+            </section>
+
+            <%!-- Zed --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Zed</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                The installer adds this for you and preserves your existing
+                comments and servers. By hand, Zed reads
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                  ~/.config/zed/settings.json
+                </code>
+                and nests MCP servers under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">context_servers</code>, not <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcpServers</code>:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+  "context_servers": &#123;
+    "emisar": &#123;
+      "source": "custom",
+      "command": "/usr/local/bin/emisar-mcp",
+      "args": [],
+      "env": &#123;
+        "EMISAR_URL": "https://emisar.dev",
+        "EMISAR_API_KEY": "emk-...",
+        "EMISAR_CLIENT": "zed"
+      &#125;
+    &#125;
+  &#125;
+&#125;</pre>
+              </div>
+            </section>
+
+            <%!-- Claude Code (CLI) --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                One-line register, user scope (every project):
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+                  terminal
+                </div>
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_API_KEY=emk-... \
     -e EMISAR_CLIENT=claude-code \
     -- /usr/local/bin/emisar-mcp</pre>
-            </div>
-            <p class="mt-3 text-sm text-zinc-400">
-              Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
-            </p>
-          </section>
+              </div>
+              <p class="mt-3 text-sm text-zinc-400">
+                Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
+              </p>
+            </section>
 
-          <%!-- Gemini CLI --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+            <%!-- Gemini CLI --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -420,56 +458,57 @@
     &#125;
   &#125;
 &#125;</pre>
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <%!-- ChatGPT Codex CLI --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
+            <%!-- ChatGPT Codex CLI --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
 command = "/usr/local/bin/emisar-mcp"
 env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</pre>
-            </div>
-            <p class="mt-3 text-sm text-zinc-400">
-              To let emisar calls run without Codex prompts, add
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                default_tools_approval_mode = "approve"
-              </code>
-              below
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
-              in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
-              This trusts only the emisar MCP server; emisar still applies its own policies and approvals.
-            </p>
-          </section>
-
-          <%!-- Grok CLI --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Grok CLI</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Register the bridge in your user config:
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                terminal
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> grok mcp add emisar \
+              <p class="mt-3 text-sm text-zinc-400">
+                To let emisar calls run without Codex prompts, add
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                  default_tools_approval_mode = "approve"
+                </code>
+                below
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
+                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
+                This trusts only the emisar MCP server; emisar still applies its own policies and approvals.
+              </p>
+            </section>
+
+            <%!-- Grok CLI --%>
+            <section>
+              <h3 class="text-xl font-semibold text-zinc-50">Grok CLI</h3>
+              <p class="mt-2 text-sm text-zinc-400">
+                Register the bridge in your user config:
+              </p>
+              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+                  terminal
+                </div>
+                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> grok mcp add emisar \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_API_KEY=emk-... \
     -e EMISAR_CLIENT=grok \
     -- /usr/local/bin/emisar-mcp</pre>
-            </div>
-            <p class="mt-3 text-sm text-zinc-400">
-              To stop Grok's per-tool prompts for emisar only, add
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
-              in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.grok/config.toml</code>.
-            </p>
-          </section>
-        </div>
+              </div>
+              <p class="mt-3 text-sm text-zinc-400">
+                To stop Grok's per-tool prompts for emisar only, add
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
+                to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
+                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.grok/config.toml</code>.
+              </p>
+            </section>
+          </div>
+        </details>
 
         <p class="mt-6 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
           <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>

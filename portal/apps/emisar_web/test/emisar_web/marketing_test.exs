@@ -688,6 +688,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s("EMISAR_CLIENT": "claude-desktop")
       assert html =~ ~s("EMISAR_CLIENT": "cursor")
       assert html =~ ~s(EMISAR_CLIENT = "codex")
+      # Zed nests under context_servers (not mcpServers) — its own shape.
+      assert html =~ ".config/zed/settings.json"
+      assert html =~ "context_servers"
+      assert html =~ ~s("EMISAR_CLIENT": "zed")
     end
 
     test "the changelog renders its entries and the feed links", %{conn: conn} do
@@ -713,6 +717,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Leaner MCP results and a hardened pack catalog"
       assert html =~ "Database-enforced tenant isolation and steadier dispatch"
       assert html =~ "Browser-approved agent connect and pack lifecycle control"
+      assert html =~ "The MCP installer preserves a commented Zed config"
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"
@@ -729,6 +734,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.29.0"
       assert html =~ "v0.30.0"
       assert html =~ "v0.31.0"
+      assert html =~ "v0.31.1"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
