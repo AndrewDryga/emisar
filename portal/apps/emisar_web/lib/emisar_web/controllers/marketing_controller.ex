@@ -105,13 +105,13 @@ defmodule EmisarWeb.MarketingController do
   # match visible content without the two drifting apart.
   @home_faqs [
     {"Can the LLM run anything it wants?",
-     "No. The runner only exposes actions declared in a content-addressed pack. Anything else is rejected at the runner before it touches your shell. The model literally cannot see undeclared commands."},
+     "No. The runner accepts only actions declared in a trusted pack and allowed by its local admission rules. Undeclared commands are not part of the agent's catalog and are rejected before execution."},
     {"What can it actually do?",
      "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, never a raw shell."},
     {"Where do approvals happen?",
      "In the web UI and your email inbox. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
     {"Do I have to approve every action?",
-     "No — you decide per action. We all know that agents are most useful when they are unleashed. Reads run automatically. You reserve approvals for the risky, mutating ones. Policy sets allow / require-approval / deny by risk tier, with per-action, per-runner or per-runner-group overrides, and the destructive verbs are deny-by-default."},
+     "No. Policy decides by risk tier, action, runner, or runner group. We all know that agents are most useful when they are unleashed so routine, bounded reads can run automatically. Risky mutations can require approval, and destructive actions can be denied. You choose where the agent keeps moving and where a person must step in."},
     {"What if my runner dies mid-run?",
      "On Linux, the runner kills the child and its process group when it exits (PR_SET_PDEATHSIG + setpgid), so a dead runner doesn't leave the action running. If the runner stays offline, the cloud's dispatch-timeout sweep marks its in-flight runs as errored with the reason within minutes, so nothing reads as running forever."},
     {"Is this MCP-compatible?",
@@ -136,7 +136,7 @@ defmodule EmisarWeb.MarketingController do
               "url" => @base,
               "logo" => @base <> "/images/brand/emisar-logo.png",
               "description" =>
-                "Give AI tools approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
+                "The best way to give your AI agents access to production. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
             },
             %{
               "@type" => "SoftwareApplication",
@@ -168,7 +168,7 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "Give AI tools approved infrastructure actions, not SSH",
+      page_title: "The best way to give your AI agents access to production.",
       meta_description:
         "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
       canonical_url: @base <> "/",

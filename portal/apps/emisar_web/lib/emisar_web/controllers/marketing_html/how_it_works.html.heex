@@ -19,14 +19,14 @@
     <div class="mx-auto max-w-4xl px-6 py-24 sm:py-32 lg:px-8">
       <p class="text-base font-semibold text-brand-400">How it works</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
-        Your agent never touches a server.
+        Your agent requests. Your runner executes.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-        When your agent needs something done — say a service is failing and it wants to investigate
-        it — it doesn't run a command. It sends emisar a request: this action, on this server,
-        for this reason. Depending on your rules, that request runs right away, gets refused, or
-        waits for a person to approve it. A small program on your server called the runner does
-        the actual work, and every step is written down in the audit log.
+        When your agent needs something done — say a service is failing and it wants to investigate —
+        it doesn't open a shell or connect directly to the host. It asks emisar for one declared
+        action, on one server, for a stated reason. Depending on your rules, that request runs right
+        away, gets refused, or waits for a person to approve it. A small program on your server
+        called the runner does the actual work, and every step is written down in the audit log.
       </p>
     </div>
   </section>

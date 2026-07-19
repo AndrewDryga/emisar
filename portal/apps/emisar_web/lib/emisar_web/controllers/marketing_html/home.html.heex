@@ -23,7 +23,7 @@
           added as packs. Agents can inspect real production state, debug what they shipped,
           and help resolve incidents. Safe reads run automatically; policy allows, blocks,
           or routes risky actions for approval. No SSH keys, VPNs, remote shells, or
-          standing access — and every call is recorded.
+          standing shell access — and every call is recorded.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -232,13 +232,11 @@
           A catalog, a gate, and a ledger.
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Every request is handled the same way.
-          Emisar builds on top of <b>vetted actions</b> groupped in packs.
-          Each action declares what it can do, carries a
-          risk tier — low, medium, high, or critical, and validates the input. The policy you set decides which tiers need a
-          human to approve. The runner re-checks the request before it runs. Then every call is
-          recorded twice — to the searchable audit in the portal, and to a hash-chained journal on
-          the runner host.
+          Every request follows the same path. Packs group <b>vetted actions</b> into a versioned
+          catalog. Each action declares what it does, validates its inputs, and carries a risk
+          tier: low, medium, high, or critical. Your policy decides which actions run, wait for
+          approval, or are denied. The runner checks the request again before execution. The portal
+          records the request, and the host writes the execution attempt to a hash-chained journal.
         </p>
       </div>
 
