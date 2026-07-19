@@ -1108,40 +1108,37 @@ defmodule EmisarWeb.TeamLive do
               <p class="mt-0.5 text-xs text-zinc-400">
                 Where this role applies. New members start with no runner access.
               </p>
-              <.choice_cards
-                name="invite[runner_access_mode]"
-                value={@form[:runner_access_mode].value}
-                class="mt-2.5"
-              >
-                <:card value="none" title="No runners">
-                  They can join the workspace but cannot view or act on runners.
-                </:card>
-                <:card value="all" title="All runners">
-                  Includes every current and future runner in this workspace.
-                </:card>
-                <:card value="restricted" title="Selected runners">
-                  Limit access to named runner groups or individual runners.
-                </:card>
-              </.choice_cards>
+              <div class="mt-2.5">
+                <.choice_cards
+                  name="invite[runner_access_mode]"
+                  value={@form[:runner_access_mode].value}
+                  attached_value="restricted"
+                >
+                  <:card value="none" title="No runners">
+                    They can join the workspace but cannot view or act on runners.
+                  </:card>
+                  <:card value="all" title="All runners">
+                    Includes every current and future runner in this workspace.
+                  </:card>
+                  <:card value="restricted" title="Selected runners">
+                    Limit access to named runner groups or individual runners.
+                  </:card>
+                </.choice_cards>
 
-              <.error :if={@form[:runner_access_mode].errors != []}>
-                Choose at least one runner group or runner for selected access.
-              </.error>
-
-              <div
-                :if={@form[:runner_access_mode].value == "restricted"}
-                class="mt-4 space-y-3"
-              >
-                <.loading_state :if={@loading?} />
-                <.callout :if={@runner_load_error?} tone={:rose}>
-                  Runner access options could not be loaded. Try again before sending the invite.
-                </.callout>
                 <.runner_scope_select
-                  :if={not @loading? and not @runner_load_error?}
+                  :if={@form[:runner_access_mode].value == "restricted"}
                   name="invite[scope][]"
-                  label="Selected runners"
+                  variant={:attached}
                   runners={@runners}
                   selected={List.wrap(@form[:scope].value)}
+                  submit_error_field={@form[:runner_access_mode]}
+                  submit_error_message="Choose at least one runner group or runner for selected access."
+                  loading?={@loading?}
+                  load_error={
+                    if @runner_load_error? do
+                      "Runner access options could not be loaded. Try again before sending the invite."
+                    end
+                  }
                 />
               </div>
             </fieldset>
@@ -1532,28 +1529,31 @@ defmodule EmisarWeb.TeamLive do
                         Role controls what this member can do. Runner access controls where it applies.
                       </p>
 
-                      <.choice_cards
-                        name="runner_access_mode"
-                        value={@scope_access_mode}
-                      >
-                        <:card value="none" title="No runners">
-                          Keep the member in the workspace without runner reach.
-                        </:card>
-                        <:card value="all" title="All runners">
-                          Grant every current and future runner in this workspace.
-                        </:card>
-                        <:card value="restricted" title="Selected runners">
-                          Grant only selected runner groups or individual runners.
-                        </:card>
-                      </.choice_cards>
+                      <div>
+                        <.choice_cards
+                          name="runner_access_mode"
+                          value={@scope_access_mode}
+                          attached_value="restricted"
+                        >
+                          <:card value="none" title="No runners">
+                            Keep the member in the workspace without runner reach.
+                          </:card>
+                          <:card value="all" title="All runners">
+                            Grant every current and future runner in this workspace.
+                          </:card>
+                          <:card value="restricted" title="Selected runners">
+                            Grant only selected runner groups or individual runners.
+                          </:card>
+                        </.choice_cards>
 
-                      <.runner_scope_select
-                        :if={@scope_access_mode == "restricted"}
-                        name="scope[]"
-                        label="Selected runners"
-                        runners={@runners}
-                        selected={@scope_draft}
-                      />
+                        <.runner_scope_select
+                          :if={@scope_access_mode == "restricted"}
+                          name="scope[]"
+                          variant={:attached}
+                          runners={@runners}
+                          selected={@scope_draft}
+                        />
+                      </div>
 
                       <div class="flex items-center gap-3">
                         <.button phx-disable-with="Saving...">Save scope</.button>

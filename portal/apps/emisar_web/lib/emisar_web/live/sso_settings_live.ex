@@ -673,7 +673,7 @@ defmodule EmisarWeb.SSOSettingsLive do
          )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -710,7 +710,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              )}
 
           {:error, %Ecto.Changeset{}} ->
-            {:noreply, assign(socket, :edit_form, edit_form(provider, params, :insert))}
+            {:noreply, assign(socket, :edit_form, edit_form(provider, params, :update))}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -919,7 +919,7 @@ defmodule EmisarWeb.SSOSettingsLive do
            |> reload_runner_access_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
-          form = runner_access_mapping_to_form(provider, changeset)
+          form = runner_access_mapping_to_form(provider, Map.put(changeset, :action, :insert))
           {:noreply, put_runner_access_mapping_form(socket, provider_id, form)}
 
         {:error, reason} ->
@@ -950,7 +950,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              |> reload_runner_access_mappings_for_id(updated.provider_id)}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            form = runner_access_mapping_edit_form(mapping, changeset)
+            form = runner_access_mapping_edit_form(mapping, Map.put(changeset, :action, :update))
             {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
 
           {:error, reason} ->
@@ -2043,37 +2043,35 @@ defmodule EmisarWeb.SSOSettingsLive do
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               Role controls what a new member can do. Runner access controls where it applies.
             </p>
-            <.choice_cards
-              name="provider[default_runner_access_mode]"
-              value={@form[:default_runner_access_mode].value}
-              class="mt-2"
-            >
-              <:card value="none" title="No runners">
-                New members join without runner visibility or dispatch reach.
-              </:card>
-              <:card value="all" title="All runners">
-                New members receive every current and future runner.
-              </:card>
-              <:card value="restricted" title="Selected runners">
-                New members receive only selected runner groups or runners.
-              </:card>
-            </.choice_cards>
-            <.error :if={@form[:default_runner_access_mode].errors != []}>
-              Choose at least one runner group or runner for selected access.
-            </.error>
-            <div
-              :if={restricted_runner_access?(@form[:default_runner_access_mode].value)}
-              class="mt-4"
-            >
-              <.callout :if={@runner_load_error?} tone={:rose}>
-                Runner access options could not be loaded. Try again before saving.
-              </.callout>
+            <div class="mt-2">
+              <.choice_cards
+                name="provider[default_runner_access_mode]"
+                value={@form[:default_runner_access_mode].value}
+                attached_value="restricted"
+              >
+                <:card value="none" title="No runners">
+                  New members join without runner visibility or dispatch reach.
+                </:card>
+                <:card value="all" title="All runners">
+                  New members receive every current and future runner.
+                </:card>
+                <:card value="restricted" title="Selected runners">
+                  New members receive only selected runner groups or runners.
+                </:card>
+              </.choice_cards>
+
               <.runner_scope_select
-                :if={not @runner_load_error?}
+                :if={restricted_runner_access?(@form[:default_runner_access_mode].value)}
                 name="provider[default_runner_scope][]"
-                label="Selected runners"
+                variant={:attached}
                 runners={@runners}
                 selected={provider_scope_values(@form)}
+                submit_error_field={@form[:default_runner_access_mode]}
+                submit_error_message="Choose at least one runner group or runner for selected access."
+                load_error={
+                  if @runner_load_error?,
+                    do: "Runner access options could not be loaded. Try again before saving."
+                }
               />
             </div>
           </div>
@@ -2839,30 +2837,31 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       <div>
         <.label>Runner access grant</.label>
-        <.choice_cards
-          name={@form[:runner_access_mode].name}
-          value={@form[:runner_access_mode].value}
-          class="mt-2"
-        >
-          <:card value="all" title="All runners">
-            Grant every current and future runner.
-          </:card>
-          <:card value="restricted" title="Selected runners">
-            Grant selected runner groups or individual runners.
-          </:card>
-        </.choice_cards>
-        <.error :if={@form[:runner_access_mode].errors != []}>
-          Choose all runners or at least one selected runner scope.
-        </.error>
-      </div>
+        <div class="mt-2">
+          <.choice_cards
+            name={@form[:runner_access_mode].name}
+            value={@form[:runner_access_mode].value}
+            attached_value="restricted"
+          >
+            <:card value="all" title="All runners">
+              Grant every current and future runner.
+            </:card>
+            <:card value="restricted" title="Selected runners">
+              Grant selected runner groups or individual runners.
+            </:card>
+          </.choice_cards>
 
-      <.runner_scope_select
-        :if={restricted_runner_access?(@form[:runner_access_mode].value)}
-        name={"#{@form.name}[scope][]"}
-        label="Selected runners"
-        runners={@runners}
-        selected={runner_access_mapping_scope_values(@form)}
-      />
+          <.runner_scope_select
+            :if={restricted_runner_access?(@form[:runner_access_mode].value)}
+            name={"#{@form.name}[scope][]"}
+            variant={:attached}
+            runners={@runners}
+            selected={runner_access_mapping_scope_values(@form)}
+            submit_error_field={@form[:runner_access_mode]}
+            submit_error_message="Choose all runners or at least one selected runner scope."
+          />
+        </div>
+      </div>
     </div>
     """
   end

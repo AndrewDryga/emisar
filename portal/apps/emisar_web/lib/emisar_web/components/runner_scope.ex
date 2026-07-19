@@ -17,31 +17,53 @@ defmodule EmisarWeb.RunnerScope do
   owns the separate no-access and all-runners choices.
   """
   use Phoenix.Component
-  import EmisarWeb.CoreComponents, only: [checkbox: 1]
+  import EmisarWeb.CoreComponents, only: [callout: 1, checkbox: 1, error: 1, loading_state: 1]
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
   attr :runners, :list, required: true, doc: "the account's runners (need id, name, group)"
   attr :selected, :list, default: [], doc: ~s(chosen "group:x"/"runner:id" values)
   attr :label, :string, default: nil
+  attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
+  attr :submit_error_field, Phoenix.HTML.FormField, default: nil
+  attr :submit_error_message, :string, default: nil
+  attr :loading?, :boolean, default: false
+  attr :load_error, :string, default: nil
+  attr :class, :any, default: nil
   attr :rest, :global
 
   def runner_scope_select(assigns) do
-    assigns = assign(assigns, :tree, tree(assigns.runners, assigns.selected))
+    assigns =
+      assigns
+      |> assign(:tree, tree(assigns.runners, assigns.selected))
+      |> assign(
+        :visible_submit_error,
+        visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
+      )
 
     ~H"""
-    <div {@rest}>
+    <div class={[scope_container_class(@variant), @class]} {@rest}>
       <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
 
+      <div :if={@visible_submit_error} class={scope_feedback_class(@variant)}>
+        <.error>{@visible_submit_error}</.error>
+      </div>
+      <div :if={@loading?} class={scope_feedback_class(@variant)}>
+        <.loading_state />
+      </div>
+      <div :if={@load_error} class={scope_feedback_class(@variant)}>
+        <.callout tone={:rose}>{@load_error}</.callout>
+      </div>
+
       <div
-        :if={@runners == []}
-        class="rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-400 ring-1 ring-white/[0.08]"
+        :if={not @loading? and is_nil(@load_error) and @runners == []}
+        class={scope_empty_class(@variant)}
       >
         No runners registered yet.
       </div>
 
       <div
-        :if={@runners != []}
-        class="max-h-72 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain rounded-lg ring-1 ring-white/[0.08] bg-zinc-950/40"
+        :if={not @loading? and is_nil(@load_error) and @runners != []}
+        class={scope_tree_class(@variant)}
       >
         <div :for={group <- @tree.groups}>
           <.checkbox
@@ -51,7 +73,7 @@ defmodule EmisarWeb.RunnerScope do
             class={group_row_class(group.selected)}
           >
             <span class="flex-1 truncate font-medium text-zinc-100">{group.name}</span>
-            <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+            <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
               {length(group.runners)} {if length(group.runners) == 1, do: "runner", else: "runners"}
             </span>
           </.checkbox>
@@ -59,7 +81,7 @@ defmodule EmisarWeb.RunnerScope do
           <%!-- Runners nested under the group, along a hierarchy rail. When the
                group is picked they're disabled + tagged "via group" — the group
                already covers them, so an individual tick would be redundant. --%>
-          <div class="ml-[1.4rem] border-l border-zinc-800/70">
+          <div class="relative ml-5 before:pointer-events-none before:absolute before:bottom-5 before:left-0 before:top-0 before:w-px before:bg-zinc-700/50 before:content-['']">
             <.checkbox
               :for={runner <- group.runners}
               name={@name}
@@ -68,7 +90,7 @@ defmodule EmisarWeb.RunnerScope do
               disabled={runner.covered}
               class={runner_row_class(runner.covered)}
             >
-              <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
+              <span class="flex-1 truncate text-zinc-400">{runner.name}</span>
               <span
                 :if={runner.covered}
                 class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
@@ -88,7 +110,7 @@ defmodule EmisarWeb.RunnerScope do
             name={@name}
             value={runner.value}
             checked={runner.selected}
-            class="flex cursor-pointer select-none items-center gap-3 py-2.5 pl-3 pr-3 text-sm transition hover:bg-white/[0.04]"
+            class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
           >
             <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
           </.checkbox>
@@ -142,13 +164,50 @@ defmodule EmisarWeb.RunnerScope do
     }
   end
 
-  @group_row "flex cursor-pointer select-none items-center gap-3 px-3 py-3 transition hover:bg-white/[0.04]"
+  @group_row "relative flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-5 after:top-[calc(50%+0.5rem)] after:w-px after:bg-zinc-700/50 after:content-[''] hover:bg-white/[0.05]"
   defp group_row_class(true), do: @group_row <> " bg-brand-500/[0.07]"
-  defp group_row_class(false), do: @group_row
+  defp group_row_class(false), do: @group_row <> " bg-white/[0.025]"
 
-  @runner_row "flex select-none items-center gap-3 py-2.5 pl-3 pr-3 text-sm transition"
+  @runner_row "relative flex min-h-10 select-none items-center gap-3 py-2 pl-3 pr-3 text-[11px] transition-colors before:pointer-events-none before:absolute before:left-0 before:top-1/2 before:h-px before:w-3 before:bg-zinc-700/50 before:content-['']"
   defp runner_row_class(true), do: @runner_row <> " opacity-55"
   defp runner_row_class(false), do: @runner_row <> " cursor-pointer hover:bg-white/[0.04]"
+
+  defp scope_container_class(:attached) do
+    "overflow-hidden rounded-b-lg border border-t border-white/25 bg-white/[0.04] " <>
+      "peer-focus-within/attached-panel:border-x-brand-500/70 " <>
+      "peer-focus-within/attached-panel:border-b-brand-500/70"
+  end
+
+  defp scope_container_class(:standalone), do: nil
+
+  defp scope_tree_class(:attached) do
+    "max-h-72 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain"
+  end
+
+  defp scope_tree_class(:standalone) do
+    "max-h-72 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain rounded-lg bg-zinc-950/40 ring-1 ring-white/[0.08]"
+  end
+
+  defp scope_feedback_class(:attached), do: "px-3 pb-3"
+  defp scope_feedback_class(:standalone), do: nil
+
+  defp scope_empty_class(:attached), do: "px-3 py-4 text-xs text-zinc-400"
+
+  defp scope_empty_class(:standalone) do
+    "rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-400 ring-1 ring-white/[0.08]"
+  end
+
+  defp visible_submit_error(
+         %Phoenix.HTML.FormField{
+           errors: [_ | _],
+           form: %Phoenix.HTML.Form{source: %{action: action}}
+         },
+         message
+       )
+       when action in [:insert, :update] and is_binary(message),
+       do: message
+
+  defp visible_submit_error(_field, _message), do: nil
 
   @doc """
   Parse the checked scope values back to `{:ok, %{groups: [name], runner_ids: [id]}}`,

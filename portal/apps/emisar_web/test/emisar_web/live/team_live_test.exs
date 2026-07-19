@@ -169,11 +169,15 @@ defmodule EmisarWeb.TeamLiveTest do
       _web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
-      lv
-      |> form("#invite_form", %{
-        "invite" => %{"runner_access_mode" => "restricted"}
-      })
-      |> render_change()
+      changed =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{"runner_access_mode" => "restricted"}
+        })
+        |> render_change()
+
+      refute changed =~ "Choose at least one runner group or runner"
+      assert length(Regex.scan(~r/>Selected runners</, changed)) == 1
 
       invalid =
         lv

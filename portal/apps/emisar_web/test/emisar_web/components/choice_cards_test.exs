@@ -44,7 +44,8 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
     test "selection is NEUTRAL (bright ring + check), never a semantic hue" do
       html = render_pair(%{value: true, disabled: false})
 
-      assert html =~ "bg-white/[0.04] ring-white/25"
+      assert html =~ "bg-white/[0.04]"
+      assert html =~ "ring-white/25"
       assert html =~ "hero-check-circle-solid"
       # The only brand usage is the keyboard focus ring.
       refute html =~ "bg-brand-500"
@@ -73,6 +74,27 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
       assert html =~ "sm:grid-cols-2"
       assert html =~ "cursor-not-allowed opacity-70"
       assert html =~ ~r/<input[^>]*disabled/
+    end
+
+    test "an attached selected value opens its card edge for a dependent panel" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.choice_cards
+          name="access"
+          value="restricted"
+          attached_value="restricted"
+        >
+          <:card value="all" title="All runners">Every runner.</:card>
+          <:card value="restricted" title="Selected runners">Named runners.</:card>
+        </CoreComponents.choice_cards>
+        """)
+
+      assert html =~ ~r/<label[^>]*rounded-t-lg[^>]*>\s*<input[^>]*value="restricted"/
+      assert html =~ ~r/<label[^>]*border-b-0[^>]*>\s*<input[^>]*value="restricted"/
+      assert html =~ ~r/<label[^>]*rounded-lg[^>]*>\s*<input[^>]*value="all"/
+      assert html =~ "peer/attached-panel"
     end
   end
 end

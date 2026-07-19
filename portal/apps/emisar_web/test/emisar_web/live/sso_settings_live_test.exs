@@ -123,6 +123,32 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
              )
     end
 
+    test "selected provider access reveals quietly and validates on submit", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      changed =
+        lv
+        |> form("#provider_form", %{
+          "provider" => %{"default_runner_access_mode" => "restricted"}
+        })
+        |> render_change()
+
+      refute changed =~ "Choose at least one runner group or runner for selected access."
+
+      invalid =
+        lv
+        |> form("#provider_form", %{
+          "provider" => %{"default_runner_access_mode" => "restricted"}
+        })
+        |> render_submit()
+
+      assert invalid =~ "Choose at least one runner group or runner for selected access."
+    end
+
     test "the edit page renders the form without leaking the stored secret", %{
       conn: conn,
       account: account
@@ -804,12 +830,28 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "No runners registered yet"
       render_click(lv, "add_runner_access_mapping_form", %{})
 
-      lv
-      |> form("#create-runner-access-mapping-#{provider.id}", %{
-        "provider_id" => provider.id,
-        "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
-      })
-      |> render_change()
+      changed =
+        lv
+        |> form("#create-runner-access-mapping-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
+        })
+        |> render_change()
+
+      refute changed =~ "Choose all runners or at least one selected runner scope."
+
+      invalid =
+        lv
+        |> form("#create-runner-access-mapping-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "runner_access_mapping" => %{
+            "external_group_id" => "grp-database",
+            "runner_access_mode" => "restricted"
+          }
+        })
+        |> render_submit()
+
+      assert invalid =~ "Choose all runners or at least one selected runner scope."
 
       html =
         lv

@@ -2657,6 +2657,10 @@ defmodule EmisarWeb.CoreComponents do
   attr :columns, :integer, default: 1, values: [1, 2]
   attr :class, :string, default: nil
 
+  attr :attached_value, :string,
+    default: nil,
+    doc: "selected value whose dependent panel visually continues its card"
+
   slot :card, required: true do
     attr :value, :string, required: true
     attr :icon, :string
@@ -2668,7 +2672,13 @@ defmodule EmisarWeb.CoreComponents do
     <div class={[choice_cards_grid(@columns), @class]}>
       <label
         :for={card <- @card}
-        class={choice_card_class(to_string(@value) == card.value, @disabled)}
+        class={
+          choice_card_class(
+            to_string(@value) == card.value,
+            @disabled,
+            to_string(@value) == card.value and @attached_value == card.value
+          )
+        }
       >
         <input
           type="radio"
@@ -2707,23 +2717,34 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp choice_cards_grid(1), do: "grid grid-cols-1 gap-2"
-  defp choice_cards_grid(2), do: "grid grid-cols-1 gap-2 sm:grid-cols-2"
+  defp choice_cards_grid(1), do: "peer/attached-panel grid grid-cols-1 gap-2"
+  defp choice_cards_grid(2), do: "peer/attached-panel grid grid-cols-1 gap-2 sm:grid-cols-2"
 
   # Neutral-bright when selected — never a semantic safe/warn hue on a
   # selection affordance. focus-within lifts the ring for keyboard users
   # (the radio itself is sr-only).
-  defp choice_card_class(selected?, disabled?) do
+  defp choice_card_class(selected?, disabled?, attached?) do
     [
-      "flex items-start gap-3 rounded-lg p-3 ring-1 transition",
-      "focus-within:ring-2 focus-within:ring-brand-500/50",
-      if(selected?,
-        do: "bg-white/[0.04] ring-white/25",
-        else: "bg-black/20 ring-zinc-800 hover:ring-zinc-700"
-      ),
+      "flex items-start gap-3 p-3 transition-[background-color,border-color,box-shadow]",
+      choice_card_frame(selected?, attached?),
       if(disabled?, do: "cursor-not-allowed opacity-70", else: "cursor-pointer")
     ]
     |> Enum.join(" ")
+  end
+
+  defp choice_card_frame(_selected?, true) do
+    "rounded-t-lg border border-b-0 border-white/25 bg-white/[0.04] " <>
+      "focus-within:border-brand-500/70"
+  end
+
+  defp choice_card_frame(true, false) do
+    "rounded-lg bg-white/[0.04] ring-1 ring-white/25 " <>
+      "focus-within:ring-2 focus-within:ring-brand-500/50"
+  end
+
+  defp choice_card_frame(false, false) do
+    "rounded-lg bg-black/20 ring-1 ring-zinc-800 hover:ring-zinc-700 " <>
+      "focus-within:ring-2 focus-within:ring-brand-500/50"
   end
 
   defp choice_card_icon_class(selected?) do
