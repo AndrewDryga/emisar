@@ -14,8 +14,8 @@ MCP bridge connects local MCP clients to the same control-plane surface.
 | `mcp/` | Thin stdio-to-HTTP JSON-RPC bridge for local MCP clients | Holds the operator API key and optional signed-dispatch leaf key; it does not implement policy or action behavior |
 | `packs/` | Versioned action manifests, schemas, commands, scripts, limits, and redaction rules | Pack bytes are executable configuration; a trusted content hash is the reviewed unit |
 
-`tools/` contains repository-only generators and CI checks. It is not shipped
-to customers and is not part of the runtime system.
+`tools/` contains pack-authoring support, repository checks, and maintainer E2E
+drivers. It is not shipped to customers and is not part of the runtime system.
 
 ## Request flow
 

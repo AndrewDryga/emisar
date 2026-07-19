@@ -11,11 +11,6 @@ Start with the public pack catalog, let emisar suggest the packs that match a
 host, and add your own actions without adding another MCP server to every
 client.
 
-**Status:** public beta. The hosted control plane is the supported product
-boundary today. Self-hosted and air-gapped control-plane deployments are not
-generally available. The runner, MCP bridge, and action packs are open source;
-the control plane is source-available. See [License](#license).
-
 ## Start with one host
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
@@ -96,7 +91,8 @@ Read the exact guarantees, limitations, and threat model in
 
 ## What emisar is not
 
-- It is not a sandbox or process isolator.
+- It is not a sandbox or process isolator. We recommend using one, such as
+  [coop](https://github.com/AndrewDryga/coop).
 - It is not a generic `execute(command)` tool or a replacement for SSH.
 - It does not replace OS least privilege, change management, or configuration
   management.
@@ -120,7 +116,7 @@ and should not be installed on production runners.
 | Review architecture and trust boundaries | [`docs/architecture.md`](docs/architecture.md) |
 | Review protocol contracts | [`docs/wire-protocol.md`](docs/wire-protocol.md) and [`docs/mcp-api-spec.md`](docs/mcp-api-spec.md) |
 | Contribute to the control plane | [`portal/README.md`](portal/README.md) |
-| Review the production GCP reference stack | [`infra/README.md`](infra/README.md) |
+| Review the production GCP infrastructure | [`infra/README.md`](infra/README.md) |
 
 ## Repository layout
 
@@ -130,8 +126,8 @@ runner/   Go host runner and operator CLI
 mcp/      Go stdio-to-HTTP MCP bridge
 packs/    Versioned action-pack catalog
 skills/   Standalone customer skills for coding agents
-infra/    Terraform reference for the hosted GCP deployment
-tools/    Maintainer-only generators and checks
+infra/    Production Terraform for emisar on Google Cloud
+tools/    Pack-authoring support, repository checks, and maintainer E2E drivers
 docs/     Architecture, security, protocol, release, and distribution references
 ```
 
