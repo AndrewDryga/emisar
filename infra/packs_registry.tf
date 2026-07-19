@@ -103,12 +103,19 @@ resource "google_compute_backend_bucket" "pack_registry" {
   name        = "emisar-pack-registry-backend"
   bucket_name = google_storage_bucket.pack_registry.name
 
-  # CDN stays OFF until publish stamps Cache-Control per object class: the
-  # mutable catalog.json/suggest.json pointers carry no cache-busting names,
-  # so edge-caching them would pin a stale catalog at the edge for hours.
-  # (The content-addressed tarballs are perfectly cacheable — flipping this
-  # on is worth it only WITH that metadata discipline.)
-  enable_cdn = false
+  # CDN ON, honoring the per-object Cache-Control the publisher already stamps
+  # (runner/internal/catalog/publish.go): the immutable, content-addressed
+  # objects — v1/packs/**, the v1/catalog/<hash>.json snapshots, and the
+  # versioned v1/schemas/** — carry `public, max-age=31536000, immutable` and
+  # cache at the edge; the two live pointers (v1/catalog.json, v1/suggest.json)
+  # carry `no-store` and are never edge-cached, so a fresh publish is visible
+  # immediately. USE_ORIGIN_HEADERS is what makes that split hold — the edge
+  # caches strictly per object, never a blanket default_ttl that would pin the
+  # mutable pointers.
+  enable_cdn = true
+  cdn_policy {
+    cache_mode = "USE_ORIGIN_HEADERS"
+  }
   depends_on = [google_project_service.apis]
 }
 
