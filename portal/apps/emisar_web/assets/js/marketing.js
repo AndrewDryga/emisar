@@ -23,6 +23,7 @@ import {initPackSearch} from "./pack_search.js"
 import {initPricingCycle} from "./pricing_cycle.js"
 import {initReveal} from "./reveal.js"
 import {initScrollFocusable} from "./scroll_focusable.js"
+import {initSubscribeGuard} from "./subscribe_guard.js"
 
 setupCopyToClipboardDelegation()
 initEmisarDemo()
@@ -39,3 +40,4 @@ initPackSearch()
 initPricingCycle()
 initReveal()
 initScrollFocusable()
+initSubscribeGuard()

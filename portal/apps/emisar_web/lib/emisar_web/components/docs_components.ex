@@ -37,9 +37,14 @@ defmodule EmisarWeb.DocsComponents do
       </details>
 
       <div class="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-x-10 xl:grid-cols-[15rem_minmax(0,1fr)_13rem] xl:gap-x-12">
+        <%!-- px-2 (not pr-3): the sticky rail is an overflow-y-auto scroll
+             container, which clips a child's focus outline (2px width + 2px
+             offset) where a link sits flush against the scrollport edge — so
+             the nav needs ≥4px horizontal padding on BOTH sides for the ring
+             to render whole. --%>
         <nav
           aria-label="Docs"
-          class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto pb-10 pr-3 lg:block"
+          class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto px-2 pb-10 lg:block"
         >
           <.docs_nav_groups current={@current} />
         </nav>
@@ -52,7 +57,7 @@ defmodule EmisarWeb.DocsComponents do
         <nav
           :if={@toc != []}
           aria-label="On this page"
-          class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto pb-10 xl:block"
+          class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto px-2 pb-10 xl:block"
         >
           <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
             On this page

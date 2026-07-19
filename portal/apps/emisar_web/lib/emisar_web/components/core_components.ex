@@ -61,12 +61,16 @@ defmodule EmisarWeb.CoreComponents do
       phx-hook={@auto_close && "FlashAutoClose"}
       data-close-ms={@auto_close && @close_ms}
       role="alert"
-      class={[
-        "fixed top-4 right-4 z-50 w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
-        @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
-        @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40",
-        @kind == :neutral && "bg-zinc-900 text-zinc-200 ring-white/10"
-      ]}
+      class={
+        [
+          # z-[60] sits above the sticky marketing nav + console chrome (z-50) so a
+          # flash toast is never painted behind them; below the skip-link (z-[100]).
+          "fixed top-4 right-4 z-[60] w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
+          @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
+          @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40",
+          @kind == :neutral && "bg-zinc-900 text-zinc-200 ring-white/10"
+        ]
+      }
       {@rest}
     >
       <p :if={@title} class="flex items-center gap-2 text-sm font-semibold">
@@ -6064,7 +6068,7 @@ defmodule EmisarWeb.CoreComponents do
               improvements. No noise.
             </p>
           </div>
-          <.form for={%{}} action={~p"/subscribe"} class="w-full sm:w-auto">
+          <.form for={%{}} action={~p"/subscribe"} class="w-full sm:w-auto" data-subscribe>
             <input type="hidden" name="source" value="footer" />
             <%!-- Honeypot — hidden from people, tempting to bots. --%>
             <input

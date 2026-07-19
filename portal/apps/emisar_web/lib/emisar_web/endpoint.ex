@@ -36,11 +36,22 @@ defmodule EmisarWeb.Endpoint do
   # rejected, 404ing every favicon/manifest in prod while dev (undigested
   # paths) looked fine. `EmisarWeb.static_paths/0` keeps the literal names
   # for ~p verified-route checking.
+  # Content-hashed build output (`app-<digest>.css` / `.js`) — the digest in the
+  # filename IS the cache key, so freeze it: cache a year and never revalidate.
+  # Scoped to /assets so the non-fingerprinted files below (images, fonts,
+  # favicons, robots) keep the default revalidating cache — those reuse their URL
+  # when their bytes change, so they must not be frozen.
+  plug Plug.Static,
+    at: "/assets",
+    from: {:emisar_web, "priv/static/assets"},
+    gzip: true,
+    cache_control_for_etags: "public, max-age=31536000, immutable"
+
   plug Plug.Static,
     at: "/",
     from: :emisar_web,
     gzip: true,
-    only: ~w(assets fonts images robots.txt .well-known),
+    only: ~w(fonts images robots.txt .well-known),
     only_matching: ~w(favicon apple-touch-icon android-chrome site)
 
   # Code reloading can be explicitly enabled under the
