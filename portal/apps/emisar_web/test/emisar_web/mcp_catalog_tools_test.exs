@@ -47,8 +47,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert byte_size(Jason.encode!(result)) <= 32_768
 
     by_name = Map.new(result, &{&1["name"], &1})
-    assert get_in(by_name, ["run_action", "annotations", "destructiveHint"]) == false
-    assert get_in(by_name, ["execute_runbook", "annotations", "destructiveHint"]) == false
+    assert get_in(by_name, ["run_action", "annotations", "destructiveHint"]) == true
+    assert get_in(by_name, ["execute_runbook", "annotations", "destructiveHint"]) == true
     assert get_in(by_name, ["create_runbook_draft", "annotations", "openWorldHint"]) == false
   end
 

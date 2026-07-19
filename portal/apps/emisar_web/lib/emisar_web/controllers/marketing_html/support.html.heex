@@ -1,0 +1,78 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-brand-400">Support</p>
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
+        Get help with emisar.
+      </.marketing_heading>
+      <p class="mt-6 max-w-2xl text-lg leading-8 text-zinc-400">
+        For setup, runner, MCP connection, billing, or account-access problems, email the support
+        address below. Include enough context to reproduce the issue, but never send credentials or
+        unredacted infrastructure output.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-4">
+        <.marketing_button href={EmisarWeb.MailTo.support()} icon="hero-envelope">
+          Email support
+        </.marketing_button>
+        <.marketing_button
+          href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+          variant={:secondary}
+          icon="hero-signal"
+        >
+          Service status
+        </.marketing_button>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-y border-zinc-900 py-16 sm:py-20">
+    <div class="mx-auto grid max-w-4xl gap-12 px-6 md:grid-cols-2 lg:px-8">
+      <div>
+        <h2 class="text-xl font-semibold text-zinc-50">What to include</h2>
+        <ul class="mt-5 space-y-3 text-sm leading-6 text-zinc-400">
+          <li>Your account name or workspace address</li>
+          <li>The runner name and version, when relevant</li>
+          <li>The time of the problem, including your timezone</li>
+          <li>The run or operation ID and the exact redacted error</li>
+          <li>What you expected to happen</li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="text-xl font-semibold text-zinc-50">Keep secrets out of email</h2>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          Do not send API keys, OAuth tokens, session cookies, private keys, runner enrollment keys,
+          cloud credentials, or raw output that may contain secrets. Revoke anything sensitive that
+          was exposed before contacting us.
+        </p>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          Start with the
+          <.link
+            href={~p"/docs"}
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >
+            documentation
+          </.link>
+          for connection and runner setup.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-20">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <h2 class="text-xl font-semibold text-zinc-50">Security reports</h2>
+      <p class="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
+        Report a suspected vulnerability or credential exposure privately to <a
+          href={EmisarWeb.MailTo.security()}
+          class="font-medium text-brand-300 hover:text-brand-200"
+        >security@emisar.dev</a>. For our disclosure process and supported versions, read the <.external_link href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md">
+          security policy
+        </.external_link>.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

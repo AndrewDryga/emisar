@@ -294,8 +294,9 @@ an execution revision.
 ### MCP annotations
 
 Descriptions and annotations come only from the normative registry above and
-are fixture-compared byte for byte. They describe the stable MCP interaction;
-Emisar owns the action-specific risk, authorization, and approval decision:
+are fixture-compared byte for byte. They describe the most consequential
+behavior each static MCP tool can reach; Emisar owns the action-specific risk,
+authorization, and approval decision:
 
 - Catalog, history, and wait tools advertise `readOnlyHint: true` and
   `idempotentHint: true`.
@@ -303,12 +304,14 @@ Emisar owns the action-specific risk, authorization, and approval decision:
   `destructiveHint: false`, `idempotentHint: false`, and
   `openWorldHint: false`: it saves only a portal-local proposal.
 - `run_action` and `execute_runbook` advertise `readOnlyHint: false`,
-  `destructiveHint: false`, and `idempotentHint: false`. A single static tool
-  spans read-only through critical actions, so a coarse destructive hint would
-  misclassify most calls and duplicate Emisar's exact policy and approval gate.
+  `destructiveHint: true`, and `idempotentHint: false`. Each static tool spans
+  low-risk through critical operations, so the conservative hint reports the
+  irreversible effects some calls can cause. It does not replace Emisar's exact
+  policy and approval gate.
 
-These are optional model/UI hints, not confirmation gates. Emisar does not
-request a second confirmation inside its tool workflow.
+These are model/UI hints, not authorization or confirmation gates. A client may
+apply its own confirmation UI; that does not replace Emisar authorization or
+approval.
 
 ### Success and error results
 

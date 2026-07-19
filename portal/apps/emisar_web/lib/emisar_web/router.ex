@@ -138,6 +138,7 @@ defmodule EmisarWeb.Router do
     get "/docs", MarketingController, :docs
     get "/changelog", MarketingController, :changelog
     get "/about", MarketingController, :about
+    get "/support", MarketingController, :support
     get "/privacy", MarketingController, :privacy
     get "/terms", MarketingController, :terms
     get "/dpa", MarketingController, :dpa

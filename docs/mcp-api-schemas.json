@@ -751,8 +751,8 @@
     },
     "run_action": {
       "title": "Run action",
-      "description": "Run one exact action on explicit runner_refs through Emisar scope, policy, approval, audit, and signed runner verification. Emisar owns approval; follow the returned wait continuation instead of adding a separate model confirmation.",
-      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
+      "description": "Run one exact action on explicit runner_refs through Emisar scope, policy, approval, audit, and signed runner verification. The selected action may be destructive; inspect it with get_action first. Emisar evaluates policy and handles any required human approval.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
         "required": ["action_id", "pack_ref", "runner_refs", "args", "reason"],
@@ -991,8 +991,8 @@
     },
     "execute_runbook": {
       "title": "Execute runbook",
-      "description": "Execute one exact published runbook_ref through Emisar scope, policy, approval, and audit. Emisar owns approval; follow returned continuations and never retry the complete execution after acceptance.",
-      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
+      "description": "Execute one exact published runbook_ref through Emisar scope, policy, approval, and audit. A runbook may contain destructive steps; inspect it with get_runbook first. Emisar evaluates policy and handles any required human approval.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
         "required": ["runbook_ref", "reason"],

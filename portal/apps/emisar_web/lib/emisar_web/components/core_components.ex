@@ -6261,9 +6261,7 @@ defmodule EmisarWeb.CoreComponents do
                   </a>
                 </li>
                 <li>
-                  <a href={MailTo.support()} class="text-zinc-400 hover:text-zinc-100">
-                    Contact
-                  </a>
+                  <.link href={~p"/support"} class="text-zinc-400 hover:text-zinc-100">Support</.link>
                 </li>
               </ul>
             </div>

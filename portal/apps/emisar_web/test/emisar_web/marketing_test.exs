@@ -23,6 +23,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/containers
     /changelog
     /about
+    /support
     /privacy
     /terms
     /refund-policy
@@ -561,6 +562,24 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  describe "support" do
+    test "publishes stable support and security channels without asking for secrets", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/support") |> html_response(200)
+
+      assert html =~ "mailto:support@emisar.dev"
+      assert html =~ "mailto:security@emisar.dev"
+      assert html =~ "https://status.emisar.dev"
+      assert html =~ "Do not send API keys"
+    end
+
+    test "the sitemap lists the public support URL", %{conn: conn} do
+      body = conn |> get(~p"/sitemap.xml") |> response(200)
+      assert body =~ "https://emisar.dev/support</loc>"
+    end
+  end
+
   describe "per-page content sections" do
     # Each marketing page renders its own documented sections. These assert
     # the STABLE, apostrophe-free headings/copy that the page actually
@@ -676,6 +695,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Settings → Security and login"
       assert html =~ "Settings → Plugins"
       assert html =~ "Developer mode"
+      assert html =~ "Available on all ChatGPT plans"
       assert html =~ "Server URL"
       assert html =~ "I understand and want to continue"
       assert html =~ "Allow low-risk actions"

@@ -22,11 +22,11 @@ defmodule EmisarWeb.MCP.Instructions do
   2. Use `get_action` before execution. It returns the trusted argument schema and compatible \
   runner refs for one exact `action_id` plus immutable `pack_ref`.
   3. Call `run_action` with those exact refs, schema-valid `args`, and a short nonblank `reason`. \
-  Emisar owns approvals: do not add a separate model confirmation. Follow each returned `next` \
-  continuation until the run is terminal.
+  Emisar evaluates policy and handles any required human approval. A client may still apply its \
+  own confirmation UI; that confirmation does not replace Emisar authorization or approval. \
+  Follow each returned `next` continuation until the run is terminal.
   Destructive and critical actions are also dispatched directly through Emisar: its policy will deny \
-  or require human approval. Do not substitute your own confirmation for Emisar's approval gate; \
-  dispatch the action and relay Emisar's decision.
+  or require human approval. Dispatch the action through Emisar and relay its decision.
 
   Catalog reads are current observations, not promises about future dispatch. Exact refs prevent \
   silently switching pack versions or runner generations. If an exact action contract changes, \

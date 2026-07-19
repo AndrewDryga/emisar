@@ -39,7 +39,9 @@ defmodule EmisarWeb.MCP.InstructionsTest do
              "Destructive and critical actions are also dispatched directly through Emisar: its policy will deny or require human approval."
 
     assert @text =~
-             "Do not substitute your own confirmation for Emisar's approval gate; dispatch the action and relay Emisar's decision."
+             "A client may still apply its own confirmation UI; that confirmation does not replace Emisar authorization or approval."
+
+    assert @text =~ "Dispatch the action through Emisar and relay its decision."
   end
 
   test "teaches typed recovery, lineage history, waits, and cancellation semantics" do

@@ -12,6 +12,7 @@ defmodule EmisarWeb.SitemapController do
     "/about",
     "/changelog",
     "/pricing",
+    "/support",
     "/security",
     "/privacy",
     "/terms",

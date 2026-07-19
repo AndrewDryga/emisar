@@ -24,6 +24,8 @@ defmodule EmisarWeb.MarketingController do
     {"/docs", :docs, :docs, "Documentation — runner setup, action packs & MCP",
      "Documentation, action pack format, security model, and integration guides for emisar."},
     {"/about", :about, :about, "About", "Why emisar exists and how we built it."},
+    {"/support", :support, :support, "Support",
+     "Get help with emisar setup, runners, MCP connections, billing, and account access. Contact support or report a security issue through the right channel."},
     {"/privacy", :privacy, :privacy, "Privacy Policy",
      "How emisar handles your data: what the control plane stores (account info, runner metadata, redacted audit events), what it never sees (raw secrets, full card numbers), where it lives, retention windows, and your export/delete rights."},
     {"/terms", :terms, :terms, "Terms of Service",

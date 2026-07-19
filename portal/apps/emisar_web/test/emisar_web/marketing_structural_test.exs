@@ -39,6 +39,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/containers
     /changelog
     /about
+    /support
     /privacy
     /terms
     /refund-policy
