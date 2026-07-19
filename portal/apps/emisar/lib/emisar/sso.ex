@@ -27,7 +27,9 @@ defmodule Emisar.SSO do
 
   @impl Supervisor
   def init(_opts),
-    do: Supervisor.init([Emisar.SSO.Jobs.AuthorizationReconcile], strategy: :one_for_one)
+    do: Supervisor.init([job_module("AuthorizationReconcile")], strategy: :one_for_one)
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Config reads ----------------------------------------------------
 

@@ -87,12 +87,19 @@ jobs:
           [[ "$live" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "::error::live /healthz reports a non-release version '${live}' — investigate the deploy"; exit 1; }
 
-          registry_latest=$(curl --fail --silent --show-error --retry 3 --max-time 15 --get \
+          if ! registry_response=$(curl --fail --silent --show-error --retry 3 --max-time 15 --get \
             --data-urlencode "search=dev.emisar/emisar" \
-            https://registry.modelcontextprotocol.io/v0/servers \
-            | jq -r '[.servers[] | select(.server.name == "dev.emisar/emisar")
-                      | select(._meta."io.modelcontextprotocol.registry/official".isLatest == true)]
-                     | first | .server.version // empty')
+            https://registry.modelcontextprotocol.io/v0/servers); then
+            echo "The MCP Registry API is unavailable; the next scheduled tick will retry without publishing." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test -n "$registry_response" || {
+            echo "::error::MCP Registry API returned an empty response"; exit 1; }
+          jq -e '.servers | type == "array"' <<< "$registry_response" >/dev/null
+          registry_latest=$(jq -r '[.servers[] | select(.server.name == "dev.emisar/emisar")
+                                     | select(._meta."io.modelcontextprotocol.registry/official".isLatest == true)]
+                                    | first | .server.version // empty' <<< "$registry_response")
 
           if [ "$live" = "$registry_latest" ]; then
             echo "Registry already lists the live version ${live} as latest — nothing to do." >> "$GITHUB_STEP_SUMMARY"
