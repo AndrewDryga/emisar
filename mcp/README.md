@@ -1,141 +1,181 @@
-# MCP bridge
+# emisar MCP bridge
 
-emisar exposes the fleet's action catalog to MCP-aware clients (Claude
-Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI, Grok, …) so an LLM can
-run real infrastructure actions — gated by the same policy, approval,
-and audit machinery as a human operator.
+emisar exposes one MCP surface for discovering runners and packs, inspecting
+declared action schemas, dispatching work, waiting for results, and reading the
+audit trail. New packs add actions behind that same surface; clients do not need
+a new server entry every time the infrastructure catalog changes.
 
-The portal exposes one MCP surface at `POST /api/mcp/rpc`. `emisar-mcp` is a
-self-contained Go binary that lets stdio clients use it: the client launches
-the bridge as a child process, and the bridge proxies JSON-RPC frames, validates
-correlated protocol responses, and writes only valid MCP frames to stdout. Tool
-descriptors, content blocks, and action semantics remain in the portal.
+The Go binary in this directory is the bridge for clients that launch MCP
+servers over stdio. It forwards bounded JSON-RPC frames to the hosted HTTP
+endpoint and keeps credentials and optional dispatch-signing keys on the client.
+All tools, schemas, authorization, policy, approvals, and response content live
+in the portal.
 
-## Bridge install + client config
+## Choose a connection
+
+| Client capability | Connection | Local install |
+| --- | --- | --- |
+| Remote MCP with OAuth | `https://emisar.dev/api/mcp/rpc` | None |
+| Local stdio MCP | `emisar-mcp` -> the same endpoint | Install the bridge |
+| Direct HTTP with a scoped API key | `POST /api/mcp/rpc` | None |
+
+Claude.ai, ChatGPT, and other remote OAuth clients should connect directly.
+Claude Desktop, Claude Code, Cursor local mode, Codex CLI, Gemini CLI, Grok CLI,
+Zed, Windsurf, and similar stdio clients can use the bridge.
+
+The current per-client instructions are at
+[emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm). The
+dashboard's **LLM agents** page generates the exact configuration for the
+signed-in operator and their runner scope.
+
+## Install the stdio bridge
 
 ```sh
 curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
 ```
 
-Drops `emisar-mcp` into `/usr/local/bin` (checksum-verified from
-GitHub releases; `INSTALL_DIR=$HOME/.local/bin` for a no-sudo
-install). An interactive run then offers to add emisar to the LLM
-clients it finds on the machine (Claude Code, Claude Desktop, Cursor,
-Gemini CLI, Codex CLI, OpenClaw, OpenCode, Windsurf, Pi, Copilot CLI,
-Zed, Hermes, Goose), asking per client. The keys come from a
-device-grant approval: the installer prints an approval link, the
-operator approves it in the portal, and the keys land straight in the
-client configs — nothing is typed or copied. `--yes` and
-non-interactive runs skip all of that. A self-hosted portal's install
-command passes `EMISAR_URL` so the approval and configs target it. The
-bridge is configured per client via env vars in the launcher's
-JSON/TOML config — the portal's **/app/agents** page still shows the
-manual snippet per client:
+The installer resolves the latest tagged release, verifies its checksum, and
+installs `emisar-mcp` in `/usr/local/bin`. Set
+`INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation.
 
-Run `emisar-mcp --help` for compact registration instructions for Claude
-Desktop, Claude Code, Cursor, Codex, and Grok, including complete JSON for the
-desktop clients and current CLI command forms.
+In an interactive terminal it then finds supported MCP clients and offers to
+configure each one. Approve the device grant in the browser; emisar writes a
+separate scoped key into every selected client config, so the raw key never
+needs to pass through the clipboard. Existing client settings and other MCP
+servers are preserved.
 
-| Env var | Required | Purpose |
+After installation, restart the client and confirm that the `emisar` server is
+connected. Ask the agent to list available infrastructure or inspect a known
+runner. You are done when the client can discover the in-scope action catalog;
+run a low-risk action such as `linux.uptime` to certify execution and audit.
+
+Use `emisar-mcp --help` for current registration commands and config locations.
+Pin a reviewed release for managed rollouts:
+
+```sh
+curl -sSL https://emisar.dev/install-mcp.sh \
+  | sudo bash -s -- --version mcp-vX.Y.Z --yes
+```
+
+## Manual configuration
+
+The bridge is configured through the environment in the MCP client's server
+entry:
+
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `EMISAR_URL` | yes | Absolute HTTP(S) portal origin, with no path, credentials, query, or fragment (for example `https://emisar.dev`) |
-| `EMISAR_API_KEY` | yes | Operator API key (`Bearer` on every request) |
-| `EMISAR_CLIENT` | no | Client label for audit attribution (`claude-code`, `cursor`, `codex`, `grok`, …) |
-| `EMISAR_CLIENT_METADATA` | no | Self-reported client metadata as a JSON object of string keys to string/number values (e.g. `{"asset_tag":"LT-4417","device_id":"…"}`), snapshotted onto each MCP action run so activity can be correlated with your own MDM/EDR/inventory in the audit log + SIEM export. Limits: ≤10 keys, keys ≤128 / values ≤512 chars. Untrusted, self-reported enrichment — never used for authorization, posture, or approval. Invalid metadata is a startup error. |
-| `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint. Loopback HTTP works without it; production should use HTTPS. |
-| `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private key (64-hex seed) used to sign each dispatch so signature-enforcing runners will run it. Keep it secret — never on the portal. See [`docs/signed-dispatch.md`](../docs/signed-dispatch.md). |
-| `EMISAR_SIGNING_CERT` | no | The CA-signed certificate (JSON) vouching for `EMISAR_SIGNING_KEY` — required with it. Minted by `emisar signing new-cert` / `emisar signing init`; the runner verifies it against its trusted CA before running the dispatch. |
+| `EMISAR_URL` | yes | Absolute portal origin with no path, query, fragment, or credentials, for example `https://emisar.dev` |
+| `EMISAR_API_KEY` | yes | Operator API key sent as a Bearer token |
+| `EMISAR_CLIENT` | no | Client label recorded with audit attribution |
+| `EMISAR_CLIENT_METADATA` | no | Self-reported JSON metadata for audit/SIEM correlation; at most 10 string keys with string or number values |
+| `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
+| `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private-key seed used for client-attested dispatch |
+| `EMISAR_SIGNING_CERT` | no | CA-signed certificate for `EMISAR_SIGNING_KEY`; required with it |
 
-### Client compatibility
+Client metadata is untrusted enrichment. It is never used for authorization,
+posture, policy, or approval. Keys are limited to 128 characters, values to 512
+characters, and invalid metadata stops the bridge at startup.
 
-The bridge is exercised against current Claude Code, Cursor, Codex, Gemini, and
-Grok client configuration shapes before release. Run `emisar-mcp --help` for
-the registration commands and JSON paths. Client certification is
-version-specific transport evidence; authorization remains server-side.
+For example, a generic stdio client entry has this shape:
 
-The portal owns tools, schemas, authorization, policy, approvals, and response
-shapes. Their normative contract and examples live in
-[`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md); changing that surface does not
-require a bridge release.
+```json
+{
+  "mcpServers": {
+    "emisar": {
+      "command": "emisar-mcp",
+      "env": {
+        "EMISAR_URL": "https://emisar.dev",
+        "EMISAR_API_KEY": "emk-...",
+        "EMISAR_CLIENT": "my-client"
+      }
+    }
+  }
+}
+```
+
+Do not commit this configuration with a real key. API keys inherit the member's
+runner scope and the account's server-side policy; use a separate key per client
+so attribution and revocation stay precise.
+
+## What the bridge owns
+
+The bridge is intentionally thin. It owns only the client-to-portal transport:
+
+- line-delimited JSON-RPC on stdin and stdout;
+- bounded request and response frames;
+- request-ID correlation and concurrent-duplicate rejection;
+- MCP protocol and Streamable HTTP headers;
+- response status, media type, UTF-8, envelope, and ID validation;
+- cancellation of observation without claiming to undo committed work;
+- endpoint-bound API-key rotation state;
+- optional client-side signing for `run_action`.
+
+It writes only validated MCP frames to stdout. Diagnostics stay on stderr. A
+network failure becomes a correlated JSON-RPC error instead of corrupting the
+client stream.
+
+The portal owns every tool and semantic response. The normative contract is
+[`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md) with machine-readable schemas
+in [`docs/mcp-api-schemas.json`](../docs/mcp-api-schemas.json). Server-side tool
+changes do not require a bridge release.
 
 ## Transport identity and recovery
 
-For every admitted `tools/call`, the bridge derives a bounded operation ID from
-its private process nonce and monotonically increasing request sequence. The
-portal reserves that ID for mutations under the API-key rotation lineage in the
-same transaction as the mutation. Native HTTP clients do not need the private
-bridge header: the portal derives the same kind of identity from the exact
-request and credential lineage. An identical retry returns the original
-resource; changed facts or a different mutation tool conflict. Distinct
-admissions, including sequential reuse of the same JSON-RPC id, and different
-bridge processes never alias. `get_operation` is the recovery path after an
-ambiguous mutation when the client has the operation ID. A correlated transport
-error includes that ID but does not guess whether the failed call was a durable
-mutation; server instructions describe when to use `get_operation`. Reads retry
-normally. Portal read handlers ignore the private operation header.
+The bridge admits at most eight concurrent requests within a 1 MiB aggregate
+request budget. Each request is capped at 128 KiB, each response at 512 KiB,
+and decoded string IDs and integer decimal forms at 4,096 bytes. Its 90-second
+HTTP deadline stays above the portal's 60-second wait cap, so pings and unrelated
+calls remain responsive during a wait.
 
-Request IDs may be reused after completion; only concurrent duplicates are
-rejected. The bridge permits eight in-flight requests within a 1 MiB aggregate
-request budget, caps each request at
-128 KiB and each response at 512 KiB, and bounds decoded string IDs and integer
-decimal forms to 4,096 bytes so every accepted ID can be echoed inside that
-response ceiling. It keeps a 90-second HTTP deadline above the portal's
-60-second wait cap. Pings and unrelated calls remain responsive during a
-wait. Cancellation after send stops observation only; it never claims to undo
-committed infrastructure work.
+Every admitted `tools/call` receives a private, bounded operation identity
+derived from the bridge process and request sequence. The portal reserves that
+identity with mutations under the API-key rotation lineage. An identical retry
+returns the original resource; changed facts or a different mutation conflict.
+If the client loses a mutation response, `get_operation` is the recovery path
+when the transport error includes an operation ID. Reads retry normally.
 
-## Attribution + audit
+JSON-RPC request IDs may be reused after completion; only concurrent duplicates
+are rejected. Cancellation after a request is sent stops observation only. It
+does not assert that infrastructure work was rolled back or never committed.
 
-Every request carries `User-Agent: emisar-mcp/<version>
-(client=<EMISAR_CLIENT>; host=<hostname>; os=<goos>)`. The stateless portal
-issues no `Mcp-Session-Id`. It snapshots MCP client info on dispatch, so
-audit rows answer "which tool, which client, which key, why" — the
-`reason` requirement closes the loop.
+## API-key rotation
 
-## Key auto-rotation
+Expiring MCP API keys rotate through a crash-safe, client-prepared exchange:
 
-MCP keys default to a 30-day expiry. When the bridge initializes with a
-key expiring within 7 days, rotation uses a crash-safe two-phase exchange:
+1. The bridge generates a successor and persists it as pending before making a
+   request.
+2. It sends only the successor prefix and digest. The portal installs those
+   exact values atomically when the current key enters its rotation window.
+3. The bridge promotes the acknowledged successor durably before using it.
+   First successful use retires the replaced key chain.
 
-1. The bridge generates a successor with the operating system CSPRNG and
-   durably records it as pending before making the request.
-2. Authenticated requests send only the successor's lookup prefix and SHA-256
-   digest. The portal atomically installs those exact values once the key enters
-   its rotation window and acknowledges the digest. Retries use the same
-   proposal and receive the same acknowledgement.
-3. The bridge durably promotes the pending key before using it. The old key
-   remains usable until the successor's first authenticated request proves the
-   swap, at which point the portal retires the replaced key chain.
+Credential state is stored per canonical endpoint and bootstrap prefix under
+the user's emisar config directory. The directory is mode 0700; files are mode
+0600 and updated through a cross-process lock, temporary write, filesystem sync,
+and atomic rename. Corrupt or endpoint-mismatched state is a startup error, not
+a reason to send a secret to another origin.
 
-The raw successor is absent from the rotation proposal and acknowledgement. It
-first reaches the portal later as the ordinary Authorization bearer after the
-bridge has durably activated it. Lost requests, lost responses, process
-restarts, and persistence failures therefore leave at least one recoverable
-credential. The rotation is recorded as
-`api_key.auto_rotated`; retirement is recorded separately as
-`api_key.retired_by_rotation`.
+If durable storage is unavailable, the bridge keeps using the configured key
+but does not offer automatic rotation. Containers should persist `/config`.
+OAuth tokens, arbitrary Bearer tokens, non-expiring quick-connect keys, and
+audit-export tokens bypass local rotation state.
 
-Credential state lives in one 0600 file per canonical endpoint origin and
-bootstrap prefix under
-`<user-config-dir>/emisar/credentials/`, protected by a 0700 directory,
-cross-process locking, atomic rename, and filesystem sync. The
-`EMISAR_API_KEY` in the client config is never edited; every launch resolves
-that endpoint-bound bootstrap prefix to the current secret, and live bridge
-processes refresh peer promotions before every request. A sandboxed read-only
-bridge keeps using its active key; only after the portal rejects that key does it
-retry a validated current or pending successor from the state file. The retry
-uses the same request token and operation identity. Corrupt endpoint-bound state is
-a startup error rather than a reason to send a stored secret to an unverified
-origin. If no durable config directory is available, the bridge continues with
-the configured key but does not offer automatic
-rotation. Container users must mount `/config` persistently. OAuth and arbitrary
-Bearer tokens bypass local rotation state; remote connectors, non-expiring
-quick-connect keys, and audit-export tokens do not auto-rotate. Operators can
-rotate a key manually from the Agents page at any time.
+## Client-attested dispatch
+
+`EMISAR_SIGNING_KEY` and `EMISAR_SIGNING_CERT` let the bridge sign the exact
+`run_action` intent: portal origin, action, immutable pack, arguments, complete
+runner set, reason, operation identity, nonce, and time. A signature-enforcing
+runner verifies that intent against a trusted offline CA and refuses altered,
+replayed, stale, or out-of-scope calls.
+
+Signing is the only place where the bridge inspects tool semantics. The public
+MCP frame remains unchanged; the attestation travels in a private HTTP header.
+Setup and rotation are documented in
+[`docs/signed-dispatch.md`](../docs/signed-dispatch.md).
 
 ## Development
 
-Build and run the bridge from the repository root:
+Build and run from the repository root:
 
 ```sh
 (cd mcp && go build -o ../bin/emisar-mcp .)
@@ -143,11 +183,6 @@ EMISAR_URL=http://localhost:4000 \
 EMISAR_API_KEY=emk-... \
   ./bin/emisar-mcp
 ```
-
-The process reads one JSON-RPC frame per stdin line, rejects malformed envelopes
-locally, and writes only validated, request-correlated JSON-RPC to stdout.
-Diagnostics go to stderr. A network failure becomes a generic synthetic error
-carrying the original request id; notification failures remain silent.
 
 The module gate is:
 
@@ -161,11 +196,7 @@ git diff --exit-code -- go.mod
 go test -race -count=1 ./...
 ```
 
-The forwarding path lives in `main.go`; `sign.go` is the only code that inspects
-`tools/call`, solely to attach client-attested `run_action` data. The canonical
-attestation encoding under `internal/attest` is duplicated deliberately in the
-runner module. Attestation v4 binds the action ID, immutable pack ref, digest of
-the exact JSON argument bytes, complete sorted runner refs, reason, operation
-ID, portal origin, nonce, and timestamp. The root gate compares both
-implementations and fixed vectors so the bridge and runner cannot silently
-disagree on those bytes.
+The forwarding path lives in `main.go`; key rotation lives in `rotate.go`; and
+`sign.go` is the only tool-aware code. The attestation implementation under
+`internal/attest` is duplicated deliberately in the runner module and must stay
+byte-identical. Read [`AGENTS.md`](AGENTS.md) before changing the boundary.

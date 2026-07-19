@@ -1,46 +1,27 @@
-# emisar — Cursor plugin
+# emisar for Cursor
 
-Connect Cursor's agent to [**emisar**](https://emisar.dev): one governed MCP
-endpoint for real infrastructure actions — gated by policy, approved by a human,
-and written to a tamper-evident audit log.
+Let Cursor investigate and act on infrastructure through emisar's declared
+action catalog, without giving the agent an SSH key or an open-ended shell.
+Policy decides what runs, what waits for a person, and what is denied; the
+runner checks the exact pack and arguments again on the host.
 
-Instead of handing an agent raw SSH, you point it at a single MCP endpoint that
-exposes an **approved catalog** of actions. Every call is checked against your
-policy (read-only actions run immediately; risky ones pause for a human to
-approve; anything outside the catalog is denied by default), attributed to the
-accountable operator, and audited. The tool list is per-account and reflects
-exactly what your policy and runner scope allow — nothing more.
+This package registers the hosted emisar MCP endpoint with Cursor. It contains
+no credential, code hook, rule, skill, subagent, or second backend. Tools,
+runner scope, policy, approval, and audit remain in the operator's emisar
+account.
 
-## What this plugin does
+**Publication status:** this directory is the ready-to-submit plugin scaffold.
+The Marketplace listing is not public yet. Use the direct MCP configuration
+below today; the plugin will register the same endpoint after publication.
 
-It registers the hosted emisar MCP server (`https://emisar.dev/api/mcp/rpc`) with
-Cursor over **OAuth** — no API key to paste, nothing to install locally. On first
-use, Cursor sends you through a one-time emisar sign-in and consent screen; after
-that, the agent can call the actions your policy already permits.
+## Connect now
 
-This plugin is **only** an integration config. It adds no rules, skills, agents,
-hooks, or subagents, and it ships **no** credentials. All behavior — the tool
-catalog, policy, approvals, and audit — lives in your emisar account.
+You need an [emisar account](https://emisar.dev/sign_up) with at least one
+connected runner and a current Cursor build with remote Streamable HTTP MCP and
+OAuth support.
 
-## Requirements
-
-- An [emisar](https://emisar.dev) account and at least one connected runner.
-  See [Connect an LLM](https://emisar.dev/docs/connect-an-llm).
-- A recent Cursor build with remote (streamable-http) MCP + OAuth support.
-
-## Install
-
-**From the Cursor Marketplace:** search for **emisar** and click Install, then run
-any tool once to trigger the OAuth sign-in.
-
-**From a local checkout:** in Cursor's **Plugins** panel, choose **+ Add → From
-Local Repo** and point it at this directory. Cursor reads the marketplace manifest
-(`.cursor-plugin/marketplace.json`), installs the plugin, and registers the emisar
-MCP server from `.mcp.json`; run any tool once to trigger the OAuth sign-in.
-
-**Manually (no plugin):** add the config below to your project's
-`.cursor/mcp.json` (or Cursor's global MCP config) — the same one remote server
-the plugin registers:
+Add this to the project's `.cursor/mcp.json`, or to `~/.cursor/mcp.json` to make
+emisar available in every workspace:
 
 ```json
 {
@@ -52,31 +33,72 @@ the plugin registers:
 }
 ```
 
-Because the entry is a bare remote `url`, Cursor uses OAuth (Dynamic Client
-Registration) automatically — there is no client id, secret, or bearer token to
-configure.
+Restart Cursor, open its MCP settings, and authenticate the `emisar` server.
+Cursor follows the endpoint's OAuth discovery flow; there is no client ID,
+secret, or API key to paste into the file.
 
-## What the agent can — and can't — do
+Confirm the connection by asking Cursor to list the infrastructure in scope.
+Then run a low-risk action such as `linux.uptime`. You are done when the result
+returns to Cursor and the run appears in the emisar audit trail.
 
-- **Can:** run the infrastructure actions your policy already permits, attributed
-  to you; read the audit trail if your key is granted it.
-- **Waits:** risky actions return `pending_approval` and stop until a human
-  approves them in the emisar dashboard.
-- **Can't:** exceed your policy, reach runners outside your scope, or invoke
-  anything that isn't in your approved catalog (default-deny).
+The complete setup and troubleshooting guide is at
+[emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm).
 
-Every action call carries a `reason` string that lands on the run and is shown to
-approvers and in the audit log.
+## What Cursor receives
+
+emisar exposes a fixed MCP tool surface that lets Cursor:
+
+- discover connected runners, installed packs, and declared actions in scope;
+- read the exact schema, risk, limits, and side effects of an action;
+- dispatch an action with typed arguments and a required reason;
+- wait for or recover the result of a run;
+- read permitted audit activity.
+
+Packs add infrastructure capabilities behind those tools. Installing a pack
+does not require another Cursor integration.
+
+Every call is attributed to the signed-in emisar member. Their runner scope
+limits which hosts are visible. Account policy decides whether the action runs,
+waits for approval, or is denied. Cursor cannot use this connection to bypass
+pack trust, policy, approval, runner-local admission, or runner-side argument
+validation.
+
+## Security boundary
+
+The plugin stores no static credential. OAuth tokens are issued through emisar
+and can be revoked from **LLM agents** in the dashboard or from Cursor's MCP
+settings.
+
+The runner is outbound-only and executes only actions declared in locally
+installed, content-addressed packs. It redacts output before transmission and
+writes every attempt to a hash-chained local journal while the control plane
+keeps the fleet audit trail.
+
+emisar is not a sandbox. An action that policy permits runs with the OS
+permissions granted to the runner service user. Review the exact guarantees and
+limits at [emisar.dev/docs/security-model](https://emisar.dev/docs/security-model).
+
+## Plugin maintainers
+
+Before Marketplace submission, lift this directory to the root of its dedicated
+public repository, then follow [`PUBLISHING.md`](PUBLISHING.md). Validate a clean
+install and the OAuth success, approval, denial, and audit-attribution paths in
+a current Cursor build before publishing.
+
+The package must stay credential-free and minimal. If the product needs richer
+agent guidance later, add it only with live evidence that it improves safe tool
+use; do not duplicate server-side policy or tool semantics in Cursor files.
 
 ## Links
 
-- Product & docs: <https://emisar.dev> · [Connect an LLM](https://emisar.dev/docs/connect-an-llm) · [MCP reference](https://emisar.dev/docs/mcp-reference)
-- Security model: <https://emisar.dev/docs/security-model> · <https://emisar.dev/security>
-- Privacy: <https://emisar.dev/privacy> · Trust: <https://emisar.dev/trust> · Terms: <https://emisar.dev/terms>
-- Support: <mailto:support@emisar.dev> · Security: <mailto:security@emisar.dev>
+- [emisar](https://emisar.dev) and [quickstart](https://emisar.dev/docs/quickstart)
+- [Connect an LLM](https://emisar.dev/docs/connect-an-llm)
+- [MCP reference](https://emisar.dev/docs/mcp-reference)
+- [Trust center](https://emisar.dev/trust), [privacy](https://emisar.dev/privacy), and [terms](https://emisar.dev/terms)
+- Support: <support@emisar.dev>; security: <security@emisar.dev>
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE). Copyright © 2026 Andrii Dryga.
+Apache License 2.0. See [LICENSE](LICENSE). Copyright 2026 Andrii Dryga.
 The emisar name and logo are trademarks of their owner; this license grants no
 trademark rights.

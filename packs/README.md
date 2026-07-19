@@ -1,205 +1,204 @@
-# Emisar example packs
+# emisar action packs
 
-80 packs / 1,285 actions covering Linux ops, web/proxy, databases,
-container orchestration, cloud, message buses, runtimes, observability,
-networking, storage, and infrastructure tools.
+An action pack is a versioned, content-addressed directory of declared
+infrastructure operations. Each action fixes the binary, argv shape, typed
+arguments, risk, limits, redaction, and side-effect description that the runner
+will enforce.
 
-Each pack is independent: a `pack.yaml` manifest + one YAML per action
-under `actions/`. Load a pack into a runner by pointing the runner config
-at the directory:
+Packs are how emisar adds capabilities without giving an agent a shell or
+adding another MCP server. The catalog in this repository currently contains
+**80 packs and 1,285 actions** across Linux, databases, containers,
+orchestrators, cloud providers, networking, storage, runtimes, and
+observability.
 
-```yaml
-packs:
-  - /opt/emisar/packs/postgres
-  - /opt/emisar/packs/linux-core
-```
+Browse the current catalog and every action at
+[emisar.dev/packs](https://emisar.dev/packs).
 
-Validate locally:
+## Install the packs a host needs
+
+The runner installer suggests a small starter set from the binaries and
+services detected on the host. Add another published pack by name:
 
 ```sh
-emisar pack validate packs/postgres
+sudo emisar pack install redis
+sudo emisar pack info redis
 ```
 
----
+`pack install` downloads the artifact, validates it, computes its content hash,
+prints its setup requirements, and reloads a running runner. `pack info` shows
+the required binaries and environment, risk profile, and a low-risk action to
+use for verification.
 
-## Auth model
+For a repeatable rollout, pin both version and hash from the registry page:
 
-Packs don't carry credentials. An action names a binary and arguments;
-the tool it runs (psql, aws, kubectl, …) reads its own target and
-credentials from the **runner host's environment**. Per-call credentials
-are never sent over the wire from the control plane.
+```sh
+sudo emisar pack install redis=0.2.3 --hash sha256:...
+```
 
-Two things make a pack work, both on the runner host:
+The same command accepts a local directory or an HTTPS tarball:
 
-1. **Provide the credentials.** Set the env vars the pack's tool reads —
-   or use its config file (`~/.pgpass`, `~/.aws/credentials`, a kubeconfig),
-   which is read from disk and needs no allowlisting.
-2. **Allowlist them.** The runner does NOT inherit the host environment.
-   Add each var to `inherit_env` or the runner drops it before exec:
+```sh
+sudo emisar pack install ./my-pack
+sudo emisar pack install https://registry.example.com/my-pack.tar.gz --hash sha256:...
+```
 
-   ```yaml
-   # /etc/emisar/config.yaml
-   inherit_env: [PATH, LANG, PGHOST, PGUSER, PGPASSWORD]
+Ship only the packs a host needs. A smaller local catalog reduces executable
+surface and gives the agent a shorter list to reason over.
+
+## Pack anatomy
+
+```text
+my-pack/
+  pack.yaml
+  actions/
+    status.yaml
+    restart.yaml
+  scripts/            optional files executed by declared script actions
+```
+
+`pack.yaml` owns identity, version, descriptive metadata, setup requirements,
+and the explicit action-file list. Each action YAML declares one operation.
+
+A minimal action looks like this:
+
+```yaml
+schema_version: 1
+id: web.service_status
+title: Show service status
+kind: exec
+risk: low
+description: Show the current systemd status for one approved web service.
+side_effects:
+  - Reads service state and recent status output.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    validation:
+      enum: [nginx.service, caddy.service]
+
+execution:
+  command:
+    binary: systemctl
+    argv: [status, "{{ args.unit }}", --no-pager]
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+```
+
+The caller chooses `unit`; it cannot replace `systemctl`, add another flag, or
+name a service outside the enum. The runner validates the same schema again on
+the host before execution.
+
+The complete schema, including paths, arrays, script actions, examples, output
+parsers, execution users, and redaction, is at
+[emisar.dev/docs/action-packs](https://emisar.dev/docs/action-packs). The
+[`showcase` pack](showcase/) is the executable reference.
+
+## Trust and drift
+
+The runner computes a SHA-256 content hash from the complete pack. The control
+plane pins the exact hash an administrator trusts, and the runner recomputes it
+before every dispatch. A new, custom, or changed pack blocks until an admin
+trusts that version and hash.
+
+Official catalog versions can be auto-trusted because their bytes match the
+catalog compiled into the portal release. Hand-editing the same version on one
+host creates a different hash; the Packs page reports that as drift rather than
+silently treating it as the published pack.
+
+This is content integrity, not publisher identity. Trusting a hash means
+trusting the action definitions, including their declared risk and side effects.
+Review custom and third-party packs as code.
+
+## Credentials stay on the runner
+
+Packs do not carry credentials, and callers do not send credentials as action
+arguments. The command-line tool named by an action reads its normal host-local
+environment or configuration file.
+
+Put required values in the runner's mode-0600 environment file:
+
+```sh
+PGHOST=postgres.internal
+PGUSER=emisar
+PGPASSWORD=<secret>
+```
+
+Then allowlist only the variable names the action process needs:
+
+```yaml
+execution:
+  inherit_env:
+    - PGHOST
+    - PGUSER
+    - PGPASSWORD
+```
+
+Restart the runner after changing its environment. `emisar pack info postgres`
+reports required variables and flags names missing from `inherit_env` when a
+runner config is available. File-based credentials such as a kubeconfig or
+`.pgpass` still require correct filesystem ownership and service-user access.
+
+## Risk and policy
+
+Every action declares one risk tier. The caller cannot lower it.
+
+| Tier | Intended meaning | Examples |
+| --- | --- | --- |
+| `low` | Read-only or negligible impact | uptime, disk use, service status |
+| `medium` | Limited, reversible state change or heavier diagnostic | refresh metadata, start a bounded profile |
+| `high` | Production-affecting or user-visible change | restart a service, scale a workload, kill a query |
+| `critical` | Broad or difficult-to-reverse change | reboot, terminate an instance, flush data, drain a node |
+
+Account policy decides whether a tier runs, waits for approval, or is denied.
+The runner can narrow that decision again with host-local admission allow/deny
+patterns and a risk ceiling.
+
+Risk is only useful when the action copy is honest. `side_effects` must name
+the actual mutation, interruption, data exposure, and blast radius; the portal
+shows that text to the agent, operator, and approver.
+
+## The shell exception
+
+The [`shell` pack](shell/) is a staging-only break-glass tool. Its single action
+runs an arbitrary operator-supplied script, bypassing the declared-action model
+that the rest of emisar exists to provide.
+
+It is critical-risk, denied by default, and has no detection rule, so it is
+never suggested automatically. Do not install or enable it on production
+runners.
+
+## Author a pack
+
+Start with the [`showcase` pack](showcase/) or let a coding agent use the public
+[`author-pack` skill](../skills/author-pack/SKILL.md).
+
+1. Create `pack.yaml` and one YAML file per action.
+2. Keep executable and argv structure fixed; expose only the smallest typed
+   argument surface the operation needs.
+3. State risk and side effects conservatively.
+4. Declare setup requirements and a low-risk verification action.
+5. Validate with the same loader the runner uses:
+
+   ```sh
+   emisar pack validate ./my-pack
    ```
 
-   If a documented var is missing from `inherit_env`, the action fails
-   with whatever the tool reports ("password authentication failed",
-   "connection refused", …).
+6. Test representative success, denial, invalid-argument, and missing-tool or
+   missing-credential paths before distribution.
 
-**Each pack documents its own setup** in a `setup:` block — the env vars
-it reads, file-based alternatives, required privileges, and a low-risk
-action to verify it works. `emisar pack install` prints this after
-installing; re-read it any time:
+Private-registry and publishing workflows are documented at
+[emisar.dev/docs/pack-registry](https://emisar.dev/docs/pack-registry) and
+[emisar.dev/docs/publishing-packs](https://emisar.dev/docs/publishing-packs).
 
-```sh
-emisar pack info postgres   # full setup; also flags vars missing from inherit_env once config is found
-```
+## Repository maintenance
 
-In the inventory below, the **Auth** column is the short form: `PG*` =
-"the PG* env vars"; `local-host` = acts on the runner machine, no
-credentials; `(opt)` = the vars are optional (the tool has a working
-default — a config file or localhost).
-
----
-
-## Pack inventory
-
-80 packs, 1,285 actions, sorted by id. **Risk** is the pack's ceiling —
-its highest-risk action (see tiers below). **Auth** legend is in the Auth
-model section above. Run `emisar pack info <id>` for a pack's full setup.
-
-| Pack | Actions | Risk | Auth |
-|---|---|---|---|
-| `apache-httpd` | 10 | critical | HTTPD_* (opt) |
-| `aws-cloudwatch` | 7 | low | AWS_* |
-| `aws-cost` | 5 | low | AWS_* (opt) |
-| `aws-ec2` | 11 | critical | AWS_* |
-| `aws-iam` | 11 | critical | AWS_* (opt) |
-| `aws-rds` | 8 | high | AWS_* |
-| `aws-s3` | 8 | low | AWS_* (opt) |
-| `bind` | 11 | high | local-host |
-| `bonding` | 3 | low | local-host |
-| `caddy` | 10 | high | CADDY_* (opt) |
-| `cassandra` | 45 | critical | CQLSH_* (opt) |
-| `clickhouse` | 32 | critical | CH_* (opt) |
-| `cloud-init` | 23 | critical | local-host |
-| `cloudflare` | 11 | critical | CF_API_TOKEN |
-| `cockroach` | 26 | critical | COCKROACH_URL |
-| `consul` | 44 | critical | CONSUL_HTTP_* (opt) |
-| `debian` | 9 | high | local-host |
-| `debugging` | 31 | high | local-host |
-| `dell-idrac` | 15 | critical | IDRAC_* |
-| `dell-ipmi` | 15 | critical | IPMI_* |
-| `dnf-rpm` | 13 | high | local-host |
-| `docker` | 25 | critical | local-host |
-| `elasticsearch` | 21 | critical | ELASTIC_* |
-| `elixir-beam` | 25 | high | ELIXIR_RELEASE_CTL (opt) |
-| `envoy` | 14 | high | ENVOY_ADMIN (opt) |
-| `fail2ban` | 8 | high | local-host |
-| `firewall` | 11 | critical | local-host |
-| `frr` | 6 | high | local-host |
-| `fs-search` | 15 | low | local-host |
-| `git-local` | 8 | low | GIT_REPO |
-| `github-cli` | 19 | high | GH_TOKEN (opt) |
-| `grafana` | 10 | low | GRAFANA_* |
-| `haproxy` | 12 | high | HAPROXY_SOCK |
-| `iperf3` | 4 | medium | local-host |
-| `iscsi` | 4 | low | local-host |
-| `java-jvm` | 17 | critical | local-host |
-| `kafka` | 20 | critical | KAFKA_BOOTSTRAP |
-| `kubernetes` | 43 | critical | KUBECONFIG (opt) |
-| `linux-core` | 34 | critical | local-host |
-| `memcached` | 7 | critical | MEMCACHED_* (opt) |
-| `minio` | 12 | high | MC_HOST_minio |
-| `mongodb` | 35 | critical | MONGO_URI |
-| `multipath` | 4 | low | local-host |
-| `mysql` | 25 | high | MYSQL_* (opt) |
-| `network-tls` | 13 | low | local-host |
-| `nfs` | 9 | high | local-host |
-| `nginx` | 22 | critical | local-host |
-| `nic` | 6 | low | local-host |
-| `nodejs-pm2` | 15 | high | local-host |
-| `nomad` | 75 | critical | NOMAD_* (opt) |
-| `pfsense` | 37 | critical | PFSENSE_* |
-| `php-fpm` | 10 | low | PHP_FPM_STATUS_URL (opt) |
-| `podman` | 12 | high | local-host |
-| `postfix` | 14 | critical | local-host |
-| `postgres` | 48 | high | PG* |
-| `process-forensics` | 10 | high | local-host |
-| `prometheus` | 14 | high | PROM_URL |
-| `pure-flasharray` | 14 | low | PURE_* (opt) |
-| `python-app` | 10 | low | PY_VENV (opt) |
-| `rabbitmq` | 18 | critical | local-host |
-| `redis` | 59 | critical | REDISCLI_AUTH (opt) |
-| `rke2` | 6 | low | local-host |
-| `shell` ⚠️ | 1 | critical | local-host |
-| `showcase` | 5 | low | local-host |
-| `snmp` | 7 | low | SNMP_* |
-| `ssl-local` | 7 | low | local-host |
-| `systemd-deep` | 24 | high | local-host |
-| `tailscale` | 9 | low | local-host |
-| `terraform-readonly` | 8 | medium | TF_DIR |
-| `time-sync` | 7 | high | local-host |
-| `traefik` | 18 | low | TRAEFIK_* (opt) |
-| `typesense` | 8 | low | TYPESENSE_* (opt) |
-| `vault` | 14 | critical | VAULT_* |
-| `vector` | 7 | low | VECTOR_API (opt) |
-| `victorialogs` | 7 | low | VL_* (opt) |
-| `victoriametrics` | 8 | low | VM_* (opt) |
-| `wireguard` | 8 | high | local-host |
-| `zfs` | 13 | critical | local-host |
-| `zookeeper` | 8 | low | local-host |
-| `zot` | 7 | low | ZOT_* (opt) |
-
-> ⚠️ **`shell` is a staging-only break-glass pack** — its one action runs an
-> arbitrary `/bin/sh` script on the host, bypassing the declared-action
-> model. Install it only on staging runners used to verify fixes; never in
-> production. It is critical-risk (denied by default policy) and ships with
-> no `detect:` block, so it is never auto-suggested. See
-> [`shell/README.md`](shell/README.md).
-
----
-
-## Risk tiers
-
-| Tier | Meaning | Examples |
-|---|---|---|
-| `low` | Read-only or near-zero impact | `df`, `nodetool status`, `SELECT version()`, `cat /proc/…` |
-| `medium` | Mutates state with limited blast radius; reversible | `apt-get update`, `JFR.start`, `set maxconn`, `mysql flush_logs` |
-| `high` | Production-affecting; user-visible impact | `systemctl restart`, `docker restart`, `kubectl scale`, `kill_query` |
-| `critical` | Hard to undo or wide blast | `reboot`, `terminate-instances`, `FLUSHDB`, `purge_queue`, `drain` |
-
-A pack's effective ceiling is set by the action it includes — every pack
-above lists its max tier. Use runner-side **admission allowlists** to
-hide tiers you don't want (e.g., allow only `low + medium` on
-production runners).
-
----
-
-## Authoring a new pack
-
-Start from `showcase/` — it exercises every schema feature. The minimum
-is `pack.yaml` + one action YAML. Action IDs are `<ns>.<action>`
-(lowercase, dot-separated).
-
-Add a `setup:` block to `pack.yaml` so operators know how to make the
-pack work. It renders on `pack install` and `pack info`:
-
-```yaml
-setup:
-  summary: >
-    One or two sentences on how this pack authenticates.
-  env:                        # omit for a pack that needs no credentials
-    - name: SOME_TOKEN
-      required: true
-      description: What the tool reads it for.
-      example: abc123         # or: default: "5432"
-  notes:                      # non-obvious caveats only
-    - File-based alternative, required privilege, or token scope.
-  verify: <pack>.<read_action>  # a low-risk read; the loader checks it exists
-```
-
-Document only env vars the tool actually reads — verify against the
-binary/argv, don't assume. For dangerous operations, write
-`side_effects:` honestly: the runner surfaces it to LLMs and to the
-approval UI, and misleading copy here defeats the safety story.
+Catalog contributors must read [`AGENTS.md`](AGENTS.md). A pack change is not
+complete until the pack validates, its generated cases and catalog artifacts
+are current, the runner/portal contract checks pass, and the public counts above
+match the manifests.

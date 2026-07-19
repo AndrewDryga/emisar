@@ -1,139 +1,133 @@
-# Runner
+# emisar runner
 
-The runner is the on-host `emisar` binary. It loads versioned action packs,
-dials out to the control plane, re-validates every request against the local
-action schema, executes with the permissions of its service user, redacts
-output before transmission, and writes a hash-chained local journal. It has no
-inbound network listener.
+The runner is the local enforcement and execution layer for emisar. It loads
+the action packs installed on a host, dials out to the control plane, and checks
+every dispatched action against the local pack before it starts a process. It
+has no inbound network listener.
 
-System boundaries and the end-to-end request flow are documented in
-[`docs/architecture.md`](../docs/architecture.md). The websocket messages are
-versioned in [`docs/wire-protocol.md`](../docs/wire-protocol.md).
+Run one runner on every host that an agent should be able to inspect or change.
+The runner uses the permissions of its service user; emisar does not turn a
+permitted command into a sandbox.
 
-## Installing and running
+## Install and prove it works
 
-The runner is intended to run as a long-lived background service on the
-host it manages. Two supervised configurations are supported:
+The supported production target is Linux with systemd. macOS with launchd is
+available for development and evaluation.
 
-- **Linux + systemd** — production target. Hardened unit, dedicated
-  service user, `Restart=on-failure` supervision with burst caps.
-- **macOS + launchd** — dev/eval target. `LaunchDaemon` with
-  `KeepAlive` + `ThrottleInterval`.
+1. In the emisar dashboard, choose **Connect a runner**. The generated command
+   contains the control-plane URL and a fresh, single-use enrollment key.
+2. Run that command on the host:
 
-Other init systems (OpenRC, runit, s6) are not part of the installer.
-The systemd unit is concise enough to translate by hand.
-
-## One-line install
-
-```sh
-curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
-```
-
-This installs the latest tagged release. To pin a specific version:
-
-```sh
-curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.12.0 --yes
-```
-
-The portal's **Runners → Install** page generates this one-liner with
-the control-plane URL and a fresh bootstrap key already baked in:
-
-```sh
-curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash
-```
-
-`EMISAR_URL` / `EMISAR_ENROLLMENT_KEY` provided as env vars are written into
-`config.yaml` / `runner.env` at install time, so the service starts
-connected — no post-install editing. Other accepted env/flags:
-`--packs LIST` (fixed pack set, no prompts), `--no-start` (install +
-enable, don't start), `--no-service` (binary only — containers/CI),
-`--bin-dir`/`--etc-dir`/`--data-dir`/`--log-dir`, `--user NAME`, and
-`RUNNER_GROUP`/`RUNNER_ROLE`/`RUNNER_ENVIRONMENT` to pre-fill the
-config's group + labels.
-
-The script is idempotent: re-running upgrades in place. It is the
-*only* component that needs network access during install (binary +
-checksum from GitHub releases).
-
-## What the installer does
-
-1. Detects OS (`linux` / `darwin`) and arch (`amd64` / `arm64`).
-2. Resolves the release tag (latest by default) and downloads the
-   matching tarball from GitHub releases.
-3. **Verifies SHA256** against the `SHA256SUMS` file published with
-   the release. Aborts on mismatch.
-4. **Linux only:** creates a system user `emisar` (via `useradd
-   --system`, no shell, no home).
-5. Installs the binary at `/usr/local/bin/emisar`.
-6. Creates directories:
-   - `/etc/emisar/` — config (`config.yaml`, `runner.env`, `packs/`).
-   - `/var/lib/emisar/` — state (the per-runner token, work dir).
-   - `/var/log/emisar/` — JSONL security log + rotated backups.
-7. Drops a `config.yaml` skeleton **only if one does not already
-   exist**. Existing configs are preserved on upgrade.
-8. Drops a `runner.env` stub (`chmod 600`) for the enrollment key and pack
-   credentials — **only if one does not already exist**, so an upgrade
-   never clobbers tokens you've added.
-9. Installs a small, host-matched set of starter packs after a confirmation
-   prompt — always `linux-core` + `debugging`, plus `systemd-deep` / `debian`
-   / `dnf-rpm` / `docker` when the matching tooling is present. The rest of the
-   catalog is added on demand with `emisar pack install <name>`. Subsequent
-   installs preserve valid packs; if a stricter runner rejects an installed
-   pack, the installer repairs official packs from the registry and stops before
-   startup if the complete tree is still invalid. Setting `EMISAR_PACKS` (or
-   `--packs`), even to an empty string, makes the set explicit instead: the
-   installer installs exactly those packs (possibly none) and skips host
-   detection and suggestions.
-10. Installs the supervisor unit:
-    - Linux: `/etc/systemd/system/emisar.service`, enabled but not
-      started until you configure the enrollment key.
-    - macOS: `/Library/LaunchDaemons/com.emisar.runner.plist`,
-      registered with launchd. A root-owned `/etc/emisar/run-launchd.sh`
-      wrapper loads the protected `runner.env` before it replaces itself with
-      the runner; launchd has no `EnvironmentFile` equivalent.
-11. On upgrades (where `config.yaml` already exists with a valid auth
-    key configured), restarts the service.
-
-## After install
-
-1. **Edit `/etc/emisar/config.yaml`** — set `runner.group` (the cloud
-   UI's auto-grouping key) and `cloud.url`.
-2. **Edit `/etc/emisar/runner.env`** — set `EMISAR_ENROLLMENT_KEY=emkey-enroll-...`
-   (the cloud-issued bootstrap key for this runner).
-3. **Start the service:**
    ```sh
-   sudo systemctl start emisar        # Linux
-   sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist  # macOS
-   ```
-4. **Verify it's healthy:**
-   ```sh
-   sudo systemctl status emisar       # Linux
-   sudo journalctl -u emisar -f       # Linux: follow logs
-   tail -f /var/log/emisar/emisar.err.log   # macOS
-   ```
-5. **Confirm the security log is being written:**
-   ```sh
-   sudo emisar --config /etc/emisar/config.yaml events tail
+   curl -sSL https://emisar.dev/install.sh \
+     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
    ```
 
-## Pack authentication (`runner.env` + `inherit_env`)
+   The installer verifies the release checksum, creates a dedicated `emisar`
+   user on Linux, installs the service, adds host-matched starter packs, and
+   starts the runner.
+3. Verify the host and the control-plane connection:
 
-Some packs reach a service that needs credentials — a token, password, or
-address. Actions read these from the runner's **environment** (never from the
-call arguments, so the secret never reaches the cloud). Two steps:
+   ```sh
+   sudo emisar doctor
+   sudo systemctl status emisar
+   sudo journalctl -u emisar -f
+   ```
 
-1. **Put the value in `/etc/emisar/runner.env`** — the `chmod 600` secrets
-   file the service loads at start. Shell-style `KEY=VALUE`, no quotes:
+4. Confirm the runner is online in the dashboard. Dispatch `linux.uptime` with
+   a reason and check that the result appears in the audit trail.
+
+`emisar doctor` is the first troubleshooting command. It checks configuration,
+credentials, pack contents, required host binaries, and control-plane reachability
+without opening a cloud session, and reports all failures in one run.
+
+The complete operator walkthrough is at
+[emisar.dev/docs/quickstart](https://emisar.dev/docs/quickstart). Container and
+Kubernetes installations are covered at
+[emisar.dev/docs/containers](https://emisar.dev/docs/containers).
+
+## What the runner enforces
+
+For every action, the runner:
+
+1. Resolves the action from its own loaded pack catalog.
+2. Recomputes the pack's content hash and compares it with the hash trusted by
+   the control plane.
+3. Re-validates every argument against the pack's typed schema and rejects
+   unknown input.
+4. Applies the host-local action allowlist, denylist, and optional risk ceiling.
+5. Clamps timeout and output limits to the pack's declared bounds.
+6. Executes the pack-authored binary and argv with `os/exec`.
+7. Redacts output before it leaves the host.
+8. Appends the attempt to a hash-chained local JSONL journal.
+
+Fixed shell programs may be authored inside a pack when pipes or shell features
+are needed, but cloud input is still limited to validated substitutions. The
+staging-only `shell` pack is the explicit arbitrary-command exception and must
+not be installed on production runners.
+
+See the [security model](../docs/security-model.md),
+[architecture](../docs/architecture.md), and
+[runner wire protocol](../docs/wire-protocol.md) for the full contract.
+
+## Files and configuration
+
+The supervised installer uses these paths by default:
+
+| Path | Purpose |
+| --- | --- |
+| `/usr/local/bin/emisar` | Runner and operator CLI |
+| `/etc/emisar/config.yaml` | Host identity, control-plane URL, packs, admission, and execution settings |
+| `/etc/emisar/runner.env` | Mode-0600 enrollment key and pack credentials |
+| `/etc/emisar/packs/` | Installed action packs |
+| `/var/lib/emisar/` | Per-runner token, work files, and durable execution state |
+| `/var/log/emisar/events.jsonl` | Hash-chained local security journal |
+
+The portal-generated install command writes the URL and enrollment key for you.
+For manual provisioning, the minimum shape is:
+
+```yaml
+schema_version: 1
+
+runner:
+  group: web-prod
+  labels:
+    region: us-east-1
+    environment: prod
+
+cloud:
+  url: wss://emisar.dev
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
+  token_path: /var/lib/emisar/token.json
+
+paths:
+  data_dir: /var/lib/emisar
+  work_dir: /var/lib/emisar/work
+  packs:
+    - /etc/emisar/packs
+
+execution: {}
+
+events:
+  jsonl_path: /var/log/emisar/events.jsonl
+```
+
+Groups and labels organize the fleet and participate in scoping. Treat their
+names as durable operational identifiers. The full annotated configuration is
+[`examples/config.yaml`](examples/config.yaml).
+
+## Pack credentials
+
+Pack credentials stay on the host. They are never passed as action arguments.
+
+1. Put each value in `/etc/emisar/runner.env`:
 
    ```sh
    NOMAD_ADDR=http://127.0.0.1:4646
    NOMAD_TOKEN=<acl-token>
    ```
 
-2. **Allowlist each name in `/etc/emisar/config.yaml`** under
-   `execution.inherit_env` — the runner only forwards listed variables into an
-   action's process:
+2. Allowlist the variable names in `/etc/emisar/config.yaml`:
 
    ```yaml
    execution:
@@ -142,170 +136,144 @@ call arguments, so the secret never reaches the cloud). Two steps:
        - NOMAD_TOKEN
    ```
 
-   The list is merged with the always-on defaults (`PATH`, `LANG`, `LC_ALL`,
-   `TERM`), so list only the additional variables the pack needs.
+3. Restart the service so both files are re-read:
 
-Restart so both files are re-read: `sudo systemctl restart emisar`. What a pack
-needs is in its setup notes (`emisar pack info <id>`). Re-running the installer
-never overwrites `runner.env` or `config.yaml`, so these survive upgrades.
+   ```sh
+   sudo systemctl restart emisar
+   ```
 
-## Supervision behaviour
+The runner always provides `PATH`, `LANG`, `LC_ALL`, and `TERM`; everything
+else is dropped unless it is allowlisted. Run `emisar pack info <id>` to see a
+pack's binaries, environment variables, privilege needs, and verification
+action. The installer preserves both configuration files during upgrades.
 
-### Linux (systemd)
+## Install and manage packs
 
-The bundled unit uses `Restart=on-failure` with `StartLimitBurst=5`
-and `StartLimitIntervalSec=300`. Meaning:
-
-- A clean `SIGTERM` (e.g., `systemctl stop emisar`) does not trigger
-  restart.
-- A panic, OOM, or non-zero exit triggers restart after a 5-second
-  delay.
-- After 5 restarts in 5 minutes the unit goes into a `failed` state
-  and stops trying. The operator must run `systemctl reset-failed
-  emisar && systemctl start emisar` to retry. This prevents a
-  misconfigured runner (e.g., revoked enrollment key returning 401) from
-  hammering the cloud forever.
-
-`TimeoutStopSec=7m` gives the runner up to 7 minutes for graceful
-shutdown before systemd SIGKILLs it. That window covers the bundled
-`cassandra.nodetool_repair`'s 5-minute `cancel_grace`. If you add
-actions with longer grace windows, raise `TimeoutStopSec` to match.
-
-### macOS (launchd)
-
-The bundled plist uses `KeepAlive` with `SuccessfulExit=false` plus
-`Crashed=true`. Equivalent to systemd's `Restart=on-failure`. The
-`ThrottleInterval=5` matches systemd's `RestartSec=5s`. `ExitTimeOut=420`
-is the SIGTERM → SIGKILL window (7 minutes, same reasoning). The installer runs
-the LaunchDaemon as root and supports macOS for development and evaluation, not
-production; create a dedicated `_emisar` user and review its permissions before
-using a custom macOS deployment. Update the plist plus the wrapper, config,
-secret, state, and log ownership as one change; changing only `UserName` leaves
-the daemon unable to read `runner.env`.
-
-## Reconnect and half-open sockets
-
-The default `heartbeat_every: 30s` keeps the portal's 90-second heartbeat
-watchdog and 120-second connection lease alive. If a network disappears
-without closing the websocket, the runner cannot observe the loss immediately:
-the portal closes the stale socket after missed heartbeats, and ownership is
-then released by the socket/lease lifecycle. A reconnect can therefore take
-roughly 90–120 seconds before a sleeping or flaky-network host is accepted
-again. This is expected availability behavior, not an action timeout.
-
-The window is intentional. The lease must outlive the stale socket's last
-possible write, so a replacement connection cannot race an old connection and
-finalize or advertise state under the wrong ownership. The runner's
-`reconnect_min`/`reconnect_max` backoff applies after the socket is observed as
-closed; lowering it does not bypass the portal's heartbeat and lease gates.
-Keep `heartbeat_every` below the portal watchdog with room for scheduling and
-network jitter, and change the heartbeat/lease contract together if a shorter
-half-open window is ever required.
-
-## Useful commands
-
-| What                                  | Linux                                                | macOS                                                       |
-| ------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------- |
-| Start                                 | `sudo systemctl start emisar`                        | `sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist` |
-| Stop                                  | `sudo systemctl stop emisar`                         | `sudo launchctl bootout system /Library/LaunchDaemons/com.emisar.runner.plist` |
-| Restart                               | `sudo systemctl restart emisar`                      | (bootout + bootstrap)                                       |
-| Status                                | `sudo systemctl status emisar`                       | `sudo launchctl print system/com.emisar.runner`              |
-| Follow logs                           | `sudo journalctl -u emisar -f`                       | `tail -f /var/log/emisar/emisar.err.log`                    |
-| Reload packs (no restart)             | `sudo systemctl kill -s HUP emisar`                  | `sudo launchctl kill HUP system/com.emisar.runner`           |
-| Inspect local security log            | `sudo emisar --config /etc/emisar/config.yaml events tail` | same                                                  |
-| List loaded actions                   | `sudo emisar --config /etc/emisar/config.yaml action list` | same                                                  |
-
-## Upgrade
-
-Re-run the installer with the new version. The service is stopped, the binary
-replaced, and the service restarted. Config and valid packs are preserved;
-incompatible official packs may be repaired before the service starts.
+The installer adds a small host-matched starter set. Add capabilities by name
+from the public registry, by pinned version, from a local directory, or from an
+HTTPS tarball:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh \
-  | sudo bash -s -- --version runner-v0.12.0 --yes
+sudo emisar pack install redis
+sudo emisar pack install redis=0.2.3 --hash sha256:...
+sudo emisar pack install ./my-pack
+sudo emisar pack info redis
 ```
 
-## Uninstall
+The runner validates every pack before installing it. When a daemon is running,
+pack install, update, and uninstall signal it to reload and re-advertise without
+dropping in-flight work. Otherwise run `sudo systemctl reload emisar`.
+
+Browse the catalog at [emisar.dev/packs](https://emisar.dev/packs) and read the
+[pack guide](../packs/README.md) before installing capabilities on production
+hosts.
+
+## Local admission
+
+Admission is the host's defense-in-depth gate. It hides and refuses actions
+that should never be available on that runner, even if the control plane asks
+for one.
+
+```yaml
+admission:
+  allow:
+    - "linux.*"
+    - "postgres.uptime"
+  deny:
+    - "*.repair"
+    - "linux.systemctl_restart"
+  max_risk: medium
+```
+
+An action must match `allow` when that list is present, must not match `deny`,
+and must not exceed `max_risk`. Empty admission settings accept every action in
+the locally installed catalog.
+
+## Operations
+
+| Task | Linux | macOS |
+| --- | --- | --- |
+| Start | `sudo systemctl start emisar` | `sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist` |
+| Stop | `sudo systemctl stop emisar` | `sudo launchctl bootout system /Library/LaunchDaemons/com.emisar.runner.plist` |
+| Restart | `sudo systemctl restart emisar` | bootout, then bootstrap |
+| Status | `sudo systemctl status emisar` | `sudo launchctl print system/com.emisar.runner` |
+| Follow logs | `sudo journalctl -u emisar -f` | `tail -f /var/log/emisar/emisar.err.log` |
+| Reload packs and signing trust | `sudo systemctl reload emisar` | `sudo launchctl kill HUP system/com.emisar.runner` |
+| Tail the local journal | `sudo emisar events tail` | `sudo emisar events tail` |
+| Verify the journal chain | `sudo emisar audit verify` | `sudo emisar audit verify` |
+
+The Linux unit uses `Restart=on-failure`, a five-attempt restart burst cap, and
+a seven-minute graceful shutdown window. The cap prevents a bad or revoked
+credential from causing an endless authentication loop. The shutdown window
+covers the longest bundled cancellation grace.
+
+The default 30-second heartbeat pairs with the portal's stale-socket watchdog
+and connection lease. A half-open network path can take roughly 90-120 seconds
+to release ownership before a replacement connection is accepted. Reducing the
+runner's reconnect backoff does not bypass that safety window.
+
+## Upgrade and remove
+
+Re-run the installer to upgrade in place. Existing configuration, credentials,
+and valid packs are preserved:
 
 ```sh
-sudo bash install.sh --uninstall            # binary + service unit only
-sudo bash install.sh --uninstall --purge    # plus /etc/emisar, /var/lib, /var/log
+curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes
 ```
 
-`--purge` also deletes the local security log; only do this if you've
-already shipped the log to wherever you want it preserved.
-
-## Air-gapped install
-
-Download the release tarball directly:
+Pin a reviewed release when repeatability matters:
 
 ```sh
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.12.0/emisar-0.12.0-linux-amd64.tar.gz
-curl -LO https://github.com/andrewdryga/emisar/releases/download/runner-v0.12.0/SHA256SUMS
-grep ' emisar-0.12.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar xzf emisar-0.12.0-linux-amd64.tar.gz
-sudo bash emisar-0.12.0-linux-amd64/install.sh --yes
+curl -sSL https://emisar.dev/install.sh \
+  | sudo bash -s -- --version runner-vX.Y.Z --yes
 ```
 
-The tarball contains a copy of `install.sh` that pins to its own
-version — running it does not re-fetch from GitHub.
+The installer bundled in a release tarball pins itself to that release and can
+be moved to an offline host with the tarball and `SHA256SUMS` file.
 
-## Why these specific patterns
+To remove the service while retaining configuration and local evidence:
 
-- **No `curl | sudo bash` without HTTPS + a tagged release.** The
-  installer always pulls from GitHub releases over TLS; the SHA256
-  verification step closes the gap if the network is compromised.
-- **`Restart=on-failure` not `Restart=always`.** Clean shutdowns
-  (operator-initiated, planned restarts) should stay shut down. Only
-  crashes warrant restart.
-- **`StartLimitBurst=5`.** Without it, a broken enrollment key produces an
-  infinite 401-reconnect loop. With it, the runner fails closed after 5
-  attempts and surfaces a clear error in `systemctl status`.
-- **Minimal default sandbox.** The unit only sets `User=emisar` and
-  `RestrictSUIDSGID=yes` beyond the supervision basics. emisar is a
-  sysadmin's deputy — actions are intentionally permissioned by the
-  operator. See the next section if you want defense-in-depth on top.
+```sh
+sudo bash install.sh --uninstall
+```
+
+Add `--purge` only when `/etc/emisar`, `/var/lib/emisar`, and
+`/var/log/emisar` should also be deleted. Preserve or export the local journal
+first.
 
 ## Signed dispatch (optional)
 
-To make this runner run **only** actions a real person signed in their MCP
-client — so even a compromised control plane can't dispatch to it — run
-`emisar signing init` to mint an offline CA plus an operator certificate, add the
-CA's public key under `signing.trusted_cas` in `config.yaml`, and give the leaf
-key and certificate to the MCP client. Full setup, scoping, rotation, and
-troubleshooting: [`docs/signed-dispatch.md`](../docs/signed-dispatch.md).
+A runner can require every action to carry an Ed25519 intent signed by the MCP
+client. The control plane can relay that action but cannot originate it, change
+its exact arguments, or widen its runner set.
+
+Run `emisar signing init`, add the generated CA public key under
+`signing.trusted_cas`, and configure the MCP client with the leaf key and
+certificate. Setup, scope, rotation, replay protection, and refusal codes are in
+[`docs/signed-dispatch.md`](../docs/signed-dispatch.md).
 
 ## Hardening (optional)
 
-The default systemd unit is deliberately minimal. Every
-`Protect*=yes` / `Restrict*=yes` directive in systemd propagates to
-the service's child processes — which means it propagates to every
-action the runner runs. Aggressive sandboxing fights the operator:
+The installed systemd unit is deliberately modest because every service
+sandbox directive also constrains the actions it launches. For example:
 
-| Directive                       | What it would break                         |
-| ------------------------------- | ------------------------------------------- |
-| `ProtectSystem=strict`          | Actions writing outside `/var/lib/emisar`   |
-| `ProtectHome=yes`               | Actions reading `/home/<user>/...`          |
-| `NoNewPrivileges=yes`           | Actions calling `sudo` for elevated work    |
-| `ProtectProc=invisible`         | `ps -ef`, `top`, scanning `/proc/<pid>`     |
-| `PrivateDevices=yes`            | Actions touching `/dev/sda`, `/dev/loop*`   |
-| `ProtectKernelTunables=yes`     | `sysctl -w`                                 |
-| `ProtectKernelLogs=yes`         | `dmesg`                                     |
-| `MemoryDenyWriteExecute=yes`    | Any JIT (Java, Node, LuaJIT, some Python)   |
-| `RestrictNamespaces=yes`        | `unshare`, container-aware actions          |
+| Directive | Common consequence |
+| --- | --- |
+| `ProtectSystem=strict` | Blocks actions that write outside declared writable paths |
+| `ProtectHome=yes` | Blocks reads under `/home` |
+| `NoNewPrivileges=yes` | Blocks actions that use `sudo` |
+| `ProtectProc=invisible` | Breaks process and `/proc` diagnostics |
+| `PrivateDevices=yes` | Blocks storage and device actions |
+| `MemoryDenyWriteExecute=yes` | Breaks JIT runtimes |
 
-Operators who want these *on top of* the default — for sites that
-strictly limit what their action packs can do — can drop in an
-override file. Drop-ins survive `install.sh` upgrades.
+Add a systemd drop-in only after checking every installed pack against the
+restrictions. Drop-ins survive installer upgrades. A strong read-mostly host
+profile can start with:
 
-```sh
-sudo mkdir -p /etc/systemd/system/emisar.service.d
-sudo tee /etc/systemd/system/emisar.service.d/harden.conf <<'EOF'
+```ini
 [Service]
 NoNewPrivileges=yes
 PrivateTmp=yes
-PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/var/lib/emisar /var/log/emisar
@@ -315,36 +283,23 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-ProtectProc=invisible
-ProcSubset=pid
 RestrictRealtime=yes
-RestrictNamespaces=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
 SystemCallArchitectures=native
-EOF
-sudo systemctl daemon-reload
-sudo systemctl restart emisar
 ```
 
-This is the full hardened stance that earlier emisar versions
-shipped as the default. Use it when you know the action packs you
-ship don't need any of the capabilities above. Run `systemctl cat
-emisar` to confirm the merged unit looks right.
+Install it under `/etc/systemd/system/emisar.service.d/harden.conf`, run
+`sudo systemctl daemon-reload`, restart the service, and use `emisar doctor`
+plus representative local action runs to prove the profile fits the host.
 
 ## Granting elevated privileges to specific actions
 
-Most ops actions need root-or-similar privileges (`systemctl
-restart`, `iptables -L`, reading `/var/log/auth.log`). The emisar
-runner user is unprivileged by default, so you grant just what each
-action needs via the OS's normal mechanisms.
+The default Linux service user is unprivileged. Grant only the OS authority
+required by the packs installed on that host.
 
-### Polkit (preferred for systemd actions)
+For systemd actions, prefer a narrow polkit rule:
 
-```sh
-sudo tee /etc/polkit-1/rules.d/50-emisar.rules <<'EOF'
+```javascript
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.systemd1.manage-units" &&
         subject.user == "emisar") {
@@ -354,53 +309,17 @@ polkit.addRule(function(action, subject) {
         }
     }
 });
-EOF
 ```
 
-`systemctl restart nginx` from the emisar user now works without a
-password, but only for the listed units.
+For other commands, a sudoers rule must match the exact binary and bounded argv
+shape used by the action:
 
-### sudoers (for non-systemd commands)
-
-```sh
-sudo tee /etc/sudoers.d/emisar <<'EOF'
+```sudoers
 emisar ALL=(root) NOPASSWD: /usr/sbin/iptables -L*, /usr/bin/journalctl -u *
-EOF
-sudo chmod 0440 /etc/sudoers.d/emisar
-sudo visudo -c -f /etc/sudoers.d/emisar
 ```
 
-If you go this route, action YAML calls `sudo` explicitly:
-
-```yaml
-execution:
-  command:
-    binary: sudo           # bare name — resolved via PATH
-    argv:
-      - "-n"
-      - "/usr/sbin/iptables"   # absolute here: sudoers rules match full paths
-      - "-L"
-```
-
-### Run as root
-
-For dev / experimentation only — flips the boundary off entirely:
-
-```sh
-sudo mkdir -p /etc/systemd/system/emisar.service.d
-sudo tee /etc/systemd/system/emisar.service.d/root.conf <<'EOF'
-[Service]
-User=root
-Group=root
-EOF
-sudo systemctl daemon-reload
-sudo systemctl restart emisar
-```
-
-Don't do this in production. If the runner is compromised, attacker
-has root. The whole point of the unprivileged-user default is to
-make a compromised runner process a small footprint, not a
-full-system takeover.
+Validate it with `visudo -c -f /etc/sudoers.d/emisar`. Do not run the service as
+root in production; that turns a runner compromise into full host compromise.
 
 ## Development
 
@@ -421,9 +340,6 @@ go mod tidy && git diff --exit-code -- go.mod go.sum
 go test -race -count=1 ./...
 ```
 
-The CLI commands live at the module root. Runtime packages are under
-`internal/`: `cloud` owns the websocket, `engine` the action pipeline,
-`packs` loading and hashes, `validation` schemas, `executor` process control,
-`redact` streaming redaction, `admission` the host-local gate, and `audit` the
-JSONL journal. Public manifest types live in `pkg/actionspec` and
-`pkg/packspec`.
+CLI commands live at the module root. Runtime packages are under `internal/`;
+the public pack manifest types are in `pkg/actionspec` and `pkg/packspec`.
+Read [`AGENTS.md`](AGENTS.md) before changing the execution or trust boundary.

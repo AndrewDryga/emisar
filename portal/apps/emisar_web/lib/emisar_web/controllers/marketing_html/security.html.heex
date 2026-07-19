@@ -143,6 +143,18 @@
           </div>
         </div>
       </div>
+
+      <figure class="mx-auto mt-16 max-w-5xl overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
+        <img
+          src="/images/screenshots/approval-decision.webp"
+          alt="The emisar approval view for a high-risk action, showing the requesting agent, target runner, reason, arguments, policy decision, and approve or deny controls before execution."
+          loading="lazy"
+          class="w-full"
+        />
+        <figcaption class="border-t border-zinc-900 bg-zinc-950/60 px-4 py-3 text-center text-xs text-zinc-400">
+          A high-risk action waits here before the runner receives it.
+        </figcaption>
+      </figure>
     </div>
   </section>
 
@@ -163,8 +175,8 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Runners connect to the control plane over WSS using TLS 1.2+. A bootstrap key is
-            exchanged for a per-runner token that can be revoked from the dashboard.
+            Runners connect to the control plane over WSS using TLS 1.2+. A single-use enrollment
+            key is exchanged for a per-runner token that can be revoked from the dashboard.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -270,8 +282,6 @@
           <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Governed LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            MCP bridge and Runner keys are short-lived and rotate themselves before they expire. All keys 
-            
             Two kinds of key. An MCP key runs actions, gated by your policy and approvals and limited
             to its owner's runner scope. An audit-export key only reads the audit log. Both are
             short-lived and rotate themselves before they expire, and both belong to a member —
@@ -321,6 +331,10 @@
         immutable audit trail. emisar enforces that control set — and assumes the agent may already
         be compromised, so a jailbroken or prompt-injected model still can't exceed the declared,
         gated, audited catalog.
+      </p>
+      <p class="mt-3 text-xs leading-5 text-zinc-500">
+        Not affiliated with or endorsed by Anthropic. We cite the framework as an independent
+        security reference.
       </p>
       <div class="mt-8 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
         <h3 class="text-sm font-semibold text-brand-300">Local admission control</h3>
