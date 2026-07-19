@@ -526,6 +526,9 @@
     {
       "action": "nomad.operator_autopilot_state",
       "args": {},
+      "expect_stdout_contains": [
+        "\"Healthy\""
+      ],
       "expect_exit": 0
     },
     {

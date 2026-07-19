@@ -28,6 +28,13 @@ var packEnv = map[string]map[string]string{
 	"grafana":       {"GRAFANA_URL": "http://grafana:3000", "GRAFANA_USER": "admin", "GRAFANA_PASS": "testpass"},
 }
 
+// stdoutAssertions reject successful commands that returned an empty or
+// semantically unrelated response. Keep needles stable across supported
+// upstream versions.
+var stdoutAssertions = map[string][]string{
+	"nomad.operator_autopilot_state": {`"Healthy"`},
+}
+
 // safeMutators are actions whose mutations can run repeatedly without harming
 // the SUT (idempotent or self-healing). Other mutators are skipped by default.
 var safeMutators = map[string]bool{

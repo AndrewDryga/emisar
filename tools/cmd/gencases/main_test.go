@@ -113,3 +113,24 @@ func TestEmitPack_RiskAndOverrideBranches(t *testing.T) {
 		t.Errorf("cases = %#v\nwant %#v", got.Cases, want)
 	}
 }
+
+func TestEmitPackAddsStdoutAssertions(t *testing.T) {
+	dir := t.TempDir()
+	packDir := filepath.Join(dir, "nomad")
+	if err := os.MkdirAll(filepath.Join(packDir, "actions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(packDir, "actions", "autopilot.yaml")
+	if err := os.WriteFile(path, []byte("id: nomad.operator_autopilot_state\nrisk: low\nargs: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := emitPack(packDir)
+	if err != nil {
+		t.Fatalf("emitPack: %v", err)
+	}
+	want := []string{`"Healthy"`}
+	if len(got.Cases) != 1 || !reflect.DeepEqual(got.Cases[0].ExpectStdoutContains, want) {
+		t.Fatalf("stdout assertions = %#v, want %#v", got.Cases, want)
+	}
+}

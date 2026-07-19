@@ -49,8 +49,9 @@ type actionDef struct {
 }
 
 type testCase struct {
-	Action string         `json:"action"`
-	Args   map[string]any `json:"args"`
+	Action               string         `json:"action"`
+	Args                 map[string]any `json:"args"`
+	ExpectStdoutContains []string       `json:"expect_stdout_contains,omitempty"`
 	// ExpectExit is an int, a []int of acceptable codes, or absent (nil) for
 	// the skipped-override cases. omitempty on an any drops only nil — a
 	// present int 0 still serializes.
@@ -153,6 +154,7 @@ func emitPack(packDir string) (*casesFile, error) {
 		}
 
 		c := testCase{Action: action.ID}
+		c.ExpectStdoutContains = stdoutAssertions[action.ID]
 		if override, listed := actionArgs[action.ID]; listed {
 			if override == nil {
 				c.Args = deriveArgs(action)
