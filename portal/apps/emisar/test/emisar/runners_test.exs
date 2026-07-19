@@ -647,7 +647,7 @@ defmodule Emisar.RunnersTest do
       %{account: account, subject: subject}
     end
 
-    test "sets disabled_at and broadcasts :runner_socket_revoked to drop the live socket", %{
+    test "sets disabled_at and broadcasts :runner_socket_disabled to drop the live socket", %{
       account: account,
       subject: subject
     } do
@@ -657,7 +657,7 @@ defmodule Emisar.RunnersTest do
       Runners.subscribe_runner_transport(runner)
 
       assert {:ok, %Runner{disabled_at: %DateTime{}}} = Runners.disable_runner(runner, subject)
-      assert_receive :runner_socket_revoked
+      assert_receive :runner_socket_disabled
     end
 
     test "a viewer (no manage_runners) is refused", %{account: account} do
@@ -1823,14 +1823,29 @@ defmodule Emisar.RunnersTest do
       assert {:error, :token_invalid} = Runners.verify_runner_token("")
     end
 
-    test "returns {:error, :token_invalid} for a disabled runner's token" do
+    test "returns {:error, :runner_disabled} only for a disabled runner's valid token" do
       {account, _user, subject} = account_with_owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
 
-      {:ok, _} = Runners.disable_runner(runner, subject)
+      {:ok, disabled} = Runners.disable_runner(runner, subject)
 
-      assert {:error, :token_invalid} = Runners.verify_runner_token(raw)
+      assert Runners.verify_runner_token(raw) == {:error, :runner_disabled}
+      assert Runners.verify_runner_token(raw <> "forged") == {:error, :token_invalid}
+
+      {:ok, _enabled} = Runners.enable_runner(disabled, subject)
+      runner_id = runner.id
+      assert {:ok, %Token{}, %Runner{id: ^runner_id}} = Runners.verify_runner_token(raw)
+    end
+
+    test "returns {:error, :token_invalid} for a deleted runner's token" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+
+      {:ok, _} = Runners.delete_runner(runner, subject)
+
+      assert Runners.verify_runner_token(raw) == {:error, :token_invalid}
     end
   end
 

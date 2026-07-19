@@ -5,6 +5,7 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   @fields ~w[
     account_id runner_id action_id pack_id pack_version pack_hash title kind risk
     summary description side_effects args_schema examples search_terms
+    primary_executable_available missing_executable
     first_seen_at last_seen_at
   ]a
 
@@ -62,10 +63,15 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
     |> validate_length(:title, max: @max_title_length)
     |> validate_length(:summary, max: @max_summary_length)
     |> validate_length(:description, max: @max_description_length)
+    |> validate_length(:missing_executable, max: 255)
     |> validate_length(:search_terms, max: @max_search_terms)
     |> validate_search_terms()
     |> validate_json_sizes()
     |> unique_constraint([:runner_id, :action_id])
+    |> check_constraint(:missing_executable,
+      name: :missing_executable_requires_unavailable,
+      message: "is only valid for an unavailable primary executable"
+    )
   end
 
   defp validate_json_sizes(changeset) do

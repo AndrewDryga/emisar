@@ -222,6 +222,52 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute compatible_by_name["unsigned"]["enforce_signatures"]
   end
 
+  test "missing primary executable removes only that action from a matching pack", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "beam-host")
+    packs = %{"elixir-beam" => %{"version" => "1.0.0", "hash" => @hash}}
+
+    available =
+      action("beam.release_targets", "elixir-beam")
+      |> Map.put("primary_executable_available", true)
+
+    unavailable =
+      action("beam.epmd_names", "elixir-beam")
+      |> Map.put("primary_executable_available", false)
+      |> Map.put("missing_executable", "epmd")
+
+    observe!(runner, packs, [available, unavailable])
+    trust_all!(subject)
+
+    [%{"pack_ref" => pack_ref} = pack] =
+      call(conn, "list_packs", %{"availability" => "all"})["packs"]
+
+    assert pack["availability"] == "executable"
+    assert Enum.any?(pack["issues"], &(&1["code"] == "primary_executable_missing"))
+    refute Enum.any?(pack["issues"], &(&1["code"] == "descriptor_mismatch"))
+
+    assert [%{"action_id" => "beam.release_targets"}] =
+             call(conn, "find_actions", %{"query" => "beam"})["candidates"]
+
+    detail =
+      call(conn, "get_action", %{
+        "pack_ref" => pack_ref,
+        "action_id" => "beam.epmd_names"
+      })
+
+    assert detail["error"]["code"] == "action_unavailable"
+
+    [listed_runner] = call(conn, "list_runners", %{})["runners"]
+
+    assert Enum.any?(
+             listed_runner["issues"],
+             &(&1["code"] == "primary_executable_missing")
+           )
+  end
+
   test "find_actions recalls natural multi-term queries and ranks term coverage", %{
     conn: conn,
     account: account,

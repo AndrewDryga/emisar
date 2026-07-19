@@ -124,6 +124,8 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 - **Content:** [repository maps come from the tree](.agent/rules/content-repository-maps-come-from-the-tree.md) — inspect the actual files, commands, and owner docs before summarizing a repository area; preserve production status and every primary responsibility.
 - **Content:** [guides teach; the chrome sells](.agent/rules/content-guides-teach-not-sell.md) — a `/guides/*` piece argues with zero in-body product mentions (or one designated section); a product-docs link mid-argument is the genre flip that turns teaching into a brochure, and the page chrome carries the conversion.
 - **Infra:** [optional-resource refs use splat, never a hard index](.agent/rules/infra-optional-resource-splat-refs.md) — a consumer that can outlive a count-gated resource references it as `A[*].attr` so absence degrades to `[]`; `A[0].attr` bakes in existence and turns a lifecycle flip into graph surgery.
+- **Runner:** [host readiness stays separate from descriptors](.agent/rules/runner-host-readiness-separate-from-descriptors.md) — preserve complete trusted-manifest comparison and report mutable host readiness as subtractive deployment evidence.
+- **Shared:** [reversible and terminal runner states stay distinct](.agent/rules/shared-runner-lifecycle-states.md) — disable keeps the identity retryable so enable recovers without host access; delete/revoke is terminal and never inherits retry behavior.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 

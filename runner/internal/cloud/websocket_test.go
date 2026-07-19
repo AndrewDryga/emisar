@@ -626,6 +626,31 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	}
 }
 
+func TestWebsocketDialer403DisabledRetainsCachedToken(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token.json")
+	cached, _ := json.Marshal(map[string]string{"token": "valid-disabled-token"})
+	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "runner_disabled"})
+	}))
+	defer srv.Close()
+
+	d := &WebsocketDialer{URL: srv.URL, TokenPath: tokenPath, ExternalID: "stable-id"}
+	_, err := d.Dial(context.Background())
+	if !errors.Is(err, ErrRunnerDisabled) {
+		t.Fatalf("Dial error = %v, want ErrRunnerDisabled", err)
+	}
+	if got, readErr := os.ReadFile(tokenPath); readErr != nil || string(got) != string(cached) {
+		t.Fatalf("cached token changed after disabled response: bytes=%q error=%v", got, readErr)
+	}
+}
+
 func TestWebsocketDialer401SurfacesTokenRemovalFailure(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "token.json")

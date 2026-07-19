@@ -184,16 +184,28 @@ defmodule EmisarWeb.RunnerSocket do
 
   def handle_info(:stop_after_drain, state), do: {:stop, :normal, state}
 
-  # Sent by `Runners.broadcast_runner_revoked/1` after the runner is disabled or
-  # deleted. Auth runs only at connect, so this is the kill switch for an already-
-  # open socket: push a shutdown envelope, then stop — a revoked runner can no
-  # longer finalize runs, append events, or mutate the pack-trust catalog.
+  # Disable closes the active socket but keeps the credential retryable so enable
+  # can restore service without touching the host.
+  def handle_info(:runner_socket_disabled, state) do
+    disabled = %{
+      type: "shutdown",
+      protocol_version: @protocol_version,
+      reason: "runner_disabled",
+      message: "This runner is disabled. Waiting until it is enabled."
+    }
+
+    send(self(), :stop_after_drain)
+    {:push, {:text, Jason.encode!(disabled)}, state}
+  end
+
+  # Delete revokes the identity. The terminal frame stops the host before it can
+  # retry a credential the portal will no longer accept.
   def handle_info(:runner_socket_revoked, state) do
     revoked = %{
       type: "shutdown",
       protocol_version: @protocol_version,
       reason: "runner_revoked",
-      message: "This runner was disabled or removed. Disconnecting."
+      message: "This runner was removed. Disconnecting."
     }
 
     send(self(), :stop_after_drain)

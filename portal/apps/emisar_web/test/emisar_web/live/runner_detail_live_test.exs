@@ -200,6 +200,26 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute html =~ "Signed dispatch only"
   end
 
+  test "a missing primary executable disables only that action's Run affordance", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "beam.epmd_names",
+      primary_executable_available: false,
+      missing_executable: "epmd"
+    )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "Primary executable epmd is missing"
+    assert html =~ "hero-wrench-screwdriver"
+    refute html =~ "/runs/new/#{runner.id}/beam.epmd_names"
+  end
+
   test "an unknown id bounces to the index as not-found", %{conn: conn, account: account} do
     dest = ~p"/app/#{account}/runners"
 

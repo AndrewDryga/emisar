@@ -50,8 +50,11 @@ type Options struct {
 	Engine         *engine.Engine
 	Logger         *slog.Logger
 	HeartbeatEvery time.Duration
-	ReconnectMin   time.Duration
-	ReconnectMax   time.Duration
+	// AvailabilityRefreshEvery is an internal polling interval for primary
+	// executable changes. It is not user configuration; tests shorten it.
+	AvailabilityRefreshEvery time.Duration
+	ReconnectMin             time.Duration
+	ReconnectMax             time.Duration
 
 	// MaxConcurrentRuns caps the number of in-flight actions. Additional
 	// run_action messages get an immediate error reply. Defaults to 8.
@@ -160,6 +163,9 @@ func NewClient(d Dialer, opts Options) *Client {
 	}
 	if opts.HeartbeatEvery <= 0 {
 		opts.HeartbeatEvery = 30 * time.Second
+	}
+	if opts.AvailabilityRefreshEvery <= 0 {
+		opts.AvailabilityRefreshEvery = 30 * time.Second
 	}
 	if opts.ReconnectMin <= 0 {
 		opts.ReconnectMin = time.Second
@@ -333,7 +339,7 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	}
 	startSessionLoop(func() { c.senderLoop(sessionCtx, sessionCancel, conn) })
 	startSessionLoop(func() { c.heartbeatLoop(sessionCtx, sessionCancel, conn) })
-	startSessionLoop(func() { c.readvertiseLoop(sessionCtx, sessionCancel, conn) })
+	startSessionLoop(func() { c.readvertiseLoop(sessionCtx, sessionCancel, conn, state) })
 
 	// Recv loop runs inline. Any error here terminates the session.
 	for {
@@ -1198,31 +1204,65 @@ func (c *Client) retryTerminalPersistence(s *runState) (bool, error) {
 	return true, nil
 }
 
-// readvertiseLoop watches for Readvertise() pings and sends a fresh
-// runner_state on the current connection. SIGHUP-driven pack reload
-// uses this to inform cloud of the new pack inventory.
-func (c *Client) readvertiseLoop(ctx context.Context, sessionCancel context.CancelFunc, conn Conn) {
+// readvertiseLoop watches for Readvertise() pings and primary-executable
+// changes. SIGHUP refreshes immediately; the fixed poll keeps package installs
+// and removals from leaving action readiness stale indefinitely.
+func (c *Client) readvertiseLoop(
+	ctx context.Context,
+	sessionCancel context.CancelFunc,
+	conn Conn,
+	initial RunnerStateMsg,
+) {
 	defer sessionCancel()
+	ticker := time.NewTicker(c.opts.AvailabilityRefreshEvery)
+	defer ticker.Stop()
+	lastAvailability := primaryExecutableAvailability(initial)
+
+	sendState := func(state RunnerStateMsg) bool {
+		if err := validateRunnerStateSize(state); err != nil {
+			c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
+			return false
+		}
+		if err := conn.Send(ctx, state); err != nil {
+			c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
+			return false
+		}
+		lastAvailability = primaryExecutableAvailability(state)
+		c.opts.Logger.Info("cloud.readvertised",
+			"actions", len(state.Actions),
+			"packs", len(state.Packs),
+		)
+		return true
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-c.readvertise:
 			state := c.opts.StateBuilder.Build()
-			if err := validateRunnerStateSize(state); err != nil {
-				c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
+			if !sendState(state) {
 				return
 			}
-			if err := conn.Send(ctx, state); err != nil {
-				c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
+		case <-ticker.C:
+			state := c.opts.StateBuilder.Build()
+			availability := primaryExecutableAvailability(state)
+			if availability == lastAvailability {
+				continue
+			}
+			if !sendState(state) {
 				return
 			}
-			c.opts.Logger.Info("cloud.readvertised",
-				"actions", len(state.Actions),
-				"packs", len(state.Packs),
-			)
 		}
 	}
+}
+
+func primaryExecutableAvailability(state RunnerStateMsg) string {
+	var b strings.Builder
+	for _, action := range state.Actions {
+		fmt.Fprintf(&b, "%s=%t:%s\n", action.ID, action.PrimaryExecutableAvailable, action.MissingExecutable)
+	}
+	return b.String()
 }
 
 // heartbeatLoop sends a heartbeat every HeartbeatEvery. Any send error

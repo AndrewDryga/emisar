@@ -1042,6 +1042,28 @@ defmodule Emisar.RunsTest do
                )
     end
 
+    test "rejects dispatch when the runner reports the primary executable missing" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          risk: "low",
+          primary_executable_available: false,
+          missing_executable: "uptime"
+        )
+
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = owner_subject_for(account)
+
+      assert {:error, :action_unavailable} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      refute Repo.exists?(ActionRun)
+    end
+
     test "rejects dispatch to a soft-deleted runner" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -2062,6 +2084,36 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
+    end
+
+    test "refuses an authorized run when the executable becomes unavailable", %{
+      account: account,
+      runner: runner
+    } do
+      action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          primary_executable_available: true
+        )
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      action
+      |> Ecto.Changeset.change(
+        primary_executable_available: false,
+        missing_executable: "uptime"
+      )
+      |> Repo.update!()
+
+      assert {:error, :action_unavailable} = Runs.recheck_run_pack_trust(run.id)
     end
 
     test "refuses a run whose action pack drifted to :pending", %{

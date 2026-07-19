@@ -91,6 +91,9 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	if a.ID != "t.echo" {
 		t.Fatalf("action id=%q", a.ID)
 	}
+	if !a.PrimaryExecutableAvailable || a.MissingExecutable != "" {
+		t.Fatalf("echo executable availability = %t, missing=%q", a.PrimaryExecutableAvailable, a.MissingExecutable)
+	}
 	if a.Summary != "Echo one validated message." || a.Description != "d" {
 		t.Fatalf("model prose not advertised: summary=%q description=%q", a.Summary, a.Description)
 	}
@@ -118,6 +121,21 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	}
 	if pi, ok := msg.Packs["t"]; !ok || pi.Hash == "" {
 		t.Fatalf("pack info missing or no hash: %+v", msg.Packs)
+	}
+}
+
+func TestStateBuilder_KeepsUnavailableActionDescriptor(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	reg := setupRegistry(t)
+	msg := (&StateBuilder{GetRegistry: func() *packs.Registry { return reg }}).Build()
+	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
+		t.Fatalf("unavailable action descriptor was omitted: %+v", msg.Actions)
+	}
+	if msg.Actions[0].PrimaryExecutableAvailable {
+		t.Fatal("missing primary executable reported available")
+	}
+	if msg.Actions[0].MissingExecutable != "echo" {
+		t.Fatalf("missing executable = %q, want echo", msg.Actions[0].MissingExecutable)
 	}
 }
 

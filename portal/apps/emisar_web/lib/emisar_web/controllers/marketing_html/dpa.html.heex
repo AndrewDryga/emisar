@@ -5,7 +5,7 @@
 ============================================================ --%>
 <.legal_page
   title="Data Processing Addendum"
-  updated="July 12, 2026"
+  updated="July 18, 2026"
   summary="The plain version: when emisar processes personal data on your behalf, we act only on your instructions, we never sell it or train on it, our subprocessors are a short named list, and we delete it when you leave. This is the standard DPA we'll sign — email support@emisar.dev for an executable copy."
   toc={[
     {"roles", "1. Roles and scope"},
@@ -130,15 +130,20 @@
     <li>
       Secrets redacted on the host before egress; outbound-only runners with no inbound port.
     </li>
-    <li>
-      Signed dispatch and local admission control — a compromised control plane cannot forge an action.
-    </li>
   </ul>
+  <p>
+    The product also provides customer-controlled signed dispatch and runner-local admission
+    controls. These controls are not enabled or configured by default. When you enable signed
+    dispatch and configure a trusted certificate authority on a runner, the control plane can relay
+    a valid client-signed request but cannot originate, alter, or replay one that the runner will
+    accept. When you configure local admission rules, the runner independently refuses actions
+    outside the action ids or risk ceiling you permit. You are responsible for enabling and
+    configuring these controls where your risk assessment or deployment requirements call for them.
+  </p>
   <p>
     The <.link navigate={~p"/trust"}>trust center</.link>
     and <.link navigate={~p"/security"}>security model</.link>
-    describe these in depth; they reflect
-    the controls actually in the product, not aspirations.
+    describe both the minimum measures and the customer-controlled measures in depth.
   </p>
 
   <h2 id="breach">6. Personal-data breach</h2>

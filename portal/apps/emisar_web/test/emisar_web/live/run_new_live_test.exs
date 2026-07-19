@@ -217,6 +217,27 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert flash["error"] == "Action not found."
   end
 
+  test "an unavailable action bounces back with the host prerequisite", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "beam.epmd_names",
+        primary_executable_available: false,
+        missing_executable: "epmd"
+      )
+
+    assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert to == ~p"/app/#{account}/runners/#{runner.id}"
+
+    assert flash["error"] ==
+             "This action cannot start because its primary executable is missing on the runner."
+  end
+
   # A blank reason is a validation of the operator's own input, so it renders
   # inline under the reason field (rose <.error>), never as a top-of-page flash.
   test "a blank reason renders inline at the field, not in a flash", %{conn: conn} do

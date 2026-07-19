@@ -162,6 +162,56 @@ defmodule Emisar.CatalogTest do
       assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == :medium))
     end
 
+    test "persists primary executable readiness and clears it for an older runner", %{
+      runner: runner,
+      subject: subject
+    } do
+      unavailable =
+        action("linux.epmd")
+        |> Map.put("primary_executable_available", false)
+        |> Map.put("missing_executable", "epmd")
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: [unavailable]))
+
+      assert {:ok,
+              [
+                %RunnerAction{
+                  primary_executable_available: false,
+                  missing_executable: "epmd"
+                }
+              ], _} = Catalog.list_actions_for_runner(runner.id, subject)
+
+      # Absence is an old-runner advertisement, not permission to retain a
+      # stale false value from a newer runner.
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: [action("linux.epmd")]))
+
+      assert {:ok, [%RunnerAction{primary_executable_available: nil, missing_executable: nil}], _} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "malformed executable readiness fails closed with bounded diagnostics", %{
+      runner: runner,
+      subject: subject
+    } do
+      malformed =
+        action("linux.epmd")
+        |> Map.put("primary_executable_available", "yes")
+        |> Map.put("missing_executable", String.duplicate("x", 1_000))
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: [malformed]))
+
+      assert {:ok,
+              [
+                %RunnerAction{
+                  primary_executable_available: false,
+                  missing_executable: "unknown"
+                }
+              ], _} = Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
     test "persists the full 512-character summary contract", %{
       runner: runner,
       subject: subject

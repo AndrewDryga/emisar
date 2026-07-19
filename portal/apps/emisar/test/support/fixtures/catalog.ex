@@ -28,6 +28,8 @@ defmodule Emisar.Fixtures.Catalog do
       side_effects: attrs[:side_effects] || ["reads /proc"],
       args_schema: attrs[:args_schema] || %{"args" => []},
       examples: attrs[:examples] || [],
+      primary_executable_available: Map.get(attrs, :primary_executable_available),
+      missing_executable: attrs[:missing_executable],
       first_seen_at: DateTime.utc_now(),
       last_seen_at: DateTime.utc_now()
     }

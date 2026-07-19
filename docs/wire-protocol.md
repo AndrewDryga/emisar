@@ -57,6 +57,16 @@ On disconnect the runner reconnects with bounded exponential backoff and sends a
 fresh `runner_state`. In-flight actions continue and queue progress/results for
 the next connection. Heartbeats let the portal expire half-open sockets.
 
+The portal sends `shutdown` before lifecycle-driven disconnects. A reversible
+disable uses `reason: "runner_disabled"`; the runner retains its bearer token and
+retries with bounded backoff. While disabled, websocket upgrades return
+`403 {"error":"runner_disabled"}`. Enabling the same runner lets the next retry
+connect without a host restart. Deleting the runner uses terminal
+`reason: "runner_revoked"`; invalid or removed credentials return `401`, the
+runner discards the cached token, and the process stops rather than retrying a
+revoked identity. `reason: "cloud_shutdown"` is also retryable, while
+`reason: "runner_version_unsupported"` is terminal until the binary is upgraded.
+
 ## `runner_state`
 
 Sent after every connection and pack reload. The complete encoded frame must not
@@ -64,6 +74,17 @@ exceed 2 MiB (2,097,152 bytes); runners validate that before sending. The
 message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
 maximum attestation age.
+
+Every action descriptor includes `primary_executable_available`. A new runner
+sets it to `false` and includes the bounded `missing_executable` name when the
+program it would start does not resolve on the runner process's `PATH`. The
+descriptor remains in the complete advertisement so exact trusted-manifest
+comparison is unchanged; availability can only remove that action from
+executable targets. Older runners omit the field and remain compatible. This is
+a narrow startability fact, not a full health promise: credentials, sockets,
+listeners, and commands invoked inside `/bin/sh -c` still require pack setup and
+functional verification. The runner refreshes the advertisement after reload
+and when this executable evidence changes.
 
 The optional `degraded_packs` array names installed packs the runner's loader
 skipped (unparseable or invalid on disk): each entry carries the pack
@@ -104,6 +125,7 @@ portal ignores the field, and an older runner never sends it.
       "description": "Runs nodetool status and returns the bounded result.",
       "side_effects": [],
       "args": [],
+      "primary_executable_available": true,
       "limits": {"default_timeout": 60000000000},
       "output": {"parser": "text", "max_stdout_bytes": 16384, "max_stderr_bytes": 16384}
     }

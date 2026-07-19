@@ -11,6 +11,15 @@ defmodule EmisarWeb.RunNewLive do
          |> put_flash(:error, "Action not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
+      {:ok, %{primary_executable_available: false}} ->
+        {:ok,
+         socket
+         |> put_flash(
+           :error,
+           "This action cannot start because its primary executable is missing on the runner."
+         )
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
+
       {:ok, action} ->
         args_schema = action.args_schema["args"] || []
 
@@ -213,6 +222,14 @@ defmodule EmisarWeb.RunNewLive do
                socket,
                :error,
                "This runner no longer advertises that action — reload the page and pick a current one."
+             )}
+
+          {:error, :action_unavailable} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This action cannot start on the runner because its primary executable is missing. Install the tool and reload the runner."
              )}
 
           # The run record itself was rejected (its fields key to the

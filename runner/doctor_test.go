@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/actionhost"
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -200,7 +201,7 @@ func TestCheckDispatchLog(t *testing.T) {
 	})
 }
 
-func TestActionBinary(t *testing.T) {
+func TestDoctorUsesActionHostExecutableVerdict(t *testing.T) {
 	exec := &actionspec.Action{
 		Kind:      actionspec.KindExec,
 		Execution: actionspec.Execution{Command: &actionspec.Command{Binary: "redis-cli"}},
@@ -211,26 +212,31 @@ func TestActionBinary(t *testing.T) {
 	}
 	execNoCmd := &actionspec.Action{Kind: actionspec.KindExec}
 
-	if got := actionBinary(exec); got != "redis-cli" {
+	if got := actionhost.PrimaryExecutable(exec); got != "redis-cli" {
 		t.Errorf("exec binary = %q, want redis-cli", got)
 	}
-	if got := actionBinary(script); got != "/bin/sh" {
+	if got := actionhost.PrimaryExecutable(script); got != "/bin/sh" {
 		t.Errorf("script interpreter = %q, want /bin/sh", got)
 	}
-	if got := actionBinary(execNoCmd); got != "" {
+	if got := actionhost.PrimaryExecutable(execNoCmd); got != "" {
 		t.Errorf("exec with no command = %q, want empty", got)
 	}
 }
 
-func TestBinaryAvailable(t *testing.T) {
-	// A real path that exists: the test binary itself.
-	if !binaryAvailable(os.Args[0]) {
-		t.Errorf("binaryAvailable(%q) = false, want true", os.Args[0])
+func TestActionHostExecutableAvailability(t *testing.T) {
+	action := func(binary string) *actionspec.Action {
+		return &actionspec.Action{Kind: actionspec.KindExec, Execution: actionspec.Execution{
+			Command: &actionspec.Command{Binary: binary},
+		}}
 	}
-	if binaryAvailable("/definitely/not/here/emisar-xyz") {
+	// A real path that exists: the test binary itself.
+	if !actionhost.PrimaryExecutableAvailable(action(os.Args[0])) {
+		t.Errorf("PrimaryExecutableAvailable(%q) = false, want true", os.Args[0])
+	}
+	if actionhost.PrimaryExecutableAvailable(action("/definitely/not/here/emisar-xyz")) {
 		t.Error("missing absolute path reported available")
 	}
-	if binaryAvailable("emisar-definitely-not-a-real-binary-xyz") {
+	if actionhost.PrimaryExecutableAvailable(action("emisar-definitely-not-a-real-binary-xyz")) {
 		t.Error("missing PATH binary reported available")
 	}
 
@@ -241,7 +247,7 @@ func TestBinaryAvailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	if !binaryAvailable("emisar-fake-tool") {
+	if !actionhost.PrimaryExecutableAvailable(action("emisar-fake-tool")) {
 		t.Error("PATH binary reported unavailable")
 	}
 }
@@ -365,11 +371,11 @@ func TestCheckCloudReportsRecentTerminalShutdown(t *testing.T) {
 			name: "recent revoked runner is actionable",
 			state: &cloud.TerminalShutdownState{
 				Reason:    "runner_revoked",
-				Message:   "runner disabled",
+				Message:   "runner removed",
 				Timestamp: now.Add(-time.Minute),
 			},
 			wantStatus: checkFail,
-			wantDetail: []string{"cloud rejected this runner", "runner_revoked", "runner disabled", "enable or re-register"},
+			wantDetail: []string{"cloud rejected this runner", "runner_revoked", "runner removed", "re-register"},
 		},
 		{
 			name: "stale rejection falls back to reachability",

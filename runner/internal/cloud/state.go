@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
+	"github.com/andrewdryga/emisar/runner/internal/actionhost"
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
@@ -137,9 +138,16 @@ func validateRunnerStateSize(msg RunnerStateMsg) error {
 }
 
 func descriptorFor(a *actionspec.Action) ActionDescriptor {
+	primaryExecutableAvailable := actionhost.PrimaryExecutableAvailable(a)
+	missingExecutable := ""
+	if !primaryExecutableAvailable {
+		missingExecutable = actionhost.PrimaryExecutable(a)
+	}
 	return ActionDescriptor{
-		ModelDescriptor: a.ModelDescriptor(),
-		PackID:          a.PackID,
+		ModelDescriptor:            a.ModelDescriptor(),
+		PackID:                     a.PackID,
+		PrimaryExecutableAvailable: primaryExecutableAvailable,
+		MissingExecutable:          missingExecutable,
 		Limits: DescriptorLimits{
 			DefaultTimeout: a.Execution.Timeout,
 			TimeoutMin:     a.Execution.TimeoutMin,

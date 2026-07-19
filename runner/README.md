@@ -218,15 +218,20 @@ Re-run the installer to upgrade in place. Existing configuration, credentials,
 and valid packs are preserved:
 
 ```sh
-curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes
+curl -sSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
 
 Pin a reviewed release when repeatability matters:
 
 ```sh
 curl -sSL https://emisar.dev/install.sh \
-  | sudo bash -s -- --version runner-vX.Y.Z --yes
+  | sudo EMISAR_PACKS="" bash -s -- --version runner-vX.Y.Z --yes
 ```
+
+Unattended installs require an explicit pack set. The empty value above adds no
+new packs and preserves valid packs already installed; pass reviewed pack IDs
+instead when provisioning a new host. Interactive installs can leave the value
+unset and review host-matched recommendations.
 
 The installer bundled in a release tarball pins itself to that release and can
 be moved to an offline host with the tarball and `SHA256SUMS` file.

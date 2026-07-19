@@ -8,9 +8,13 @@ interfaces. Installing one never requires cloning or forking this repository.
 
 | Skill | Purpose |
 | --- | --- |
-| [`install-emisar`](install-emisar/SKILL.md) | Install, configure, repair, and certify the on-host runner and its packs end to end. |
+| [`install-emisar`](install-emisar/SKILL.md) | Install, configure, and certify the runner and packs, then offer an authenticated agent connection through `connect-llm`. |
 | [`connect-llm`](connect-llm/SKILL.md) | Connect an LLM or MCP client — the stdio bridge or a cloud connector — and certify the connection. |
 | [`author-pack`](author-pack/SKILL.md) | Author, validate, test, distribute, and certify a custom action pack — directory installs or a private registry. |
+
+Install both `install-emisar` and `connect-llm` for complete onboarding. The
+runner workflow prompts before handing agent registration and authenticated MCP
+dispatch to `connect-llm`.
 
 ## Install directly
 

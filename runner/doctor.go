@@ -9,18 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/andrewdryga/emisar/runner/internal/actionhost"
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
-	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // cloudProbeTimeout bounds the single reachability request so doctor never
@@ -253,7 +252,7 @@ func checkActionBinaries(registry *packs.Registry) checkResult {
 	// binary -> an action that needs it, so the report names a culprit.
 	needs := map[string]string{}
 	for _, action := range registry.Actions() {
-		if bin := actionBinary(action); bin != "" {
+		if bin := actionhost.PrimaryExecutable(action); bin != "" {
 			if _, seen := needs[bin]; !seen {
 				needs[bin] = action.ID
 			}
@@ -265,7 +264,8 @@ func checkActionBinaries(registry *packs.Registry) checkResult {
 
 	var missing []string
 	for bin, actionID := range needs {
-		if !binaryAvailable(bin) {
+		action, ok := registry.Action(actionID)
+		if !ok || !actionhost.PrimaryExecutableAvailable(action) {
 			missing = append(missing, fmt.Sprintf("%s (%s)", bin, actionID))
 		}
 	}
@@ -275,34 +275,6 @@ func checkActionBinaries(registry *packs.Registry) checkResult {
 	sort.Strings(missing)
 	return checkResult{"action tools", checkWarn,
 		fmt.Sprintf("%d not found, those actions will fail: %s", len(missing), strings.Join(missing, ", "))}
-}
-
-// actionBinary is the host program an action runs: the command binary for an
-// exec action, the interpreter for a script action.
-func actionBinary(action *actionspec.Action) string {
-	switch action.Kind {
-	case actionspec.KindExec:
-		if action.Execution.Command != nil {
-			return action.Execution.Command.Binary
-		}
-	case actionspec.KindScript:
-		if action.Execution.Script != nil {
-			return action.Execution.Script.Interpreter
-		}
-	}
-	return ""
-}
-
-// binaryAvailable reports whether a program resolves the way the executor will
-// run it: a bare name through PATH, an explicit path checked on disk (the
-// convention is bare PATH names everywhere except /bin/sh).
-func binaryAvailable(bin string) bool {
-	if strings.ContainsRune(bin, os.PathSeparator) {
-		info, err := os.Stat(bin)
-		return err == nil && !info.IsDir()
-	}
-	_, err := exec.LookPath(bin)
-	return err == nil
 }
 
 // checkCloud confirms the control plane is reachable over the expected
@@ -358,7 +330,7 @@ func terminalShutdownDetail(shutdown *cloud.TerminalShutdownState) string {
 	case "runner_version_unsupported":
 		return detail + "; upgrade the runner and restart it"
 	case "runner_revoked":
-		return detail + "; enable or re-register the runner in the control plane and restart it"
+		return detail + "; re-register the runner in the control plane and restart it"
 	default:
 		return detail + "; update the runner state in the control plane and restart it"
 	}

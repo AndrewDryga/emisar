@@ -85,8 +85,8 @@ Flags:
   --data-dir DIR     Data dir (default /var/lib/emisar)
   --log-dir DIR      Log dir (default /var/log/emisar)
   --user NAME        Service user (default emisar)
-  --yes              Skip confirmation prompts (also auto-accepts the
-                     host-matched packs the installer would ask about).
+  --yes              Skip confirmation prompts. Requires an explicit
+                     --packs LIST or EMISAR_PACKS (empty means no new packs).
   --packs LIST       Comma/space-separated packs to install up front, e.g.
                      --packs redis,postgres. Installs exactly these — no
                      host detection, no prompt — from the bundle if present,
@@ -104,8 +104,9 @@ RUNNER_GROUP defaults to `hostname -s`; RUNNER_ENVIRONMENT to `prod`.
 
 Setting EMISAR_PACKS (the env form of --packs), even to an empty string,
 makes the pack list explicit: the installer installs exactly those packs
-and never host-detects or prompts to add suggested ones. Leave it unset
-to get the host-matched starter packs.
+and never host-detects or prompts to add suggested ones. Leave it unset for
+an interactive install with host-matched recommendations. Unattended installs
+must set it explicitly, including to an empty string.
 USAGE
 }
 
@@ -169,10 +170,8 @@ confirm() {
   # `curl | bash` makes stdin the script content, not a terminal — so a
   # plain `read` consumes the NEXT LINE of the script and reports an
   # "empty" answer to every prompt. Try /dev/tty so the operator can
-  # actually answer; if no controlling terminal exists at all (CI,
-  # cloud-init, container provisioner) auto-yes — at that point the
-  # caller explicitly opted in by running with sudo + env vars and
-  # there's no human at the keyboard to confirm anyway.
+  # actually answer. No controlling terminal means there is nobody who can
+  # consent, so the safe answer is no; unattended callers must pass --yes.
   if [ -t 0 ]; then
     printf '%s [y/N] ' "$1"
     read -r reply || reply=""
@@ -181,11 +180,31 @@ confirm() {
     read -r reply <&3 || reply=""
     exec 3<&-
   else
-    # No tty at all — treat as a non-interactive install. The caller
-    # already opted in by piping us through `sudo bash`.
-    return 0
+    return 1
   fi
   case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
+}
+
+tty_available() {
+  if [ -t 0 ]; then
+    return 0
+  fi
+  if { exec 3</dev/tty; } 2>/dev/null; then
+    exec 3<&-
+    return 0
+  fi
+  return 1
+}
+
+require_explicit_unattended_packs() {
+  if [ "$ASSUME_YES" = "1" ]; then
+    [ "$PACKS_EXPLICIT" = "1" ] || \
+      die "--yes requires an explicit pack set. Pass --packs <ids> or set EMISAR_PACKS (an empty value installs no new packs)."
+    return 0
+  fi
+
+  tty_available || \
+    die "non-interactive install requires --yes and an explicit --packs <ids> or EMISAR_PACKS value (empty installs no new packs)."
 }
 
 # -----------------------------------------------------------------------
@@ -910,7 +929,7 @@ install_default_packs() {
 }
 
 # install_suggested_packs queries the full registry catalog for packs that
-# match services detected on this host (running processes + installed
+# match this host (running processes, listening ports, and installed
 # binaries) and offers to install them now — so a host running Nomad,
 # Consul, Postgres, etc. gets the matching packs in one step instead of
 # hunting for them. Network-dependent: if the catalog can't be reached it
@@ -937,7 +956,7 @@ install_suggested_packs() {
   names="$(printf '%s' "${out}" | tr '\n' ' ')"
   names="${names% }"
 
-  if ! confirm "detected services on this host — install their packs (${names})?"; then
+  if ! confirm "install host-matched pack recommendations (${names})?"; then
     log "skipping — add them later with: sudo ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
@@ -1152,6 +1171,10 @@ finish_install() {
 # -----------------------------------------------------------------------
 
 do_install() {
+  # Reject ambiguous automation before resolving or downloading a release and
+  # before touching a running service. Pack suggestions are recommendations,
+  # not consent to mutate an unattended host.
+  require_explicit_unattended_packs
   require_root_and_tools
   log "install target: ${OS}/${ARCH} via ${INIT}"
   if [ -z "${VERSION}" ]; then

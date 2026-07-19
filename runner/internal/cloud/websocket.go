@@ -73,9 +73,15 @@ type WebsocketDialer struct {
 	Logger *slog.Logger
 }
 
-// ErrUnauthorized is returned when /runner/register or the websocket
-// upgrade comes back 401. Callers should fail closed.
-var ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked enrollment key / token)")
+var (
+	// ErrUnauthorized is returned when /runner/register or the websocket
+	// upgrade rejects an invalid credential. Callers should fail closed.
+	ErrUnauthorized = errors.New("cloud: unauthorized (bad or revoked enrollment key / token)")
+
+	// ErrRunnerDisabled means the credential is valid but the reversible runner
+	// state currently forbids a connection. Callers should retain it and retry.
+	ErrRunnerDisabled = errors.New("cloud: runner disabled")
+)
 
 const (
 	cloudHandshakeTimeout        = 10 * time.Second
@@ -120,6 +126,10 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 	if err != nil {
 		if resp != nil {
 			defer resp.Body.Close()
+		}
+		if resp != nil && resp.StatusCode == http.StatusForbidden &&
+			serverErrorMessage(resp.Body) == "runner_disabled" {
+			return nil, fmt.Errorf("%w: ws upgrade returned 403", ErrRunnerDisabled)
 		}
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			// Token was rejected — drop the file so the next process start

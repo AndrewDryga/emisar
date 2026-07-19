@@ -36,6 +36,71 @@ extract_shell_function() {
 
 case "$module" in
   runner)
+    unattended_lib="$tmp/unattended-packs.sh"
+    extract_shell_function install.sh tty_available >"$unattended_lib"
+    extract_shell_function install.sh require_explicit_unattended_packs >>"$unattended_lib"
+
+    # --yes is automation, so pack mutation must be explicit before the
+    # installer resolves a release or touches a running service.
+    if (
+      # shellcheck disable=SC1090
+      source "$unattended_lib"
+      # Called by the sourced installer function.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      ASSUME_YES=1
+      PACKS_EXPLICIT=0
+      require_explicit_unattended_packs
+    ) >"$tmp/ambiguous-unattended.log" 2>&1; then
+      echo "ambiguous unattended pack selection unexpectedly succeeded" >&2
+      exit 1
+    fi
+    grep -Fq -- "--yes requires an explicit pack set" "$tmp/ambiguous-unattended.log"
+
+    (
+      # shellcheck disable=SC1090
+      source "$unattended_lib"
+      # Called by the sourced installer function.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      ASSUME_YES=1
+      PACKS_EXPLICIT=1
+      require_explicit_unattended_packs
+    )
+
+    if (
+      # shellcheck disable=SC1090
+      source "$unattended_lib"
+      # Called by the sourced installer function.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 1; }
+      ASSUME_YES=0
+      PACKS_EXPLICIT=1
+      require_explicit_unattended_packs
+    ) >"$tmp/no-tty.log" 2>&1; then
+      echo "non-interactive install without --yes unexpectedly succeeded" >&2
+      exit 1
+    fi
+    grep -Fq "non-interactive install requires --yes" "$tmp/no-tty.log"
+
+    # Interactive installs still reach host-matched recommendations.
+    (
+      # shellcheck disable=SC1090
+      source "$unattended_lib"
+      # Called by the sourced installer function.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      tty_available() { return 0; }
+      ASSUME_YES=0
+      # Read by the sourced installer function.
+      # shellcheck disable=SC2034
+      PACKS_EXPLICIT=0
+      require_explicit_unattended_packs
+    )
+
     EMISAR_PACKS="" bash install.sh --yes --no-service \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/etc" \

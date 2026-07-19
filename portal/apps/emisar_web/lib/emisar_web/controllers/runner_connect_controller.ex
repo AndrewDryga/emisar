@@ -105,6 +105,11 @@ defmodule EmisarWeb.RunnerConnectController do
 
       {:error, :token_invalid} ->
         unauthorized(conn, "token_invalid")
+
+      {:error, :runner_disabled} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "runner_disabled"})
     end
   end
 

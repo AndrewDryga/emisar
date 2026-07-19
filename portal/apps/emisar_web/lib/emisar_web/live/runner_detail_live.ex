@@ -430,6 +430,17 @@ defmodule EmisarWeb.RunnerDetailLive do
                         <%!-- Viewers read the catalog; the Run affordance isn't
                            theirs to have (§4 — hidden, not dead). --%>
                         <span></span>
+                      <% action.primary_executable_available == false -> %>
+                        <.button
+                          size={:sm}
+                          variant={:secondary}
+                          aria-disabled="true"
+                          icon="hero-wrench-screwdriver"
+                          title={"Primary executable #{action.missing_executable || "unknown"} is missing on this runner"}
+                          class="shrink-0 cursor-not-allowed opacity-60"
+                        >
+                          Run
+                        </.button>
                       <% @runner.enforce_signatures -> %>
                         <%!-- Signed-only: the portal can't dispatch here. aria-disabled
                            (focusable, so the title explains WHY) + the lock icon carry

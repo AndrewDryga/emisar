@@ -201,6 +201,7 @@
             "job"
           ],
           "pack_id": "database",
+          "primary_executable_available": true,
           "limits": {
             "default_timeout": 15000000000,
             "timeout_min": 5000000000,

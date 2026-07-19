@@ -583,6 +583,49 @@ func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
 	}
 }
 
+func TestClient_ReadvertisesPrimaryExecutableChanges(t *testing.T) {
+	dir := t.TempDir()
+	echo := filepath.Join(dir, "echo")
+	if err := os.WriteFile(echo, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}}, func(opts *Options) {
+		opts.AvailabilityRefreshEvery = 10 * time.Millisecond
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	waitUntil(t, 2*time.Second, func() bool {
+		return len(conn.sentByType(MsgRunnerState)) == 1
+	})
+	if err := os.Remove(echo); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 2*time.Second, func() bool {
+		states := conn.sentByType(MsgRunnerState)
+		if len(states) < 2 {
+			return false
+		}
+		actions, ok := states[len(states)-1]["actions"].([]any)
+		if !ok {
+			return false
+		}
+		for _, raw := range actions {
+			action := raw.(map[string]any)
+			if action["id"] == "t.echo" {
+				return action["primary_executable_available"] == false
+			}
+		}
+		return false
+	})
+}
+
 // TestClient_DeliversResultsOnSingleConn — happy path that proves the
 // new sender pipeline still delivers under normal conditions.
 func TestClient_DeliversResultsOnSingleConn(t *testing.T) {

@@ -123,7 +123,7 @@
           Confirm the tier floor for the whole fleet — <code class="font-mono">low</code>/<code class="font-mono">medium</code> allow,
           <code class="font-mono">high</code>
           require approval, <code class="font-mono">critical</code>
-          deny. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
+          deny. Packs are designed to have low-risk actions read-only and harmfull. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
         </li>
         <li>
           <strong class="text-zinc-200">Add approvals where they matter.</strong>
@@ -207,8 +207,9 @@
             <span class="flex-none text-zinc-500">—</span>
             <span>
               <strong class="text-zinc-300">Access:</strong>
-              the on-call's runner scope is the <code class="font-mono">web</code>
-              group, and their agent's key is bounded by it. That's the whole grant.
+              the on-call is scoped to the <code class="font-mono">web</code>
+              group — they can't reach any other tier — and their agent's key inherits that
+              scope. That's the whole grant: you scope the person, and the key follows.
             </span>
           </li>
         </ul>

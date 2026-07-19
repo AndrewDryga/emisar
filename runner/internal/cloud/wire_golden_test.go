@@ -405,7 +405,8 @@ func canonicalActionDescriptor() ActionDescriptor {
 			Examples:    []actionspec.ModelExample{{Title: "Pause nightly backup", Args: map[string]any{"job_id": 42}}},
 			SearchTerms: []string{"pause", "database", "job"},
 		},
-		PackID: "database",
+		PackID:                     "database",
+		PrimaryExecutableAvailable: true,
 		Limits: DescriptorLimits{
 			DefaultTimeout: actionspec.Duration(15 * time.Second),
 			TimeoutMin:     actionspec.Duration(5 * time.Second),

@@ -250,6 +250,11 @@ in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its environment
 includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
 `EMISAR_URL`, and `EMISAR_ENROLLMENT_KEY`.
+An unattended runner install requires `--yes` plus an explicit
+`--packs`/`EMISAR_PACKS` value; an explicitly empty value installs no new packs
+and preserves existing ones. A caller without a controlling terminal is refused
+without `--yes`. Interactive installs may leave pack selection unset to review
+host-matched recommendations.
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, and `--yes`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,

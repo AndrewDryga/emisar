@@ -708,6 +708,20 @@ func TestClient_Run_UnauthorizedDialFailureIsPermanent(t *testing.T) {
 	}
 }
 
+func TestClient_Run_DisabledDialFailureKeepsRetrying(t *testing.T) {
+	d := &disabledDialer{}
+	cli := buildClient(t, d)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+
+	waitUntil(t, time.Second, func() bool { return d.calls.Load() >= 3 })
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+}
+
 func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "dispatches.jsonl")
 	if err := os.WriteFile(storePath, []byte("not-json\n"), 0o600); err != nil {
@@ -828,9 +842,18 @@ type unauthorizedDialer struct {
 	calls atomic.Int64
 }
 
+type disabledDialer struct {
+	calls atomic.Int64
+}
+
 func (d *unauthorizedDialer) Dial(context.Context) (Conn, error) {
 	d.calls.Add(1)
 	return nil, ErrUnauthorized
+}
+
+func (d *disabledDialer) Dial(context.Context) (Conn, error) {
+	d.calls.Add(1)
+	return nil, ErrRunnerDisabled
 }
 
 func (d *alwaysFailDialer) Dial(context.Context) (Conn, error) {

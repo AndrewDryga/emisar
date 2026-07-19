@@ -786,6 +786,7 @@ defmodule Emisar.Runs do
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
+         :ok <- ensure_primary_executable_available(action),
          :ok <- check_pack_ref(action, attrs[:pack_ref]),
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs =
@@ -1068,6 +1069,7 @@ defmodule Emisar.Runs do
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
+         :ok <- ensure_primary_executable_available(action),
          :ok <- check_pack_ref(action, attrs[:pack_ref]),
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
@@ -1242,6 +1244,14 @@ defmodule Emisar.Runs do
       {:ok, action} -> {:ok, action}
     end
   end
+
+  # Nil is a rolling-upgrade advertisement from an older runner. Only a
+  # definite false removes an action; this host fact can never make an
+  # untrusted or mismatched descriptor executable.
+  defp ensure_primary_executable_available(%{primary_executable_available: false}),
+    do: {:error, :action_unavailable}
+
+  defp ensure_primary_executable_available(_action), do: :ok
 
   defp check_pack_ref(_action, nil), do: :ok
 
@@ -1746,6 +1756,14 @@ defmodule Emisar.Runs do
         # after every successful catalog sync.
         error
 
+      {:error, :action_unavailable} = error ->
+        mark_refused(
+          run,
+          "the runner reports that this action's primary executable is missing — install it, reload the runner, and dispatch again"
+        )
+
+        error
+
       {:error, reason} ->
         # The exact pack snapshot is no longer trusted. Refuse instead of
         # silently upgrading the authorization decision to different bytes.
@@ -1811,15 +1829,17 @@ defmodule Emisar.Runs do
   defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
     case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
       {:ok, action} ->
-        case check_pack_trust(action, run.account_id) do
-          {:ok, hash} when is_nil(run.expected_pack_hash) or hash == run.expected_pack_hash ->
-            :ok
+        with :ok <- ensure_primary_executable_available(action) do
+          case check_pack_trust(action, run.account_id) do
+            {:ok, hash} when is_nil(run.expected_pack_hash) or hash == run.expected_pack_hash ->
+              :ok
 
-          {:ok, _different_hash} ->
-            {:error, :pack_untrusted}
+            {:ok, _different_hash} ->
+              {:error, :pack_untrusted}
 
-          {:error, reason} ->
-            {:error, reason}
+            {:error, reason} ->
+              {:error, reason}
+          end
         end
 
       {:error, :action_not_found} when is_nil(run.expected_pack_hash) ->

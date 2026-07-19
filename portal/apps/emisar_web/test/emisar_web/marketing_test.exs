@@ -1237,7 +1237,7 @@ defmodule EmisarWeb.MarketingTest do
       # TOC must have a matching <h2 id="anchor"> in the body, or the
       # in-page nav scrolls to nothing. Pull the data-toc-link anchors and
       # assert each id="…" exists.
-      for route <- ~w(/privacy /terms /refund-policy) do
+      for route <- ~w(/privacy /terms /refund-policy /dpa) do
         html = conn |> get(route) |> html_response(200)
 
         anchors =
@@ -1259,7 +1259,8 @@ defmodule EmisarWeb.MarketingTest do
       for {route, date} <- [
             {"/privacy", "July 12, 2026"},
             {"/terms", "June 4, 2026"},
-            {"/refund-policy", "June 5, 2026"}
+            {"/refund-policy", "June 5, 2026"},
+            {"/dpa", "July 18, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)
         assert html =~ "· emisar", "missing title suffix on #{route}"
@@ -1271,6 +1272,7 @@ defmodule EmisarWeb.MarketingTest do
       privacy = conn |> get(~p"/privacy") |> html_response(200)
       terms = conn |> get(~p"/terms") |> html_response(200)
       refund = conn |> get(~p"/refund-policy") |> html_response(200)
+      dpa = conn |> get(~p"/dpa") |> html_response(200)
 
       # Privacy: support (data requests) + security (disclosure).
       assert privacy =~ "mailto:support@emisar.dev"
@@ -1280,6 +1282,22 @@ defmodule EmisarWeb.MarketingTest do
       assert terms =~ "mailto:sales@emisar.dev"
       assert refund =~ "mailto:support@emisar.dev"
       assert refund =~ "mailto:sales@emisar.dev"
+      assert dpa =~ "mailto:support@emisar.dev"
+    end
+
+    test "the DPA separates minimum measures from customer-controlled runner controls", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/dpa") |> html_response(200)
+      text = Regex.replace(~r/\s+/, html, " ")
+
+      assert text =~ "These controls are not enabled or configured by default"
+      assert text =~ "When you enable signed dispatch"
+      assert text =~ "When you configure local admission rules"
+      assert text =~ "You are responsible for enabling and configuring these controls"
+
+      refute text =~
+               "Signed dispatch and local admission control — a compromised control plane cannot forge an action"
     end
 
     test "the privacy, trust, and DPA pages name only the real subprocessors", %{conn: conn} do

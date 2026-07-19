@@ -231,6 +231,7 @@ defmodule Emisar.Catalog.MCPProjection do
       [
         trust_issue,
         descriptor_mismatch_issue(compatibility),
+        primary_executable_missing_issue(compatibility),
         no_connected_runner_issue(executable_trust?, executable?),
         partially_deployed_issue(executable?, compatibility),
         version_skew_issue(pack_id, skewed_pack_ids)
@@ -312,13 +313,23 @@ defmodule Emisar.Catalog.MCPProjection do
 
     advertised_action_ids = rows |> Enum.map(& &1.action_id) |> MapSet.new()
 
+    unavailable_action_ids =
+      rows
+      |> Enum.filter(&(&1.primary_executable_available == false))
+      |> Enum.map(& &1.action_id)
+      |> MapSet.new()
+      |> MapSet.intersection(expected_action_ids)
+
     descriptor_match? =
       expected_action_ids == matching_action_ids and
         advertised_action_ids == expected_action_ids
 
     compatible_action_ids =
       if executable_trust? and descriptor_match? and deployment.runner_status == "connected" do
-        matching_action_ids |> MapSet.to_list() |> Enum.sort()
+        matching_action_ids
+        |> MapSet.difference(unavailable_action_ids)
+        |> MapSet.to_list()
+        |> Enum.sort()
       else
         []
       end
@@ -338,7 +349,16 @@ defmodule Emisar.Catalog.MCPProjection do
               "descriptor_mismatch",
               "The runner advertisement does not match the complete trusted manifest."
             )
-        )
+        ),
+        if descriptor_match? and deployment.runner_status == "connected" and
+             MapSet.size(unavailable_action_ids) > 0 do
+          issue(
+            "primary_executable_missing",
+            unavailable_action_message(unavailable_action_ids)
+          )
+        else
+          nil
+        end
       ]
       |> Enum.reject(&is_nil/1)
 
@@ -347,8 +367,17 @@ defmodule Emisar.Catalog.MCPProjection do
       status: deployment.runner_status,
       descriptor_match?: descriptor_match?,
       compatible_action_ids: compatible_action_ids,
+      unavailable_action_ids: unavailable_action_ids |> MapSet.to_list() |> Enum.sort(),
       issues: issues
     }
+  end
+
+  defp unavailable_action_message(action_ids) do
+    ids = action_ids |> MapSet.to_list() |> Enum.sort()
+    shown = ids |> Enum.take(5) |> Enum.join(", ")
+    suffix = if length(ids) > 5, do: ", +#{length(ids) - 5} more", else: ""
+
+    "Primary executables are missing for #{length(ids)} action(s): #{shown}#{suffix}."
   end
 
   defp runner_descriptor(%RunnerAction{} = action) do
@@ -392,6 +421,25 @@ defmodule Emisar.Catalog.MCPProjection do
       issue(
         "descriptor_mismatch",
         "At least one runner advertisement differs from the complete trusted manifest."
+      )
+    end
+  end
+
+  defp primary_executable_missing_issue(compatibility) do
+    count =
+      compatibility
+      |> Enum.flat_map(fn {_runner_id, result} ->
+        if result.status == "connected" and result.descriptor_match?,
+          do: result.unavailable_action_ids,
+          else: []
+      end)
+      |> Enum.uniq()
+      |> length()
+
+    if count > 0 do
+      issue(
+        "primary_executable_missing",
+        "#{count} action(s) cannot start on at least one connected runner because their primary executable is missing."
       )
     end
   end

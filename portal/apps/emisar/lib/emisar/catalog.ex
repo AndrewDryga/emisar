@@ -1062,6 +1062,9 @@ defmodule Emisar.Catalog do
        when is_map(descriptor) do
     pack_id = descriptor["pack_id"]
 
+    {primary_executable_available, missing_executable} =
+      primary_executable_availability(descriptor)
+
     # `packs` is untrusted runner-advertised state: a descriptor can name a
     # pack_id that isn't in the packs map, or map to a non-map. Pull the
     # version defensively so one malformed descriptor doesn't abort the whole
@@ -1095,6 +1098,8 @@ defmodule Emisar.Catalog do
       args_schema: %{"args" => descriptor["args"] || []},
       examples: descriptor["examples"] || [],
       search_terms: descriptor["search_terms"] || [],
+      primary_executable_available: primary_executable_available,
+      missing_executable: missing_executable,
       first_seen_at: now,
       last_seen_at: now
     }
@@ -1131,6 +1136,38 @@ defmodule Emisar.Catalog do
   # (the caller rejects nils) rather than letting `descriptor["id"]` raise and
   # abort the whole batch's action upsert.
   defp observe_action(_runner, _descriptor, _packs, _now), do: nil
+
+  # The field is additive: absence means an older runner and stays unknown.
+  # Malformed present values fail closed. The executable is diagnostic only,
+  # normalized before storage because the authenticated runner is hostile input.
+  defp primary_executable_availability(descriptor) do
+    case Map.fetch(descriptor, "primary_executable_available") do
+      :error ->
+        {nil, nil}
+
+      {:ok, true} ->
+        {true, nil}
+
+      {:ok, false} ->
+        {false, normalize_missing_executable(descriptor["missing_executable"])}
+
+      {:ok, _malformed} ->
+        {false, "unknown"}
+    end
+  end
+
+  defp normalize_missing_executable(executable)
+       when is_binary(executable) and executable != "" do
+    executable
+    |> String.replace(~r/[\p{Cc}\p{Cf}\p{Cs}]/u, "")
+    |> String.slice(0, 255)
+    |> case do
+      "" -> "unknown"
+      normalized -> normalized
+    end
+  end
+
+  defp normalize_missing_executable(_invalid), do: "unknown"
 
   defp prune_missing_actions(runner_id, [], _seen_action_ids) do
     RunnerAction.Query.all()

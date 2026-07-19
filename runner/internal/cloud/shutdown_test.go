@@ -79,9 +79,15 @@ func TestClient_DispatchShutdownLogsAndClassifiesReason(t *testing.T) {
 			terminal: false,
 		},
 		{
+			name:     "disabled runner reconnects",
+			reason:   "runner_disabled",
+			message:  "This runner is disabled. Waiting until it is enabled.",
+			terminal: false,
+		},
+		{
 			name:     "revoked runner stops",
 			reason:   "runner_revoked",
-			message:  "This runner was disabled or removed. Disconnecting.",
+			message:  "This runner was removed. Disconnecting.",
 			terminal: true,
 		},
 		{
@@ -147,7 +153,7 @@ func TestClient_DispatchShutdownLogsAndClassifiesReason(t *testing.T) {
 
 func TestClient_ClearsTerminalShutdownStateAfterConnect(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state", "terminal_shutdown.json")
-	if err := WriteTerminalShutdown(statePath, "runner_revoked", "runner disabled"); err != nil {
+	if err := WriteTerminalShutdown(statePath, "runner_revoked", "runner removed"); err != nil {
 		t.Fatalf("seed terminal shutdown state: %v", err)
 	}
 
@@ -178,6 +184,7 @@ func TestClient_RunShutdownReconnectPolicy(t *testing.T) {
 		reconnect bool
 	}{
 		{name: "cloud shutdown reconnects", reason: "cloud_shutdown", reconnect: true},
+		{name: "disabled runner reconnects", reason: "runner_disabled", reconnect: true},
 		{name: "terminal shutdown stops", reason: "runner_version_unsupported", reconnect: false},
 	}
 

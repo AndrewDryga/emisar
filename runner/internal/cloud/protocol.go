@@ -478,8 +478,8 @@ type AckResultMsg struct {
 }
 
 // ShutdownMsg tells the runner why the portal is closing the current session.
-// cloud_shutdown is a planned cloud restart and should reconnect; a revoked
-// or unsupported runner must stop until the operator changes its state.
+// cloud_shutdown and runner_disabled reconnect; a revoked or unsupported runner
+// must stop until an operator replaces its identity or binary.
 type ShutdownMsg struct {
 	Envelope
 	Reason  string `json:"reason"`
@@ -538,9 +538,11 @@ type PackInfo struct {
 // and runbook authoring data come from that manifest, never this advertisement.
 type ActionDescriptor struct {
 	actionspec.ModelDescriptor
-	PackID string           `json:"pack_id,omitempty"`
-	Limits DescriptorLimits `json:"limits"`
-	Output DescriptorOutput `json:"output"`
+	PackID                     string           `json:"pack_id,omitempty"`
+	PrimaryExecutableAvailable bool             `json:"primary_executable_available"`
+	MissingExecutable          string           `json:"missing_executable,omitempty"`
+	Limits                     DescriptorLimits `json:"limits"`
+	Output                     DescriptorOutput `json:"output"`
 }
 
 // DescriptorLimits is the timeout envelope cloud sees.

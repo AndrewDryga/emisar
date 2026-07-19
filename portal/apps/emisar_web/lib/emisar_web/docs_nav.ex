@@ -29,7 +29,7 @@ defmodule EmisarWeb.DocsNav do
      [
        %{
          slug: "deployment",
-         title: "Deploying in production",
+         title: "Production rollout",
          path: "/docs/deployment",
          icon: "hero-clipboard-document-check",
          desc: "Go from one runner to a governed fleet, with a phased rollout and a checklist."

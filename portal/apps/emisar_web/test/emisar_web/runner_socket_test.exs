@@ -227,6 +227,29 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert json_response(conn, 401) == %{"error" => "token_invalid"}
     end
+
+    test "a disabled runner's valid token → retryable 403", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+      {:ok, _runner} = Runners.disable_runner(runner, subject)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get("/runner/socket/websocket")
+
+      assert json_response(conn, 403) == %{"error" => "runner_disabled"}
+    end
   end
 
   describe "GET /healthz" do
@@ -649,6 +672,32 @@ defmodule EmisarWeb.RunnerSocketTest do
       # The stop is deferred behind the frame (this process IS the socket).
       assert_receive :stop_after_drain
       assert {:stop, :normal, ^state} = RunnerSocket.handle_info(:stop_after_drain, state)
+    end
+
+    test "disable pushes a retryable shutdown envelope first, then stops", %{state: state} do
+      assert {:push, frame, ^state} = RunnerSocket.handle_info(:runner_socket_disabled, state)
+
+      assert decode(frame) == %{
+               "message" => "This runner is disabled. Waiting until it is enabled.",
+               "protocol_version" => 1,
+               "reason" => "runner_disabled",
+               "type" => "shutdown"
+             }
+
+      assert_receive :stop_after_drain
+    end
+
+    test "removal pushes a terminal revoked envelope first, then stops", %{state: state} do
+      assert {:push, frame, ^state} = RunnerSocket.handle_info(:runner_socket_revoked, state)
+
+      assert decode(frame) == %{
+               "message" => "This runner was removed. Disconnecting.",
+               "protocol_version" => 1,
+               "reason" => "runner_revoked",
+               "type" => "shutdown"
+             }
+
+      assert_receive :stop_after_drain
     end
 
     test "an unexpected message is logged and ignored", %{state: state} do

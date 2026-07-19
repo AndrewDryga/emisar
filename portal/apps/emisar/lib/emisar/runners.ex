@@ -389,7 +389,7 @@ defmodule Emisar.Runners do
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.disable/1,
         audit: &Audit.Events.runner_disabled(subject, &1),
-        after_commit: &broadcast_runner_revoked/1
+        after_commit: &broadcast_runner_disabled/1
       )
     end
   end
@@ -996,12 +996,16 @@ defmodule Emisar.Runners do
     )
   end
 
-  # Force any LIVE socket for this runner to disconnect after disable/delete. The
-  # socket authenticates ONLY at connect, so an already-connected (now disabled/
-  # deleted) runner would otherwise keep finalizing in-flight runs + mutating the
-  # pack-trust catalog until its socket happened to drop — Disable/Delete must be a
-  # kill switch, not just a future-dispatch block. The socket stops on
-  # `:runner_socket_revoked` (runner_socket.ex).
+  # Authentication runs only at connect, so either lifecycle change must drop the
+  # live socket before it can finalize more runs or mutate catalog state. Disabled
+  # retries its valid token; deleted revokes the identity and stops permanently.
+  defp broadcast_runner_disabled(%Runner{} = runner) do
+    Emisar.PubSub.broadcast(
+      runner_control_topic(runner.account_id, runner.id),
+      :runner_socket_disabled
+    )
+  end
+
   defp broadcast_runner_revoked(%Runner{} = runner) do
     Emisar.PubSub.broadcast(
       runner_control_topic(runner.account_id, runner.id),
@@ -1159,8 +1163,8 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — runner socket upgrade controller, before any Subject exists:
-  verifies a presented runner token. Returns `{:ok, token, runner}` or
-  `{:error, :token_invalid}`.
+  verifies a presented runner token. Returns `{:ok, token, runner}`,
+  `{:error, :runner_disabled}`, or `{:error, :token_invalid}`.
   """
   def verify_runner_token(raw) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
@@ -1173,9 +1177,13 @@ defmodule Emisar.Runners do
       with %Token{} = token <- Repo.peek(token_queryable),
            true <- Crypto.secure_compare(token.token_hash, hash),
            runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
-           %Runner{disabled_at: nil} = runner <- Repo.peek(runner_queryable) do
-        {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
-        {:ok, token, runner}
+           %Runner{} = runner <- Repo.peek(runner_queryable) do
+        if is_nil(runner.disabled_at) do
+          {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
+          {:ok, token, runner}
+        else
+          {:error, :runner_disabled}
+        end
       else
         _ -> {:error, :token_invalid}
       end
