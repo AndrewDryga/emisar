@@ -1880,11 +1880,11 @@ end
 _ = seed_plan_account.("Blank Workspace Demo", "blank", "free")
 IO.puts(IO.ANSI.cyan() <> "✓ Blank Workspace Demo (slug=blank, free) — empty" <> IO.ANSI.reset())
 
-# A "both connected, nothing run" account — one runner AND one agent, no runs —
-# so the onboarding checklist's third step (the first run, with its example
-# prompt) shows without dispatching anything. Demo-owned, reachable by switching
-# accounts as demo. Existence-checked, so it just adds the missing agent key to
-# the account demo already made by hand rather than duplicating its runner.
+# A "both connected, no actions" account — one runner AND one agent, but the
+# runner advertises an empty catalog — so the onboarding checklist must explain
+# how to install a catalog pack before offering a run prompt. Demo-owned, reachable by
+# switching accounts as demo. Existence-checked, so it repairs the account demo
+# already made by hand rather than duplicating its runner.
 both_connected_account =
   case Repo.fetch(
          Account.Query.not_deleted() |> Account.Query.by_slug("both-connected"),
@@ -1906,26 +1906,28 @@ both_connected_account =
 {:ok, bc_membership} = Accounts.fetch_membership_for_session(user, both_connected_account.id)
 bc_subject = Subject.for_user(user, both_connected_account, bc_membership)
 
-case Runners.list_all_runners_for_account(bc_subject) do
-  {:ok, [_ | _]} ->
-    :ok
+bc_runner =
+  case Runners.list_all_runners_for_account(bc_subject) do
+    {:ok, [runner | _]} ->
+      runner
 
-  _ ->
-    {:ok, bc_runner} =
-      insert_seed_runner.(both_connected_account.id, %{
-        name: "both-connected-prod-1",
-        group: "prod"
-      })
+    _ ->
+      {:ok, runner} =
+        insert_seed_runner.(both_connected_account.id, %{
+          name: "both-connected-prod-1",
+          group: "prod"
+        })
 
-    bc_runner
-    |> Ecto.Changeset.change(
-      hostname: "both-connected-prod-1.example",
-      last_connected_at: mins_ago.(20),
-      runner_version: "0.4.2"
-    )
-    |> Repo.update!()
-    |> advertise.(linux_actions)
-end
+      runner
+      |> Ecto.Changeset.change(
+        hostname: "both-connected-prod-1.example",
+        last_connected_at: mins_ago.(20),
+        runner_version: "0.4.2"
+      )
+      |> Repo.update!()
+  end
+
+advertise.(bc_runner, [])
 
 case ApiKeys.list_api_keys_for_account(bc_subject, page: [limit: 10]) do
   {:ok, [_ | _], _} ->
@@ -1944,5 +1946,6 @@ end
 
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Both Connected Co (slug=both-connected) — runner + agent, no runs" <> IO.ANSI.reset()
+    "✓ Both Connected Co (slug=both-connected) — runner + agent, no actions" <>
+    IO.ANSI.reset()
 )

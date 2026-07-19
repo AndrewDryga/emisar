@@ -250,7 +250,7 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
-    test "both connected but nothing run: the checklist's run step carries the example prompt",
+    test "both connected but no advertised actions: the checklist requires a catalog pack first",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
@@ -262,12 +262,32 @@ defmodule EmisarWeb.DashboardLiveTest do
           subject
         )
 
-      # Both connections done, no run yet: the checklist stays, its third step now
-      # current, carrying the exact prompt to send an agent.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+      # Both connections exist, but the runner cannot execute anything yet. The
+      # checklist replaces the unusable prompt with the missing setup action.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Get to your first gated run"
+      assert html =~ "needs at least one action pack"
+      assert html =~ "Install a pack from the catalog"
+      assert html =~ "not advertising any actions yet"
+      assert html =~ "emisar pack suggest"
+      assert html =~ "emisar pack install"
+      refute html =~ "load, memory, disk, and any failed services"
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/packs"}']",
+               "Browse the pack catalog"
+             )
+
+      # Once the runner advertises an action, the first-run prompt becomes
+      # truthful and usable without requiring a page refresh.
+      Fixtures.Catalog.create_action(runner: runner)
+      send(lv.pid, :reload_dashboard)
+      html = render(lv)
       assert html =~ "Ask your agent to run an action"
       assert html =~ "load, memory, disk, and any failed services"
+      refute html =~ "Install a pack from the catalog"
+      refute html =~ "emisar pack suggest"
 
       # The first run hands off to the pillars — the checklist is gone.
       first_run(account, runner)

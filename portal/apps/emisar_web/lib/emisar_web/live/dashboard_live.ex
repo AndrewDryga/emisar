@@ -69,12 +69,20 @@ defmodule EmisarWeb.DashboardLive do
     runners = list_or_empty(Runners.list_all_runners_for_account(subject))
     pending = list_or_empty(Approvals.list_pending_approval_requests(subject))
     api_keys = list_or_empty(ApiKeys.list_api_keys_for_account(subject))
+    visible_runner_ids = Enum.map(runners, & &1.id)
+
+    actions_advertised? =
+      case Catalog.action_risks_for_runner_ids(visible_runner_ids, subject) do
+        {:ok, action_risks} -> map_size(action_risks) > 0
+        _ -> false
+      end
 
     socket
     |> assign(:page_title, "Dashboard")
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
+    |> assign(:actions_advertised?, actions_advertised?)
     |> assign(
       :recent_runs,
       # :api_key so the source badge names the actual agent ("Claude Code -
@@ -184,6 +192,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={not @loading?}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
+        actions_advertised?={@actions_advertised?}
         pending_approvals={@pending_approvals}
         pending_approvals_count={@pending_approvals_count}
         recent_runs={@recent_runs}
@@ -223,6 +232,7 @@ defmodule EmisarWeb.DashboardLive do
   #   4. Recent runs — the activity proof, with the 24h digest in its header.
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
+  attr :actions_advertised?, :boolean, required: true
   attr :pending_approvals, :list, required: true
   attr :pending_approvals_count, :integer, required: true
   attr :recent_runs, :list, required: true
@@ -274,6 +284,7 @@ defmodule EmisarWeb.DashboardLive do
     <.setup_checklist
       :if={@show_setup?}
       runners_total={@runners_total}
+      actions_advertised?={@actions_advertised?}
       agents_total={@agents.total}
       team_total={if is_map(@team_mfa), do: @team_mfa.total, else: 0}
       current_account={@current_account}
@@ -423,6 +434,7 @@ defmodule EmisarWeb.DashboardLive do
   # Two required connections + one optional invite — sequenced by emphasis
   # (the current step carries the page's one brand fill), never locked.
   attr :runners_total, :integer, required: true
+  attr :actions_advertised?, :boolean, required: true
   attr :agents_total, :integer, required: true
   attr :team_total, :integer, required: true
   attr :current_account, :map, required: true
@@ -472,8 +484,14 @@ defmodule EmisarWeb.DashboardLive do
         </span>
       </div>
       <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
-        Two connections, then ask any MCP client — Claude, Cursor, Codex — to run an action
-        on your own hosts. Every call is checked against policy first.
+        <%= if @runner_done? and not @actions_advertised? do %>
+          Your runner needs at least one action pack before it can do work. Install a pack from the
+          catalog, then ask any MCP client — Claude, Cursor, Codex — to run it. Every call is checked
+          against policy first.
+        <% else %>
+          Two connections, then ask any MCP client — Claude, Cursor, Codex — to run an action on
+          your own hosts. Every call is checked against policy first.
+        <% end %>
       </p>
 
       <ol class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
@@ -504,11 +522,9 @@ defmodule EmisarWeb.DashboardLive do
         >
           Give Claude, Cursor, or any MCP client a scoped, revocable key.
         </.setup_step>
-        <%!-- Step 3 — the run itself, and the thing a first-timer most needs
-             spelled out: the exact words to send. Becomes the current step once
-             both connections exist; it never toggles to done — a landed run hides
-             the whole checklist. Custom <li> (not <.setup_step>) so the body can
-             carry a real code_panel instead of one line. --%>
+        <%!-- Step 3 — make the first run possible, then spell out the exact
+             words to send. A connected runner with no advertised actions needs
+             a pack before the example prompt can work. --%>
         <li class="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:gap-5">
           <span class={[
             "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ring-1",
@@ -520,24 +536,49 @@ defmodule EmisarWeb.DashboardLive do
             3
           </span>
           <div class="min-w-0 flex-1">
-            <span class={[
-              "font-medium",
-              if(@both_connected?, do: "text-zinc-100", else: "text-zinc-300")
-            ]}>
-              Ask your agent to run an action
-            </span>
-            <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
-              Ask in plain English — your agent picks the matching action from the catalog and
-              runs it on the host. A read-only health check is a safe first run:
-            </p>
-            <.code_panel
-              id="onboarding-example-prompt"
-              label="Example prompt"
-              copy
-              wrap
-              class="mt-3 sm:max-w-prose"
-              code={@example_prompt}
-            />
+            <%= if @runner_done? and not @actions_advertised? do %>
+              <span class={[
+                "font-medium",
+                if(@both_connected?, do: "text-zinc-100", else: "text-zinc-300")
+              ]}>
+                Install a pack from the catalog
+              </span>
+              <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
+                Your runner is connected, but it is not advertising any actions yet. Find the packs
+                that match this host, then install one before asking your agent to run an action.
+              </p>
+              <.code_line
+                id="onboarding-suggest-packs"
+                label="On the runner"
+                value="emisar pack suggest"
+                prompt
+                class="mt-3 sm:max-w-prose"
+              />
+              <p class="mt-2 max-w-prose text-sm leading-relaxed text-zinc-400">
+                Run one of the
+                <code class="font-mono text-xs text-zinc-300">emisar pack install</code>
+                commands it prints. <.doc_link href={~p"/packs"}>Browse the pack catalog</.doc_link>
+              </p>
+            <% else %>
+              <span class={[
+                "font-medium",
+                if(@both_connected?, do: "text-zinc-100", else: "text-zinc-300")
+              ]}>
+                Ask your agent to run an action
+              </span>
+              <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
+                Ask in plain English — your agent picks the matching action from the catalog and
+                runs it on the host. A read-only health check is a safe first run:
+              </p>
+              <.code_panel
+                id="onboarding-example-prompt"
+                label="Example prompt"
+                copy
+                wrap
+                class="mt-3 sm:max-w-prose"
+                code={@example_prompt}
+              />
+            <% end %>
           </div>
         </li>
         <.setup_step
