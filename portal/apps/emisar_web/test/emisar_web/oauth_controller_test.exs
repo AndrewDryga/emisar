@@ -527,7 +527,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute html =~ ~s(type="hidden" name="account_id")
     end
 
-    test "CSP form-action allows the registered OAuth callback origin only", %{
+    test "CSP form-action names the server and registered callback origins", %{
       conn: conn,
       user: user
     } do
@@ -547,14 +547,17 @@ defmodule EmisarWeb.OAuthControllerTest do
       }
 
       conn =
-        conn
+        %{conn | host: "attacker.example"}
         |> log_in_user(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       [csp] = get_resp_header(conn, "content-security-policy")
 
-      assert csp =~ "form-action 'self' https://chatgpt.com"
+      server_origin = EmisarWeb.Endpoint.url()
+
+      assert csp =~ "form-action 'self' #{server_origin} https://chatgpt.com"
       refute csp =~ "connector/oauth"
+      refute csp =~ "attacker.example"
     end
 
     # the consent screen identifies the callback ORIGIN (validated against the

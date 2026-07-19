@@ -192,7 +192,7 @@ defmodule EmisarWeb.OAuthController do
     requested = scopes(params["scope"])
 
     conn
-    |> allow_oauth_form_redirect(params["redirect_uri"])
+    |> allow_oauth_form_navigation(params["redirect_uri"])
     |> render(:consent,
       client_name: client_label(client),
       # The origin codes are delivered to — validated against the client's
@@ -239,23 +239,23 @@ defmodule EmisarWeb.OAuthController do
     redirect_back(conn, redirect_uri, %{error: error_code, state: state})
   end
 
-  # Some browser CSP implementations apply `form-action` across the OAuth form
-  # navigation chain, including the 302 back to the client's callback. Keep the
-  # base policy strict and widen only this consent page to the already-validated
-  # callback origin.
-  defp allow_oauth_form_redirect(conn, redirect_uri) do
-    case form_action_origin(redirect_uri) do
-      nil ->
-        conn
+  # Sandboxed OAuth webviews can give this document an opaque origin, where
+  # CSP `'self'` no longer matches our same-origin consent POST. Name the
+  # configured server origin explicitly, plus the already-validated client
+  # callback for browsers that apply `form-action` across the final redirect.
+  defp allow_oauth_form_navigation(conn, redirect_uri) do
+    origins =
+      [EmisarWeb.Endpoint.url(), redirect_uri]
+      |> Enum.map(&form_action_origin/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
-      origin ->
-        extra =
-          conn.assigns
-          |> Map.get(:csp_extra, %{})
-          |> Map.update("form-action", [origin], &(&1 ++ [origin]))
+    extra =
+      conn.assigns
+      |> Map.get(:csp_extra, %{})
+      |> Map.update("form-action", origins, &Enum.uniq(&1 ++ origins))
 
-        assign(conn, :csp_extra, extra)
-    end
+    assign(conn, :csp_extra, extra)
   end
 
   defp form_action_origin(uri) when is_binary(uri) do
