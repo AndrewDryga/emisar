@@ -21,6 +21,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   alias Emisar.Runners.Runner
 
   defp pending_request(account, requested_by, opts \\ []) do
+    membership = Emisar.Accounts.peek_sync_membership(account.id, requested_by.id)
+
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,
@@ -38,6 +40,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         action_id: "cassandra.repair",
         source: "operator",
         reason: "needs review",
+        requested_by_id: requested_by.id,
+        initiating_membership_id: membership.id,
         args: %{},
         # A real require-approval run is parked :pending_approval; the finalizer
         # only dispatches a run still in that state.

@@ -291,7 +291,12 @@ invite_member = fn email, full_name, role ->
         case Accounts.peek_sync_membership(account.id, existing_user.id) do
           nil ->
             {:ok, %{user: invited, membership: membership}} =
-              Accounts.invite_user_to_account(email, role, owner_subject)
+              Accounts.invite_user_to_account(
+                email,
+                role,
+                Accounts.RunnerAccess.all(),
+                owner_subject
+              )
 
             {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
             invited
@@ -306,7 +311,12 @@ invite_member = fn email, full_name, role ->
 
       {:error, :not_found} ->
         {:ok, %{user: invited, membership: membership}} =
-          Accounts.invite_user_to_account(email, role, owner_subject)
+          Accounts.invite_user_to_account(
+            email,
+            role,
+            Accounts.RunnerAccess.all(),
+            owner_subject
+          )
 
         {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
         invited

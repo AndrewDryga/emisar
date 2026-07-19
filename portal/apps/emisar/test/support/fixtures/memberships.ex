@@ -4,7 +4,7 @@ defmodule Emisar.Fixtures.Memberships do
   `Fixtures.Memberships.create_membership/1`.
   """
 
-  alias Emisar.Accounts.Membership
+  alias Emisar.Accounts.{Membership, MembershipRunnerScope, RunnerAccess}
   alias Emisar.{Fixtures, Repo}
 
   @doc """
@@ -24,9 +24,20 @@ defmodule Emisar.Fixtures.Memberships do
       %{
         account_id: account_id,
         user_id: user_id,
-        role: attrs[:role] || "operator"
+        role: attrs[:role] || "operator",
+        runner_access_mode: attrs[:runner_access_mode] || "all"
       }
-      |> Map.merge(Map.take(attrs, [:invited_by_id, :invitation_token_digest]))
+      |> Map.merge(
+        Map.take(attrs, [
+          :invited_by_id,
+          :invitation_token_digest,
+          :directory_managed,
+          :runner_access_directory_managed,
+          :directory_provider_id,
+          :directory_authorization_version,
+          :directory_authorization_pending_version
+        ])
+      )
 
     {:ok, m} = params |> Membership.Changeset.create() |> Repo.insert()
     m
@@ -44,6 +55,54 @@ defmodule Emisar.Fixtures.Memberships do
       membership
       |> Membership.Changeset.update(%{role: role})
       |> Repo.update()
+
+    updated
+  end
+
+  @doc """
+  Test-only runner-access override. Production code MUST go through
+  `Accounts.update_membership_runner_access/3`; this helper rigs an existing
+  caller's state without exercising nondelegation or emitting an audit event.
+  """
+  def force_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
+    membership = Repo.reload!(membership)
+
+    {:ok, _result} =
+      Ecto.Adapters.SQL.query(
+        Repo,
+        "SELECT set_config('emisar.runner_access_write', 'enabled', true)",
+        []
+      )
+
+    {:ok, updated} =
+      membership
+      |> Membership.Changeset.update_runner_access(access.mode)
+      |> Repo.update()
+
+    MembershipRunnerScope.Query.by_membership_id(membership.id)
+    |> Repo.delete_all()
+
+    now = DateTime.utc_now()
+
+    rows =
+      Enum.map(RunnerAccess.scope_tuples(access), fn {scope_type, scope_value} ->
+        %{
+          id: Repo.generate_id(),
+          membership_id: membership.id,
+          scope_type: scope_type,
+          scope_value: scope_value,
+          inserted_at: now
+        }
+      end)
+
+    Repo.insert_all(MembershipRunnerScope, rows)
+
+    {:ok, _result} =
+      Ecto.Adapters.SQL.query(
+        Repo,
+        "SELECT set_config('emisar.runner_access_write', 'disabled', true)",
+        []
+      )
 
     updated
   end

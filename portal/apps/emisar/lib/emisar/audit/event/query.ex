@@ -79,7 +79,7 @@ defmodule Emisar.Audit.Event.Query do
     {"membership.suspended", "Member suspended"},
     {"membership.reinstated", "Member reinstated"},
     {"membership.invitation_accepted", "Invitation accepted"},
-    {"membership.runner_scopes_changed", "Runner scopes changed"},
+    {"membership.runner_access_changed", "Runner access changed"},
     {"policy.updated", "Policy updated"},
     {"runbook.created", "Runbook created"},
     {"runbook.updated", "Runbook updated"},
@@ -106,9 +106,16 @@ defmodule Emisar.Audit.Event.Query do
     {"membership.deprovisioned_via_scim", "Member deprovisioned (SCIM)"},
     {"membership.reprovisioned_via_scim", "Member reprovisioned (SCIM)"},
     {"membership.role_synced_via_scim", "Member role synced (SCIM)"},
+    {"membership.runner_access_synced_via_scim", "Member runner access synced (SCIM)"},
     {"sso.group_mapping_created", "SSO group mapping created"},
     {"sso.group_mapping_updated", "SSO group mapping updated"},
     {"sso.group_mapping_deleted", "SSO group mapping deleted"},
+    {"sso.group_runner_access_mapping_created", "SSO group runner access created"},
+    {"sso.group_runner_access_mapping_updated", "SSO group runner access updated"},
+    {"sso.group_runner_access_mapping_deleted", "SSO group runner access deleted"},
+    {"sso.provider_configured", "SSO provider configured"},
+    {"sso.provider_updated", "SSO provider updated"},
+    {"sso.provider_deleted", "SSO provider deleted"},
     {"sso.link_request_approved", "SSO link request approved"},
     {"sso.link_request_dismissed", "SSO link request dismissed"},
     {"audit.exported", "Audit log exported"},
@@ -232,7 +239,7 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.removed", "Member removed"},
        {"membership.suspended", "Member suspended"},
        {"membership.reinstated", "Member reinstated"},
-       {"membership.runner_scopes_changed", "Runner scopes changed"}
+       {"membership.runner_access_changed", "Runner access changed"}
      ]},
     {"Policy",
      [
@@ -274,9 +281,16 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.deprovisioned_via_scim", "Member deprovisioned"},
        {"membership.reprovisioned_via_scim", "Member reprovisioned"},
        {"membership.role_synced_via_scim", "Role synced"},
+       {"membership.runner_access_synced_via_scim", "Runner access synced"},
        {"sso.group_mapping_created", "Group mapping created"},
        {"sso.group_mapping_updated", "Group mapping updated"},
        {"sso.group_mapping_deleted", "Group mapping deleted"},
+       {"sso.group_runner_access_mapping_created", "Group runner access created"},
+       {"sso.group_runner_access_mapping_updated", "Group runner access updated"},
+       {"sso.group_runner_access_mapping_deleted", "Group runner access deleted"},
+       {"sso.provider_configured", "Provider configured"},
+       {"sso.provider_updated", "Provider updated"},
+       {"sso.provider_deleted", "Provider deleted"},
        {"sso.link_request_approved", "Link request approved"},
        {"sso.link_request_dismissed", "Link request dismissed"}
      ]},
@@ -812,7 +826,7 @@ defmodule Emisar.Audit.Event.Query do
     "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
     "membership.invitation_accepted" =>
       {true, false, false, "An existing user accepted an invitation into this workspace."},
-    "membership.runner_scopes_changed" =>
+    "membership.runner_access_changed" =>
       {true, true, true, "An admin changed which runners a member may target."},
     "policy.updated" =>
       {true, true, true, "An admin changed the action policy (tier defaults or overrides)."},
@@ -859,12 +873,25 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true, "The identity provider re-activated a previously deprovisioned member."},
     "membership.role_synced_via_scim" =>
       {true, false, true, "A member's role was recomputed from directory group mappings."},
+    "membership.runner_access_synced_via_scim" =>
+      {true, false, true,
+       "A member's runner access was recomputed from directory group mappings."},
     "sso.group_mapping_created" =>
       {true, true, true, "An admin mapped a directory group to a workspace role."},
     "sso.group_mapping_updated" =>
       {true, true, true, "An admin changed a directory-group role mapping."},
     "sso.group_mapping_deleted" =>
       {true, true, true, "An admin removed a directory-group role mapping."},
+    "sso.group_runner_access_mapping_created" =>
+      {true, true, true, "An admin mapped a directory group to runner access."},
+    "sso.group_runner_access_mapping_updated" =>
+      {true, true, true, "An admin changed a directory-group runner-access mapping."},
+    "sso.group_runner_access_mapping_deleted" =>
+      {true, true, true, "An admin removed a directory-group runner-access mapping."},
+    "sso.provider_configured" => {true, true, true, "An admin configured an identity provider."},
+    "sso.provider_updated" =>
+      {true, true, true, "An admin changed an identity provider's configuration."},
+    "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},
     "sso.link_request_approved" =>
       {true, true, true, "A user approved linking their SSO identity to an existing account."},
     "sso.link_request_dismissed" =>

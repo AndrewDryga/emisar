@@ -34,6 +34,27 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
   end
 
+  def by_directory_provider_id(queryable, provider_id),
+    do: where(queryable, [memberships: m], m.directory_provider_id == ^provider_id)
+
+  def by_directory_provider_or_unmanaged(queryable, provider_id) do
+    where(
+      queryable,
+      [memberships: m],
+      is_nil(m.directory_provider_id) or m.directory_provider_id == ^provider_id
+    )
+  end
+
+  def authorization_sync_pending(queryable \\ all()) do
+    where(
+      queryable,
+      [memberships: m],
+      not is_nil(m.directory_authorization_pending_version)
+    )
+  end
+
+  def limit_to(queryable, limit), do: limit(queryable, ^limit)
+
   def by_invitation_token_digest(queryable, digest),
     do: where(queryable, [memberships: m], m.invitation_token_digest == ^digest)
 

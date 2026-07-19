@@ -143,12 +143,7 @@ defmodule Emisar.Runbooks do
     runner_ids = execution.work_list |> Enum.map(& &1["runner_id"]) |> MapSet.new()
 
     with {:ok, runners} <- Emisar.Runners.list_all_runners_for_account(subject) do
-      scopes = Emisar.Runners.runner_scopes_for_membership(membership_id)
-
-      visible_ids =
-        runners
-        |> Enum.filter(&Emisar.Runners.runner_in_scope?(&1, scopes))
-        |> MapSet.new(& &1.id)
+      visible_ids = MapSet.new(runners, & &1.id)
 
       if MapSet.subset?(runner_ids, visible_ids), do: :ok, else: {:error, :not_found}
     end

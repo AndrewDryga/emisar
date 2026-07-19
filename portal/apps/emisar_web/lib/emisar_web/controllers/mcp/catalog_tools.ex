@@ -39,8 +39,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
     with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
          {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
          {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      scopes = membership_scopes(api_key)
-      runners = Enum.filter(runners, &Runners.runner_in_scope?(&1, scopes))
       runner_ids = MapSet.new(runners, & &1.id)
       actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
       snapshot = Catalog.MCPProjection.build(pack_versions, actions, runners)
@@ -740,11 +738,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
       {:error, message} -> {:error, error("invalid_args", message)}
     end
   end
-
-  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
-    do: Runners.runner_scopes_for_membership(id)
-
-  defp membership_scopes(_api_key), do: nil
 
   defp error(code, message) do
     %{

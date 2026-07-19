@@ -9,7 +9,7 @@ defmodule Emisar.AuthAuditTest do
   in `Audit.list_events/1` scoped to that account.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext, Runners, Users}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext, Users}
   alias Emisar.Fixtures
 
   defp events_of(account, event_type) do
@@ -300,20 +300,19 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["role"] == "operator"
     end
 
-    test "replace_runner_scopes audits with scope payload", %{
+    test "update_membership_runner_access audits the explicit transition", %{
       owner_subject: owner_subject,
       account: account,
       membership: membership
     } do
-      {:ok, _} =
-        Runners.replace_runner_scopes(
-          membership,
-          [{"group", "prod"}, {"group", "stage"}],
-          owner_subject
-        )
+      {:ok, access} = Accounts.RunnerAccess.restricted(["prod", "stage"], [])
 
-      assert [event] = events_of(account, "membership.runner_scopes_changed")
-      assert event.payload["scope_count"] == 2
+      {:ok, _} = Accounts.update_membership_runner_access(membership, access, owner_subject)
+
+      assert [event] = events_of(account, "membership.runner_access_changed")
+      assert event.payload["before"]["mode"] == "all"
+      assert event.payload["after"]["mode"] == "restricted"
+      assert event.payload["after"]["groups"] == ["prod", "stage"]
     end
 
     test "mark_invitation_accepted (self-accept of existing user) audits", %{

@@ -635,14 +635,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp catalog_snapshot(conn) do
     subject = conn.assigns.current_subject
-    api_key = conn.assigns.api_key
 
     with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
          {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
          {:ok, versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      scopes = membership_scopes(api_key)
       account_runners = runners
-      runners = Enum.filter(account_runners, &Runners.runner_in_scope?(&1, scopes))
       ids = MapSet.new(runners, & &1.id)
       actions = Enum.filter(actions, &MapSet.member?(ids, &1.runner_id))
 
@@ -765,11 +762,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp cursor_scope(conn) do
     Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> conn.assigns.api_key.id)
   end
-
-  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
-    do: Runners.runner_scopes_for_membership(id)
-
-  defp membership_scopes(_api_key), do: nil
 
   defp changeset_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->

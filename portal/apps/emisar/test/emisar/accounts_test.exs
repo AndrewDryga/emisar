@@ -1000,23 +1000,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "provision_sso_membership/4" do
+  describe "provision_sso_membership/5" do
     test "creates a membership at the given role for a JIT-provisioned user" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
       assert {:ok, %Membership{role: :operator} = membership} =
-               Accounts.provision_sso_membership(account.id, user.id, :operator)
+               Accounts.provision_sso_membership(
+                 account.id,
+                 user.id,
+                 :operator,
+                 Accounts.RunnerAccess.none(),
+                 directory_managed?: false
+               )
 
       assert membership.account_id == account.id
       assert membership.user_id == user.id
+      assert membership.runner_access_mode == :none
+      refute membership.runner_access_directory_managed
     end
 
     test "refuses :owner — owner is never assignable via sync (defense in depth)" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      assert Accounts.provision_sso_membership(account.id, user.id, :owner) ==
+      assert Accounts.provision_sso_membership(
+               account.id,
+               user.id,
+               :owner,
+               Accounts.RunnerAccess.none(),
+               directory_managed?: true
+             ) ==
                {:error, :owner_not_assignable}
 
       # Nothing was written — the user has no membership in the account.
@@ -2615,7 +2629,12 @@ defmodule Emisar.AccountsTest do
       assert {:ok, _} = Accounts.delete_membership(target, subject)
 
       assert {:ok, %{membership: fresh}} =
-               Accounts.invite_user_to_account(target_user.email, "viewer", subject)
+               Accounts.invite_user_to_account(
+                 target_user.email,
+                 "viewer",
+                 Accounts.RunnerAccess.none(),
+                 subject
+               )
 
       assert fresh.user_id == target_user.id
       assert fresh.id != target.id
@@ -2752,7 +2771,12 @@ defmodule Emisar.AccountsTest do
                 user: %User{} = invitee,
                 invitation_token: token
               }} =
-               Accounts.invite_user_to_account(email, "admin", subject)
+               Accounts.invite_user_to_account(
+                 email,
+                 "admin",
+                 Accounts.RunnerAccess.all(),
+                 subject
+               )
 
       assert invitee.email == email
       refute invitee.confirmed_at
@@ -2768,7 +2792,12 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.membership_subject(viewer_membership)
       email = "denied-invite-#{System.unique_integer([:positive])}@example.test"
 
-      assert Accounts.invite_user_to_account(email, "operator", subject) ==
+      assert Accounts.invite_user_to_account(
+               email,
+               "operator",
+               Accounts.RunnerAccess.all(),
+               subject
+             ) ==
                {:error, :unauthorized}
     end
 
@@ -2786,7 +2815,12 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
       assert {:ok, %{user: %User{id: id}}} =
-               Accounts.invite_user_to_account(existing.email, "operator", subject)
+               Accounts.invite_user_to_account(
+                 existing.email,
+                 "operator",
+                 Accounts.RunnerAccess.all(),
+                 subject
+               )
 
       assert id == existing.id
     end
@@ -2805,7 +2839,12 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
-      assert Accounts.invite_user_to_account(existing.email, "operator", subject) ==
+      assert Accounts.invite_user_to_account(
+               existing.email,
+               "operator",
+               Accounts.RunnerAccess.all(),
+               subject
+             ) ==
                {:error, :already_member}
     end
 
@@ -2823,7 +2862,12 @@ defmodule Emisar.AccountsTest do
 
       email = "owner-invite-#{System.unique_integer([:positive])}@example.test"
 
-      assert Accounts.invite_user_to_account(email, "owner", subject) ==
+      assert Accounts.invite_user_to_account(
+               email,
+               "owner",
+               Accounts.RunnerAccess.all(),
+               subject
+             ) ==
                {:error, :insufficient_privileges}
     end
 
@@ -2845,7 +2889,12 @@ defmodule Emisar.AccountsTest do
         email = "seat-#{n}-#{System.unique_integer([:positive])}@example.test"
 
         assert {:ok, %{membership: %Membership{}}} =
-                 Accounts.invite_user_to_account(email, "viewer", subject)
+                 Accounts.invite_user_to_account(
+                   email,
+                   "viewer",
+                   Accounts.RunnerAccess.all(),
+                   subject
+                 )
       end
 
       # All twelve invitees plus the owner are members — none was capped.
@@ -2863,7 +2912,12 @@ defmodule Emisar.AccountsTest do
       # only ever invite into B — there is no caller-supplied account id to
       # redirect the invite into A.
       assert {:ok, %{membership: %Membership{account_id: account_id}, user: invitee}} =
-               Accounts.invite_user_to_account(email, "operator", subject_b)
+               Accounts.invite_user_to_account(
+                 email,
+                 "operator",
+                 Accounts.RunnerAccess.none(),
+                 subject_b
+               )
 
       assert account_id == account_b.id
       # And nothing was written into A: the invitee has no membership there.
@@ -2877,7 +2931,12 @@ defmodule Emisar.AccountsTest do
       email = "resend-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
-        Accounts.invite_user_to_account(email, "operator", subject)
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.none(),
+          subject
+        )
 
       expired_at = DateTime.add(DateTime.utc_now(), -8 * 24 * 60 * 60, :second)
 
@@ -2916,6 +2975,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "viewer-denied-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.none(),
           owner_subject
         )
 
@@ -2944,6 +3004,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "cross-resend-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject_a
         )
 
@@ -2960,6 +3021,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "accepted-resend-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -2975,6 +3037,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "owner-resend-#{System.unique_integer([:positive])}@example.test",
           "owner",
+          Accounts.RunnerAccess.none(),
           owner_subject
         )
 
@@ -3001,6 +3064,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "tok-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -3015,6 +3079,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "tok-preload-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -3035,6 +3100,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "tok-accepted-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -3060,7 +3126,12 @@ defmodule Emisar.AccountsTest do
       email = "joiner-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership, user: user}} =
-        Accounts.invite_user_to_account(email, "operator", subject)
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject
+        )
 
       # No full_name set — the signed-in-as-self path skips the registration
       # changeset entirely.
@@ -3089,7 +3160,12 @@ defmodule Emisar.AccountsTest do
       email = "invitee-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership, invitation_token: token}} =
-        Accounts.invite_user_to_account(email, "operator", subject)
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject
+        )
 
       attacker = Fixtures.Users.create_user()
 
@@ -3109,6 +3185,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "accept-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -3136,6 +3213,7 @@ defmodule Emisar.AccountsTest do
         Accounts.invite_user_to_account(
           "race-#{System.unique_integer([:positive])}@example.test",
           "operator",
+          Accounts.RunnerAccess.all(),
           subject
         )
 
@@ -3765,6 +3843,25 @@ defmodule Emisar.AccountsTest do
 
       refute Accounts.subject_can_manage_account_security?(operator_subject)
       refute Accounts.subject_can_manage_account_security?(viewer_subject)
+    end
+  end
+
+  describe "refresh_directory_authorization_sessions/1" do
+    test "disconnects live sockets without revoking the member's session token" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "admin"
+        )
+
+      token = Emisar.Auth.create_session_token!(user, :sso, true)
+
+      assert :ok = Accounts.refresh_directory_authorization_sessions(membership)
+      assert {:ok, %User{}, _session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 

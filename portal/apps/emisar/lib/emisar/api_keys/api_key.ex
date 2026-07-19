@@ -4,8 +4,8 @@ defmodule Emisar.ApiKeys.ApiKey do
   (Claude, Cursor, custom runners) and SIEM audit-export tokens. The key is
   identity + expiry + audit attribution only — it carries NO per-key
   authorization scope. What it may do is decided by account Policy + approval;
-  which runners it may see and reach is the minting operator's own runner scope
-  (`created_by_membership`'s `UserRunnerScope`), resolved at call time. `kind`
+  which runners it may see and reach is the minting operator's explicit runner
+  access, resolved from `created_by_membership` at call time. `kind`
   is the sole capability discriminator: `:mcp` reaches the MCP tool surface,
   `:audit_export` the read-only `/api/audit` stream.
   """

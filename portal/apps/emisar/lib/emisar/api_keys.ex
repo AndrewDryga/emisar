@@ -804,6 +804,22 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc "Internal - locked liveness check for a delayed run authorization decision."
+  def api_key_usable_in_account?(repo, id, account_id)
+      when is_binary(id) and is_binary(account_id) do
+    queryable =
+      ApiKey.Query.all()
+      |> ApiKey.Query.by_id(id)
+      |> ApiKey.Query.lock_for_update()
+
+    case repo.one(queryable) do
+      %ApiKey{account_id: ^account_id} = key -> ApiKey.usable?(key)
+      _ -> false
+    end
+  end
+
+  def api_key_usable_in_account?(_repo, _id, _account_id), do: false
+
   @doc """
   Internal — called from the MCP controller after the auth plug resolved
   the key (already-authorized caller), to record the MCP clientInfo a key

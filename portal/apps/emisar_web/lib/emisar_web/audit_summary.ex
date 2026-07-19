@@ -47,13 +47,17 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("membership.removed", p),
     do: pairs(role: get(p, :role))
 
-  defp summarize("membership.runner_scopes_changed", p) do
-    case get(p, :scope_count) do
-      n when is_integer(n) and n > 0 -> [{"scopes", to_string(n)}]
-      0 -> [{"scopes", "cleared (all runners)"}]
-      _ -> []
-    end
-  end
+  defp summarize("membership.runner_access_changed", p),
+    do: access_from_to(p)
+
+  defp summarize("membership.runner_access_synced_via_scim", p),
+    do: access_from_to(p)
+
+  defp summarize("sso.provider_updated", p), do: access_from_to(p)
+
+  defp summarize("sso.group_runner_access_mapping_created", p), do: access_from_to(p)
+  defp summarize("sso.group_runner_access_mapping_updated", p), do: access_from_to(p)
+  defp summarize("sso.group_runner_access_mapping_deleted", p), do: access_from_to(p)
 
   defp summarize("membership.invitation_accepted", p),
     do: pairs(role: get(p, :role))
@@ -280,6 +284,13 @@ defmodule EmisarWeb.AuditSummary do
   defp from_to(_, nil), do: []
   defp from_to(from, from), do: []
   defp from_to(from, to), do: [{"change", "#{from} → #{to}"}]
+
+  defp access_from_to(payload) do
+    before_mode = payload |> map_value(:before) |> get(:mode)
+    after_mode = payload |> map_value(:after) |> get(:mode)
+
+    from_to(before_mode, after_mode)
+  end
 
   defp pairs(kw) do
     Enum.flat_map(kw, fn

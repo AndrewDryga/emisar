@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, SSO}
-  alias EmisarWeb.{ConfirmDialog, MailTo, Permissions}
+  alias Emisar.{Accounts, Runners, SSO}
+  alias EmisarWeb.{ConfirmDialog, MailTo, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
@@ -89,6 +89,13 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:mapping_edit_form, nil)
       # The add-mapping form is behind an "Add mapping" button, not always open.
       |> assign(:adding_mapping, false)
+      |> assign(:runner_access_mappings, %{})
+      |> assign(:runner_access_mapping_forms, %{})
+      |> assign(:editing_runner_access_mapping_id, nil)
+      |> assign(:runner_access_mapping_edit_form, nil)
+      |> assign(:adding_runner_access_mapping, false)
+      |> assign(:runners, [])
+      |> assign(:runner_load_error?, false)
       |> assign(:scim_base_url, "#{Emisar.PublicUrl.base()}/scim/v2")
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
@@ -137,10 +144,20 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp load_for_action(socket, params) do
     if connected?(socket) do
       case socket.assigns.live_action do
-        :index -> load_index(socket)
-        :show -> load_show(socket, params["id"])
-        :edit -> load_edit(socket, params["id"])
-        :new -> socket |> assign_form(SSO.change_provider()) |> assign(:test_result, nil)
+        :index ->
+          load_index(socket)
+
+        :show ->
+          load_show(socket, params["id"])
+
+        :edit ->
+          load_edit(socket, params["id"])
+
+        :new ->
+          socket
+          |> load_runners()
+          |> assign_form(SSO.change_provider())
+          |> assign(:test_result, nil)
       end
     else
       # A synchronous changeset (no DB read) so /new renders on the dead pass.
@@ -176,8 +193,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
         |> assign(:adding_mapping, false)
+        |> assign(:adding_runner_access_mapping, false)
         |> load_group_mappings([provider])
         |> load_synced_members(provider)
+        |> load_runners()
         |> assign_form(SSO.change_provider())
 
       {:error, :not_found} ->
@@ -226,6 +245,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         socket
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
+        |> load_runners()
         |> assign(:edit_form, edit_form(provider))
 
       {:error, :not_found} ->
@@ -242,6 +262,20 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
+  defp load_runners(socket) do
+    case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+      {:ok, runners} ->
+        socket
+        |> assign(:runners, runners)
+        |> assign(:runner_load_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:runners, [])
+        |> assign(:runner_load_error?, true)
+    end
+  end
+
   defp list_providers(socket) do
     case SSO.list_providers_for_account(socket.assigns.current_subject) do
       {:ok, providers, _meta} -> providers
@@ -254,9 +288,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp load_group_mappings(socket, providers) do
     scim_providers = Enum.filter(providers, & &1.scim_enabled)
 
-    mappings =
+    role_mappings =
       Map.new(scim_providers, fn provider ->
         {provider.id, list_mappings(socket, provider)}
+      end)
+
+    runner_access_mappings =
+      Map.new(scim_providers, fn provider ->
+        {provider.id, list_runner_access_mappings(socket, provider)}
       end)
 
     # The groups the IdP has actually synced (id + member count), each annotated
@@ -265,15 +304,22 @@ defmodule EmisarWeb.SSOSettingsLive do
     synced =
       Map.new(scim_providers, fn provider ->
         {provider.id,
-         annotate_synced_groups(list_synced_groups(socket, provider), mappings[provider.id])}
+         annotate_synced_groups(
+           list_synced_groups(socket, provider),
+           role_mappings[provider.id],
+           runner_access_mappings[provider.id]
+         )}
       end)
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
+    runner_access_forms = Map.new(scim_providers, &{&1.id, runner_access_mapping_form(&1)})
 
     socket
-    |> assign(:group_mappings, mappings)
+    |> assign(:group_mappings, role_mappings)
+    |> assign(:runner_access_mappings, runner_access_mappings)
     |> assign(:synced_groups, synced)
     |> assign(:mapping_forms, forms)
+    |> assign(:runner_access_mapping_forms, runner_access_forms)
   end
 
   defp list_synced_groups(socket, provider) do
@@ -285,9 +331,18 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Attach each synced group's role mapping (nil when unmapped) so the readout
   # shows the role its members resolve to next to the member count.
-  defp annotate_synced_groups(groups, mappings) do
-    by_group = Map.new(mappings, &{&1.external_group_id, &1})
-    Enum.map(groups, &Map.put(&1, :mapping, Map.get(by_group, &1.external_group_id)))
+  defp annotate_synced_groups(groups, role_mappings, runner_access_mappings) do
+    role_by_group = Map.new(role_mappings, &{&1.external_group_id, &1})
+    access_by_group = Map.new(runner_access_mappings, &{&1.external_group_id, &1})
+
+    Enum.map(groups, fn group ->
+      group
+      |> Map.put(:mapping, Map.get(role_by_group, group.external_group_id))
+      |> Map.put(
+        :runner_access_mapping,
+        Map.get(access_by_group, group.external_group_id)
+      )
+    end)
   end
 
   defp list_mappings(socket, provider) do
@@ -297,8 +352,15 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
+  defp list_runner_access_mappings(socket, provider) do
+    case SSO.list_group_runner_access_mappings(provider, socket.assigns.current_subject) do
+      {:ok, mappings, _meta} -> mappings
+      {:error, _reason} -> []
+    end
+  end
+
   def handle_event("validate", %{"provider" => params}, socket) do
-    params = prefill_fixed_issuer(params)
+    params = params |> prefill_fixed_issuer() |> normalize_provider_access(socket.assigns.runners)
 
     changeset =
       SSO.change_provider(%SSO.IdentityProvider{}, params) |> Map.put(:action, :validate)
@@ -307,6 +369,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("create", %{"provider" => params}, socket) do
+    params = normalize_provider_access(params, socket.assigns.runners)
     Permissions.gated(socket, socket.assigns.can_configure?, &do_create(&1, params))
   end
 
@@ -318,6 +381,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params}, socket) do
+    params = normalize_provider_access(params, socket.assigns.runners)
+
     case find_provider(socket, id) do
       nil ->
         {:noreply, socket}
@@ -328,6 +393,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("update", %{"provider_id" => id, "provider" => params}, socket) do
+    params = normalize_provider_access(params, socket.assigns.runners)
     Permissions.gated(socket, socket.assigns.can_configure?, &do_update(&1, id, params))
   end
 
@@ -444,6 +510,114 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
+  # -- Group -> runner access mapping ---------------------------------
+
+  def handle_event(
+        "validate_runner_access_mapping",
+        %{"provider_id" => id, "runner_access_mapping" => params},
+        socket
+      ) do
+    case find_provider(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      provider ->
+        changeset = runner_access_mapping_changeset(provider, params, socket.assigns.runners)
+        form = runner_access_mapping_to_form(provider, Map.put(changeset, :action, :validate))
+        {:noreply, put_runner_access_mapping_form(socket, id, form)}
+    end
+  end
+
+  def handle_event(
+        "create_runner_access_mapping",
+        %{"provider_id" => id, "runner_access_mapping" => params},
+        socket
+      ) do
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_create_runner_access_mapping(&1, id, params)
+    )
+  end
+
+  def handle_event("add_runner_access_mapping_form", _params, socket),
+    do: {:noreply, assign(socket, :adding_runner_access_mapping, true)}
+
+  def handle_event("cancel_add_runner_access_mapping", _params, socket) do
+    socket =
+      case socket.assigns.providers do
+        [provider | _] ->
+          put_runner_access_mapping_form(
+            socket,
+            provider.id,
+            runner_access_mapping_form(provider)
+          )
+
+        _ ->
+          socket
+      end
+
+    {:noreply, assign(socket, :adding_runner_access_mapping, false)}
+  end
+
+  def handle_event("start_edit_runner_access_mapping", %{"id" => id}, socket) do
+    case find_runner_access_mapping(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      mapping ->
+        {:noreply,
+         socket
+         |> assign(:editing_runner_access_mapping_id, id)
+         |> assign(
+           :runner_access_mapping_edit_form,
+           runner_access_mapping_edit_form(mapping)
+         )}
+    end
+  end
+
+  def handle_event("cancel_edit_runner_access_mapping", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:editing_runner_access_mapping_id, nil)
+     |> assign(:runner_access_mapping_edit_form, nil)}
+  end
+
+  def handle_event(
+        "validate_edit_runner_access_mapping",
+        %{"runner_access_mapping_id" => id, "runner_access_mapping" => params},
+        socket
+      ) do
+    case find_runner_access_mapping(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      mapping ->
+        form = runner_access_mapping_edit_form(mapping, params, socket.assigns.runners)
+        {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
+    end
+  end
+
+  def handle_event(
+        "update_runner_access_mapping",
+        %{"runner_access_mapping_id" => id, "runner_access_mapping" => params},
+        socket
+      ) do
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_update_runner_access_mapping(&1, id, params)
+    )
+  end
+
+  def handle_event("delete_runner_access_mapping", %{"id" => id}, socket) do
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_delete_runner_access_mapping(&1, id)
+    )
+  end
+
   # -- Manual link requests -------------------------------------------
 
   def handle_event("approve_request", %{"id" => id}, socket) do
@@ -499,7 +673,7 @@ defmodule EmisarWeb.SSOSettingsLive do
          )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -725,9 +899,92 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
+  defp do_create_runner_access_mapping(socket, provider_id, params) do
+    with_provider(socket, provider_id, fn provider ->
+      params = normalize_runner_access_mapping(params, socket.assigns.runners)
+
+      case SSO.create_group_runner_access_mapping(
+             provider,
+             params,
+             socket.assigns.current_subject
+           ) do
+        {:ok, _mapping} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Group runner access added.")
+           |> put_runner_access_mapping_form(
+             provider_id,
+             runner_access_mapping_form(provider)
+           )
+           |> reload_runner_access_mappings(provider)}
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          form = runner_access_mapping_to_form(provider, changeset)
+          {:noreply, put_runner_access_mapping_form(socket, provider_id, form)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, error_message(reason))}
+      end
+    end)
+  end
+
+  defp do_update_runner_access_mapping(socket, id, params) do
+    case find_runner_access_mapping(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      mapping ->
+        params = normalize_runner_access_mapping(params, socket.assigns.runners)
+
+        case SSO.update_group_runner_access_mapping(
+               mapping,
+               params,
+               socket.assigns.current_subject
+             ) do
+          {:ok, updated} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Group runner access updated.")
+             |> assign(:editing_runner_access_mapping_id, nil)
+             |> assign(:runner_access_mapping_edit_form, nil)
+             |> reload_runner_access_mappings_for_id(updated.provider_id)}
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            form = runner_access_mapping_edit_form(mapping, changeset)
+            {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, error_message(reason))}
+        end
+    end
+  end
+
+  defp do_delete_runner_access_mapping(socket, id) do
+    case find_runner_access_mapping(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      mapping ->
+        case SSO.delete_group_runner_access_mapping(mapping, socket.assigns.current_subject) do
+          {:ok, deleted} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Group runner access deleted.")
+             |> reload_runner_access_mappings_for_id(deleted.provider_id)}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, error_message(reason))}
+        end
+    end
+  end
+
   defp do_approve_request(socket, id) do
     with_request(socket, id, fn request ->
-      case SSO.approve_link_request(request, socket.assigns.current_subject) do
+      case SSO.approve_link_request(
+             request,
+             Accounts.RunnerAccess.none(),
+             socket.assigns.current_subject
+           ) do
         {:ok, _result} ->
           {:noreply,
            socket
@@ -791,6 +1048,23 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
+  defp reload_runner_access_mappings(socket, provider) do
+    mappings = list_runner_access_mappings(socket, provider)
+
+    assign(
+      socket,
+      :runner_access_mappings,
+      Map.put(socket.assigns.runner_access_mappings, provider.id, mappings)
+    )
+  end
+
+  defp reload_runner_access_mappings_for_id(socket, provider_id) do
+    case find_provider(socket, provider_id) do
+      nil -> socket
+      provider -> reload_runner_access_mappings(socket, provider)
+    end
+  end
+
   defp put_mappings(socket, provider_id, mappings) do
     assign(
       socket,
@@ -802,10 +1076,22 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp put_mapping_form(socket, provider_id, form),
     do: assign(socket, :mapping_forms, Map.put(socket.assigns.mapping_forms, provider_id, form))
 
+  defp put_runner_access_mapping_form(socket, provider_id, form) do
+    forms = Map.put(socket.assigns.runner_access_mapping_forms, provider_id, form)
+    assign(socket, :runner_access_mapping_forms, forms)
+  end
+
   defp find_provider(socket, id), do: Enum.find(socket.assigns.providers, &(&1.id == id))
 
   defp find_mapping(socket, id) do
     socket.assigns.group_mappings
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.find(&(&1.id == id))
+  end
+
+  defp find_runner_access_mapping(socket, id) do
+    socket.assigns.runner_access_mappings
     |> Map.values()
     |> List.flatten()
     |> Enum.find(&(&1.id == id))
@@ -841,6 +1127,111 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> Map.put(:action, :validate)
 
     to_form(changeset, as: "mapping", id: "edit-mapping-#{mapping.id}")
+  end
+
+  defp runner_access_mapping_changeset(provider, params \\ %{}, runners \\ []) do
+    params = normalize_runner_access_mapping(params, runners)
+    SSO.change_group_runner_access_mapping(provider, params)
+  end
+
+  defp runner_access_mapping_form(provider) do
+    provider
+    |> runner_access_mapping_changeset()
+    |> runner_access_mapping_to_form(provider)
+  end
+
+  defp runner_access_mapping_to_form(%Ecto.Changeset{} = changeset, provider),
+    do: runner_access_mapping_to_form(provider, changeset)
+
+  defp runner_access_mapping_to_form(provider, %Ecto.Changeset{} = changeset) do
+    to_form(changeset,
+      as: "runner_access_mapping",
+      id: "create-runner-access-mapping-#{provider.id}"
+    )
+  end
+
+  defp runner_access_mapping_edit_form(mapping, params_or_changeset \\ %{}, runners \\ [])
+
+  defp runner_access_mapping_edit_form(mapping, %Ecto.Changeset{} = changeset, _runners) do
+    to_form(changeset,
+      as: "runner_access_mapping",
+      id: "edit-runner-access-mapping-#{mapping.id}"
+    )
+  end
+
+  defp runner_access_mapping_edit_form(mapping, params, _runners) when map_size(params) == 0 do
+    changeset = SSO.change_group_runner_access_mapping(mapping)
+    runner_access_mapping_edit_form(mapping, changeset, [])
+  end
+
+  defp runner_access_mapping_edit_form(mapping, params, runners) do
+    changeset =
+      mapping
+      |> SSO.change_group_runner_access_mapping(normalize_runner_access_mapping(params, runners))
+      |> Map.put(:action, :validate)
+
+    runner_access_mapping_edit_form(mapping, changeset, runners)
+  end
+
+  defp normalize_runner_access_mapping(params, runners) do
+    mode = Map.get(params, "runner_access_mode")
+    scope = List.wrap(params["scope"])
+    access = parse_runner_access(mode, scope, runners)
+
+    params
+    |> Map.delete("scope")
+    |> Map.put("runner_scope_groups", access.groups)
+    |> Map.put("runner_scope_runner_ids", access.runner_ids)
+  end
+
+  defp runner_access_mapping_scope_values(form) do
+    RunnerScope.to_values(
+      List.wrap(form[:runner_scope_groups].value),
+      List.wrap(form[:runner_scope_runner_ids].value)
+    )
+  end
+
+  defp normalize_provider_access(params, runners) do
+    mode = Map.get(params, "default_runner_access_mode", "none")
+    scope = List.wrap(params["default_runner_scope"])
+
+    access = parse_runner_access(mode, scope, runners)
+
+    params
+    |> Map.delete("default_runner_scope")
+    |> Map.put("default_runner_scope_groups", access.groups)
+    |> Map.put("default_runner_scope_runner_ids", access.runner_ids)
+  end
+
+  defp parse_runner_access(mode, _scope, _runners) when mode in ["none", "all"] do
+    {:ok, access} = Accounts.RunnerAccess.new(mode)
+    access
+  end
+
+  defp parse_runner_access("restricted", scope, runners) do
+    case RunnerScope.parse(scope, runners) do
+      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
+        case Accounts.RunnerAccess.new(:restricted, groups, runner_ids) do
+          {:ok, access} -> access
+          {:error, _reason} -> invalid_runner_access()
+        end
+
+      {:error, :invalid} ->
+        invalid_runner_access()
+    end
+  end
+
+  defp parse_runner_access(_mode, _scope, _runners), do: invalid_runner_access()
+
+  defp invalid_runner_access do
+    %Accounts.RunnerAccess{mode: :restricted, groups: [], runner_ids: []}
+  end
+
+  defp provider_scope_values(form) do
+    RunnerScope.to_values(
+      List.wrap(form[:default_runner_scope_groups].value),
+      List.wrap(form[:default_runner_scope_runner_ids].value)
+    )
   end
 
   # An empty client_secret on submit means "leave the stored one" (write-only
@@ -1022,6 +1413,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               kind_options={@kind_options}
               role_options={@role_options}
               provisioner_options={@provisioner_options}
+              runners={@runners}
+              runner_load_error?={@runner_load_error?}
               guide_id="new"
               callback_url={@callback_url}
             />
@@ -1074,6 +1467,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                 kind_options={@kind_options}
                 role_options={@role_options}
                 provisioner_options={@provisioner_options}
+                runners={@runners}
+                runner_load_error?={@runner_load_error?}
                 guide_id={provider.id}
                 callback_url={@callback_url}
                 editing?
@@ -1262,6 +1657,11 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <.meta_field label="Default role">
                     <span class="text-zinc-300">{role_label(provider.default_role)}</span>
                   </.meta_field>
+                  <.meta_field label="Default runner access">
+                    <span class="text-zinc-300">
+                      {runner_access_mode_label(provider.default_runner_access_mode)}
+                    </span>
+                  </.meta_field>
                   <.meta_field label="Identifier claim">
                     <span class="font-mono text-zinc-300">{provider.identifier_claim}</span>
                   </.meta_field>
@@ -1309,6 +1709,18 @@ defmodule EmisarWeb.SSOSettingsLive do
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
               adding_mapping={@adding_mapping}
+            />
+
+            <.group_runner_access_mapping_section
+              :if={@can_configure_directory_sync? and provider.scim_enabled}
+              provider={provider}
+              mappings={Map.get(@runner_access_mappings, provider.id, [])}
+              synced_groups={Map.get(@synced_groups, provider.id, [])}
+              mapping_form={Map.get(@runner_access_mapping_forms, provider.id)}
+              editing_mapping_id={@editing_runner_access_mapping_id}
+              mapping_edit_form={@runner_access_mapping_edit_form}
+              adding_mapping={@adding_runner_access_mapping}
+              runners={@runners}
             />
 
             <.synced_groups_section
@@ -1465,6 +1877,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :kind_options, :list, required: true
   attr :role_options, :list, required: true
   attr :provisioner_options, :list, required: true
+  attr :runners, :list, required: true
+  attr :runner_load_error?, :boolean, required: true
   attr :guide_id, :string, required: true
   attr :callback_url, :string, required: true
   attr :editing?, :boolean, default: false
@@ -1623,6 +2037,45 @@ defmodule EmisarWeb.SSOSettingsLive do
                 {Emisar.Auth.Role.description(value)}
               </:card>
             </.choice_cards>
+          </div>
+          <div class="sm:col-span-2">
+            <.label>Default runner access for new users</.label>
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
+              Role controls what a new member can do. Runner access controls where it applies.
+            </p>
+            <.choice_cards
+              name="provider[default_runner_access_mode]"
+              value={@form[:default_runner_access_mode].value}
+              class="mt-2"
+            >
+              <:card value="none" title="No runners">
+                New members join without runner visibility or dispatch reach.
+              </:card>
+              <:card value="all" title="All runners">
+                New members receive every current and future runner.
+              </:card>
+              <:card value="restricted" title="Selected runners">
+                New members receive only selected runner groups or runners.
+              </:card>
+            </.choice_cards>
+            <.error :if={@form[:default_runner_access_mode].errors != []}>
+              Choose at least one runner group or runner for selected access.
+            </.error>
+            <div
+              :if={restricted_runner_access?(@form[:default_runner_access_mode].value)}
+              class="mt-4"
+            >
+              <.callout :if={@runner_load_error?} tone={:rose}>
+                Runner access options could not be loaded. Try again before saving.
+              </.callout>
+              <.runner_scope_select
+                :if={not @runner_load_error?}
+                name="provider[default_runner_scope][]"
+                label="Selected runners"
+                runners={@runners}
+                selected={provider_scope_values(@form)}
+              />
+            </div>
           </div>
           <div class="sm:col-span-2">
             <.input
@@ -2206,6 +2659,214 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
+  attr :provider, :map, required: true
+  attr :mappings, :list, required: true
+  attr :mapping_form, Phoenix.HTML.Form, default: nil
+  attr :editing_mapping_id, :string, default: nil
+  attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
+  attr :synced_groups, :list, default: []
+  attr :adding_mapping, :boolean, default: false
+  attr :runners, :list, required: true
+
+  defp group_runner_access_mapping_section(assigns) do
+    ~H"""
+    <section>
+      <.section_header
+        title="Group → runner access"
+        count={length(@mappings)}
+        count_tone={:neutral}
+      >
+        <:actions>
+          <.button
+            :if={not @adding_mapping}
+            variant={:secondary}
+            size={:sm}
+            phx-click="add_runner_access_mapping_form"
+            icon="hero-plus"
+          >
+            Add runner access
+          </.button>
+        </:actions>
+      </.section_header>
+      <p class="max-w-prose text-sm leading-6 text-zinc-400">
+        Grant an IdP group all runners or selected runner groups and runners. These grants add
+        to the connection default and to the member's other mapped groups; names are never
+        matched automatically.
+      </p>
+
+      <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
+        <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm text-zinc-200">
+                {mapping.external_group_display || mapping.external_group_id}
+              </p>
+              <p :if={mapping.external_group_display} class="font-mono text-[11px] text-zinc-400">
+                {mapping.external_group_id}
+              </p>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <.chip>{runner_access_mode_label(mapping.runner_access_mode)}</.chip>
+                <.chip :for={group <- mapping.runner_scope_groups} tone={:neutral}>
+                  Group: {group}
+                </.chip>
+                <.chip :for={runner_id <- mapping.runner_scope_runner_ids} tone={:neutral}>
+                  Runner: {String.slice(runner_id, 0, 8)}…
+                </.chip>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <.button
+                :if={@editing_mapping_id != mapping.id}
+                variant={:secondary}
+                size={:sm}
+                phx-click="start_edit_runner_access_mapping"
+                phx-value-id={mapping.id}
+              >
+                Edit
+              </.button>
+              <.confirm_button
+                id={"delete-runner-access-mapping-#{mapping.id}"}
+                title="Delete this runner-access mapping?"
+                confirm_label="Delete mapping"
+                variant={:secondary}
+                tone={:rose}
+                size={:sm}
+                on_confirm={JS.push("delete_runner_access_mapping", value: %{id: mapping.id})}
+              >
+                <:body>
+                  Current members of this IdP group immediately lose this grant. Their connection
+                  default and other mapped-group grants remain.
+                </:body>
+                Delete
+              </.confirm_button>
+            </div>
+          </div>
+
+          <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-4">
+            <.simple_form
+              for={@mapping_edit_form}
+              id={"edit-runner-access-mapping-#{mapping.id}"}
+              phx-change="validate_edit_runner_access_mapping"
+              phx-submit="update_runner_access_mapping"
+            >
+              <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
+              <.runner_access_mapping_fields
+                form={@mapping_edit_form}
+                synced_groups={@synced_groups}
+                runners={@runners}
+                editing?
+              />
+              <:actions>
+                <.button phx-disable-with="Saving...">Save</.button>
+                <.button
+                  variant={:ghost}
+                  type="button"
+                  phx-click="cancel_edit_runner_access_mapping"
+                >
+                  Cancel
+                </.button>
+              </:actions>
+            </.simple_form>
+          </div>
+        </li>
+      </ul>
+
+      <.empty_state :if={@mappings == []} variant={:hint} class="mt-4">
+        No IdP groups grant additional runner access. Synced members use the connection default.
+      </.empty_state>
+
+      <div :if={@adding_mapping and @mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
+        <p class="text-sm font-medium text-zinc-300">Add group runner access</p>
+        <.simple_form
+          for={@mapping_form}
+          id={"create-runner-access-mapping-#{@provider.id}"}
+          phx-change="validate_runner_access_mapping"
+          phx-submit="create_runner_access_mapping"
+          class="mt-3"
+        >
+          <input type="hidden" name="provider_id" value={@provider.id} />
+          <.runner_access_mapping_fields
+            form={@mapping_form}
+            synced_groups={@synced_groups}
+            runners={@runners}
+          />
+          <:actions>
+            <.button phx-disable-with="Adding...">Add runner access</.button>
+            <.button
+              variant={:ghost}
+              type="button"
+              phx-click="cancel_add_runner_access_mapping"
+            >
+              Cancel
+            </.button>
+          </:actions>
+        </.simple_form>
+      </div>
+    </section>
+    """
+  end
+
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :synced_groups, :list, required: true
+  attr :runners, :list, required: true
+  attr :editing?, :boolean, default: false
+
+  defp runner_access_mapping_fields(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <.input
+          :if={not @editing? and @synced_groups != []}
+          field={@form[:external_group_id]}
+          type="select"
+          label="IdP group"
+          options={Enum.map(@synced_groups, & &1.external_group_id)}
+          prompt="Pick a synced group"
+        />
+        <.input
+          :if={not @editing? and @synced_groups == []}
+          field={@form[:external_group_id]}
+          type="text"
+          label="IdP group ID"
+          class="font-mono"
+        />
+        <.input
+          field={@form[:external_group_display]}
+          type="text"
+          label="Display name (optional)"
+        />
+      </div>
+
+      <div>
+        <.label>Runner access grant</.label>
+        <.choice_cards
+          name={@form[:runner_access_mode].name}
+          value={@form[:runner_access_mode].value}
+          class="mt-2"
+        >
+          <:card value="all" title="All runners">
+            Grant every current and future runner.
+          </:card>
+          <:card value="restricted" title="Selected runners">
+            Grant selected runner groups or individual runners.
+          </:card>
+        </.choice_cards>
+        <.error :if={@form[:runner_access_mode].errors != []}>
+          Choose all runners or at least one selected runner scope.
+        </.error>
+      </div>
+
+      <.runner_scope_select
+        :if={restricted_runner_access?(@form[:runner_access_mode].value)}
+        name={"#{@form.name}[scope][]"}
+        label="Selected runners"
+        runners={@runners}
+        selected={runner_access_mapping_scope_values(@form)}
+      />
+    </div>
+    """
+  end
+
   attr :synced_groups, :list, required: true
 
   # The groups the IdP actually pushes over SCIM (id + distinct member count),
@@ -2424,6 +3085,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp role_label(role), do: Emisar.Auth.Role.label(role)
+
+  defp runner_access_mode_label(:none), do: "No runners"
+  defp runner_access_mode_label(:all), do: "All runners"
+  defp runner_access_mode_label(:restricted), do: "Selected runners"
+
+  defp restricted_runner_access?(mode), do: mode in [:restricted, "restricted"]
 
   defp provisioner_label(:jit), do: "Auto-provision"
   defp provisioner_label(:manual), do: "Manual approval"

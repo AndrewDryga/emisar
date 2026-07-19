@@ -20,7 +20,7 @@ defmodule Emisar.Runners do
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token, UserRunnerScope}
+  alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token}
   require Logger
 
   # 13 chars for "emkey-enroll-" + 16 random chars => 29.
@@ -64,8 +64,9 @@ defmodule Emisar.Runners do
   @doc """
   Paginated, filterable runner listing for the RunnersLive UI —
   `:group` / `:status` opts narrow the set. The authenticated subject's
-  membership scope applies in the query, before pagination; empty scopes
-  mean all runners. Returns `{:ok, [runner], %Paginator.Metadata{}}`,
+  runner access applies in the query before pagination: `none` returns no rows,
+  `all` is unrestricted, and `restricted` filters by stored groups and ids.
+  Returns `{:ok, [runner], %Paginator.Metadata{}}`,
   presence-decorated. MCP paths that need the complete accessible fleet use
   `list_all_runners_for_account/1` instead.
   """
@@ -116,21 +117,18 @@ defmodule Emisar.Runners do
     end
   end
 
-  # Per-membership runner ACLs: restrict to the authenticated membership's
-  # runners (empty scopes = all). Filters in the query — BEFORE pagination — so
-  # page contents and metadata counts agree. A subject without a membership has
-  # no runner authorization and therefore sees nothing.
-  defp scope_to_subject_membership(query, %Subject{membership_id: nil}),
-    do: Runner.Query.none(query)
+  # Membership access is current authorization data, not session state. Resolve
+  # the active membership before every runner query so suspension, deletion, and
+  # access changes immediately affect open sessions and old API keys.
+  defp scope_to_subject_membership(query, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :none} ->
+        Runner.Query.none(query)
 
-  defp scope_to_subject_membership(query, %Subject{membership_id: membership_id}) do
-    case runner_scopes_for_membership(membership_id) do
-      [] ->
+      %Accounts.RunnerAccess{mode: :all} ->
         query
 
-      scopes ->
-        runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
-        groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
+      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
         Runner.Query.by_scope_values(query, runner_ids, groups)
     end
   end
@@ -163,6 +161,7 @@ defmodule Emisar.Runners do
            ) do
       rows =
         Runner.Query.not_deleted()
+        |> scope_to_subject_membership(subject)
         |> Runner.Query.group_summary()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -385,6 +384,7 @@ defmodule Emisar.Runners do
            ) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(runner.id)
+      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.disable/1,
@@ -425,6 +425,7 @@ defmodule Emisar.Runners do
       |> Multi.run(:runner, fn _repo, _ ->
         Runner.Query.not_deleted()
         |> Runner.Query.by_id(runner.id)
+        |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.fetch_and_update(Runner.Query,
           with: &Runner.Changeset.enable/1,
@@ -453,6 +454,7 @@ defmodule Emisar.Runners do
            ) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(runner.id)
+      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.delete/1,
@@ -822,123 +824,22 @@ defmodule Emisar.Runners do
   defp unix_to_datetime(nil), do: nil
   defp unix_to_datetime(unix) when is_integer(unix), do: DateTime.from_unix!(unix)
 
-  # -- Per-membership runner scopes (ACLs) -----------------------------
-  #
-  # Empty scope list = all runners (default). Any rows = union of
-  # (group, runner) tuples — a runner is in-scope when its id OR its
-  # group matches at least one row.
-
   @doc """
-  Internal — scope resolver: all scope rows for a membership, ordered for
-  stable rendering. Composed by `Runners` / `Runs.dispatch_run` (already
-  authorized via Subject) and the team-page LV (operator's own membership
-  in scope); no Subject because scoping is by the opaque `membership_id`
-  the caller has already proven access to.
-  """
-  def runner_scopes_for_membership(membership_id) when is_binary(membership_id) do
-    UserRunnerScope.Query.by_membership_id(membership_id)
-    |> UserRunnerScope.Query.ordered_by_type_and_value()
-    |> Repo.all()
-  end
-
-  @doc """
-  Replaces the scope set for a membership atomically. Pass a list of
-  `{scope_type, scope_value}` tuples (or `[]` to clear → all-runners).
-  Wrapped in a transaction so a partial failure can't leave a
-  half-applied scope set.
-  """
-  def replace_runner_scopes(
-        %Accounts.Membership{id: membership_id} = membership,
-        new_scopes,
-        %Subject{} = subject
-      )
-      when is_list(new_scopes) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Accounts.Authorizer.manage_team_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, membership.account_id, :unauthorized) do
-      # Validate each scope through the changeset (rejects a bad scope_type,
-      # an empty value, etc.), then write the whole set in one INSERT rather
-      # than a Multi step per row — it's a simple join table.
-      changesets =
-        Enum.map(new_scopes, fn {type, value} ->
-          UserRunnerScope.Changeset.create(membership_id, type, value)
-        end)
-
-      case Enum.find(changesets, &(not &1.valid?)) do
-        %Ecto.Changeset{} = invalid ->
-          {:error, invalid}
-
-        nil ->
-          now = DateTime.utc_now()
-
-          rows =
-            Enum.map(changesets, fn changeset ->
-              changeset.changes
-              |> Map.put(:id, Repo.generate_id())
-              |> Map.put(:inserted_at, now)
-            end)
-
-          Multi.new()
-          |> Multi.delete_all(:cleared, UserRunnerScope.Query.by_membership_id(membership_id))
-          |> Multi.insert_all(:scopes, UserRunnerScope, rows)
-          |> Multi.insert(:audit, fn _ ->
-            Audit.Events.membership_runner_scopes_changed(subject, membership, new_scopes)
-          end)
-          |> Repo.commit_multi()
-          |> case do
-            {:ok, _changes} -> {:ok, :ok}
-            {:error, reason} -> {:error, reason}
-          end
-      end
-    end
-  end
-
-  @doc """
-  Internal — scope batcher: `%{membership_id => [%UserRunnerScope{}]}` so
-  an already-authorized list view renders scope chips without N+1 queries;
-  takes opaque ids, no Subject.
-  """
-  def runner_scopes_for_membership_ids(ids) when is_list(ids) do
-    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-    case ids do
-      [] ->
-        %{}
-
-      ids ->
-        UserRunnerScope.Query.by_membership_ids(ids)
-        |> UserRunnerScope.Query.ordered_by_type_and_value()
-        |> Repo.all()
-        |> Enum.group_by(& &1.membership_id)
-    end
-  end
-
-  @doc """
-  True when the runner is visible/dispatchable for the membership.
-  Empty scope = all runners. Otherwise the runner's id OR its group
-  must appear in at least one row.
-
-  A membership with no scopes always passes. A missing membership fails closed.
+  True when a runner is visible/dispatchable under explicit runner access.
+  Membership structs are re-resolved by account and id; missing or inactive
+  memberships fail closed.
   """
   def runner_in_scope?(_runner, nil), do: false
 
-  def runner_in_scope?(runner, %Accounts.Membership{} = membership),
-    do: runner_in_scope?(runner, runner_scopes_for_membership(membership.id))
-
-  def runner_in_scope?(_runner, []), do: true
-
-  def runner_in_scope?(%{id: id, group: group}, scopes) when is_list(scopes) do
-    Enum.any?(scopes, fn
-      %UserRunnerScope{scope_type: :runner, scope_value: ^id} -> true
-      %UserRunnerScope{scope_type: :group, scope_value: ^group} -> true
-      _ -> false
-    end)
+  def runner_in_scope?(runner, %Accounts.Membership{} = membership) do
+    access = Accounts.runner_access_for_membership(membership.account_id, membership.id)
+    Accounts.RunnerAccess.runner_in_scope?(runner, access)
   end
 
-  def runner_in_scope?(_runner, _scopes), do: false
+  def runner_in_scope?(runner, %Accounts.RunnerAccess{} = access),
+    do: Accounts.RunnerAccess.runner_in_scope?(runner, access)
+
+  def runner_in_scope?(_runner, _access), do: false
 
   # -- Enrollment keys -------------------------------------------------------
 

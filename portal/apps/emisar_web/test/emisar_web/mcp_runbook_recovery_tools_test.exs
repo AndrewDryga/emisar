@@ -385,7 +385,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     _visible_runbook = publish_runbook!(subject, "visible-book", %{"runner_id" => [visible.id]})
     _hidden_runbook = publish_runbook!(subject, "hidden-book", %{"runner_id" => [signed.id]})
 
-    assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "db"}], subject)
+    {:ok, db_access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+    Fixtures.Memberships.force_runner_access(membership, db_access)
 
     listed = call(conn, "list_runbooks", %{})
     assert Enum.map(listed["runbooks"], & &1["runbook_ref"]) == ["visible-book@1"]
@@ -393,7 +394,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     hidden = call(conn, "get_runbook", %{"runbook_ref" => "hidden-book@1"})
     assert hidden["error"]["code"] == "runbook_not_found"
 
-    assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [], subject)
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
 
     rejected =
       call(
@@ -497,7 +498,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       )
 
     execution_id = execution["execution"]["runbook_execution_id"]
-    assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "db"}], subject)
+    {:ok, db_access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+    Fixtures.Memberships.force_runner_access(membership, db_access)
 
     recovered = call(conn, "get_operation", %{"operation_id" => operation_id})
     assert recovered["operation"]["runbook_execution_id"] == execution_id

@@ -4,7 +4,9 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
 
   # `kind` is set once at create (the IdP preset); update casts the rest.
   @config_fields ~w[name issuer client_id client_secret identifier_claim default_role
-                     satisfies_mfa allowed_email_domain provisioner enabled]a
+                     default_runner_access_mode default_runner_scope_groups
+                     default_runner_scope_runner_ids satisfies_mfa allowed_email_domain
+                     provisioner enabled]a
 
   def create(account_id, attrs) do
     %IdentityProvider{}
@@ -29,6 +31,10 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
 
   def delete(%IdentityProvider{} = provider),
     do: change(provider, deleted_at: DateTime.utc_now())
+
+  def bump_authorization_version(%Ecto.Changeset{} = changeset, current_version) do
+    put_change(changeset, :authorization_version, current_version + 1)
+  end
 
   @doc "Set the per-provider SCIM bearer (prefix + hash) and its enabled flag — for enable/rotate."
   def scim_token(%IdentityProvider{} = provider, prefix, hash, enabled)
@@ -59,6 +65,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     # would let a `manage_sso` admin self-provision account owners — never
     # allowed via sync (owner is a deliberate human grant needing manage_owners).
     |> validate_exclusion(:default_role, [:owner], message: "can't be owner")
+    |> Emisar.Accounts.RunnerAccess.validate_changeset(:default_runner)
     |> validate_issuer()
     |> normalize_allowed_email_domain()
     |> unique_constraint([:account_id, :kind],

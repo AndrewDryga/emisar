@@ -6,7 +6,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
   @create_fields ~w[
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
-    ip_address user_agent opts attestation reason source requested_by_id api_key_id
+    ip_address user_agent opts attestation reason source requested_by_id api_key_id initiating_membership_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at

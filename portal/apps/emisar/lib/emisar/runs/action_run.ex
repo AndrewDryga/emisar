@@ -27,6 +27,7 @@ defmodule Emisar.Runs.ActionRun do
     field :runbook_execution_id, Ecto.UUID
 
     field :api_key_id, Ecto.UUID
+    field :initiating_membership_id, Ecto.UUID
     # Stable bridge-owned identity for one public MCP mutation. Fan-out creates
     # one row per runner under the same operation id; retries reuse those rows.
     field :operation_id, :string

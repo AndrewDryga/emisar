@@ -220,7 +220,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
   test "an out-of-scope runner reads as not-found, not 403", %{
     conn: _conn,
-    user: owner,
+    user: _owner,
     account: account,
     runner: runner
   } do
@@ -235,12 +235,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
         role: "operator"
       )
 
-    {:ok, :ok} =
-      Runners.replace_runner_scopes(
-        membership,
-        [{"runner", in_scope_runner.id}],
-        Fixtures.Subjects.subject_for(owner, account)
-      )
+    {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [in_scope_runner.id])
+    Fixtures.Memberships.force_runner_access(membership, access)
 
     operator_conn = build_conn() |> log_in_user(operator)
 

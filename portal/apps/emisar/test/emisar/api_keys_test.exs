@@ -1114,6 +1114,19 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "api_key_usable_in_account?/3" do
+    test "locks and accepts only a live key in its own account" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "delayed run"}, subject)
+
+      assert ApiKeys.api_key_usable_in_account?(Repo, key.id, account.id)
+      refute ApiKeys.api_key_usable_in_account?(Repo, key.id, Ecto.UUID.generate())
+
+      assert {:ok, _revoked} = ApiKeys.revoke_api_key(key, subject)
+      refute ApiKeys.api_key_usable_in_account?(Repo, key.id, account.id)
+    end
+  end
+
   describe "record_client_info/2" do
     setup do
       {_raw, key} = Fixtures.ApiKeys.create_api_key()

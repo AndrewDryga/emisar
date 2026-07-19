@@ -71,7 +71,12 @@ defmodule EmisarWeb.TeamLiveTest do
       # dispatches approve_request. Provisioning drops the request from the list —
       # the only one, so the whole queue clears (name lingers in the flash).
       assert has_element?(lv, "#approve-request-#{request.id}")
-      render_click(lv, "approve_request", %{"id" => request.id})
+
+      render_click(lv, "approve_request", %{
+        "id" => request.id,
+        "runner_access_mode" => "none"
+      })
+
       refute render(lv) =~ "Pending access requests"
       assert Emisar.Repo.reload(request) == nil
     end
@@ -105,13 +110,15 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "GET /app/settings/team/invite" do
     test "renders the invite form with each role explained", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       assert html =~ "Send invite"
       # Each assignable role is explained, not just named — assigning one is a
       # privilege grant, so the picker itself carries the description.
       assert html =~ "Read-only across runs"
       assert html =~ "Dispatches actions and approves them"
+      assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
+      assert html =~ "New members start with no runner access"
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
@@ -154,6 +161,54 @@ defmodule EmisarWeb.TeamLiveTest do
       reset = render_click(lv, "invite_another", %{})
       assert reset =~ "Send invite"
       refute reset =~ "Invitation sent"
+    end
+
+    test "selected runner access is required and persisted with the invitation", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      _db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      _web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      lv
+      |> form("#invite_form", %{
+        "invite" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      invalid =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{
+            "email" => "scoped@example.com",
+            "role" => "operator",
+            "runner_access_mode" => "restricted",
+            "scope" => []
+          }
+        })
+        |> render_submit()
+
+      assert invalid =~ "Choose at least one runner group or runner"
+
+      lv
+      |> form("#invite_form", %{
+        "invite" => %{
+          "email" => "scoped@example.com",
+          "role" => "operator",
+          "runner_access_mode" => "restricted",
+          "scope" => ["group:database"]
+        }
+      })
+      |> render_submit()
+
+      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped@example.com")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["database"],
+                 runner_ids: []
+               }
     end
 
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
@@ -389,20 +444,24 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(target_membership).invitation_token_digest
     end
 
-    test "save_scopes is refused via the Runners gate, scopes unchanged", %{
+    test "save_scopes is refused via the Accounts gate, access unchanged", %{
       lv: lv,
       target_membership: target_membership
     } do
       html =
         render_submit(lv, "save_scopes", %{
           "membership_id" => target_membership.id,
-          "scope" => ["group:dba"]
+          "runner_access_mode" => "none"
         })
 
-      # The Runners context denies with :unauthorized; the LV maps it to the same
-      # membership-management flash, and no scope rows were written.
+      # The Accounts context denies with :unauthorized; the LV maps it to the same
+      # membership-management flash, and access is unchanged.
       assert html =~ "Only owners and admins can manage memberships."
-      assert Emisar.Runners.runner_scopes_for_membership(target_membership.id) == []
+
+      assert Emisar.Accounts.runner_access_for_membership(
+               target_membership.account_id,
+               target_membership.id
+             ) == Emisar.Accounts.RunnerAccess.all()
     end
   end
 
@@ -416,7 +475,12 @@ defmodule EmisarWeb.TeamLiveTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       {:ok, %{membership: m}} =
-        Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "admin",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
 
       # A whole group, plus one runner from a DIFFERENT group (picking a runner
       # inside the chosen group would be redundant — it collapses to the group).
@@ -425,22 +489,26 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      # Default state — no scopes reads "all runners" explicitly (scope shown always).
-      assert html =~ "scope:"
-      assert html =~ "all runners"
+      assert html =~ "All runners"
 
       # Open the inline editor for the invited admin.
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
 
       render_submit(
         element(lv, "form[phx-submit='save_scopes']"),
-        %{"membership_id" => m.id, "scope" => ["group:dba", "runner:#{web.id}"]}
+        %{
+          "membership_id" => m.id,
+          "runner_access_mode" => "restricted",
+          "scope" => ["group:dba", "runner:#{web.id}"]
+        }
       )
 
-      # Persisted as two scope rows: the group, and the cross-group runner.
-      scopes = Emisar.Runners.runner_scopes_for_membership(m.id)
-      assert Enum.any?(scopes, &(&1.scope_type == :group and &1.scope_value == "dba"))
-      assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == web.id))
+      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["dba"],
+                 runner_ids: [web.id]
+               }
     end
 
     test "picking a group disables its runners live, so they can't be double-scoped", %{
@@ -450,7 +518,15 @@ defmodule EmisarWeb.TeamLiveTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped3-#{System.unique_integer([:positive])}@example.com"
-      {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+
+      {:ok, %{membership: m}} =
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "admin",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
+
       _runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r9", group: "dba")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -460,7 +536,11 @@ defmodule EmisarWeb.TeamLiveTest do
       html =
         render_change(
           element(lv, "form[phx-submit='save_scopes']"),
-          %{"membership_id" => m.id, "scope" => ["group:dba"]}
+          %{
+            "membership_id" => m.id,
+            "runner_access_mode" => "restricted",
+            "scope" => ["group:dba"]
+          }
         )
 
       # That group's checkbox is now checked, and its runner is covered — tagged
@@ -474,17 +554,21 @@ defmodule EmisarWeb.TeamLiveTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped2-#{System.unique_integer([:positive])}@example.com"
-      {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+
+      {:ok, %{membership: m}} =
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "admin",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
+
       web = Fixtures.Runners.create_runner(account_id: account.id, name: "r9", group: "web")
       _dba = Fixtures.Runners.create_runner(account_id: account.id, name: "r8", group: "dba")
 
       # Pre-existing scope: one group + one runner from another group.
-      {:ok, :ok} =
-        Emisar.Runners.replace_runner_scopes(
-          m,
-          [{"group", "dba"}, {"runner", web.id}],
-          subject
-        )
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["dba"], [web.id])
+      Fixtures.Memberships.force_runner_access(m, access)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
@@ -504,27 +588,30 @@ defmodule EmisarWeb.TeamLiveTest do
       email = "scoped4-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{membership: membership}} =
-        Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "admin",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r10", group: "web")
 
-      {:ok, :ok} =
-        Emisar.Runners.replace_runner_scopes(membership, [{"runner", runner.id}], subject)
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [runner.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       html =
         render_submit(lv, "save_scopes", %{
           "membership_id" => membership.id,
+          "runner_access_mode" => "restricted",
           "scope" => %{"crafted" => "all-runners"}
         })
 
-      assert html =~ "Invalid runner scope."
+      assert html =~ "Choose at least one runner group or runner for selected access."
 
-      assert [%{scope_type: :runner, scope_value: runner_id}] =
-               Emisar.Runners.runner_scopes_for_membership(membership.id)
-
-      assert runner_id == runner.id
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) == access
     end
   end
 
@@ -549,7 +636,12 @@ defmodule EmisarWeb.TeamLiveTest do
       email = "resend-web-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{membership: membership, invitation_token: old_token}} =
-        Emisar.Accounts.invite_user_to_account(email, "operator", subject)
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
 
       {:ok, lv, html} =
         build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
@@ -808,6 +900,11 @@ defmodule EmisarWeb.TeamLiveTest do
       # ...and it reads as provider-managed, via a hover tooltip explaining the lock.
       assert has_element?(lv, "[role='tooltip']", "managed by")
 
+      refute has_element?(
+               lv,
+               "[phx-click='start_scope_edit'][phx-value-membership_id='#{synced.membership.id}']"
+             )
+
       html =
         render_click(lv, "change_role", %{
           "membership_id" => synced.membership.id,
@@ -816,6 +913,17 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "set by their identity provider"
       assert Emisar.Repo.reload!(synced.membership).role == :operator
+
+      access_before =
+        Emisar.Accounts.runner_access_for_membership(account.id, synced.membership.id)
+
+      scope_html =
+        render_click(lv, "start_scope_edit", %{"membership_id" => synced.membership.id})
+
+      assert scope_html =~ "runner access is set by their identity provider"
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, synced.membership.id) ==
+               access_before
     end
 
     test "the roster hides Edit name and refuses a crafted save_edit", %{

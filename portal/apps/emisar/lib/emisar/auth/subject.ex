@@ -73,7 +73,7 @@ defmodule Emisar.Auth.Subject do
         context \\ %RequestContext{},
         opts \\ []
       ) do
-    role = role_atom(membership.role)
+    role = effective_membership_role(membership)
 
     %__MODULE__{
       account: account,
@@ -122,6 +122,21 @@ defmodule Emisar.Auth.Subject do
       :error -> :viewer
     end
   end
+
+  # Directory changes fail closed while their durable role + runner-access
+  # reconciliation is pending. A human owner remains an owner; directory sync
+  # is never allowed to grant or revoke that role.
+  defp effective_membership_role(%Accounts.Membership{role: role})
+       when role in [:owner, "owner"],
+       do: :owner
+
+  defp effective_membership_role(%Accounts.Membership{
+         directory_authorization_pending_version: version
+       })
+       when is_integer(version),
+       do: :viewer
+
+  defp effective_membership_role(%Accounts.Membership{role: role}), do: role_atom(role)
 
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 

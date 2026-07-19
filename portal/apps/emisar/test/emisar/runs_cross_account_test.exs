@@ -27,8 +27,16 @@ defmodule Emisar.RunsCrossAccountTest do
         requested_by_id: user.id
       }
 
-      subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
+      subject_user = Fixtures.Users.create_user()
+
+      _membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account_a.id,
+          user_id: subject_user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(subject_user, account_a, role: :owner)
 
       assert {:error, :runner_not_found} =
                Runs.dispatch_run(attrs, subject)
@@ -38,7 +46,16 @@ defmodule Emisar.RunsCrossAccountTest do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject_user = Fixtures.Users.create_user()
+
+      _membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: subject_user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(subject_user, account, role: :owner)
 
       assert {:error, :runner_required} =
                Runs.dispatch_run(

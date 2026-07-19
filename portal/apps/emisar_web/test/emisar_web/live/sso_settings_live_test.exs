@@ -109,12 +109,18 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       assert html =~ ~s(name="provider[default_role]")
       assert html =~ ~s(type="radio")
       # A role's shared description renders on its card (viewer, here).
       assert html =~ "Read-only across runs"
+      assert html =~ ~s(name="provider[default_runner_access_mode]")
+
+      assert has_element?(
+               lv,
+               "input[name='provider[default_runner_access_mode]'][value='none']:checked"
+             )
     end
 
     test "the edit page renders the form without leaking the stored secret", %{
@@ -263,6 +269,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert provider.satisfies_mfa == true
       assert provider.enabled == false
       assert provider.provisioner == :jit
+      assert provider.default_runner_access_mode == :none
     end
 
     test "a crafted create event is refused when the plan is downgraded mid-form", %{
@@ -777,6 +784,74 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert updated.external_group_id == "00g-eng"
       assert updated.external_group_display == "Engineering"
       assert updated.role == :admin
+    end
+
+    test "creates, updates, and deletes an independent group runner-access mapping", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner,
+      user: user
+    } do
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      assert {:ok, [%{id: runner_id}]} = Emisar.Runners.list_all_runners_for_account(owner)
+      assert runner_id == runner.id
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "Group → runner access"
+      refute html =~ "No runners registered yet"
+      render_click(lv, "add_runner_access_mapping_form", %{})
+
+      lv
+      |> form("#create-runner-access-mapping-#{provider.id}", %{
+        "provider_id" => provider.id,
+        "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      html =
+        lv
+        |> form("#create-runner-access-mapping-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "runner_access_mapping" => %{
+            "external_group_id" => "grp-database",
+            "external_group_display" => "Database team",
+            "runner_access_mode" => "restricted",
+            "scope" => ["group:database"]
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Group runner access added."
+      assert html =~ "Database team"
+      assert html =~ "Group: database"
+
+      assert {:ok, [mapping], _meta} =
+               SSO.list_group_runner_access_mappings(provider, owner)
+
+      render_click(lv, "start_edit_runner_access_mapping", %{"id" => mapping.id})
+
+      updated =
+        lv
+        |> form("#edit-runner-access-mapping-#{mapping.id}", %{
+          "runner_access_mapping_id" => mapping.id,
+          "runner_access_mapping" => %{
+            "external_group_display" => "Database team",
+            "runner_access_mode" => "all"
+          }
+        })
+        |> render_submit()
+
+      assert updated =~ "Group runner access updated."
+
+      assert {:ok, [%{runner_access_mode: :all}], _meta} =
+               SSO.list_group_runner_access_mappings(provider, owner)
+
+      deleted = render_click(lv, "delete_runner_access_mapping", %{"id" => mapping.id})
+      assert deleted =~ "Group runner access deleted."
+      assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, owner)
     end
 
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{

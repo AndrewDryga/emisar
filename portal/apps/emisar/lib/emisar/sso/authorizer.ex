@@ -3,6 +3,7 @@ defmodule Emisar.SSO.Authorizer do
   use Emisar.Auth.Authorizer
   alias Emisar.SSO.DirectoryGroupMember
   alias Emisar.SSO.GroupRoleMapping
+  alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.LinkRequest
   alias Emisar.SSO.UserIdentity
@@ -26,6 +27,9 @@ defmodule Emisar.SSO.Authorizer do
 
       :sso_directory_group_role_mappings ->
         GroupRoleMapping.Query.by_account_id(queryable, account_id)
+
+      :sso_directory_group_runner_access_mappings ->
+        GroupRunnerAccessMapping.Query.by_account_id(queryable, account_id)
 
       :sso_directory_group_members ->
         DirectoryGroupMember.Query.by_account_id(queryable, account_id)

@@ -13,16 +13,30 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   alias Emisar.Runners.Presence
   alias Emisar.Runs.Jobs.DispatchTimeout
 
-  defp running_run_for(runner) do
-    {:ok, run} =
-      Runs.create_run(%{
+  defp run_attrs(runner) do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
         account_id: runner.account_id,
-        runner_id: runner.id,
-        action_id: "linux.uptime",
-        args: %{},
-        reason: "test",
-        source: "operator"
-      })
+        user_id: user.id,
+        role: "operator"
+      )
+
+    %{
+      account_id: runner.account_id,
+      runner_id: runner.id,
+      action_id: "linux.uptime",
+      args: %{},
+      reason: "test",
+      source: "operator",
+      requested_by_id: user.id,
+      initiating_membership_id: membership.id
+    }
+  end
+
+  defp running_run_for(runner) do
+    {:ok, run} = Runs.create_run(run_attrs(runner))
 
     run =
       run
@@ -45,15 +59,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   # Backdates `queued_at` (the sweep's staleness key) and `sent_at` (so a
   # re-dispatch's fresh sent timestamp is observable as a forward jump).
   defp sent_run_for(runner, seconds_ago) do
-    {:ok, run} =
-      Runs.create_run(%{
-        account_id: runner.account_id,
-        runner_id: runner.id,
-        action_id: "linux.uptime",
-        args: %{},
-        reason: "test",
-        source: "operator"
-      })
+    {:ok, run} = Runs.create_run(run_attrs(runner))
 
     run = Fixtures.Runs.put_status(run, :sent)
     at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
@@ -68,15 +74,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   end
 
   defp pending_run_for(runner, seconds_ago) do
-    {:ok, run} =
-      Runs.create_run(%{
-        account_id: runner.account_id,
-        runner_id: runner.id,
-        action_id: "linux.uptime",
-        args: %{},
-        reason: "test",
-        source: "operator"
-      })
+    {:ok, run} = Runs.create_run(run_attrs(runner))
 
     queued_at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
     run |> Ecto.Changeset.change(queued_at: queued_at) |> Repo.update!()

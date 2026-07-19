@@ -10,6 +10,7 @@ defmodule Emisar.SSO.IdentityProvider do
 
   @kinds [:google_workspace, :okta, :jumpcloud, :keycloak, :openid_connect]
   @provisioners [:jit, :manual]
+  @runner_access_modes Emisar.Accounts.RunnerAccess.modes()
 
   schema "sso_identity_providers" do
     field :kind, Ecto.Enum, values: @kinds
@@ -25,6 +26,14 @@ defmodule Emisar.SSO.IdentityProvider do
     # Microsoft Entra's immutable object id.
     field :identifier_claim, Ecto.Enum, values: [:sub, :oid], default: :sub
     field :default_role, Ecto.Enum, values: Auth.Role.all(), default: :viewer
+
+    field :default_runner_access_mode, Ecto.Enum,
+      values: @runner_access_modes,
+      default: :none
+
+    field :default_runner_scope_groups, {:array, :string}, default: []
+    field :default_runner_scope_runner_ids, {:array, Ecto.UUID}, default: []
+    field :authorization_version, :integer, default: 0
     field :satisfies_mfa, :boolean, default: true
     field :allowed_email_domain, :string
     field :enabled, :boolean, default: false

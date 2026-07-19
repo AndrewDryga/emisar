@@ -12,6 +12,7 @@ defmodule Emisar.Accounts do
   use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
+  alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
   require Logger
@@ -213,7 +214,12 @@ defmodule Emisar.Accounts do
     Multi.new()
     |> Multi.insert(:account, Account.Changeset.create(account_attrs))
     |> Multi.insert(:membership, fn %{account: account} ->
-      Membership.Changeset.create(%{account_id: account.id, user_id: user.id, role: :owner})
+      Membership.Changeset.create(%{
+        account_id: account.id,
+        user_id: user.id,
+        role: :owner,
+        runner_access_mode: :all
+      })
     end)
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
@@ -555,20 +561,359 @@ defmodule Emisar.Accounts do
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
   # grant needing `manage_owners`.
-  def provision_sso_membership(account_id, user_id, role, active? \\ true)
+  def provision_sso_membership(account_id, user_id, role, access, opts \\ [])
 
-  def provision_sso_membership(_account_id, _user_id, :owner, _active?) do
+  def provision_sso_membership(_account_id, _user_id, :owner, %RunnerAccess{}, _opts) do
     {:error, :owner_not_assignable}
   end
 
-  def provision_sso_membership(account_id, user_id, role, active?) do
-    %{account_id: account_id, user_id: user_id, role: role}
-    |> sso_membership_changeset(active?)
-    |> Repo.insert()
+  def provision_sso_membership(account_id, user_id, role, %RunnerAccess{} = access, opts) do
+    active? = Keyword.get(opts, :active?, true)
+    directory_managed? = Keyword.get(opts, :directory_managed?, false)
+    directory_provider = Keyword.get(opts, :directory_provider)
+
+    attrs = %{
+      account_id: account_id,
+      user_id: user_id,
+      role: role,
+      directory_managed: directory_managed?,
+      runner_access_mode: access.mode,
+      runner_access_directory_managed: directory_managed?,
+      directory_provider_id: directory_provider_id(directory_provider, directory_managed?),
+      directory_authorization_version:
+        directory_provider_version(directory_provider, directory_managed?)
+    }
+
+    Multi.new()
+    |> Multi.insert(:membership, sso_membership_changeset(attrs, active?))
+    |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
+      replace_runner_access_rows(repo, membership.id, access)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{membership: membership}} -> {:ok, membership}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp sso_membership_changeset(attrs, true), do: Membership.Changeset.create(attrs)
   defp sso_membership_changeset(attrs, false), do: Membership.Changeset.create_suspended(attrs)
+
+  defp directory_provider_id(%SSO.IdentityProvider{id: id}, true), do: id
+  defp directory_provider_id(_provider, _managed?), do: nil
+
+  defp directory_provider_version(%SSO.IdentityProvider{authorization_version: version}, true),
+    do: version
+
+  defp directory_provider_version(_provider, _managed?), do: 0
+
+  @doc """
+  Internal - current runner access for an authenticated subject. The membership
+  is re-read on every call and must still be active in the subject's account.
+  Missing, unbound, cross-account, or inconsistent data returns explicit none.
+  """
+  def runner_access_for_subject(%Subject{
+        account: %Account{id: account_id},
+        membership_id: membership_id
+      }) do
+    runner_access_for_membership(account_id, membership_id)
+  end
+
+  def runner_access_for_subject(%Subject{}), do: RunnerAccess.none()
+
+  @doc """
+  Internal - current active runner access by account and membership id. Runbook
+  continuations use this before each wave; malformed identifiers fail closed.
+  """
+  def runner_access_for_membership(account_id, membership_id)
+      when is_binary(account_id) and is_binary(membership_id) do
+    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
+      membership =
+        Membership.Query.not_deleted()
+        |> Membership.Query.not_disabled()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_id(membership_id)
+        |> Repo.peek()
+
+      case membership do
+        %Membership{} = membership -> load_runner_access(Repo, membership)
+        nil -> RunnerAccess.none()
+      end
+    else
+      RunnerAccess.none()
+    end
+  end
+
+  def runner_access_for_membership(_account_id, _membership_id), do: RunnerAccess.none()
+
+  @doc """
+  Internal - batch runner access for already account-scoped membership rows.
+  Used by Team to render explicit access without an N+1 query.
+  """
+  def runner_access_for_memberships(memberships) when is_list(memberships) do
+    membership_by_id = Map.new(memberships, &{&1.id, &1})
+    ids = Map.keys(membership_by_id)
+
+    scopes_by_membership =
+      case ids do
+        [] ->
+          %{}
+
+        ids ->
+          MembershipRunnerScope.Query.by_membership_ids(ids)
+          |> MembershipRunnerScope.Query.ordered_by_type_and_value()
+          |> Repo.all()
+          |> Enum.group_by(& &1.membership_id)
+      end
+
+    Map.new(membership_by_id, fn {id, membership} ->
+      access = persisted_runner_access(membership, Map.get(scopes_by_membership, id, []))
+      {id, access}
+    end)
+  end
+
+  @doc """
+  Replace one membership's runner access atomically. The locked row enforces
+  account scope, directory ownership, and live nondelegation before mode and
+  normalized scopes are written with one audit event.
+  """
+  def update_membership_runner_access(
+        %Membership{} = membership,
+        %RunnerAccess{} = access,
+        %Subject{} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
+         :ok <- ensure_subject_in_account(subject, membership.account_id),
+         :ok <- ensure_runner_access_grant_allowed(subject, access) do
+      Multi.new()
+      |> Multi.run(:target, fn repo, _changes ->
+        lock_runner_access_membership(repo, membership.id, membership.account_id)
+      end)
+      |> Multi.run(:previous_access, fn repo, %{target: target} ->
+        {:ok, load_runner_access(repo, target)}
+      end)
+      |> Multi.run(:runner_access_guard, fn _repo, %{target: target} ->
+        with :ok <- ensure_can_modify_membership(target, subject),
+             :ok <- ensure_runner_access_grant_allowed(subject, access),
+             :ok <- ensure_runner_access_not_directory_managed(target) do
+          {:ok, :ok}
+        else
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:membership, fn %{target: target} ->
+        Membership.Changeset.update_runner_access(target, access.mode)
+      end)
+      |> Multi.run(:runner_access, fn repo, %{membership: updated} ->
+        replace_runner_access_rows(repo, updated.id, access)
+      end)
+      |> Multi.run(:audit, fn repo, changes ->
+        insert_runner_access_audit(repo, subject, changes, access)
+      end)
+      |> Repo.commit_multi(after_commit: &on_membership_runner_access_changed/1)
+      |> case do
+        {:ok, %{membership: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Internal - SSO and team configuration use the same live nondelegation check:
+  a subject may grant only runner access their current active membership covers.
+  """
+  def ensure_runner_access_grant_allowed(%Subject{} = subject, %RunnerAccess{} = access) do
+    if RunnerAccess.covers?(runner_access_for_subject(subject), access),
+      do: :ok,
+      else: {:error, :runner_access_exceeds_subject}
+  end
+
+  @doc "Internal - reject individual runner grants that do not name live runners in the account."
+  def validate_runner_access_for_account(account_id, %RunnerAccess{runner_ids: runner_ids})
+      when is_binary(account_id) do
+    cond do
+      runner_ids == [] ->
+        :ok
+
+      not Repo.valid_uuid?(account_id) ->
+        {:error, :invalid_runner_access}
+
+      true ->
+        query = """
+        SELECT NOT EXISTS (
+          SELECT 1
+          FROM unnest($1::uuid[]) AS requested(id)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM runners
+            WHERE runners.account_id = $2
+              AND runners.id = requested.id
+              AND runners.deleted_at IS NULL
+          )
+        )
+        """
+
+        dumped_runner_ids = Enum.map(runner_ids, &Ecto.UUID.dump!/1)
+
+        case Ecto.Adapters.SQL.query(Repo, query, [
+               dumped_runner_ids,
+               Ecto.UUID.dump!(account_id)
+             ]) do
+          {:ok, %{rows: [[true]]}} -> :ok
+          {:ok, %{rows: [[false]]}} -> {:error, :invalid_runner_access}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  def validate_runner_access_for_account(_account_id, %RunnerAccess{}),
+    do: {:error, :invalid_runner_access}
+
+  defp ensure_runner_access_not_directory_managed(%Membership{
+         runner_access_directory_managed: true
+       }),
+       do: {:error, :runner_access_managed_by_directory}
+
+  defp ensure_runner_access_not_directory_managed(%Membership{}), do: :ok
+
+  defp lock_runner_access_membership(repo, membership_id, account_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Membership.Query.lock_for_update()
+    |> repo.fetch(Membership.Query)
+  end
+
+  defp load_runner_access(repo, %Membership{} = membership) do
+    scopes =
+      MembershipRunnerScope.Query.by_membership_id(membership.id)
+      |> MembershipRunnerScope.Query.ordered_by_type_and_value()
+      |> repo.all()
+
+    persisted_runner_access(membership, scopes)
+  end
+
+  defp persisted_runner_access(
+         %Membership{directory_authorization_pending_version: version},
+         _scopes
+       )
+       when is_integer(version),
+       do: RunnerAccess.none()
+
+  defp persisted_runner_access(%Membership{} = membership, scopes) do
+    case RunnerAccess.from_fields(membership, scopes) do
+      {:ok, access} -> access
+      {:error, _reason} -> RunnerAccess.none()
+    end
+  end
+
+  defp replace_runner_access_rows(repo, membership_id, %RunnerAccess{} = access) do
+    with :ok <- validate_runner_access_ids(repo, membership_id, access) do
+      do_replace_runner_access_rows(repo, membership_id, access)
+    end
+  end
+
+  defp do_replace_runner_access_rows(repo, membership_id, %RunnerAccess{} = access) do
+    {:ok, _result} =
+      Ecto.Adapters.SQL.query(
+        repo,
+        "SELECT set_config('emisar.runner_access_write', 'enabled', true)",
+        []
+      )
+
+    MembershipRunnerScope.Query.by_membership_id(membership_id)
+    |> repo.delete_all()
+
+    now = DateTime.utc_now()
+
+    rows =
+      Enum.map(RunnerAccess.scope_tuples(access), fn {scope_type, scope_value} ->
+        %{
+          id: Repo.generate_id(),
+          membership_id: membership_id,
+          scope_type: scope_type,
+          scope_value: scope_value,
+          inserted_at: now
+        }
+      end)
+
+    repo.insert_all(MembershipRunnerScope, rows)
+
+    {:ok, _result} =
+      Ecto.Adapters.SQL.query(
+        repo,
+        "SELECT set_config('emisar.runner_access_write', 'disabled', true)",
+        []
+      )
+
+    {:ok, access}
+  end
+
+  defp validate_runner_access_ids(_repo, _membership_id, %RunnerAccess{runner_ids: []}), do: :ok
+
+  defp validate_runner_access_ids(repo, membership_id, %RunnerAccess{runner_ids: runner_ids}) do
+    query = """
+    SELECT NOT EXISTS (
+      SELECT 1
+      FROM unnest($1::uuid[]) AS requested(id)
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM account_memberships AS memberships
+        JOIN runners ON runners.account_id = memberships.account_id
+        WHERE memberships.id = $2
+          AND runners.id = requested.id
+          AND runners.deleted_at IS NULL
+      )
+    )
+    """
+
+    dumped_runner_ids = Enum.map(runner_ids, &Ecto.UUID.dump!/1)
+
+    case Ecto.Adapters.SQL.query(repo, query, [dumped_runner_ids, Ecto.UUID.dump!(membership_id)]) do
+      {:ok, %{rows: [[true]]}} -> :ok
+      {:ok, %{rows: [[false]]}} -> {:error, :invalid_runner_access}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp insert_runner_access_audit(repo, subject, changes, access) do
+    previous_access = changes.previous_access
+
+    if previous_access == access do
+      {:ok, nil}
+    else
+      Audit.Events.membership_runner_access_changed(
+        subject,
+        changes.target,
+        previous_access,
+        access
+      )
+      |> repo.insert()
+    end
+  end
+
+  defp on_membership_runner_access_changed(%{
+         membership: membership,
+         previous_access: previous_access,
+         runner_access: access
+       }) do
+    broadcast_membership_runner_access_changed(membership)
+
+    if RunnerAccess.covers?(previous_access, access) and
+         not RunnerAccess.covers?(access, previous_access) do
+      refresh_member_sessions(membership)
+    else
+      :ok
+    end
+  end
+
+  defp broadcast_membership_runner_access_changed(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.runner_access_changed", membership.user_id}
+    )
+  end
 
   @doc """
   Internal — the runbook engine's per-wave authorization re-check: the
@@ -588,6 +933,24 @@ defmodule Emisar.Accounts do
   end
 
   def peek_active_membership(_account_id, _membership_id), do: nil
+
+  @doc "Internal - lock a run initiator's current active membership in the caller's transaction."
+  def fetch_and_lock_active_membership(repo, account_id, membership_id)
+      when is_binary(account_id) and is_binary(membership_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.not_disabled()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Membership.Query.lock_for_update()
+    |> repo.fetch(Membership.Query)
+  end
+
+  def fetch_and_lock_active_membership(_repo, _account_id, _membership_id),
+    do: {:error, :not_found}
+
+  @doc "Internal - explicit access for a membership row already locked by a caller transaction."
+  def runner_access_for_locked_membership(repo, %Membership{} = membership),
+    do: load_runner_access(repo, membership)
 
   @doc """
   Internal — directory sync: the membership joining `account_id` + `user_id`,
@@ -1145,6 +1508,122 @@ defmodule Emisar.Accounts do
   defp ensure_directory_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
 
   @doc """
+  Internal - SCIM's one locked authorization write. Role and runner access are
+  recomputed from the same directory snapshot, persisted in one transaction,
+  and marked directory-managed together. The provider account is the authority.
+  """
+  def sync_set_membership_authorization(
+        %Membership{} = membership,
+        role,
+        %RunnerAccess{} = access,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    Multi.new()
+    |> Multi.run(:target, fn repo, _changes ->
+      lock_runner_access_membership(repo, membership.id, provider.account_id)
+    end)
+    |> Multi.run(:previous_access, fn repo, %{target: target} ->
+      {:ok, load_runner_access(repo, target)}
+    end)
+    |> Multi.run(:authorization_guard, fn _repo, %{target: target} ->
+      with :ok <- ensure_membership_in_provider_account(target, provider),
+           :ok <- ensure_directory_provider_matches(target, provider),
+           :ok <- ensure_current_authorization_version(target, provider),
+           :ok <- ensure_synced_role_transition(target, role) do
+        {:ok, :ok}
+      end
+    end)
+    |> Multi.update(:membership, fn %{target: target} ->
+      if target.role == :owner do
+        Membership.Changeset.sync_runner_authorization(
+          target,
+          access.mode,
+          provider.id,
+          provider.authorization_version
+        )
+      else
+        Membership.Changeset.sync_authorization(
+          target,
+          role,
+          access.mode,
+          provider.id,
+          provider.authorization_version
+        )
+      end
+    end)
+    |> Multi.run(:runner_access, fn repo, %{membership: updated} ->
+      replace_runner_access_rows(repo, updated.id, access)
+    end)
+    |> Multi.run(:role_audit, fn repo, changes ->
+      insert_synced_role_audit(repo, provider, role, changes)
+    end)
+    |> Multi.run(:runner_access_audit, fn repo, changes ->
+      insert_synced_runner_access_audit(repo, provider, access, changes)
+    end)
+    |> Repo.commit_multi(after_commit: &on_membership_authorization_synced/1)
+    |> case do
+      {:ok, %{membership: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp insert_synced_role_audit(
+         repo,
+         provider,
+         _role,
+         %{target: target, membership: membership}
+       ) do
+    if target.role == membership.role do
+      {:ok, nil}
+    else
+      target
+      |> Audit.Events.membership_role_synced_via_scim(provider, membership.role)
+      |> repo.insert()
+    end
+  end
+
+  defp insert_synced_runner_access_audit(
+         repo,
+         provider,
+         access,
+         %{target: target, previous_access: previous_access}
+       ) do
+    if previous_access == access do
+      {:ok, nil}
+    else
+      target
+      |> Audit.Events.membership_runner_access_synced_via_scim(
+        provider,
+        previous_access,
+        access
+      )
+      |> repo.insert()
+    end
+  end
+
+  defp on_membership_authorization_synced(%{
+         target: previous_membership,
+         membership: membership,
+         previous_access: previous_access,
+         runner_access: access
+       }) do
+    broadcast_membership_role_changed(membership)
+
+    if is_integer(previous_membership.directory_authorization_pending_version) do
+      refresh_member_sessions(membership)
+    else
+      maybe_refresh_reduced_member_sessions(previous_membership.role, membership)
+
+      if RunnerAccess.covers?(previous_access, access) and
+           not RunnerAccess.covers?(access, previous_access) do
+        refresh_member_sessions(membership)
+      else
+        :ok
+      end
+    end
+  end
+
+  @doc """
   Internal — directory sync: set a member's role from their mapped IdP groups
   (Slice 2b). No `%Subject{}` — the SCIM bearer's provider-scope is the
   authorization, validated at the web boundary; the `provider` is threaded
@@ -1210,7 +1689,15 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_user_ids(user_ids)
-    |> Repo.update_all(set: [directory_managed: false, updated_at: DateTime.utc_now()])
+    |> Repo.update_all(
+      set: [
+        directory_managed: false,
+        runner_access_directory_managed: false,
+        directory_provider_id: nil,
+        directory_authorization_pending_version: nil,
+        updated_at: DateTime.utc_now()
+      ]
+    )
   end
 
   # Directory sync can never grant owner — owner stays a deliberate human
@@ -1218,6 +1705,14 @@ defmodule Emisar.Accounts do
   # it; this is the write-path backstop.
   defp ensure_sync_role_assignable(:owner), do: {:error, :owner_not_assignable}
   defp ensure_sync_role_assignable(_role), do: :ok
+
+  defp ensure_synced_role_transition(%Membership{role: :owner}, _role), do: :ok
+
+  defp ensure_synced_role_transition(%Membership{} = membership, role) do
+    with :ok <- ensure_sync_role_assignable(role) do
+      ensure_demotion_keeps_an_owner(membership, role)
+    end
+  end
 
   # The provider's account IS the authorization on the directory-sync path (no
   # %Subject{}), so the locked membership must live in it before we write — the
@@ -1231,6 +1726,21 @@ defmodule Emisar.Accounts do
        do: :ok
 
   defp ensure_membership_in_provider_account(_membership, _provider), do: {:error, :not_found}
+
+  defp ensure_directory_provider_matches(
+         %Membership{directory_provider_id: nil},
+         %SSO.IdentityProvider{}
+       ),
+       do: :ok
+
+  defp ensure_directory_provider_matches(
+         %Membership{directory_provider_id: provider_id},
+         %SSO.IdentityProvider{id: provider_id}
+       ),
+       do: :ok
+
+  defp ensure_directory_provider_matches(%Membership{}, %SSO.IdentityProvider{}),
+    do: {:error, :directory_authorization_provider_conflict}
 
   @doc """
   Admin-triggered MFA reset: clears a member's enrolled second factor
@@ -1269,6 +1779,52 @@ defmodule Emisar.Accounts do
       end
     end
   end
+
+  defp ensure_current_authorization_version(
+         %Membership{directory_authorization_pending_version: pending},
+         %SSO.IdentityProvider{authorization_version: version}
+       )
+       when is_integer(pending) and pending > version,
+       do: {:error, :stale_authorization_version}
+
+  defp ensure_current_authorization_version(%Membership{}, %SSO.IdentityProvider{}), do: :ok
+
+  @doc "Internal - atomically mark a provider's affected memberships fail-closed until reconciliation."
+  def mark_directory_authorization_pending(
+        repo,
+        account_id,
+        provider_id,
+        user_ids,
+        version
+      )
+      when is_list(user_ids) and is_integer(version) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_user_ids(user_ids)
+    |> Membership.Query.by_directory_provider_or_unmanaged(provider_id)
+    |> repo.update_all(
+      set: [
+        runner_access_directory_managed: true,
+        directory_provider_id: provider_id,
+        directory_authorization_pending_version: version,
+        updated_at: DateTime.utc_now()
+      ]
+    )
+
+    {:ok, version}
+  end
+
+  @doc "Internal - bounded durable directory authorization work for the SSO retry job."
+  def list_pending_directory_authorizations(limit) when is_integer(limit) and limit > 0 do
+    Membership.Query.not_deleted()
+    |> Membership.Query.authorization_sync_pending()
+    |> Membership.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  @doc "Internal - remount one member's live sessions around a fail-closed directory transition."
+  def refresh_directory_authorization_sessions(%Membership{} = membership),
+    do: refresh_member_sessions(membership)
 
   @doc """
   Admin-triggered profile edit for another member. Lets owners/admins
@@ -1456,13 +2012,19 @@ defmodule Emisar.Accounts do
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
   """
-  def invite_user_to_account(email, role, %Subject{account: %Account{id: account_id}} = subject)
+  def invite_user_to_account(
+        email,
+        role,
+        %RunnerAccess{} = access,
+        %Subject{account: %Account{id: account_id}} = subject
+      )
       when is_binary(email) and is_binary(role) do
     # Team seats are intentionally NOT capped (no Billing.check_limit(:members)
     # here, unlike the runner cap): giving away collaboration is a deliberate
     # growth lever — Free's members_limit + the Team meter are aspirational, not
     # gates. Revisit only if seat-based pricing lands. (PENDING_DECISIONS, 2026-06-14.)
-    with :ok <- ensure_invite_permitted(role, subject) do
+    with :ok <- ensure_invite_permitted(role, subject),
+         :ok <- ensure_runner_access_grant_allowed(subject, access) do
       # Trim only: `users.email` is citext, so lookup + uniqueness are
       # case-insensitive without app-side normalization (and registration
       # stores the typed casing — invites shouldn't differ).
@@ -1476,12 +2038,16 @@ defmodule Emisar.Accounts do
           account_id: account_id,
           user_id: user.id,
           role: role,
+          runner_access_mode: access.mode,
           invited_by_id: subject.actor.id,
           invitation_token_digest: token_digest
         })
       end)
+      |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
+        replace_runner_access_rows(repo, membership.id, access)
+      end)
       |> Multi.insert(:audit, fn %{user: user} ->
-        Audit.Events.user_invited(subject, user, role)
+        Audit.Events.user_invited(subject, user, role, access)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -1528,7 +2094,12 @@ defmodule Emisar.Accounts do
           end
         end,
         audit: fn updated ->
-          Audit.Events.user_invited(subject, updated.user, updated.role)
+          Audit.Events.user_invited(
+            subject,
+            updated.user,
+            updated.role,
+            load_runner_access(Repo, updated)
+          )
         end,
         after_commit: &broadcast_membership_invitation_resent/1
       )

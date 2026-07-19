@@ -1,11 +1,9 @@
 defmodule Emisar.SSOGroupsTest do
   @moduledoc """
-  Slice 2b — IdP groups → emisar role mapping. The server-side group→role
-  mapping config (enterprise + `manage_sso` gated, account-scoped) and the
-  internal sync that recomputes a member's role as the HIGHEST mapped role over
-  their synced groups — capped non-`:owner` (decision 7) and never demoting the
-  account's last active owner (§9 N5). The internal sync functions take a
-  provider explicitly and carry no `%Subject{}`.
+  IdP groups → emisar role and runner-access mapping. Role is the highest mapped
+  role; runner access is the additive union of the provider baseline and every
+  mapped group, with `all` dominance. Both are recomputed from one directory
+  snapshot and never grant owner.
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Repo, SSO}
@@ -66,6 +64,29 @@ defmodule Emisar.SSOGroupsTest do
 
   defp role_of(account_id, user_id),
     do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
+
+  defp access_of(account_id, user_id) do
+    membership = Fixtures.Memberships.fetch_membership(account_id, user_id)
+    Accounts.runner_access_for_membership(account_id, membership.id)
+  end
+
+  defp synced_access_audit_count(account_id, user_id) do
+    Emisar.Audit.Event.Query.all()
+    |> Emisar.Audit.Event.Query.by_account_id(account_id)
+    |> Emisar.Audit.Event.Query.by_event_type("membership.runner_access_synced_via_scim")
+    |> where([event], event.target_id == ^user_id)
+    |> Repo.aggregate(:count)
+  end
+
+  defp latest_synced_access_audit(account_id, user_id) do
+    Emisar.Audit.Event.Query.all()
+    |> Emisar.Audit.Event.Query.by_account_id(account_id)
+    |> Emisar.Audit.Event.Query.by_event_type("membership.runner_access_synced_via_scim")
+    |> where([event], event.target_id == ^user_id)
+    |> order_by([event], desc: event.inserted_at, desc: event.id)
+    |> limit(1)
+    |> Repo.one!()
+  end
 
   defp overlong_scim_id, do: String.duplicate("g", @scim_string_limit + 1)
   defp too_many_member_external_ids, do: for(n <- 1..(@max_group_member_ids + 1), do: "okta|#{n}")
@@ -296,6 +317,332 @@ defmodule Emisar.SSOGroupsTest do
       # The healthy member's role was still recomputed — the failed one didn't
       # abort the batch.
       assert role_of(account.id, kept_identity.user_id) == :admin
+    end
+  end
+
+  describe "reconcile_pending_authorizations/1" do
+    setup do
+      scim_provider()
+    end
+
+    test "unions mapped groups and revokes access on group removal and mapping deletion", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|runner-union")
+      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+
+      {:ok, db_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["db"]
+          },
+          subject
+        )
+
+      {:ok, app_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-app",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["app"]
+          },
+          subject
+        )
+
+      for group_id <- ["grp-db", "grp-app"] do
+        {:ok, _group} =
+          SSO.scim_upsert_group(provider, %{
+            external_id: group_id,
+            member_external_ids: ["okta|runner-union"]
+          })
+      end
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["app", "db"],
+                 runner_ids: []
+               }
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-db",
+          member_external_ids: []
+        })
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{mode: :restricted, groups: ["app"], runner_ids: []}
+
+      assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(app_mapping, subject)
+      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+
+      assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(db_mapping, subject)
+    end
+
+    test "all dominates restricted grants and deletion reveals the remaining union", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|runner-all")
+
+      {:ok, _restricted} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["db"]
+          },
+          subject
+        )
+
+      {:ok, all_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-all", runner_access_mode: :all},
+          subject
+        )
+
+      for group_id <- ["grp-db", "grp-all"] do
+        {:ok, _group} =
+          SSO.scim_upsert_group(provider, %{
+            external_id: group_id,
+            member_external_ids: ["okta|runner-all"]
+          })
+      end
+
+      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.all()
+
+      assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(all_mapping, subject)
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{mode: :restricted, groups: ["db"], runner_ids: []}
+    end
+
+    test "mapping changes reconcile a deactivated member before reactivation", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|runner-reactivate")
+
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["db"]
+          },
+          subject
+        )
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-db",
+          member_external_ids: ["okta|runner-reactivate"]
+        })
+
+      assert {:ok, _result} = SSO.scim_deactivate_user(provider, "okta|runner-reactivate")
+
+      assert {:ok, _updated} =
+               SSO.update_group_runner_access_mapping(
+                 mapping,
+                 %{
+                   runner_access_mode: :restricted,
+                   runner_scope_groups: ["app"],
+                   runner_scope_runner_ids: []
+                 },
+                 subject
+               )
+
+      assert {:ok, _result} = SSO.scim_reactivate_user(provider, "okta|runner-reactivate")
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{mode: :restricted, groups: ["app"], runner_ids: []}
+    end
+
+    test "a failed provider change stays durable and fail-closed until a retry converges", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity, membership: membership} =
+        provision(provider, "okta|durable-reconcile")
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-runner",
+            runner_access_mode: :restricted,
+            runner_scope_runner_ids: [runner.id]
+          },
+          subject
+        )
+
+      assert {:ok, _group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-runner",
+                 member_external_ids: ["okta|durable-reconcile"]
+               })
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: [],
+                 runner_ids: [runner.id]
+               }
+
+      stale_provider = Repo.reload!(provider)
+      audit_count_before = synced_access_audit_count(account.id, membership.user_id)
+
+      deleted_runner =
+        runner
+        |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+        |> Repo.update!()
+
+      assert {:ok, _provider} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   default_runner_access_mode: :restricted,
+                   default_runner_scope_groups: ["baseline"],
+                   default_runner_scope_runner_ids: []
+                 },
+                 subject
+               )
+
+      pending = Repo.reload!(membership)
+      assert is_integer(pending.directory_authorization_pending_version)
+      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+
+      assert {:error, :stale_authorization_version} =
+               Accounts.sync_set_membership_authorization(
+                 pending,
+                 :viewer,
+                 Accounts.RunnerAccess.none(),
+                 stale_provider
+               )
+
+      assert Repo.reload!(membership).directory_authorization_pending_version ==
+               pending.directory_authorization_pending_version
+
+      deleted_runner
+      |> Ecto.Changeset.change(deleted_at: nil)
+      |> Repo.update!()
+
+      assert :ok = SSO.reconcile_pending_authorizations()
+
+      reconciled = Repo.reload!(membership)
+      assert reconciled.role == :viewer
+      assert is_nil(reconciled.directory_authorization_pending_version)
+
+      assert access_of(account.id, identity.user_id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["baseline"],
+                 runner_ids: [runner.id]
+               }
+
+      assert synced_access_audit_count(account.id, membership.user_id) ==
+               audit_count_before + 1
+
+      event = latest_synced_access_audit(account.id, membership.user_id)
+      assert event.payload["before"]["mode"] == "none"
+      assert event.payload["after"]["groups"] == ["baseline"]
+      assert event.payload["after"]["runner_ids"] == [runner.id]
+
+      assert :ok = SSO.reconcile_pending_authorizations()
+
+      assert synced_access_audit_count(account.id, membership.user_id) ==
+               audit_count_before + 1
+    end
+
+    test "a provider change converges healthy members while a failed member remains fail-closed",
+         %{
+           provider: provider,
+           subject: subject,
+           account: account
+         } do
+      %{identity: healthy_identity} = provision(provider, "okta|healthy")
+
+      %{identity: blocked_identity, membership: blocked_membership} =
+        provision(provider, "okta|blocked")
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-runner",
+            runner_access_mode: :restricted,
+            runner_scope_runner_ids: [runner.id]
+          },
+          subject
+        )
+
+      assert {:ok, _group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-runner",
+                 member_external_ids: ["okta|blocked"]
+               })
+
+      deleted_runner =
+        runner
+        |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+        |> Repo.update!()
+
+      assert {:ok, _provider} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   default_runner_access_mode: :restricted,
+                   default_runner_scope_groups: ["baseline"],
+                   default_runner_scope_runner_ids: []
+                 },
+                 subject
+               )
+
+      healthy_membership =
+        Fixtures.Memberships.fetch_membership(account.id, healthy_identity.user_id)
+
+      assert is_nil(healthy_membership.directory_authorization_pending_version)
+
+      assert access_of(account.id, healthy_identity.user_id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["baseline"],
+                 runner_ids: []
+               }
+
+      blocked = Repo.reload!(blocked_membership)
+      assert is_integer(blocked.directory_authorization_pending_version)
+      assert access_of(account.id, blocked_identity.user_id) == Accounts.RunnerAccess.none()
+
+      deleted_runner
+      |> Ecto.Changeset.change(deleted_at: nil)
+      |> Repo.update!()
+
+      assert :ok = SSO.reconcile_pending_authorizations()
+      assert is_nil(Repo.reload!(blocked_membership).directory_authorization_pending_version)
+
+      assert access_of(account.id, blocked_identity.user_id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["baseline"],
+                 runner_ids: [runner.id]
+               }
     end
   end
 

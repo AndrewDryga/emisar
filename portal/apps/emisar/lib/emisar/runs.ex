@@ -7,9 +7,17 @@ defmodule Emisar.Runs do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, MCPOperations, Repo, RequestContext, Users}
+  alias Emisar.Accounts
+  alias Emisar.ApiKeys
+  alias Emisar.Audit
+  alias Emisar.Auth
   alias Emisar.Auth.Subject
+  alias Emisar.Crypto
+  alias Emisar.MCPOperations
+  alias Emisar.Repo
+  alias Emisar.RequestContext
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
+  alias Emisar.Users
   require Logger
 
   def start_link(opts) do
@@ -50,6 +58,7 @@ defmodule Emisar.Runs do
       # Query.filters/0 carries :runner_id and :api_key_id, the deep-link
       # targets of "View all runs" / "View activity" — not side-channel opts.
       ActionRun.Query.all()
+      |> scope_runs_to_membership(subject)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
@@ -69,6 +78,7 @@ defmodule Emisar.Runs do
            ) do
       options =
         ActionRun.Query.all()
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.operator_options()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -90,6 +100,7 @@ defmodule Emisar.Runs do
            ) do
       options =
         ActionRun.Query.all()
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.runbook_options()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -122,6 +133,7 @@ defmodule Emisar.Runs do
       limit = Keyword.get(opts, :limit, 8)
 
       ActionRun.Query.all()
+      |> scope_runs_to_membership(subject)
       |> apply_run_scope(scope, subject)
       |> maybe_by_runner_id(runner_id)
       |> maybe_by_action_id(action_id)
@@ -141,7 +153,7 @@ defmodule Emisar.Runs do
            ) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
-      |> scope_fixed_mcp_runs_to_membership(subject)
+      |> scope_runs_to_membership(subject)
       |> apply_mcp_history_scope(filters[:scope], subject)
       |> maybe_by_operation_id(filters[:operation_id])
       |> maybe_by_runbook_execution_id(filters[:runbook_execution_id])
@@ -247,6 +259,7 @@ defmodule Emisar.Runs do
       # One aggregate row, summed in SQL (FILTER) — no app-side counting.
       %{total: total, success: success, failed: failed, denied: denied, cancelled: cancelled} =
         ActionRun.Query.all()
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.inserted_after(cutoff)
         |> ActionRun.Query.outcome_totals(@failure_statuses)
         |> Authorizer.for_subject(subject)
@@ -302,6 +315,7 @@ defmodule Emisar.Runs do
            ) do
       ActionRun.Query.all()
       |> ActionRun.Query.by_runner_id(runner_id)
+      |> scope_runs_to_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
     end
@@ -318,6 +332,7 @@ defmodule Emisar.Runs do
 
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(id)
+      |> scope_runs_to_membership(subject)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(ActionRun.Query, opts)
@@ -337,7 +352,7 @@ defmodule Emisar.Runs do
          true <- Repo.valid_uuid?(id) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
-      |> scope_fixed_mcp_runs_to_membership(subject)
+      |> scope_runs_to_membership(subject)
       |> ActionRun.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(ActionRun.Query)
@@ -359,6 +374,7 @@ defmodule Emisar.Runs do
         ActionRun.Query.all()
         |> ActionRun.Query.by_operation_id(operation_id)
         |> ActionRun.Query.by_api_key_id(api_key_id)
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.with_preloaded_runner()
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.ordered_by_oldest()
@@ -379,6 +395,7 @@ defmodule Emisar.Runs do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_runbook_execution_id(execution_id)
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.with_preloaded_runner()
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.ordered_by_oldest()
@@ -396,24 +413,18 @@ defmodule Emisar.Runs do
 
   defp apply_run_scope(query, _scope, _subject), do: query
 
-  defp scope_fixed_mcp_runs_to_membership(
-         query,
-         %Subject{membership_id: membership_id}
-       )
-       when is_binary(membership_id) do
-    case Emisar.Runners.runner_scopes_for_membership(membership_id) do
-      [] ->
+  defp scope_runs_to_membership(query, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :none} ->
+        ActionRun.Query.none(query)
+
+      %Accounts.RunnerAccess{mode: :all} ->
         query
 
-      scopes ->
-        runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
-        groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
+      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
         ActionRun.Query.by_runner_scope_values(query, runner_ids, groups)
     end
   end
-
-  defp scope_fixed_mcp_runs_to_membership(query, %Subject{}),
-    do: ActionRun.Query.none(query)
 
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).
@@ -500,7 +511,8 @@ defmodule Emisar.Runs do
   """
   def create_run(attrs, opts \\ []) do
     request_id = attrs[:request_id] || Crypto.run_request_id()
-    attrs = attrs |> put_action_arguments_raw() |> Map.put(:request_id, request_id)
+    attrs = attrs |> resolve_initiating_membership() |> put_action_arguments_raw()
+    attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
 
     result =
@@ -525,6 +537,36 @@ defmodule Emisar.Runs do
     end
   end
 
+  defp resolve_initiating_membership(%{initiating_membership_id: id} = attrs)
+       when is_binary(id),
+       do: attrs
+
+  defp resolve_initiating_membership(%{api_key_id: api_key_id} = attrs)
+       when is_binary(api_key_id) do
+    case ApiKeys.peek_api_key_by_id(api_key_id) do
+      %ApiKeys.ApiKey{created_by_membership_id: membership_id} ->
+        Map.put(attrs, :initiating_membership_id, membership_id)
+
+      nil ->
+        attrs
+    end
+  end
+
+  defp resolve_initiating_membership(
+         %{account_id: account_id, requested_by_id: requested_by_id} = attrs
+       )
+       when is_binary(account_id) and is_binary(requested_by_id) do
+    case Accounts.peek_sync_membership(account_id, requested_by_id) do
+      %Accounts.Membership{id: membership_id} ->
+        Map.put(attrs, :initiating_membership_id, membership_id)
+
+      nil ->
+        attrs
+    end
+  end
+
+  defp resolve_initiating_membership(attrs), do: attrs
+
   defp compose_run_steps(multi, nil), do: multi
   defp compose_run_steps(multi, fun) when is_function(fun, 1), do: fun.(multi)
 
@@ -546,7 +588,8 @@ defmodule Emisar.Runs do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.dispatch_run_permission()
-           ) do
+           ),
+         :ok <- require_subject_membership(subject) do
       attrs
       |> put_dispatcher_context(subject)
       |> put_dispatcher_identity(subject)
@@ -571,6 +614,7 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.dispatch_run_permission()
            ),
+         :ok <- require_subject_membership(subject),
          :ok <- validate_mcp_targets(target_attrs) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
@@ -673,6 +717,7 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.dispatch_run_permission()
            ),
+         :ok <- require_subject_membership(subject),
          :ok <- validate_dispatch_batch(target_attrs) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
@@ -745,7 +790,7 @@ defmodule Emisar.Runs do
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs =
         attrs
-        |> Map.delete(:requested_by_membership_id)
+        |> persist_initiating_membership()
         |> put_action_arguments(action)
         |> Map.put(:runner_ref, runner_ref)
         |> Map.put(:expected_pack_hash, pack_hash)
@@ -934,6 +979,7 @@ defmodule Emisar.Runs do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_mcp_operation_record_id(operation_record_id)
+        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.with_preloaded_runner()
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.ordered_by_oldest()
@@ -985,6 +1031,18 @@ defmodule Emisar.Runs do
   defp put_dispatcher_identity(attrs, %Subject{membership_id: membership_id}),
     do: Map.put(attrs, :requested_by_membership_id, membership_id)
 
+  defp require_subject_membership(%Subject{membership_id: membership_id})
+       when is_binary(membership_id),
+       do: :ok
+
+  defp require_subject_membership(%Subject{}), do: {:error, :runner_out_of_scope}
+
+  defp persist_initiating_membership(attrs) do
+    attrs
+    |> Map.put(:initiating_membership_id, Map.get(attrs, :requested_by_membership_id))
+    |> Map.delete(:requested_by_membership_id)
+  end
+
   @doc """
   Internal: dispatch a run for an explicit account with no `%Subject{}`.
   Used by the runbook engine to continue a chain after a terminal runner result
@@ -1013,7 +1071,7 @@ defmodule Emisar.Runs do
          :ok <- check_pack_ref(action, attrs[:pack_ref]),
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
-      |> Map.delete(:requested_by_membership_id)
+      |> persist_initiating_membership()
       |> put_action_arguments(action)
       |> Map.put(:runner_ref, runner_ref)
       # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
@@ -1128,21 +1186,17 @@ defmodule Emisar.Runs do
   # here.
   defp runner_in_membership_scope(_runner_id, _account_id, nil), do: :ok
 
-  defp runner_in_membership_scope(runner_id, _account_id, membership_id) do
-    case Emisar.Runners.runner_scopes_for_membership(membership_id) do
-      [] ->
-        :ok
+  defp runner_in_membership_scope(runner_id, account_id, membership_id) do
+    access = Accounts.runner_access_for_membership(account_id, membership_id)
 
-      scopes ->
-        case Emisar.Runners.peek_runner_by_id(runner_id) do
-          nil ->
-            {:error, :runner_not_found}
+    case Emisar.Runners.peek_runner_by_id(runner_id) do
+      nil ->
+        {:error, :runner_not_found}
 
-          runner ->
-            if Emisar.Runners.runner_in_scope?(runner, scopes),
-              do: :ok,
-              else: {:error, :runner_out_of_scope}
-        end
+      runner ->
+        if Accounts.RunnerAccess.runner_in_scope?(runner, access),
+          do: :ok,
+          else: {:error, :runner_out_of_scope}
     end
   end
 
@@ -1796,8 +1850,8 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.cancel_run_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, run.account_id) do
-      cancel_run_for_status(run, subject, reason)
+         {:ok, scoped_run} <- fetch_run_by_id(run.id, subject) do
+      cancel_run_for_status(scoped_run, subject, reason)
     end
   end
 
@@ -2106,7 +2160,9 @@ defmodule Emisar.Runs do
             {:error, :not_dispatchable}
 
           true ->
-            repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
+            with :ok <- authorize_dispatch_transition(repo, loaded_run, expected_status, status) do
+              repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
+            end
         end
       end)
       |> put_run_audit_event()
@@ -2125,6 +2181,11 @@ defmodule Emisar.Runs do
       end
     end
   end
+
+  defp authorize_dispatch_transition(repo, run, :pending, :sent),
+    do: ensure_run_initiator_authorized(repo, run)
+
+  defp authorize_dispatch_transition(_repo, _run, _expected_status, _status), do: :ok
 
   defp put_connection_guard(multi, nil), do: multi
 
@@ -2396,6 +2457,37 @@ defmodule Emisar.Runs do
       %ActionRun{} -> {:error, :run_not_pending_approval}
     end
   end
+
+  @doc "Internal - approval release revalidates the exact initiating membership and credential."
+  def ensure_run_initiator_authorized(repo, %ActionRun{} = run) do
+    with {:ok, membership} <-
+           Accounts.fetch_and_lock_active_membership(
+             repo,
+             run.account_id,
+             run.initiating_membership_id
+           ),
+         {:ok, runner} <-
+           Emisar.Runners.fetch_and_lock_active_runner(
+             run.runner_id,
+             run.account_id,
+             repo: repo
+           ),
+         access = Accounts.runner_access_for_locked_membership(repo, membership),
+         true <- Accounts.RunnerAccess.runner_in_scope?(runner, access),
+         true <- initiating_api_key_usable?(repo, run) do
+      :ok
+    else
+      _ -> {:error, :initiator_no_longer_authorized}
+    end
+  end
+
+  defp initiating_api_key_usable?(_repo, %ActionRun{api_key_id: nil}), do: true
+
+  defp initiating_api_key_usable?(
+         repo,
+         %ActionRun{api_key_id: api_key_id, account_id: account_id}
+       ),
+       do: ApiKeys.api_key_usable_in_account?(repo, api_key_id, account_id)
 
   @doc """
   Internal -- Approvals releases its locked, approved run into a fresh

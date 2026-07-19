@@ -10,7 +10,12 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     subject = owner_subject(owner, account)
 
     {:ok, %{invitation_token: token}} =
-      Accounts.invite_user_to_account(email, "operator", subject)
+      Accounts.invite_user_to_account(
+        email,
+        "operator",
+        Accounts.RunnerAccess.all(),
+        subject
+      )
 
     token
   end
@@ -138,7 +143,12 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       invitee = Fixtures.Users.create_user()
 
       {:ok, %{invitation_token: token}} =
-        Accounts.invite_user_to_account(invitee.email, "viewer", owner_subject(owner, account))
+        Accounts.invite_user_to_account(
+          invitee.email,
+          "viewer",
+          Accounts.RunnerAccess.all(),
+          owner_subject(owner, account)
+        )
 
       {:ok, lv, html} =
         build_conn() |> log_in_user(invitee) |> live(~p"/accept_invitation/#{token}")

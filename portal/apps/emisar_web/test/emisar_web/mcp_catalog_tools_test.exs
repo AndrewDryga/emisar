@@ -331,7 +331,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     ])
 
     trust_all!(subject)
-    assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "db"}], subject)
+    {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+    Fixtures.Memberships.force_runner_access(membership, access)
 
     runners = call(conn, "list_runners", %{})
     assert Enum.map(runners["runners"], & &1["name"]) == ["allowed"]
@@ -350,6 +351,22 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     refute Jason.encode!(call(conn, "list_packs", %{"availability" => "all"})) =~ "foreign"
     assert call(conn, "find_actions", %{"action_id" => "foreign.secret"})["candidates"] == []
+  end
+
+  test "an already-issued API key loses runner visibility when its membership is suspended", %{
+    conn: conn,
+    account: account,
+    membership: membership
+  } do
+    _runner = Fixtures.Runners.create_runner(account_id: account.id, name: "formerly-visible")
+    assert length(call(conn, "list_runners", %{})["runners"]) == 1
+
+    Fixtures.Memberships.suspend_membership(membership)
+
+    result = call(conn, "list_runners", %{})
+    assert result["ok"]
+    assert result["runners"] == []
+    assert result["summary"]["matched"] == 0
   end
 
   test "a runner that is not connected wears only its connection story, never trust alarms", %{

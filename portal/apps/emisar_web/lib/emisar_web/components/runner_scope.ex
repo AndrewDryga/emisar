@@ -5,16 +5,16 @@ defmodule EmisarWeb.RunnerScope do
   groups and runners live in one place instead of a groups list plus a separate,
   ungrouped runners list. Selecting a group covers every runner in it, so those
   runners render disabled ("via group") — picking them on top would be redundant.
-  Used by the team member runner-scope editor (the `UserRunnerScope` that governs
-  which runners an operator — and every key they mint — may reach); reads the
-  selection back with `parse/2`.
+  Used by explicit restricted-access controls for team members and SSO mappings;
+  reads the selection back with `parse/2`.
 
   A custom checkbox tree (not a native `<select multiple>`): full-row tap targets,
   a hierarchy rail nesting runners under their group, brand-tinted selection — and
   it works on mobile, where a multi-select cannot. Selection travels as
   `"group:<name>"` / `"runner:<id>"` strings in one `scope[]` field, so the caller
   wraps it in a `phx-change` form and parses the checked values with `parse/2`.
-  Empty selection = all runners (the default) — the caller's copy states that.
+  An empty selection is invalid restricted access; the surrounding mode control
+  owns the separate no-access and all-runners choices.
   """
   use Phoenix.Component
   import EmisarWeb.CoreComponents, only: [checkbox: 1]
@@ -154,8 +154,9 @@ defmodule EmisarWeb.RunnerScope do
   Parse the checked scope values back to `{:ok, %{groups: [name], runner_ids: [id]}}`,
   allowlisted against `runners` (a crafted POST can't smuggle another account's
   ids/groups — IL-15), with any runner already covered by a selected group
-  dropped (redundant). An explicit empty list means "all runners"; malformed or
-  unknown values return `{:error, :invalid}` so they cannot widen a scope.
+  dropped (redundant). An empty list remains an empty selection; the caller's
+  explicit mode decides `none`/`all`, while `restricted` rejects it. Malformed or
+  unknown values return `{:error, :invalid}` so they cannot widen access.
   """
   def parse(values, runners) when is_list(values) do
     valid_groups = runners |> Enum.map(& &1.group) |> Enum.reject(&blank?/1) |> MapSet.new()

@@ -1759,8 +1759,7 @@ defmodule Emisar.AuditTest do
       # longer drift.
       drift = ~w[
         user.mfa_reset_by_admin policy.scope_deleted
-        approval.decision_recorded sso.provider_configured sso.provider_updated
-        sso.provider_deleted sso.existing_user_linked
+        approval.decision_recorded sso.existing_user_linked
       ]
 
       emitted = emitted_event_types()

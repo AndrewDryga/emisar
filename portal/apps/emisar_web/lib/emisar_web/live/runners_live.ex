@@ -40,19 +40,16 @@ defmodule EmisarWeb.RunnersLive do
     filters = Runners.Runner.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
-    # Runners derives the current membership's scope from the subject, so the
-    # URL cannot select a broader member's scope. The groups and fleet summary
-    # remain account-wide by product decision; only individual rows are scoped.
+    # Runners derives current access from the subject, so the URL cannot select
+    # a broader membership. Rows, group summaries, and fleet posture all use the
+    # same scoped fleet; counts must not reveal inaccessible runners.
 
-    # Whole-account fleet health for the summary strip — counted from the
-    # presence-decorated runners (the group_summary DB aggregate can't know
-    # online?), like the dashboard. Account-wide (not scope-filtered), matching
-    # the group sidebar so the strip reflects the whole fleet, not just a page.
+    # Fleet health is counted from the complete accessible set, not the current
+    # page, because connection presence is not available to the DB aggregate.
     fleet = load_fleet_health(socket.assigns.current_subject)
 
-    # Whole-account dispatch posture: when every active runner enforces signatures
-    # the portal can't dispatch to ANY of them, so surface it once for the fleet
-    # rather than leaving the operator to read it off each runner's chip.
+    # When every accessible active runner enforces signatures, surface the
+    # resulting portal-dispatch posture once instead of on each row.
     fleet_signed? = Runners.fleet_all_signed?(socket.assigns.current_subject)
 
     case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
@@ -267,8 +264,7 @@ defmodule EmisarWeb.RunnersLive do
                 />
               </div>
               <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
-             scanning every dot. Whole-account (like the group headers below),
-             counted from presence. NAKED posture line, not a boxed band — the
+             scanning every accessible dot. Counted from presence. NAKED posture line, not a boxed band — the
              dashboard pillar grammar: healthy counts stay quiet, offline wears
              amber (needs attention, not failed — the ONE tone the fact wears
              everywhere). --%>
@@ -291,8 +287,8 @@ defmodule EmisarWeb.RunnersLive do
                 </span>
               </div>
 
-              <%!-- Group sidebar shows whole-account totals; the runners
-             list below is paginated and may show fewer rows per
+              <%!-- Group headers show accessible totals; the runners list below
+             is paginated and may show fewer rows per
              group than the count next to the header. That's
              intentional — operators expect group counts to be
              source-of-truth, not "what fits on this page". --%>

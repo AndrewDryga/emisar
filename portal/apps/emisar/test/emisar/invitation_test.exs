@@ -1,6 +1,7 @@
 defmodule Emisar.InvitationTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
+  alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
 
   defp inviter_subject(account) do
@@ -16,7 +17,7 @@ defmodule Emisar.InvitationTest do
     {inviter, Fixtures.Subjects.subject_for(inviter, account, role: :owner)}
   end
 
-  describe "invite_user_to_account/3" do
+  describe "invite_user_to_account/4" do
     setup do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
@@ -29,12 +30,23 @@ defmodule Emisar.InvitationTest do
                 membership: membership,
                 user: invitee,
                 invitation_token: token
-              }} = Accounts.invite_user_to_account("new@example.test", "admin", subject)
+              }} =
+               Accounts.invite_user_to_account(
+                 "new@example.test",
+                 "admin",
+                 RunnerAccess.none(),
+                 subject
+               )
 
       assert invitee.email == "new@example.test"
       assert is_binary(token)
       assert byte_size(token) > 16
       assert membership.role == :admin
+      assert membership.runner_access_mode == :none
+
+      assert Accounts.runner_access_for_membership(membership.account_id, membership.id) ==
+               RunnerAccess.none()
+
       # Only the digest is at rest — a DB leak must not expose the live link.
       assert membership.invitation_token_digest == Emisar.Crypto.user_invite_token_digest(token)
       refute membership.invitation_token_digest == token
@@ -45,9 +57,61 @@ defmodule Emisar.InvitationTest do
       existing = Fixtures.Users.create_user(email: "alice@example.test")
 
       assert {:ok, %{user: invitee}} =
-               Accounts.invite_user_to_account("alice@example.test", "operator", subject)
+               Accounts.invite_user_to_account(
+                 "alice@example.test",
+                 "operator",
+                 RunnerAccess.all(),
+                 subject
+               )
 
       assert invitee.id == existing.id
+    end
+
+    test "persists and audits normalized selected runner access on the invitation", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, access} =
+        RunnerAccess.restricted(["production", "production"], [runner.id])
+
+      assert {:ok, %{membership: membership}} =
+               Accounts.invite_user_to_account(
+                 "scoped@example.test",
+                 "operator",
+                 access,
+                 subject
+               )
+
+      assert Accounts.runner_access_for_membership(membership.account_id, membership.id) ==
+               %RunnerAccess{
+                 mode: :restricted,
+                 groups: ["production"],
+                 runner_ids: [runner.id]
+               }
+
+      assert {:ok, [event], _meta} =
+               Emisar.Audit.list_events(subject, filter: [event_type: ["user.invited"]])
+
+      assert event.payload["runner_access"] == %{
+               "mode" => "restricted",
+               "groups" => ["production"],
+               "runner_ids" => [runner.id]
+             }
+    end
+
+    test "rejects an individual runner from another account", %{subject: subject} do
+      foreign_runner = Fixtures.Runners.create_runner()
+      {:ok, access} = RunnerAccess.restricted([], [foreign_runner.id])
+
+      assert {:error, :invalid_runner_access} =
+               Accounts.invite_user_to_account(
+                 "foreign-scope@example.test",
+                 "operator",
+                 access,
+                 subject
+               )
     end
 
     test "trims the email; the citext column owns case-insensitive identity", %{subject: subject} do
@@ -55,6 +119,7 @@ defmodule Emisar.InvitationTest do
                Accounts.invite_user_to_account(
                  "  HELLO@Example.Test  ",
                  "viewer",
+                 RunnerAccess.none(),
                  subject
                )
 
@@ -67,7 +132,12 @@ defmodule Emisar.InvitationTest do
       {_inviter, other_subject} = inviter_subject(other_account)
 
       assert {:ok, %{user: same_user}} =
-               Accounts.invite_user_to_account("hello@example.test", "viewer", other_subject)
+               Accounts.invite_user_to_account(
+                 "hello@example.test",
+                 "viewer",
+                 RunnerAccess.none(),
+                 other_subject
+               )
 
       assert same_user.id == invitee.id
     end
@@ -82,7 +152,12 @@ defmodule Emisar.InvitationTest do
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
 
       assert {:error, :already_member} =
-               Accounts.invite_user_to_account(existing.email, "admin", subject)
+               Accounts.invite_user_to_account(
+                 existing.email,
+                 "admin",
+                 RunnerAccess.none(),
+                 subject
+               )
     end
   end
 
@@ -92,7 +167,12 @@ defmodule Emisar.InvitationTest do
       {_inviter, subject} = inviter_subject(account)
 
       {:ok, %{membership: membership, invitation_token: token, user: invitee}} =
-        Accounts.invite_user_to_account("bob@example.test", "admin", subject)
+        Accounts.invite_user_to_account(
+          "bob@example.test",
+          "admin",
+          RunnerAccess.none(),
+          subject
+        )
 
       %{membership: membership, token: token, invitee: invitee, account: account}
     end
@@ -164,7 +244,12 @@ defmodule Emisar.InvitationTest do
       invitee = Fixtures.Users.create_user()
 
       {:ok, %{membership: membership}} =
-        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
+        Accounts.invite_user_to_account(
+          invitee.email,
+          "viewer",
+          RunnerAccess.none(),
+          subject
+        )
 
       %{membership: membership, invitee: invitee}
     end
@@ -194,7 +279,12 @@ defmodule Emisar.InvitationTest do
       {_inviter, subject} = inviter_subject(account)
 
       {:ok, %{membership: membership}} =
-        Accounts.invite_user_to_account("carol@example.test", "operator", subject)
+        Accounts.invite_user_to_account(
+          "carol@example.test",
+          "operator",
+          RunnerAccess.none(),
+          subject
+        )
 
       %{membership: membership}
     end

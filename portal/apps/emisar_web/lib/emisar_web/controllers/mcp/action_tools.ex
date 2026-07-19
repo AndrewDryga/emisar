@@ -232,16 +232,13 @@ defmodule EmisarWeb.MCP.ActionTools do
 
   defp resolve_targets(conn, input) do
     subject = conn.assigns.current_subject
-    api_key = conn.assigns.api_key
 
     with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
          {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
          {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      scopes = membership_scopes(api_key)
-      scoped_runners = Enum.filter(runners, &Runners.runner_in_scope?(&1, scopes))
-      scoped_ids = MapSet.new(scoped_runners, & &1.id)
-      actions = Enum.filter(actions, &MapSet.member?(scoped_ids, &1.runner_id))
-      snapshot = Catalog.MCPProjection.build(pack_versions, actions, scoped_runners)
+      runner_ids = MapSet.new(runners, & &1.id)
+      actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
+      snapshot = Catalog.MCPProjection.build(pack_versions, actions, runners)
 
       with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == input.pack_ref)),
            %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == input.action_id)),
@@ -369,11 +366,6 @@ defmodule EmisarWeb.MCP.ActionTools do
     |> Enum.map_join(fn value -> Integer.to_string(byte_size(value)) <> ":" <> value end)
     |> Crypto.hash_hex()
   end
-
-  defp membership_scopes(%{created_by_membership_id: id}) when is_binary(id),
-    do: Runners.runner_scopes_for_membership(id)
-
-  defp membership_scopes(_api_key), do: nil
 
   defp error(code, message, dispatch_started \\ false, details \\ nil) do
     error = %{code: code, message: message, retryable: false}

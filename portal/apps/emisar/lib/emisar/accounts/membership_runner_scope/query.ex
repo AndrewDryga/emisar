@@ -1,8 +1,9 @@
-defmodule Emisar.Runners.UserRunnerScope.Query do
+defmodule Emisar.Accounts.MembershipRunnerScope.Query do
   use Emisar, :query
 
-  def all,
-    do: from(scopes in Emisar.Runners.UserRunnerScope, as: :scopes)
+  def all do
+    from(scopes in Emisar.Accounts.MembershipRunnerScope, as: :scopes)
+  end
 
   def by_membership_id(queryable \\ all(), membership_id),
     do: where(queryable, [scopes: s], s.membership_id == ^membership_id)

@@ -54,6 +54,7 @@ defmodule Emisar.Approvals do
       opts = Keyword.put_new(opts, :order_by, [{:requests, :asc, :requested_at}])
 
       Request.Query.pending()
+      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
     end
@@ -72,6 +73,7 @@ defmodule Emisar.Approvals do
          ) do
       :ok ->
         Request.Query.pending()
+        |> scope_requests_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.aggregate(:count)
 
@@ -143,6 +145,7 @@ defmodule Emisar.Approvals do
       # ORDER BY so it matches the keyset WHERE.
       Request.Query.all()
       |> apply_request_status_filter(status)
+      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
     end
@@ -164,6 +167,7 @@ defmodule Emisar.Approvals do
          true <- Repo.valid_uuid?(id) do
       Request.Query.all()
       |> Request.Query.by_id(id)
+      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Request.Query, opts)
     else
@@ -191,6 +195,7 @@ defmodule Emisar.Approvals do
            ) do
       Request.Query.all()
       |> Request.Query.by_run_id(run_id)
+      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Request.Query)
     end
@@ -232,7 +237,7 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.view_approvals_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, request.account_id) do
+         {:ok, _request} <- fetch_approval_request_by_id(request.id, subject) do
       decisions =
         Decision.Query.all()
         |> Decision.Query.by_request_id(request.id)
@@ -255,7 +260,7 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.view_approvals_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, request.account_id) do
+         {:ok, _request} <- fetch_approval_request_by_id(request.id, subject) do
       {:ok, Repo.one(Decision.Query.approved_distinct_decider_count(request.id))}
     end
   end
@@ -533,11 +538,15 @@ defmodule Emisar.Approvals do
           locked =
             Request.Query.all()
             |> Request.Query.by_id(request.id)
+            |> scope_requests_to_subject(subject)
             |> Authorizer.for_subject(subject)
             |> Request.Query.lock_for_update()
             |> repo.one()
 
-          {:ok, locked}
+          case locked do
+            %Request{} = locked -> {:ok, locked}
+            nil -> {:error, :not_found}
+          end
         end)
         |> Multi.run(:decision, fn _repo, %{locked: locked} ->
           insert_decision(locked, by_user_id, decision)
@@ -576,6 +585,7 @@ defmodule Emisar.Approvals do
   defp fetch_approval_request_for_decision(id, %Subject{} = subject) do
     Request.Query.all()
     |> Request.Query.by_id(id)
+    |> scope_requests_to_subject(subject)
     |> Authorizer.for_subject(subject)
     |> Repo.fetch(Request.Query)
   end
@@ -694,8 +704,9 @@ defmodule Emisar.Approvals do
     # `:pending_approval` — a cancel/expiry between parking and this approval
     # makes it non-dispatchable, so the approve must abort rather than resurrect
     # it. With the request + run both locked, the decision is atomic.
-    with {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
-         {:ok, run} <- Runs.fetch_and_lock_pending_approval_run(repo, locked.run_id),
+    with {:ok, run} <- Runs.fetch_and_lock_pending_approval_run(repo, locked.run_id),
+         :ok <- Runs.ensure_run_initiator_authorized(repo, run),
+         {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
          {:ok, released_run} <- Runs.release_pending_approval_run(run, repo: repo),
          {:ok, grant} <- mint_grant(locked, released_run, by_user_id, attrs) do
       {:ok,
@@ -1064,6 +1075,7 @@ defmodule Emisar.Approvals do
 
       Grant.Query.all()
       |> Grant.Query.by_id(grant.id)
+      |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Grant.Query,
         with: &Grant.Changeset.revoke(&1, by_user_id),
@@ -1086,6 +1098,7 @@ defmodule Emisar.Approvals do
            ) do
       grants =
         Grant.Query.not_revoked()
+        |> scope_grants_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -1119,6 +1132,7 @@ defmodule Emisar.Approvals do
       |> Grant.Query.ordered_by_recent()
       |> maybe_filter_expired(include_expired)
       |> apply_grant_preloads(preloads)
+      |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Grant.Query, opts)
     end
@@ -1160,6 +1174,7 @@ defmodule Emisar.Approvals do
       Grant.Query.all()
       |> Grant.Query.by_id(id)
       |> apply_grant_preloads(preloads)
+      |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Grant.Query, opts)
     else
@@ -1167,6 +1182,12 @@ defmodule Emisar.Approvals do
       other -> other
     end
   end
+
+  defp scope_requests_to_subject(queryable, %Subject{} = subject),
+    do: Request.Query.by_runner_access(queryable, Accounts.runner_access_for_subject(subject))
+
+  defp scope_grants_to_subject(queryable, %Subject{} = subject),
+    do: Grant.Query.by_runner_access(queryable, Accounts.runner_access_for_subject(subject))
 
   # -- Authorization --------------------------------------------------
 

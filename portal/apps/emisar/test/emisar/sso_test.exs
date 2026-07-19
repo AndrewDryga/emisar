@@ -13,9 +13,11 @@ defmodule Emisar.SSOTest do
   resolution/JIT/gate logic with canned claims and no live IdP.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Repo, SSO}
+  alias Emisar.{Accounts, Audit, Repo, SSO}
+  alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
-  alias Emisar.SSO.{GroupRoleMapping, IdentityProvider, LinkRequest, UserIdentity}
+  alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
+  alias Emisar.SSO.{IdentityProvider, LinkRequest, UserIdentity}
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -378,6 +380,48 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "change_group_runner_access_mapping/2" do
+    test "builds explicit create and update changesets" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      create =
+        SSO.change_group_runner_access_mapping(provider, %{
+          external_group_id: "grp-db",
+          runner_access_mode: :restricted,
+          runner_scope_groups: ["db"]
+        })
+
+      assert %Ecto.Changeset{data: %GroupRunnerAccessMapping{}} = create
+      assert Ecto.Changeset.get_field(create, :account_id) == account.id
+      assert Ecto.Changeset.get_field(create, :provider_id) == provider.id
+
+      mapping = %GroupRunnerAccessMapping{runner_access_mode: :restricted}
+
+      update =
+        SSO.change_group_runner_access_mapping(mapping, %{
+          runner_access_mode: :all,
+          runner_scope_groups: [],
+          runner_scope_runner_ids: []
+        })
+
+      assert Ecto.Changeset.get_change(update, :runner_access_mode) == :all
+    end
+
+    test "rejects selected access without a group or runner" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      changeset =
+        SSO.change_group_runner_access_mapping(provider, %{
+          external_group_id: "grp-empty",
+          runner_access_mode: :restricted
+        })
+
+      assert "is invalid" in errors_on(changeset).runner_access_mode
+    end
+  end
+
   # -- configure_provider/2 --------------------------------------------
 
   describe "configure_provider/2 gating" do
@@ -439,6 +483,76 @@ defmodule Emisar.SSOTest do
       assert provider.kind == :okta
       assert provider.default_role == :viewer
       assert provider.satisfies_mfa
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_configured"]])
+
+      assert event.payload["runner_access"] == %{
+               "mode" => "none",
+               "groups" => [],
+               "runner_ids" => []
+             }
+    end
+
+    test "rejects a default that names a runner in another account" do
+      {_user, _account, subject} = enterprise_owner()
+      foreign_runner = Fixtures.Runners.create_runner()
+
+      assert {:error, :invalid_runner_access} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   default_runner_access_mode: :restricted,
+                   default_runner_scope_runner_ids: [foreign_runner.id]
+                 },
+                 subject
+               )
+    end
+
+    test "a restricted admin cannot configure or update a broader provider default" do
+      {_owner, account, owner_subject} = enterprise_owner()
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      assert {:ok, _membership} =
+               Accounts.update_membership_runner_access(
+                 membership,
+                 db_access,
+                 owner_subject
+               )
+
+      admin_subject = Fixtures.Subjects.membership_subject(membership)
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        default_runner_access_mode: :all
+      }
+
+      assert {:error, :runner_access_exceeds_subject} =
+               SSO.configure_provider(attrs, admin_subject)
+
+      provider = provider_fixture(account)
+
+      assert {:error, :runner_access_exceeds_subject} =
+               SSO.update_provider(
+                 provider,
+                 %{default_runner_access_mode: :all},
+                 admin_subject
+               )
     end
 
     test "JumpCloud is an accepted provider kind" do
@@ -739,6 +853,43 @@ defmodule Emisar.SSOTest do
       assert reloaded.name == "Renamed"
     end
 
+    test "a SCIM provider default change reconciles members and audits before/after access" do
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      %{membership: membership} = provision(provider, "okta|default-change")
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               RunnerAccess.none()
+
+      assert {:ok, _updated} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   default_runner_access_mode: :restricted,
+                   default_runner_scope_groups: ["database"],
+                   default_runner_scope_runner_ids: []
+                 },
+                 subject
+               )
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %RunnerAccess{mode: :restricted, groups: ["database"], runner_ids: []}
+
+      assert {:ok, [event | _], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      assert event.payload["before"] == %{
+               "mode" => "none",
+               "groups" => [],
+               "runner_ids" => []
+             }
+
+      assert event.payload["after"] == %{
+               "mode" => "restricted",
+               "groups" => ["database"],
+               "runner_ids" => []
+             }
+    end
+
     test "a free plan is denied on update (:sso_not_available)" do
       # The row exists (built via the fixture, bypassing the gate), but the plan
       # gate (`ensure_can_configure_sso`) fires before any row touch.
@@ -994,8 +1145,14 @@ defmodule Emisar.SSOTest do
 
   describe "complete_auth/3 — resolution + JIT" do
     test "first login JIT-provisions a fresh user + identity + membership at default_role" do
-      {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account, default_role: :operator)
+      {_user, account, subject} = enterprise_owner()
+
+      provider =
+        provider_fixture(account,
+          default_role: :operator,
+          default_runner_access_mode: :restricted,
+          default_runner_scope_groups: ["production"]
+        )
 
       claims = %{
         "sub" => "okta|new-1",
@@ -1015,6 +1172,20 @@ defmodule Emisar.SSOTest do
 
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       assert membership.role == :operator
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %RunnerAccess{mode: :restricted, groups: ["production"], runner_ids: []}
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject,
+                 filter: [event_type: ["user.provisioned_via_sso"]]
+               )
+
+      assert event.payload["runner_access"] == %{
+               "mode" => "restricted",
+               "groups" => ["production"],
+               "runner_ids" => []
+             }
     end
 
     test "an existing same-email user is NEVER matched — a colliding email fails :email_taken" do
@@ -1273,8 +1444,14 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "creates a user_identity (created_by :provider, provisioned_via :scim) + membership at default_role" do
-      %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
+    test "creates a user_identity + directory-owned membership at the provider defaults" do
+      %{provider: provider, account: account, subject: subject} =
+        scim_provider(%{
+          default_role: :operator,
+          default_runner_access_mode: :restricted,
+          default_runner_scope_groups: ["production"]
+        })
+
       attrs = scim_attrs(%{external_id: "okta|prov-1", email: "prov@acme.test"})
 
       assert {:ok, %{user: user, identity: identity, membership: membership}} =
@@ -1293,7 +1470,23 @@ defmodule Emisar.SSOTest do
 
       assert membership.account_id == account.id
       assert membership.role == :operator
+      assert membership.directory_managed
+      assert membership.runner_access_directory_managed
       refute membership.disabled_at
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %RunnerAccess{mode: :restricted, groups: ["production"], runner_ids: []}
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject,
+                 filter: [event_type: ["user.provisioned_via_scim"]]
+               )
+
+      assert event.payload["runner_access"] == %{
+               "mode" => "restricted",
+               "groups" => ["production"],
+               "runner_ids" => []
+             }
     end
 
     test "a provision with active:false is born suspended — a user deactivated in the IdP never holds access",
@@ -1790,15 +1983,16 @@ defmodule Emisar.SSOTest do
       subject: subject
     } do
       %{identity: identity, membership: membership} = provision(provider, "okta|locked")
-      refute membership.directory_managed
+      assert membership.directory_managed
+      stale_membership = %{membership | directory_managed: false}
 
-      # A sync recompute (even to the default role, no mapping) marks the role.
+      # A sync recompute (even to the default role, no mapping) keeps the role marked.
       assert {:ok, _synced} = SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
       assert Repo.reload!(membership).directory_managed
 
       # The reject is judged on the LOCKED row's own flag — passing the STALE
       # pre-sync struct (flag false) still refuses. No UI, no caller-supplied hint.
-      assert Accounts.update_membership_role(membership, "admin", subject) ==
+      assert Accounts.update_membership_role(stale_membership, "admin", subject) ==
                {:error, :role_managed_by_directory}
     end
 
@@ -1966,18 +2160,28 @@ defmodule Emisar.SSOTest do
       assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
     end
 
-    test "hands role control back to operators — clears directory_managed on synced members", %{
+    test "hands role and runner access control back while retaining the last synced values", %{
       subject: subject,
       provider: provider
     } do
       {:ok, provider, _raw} = SSO.enable_scim(provider, subject)
       %{identity: identity, membership: membership} = provision(provider, "okta|freed")
       {:ok, _} = SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
-      assert Repo.reload!(membership).directory_managed
+      before = Repo.reload!(membership)
+      assert before.directory_managed
+      assert before.runner_access_directory_managed
+
+      access_before =
+        Accounts.runner_access_for_membership(membership.account_id, membership.id)
 
       {:ok, _} = SSO.disable_scim(provider, subject)
 
-      refute Repo.reload!(membership).directory_managed
+      after_disable = Repo.reload!(membership)
+      refute after_disable.directory_managed
+      refute after_disable.runner_access_directory_managed
+
+      assert Accounts.runner_access_for_membership(membership.account_id, membership.id) ==
+               access_before
     end
 
     test "a non-admin (no manage_sso) is denied → :unauthorized", %{
@@ -2272,6 +2476,241 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "list_group_runner_access_mappings/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "lists only the provider's mappings", %{provider: provider, subject: subject} do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["db"]
+          },
+          subject
+        )
+
+      assert {:ok, [listed], _meta} =
+               SSO.list_group_runner_access_mappings(provider, subject)
+
+      assert listed.id == mapping.id
+    end
+
+    test "is permission and account scoped", %{provider: provider, account: account} do
+      assert {:error, :unauthorized} =
+               SSO.list_group_runner_access_mappings(provider, viewer_in(account))
+
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert {:ok, [], _meta} =
+               SSO.list_group_runner_access_mappings(provider, other_subject)
+    end
+  end
+
+  describe "create_group_runner_access_mapping/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "creates an independent additive access grant", %{
+      provider: provider,
+      subject: subject
+    } do
+      assert {:ok, %GroupRunnerAccessMapping{} = mapping} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{
+                   external_group_id: "grp-prod",
+                   external_group_display: "Production",
+                   runner_access_mode: :restricted,
+                   runner_scope_groups: ["production"]
+                 },
+                 subject
+               )
+
+      assert mapping.external_group_id == "grp-prod"
+      assert mapping.runner_access_mode == :restricted
+      assert mapping.runner_scope_groups == ["production"]
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject,
+                 filter: [event_type: ["sso.group_runner_access_mapping_created"]]
+               )
+
+      assert event.payload["before"]["mode"] == "none"
+      assert event.payload["after"]["mode"] == "restricted"
+      assert event.payload["after"]["groups"] == ["production"]
+    end
+
+    test "rejects a grant that names a runner in another account", %{
+      provider: provider,
+      subject: subject
+    } do
+      foreign_runner = Fixtures.Runners.create_runner()
+
+      assert {:error, :invalid_runner_access} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{
+                   external_group_id: "grp-foreign",
+                   runner_access_mode: :restricted,
+                   runner_scope_runner_ids: [foreign_runner.id]
+                 },
+                 subject
+               )
+    end
+
+    test "the database rejects an account/provider tenant mismatch", %{
+      provider: provider
+    } do
+      {_user, other_account, _subject} = enterprise_owner()
+
+      changeset =
+        Emisar.SSO.GroupRunnerAccessMapping.Changeset.create(
+          other_account.id,
+          provider.id,
+          %{external_group_id: "grp-cross-tenant", runner_access_mode: :all}
+        )
+
+      assert {:error, changeset} = Repo.insert(changeset)
+      assert "does not exist" in errors_on(changeset).provider_id
+    end
+
+    test "refuses a grant broader than the configuring admin currently has", %{
+      account: account,
+      provider: provider,
+      subject: owner_subject
+    } do
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(membership, db_access, owner_subject)
+
+      admin_subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:error, :runner_access_exceeds_subject} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{external_group_id: "grp-all", runner_access_mode: :all},
+                 admin_subject
+               )
+    end
+
+    test "is account scoped", %{provider: provider} do
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert {:error, :not_found} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{external_group_id: "grp-x", runner_access_mode: :all},
+                 other_subject
+               )
+    end
+  end
+
+  describe "update_group_runner_access_mapping/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "replaces the mapped access", %{provider: provider, subject: subject} do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            runner_scope_groups: ["db"]
+          },
+          subject
+        )
+
+      assert {:ok, updated} =
+               SSO.update_group_runner_access_mapping(
+                 mapping,
+                 %{
+                   runner_access_mode: :restricted,
+                   runner_scope_groups: ["app"],
+                   runner_scope_runner_ids: []
+                 },
+                 subject
+               )
+
+      assert updated.runner_scope_groups == ["app"]
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject,
+                 filter: [event_type: ["sso.group_runner_access_mapping_updated"]]
+               )
+
+      assert event.payload["before"]["groups"] == ["db"]
+      assert event.payload["after"]["groups"] == ["app"]
+    end
+
+    test "another account cannot update it", %{provider: provider, subject: subject} do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-db", runner_access_mode: :all},
+          subject
+        )
+
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert {:error, :not_found} =
+               SSO.update_group_runner_access_mapping(
+                 mapping,
+                 %{runner_access_mode: :all},
+                 other_subject
+               )
+    end
+  end
+
+  describe "delete_group_runner_access_mapping/2" do
+    setup do
+      scim_provider()
+    end
+
+    test "soft-deletes the independent grant", %{provider: provider, subject: subject} do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-db", runner_access_mode: :all},
+          subject
+        )
+
+      assert {:ok, deleted} = SSO.delete_group_runner_access_mapping(mapping, subject)
+      assert deleted.deleted_at
+      assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, subject)
+    end
+
+    test "another account cannot delete it", %{provider: provider, subject: subject} do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-db", runner_access_mode: :all},
+          subject
+        )
+
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert {:error, :not_found} =
+               SSO.delete_group_runner_access_mapping(mapping, other_subject)
+    end
+  end
+
   # -- list_link_requests/3 --------------------------------------------
 
   describe "list_link_requests/3" do
@@ -2355,9 +2794,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- approve_link_request/2 ------------------------------------------
+  # -- approve_link_request/3 ------------------------------------------
 
-  describe "approve_link_request/2" do
+  describe "approve_link_request/3" do
     setup do
       {_owner, account, subject} = enterprise_owner()
       provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
@@ -2377,13 +2816,18 @@ defmodule Emisar.SSOTest do
           "name" => "Approve Me"
         })
 
-      assert {:ok, %{user: user, identity: identity}} = SSO.approve_link_request(request, subject)
+      {:ok, access} = RunnerAccess.restricted(["production"], [])
+
+      assert {:ok, %{user: user, identity: identity}} =
+               SSO.approve_link_request(request, access, subject)
 
       assert user.email == "approve@acme.test"
       assert identity.provider_identifier == "okta|approve"
       assert identity.created_by == :admin
       assert identity.provisioned_via == :manual
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).role == :operator
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert membership.role == :operator
+      assert Accounts.runner_access_for_membership(account.id, membership.id) == access
       assert link_requests(provider.id) == []
 
       # The bound sub now signs in normally, resolving to the provisioned user.
@@ -2406,7 +2850,7 @@ defmodule Emisar.SSOTest do
 
       :ok = SSO.subscribe_link_request(request.id)
 
-      assert {:ok, _} = SSO.approve_link_request(request, subject)
+      assert {:ok, _} = SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
       assert_receive {:sso_link_request, :approved, %{id: id, provider_id: provider_id}}
       assert id == request.id
@@ -2421,12 +2865,15 @@ defmodule Emisar.SSOTest do
       # An existing :admin member whose email the IdP asserts.
       member = Fixtures.Users.create_user(%{email: "member@acme.test"})
 
-      _ =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: member.id,
           role: :admin
         )
+
+      {:ok, existing_access} = RunnerAccess.restricted(["database"], [])
+      Fixtures.Memberships.force_runner_access(membership, existing_access)
 
       request =
         capture_request(provider, %{
@@ -2436,14 +2883,21 @@ defmodule Emisar.SSOTest do
         })
 
       assert request.matched_user_id == member.id
-      assert {:ok, %{user: user, identity: identity}} = SSO.approve_link_request(request, subject)
+
+      assert {:ok, %{user: user, identity: identity}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
       # Bound to the EXISTING user; the sub is stored as both ids.
       assert user.id == member.id
       assert identity.provider_identifier == "okta|m"
       assert identity.scim_external_id == "okta|m"
       # The member's existing role is untouched (not downgraded to :operator).
-      assert Fixtures.Memberships.fetch_membership(account.id, member.id).role == :admin
+      membership = Fixtures.Memberships.fetch_membership(account.id, member.id)
+      assert membership.role == :admin
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               existing_access
+
       assert link_requests(provider.id) == []
     end
 
@@ -2460,7 +2914,9 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert {:error, :email_taken} = SSO.approve_link_request(request, subject)
+      assert {:error, :email_taken} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
       # The request survives so an admin can resolve it another way.
       assert [_still_pending] = link_requests(provider.id)
     end
@@ -2468,7 +2924,9 @@ defmodule Emisar.SSOTest do
     test "denies a viewer and leaves the request pending", %{account: account, provider: provider} do
       request = capture_request(provider, %{"sub" => "okta|v", "email" => "v@acme.test"})
 
-      assert {:error, :unauthorized} = SSO.approve_link_request(request, viewer_in(account))
+      assert {:error, :unauthorized} =
+               SSO.approve_link_request(request, RunnerAccess.none(), viewer_in(account))
+
       assert [_still_pending] = link_requests(provider.id)
     end
 
@@ -2479,7 +2937,9 @@ defmodule Emisar.SSOTest do
       # request is even fetched — so a free-plan owner is denied outright.
       {_u, _free_account, free_subject} = Fixtures.Subjects.owner_subject(%{})
 
-      assert {:error, :sso_not_available} = SSO.approve_link_request(request, free_subject)
+      assert {:error, :sso_not_available} =
+               SSO.approve_link_request(request, RunnerAccess.none(), free_subject)
+
       assert [_still_pending] = link_requests(provider.id)
     end
 
@@ -2487,7 +2947,9 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       request = capture_request(provider, %{"sub" => "okta|x", "email" => "x@acme.test"})
 
-      assert {:error, :not_found} = SSO.approve_link_request(request, sb)
+      assert {:error, :not_found} =
+               SSO.approve_link_request(request, RunnerAccess.none(), sb)
+
       assert [_still_pending] = link_requests(provider.id)
     end
 
@@ -2514,7 +2976,9 @@ defmodule Emisar.SSOTest do
       assert request.matched_user_id == member.id
 
       # Admin approves → the identity is linked to the existing member.
-      assert {:ok, %{user: user}} = SSO.approve_link_request(request, subject)
+      assert {:ok, %{user: user}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
       assert user.id == member.id
 
       # The next SCIM push self-heals: the identity now resolves to the member.

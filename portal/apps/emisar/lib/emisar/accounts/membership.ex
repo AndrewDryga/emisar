@@ -7,9 +7,15 @@ defmodule Emisar.Accounts.Membership do
   alias Emisar.Auth
 
   @roles Auth.Role.all()
+  @runner_access_modes Emisar.Accounts.RunnerAccess.modes()
 
   schema "account_memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator
+    field :runner_access_mode, Ecto.Enum, values: @runner_access_modes, default: :none
+    field :runner_access_directory_managed, :boolean, default: false
+    field :directory_provider_id, Ecto.UUID
+    field :directory_authorization_version, :integer, default: 0
+    field :directory_authorization_pending_version, :integer
     # True when a directory sync (SCIM group->role recompute) owns this role, so
     # the operator role-change path (`Accounts.update_membership_role`) rejects a
     # manual change independently of the UI. Set by the sync write path, cleared

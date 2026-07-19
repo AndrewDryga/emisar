@@ -126,25 +126,33 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  def membership_runner_scopes_changed(
+  def membership_runner_access_changed(
         %Subject{} = subject,
         %Accounts.Membership{} = membership,
-        scopes
-      )
-      when is_list(scopes) do
+        %Accounts.RunnerAccess{} = before_access,
+        %Accounts.RunnerAccess{} = after_access
+      ) do
     Audit.changeset(
       membership.account_id,
-      "membership.runner_scopes_changed",
+      "membership.runner_access_changed",
       actor(subject) ++
         [
           target_kind: "user",
           target_id: membership.user_id,
           payload: %{
-            scope_count: length(scopes),
-            scopes: Enum.map(scopes, fn {type, value} -> %{type: type, value: value} end)
+            before: runner_access_payload(before_access),
+            after: runner_access_payload(after_access)
           }
         ]
     )
+  end
+
+  defp runner_access_payload(%Accounts.RunnerAccess{} = access) do
+    %{
+      mode: to_string(access.mode),
+      groups: access.groups,
+      runner_ids: access.runner_ids
+    }
   end
 
   # Self-service (no Subject): switching tenants is the user acting on
@@ -206,7 +214,12 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  def user_invited(%Subject{} = subject, %Users.User{} = invited, role) do
+  def user_invited(
+        %Subject{} = subject,
+        %Users.User{} = invited,
+        role,
+        %Accounts.RunnerAccess{} = access
+      ) do
     Audit.changeset(
       subject.account.id,
       "user.invited",
@@ -215,7 +228,7 @@ defmodule Emisar.Audit.Events do
           target_kind: "user",
           target_id: invited.id,
           target_label: invited.email,
-          payload: %{role: role}
+          payload: %{role: role, runner_access: runner_access_payload(access)}
         ]
     )
   end
@@ -1094,7 +1107,8 @@ defmodule Emisar.Audit.Events do
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
-        role: to_string(provider.default_role)
+        role: to_string(provider.default_role),
+        runner_access: provider |> provider_runner_access() |> runner_access_payload()
       }
     )
   end
@@ -1117,7 +1131,8 @@ defmodule Emisar.Audit.Events do
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
-        role: to_string(provider.default_role)
+        role: to_string(provider.default_role),
+        runner_access: provider |> provider_runner_access() |> runner_access_payload()
       }
     )
   end
@@ -1176,6 +1191,28 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "A membership's runner access recomputed from its SCIM provider baseline and mapped groups."
+  def membership_runner_access_synced_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        %Accounts.RunnerAccess{} = before_access,
+        %Accounts.RunnerAccess{} = after_access
+      ) do
+    Audit.changeset(membership.account_id, "membership.runner_access_synced_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      target_kind: "user",
+      target_id: membership.user_id,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        before: runner_access_payload(before_access),
+        after: runner_access_payload(after_access)
+      }
+    )
+  end
+
   defp directory_sync_membership_event(
          %Accounts.Membership{} = membership,
          %SSO.IdentityProvider{} = provider,
@@ -1207,6 +1244,87 @@ defmodule Emisar.Audit.Events do
   def group_role_mapping_deleted(%Subject{} = subject, %SSO.GroupRoleMapping{} = mapping),
     do: group_role_mapping_event(subject, mapping, "sso.group_mapping_deleted", nil)
 
+  @doc "An IdP group runner-access mapping created by an operator."
+  def group_runner_access_mapping_created(
+        %Subject{} = subject,
+        %SSO.IdentityProvider{} = provider,
+        %SSO.GroupRunnerAccessMapping{} = mapping
+      ) do
+    access = runner_access_from_mapping(mapping)
+
+    group_runner_access_mapping_event(
+      subject,
+      mapping,
+      "sso.group_runner_access_mapping_created",
+      provider,
+      Accounts.RunnerAccess.none(),
+      access
+    )
+  end
+
+  @doc "An IdP group runner-access mapping updated by an operator."
+  def group_runner_access_mapping_updated(
+        %Subject{} = subject,
+        %SSO.GroupRunnerAccessMapping{} = before_mapping,
+        %SSO.GroupRunnerAccessMapping{} = after_mapping
+      ) do
+    group_runner_access_mapping_event(
+      subject,
+      after_mapping,
+      "sso.group_runner_access_mapping_updated",
+      nil,
+      runner_access_from_mapping(before_mapping),
+      runner_access_from_mapping(after_mapping)
+    )
+  end
+
+  @doc "An IdP group runner-access mapping deleted by an operator."
+  def group_runner_access_mapping_deleted(
+        %Subject{} = subject,
+        %SSO.GroupRunnerAccessMapping{} = mapping
+      ) do
+    access = runner_access_from_mapping(mapping)
+
+    group_runner_access_mapping_event(
+      subject,
+      mapping,
+      "sso.group_runner_access_mapping_deleted",
+      nil,
+      access,
+      Accounts.RunnerAccess.none()
+    )
+  end
+
+  defp group_runner_access_mapping_event(
+         subject,
+         mapping,
+         event_type,
+         provider,
+         before_access,
+         after_access
+       ) do
+    Audit.changeset(
+      mapping.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          target_kind: "identity_provider",
+          target_id: provider_id(provider, mapping),
+          target_label: mapping.external_group_display || mapping.external_group_id,
+          payload: %{
+            external_group_id: mapping.external_group_id,
+            before: runner_access_payload(before_access),
+            after: runner_access_payload(after_access)
+          }
+        ]
+    )
+  end
+
+  defp runner_access_from_mapping(%SSO.GroupRunnerAccessMapping{} = mapping) do
+    {:ok, access} = Accounts.RunnerAccess.from_prefixed_fields(mapping, :runner)
+    access
+  end
+
   defp group_role_mapping_event(
          %Subject{} = subject,
          %SSO.GroupRoleMapping{} = mapping,
@@ -1231,12 +1349,39 @@ defmodule Emisar.Audit.Events do
 
   defp provider_id(%SSO.IdentityProvider{id: id}, _mapping), do: id
   defp provider_id(nil, %SSO.GroupRoleMapping{provider_id: id}), do: id
+  defp provider_id(nil, %SSO.GroupRunnerAccessMapping{provider_id: id}), do: id
 
   def identity_provider_configured(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_configured")
 
   def identity_provider_updated(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_updated")
+
+  @doc "An identity provider update with an explicit default runner-access transition."
+  def identity_provider_updated(
+        %Subject{} = subject,
+        %SSO.IdentityProvider{} = before_provider,
+        %SSO.IdentityProvider{} = after_provider
+      ) do
+    before_access = provider_runner_access(before_provider)
+    after_access = provider_runner_access(after_provider)
+
+    Audit.changeset(
+      after_provider.account_id,
+      "sso.provider_updated",
+      actor(subject) ++
+        [
+          target_kind: "identity_provider",
+          target_id: after_provider.id,
+          target_label: after_provider.name,
+          payload: %{
+            kind: to_string(after_provider.kind),
+            before: runner_access_payload(before_access),
+            after: runner_access_payload(after_access)
+          }
+        ]
+    )
+  end
 
   def identity_provider_deleted(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_deleted")
@@ -1254,9 +1399,17 @@ defmodule Emisar.Audit.Events do
           target_kind: "identity_provider",
           target_id: provider.id,
           target_label: provider.name,
-          payload: %{kind: to_string(provider.kind)}
+          payload: %{
+            kind: to_string(provider.kind),
+            runner_access: provider |> provider_runner_access() |> runner_access_payload()
+          }
         ]
     )
+  end
+
+  defp provider_runner_access(%SSO.IdentityProvider{} = provider) do
+    {:ok, access} = Accounts.RunnerAccess.from_prefixed_fields(provider, :default_runner)
+    access
   end
 
   @doc "An admin approved a pending manual SSO link request — the captured identity is now provisioned. Actor is the admin."

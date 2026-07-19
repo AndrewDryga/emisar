@@ -2013,7 +2013,8 @@ defmodule Emisar.RunbooksTest do
 
       # Narrow the initiating membership to a DIFFERENT runner — `runner` is now
       # out of scope for every later wave.
-      assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"runner", other.id}], owner)
+      {:ok, access} = Accounts.RunnerAccess.restricted([], [other.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
 
       Enum.each(wave1, &finish!/1)
 

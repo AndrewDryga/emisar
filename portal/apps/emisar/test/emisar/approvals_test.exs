@@ -1,7 +1,7 @@
 defmodule Emisar.ApprovalsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{Approvals, Audit, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Repo, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
@@ -12,6 +12,14 @@ defmodule Emisar.ApprovalsTest do
       Keyword.get(opts, :account) || Fixtures.Accounts.create_account()
 
     runner = Keyword.get(opts, :runner) || Fixtures.Runners.create_runner(account_id: account.id)
+    initiator = Fixtures.Users.create_user()
+
+    initiating_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: initiator.id,
+        role: "operator"
+      )
 
     {:ok, run} =
       Runs.create_run(%{
@@ -19,6 +27,8 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        requested_by_id: initiator.id,
+        initiating_membership_id: initiating_membership.id,
         args: %{},
         # A real require-approval run is parked :pending_approval — the approval
         # finalizer only dispatches a run still in that state, so the fixture
@@ -40,6 +50,12 @@ defmodule Emisar.ApprovalsTest do
       )
 
     Fixtures.Subjects.subject_for(operator, account, role: :owner)
+  end
+
+  defp subject_with_runner_access(subject, access) do
+    membership = Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
+    Fixtures.Memberships.force_runner_access(membership, access)
+    Fixtures.Subjects.subject_for(subject.actor, subject.account, role: subject.role)
   end
 
   # Drain the Swoosh test mailbox (notify runs inline under
@@ -105,6 +121,7 @@ defmodule Emisar.ApprovalsTest do
         action_id: "linux.uptime",
         source: "mcp",
         api_key_id: key.id,
+        initiating_membership_id: key.created_by_membership_id,
         args: %{},
         args_sha256: "abc123",
         status: :pending_approval
@@ -191,12 +208,16 @@ defmodule Emisar.ApprovalsTest do
 
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
+    membership = Fixtures.Memberships.fetch_membership(account.id, decider.id)
+
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        requested_by_id: decider.id,
+        initiating_membership_id: membership.id,
         args: %{},
         status: :pending_approval
       })
@@ -211,6 +232,14 @@ defmodule Emisar.ApprovalsTest do
     account = Fixtures.Accounts.create_account()
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Emisar.Runners.subscribe_runner_transport(runner)
+    initiator = Fixtures.Users.create_user()
+
+    initiating_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: initiator.id,
+        role: "operator"
+      )
 
     {:ok, run} =
       Runs.create_run(%{
@@ -218,6 +247,8 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        requested_by_id: initiator.id,
+        initiating_membership_id: initiating_membership.id,
         args: %{},
         # A real require-approval run is parked :pending_approval; the finalizer
         # only dispatches a run still in that state.
@@ -286,6 +317,42 @@ defmodule Emisar.ApprovalsTest do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject_b)
+    end
+
+    test "runner access filters the queue, badge, detail, and decision authority" do
+      account = Fixtures.Accounts.create_account()
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      {_, db_run} = run_fixture(account: account, runner: db_runner)
+      {_, web_run} = run_fixture(account: account, runner: web_runner)
+
+      {:ok, db_request} =
+        Approvals.create_request(db_run, Fixtures.Users.create_user().id, "database")
+
+      {:ok, web_request} =
+        Approvals.create_request(web_run, Fixtures.Users.create_user().id, "web")
+
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      subject =
+        account
+        |> operator_subject()
+        |> subject_with_runner_access(database_access)
+
+      assert {:ok, [%Request{id: id}], _meta} =
+               Approvals.list_pending_approval_requests(subject)
+
+      assert id == db_request.id
+      assert Approvals.count_pending_approval_requests(subject) == 1
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(web_request.id, subject)
+
+      assert {:error, :not_found} = Approvals.deny_request(web_request, subject, "forged")
+      assert Repo.reload!(web_request).status == :pending
+
+      assert {:ok, {%Request{status: :denied}, _run}} =
+               Approvals.deny_request(db_request, subject, "in scope")
     end
   end
 
@@ -1389,6 +1456,13 @@ defmodule Emisar.ApprovalsTest do
       requester = Fixtures.Users.create_user()
       approver = Fixtures.Users.create_user()
 
+      requester_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: requester.id,
+          role: "operator"
+        )
+
       _ =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
@@ -1402,6 +1476,7 @@ defmodule Emisar.ApprovalsTest do
         account: account,
         runner: runner,
         requester: requester,
+        requester_membership: requester_membership,
         approver_subject: approver_subject
       }
     end
@@ -1410,6 +1485,7 @@ defmodule Emisar.ApprovalsTest do
       account: account,
       runner: runner,
       requester: requester,
+      requester_membership: requester_membership,
       approver_subject: approver_subject
     } do
       # Parked with a signature already 2h old — it would be refused at dispatch.
@@ -1421,6 +1497,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          requested_by_id: requester.id,
+          initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval,
           attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => stale}
@@ -1440,6 +1518,7 @@ defmodule Emisar.ApprovalsTest do
       account: account,
       runner: runner,
       requester: requester,
+      requester_membership: requester_membership,
       approver_subject: approver_subject
     } do
       fresh = DateTime.to_iso8601(DateTime.utc_now())
@@ -1451,6 +1530,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          requested_by_id: requester.id,
+          initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval,
           attestation: %{
@@ -1526,7 +1607,7 @@ defmodule Emisar.ApprovalsTest do
       requester = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
+      requester_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: requester.id,
@@ -1543,6 +1624,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          requested_by_id: requester.id,
+          initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval
         })
@@ -1609,6 +1692,15 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
 
+      initiator = Fixtures.Users.create_user()
+
+      initiating_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: initiator.id,
+          role: "operator"
+        )
+
       # Operator-source run (no api_key) so effective_requester keeps the nil.
       {:ok, run} =
         Runs.create_run(%{
@@ -1616,6 +1708,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          requested_by_id: initiator.id,
+          initiating_membership_id: initiating_membership.id,
           args: %{},
           status: :pending_approval
         })
@@ -1756,12 +1850,23 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
 
+      initiator = Fixtures.Users.create_user()
+
+      initiating_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: initiator.id,
+          role: "operator"
+        )
+
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          requested_by_id: initiator.id,
+          initiating_membership_id: initiating_membership.id,
           args: %{},
           status: :pending_approval
         })
@@ -1796,26 +1901,28 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
 
+      # The requester is also an owner, so they CAN decide — self-approval is the
+      # thing under test, not the permission.
+      requester = Fixtures.Users.create_user()
+
+      requester_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: requester.id,
+          role: "owner"
+        )
+
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          requested_by_id: requester.id,
+          initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval
         })
-
-      # The requester is also an owner, so they CAN decide — self-approval is the
-      # thing under test, not the permission.
-      requester = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: requester.id,
-          role: "owner"
-        )
 
       requester_subject = Fixtures.Subjects.subject_for(requester, account, role: :owner)
 
@@ -2825,6 +2932,34 @@ defmodule Emisar.ApprovalsTest do
       # A second account's owner sees none of A's grants.
       subject_b = operator_subject(Fixtures.Accounts.create_account())
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject_b)
+    end
+
+    test "restricted managers can see and revoke only grants within their runner access" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      db_grant = insert_grant(account, key, runner_id: db_runner.id, granted_by_id: user.id)
+      web_grant = insert_grant(account, key, runner_id: web_runner.id, granted_by_id: user.id)
+      wildcard = insert_grant(account, key, runner_id: nil, granted_by_id: user.id)
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      subject =
+        account
+        |> operator_subject()
+        |> subject_with_runner_access(database_access)
+
+      assert {:ok, [%Grant{id: id}], _meta} = Approvals.list_grants_for_account(subject)
+      assert id == db_grant.id
+      assert {:error, :not_found} = Approvals.fetch_grant_by_id(web_grant.id, subject)
+      assert {:error, :not_found} = Approvals.revoke_grant(web_grant, subject)
+
+      assert {:ok, 1} = Approvals.revoke_all_grants(subject)
+      assert Repo.reload!(db_grant).revoked_at
+      refute Repo.reload!(web_grant).revoked_at
+      refute Repo.reload!(wildcard).revoked_at
     end
   end
 

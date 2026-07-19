@@ -36,6 +36,7 @@ config :emisar, Emisar.MCPOperations.Jobs.ReplayRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.DispatchTimeout, enabled: false
 config :emisar, Emisar.Runs.Jobs.EventRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.ActionRunRetention, enabled: false
+config :emisar, Emisar.SSO.Jobs.AuthorizationReconcile, enabled: false
 
 # A fixed version-compatibility policy so classification is deterministic:
 # < 0.0.1 is unsupported, [0.0.1, 0.1.0) is outdated, >= 0.1.0 is supported.

@@ -16,6 +16,42 @@ defmodule Emisar.Approvals.Request.Query do
   def by_status(queryable, status),
     do: where(queryable, [requests: r], r.status == ^status)
 
+  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: where(queryable, [requests: _], false)
+
+  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}), do: queryable
+
+  def by_runner_access(
+        queryable,
+        %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
+      ) do
+    queryable
+    |> with_named_binding(:scope_run, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [requests: request],
+        run in ^Emisar.Runs.ActionRun.Query.all(),
+        on: request.run_id == run.id,
+        as: ^binding
+      )
+    end)
+    |> with_named_binding(:scope_runner, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [scope_run: run],
+        runner in ^Emisar.Runners.Runner.Query.all(),
+        on: run.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> where(
+      [scope_runner: runner],
+      runner.id in ^runner_ids or runner.group in ^groups
+    )
+  end
+
   def pending(queryable \\ all()),
     do: where(queryable, [requests: r], r.status == :pending)
 

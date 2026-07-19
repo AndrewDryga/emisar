@@ -74,6 +74,32 @@ defmodule Emisar.Auth.SubjectTest do
       assert subject.role == :viewer
       assert subject.permissions == viewer_perms
     end
+
+    test "pending directory authorization is viewer-only except for a human owner", %{
+      user: user,
+      account: account
+    } do
+      pending_admin =
+        Subject.for_user(user, account, %Membership{
+          role: "admin",
+          user_id: user.id,
+          account_id: account.id,
+          directory_authorization_pending_version: 3
+        })
+
+      pending_owner =
+        Subject.for_user(user, account, %Membership{
+          role: "owner",
+          user_id: user.id,
+          account_id: account.id,
+          directory_authorization_pending_version: 3
+        })
+
+      assert pending_admin.role == :viewer
+      assert pending_admin.permissions == Emisar.Auth.Permissions.for_role(:viewer)
+      assert pending_owner.role == :owner
+      assert pending_owner.permissions == Emisar.Auth.Permissions.for_role(:owner)
+    end
   end
 
   describe "Authorizer.permissions_for/1" do

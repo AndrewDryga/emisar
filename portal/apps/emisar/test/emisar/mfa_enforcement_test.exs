@@ -42,7 +42,12 @@ defmodule Emisar.MfaEnforcementTest do
       email = "operator-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{user: operator_user, membership: m}} =
-        Accounts.invite_user_to_account(email, "operator", owner_subject)
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.all(),
+          owner_subject
+        )
 
       Fixtures.Users.confirm_user(operator_user)
       {:ok, _} = Accounts.mark_invitation_accepted(m, operator_user)

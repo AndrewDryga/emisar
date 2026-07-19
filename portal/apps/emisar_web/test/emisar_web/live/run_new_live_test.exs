@@ -494,12 +494,8 @@ defmodule EmisarWeb.RunNewLiveTest do
       )
 
     # Scope the operator to a group that ISN'T this runner's ("default").
-    {:ok, _} =
-      Runners.replace_runner_scopes(
-        membership,
-        [{"group", "locked-out"}],
-        owner_subject(owner, account)
-      )
+    {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["locked-out"], [])
+    Fixtures.Memberships.force_runner_access(membership, access)
 
     {:ok, lv, _html} =
       build_conn()

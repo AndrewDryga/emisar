@@ -190,15 +190,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "Couldn't load your fleet"
     end
 
-    # the list ROWS are scope-filtered to a
-    # per-membership runner ACL (operators may have one): an operator scoped to one
-    # runner sees only that row and never the out-of-scope runner (T12). But the
-    # group sidebar + fleet-health strip are deliberately NOT scope-filtered —
-    # they're whole-account source-of-truth, so their counts include both runners
-    # and can exceed the visible rows (T09 — `list_group_summaries` takes only the
-    # subject, no `membership_id`).
-    test "operator scope filters list rows but not the group/fleet counts", %{conn: conn} do
-      {_owner_conn, owner, account} = register_and_log_in(conn)
+    # Rows, group totals, and fleet health derive from the same current membership
+    # access. An operator cannot infer inaccessible runner inventory from counts.
+    test "operator access filters rows and aggregate counts", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
 
       in_scope =
         Fixtures.Runners.create_runner(
@@ -224,12 +219,8 @@ defmodule EmisarWeb.RunnersLiveTest do
         )
 
       # Scope the operator to just the in-scope runner.
-      {:ok, :ok} =
-        Emisar.Runners.replace_runner_scopes(
-          membership,
-          [{"runner", in_scope.id}],
-          Fixtures.Subjects.subject_for(owner, account)
-        )
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [in_scope.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
 
       {:ok, _lv, html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners")
@@ -237,9 +228,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       # Only the in-scope runner appears as a list row…
       assert html =~ "in-scope-runner"
       refute html =~ "out-of-scope-runner"
-      # …but the group header count is whole-account (both runners), so it can
-      # exceed the one visible row — intentional source-of-truth behaviour.
-      assert html =~ "2 runners total"
+      assert html =~ "1 runner total"
+      refute html =~ "2 runners total"
     end
 
     test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do

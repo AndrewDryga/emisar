@@ -20,7 +20,13 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:editing_id, nil)
        |> assign(:edit_form, nil)
        |> assign(:scope_editing_id, nil)
+       |> assign(:scope_access_mode, "none")
        |> assign(:scope_draft, [])
+       |> assign(:runners, [])
+       |> assign(:runners_by_id, %{})
+       |> assign(:runner_load_error?, false)
+       |> assign(:approval_access_modes, %{})
+       |> assign(:approval_scope_drafts, %{})
        # The branded sign-in link is a per-account constant to hand to members.
        |> assign(
          :sign_in_url,
@@ -41,7 +47,13 @@ defmodule EmisarWeb.TeamLive do
       # The invite page needs no member load — it renders from the subject alone,
       # so it skips the connected?/loading dance and shows the form immediately.
       :new ->
-        {:noreply, socket |> assign(:page_title, "Invite a member") |> reset_invite_form()}
+        socket = socket |> assign(:page_title, "Invite a member") |> reset_invite_form()
+
+        if connected?(socket) do
+          {:noreply, load_invite_runners(socket)}
+        else
+          {:noreply, assign(socket, :loading?, true)}
+        end
 
       # Gate load/2's reads behind connected? — they run once on the live mount,
       # not also on the dead render (IL-18). The dead render shows <.loading_state>.
@@ -76,6 +88,7 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:editing_id, id)
          |> assign(:edit_form, to_form(params, as: "user"))
          |> assign(:scope_editing_id, nil)
+         |> assign(:scope_access_mode, "none")
          |> assign(:scope_draft, [])}
     end
   end
@@ -85,37 +98,56 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
-    scopes = Map.get(socket.assigns.scopes_by_membership, id, [])
-    groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
-    runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
+    case find_membership(socket, id) do
+      %Accounts.Membership{runner_access_directory_managed: true} ->
+        {:noreply, put_flash(socket, :error, error_message(:runner_access_managed_by_directory))}
 
-    {:noreply,
-     socket
-     |> assign(:scope_editing_id, id)
-     |> assign(:scope_draft, RunnerScope.to_values(groups, runner_ids))
-     |> assign(:editing_id, nil)
-     |> assign(:edit_form, nil)}
+      %Accounts.Membership{} ->
+        access =
+          Map.get(
+            socket.assigns.runner_access_by_membership,
+            id,
+            Accounts.RunnerAccess.none()
+          )
+
+        {:noreply,
+         socket
+         |> assign(:scope_editing_id, id)
+         |> assign(:scope_access_mode, to_string(access.mode))
+         |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
+         |> assign(:editing_id, nil)
+         |> assign(:edit_form, nil)}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("cancel_scope_edit", _params, socket) do
-    {:noreply, socket |> assign(:scope_editing_id, nil) |> assign(:scope_draft, [])}
+    {:noreply,
+     socket
+     |> assign(:scope_editing_id, nil)
+     |> assign(:scope_access_mode, "none")
+     |> assign(:scope_draft, [])}
   end
 
   # Live-normalize the scope selection so the picker can disable a runner the
   # moment its group is selected (the group already covers it) — parse drops the
   # now-redundant runners and re-seeds the draft the select renders from.
-  def handle_event("scope_changed", %{"scope" => values}, socket) do
-    case RunnerScope.parse(values, socket.assigns.runners) do
-      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
-        {:noreply, assign(socket, :scope_draft, RunnerScope.to_values(groups, runner_ids))}
+  def handle_event("scope_changed", params, socket) do
+    mode = Map.get(params, "runner_access_mode", socket.assigns.scope_access_mode)
 
-      {:error, :invalid} ->
-        {:noreply, socket}
+    case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+      {:ok, %Accounts.RunnerAccess{} = access} ->
+        {:noreply,
+         socket
+         |> assign(:scope_access_mode, to_string(access.mode))
+         |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))}
+
+      {:error, :invalid_runner_access} ->
+        {:noreply, assign(socket, :scope_access_mode, mode)}
     end
   end
-
-  def handle_event("scope_changed", _params, socket),
-    do: {:noreply, assign(socket, :scope_draft, [])}
 
   def handle_event("toggle_require_mfa", _params, socket) do
     value = not socket.assigns.current_account.settings.require_mfa
@@ -244,11 +276,49 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  def handle_event("approve_request", %{"id" => id}, socket) do
+  def handle_event("approval_access_changed", %{"id" => id} = params, socket) do
+    mode = params["runner_access_mode"]
+
+    case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+      {:ok, access} ->
+        {:noreply,
+         socket
+         |> assign(
+           :approval_access_modes,
+           Map.put(socket.assigns.approval_access_modes, id, to_string(access.mode))
+         )
+         |> assign(
+           :approval_scope_drafts,
+           Map.put(
+             socket.assigns.approval_scope_drafts,
+             id,
+             RunnerScope.to_values(access.groups, access.runner_ids)
+           )
+         )}
+
+      {:error, :invalid_runner_access} ->
+        {:noreply,
+         assign(
+           socket,
+           :approval_access_modes,
+           Map.put(socket.assigns.approval_access_modes, id, mode)
+         )}
+    end
+  end
+
+  def handle_event("approve_request", %{"id" => id} = params, socket) do
     Permissions.gated(
       socket,
       SSO.subject_can_configure_sso?(socket.assigns.current_subject),
-      &do_approve_request(&1, id)
+      &do_approve_request(&1, id, params)
+    )
+  end
+
+  def handle_event("approve_request", %{"_request_id" => id} = params, socket) do
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_approve_request(&1, id, params)
     )
   end
 
@@ -262,26 +332,23 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
-      if Runners.subject_can_manage_runners?(socket.assigns.current_subject) do
-        case RunnerScope.parse(List.wrap(params["scope"]), socket.assigns.runners) do
-          {:ok, %{groups: groups, runner_ids: runner_ids}} ->
-            new_scopes =
-              Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
+      case parse_runner_access(
+             params["runner_access_mode"],
+             List.wrap(params["scope"]),
+             socket.assigns.runners
+           ) do
+        {:ok, access} ->
+          case Accounts.update_membership_runner_access(
+                 membership,
+                 access,
+                 socket.assigns.current_subject
+               ) do
+            {:ok, _membership} -> {:ok, "Runner access updated."}
+            {:error, reason} -> {:error, error_message(reason)}
+          end
 
-            case Runners.replace_runner_scopes(
-                   membership,
-                   new_scopes,
-                   socket.assigns.current_subject
-                 ) do
-              {:ok, :ok} -> {:ok, "Scope updated."}
-              {:error, reason} -> {:error, error_message(reason)}
-            end
-
-          {:error, :invalid} ->
-            {:error, "Invalid runner scope."}
-        end
-      else
-        {:error, error_message(:unauthorized)}
+        {:error, :invalid_runner_access} ->
+          {:error, "Choose at least one runner group or runner for selected access."}
       end
     end)
     |> tap_clear_scope_edit()
@@ -298,12 +365,12 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("validate", %{"invite" => params}, socket) do
-    changeset = invite_changeset(params) |> Map.put(:action, :validate)
+    changeset = invite_changeset(params, socket.assigns.runners) |> Map.put(:action, :validate)
     {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("invite", %{"invite" => params}, socket) do
-    changeset = invite_changeset(params)
+    changeset = invite_changeset(params, socket.assigns.runners)
 
     cond do
       not can_manage?(socket) ->
@@ -313,8 +380,12 @@ defmodule EmisarWeb.TeamLive do
         {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
       :else ->
-        %{email: email, role: role} = Ecto.Changeset.apply_changes(changeset)
-        do_invite(socket, email, role)
+        values = Ecto.Changeset.apply_changes(changeset)
+
+        {:ok, access} =
+          parse_runner_access(values.runner_access_mode, values.scope, socket.assigns.runners)
+
+        do_invite(socket, values.email, values.role, access)
     end
   end
 
@@ -466,6 +537,12 @@ defmodule EmisarWeb.TeamLive do
   defp error_message(:role_managed_by_directory),
     do: "That member's role is set by their identity provider."
 
+  defp error_message(:runner_access_managed_by_directory),
+    do: "That member's runner access is set by their identity provider."
+
+  defp error_message(:runner_access_exceeds_subject),
+    do: "You can only grant runner access that you currently have."
+
   defp error_message(:deactivated_in_idp),
     do: "That member is deactivated in your identity provider — reactivate them there first."
 
@@ -479,11 +556,11 @@ defmodule EmisarWeb.TeamLive do
   # role CAN do and where it stops, so the grant is a deliberate choice. Kept in
   # sync with the authorizers: owner manages billing + adds owners; admin manages
   # members/runners/policies and approves runs but only *views* billing;
-  defp do_invite(socket, email, role) do
+  defp do_invite(socket, email, role, %Accounts.RunnerAccess{} = access) do
     account = socket.assigns.current_account
     inviter = socket.assigns.current_user
 
-    case Accounts.invite_user_to_account(email, role, socket.assigns.current_subject) do
+    case Accounts.invite_user_to_account(email, role, access, socket.assigns.current_subject) do
       {:ok, %{user: user, invitation_token: token}} ->
         delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
 
@@ -557,10 +634,7 @@ defmodule EmisarWeb.TeamLive do
            Keyword.put(opts, :preload, [:user])
          ) do
       {:ok, memberships, meta} ->
-        scopes_by_membership =
-          memberships
-          |> Enum.map(& &1.id)
-          |> Runners.runner_scopes_for_membership_ids()
+        runner_access_by_membership = Accounts.runner_access_for_memberships(memberships)
 
         # Which of the visible members were provisioned by an SSO/SCIM connection
         # (and which one), so the row can attribute + link them. manage_sso-gated,
@@ -592,7 +666,7 @@ defmodule EmisarWeb.TeamLive do
           mfa_stats(socket.assigns.current_account, socket.assigns.current_subject)
         )
         |> assign(:filter_params, params)
-        |> assign(:scopes_by_membership, scopes_by_membership)
+        |> assign(:runner_access_by_membership, runner_access_by_membership)
         |> assign(:identity_by_user_id, identity_by_user_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
@@ -613,7 +687,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:mfa_stats, %{total: 0, enrolled: 0})
         |> assign(:filter_params, params)
-        |> assign(:scopes_by_membership, %{})
+        |> assign(:runner_access_by_membership, %{})
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
         |> assign(:current_role, nil)
@@ -628,6 +702,24 @@ defmodule EmisarWeb.TeamLive do
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
+    end
+  end
+
+  defp load_invite_runners(socket) do
+    case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+      {:ok, runners} ->
+        socket
+        |> assign(:loading?, false)
+        |> assign(:runners, runners)
+        |> assign(:runners_by_id, Map.new(runners, &{&1.id, &1}))
+        |> assign(:runner_load_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:loading?, false)
+        |> assign(:runners, [])
+        |> assign(:runners_by_id, %{})
+        |> assign(:runner_load_error?, true)
     end
   end
 
@@ -677,29 +769,73 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
     |> assign(:pending_requests, pending_requests)
+    |> assign_approval_access(pending_requests, providers)
     |> assign(:sync_stats, sync_stats)
+  end
+
+  defp assign_approval_access(socket, requests, providers) do
+    provider_by_id = Map.new(providers, &{&1.id, &1})
+
+    {modes, drafts} =
+      Map.new(requests, fn request ->
+        access =
+          case Map.get(provider_by_id, request.provider_id) do
+            %SSO.IdentityProvider{} = provider -> provider_default_runner_access(provider)
+            nil -> Accounts.RunnerAccess.none()
+          end
+
+        {request.id,
+         {to_string(access.mode), RunnerScope.to_values(access.groups, access.runner_ids)}}
+      end)
+      |> Enum.reduce({%{}, %{}}, fn {id, {mode, draft}}, {modes, drafts} ->
+        {Map.put(modes, id, mode), Map.put(drafts, id, draft)}
+      end)
+
+    socket
+    |> assign(:approval_access_modes, modes)
+    |> assign(:approval_scope_drafts, drafts)
+  end
+
+  defp provider_default_runner_access(provider) do
+    case Accounts.RunnerAccess.from_prefixed_fields(provider, :default_runner) do
+      {:ok, access} -> access
+      {:error, _reason} -> Accounts.RunnerAccess.none()
+    end
   end
 
   # -- Pending SSO access requests (manual provisioning) ----------------
   # People blocked at sign-in until an admin approves. Gated on configure_sso;
   # each acts on a request from the loaded list, then refreshes the SSO state.
 
-  defp do_approve_request(socket, id) do
+  defp do_approve_request(socket, id, params) do
     case find_pending_request(socket, id) do
       nil ->
         {:noreply, socket}
 
       request ->
-        case SSO.approve_link_request(request, socket.assigns.current_subject) do
-          {:ok, _result} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "#{request_label(request)} approved — they can sign in now.")
-             |> assign_sso_state()}
+        mode = Map.get(params, "runner_access_mode", "none")
 
-          {:error, _reason} ->
-            {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}
+        case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+          {:ok, access} ->
+            approve_request_with_access(socket, request, access)
+
+          {:error, :invalid_runner_access} ->
+            {:noreply,
+             put_flash(socket, :error, "Choose runner access before approving this request.")}
         end
+    end
+  end
+
+  defp approve_request_with_access(socket, request, access) do
+    case SSO.approve_link_request(request, access, socket.assigns.current_subject) do
+      {:ok, _result} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{request_label(request)} approved — they can sign in now.")
+         |> assign_sso_state()}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}
     end
   end
 
@@ -728,11 +864,7 @@ defmodule EmisarWeb.TeamLive do
   defp request_label(request),
     do: request.full_name || request.email || request.provider_identifier
 
-  defp approve_title(%{matched_user_id: nil}), do: "Approve access for this user?"
   defp approve_title(%{email: email}), do: "Link this connection to #{email}?"
-
-  defp approve_body(%{matched_user_id: nil}),
-    do: "They'll be able to sign in at the connection's default role."
 
   defp approve_body(%{email: _email}),
     do: "That IdP identity will then sign in as this existing user."
@@ -746,18 +878,16 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # Operator-facing label for a scope's type — "Group" / "Runner", not the raw
-  # lowercase atom.
-  defp scope_type_label(:group), do: "Group"
-  defp scope_type_label(:runner), do: "Runner"
+  defp runner_access_label(%Accounts.RunnerAccess{mode: :none}), do: "No runners"
+  defp runner_access_label(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
 
-  # Render a scope chip's value — humanizes runner-uuids into names.
-  defp scope_label(%{scope_type: :group, scope_value: value}, _runners), do: value
+  defp runner_access_label(%Accounts.RunnerAccess{mode: :restricted}),
+    do: "Selected runners"
 
-  defp scope_label(%{scope_type: :runner, scope_value: id}, runners_by_id) do
-    case Map.get(runners_by_id, id) do
+  defp runner_access_runner_label(runner_id, runners_by_id) do
+    case Map.get(runners_by_id, runner_id) do
       %{name: name} -> name
-      _ -> String.slice(id, 0, 8) <> "…"
+      _ -> String.slice(runner_id, 0, 8) <> "…"
     end
   end
 
@@ -790,16 +920,62 @@ defmodule EmisarWeb.TeamLive do
   # is created by `Accounts.invite_user_to_account/3`; this only drives
   # `phx-change` validation + inline field errors (email format, role) so
   # bad input lands under the input instead of in a flash banner.
-  defp invite_changeset(params \\ %{}) do
-    {%{role: "operator"}, %{email: :string, role: :string}}
-    |> Ecto.Changeset.cast(params, [:email, :role])
+  defp invite_changeset(params \\ %{}, runners \\ []) do
+    types = %{
+      email: :string,
+      role: :string,
+      runner_access_mode: :string,
+      scope: {:array, :string}
+    }
+
+    {%{role: "operator", runner_access_mode: "none", scope: []}, types}
+    |> Ecto.Changeset.cast(params, [:email, :role, :runner_access_mode, :scope])
     |> Ecto.Changeset.update_change(:email, &String.trim/1)
     |> Ecto.Changeset.validate_required([:email])
     |> Ecto.Changeset.validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
       message: "must have the @ sign and no spaces"
     )
     |> Ecto.Changeset.validate_inclusion(:role, @roles)
+    |> Ecto.Changeset.validate_inclusion(:runner_access_mode, ~w(none all restricted))
+    |> validate_invite_runner_access(runners)
   end
+
+  defp validate_invite_runner_access(changeset, runners) do
+    mode = Ecto.Changeset.get_field(changeset, :runner_access_mode)
+    scope = Ecto.Changeset.get_field(changeset, :scope, [])
+
+    case parse_runner_access(mode, scope, runners) do
+      {:ok, access} ->
+        Ecto.Changeset.put_change(
+          changeset,
+          :scope,
+          RunnerScope.to_values(access.groups, access.runner_ids)
+        )
+
+      {:error, :invalid_runner_access} ->
+        Ecto.Changeset.add_error(
+          changeset,
+          :runner_access_mode,
+          "requires at least one runner group or runner"
+        )
+    end
+  end
+
+  defp parse_runner_access(mode, _scope, _runners) when mode in ["none", "all"] do
+    Accounts.RunnerAccess.new(mode)
+  end
+
+  defp parse_runner_access("restricted", scope, runners) do
+    case RunnerScope.parse(scope, runners) do
+      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
+        Accounts.RunnerAccess.new(:restricted, groups, runner_ids)
+
+      {:error, :invalid} ->
+        {:error, :invalid_runner_access}
+    end
+  end
+
+  defp parse_runner_access(_mode, _scope, _runners), do: {:error, :invalid_runner_access}
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "invite"))
@@ -927,6 +1103,49 @@ defmodule EmisarWeb.TeamLive do
               </.choice_cards>
             </fieldset>
 
+            <fieldset>
+              <legend class="text-sm font-medium text-zinc-300">Runner access</legend>
+              <p class="mt-0.5 text-xs text-zinc-400">
+                Where this role applies. New members start with no runner access.
+              </p>
+              <.choice_cards
+                name="invite[runner_access_mode]"
+                value={@form[:runner_access_mode].value}
+                class="mt-2.5"
+              >
+                <:card value="none" title="No runners">
+                  They can join the workspace but cannot view or act on runners.
+                </:card>
+                <:card value="all" title="All runners">
+                  Includes every current and future runner in this workspace.
+                </:card>
+                <:card value="restricted" title="Selected runners">
+                  Limit access to named runner groups or individual runners.
+                </:card>
+              </.choice_cards>
+
+              <.error :if={@form[:runner_access_mode].errors != []}>
+                Choose at least one runner group or runner for selected access.
+              </.error>
+
+              <div
+                :if={@form[:runner_access_mode].value == "restricted"}
+                class="mt-4 space-y-3"
+              >
+                <.loading_state :if={@loading?} />
+                <.callout :if={@runner_load_error?} tone={:rose}>
+                  Runner access options could not be loaded. Try again before sending the invite.
+                </.callout>
+                <.runner_scope_select
+                  :if={not @loading? and not @runner_load_error?}
+                  name="invite[scope][]"
+                  label="Selected runners"
+                  runners={@runners}
+                  selected={List.wrap(@form[:scope].value)}
+                />
+              </div>
+            </fieldset>
+
             <:actions>
               <.button phx-disable-with="Sending…">Send invite</.button>
               <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
@@ -979,14 +1198,45 @@ defmodule EmisarWeb.TeamLive do
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
+              <form
+                :if={is_nil(request.matched_user_id)}
+                id={"approve-request-#{request.id}"}
+                phx-change="approval_access_changed"
+                phx-submit="approve_request"
+                class="w-full space-y-2 sm:w-80"
+              >
+                <input type="hidden" name="_request_id" value={request.id} />
+                <.input
+                  type="select"
+                  name="runner_access_mode"
+                  value={Map.get(@approval_access_modes, request.id, "none")}
+                  label="Runner access"
+                  options={[
+                    {"No runners", "none"},
+                    {"All runners", "all"},
+                    {"Selected runners", "restricted"}
+                  ]}
+                />
+                <.runner_scope_select
+                  :if={Map.get(@approval_access_modes, request.id) == "restricted"}
+                  name="scope[]"
+                  label="Selected runners"
+                  runners={@runners}
+                  selected={Map.get(@approval_scope_drafts, request.id, [])}
+                />
+                <.button variant={:secondary} tone={:amber} size={:sm}>Approve</.button>
+              </form>
               <.confirm_button
+                :if={request.matched_user_id}
                 id={"approve-request-#{request.id}"}
                 title={approve_title(request)}
                 confirm_label="Approve"
                 variant={:secondary}
                 tone={:amber}
                 size={:sm}
-                on_confirm={JS.push("approve_request", value: %{id: request.id})}
+                on_confirm={
+                  JS.push("approve_request", value: %{id: request.id, runner_access_mode: "none"})
+                }
               >
                 <:body>{approve_body(request)}</:body>
                 Approve
@@ -1139,19 +1389,29 @@ defmodule EmisarWeb.TeamLive do
                             mode={:relative}
                           /> ·{" "}<.sign_in_status user={membership.user} />
                         </div>
-                        <%!-- Per-user runner ACLs (#238): what runners this member
-                       can reach. Shown ALWAYS — an unset scope reads "all runners"
-                       explicitly, so a member's reach is stated, never inferred
-                       from an absent line (operator's call). --%>
-                        <% scopes = Map.get(@scopes_by_membership, membership.id, []) %>
+                        <% access =
+                          Map.get(
+                            @runner_access_by_membership,
+                            membership.id,
+                            Emisar.Accounts.RunnerAccess.none()
+                          ) %>
                         <div class="mt-1 flex flex-wrap items-center gap-1">
                           <span class="text-[10px] uppercase tracking-wider text-zinc-400">
-                            scope:
+                            runner access:
                           </span>
-                          <span :if={scopes == []} class="text-xs text-zinc-400">all runners</span>
-                          <.chip :for={scope <- scopes} tone={:neutral}>
-                            {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
+                          <span class="text-xs text-zinc-400">{runner_access_label(access)}</span>
+                          <.chip :for={group <- access.groups} tone={:neutral}>
+                            Group: {group}
                           </.chip>
+                          <.chip :for={runner_id <- access.runner_ids} tone={:neutral}>
+                            Runner: {runner_access_runner_label(runner_id, @runners_by_id)}
+                          </.chip>
+                          <span
+                            :if={membership.runner_access_directory_managed}
+                            class="text-xs text-zinc-500"
+                          >
+                            · managed by identity provider
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1265,25 +1525,32 @@ defmodule EmisarWeb.TeamLive do
                     </.simple_form>
                   </div>
 
-                  <%!-- Inline scope editor — appears under the row when "Set runner
-                   scope" is clicked, NAKED like the edit form above (the
-                   runner-scope tree is its own bordered control). ONE grouped
-                   multi-select (groups with their runners nested beneath);
-                   selecting a group disables its runners (already covered).
-                   Empty selection = "all runners" default. --%>
                   <div :if={@scope_editing_id == membership.id} class="mt-4 max-w-xl sm:pl-14">
                     <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
-                        Restrict this member to specific runner groups or individual runners. Selecting a
-                        group covers every runner in it. Leave everything unselected to grant access to
-                        <strong>all runners</strong>
-                        in the account.
+                        Role controls what this member can do. Runner access controls where it applies.
                       </p>
 
+                      <.choice_cards
+                        name="runner_access_mode"
+                        value={@scope_access_mode}
+                      >
+                        <:card value="none" title="No runners">
+                          Keep the member in the workspace without runner reach.
+                        </:card>
+                        <:card value="all" title="All runners">
+                          Grant every current and future runner in this workspace.
+                        </:card>
+                        <:card value="restricted" title="Selected runners">
+                          Grant only selected runner groups or individual runners.
+                        </:card>
+                      </.choice_cards>
+
                       <.runner_scope_select
+                        :if={@scope_access_mode == "restricted"}
                         name="scope[]"
-                        label="Runner scope"
+                        label="Selected runners"
                         runners={@runners}
                         selected={@scope_draft}
                       />
@@ -1703,8 +1970,12 @@ defmodule EmisarWeb.TeamLive do
           >
             Edit name
           </.menu_item>
-          <.menu_item phx-click="start_scope_edit" phx-value-membership_id={@membership.id}>
-            Set runner scope
+          <.menu_item
+            :if={not @membership.runner_access_directory_managed}
+            phx-click="start_scope_edit"
+            phx-value-membership_id={@membership.id}
+          >
+            Set runner access
           </.menu_item>
           <.menu_item
             :if={Emisar.Accounts.Membership.disabled?(@membership)}

@@ -28,6 +28,32 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_action_id(queryable, action_id),
     do: where(queryable, [grants: g], g.action_id == ^action_id)
 
+  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: where(queryable, [grants: _], false)
+
+  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}), do: queryable
+
+  def by_runner_access(
+        queryable,
+        %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
+      ) do
+    queryable
+    |> with_named_binding(:scope_runner, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [grants: grant],
+        runner in ^Emisar.Runners.Runner.Query.all(),
+        on: grant.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> where(
+      [scope_runner: runner],
+      runner.id in ^runner_ids or runner.group in ^groups
+    )
+  end
+
   @doc """
   Match `runner_id` exactly, OR allow a wildcard grant (where
   `runner_id IS NULL`). When the caller has no runner, only wildcard
