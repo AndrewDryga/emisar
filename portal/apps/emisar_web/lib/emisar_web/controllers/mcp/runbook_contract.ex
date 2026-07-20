@@ -152,7 +152,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
 
   defp valid_groups?(groups) do
     Enum.uniq(groups) == groups and
-      Enum.all?(groups, &(is_binary(&1) and byte_size(&1) in 1..80))
+      Enum.all?(groups, &(is_binary(&1) and String.length(&1) in 1..80))
   end
 
   defp public_runbook(runbook, steps) do
@@ -170,7 +170,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
   end
 
   defp bounded_string?(value, min, max),
-    do: is_binary(value) and byte_size(value) in min..max
+    do: is_binary(value) and String.length(value) in min..max
 
   defp encoded_size(value), do: value |> Jason.encode_to_iodata!() |> IO.iodata_length()
 end

@@ -41,11 +41,14 @@ defmodule EmisarWeb.MCPRpcController do
   alias EmisarWeb.MCP.{ActionTools, Auth, BoundaryResponse, Cancellation}
   alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
   alias EmisarWeb.MCP.ClientMetadata
-  alias EmisarWeb.MCP.{Instructions, RawJSON, ResponseBudget, SchemaRegistry, Transport}
+  alias EmisarWeb.MCP.{InputContract, Instructions, RawJSON, ResponseBudget, SchemaRegistry}
+  alias EmisarWeb.MCP.Transport
+  alias EmisarWeb.MCP.ValidationError
 
   @latest_protocol_version "2025-11-25"
   @supported_protocol_versions [@latest_protocol_version, "2025-06-18"]
   @server_name "emisar"
+  @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
@@ -105,11 +108,7 @@ defmodule EmisarWeb.MCPRpcController do
         respond(conn, :request, id, result)
 
       :error ->
-        json(conn, %{
-          jsonrpc: "2.0",
-          id: id,
-          error: %{code: -32602, message: "params must be an object"}
-        })
+        respond_invalid_params(conn, method, id)
     end
   end
 
@@ -213,40 +212,33 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp dispatch(conn, "tools/call", params) do
     name = Map.get(params, "name", "")
-    args = Map.get(params, "arguments") || %{}
+    args = Map.get(params, "arguments", %{})
 
     cond do
       name == "" ->
-        {:error, -32602, "missing tool name"}
+        invalid_tool_call(conn, name, "missing tool name",
+          issues: [ValidationError.issue([:name], :required)]
+        )
 
       not is_binary(name) ->
-        {:error, -32602, "tool name must be a string"}
+        invalid_tool_call(conn, name, "tool name must be a string",
+          issues: [ValidationError.issue([:name], :type)]
+        )
 
-      not is_map(args) ->
-        {:error, -32602, "tool arguments must be an object"}
-
-      name == "run_action" ->
+      name in SchemaRegistry.tool_names() ->
         with :ok <- require_mcp_key(conn) do
-          handle_run_action(conn, args)
-        end
-
-      name in ~w(list_packs list_runners find_actions get_action) ->
-        with :ok <- require_mcp_key(conn) do
-          handle_catalog_tool(conn, name, args)
-        end
-
-      name in ~w(list_runbooks get_runbook execute_runbook create_runbook_draft) ->
-        with :ok <- require_mcp_key(conn) do
-          handle_runbook_tool(conn, name, args)
-        end
-
-      name in ~w(get_operation wait_for_run recent_runs) ->
-        with :ok <- require_mcp_key(conn) do
-          handle_recovery_tool(conn, name, args)
+          case validate_tool_input(conn, name, args) do
+            {:ok, validated_args} -> dispatch_tool(conn, name, validated_args)
+            {:invalid, result} -> result
+          end
         end
 
       true ->
+        :ok = ValidationError.log_unknown_tool(conn, name)
+
         fixed_tool_result(
+          conn,
+          name,
           %{
             ok: false,
             error: %{
@@ -272,6 +264,39 @@ defmodule EmisarWeb.MCPRpcController do
   defp dispatch(_conn, method, _params),
     do: {:error, -32601, "method not found", method}
 
+  defp dispatch_tool(conn, "run_action", args), do: handle_run_action(conn, args)
+
+  defp dispatch_tool(conn, name, args)
+       when name in ~w(list_packs list_runners find_actions get_action),
+       do: handle_catalog_tool(conn, name, args)
+
+  defp dispatch_tool(conn, name, args)
+       when name in ~w(list_runbooks get_runbook execute_runbook create_runbook_draft),
+       do: handle_runbook_tool(conn, name, args)
+
+  defp dispatch_tool(conn, name, args)
+       when name in ~w(get_operation wait_for_run recent_runs),
+       do: handle_recovery_tool(conn, name, args)
+
+  defp validate_tool_input(conn, name, args) do
+    case InputContract.validate(name, args) do
+      {:ok, validated_args} ->
+        {:ok, validated_args}
+
+      {:error, issues} ->
+        {:invalid,
+         fixed_tool_result(
+           conn,
+           name,
+           ValidationError.payload("Tool arguments do not match the published input schema.",
+             stage: :arguments,
+             issues: issues
+           ),
+           true
+         )}
+    end
+  end
+
   defp params_map(nil), do: {:ok, %{}}
   defp params_map(%{} = params), do: {:ok, params}
   defp params_map(_), do: :error
@@ -280,13 +305,37 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp handle_catalog_tool(conn, name, args) do
     case CatalogTools.call(conn, name, args) do
-      {:ok, payload} -> fixed_tool_result(payload, false)
-      {:error, payload} -> fixed_tool_result(payload, true)
+      {:ok, payload} -> fixed_tool_result(conn, name, payload, false)
+      {:error, payload} -> fixed_tool_result(conn, name, payload, true)
     end
   end
 
-  defp fixed_tool_result(payload, is_error) do
+  defp fixed_tool_result(conn, tool, payload, is_error) do
+    :ok = ValidationError.log(conn, tool, payload)
     {:ok, ResponseBudget.fixed_result(payload, is_error)}
+  end
+
+  defp invalid_tool_call(conn, tool, message, opts) do
+    details = ValidationError.details(Keyword.put(opts, :stage, :tool_call))
+    :ok = ValidationError.log_details(conn, tool, details)
+    {:error, -32602, message, details}
+  end
+
+  defp respond_invalid_params(conn, "tools/call", id) do
+    result =
+      invalid_tool_call(conn, "unknown", "params must be an object",
+        issues: [ValidationError.issue([], :type)]
+      )
+
+    respond(conn, :request, id, result)
+  end
+
+  defp respond_invalid_params(conn, _method, id) do
+    json(conn, %{
+      jsonrpc: "2.0",
+      id: id,
+      error: %{code: -32602, message: "params must be an object"}
+    })
   end
 
   defp send_bounded_frame(conn, frame, result \\ nil) do
@@ -332,29 +381,48 @@ defmodule EmisarWeb.MCPRpcController do
   defp response_recovery_data(_result), do: %{}
 
   defp handle_run_action(conn, args) do
-    with {:ok, %{name: "run_action", action_args: args_raw}} <-
-           RawJSON.tool_call(conn.assigns.raw_body),
-         operation_id when is_binary(operation_id) <- mutation_operation_id(conn) do
-      case ActionTools.call(
-             conn,
-             args,
-             args_raw,
-             operation_id,
-             get_req_header(conn, "emisar-attestation")
-           ) do
-        {:ok, payload} -> fixed_tool_result(payload, false)
-        {:error, payload} -> fixed_tool_result(payload, true)
-        :cancelled -> :cancelled
-      end
-    else
+    case RawJSON.tool_call(conn.assigns.raw_body) do
+      {:ok, %{name: "run_action", action_args: args_raw}} ->
+        dispatch_run_action(conn, args, args_raw)
+
       _ ->
         fixed_tool_result(
+          conn,
+          "run_action",
+          ValidationError.payload("run_action arguments are malformed.",
+            stage: :tool_call,
+            issues: [ValidationError.issue([:arguments], :schema)]
+          ),
+          true
+        )
+    end
+  end
+
+  defp dispatch_run_action(conn, args, args_raw) do
+    case mutation_operation_id(conn) do
+      operation_id when is_binary(operation_id) ->
+        case ActionTools.call(
+               conn,
+               args,
+               args_raw,
+               operation_id,
+               get_req_header(conn, "emisar-attestation")
+             ) do
+          {:ok, payload} -> fixed_tool_result(conn, "run_action", payload, false)
+          {:error, payload} -> fixed_tool_result(conn, "run_action", payload, true)
+          :cancelled -> :cancelled
+        end
+
+      _ ->
+        fixed_tool_result(
+          conn,
+          "run_action",
           %{
             ok: false,
             error: %{
-              code: "invalid_args",
+              code: "invalid_operation",
               message:
-                "run_action arguments are malformed, or the transport-owned operation_id is missing. If your args match the schema, this is a bridge/transport fault, not an argument error — report it to the operator; do not re-edit valid args or retry in a loop.",
+                "This mutation requires one transport-owned operation_id. This is a bridge or transport fault; report it to the operator instead of changing valid arguments.",
               retryable: false
             },
             dispatch_started: false
@@ -372,6 +440,8 @@ defmodule EmisarWeb.MCPRpcController do
 
       _ ->
         fixed_tool_result(
+          conn,
+          name,
           %{
             ok: false,
             error: %{
@@ -391,15 +461,15 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp runbook_tool_result(conn, name, args, operation_id) do
     case RunbookTools.call(conn, name, args, operation_id) do
-      {:ok, payload} -> fixed_tool_result(payload, false)
-      {:error, payload} -> fixed_tool_result(payload, true)
+      {:ok, payload} -> fixed_tool_result(conn, name, payload, false)
+      {:error, payload} -> fixed_tool_result(conn, name, payload, true)
     end
   end
 
   defp mutation_operation_id(conn) do
     case get_req_header(conn, "emisar-operation-id") do
-      [operation_id] ->
-        operation_id
+      [operation_id] when is_binary(operation_id) ->
+        if Regex.match?(@operation_id, operation_id), do: operation_id
 
       [] ->
         MCPOperations.operation_id(conn.assigns.raw_body, conn.assigns.current_subject)
@@ -411,8 +481,8 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp handle_recovery_tool(conn, name, args) do
     case RecoveryTools.call(conn, name, args) do
-      {:ok, payload} -> fixed_tool_result(payload, false)
-      {:error, payload} -> fixed_tool_result(payload, true)
+      {:ok, payload} -> fixed_tool_result(conn, name, payload, false)
+      {:error, payload} -> fixed_tool_result(conn, name, payload, true)
       :cancelled -> :cancelled
     end
   end
@@ -574,8 +644,11 @@ defmodule EmisarWeb.MCPRpcController do
   # (no bridge) has no such UA → nil → :unknown, which is never blocked.
   defp bridge_version(conn) do
     case get_req_header(conn, "user-agent") do
-      ["emisar-mcp/" <> rest | _] -> rest |> String.split() |> List.first()
-      _ -> nil
+      ["emisar-mcp/" <> rest | _] ->
+        rest |> String.split() |> List.first()
+
+      _ ->
+        nil
     end
   end
 
@@ -616,7 +689,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp client_info_snapshot(conn, params) do
     case sanitize_client_info(Map.get(params, "clientInfo")) do
       nil -> nil
-      info -> put_bridge_version(info, bridge_version(conn))
+      info -> put_bridge_version(info, ValidationError.safe_version(bridge_version(conn)))
     end
   end
 

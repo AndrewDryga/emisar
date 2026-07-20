@@ -38,6 +38,14 @@
       "type": "string",
       "pattern": "^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
+    "contract_ref": {
+      "type": "string",
+      "description": "Opaque short-lived action-contract receipt. Copy the exact value from get_action for the same action_id and pack_ref.",
+      "minLength": 1,
+      "maxLength": 4096,
+      "x-maxUtf8Bytes": 4096,
+      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+){2}$"
+    },
     "runbook_execution_id": {
       "type": "string",
       "format": "uuid",
@@ -63,6 +71,18 @@
       "type": "string",
       "format": "date-time"
     },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": true,
+      "x-maxEncodedUtf8Bytes": 8192,
+      "description": "The complete bounded Draft 2020-12 object schema enforced by the runner after output redaction. Present only for actions that opt into typed results."
+    },
+    "structured_output": {
+      "type": "object",
+      "additionalProperties": true,
+      "x-maxEncodedUtf8Bytes": 8192,
+      "description": "Runner-redacted output that passed the action's declared output schema."
+    },
     "wait_short": {
       "type": "string",
       "pattern": "^(0|([1-9]|[1-5][0-9]|60)s|([1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)ms)$"
@@ -83,8 +103,7 @@
       "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval.",
       "minLength": 1,
       "maxLength": 255,
-      "pattern": "\\S",
-      "x-maxUtf8Bytes": 255
+      "pattern": "\\S"
     },
     "list_packs_arguments": {
       "type": "object",
@@ -233,6 +252,26 @@
         {"type": "object", "properties": {"tool": {"const": "wait_for_run"}, "arguments": {"$ref": "#/$defs/wait_for_run_arguments"}}}
       ]
     },
+    "next_wait_run_immediate": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {
+          "type": "object",
+          "properties": {
+            "tool": {"const": "wait_for_run"},
+            "arguments": {
+              "type": "object",
+              "required": ["run_id", "timeout"],
+              "additionalProperties": false,
+              "properties": {
+                "run_id": {"$ref": "#/$defs/run_id"},
+                "timeout": {"const": "0"}
+              }
+            }
+          }
+        }
+      ]
+    },
     "next_recent_runs": {
       "allOf": [
         {"$ref": "#/$defs/next_call"},
@@ -255,6 +294,48 @@
         {"type": "null"}
       ]
     },
+    "validation_issue": {
+      "type": "object",
+      "required": ["path", "code"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 263,
+          "pattern": "^\\$(?:\\.[A-Za-z_][A-Za-z0-9_-]{0,63}){0,4}$"
+        },
+        "code": {
+          "enum": [
+            "required", "unknown", "unknown_arg", "type", "format", "range",
+            "conflict", "dependency", "unique", "size", "schema", "max_length",
+            "max_items", "enum", "allowed", "min", "max", "min_duration",
+            "max_duration", "duration", "path"
+          ]
+        }
+      }
+    },
+    "validation_details": {
+      "type": "object",
+      "required": ["schema_version", "stage", "kind", "issues"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": 1},
+        "stage": {"enum": ["tool_call", "arguments", "action_arguments"]},
+        "kind": {
+          "enum": [
+            "missing", "unknown", "type", "format", "enum", "range", "size",
+            "unique", "conflict", "dependency", "schema"
+          ]
+        },
+        "issues": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/validation_issue"}
+        }
+      }
+    },
     "error": {
       "type": "object",
       "required": ["code", "message", "retryable"],
@@ -267,6 +348,13 @@
         "next": {"$ref": "#/$defs/read_next"}
       },
       "allOf": [
+        {
+          "if": {"properties": {"code": {"const": "invalid_args"}}},
+          "then": {
+            "required": ["details"],
+            "properties": {"details": {"$ref": "#/$defs/validation_details"}}
+          }
+        },
         {
           "if": {"properties": {"code": {"const": "target_contract_changed"}}},
           "then": {"required": ["next"], "properties": {"next": {"$ref": "#/$defs/next_get_action"}}}
@@ -387,6 +475,8 @@
         "emitted_stderr_bytes": {"type": "integer", "minimum": 0, "description": "Normalized, redacted stderr bytes emitted within the runner's output cap."},
         "output_complete": {"const": false, "description": "Present only when the runner or portal detected a missing progress chunk on a terminal run; the previews may then contain gaps. Complete output omits this field."},
         "local_audit_failed": {"const": true, "description": "The runner could not persist the terminal or refusal event in its local audit journal. The action status remains authoritative."},
+        "structured_output": {"$ref": "#/$defs/structured_output"},
+        "structured_output_omitted": {"const": true, "description": "A structured result exists but was omitted intact to keep this multi-run response within its aggregate output budget."},
         "truncated_stdout": {"type": "boolean"},
         "truncated_stderr": {"type": "boolean"},
         "approval": {"$ref": "#/$defs/approval"},
@@ -402,9 +492,19 @@
           ]
         },
         {
-          "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}},
-          "then": {"required": ["next"]},
-          "else": {"not": {"required": ["next"]}}
+          "if": {"required": ["structured_output_omitted"]},
+          "then": {
+            "required": ["next"],
+            "properties": {
+              "status": {"enum": ["success", "failed", "error", "validation_failed", "unknown_action", "cancelled", "timed_out", "refused", "denied"]},
+              "next": {"$ref": "#/$defs/next_wait_run_immediate"}
+            }
+          },
+          "else": {
+            "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}},
+            "then": {"required": ["next"]},
+            "else": {"not": {"required": ["next"]}}
+          }
         },
         {
           "if": {"properties": {"status": {"const": "pending_approval"}}},
@@ -413,6 +513,9 @@
         {
           "if": {"properties": {"status": {"const": "sent"}}},
           "then": {"required": ["wait_until"]}
+        },
+        {
+          "not": {"required": ["structured_output", "structured_output_omitted"]}
         }
       ]
     },
@@ -712,11 +815,12 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "observed_at", "action", "compatible_runners", "more_compatible_runners", "next"],
+            "required": ["ok", "observed_at", "contract_ref", "action", "compatible_runners", "more_compatible_runners", "next"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
               "observed_at": {"$ref": "#/$defs/timestamp"},
+              "contract_ref": {"$ref": "#/$defs/contract_ref"},
               "action": {
                 "type": "object",
                 "x-maxEncodedUtf8Bytes": 32768,
@@ -730,6 +834,7 @@
                   "risk": {"$ref": "#/$defs/risk"},
                   "side_effects": {"type": "array", "maxItems": 16, "items": {"type": "string", "maxLength": 1024}},
                   "args_schema": {"type": "object"},
+                  "output_schema": {"$ref": "#/$defs/output_schema"},
                   "examples": {"type": "array", "maxItems": 16, "items": {"type": "object"}}
                 }
               },
@@ -755,11 +860,12 @@
       "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
-        "required": ["action_id", "pack_ref", "runner_refs", "args", "reason"],
+        "required": ["action_id", "pack_ref", "contract_ref", "runner_refs", "args", "reason"],
         "additionalProperties": false,
         "properties": {
           "action_id": {"$ref": "#/$defs/action_id"},
           "pack_ref": {"$ref": "#/$defs/pack_ref"},
+          "contract_ref": {"$ref": "#/$defs/contract_ref"},
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
           "reason": {"$ref": "#/$defs/reason"},

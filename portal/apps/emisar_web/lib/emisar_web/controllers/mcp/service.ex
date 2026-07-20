@@ -113,12 +113,15 @@ defmodule EmisarWeb.MCP.Service do
   @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
   def fixed_run_summaries(runs, subject) when is_list(runs) do
     stream_cap = min(16_384, div(65_536, max(2 * length(runs), 1)))
-    Enum.map(runs, &fixed_run_summary(&1, subject, stream_cap))
+    structured_output_cap = min(8_192, div(65_536, max(length(runs), 1)))
+
+    Enum.map(runs, &fixed_run_summary(&1, subject, stream_cap, structured_output_cap))
   end
 
   @doc "Renders one fixed-contract run summary. A stream that produced no bytes is omitted."
-  def fixed_run_summary(run, subject, stream_cap \\ 16_384) do
+  def fixed_run_summary(run, subject, stream_cap \\ 16_384, structured_output_cap \\ 8_192) do
     output_preview = run_output_preview(run, subject, stream_cap)
+    structured_output = structured_output_summary(run.structured_output, structured_output_cap)
     {approval, approval_wait_until} = fixed_approval(run, subject)
 
     %{
@@ -139,13 +142,24 @@ defmodule EmisarWeb.MCP.Service do
       local_audit_failed: if(run.local_audit_failed, do: true),
       approval: approval,
       wait_until: approval_wait_until || fixed_wait_until(run),
-      next: fixed_run_next(run),
+      next: fixed_run_next(run, structured_output),
       run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
     }
+    |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
     |> Map.merge(stream_summary(run, output_preview, :stderr))
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  defp structured_output_summary(nil, _cap), do: %{}
+
+  defp structured_output_summary(output, cap) do
+    encoded_size = output |> Jason.encode_to_iodata!() |> IO.iodata_length()
+
+    if encoded_size <= cap,
+      do: %{structured_output: output},
+      else: %{structured_output_omitted: true}
   end
 
   # A stream that produced no bytes carries no information: its preview, byte
@@ -255,7 +269,10 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_wait_until(_run), do: nil
 
-  defp fixed_run_next(%{status: status, id: run_id}) do
+  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}),
+    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
+
+  defp fixed_run_next(%{status: status, id: run_id}, _structured_output) do
     if Runs.ActionRun.terminal?(status),
       do: nil,
       else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}

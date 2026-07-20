@@ -64,6 +64,13 @@ message type is additive-safe. An older portal that receives a future
 status therefore requires a coordinated runner emission, portal mapping, and
 enum change even though the fallback is fail-safe.
 
+Optional `action_result.structured_output` and runner descriptor
+`output_schema` are additive v1 fields. Old runners omit them. The portal
+accepts their absence, but it never invents a missing schema: a runner that does
+not advertise the exact schema cannot match a schema-bearing trusted manifest.
+Schema-bearing packs must therefore roll out only after portal acceptance and
+runner enforcement are deployed.
+
 There are two known limits in the current implementation. The runner has no
 `shutdown`-reason handler, so the portal's useful version-rejection message is
 not surfaced on the host; the host generally sees session-ended/reconnect
@@ -82,11 +89,13 @@ hashes; the runner re-hashes the pack it loads.
 
 **How they are versioned today.** The pack manifest, action schema, catalog,
 trusted-manifest, and runner configuration currently use `schema_version: 1`.
-Pack and action YAML loading is strict about unknown fields. Schema versions
-are exact-match gates, not ranges. The catalog keeps the current pack plus up
-to `K=3` previous published versions in `previous_versions` for the trust
-window. A pack's `retired_below` watermark is permanent and monotonic once
-published.
+A trusted descriptor's optional `output_schema` is an additive field that
+participates in descriptor trust and drift comparison; a descriptor without one
+simply omits the key. Pack and action YAML loading is strict about unknown
+fields. Schema versions are exact-match gates, not ranges. The catalog keeps
+the current pack plus up to `K=3` previous published versions in
+`previous_versions` for the trust window. A pack's `retired_below` watermark is
+permanent and monotonic once published.
 
 **What happens on skew.** A runner that cannot read a newer pack or action
 schema rejects it closed and does not advertise it. A consumer that sees a
@@ -122,6 +131,10 @@ get_runbook         execute_runbook        create_runbook_draft
 
 The tool catalog advertises `tools.listChanged: false`. Packs and runner state
 appear in tool results; they do not become one tool per action.
+
+Every descriptor carries its complete, self-contained `inputSchema`; response
+schemas stay server-side as normative contracts exercised by the portal's
+fixture and integration tests, so `tools/list` stays small on every client.
 
 **How it is versioned today.** MCP transport negotiation accepts
 `2025-11-25` and `2025-06-18` during `initialize`. The negotiated

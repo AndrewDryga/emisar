@@ -9,28 +9,59 @@ defmodule EmisarWeb.MCP.CatalogTools do
   """
 
   alias Emisar.{Catalog, Crypto, Runners}
-  alias EmisarWeb.MCP.{CatalogCursor, ToolParams, ToolSchema}
+  alias EmisarWeb.MCP.{ActionContractRef, CatalogCursor, ToolSchema}
 
   @default_limit 15
-  @max_list_limit 50
-  @max_find_limit 15
   @max_search_score 9_999
   @max_page_items_bytes 60_000
-  @max_runner_refs 16
-  @statuses ~w(connected disconnected pending disabled)
-  @pack_id_format ~r/\A[a-z][a-z0-9_-]*\z/
-  @action_id_format ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
+
+  defmodule ListPacksArgs do
+    @moduledoc false
+    defstruct pack_id: nil,
+              pack_ref: nil,
+              runner_refs: [],
+              availability: "executable",
+              limit: 15,
+              cursor: nil
+  end
+
+  defmodule ListRunnersArgs do
+    @moduledoc false
+    defstruct query: nil,
+              runner_refs: [],
+              statuses: [],
+              pack_id: nil,
+              pack_ref: nil,
+              action_id: nil,
+              issues_only: false,
+              limit: 15,
+              cursor: nil
+  end
+
+  defmodule FindActionsArgs do
+    @moduledoc false
+    defstruct query: nil,
+              action_id: nil,
+              pack_id: nil,
+              pack_ref: nil,
+              target: nil,
+              runner_refs: [],
+              limit: 15,
+              cursor: nil
+  end
+
+  defmodule GetActionArgs do
+    @moduledoc false
+    defstruct action_id: nil, pack_ref: nil, target: nil, runner_refs: []
+  end
 
   @doc "Executes one of the four fixed, read-only catalog tools."
   @spec call(Plug.Conn.t(), String.t(), map()) :: {:ok, map()} | {:error, map()}
   def call(conn, tool, args) when tool in ~w(list_packs list_runners find_actions get_action) do
-    with {:ok, parsed} <- validate(tool, args),
-         {:ok, snapshot, scope} <- snapshot(conn) do
-      execute(tool, snapshot, scope, parsed)
+    with {:ok, snapshot, scope} <- snapshot(conn) do
+      execute(tool, snapshot, scope, parse(tool, args), conn)
     end
   end
-
-  def call(_conn, _tool, _args), do: {:error, error("invalid_args", "Unknown catalog tool.")}
 
   defp snapshot(conn) do
     subject = conn.assigns.current_subject
@@ -55,7 +86,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp execute("list_packs", snapshot, scope, args) do
+  defp execute("list_packs", snapshot, scope, args, _conn) do
     packs =
       snapshot.packs
       |> Enum.filter(&pack_matches?(&1, args))
@@ -72,7 +103,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     )
   end
 
-  defp execute("list_runners", snapshot, scope, args) do
+  defp execute("list_runners", snapshot, scope, args, _conn) do
     packs_by_ref = Map.new(snapshot.packs, &{&1.pack_ref, &1})
 
     runners =
@@ -95,7 +126,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp execute("find_actions", snapshot, scope, args) do
+  defp execute("find_actions", snapshot, scope, args, _conn) do
     candidates =
       snapshot.packs
       |> Enum.flat_map(&searchable_actions(&1, snapshot.runners, args))
@@ -114,7 +145,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     )
   end
 
-  defp execute("get_action", snapshot, _scope, args) do
+  defp execute("get_action", snapshot, _scope, args, conn) do
     with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == args.pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == args.action_id)),
          runners when runners != [] <- compatible_runners(snapshot.runners, action, args) do
@@ -125,16 +156,25 @@ defmodule EmisarWeb.MCP.CatalogTools do
        %{
          ok: true,
          observed_at: observed_at(),
-         action: %{
-           action_id: action["action_id"],
-           pack_ref: pack.pack_ref,
-           title: action["title"],
-           description: action["description"],
-           risk: action["risk"],
-           side_effects: action["side_effects"],
-           args_schema: ToolSchema.action_args_schema(action),
-           examples: action["examples"]
-         },
+         contract_ref:
+           ActionContractRef.issue(
+             conn.assigns.current_subject,
+             conn.assigns.api_key,
+             action["action_id"],
+             pack.pack_ref
+           ),
+         action:
+           %{
+             action_id: action["action_id"],
+             pack_ref: pack.pack_ref,
+             title: action["title"],
+             description: action["description"],
+             risk: action["risk"],
+             side_effects: action["side_effects"],
+             args_schema: ToolSchema.action_args_schema(action),
+             examples: action["examples"]
+           }
+           |> maybe_put_output_schema(action["output_schema"]),
          compatible_runners: Enum.map(runners, &runner_brief/1),
          more_compatible_runners: more?,
          next: compatible_runners_next(pack, action, args, more?)
@@ -155,6 +195,9 @@ defmodule EmisarWeb.MCP.CatalogTools do
         {:error, put_in(payload, [:error, :next], next)}
     end
   end
+
+  defp maybe_put_output_schema(action, %{} = schema), do: Map.put(action, :output_schema, schema)
+  defp maybe_put_output_schema(action, _schema), do: action
 
   defp pack_matches?(pack, args) do
     (is_nil(args.pack_id) or pack.pack_id == args.pack_id) and
@@ -490,253 +533,53 @@ defmodule EmisarWeb.MCP.CatalogTools do
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
   end
 
-  defp validate(tool, args) when is_map(args) do
-    case tool do
-      "list_packs" -> validate_list_packs(args)
-      "list_runners" -> validate_list_runners(args)
-      "find_actions" -> validate_find_actions(args)
-      "get_action" -> validate_get_action(args)
-    end
+  # The controller already validated `args` against each tool's published
+  # inputSchema; these builders only apply the documented defaults.
+  defp parse("list_packs", args) do
+    %__MODULE__.ListPacksArgs{
+      pack_id: args["pack_id"],
+      pack_ref: args["pack_ref"],
+      runner_refs: args["runner_refs"] || [],
+      availability: args["availability"] || "executable",
+      limit: args["limit"] || @default_limit,
+      cursor: args["cursor"]
+    }
   end
 
-  defp validate(_tool, _args), do: {:error, error("invalid_args", "Arguments must be an object.")}
-
-  defp validate_list_packs(args) do
-    allowed = ~w(pack_id pack_ref runner_refs availability limit cursor)
-
-    with :ok <- allowed_keys(args, allowed),
-         :ok <- mutually_exclusive(args, "pack_id", "pack_ref"),
-         {:ok, pack_id} <- optional_format(args["pack_id"], @pack_id_format, "pack_id"),
-         {:ok, pack_ref} <- optional_pack_ref(args["pack_ref"]),
-         {:ok, runner_refs} <- runner_refs(args["runner_refs"]),
-         {:ok, availability} <-
-           enum(args["availability"], ~w(executable all), "executable", "availability"),
-         {:ok, limit} <- limit(args["limit"], @max_list_limit),
-         {:ok, cursor} <- optional_string(args["cursor"], 4_096, "cursor") do
-      {:ok,
-       struct!(__MODULE__.ListPacksArgs,
-         pack_id: pack_id,
-         pack_ref: pack_ref,
-         runner_refs: runner_refs,
-         availability: availability,
-         limit: limit,
-         cursor: cursor
-       )}
-    end
+  defp parse("list_runners", args) do
+    %__MODULE__.ListRunnersArgs{
+      query: args["query"],
+      runner_refs: args["runner_refs"] || [],
+      statuses: args["statuses"] || [],
+      pack_id: args["pack_id"],
+      pack_ref: args["pack_ref"],
+      action_id: args["action_id"],
+      issues_only: args["issues_only"] || false,
+      limit: args["limit"] || @default_limit,
+      cursor: args["cursor"]
+    }
   end
 
-  defp validate_list_runners(args) do
-    allowed = ~w(query runner_refs statuses pack_id pack_ref action_id issues_only limit cursor)
-
-    with :ok <- allowed_keys(args, allowed),
-         :ok <- mutually_exclusive(args, "query", "runner_refs"),
-         :ok <- mutually_exclusive(args, "pack_id", "pack_ref"),
-         :ok <- require_with(args, "action_id", "pack_ref"),
-         {:ok, query} <- optional_string(args["query"], 256, "query"),
-         {:ok, refs} <- runner_refs(args["runner_refs"]),
-         {:ok, statuses} <- enums(args["statuses"], @statuses, 4, "statuses"),
-         {:ok, pack_id} <- optional_format(args["pack_id"], @pack_id_format, "pack_id"),
-         {:ok, pack_ref} <- optional_pack_ref(args["pack_ref"]),
-         {:ok, action_id} <- optional_format(args["action_id"], @action_id_format, "action_id"),
-         {:ok, issues_only} <- optional_boolean(args["issues_only"], false, "issues_only"),
-         {:ok, limit} <- limit(args["limit"], @max_list_limit),
-         {:ok, cursor} <- optional_string(args["cursor"], 4_096, "cursor") do
-      {:ok,
-       struct!(__MODULE__.ListRunnersArgs,
-         query: query,
-         runner_refs: refs,
-         statuses: statuses,
-         pack_id: pack_id,
-         pack_ref: pack_ref,
-         action_id: action_id,
-         issues_only: issues_only,
-         limit: limit,
-         cursor: cursor
-       )}
-    end
+  defp parse("find_actions", args) do
+    %__MODULE__.FindActionsArgs{
+      query: args["query"],
+      action_id: args["action_id"],
+      pack_id: args["pack_id"],
+      pack_ref: args["pack_ref"],
+      target: args["target"],
+      runner_refs: args["runner_refs"] || [],
+      limit: args["limit"] || @default_limit,
+      cursor: args["cursor"]
+    }
   end
 
-  defp validate_find_actions(args) do
-    allowed = ~w(query action_id pack_id pack_ref target runner_refs limit cursor)
-
-    with :ok <- allowed_keys(args, allowed),
-         :ok <- mutually_exclusive(args, "query", "action_id"),
-         :ok <- mutually_exclusive(args, "pack_id", "pack_ref"),
-         :ok <- mutually_exclusive(args, "target", "runner_refs"),
-         {:ok, query} <- optional_string(args["query"], 256, "query"),
-         {:ok, action_id} <- optional_format(args["action_id"], @action_id_format, "action_id"),
-         {:ok, pack_id} <- optional_format(args["pack_id"], @pack_id_format, "pack_id"),
-         {:ok, pack_ref} <- optional_pack_ref(args["pack_ref"]),
-         {:ok, target} <- optional_string(args["target"], 256, "target"),
-         {:ok, refs} <- runner_refs(args["runner_refs"]),
-         {:ok, limit} <- limit(args["limit"], @max_find_limit),
-         {:ok, cursor} <- optional_string(args["cursor"], 4_096, "cursor") do
-      {:ok,
-       struct!(__MODULE__.FindActionsArgs,
-         query: query,
-         action_id: action_id,
-         pack_id: pack_id,
-         pack_ref: pack_ref,
-         target: target,
-         runner_refs: refs,
-         limit: limit,
-         cursor: cursor
-       )}
-    end
-  end
-
-  defp validate_get_action(args) do
-    allowed = ~w(action_id pack_ref target runner_refs)
-
-    with :ok <- allowed_keys(args, allowed),
-         :ok <- required(args, ~w(action_id pack_ref)),
-         :ok <- mutually_exclusive(args, "target", "runner_refs"),
-         {:ok, action_id} <- optional_format(args["action_id"], @action_id_format, "action_id"),
-         {:ok, pack_ref} <- optional_pack_ref(args["pack_ref"]),
-         {:ok, target} <- optional_string(args["target"], 256, "target"),
-         {:ok, refs} <- runner_refs(args["runner_refs"]) do
-      {:ok,
-       struct!(__MODULE__.GetActionArgs,
-         action_id: action_id,
-         pack_ref: pack_ref,
-         target: target,
-         runner_refs: refs
-       )}
-    end
-  end
-
-  defp allowed_keys(args, allowed) do
-    case Map.keys(args) -- allowed do
-      [] ->
-        :ok
-
-      keys ->
-        {:error,
-         error("invalid_args", "Unknown argument(s): #{Enum.join(Enum.sort(keys), ", ")}.")}
-    end
-  end
-
-  defp required(args, keys) do
-    case Enum.reject(keys, &(is_binary(args[&1]) and args[&1] != "")) do
-      [] ->
-        :ok
-
-      missing ->
-        {:error,
-         error("invalid_args", "Missing required argument(s): #{Enum.join(missing, ", ")}.")}
-    end
-  end
-
-  defp mutually_exclusive(args, left, right) do
-    if Map.has_key?(args, left) and Map.has_key?(args, right),
-      do: {:error, error("invalid_args", "#{left} and #{right} cannot be combined.")},
-      else: :ok
-  end
-
-  defp require_with(args, key, required_key) do
-    if Map.has_key?(args, key) and not Map.has_key?(args, required_key),
-      do: {:error, error("invalid_args", "#{key} requires #{required_key}.")},
-      else: :ok
-  end
-
-  defp optional_format(nil, _format, _name), do: {:ok, nil}
-
-  defp optional_format(value, format, _name) when is_binary(value) do
-    if Regex.match?(format, value),
-      do: {:ok, value},
-      else: {:error, error("invalid_args", "Identifier has an invalid format.")}
-  end
-
-  defp optional_format(_value, _format, name),
-    do: {:error, error("invalid_args", "#{name} must be a string.")}
-
-  defp optional_pack_ref(nil), do: {:ok, nil}
-
-  defp optional_pack_ref(value) do
-    case Catalog.MCPProjection.parse_pack_ref(value) do
-      {:ok, _parts} ->
-        {:ok, value}
-
-      {:error, :invalid_pack_ref} ->
-        {:error, error("invalid_args", "pack_ref has an invalid format.")}
-    end
-  end
-
-  defp optional_string(nil, _max, _name), do: {:ok, nil}
-
-  defp optional_string(value, max, _name)
-       when is_binary(value) and value != "" and byte_size(value) <= max, do: {:ok, value}
-
-  defp optional_string(_value, _max, name),
-    do: {:error, error("invalid_args", "#{name} must be a non-empty bounded string.")}
-
-  defp optional_boolean(value, default, name) do
-    case ToolParams.boolean(value, default, name) do
-      {:ok, parsed} -> {:ok, parsed}
-      {:error, message} -> {:error, error("invalid_args", message)}
-    end
-  end
-
-  defp runner_refs(nil), do: {:ok, []}
-
-  defp runner_refs(values) when is_list(values) and length(values) in 1..@max_runner_refs do
-    if Enum.all?(values, &valid_runner_ref?/1) and Enum.uniq(values) == values do
-      {:ok, values}
-    else
-      {:error, error("invalid_args", "runner_refs must contain unique valid runner references.")}
-    end
-  end
-
-  defp runner_refs(_values) do
-    {:error,
-     error("invalid_args", "runner_refs must be a non-empty array of at most 16 references.")}
-  end
-
-  defp valid_runner_ref?(value) do
-    is_binary(value) and
-      Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}\z/, value)
-  end
-
-  defp enums(nil, _allowed, _max, _name), do: {:ok, []}
-
-  # Listing the allowed values lets a model self-correct in one step instead
-  # of guessing which member of its array was wrong.
-  defp enums(values, allowed, max, name) when is_list(values) do
-    if length(values) in 1..max and Enum.uniq(values) == values and
-         Enum.all?(values, &(&1 in allowed)) do
-      {:ok, values}
-    else
-      {:error,
-       error(
-         "invalid_args",
-         "#{name} must be 1 to #{max} unique values from: #{Enum.join(allowed, ", ")}."
-       )}
-    end
-  end
-
-  defp enums(_values, allowed, max, name) do
-    {:error,
-     error(
-       "invalid_args",
-       "#{name} must be an array of 1 to #{max} unique values from: #{Enum.join(allowed, ", ")}."
-     )}
-  end
-
-  defp enum(nil, _allowed, default, _name), do: {:ok, default}
-
-  defp enum(value, allowed, _default, name) do
-    if value in allowed do
-      {:ok, value}
-    else
-      {:error, error("invalid_args", "#{name} must be one of: #{Enum.join(allowed, ", ")}.")}
-    end
-  end
-
-  defp limit(value, max) do
-    case ToolParams.limit(value, @default_limit, max) do
-      {:ok, parsed} -> {:ok, parsed}
-      {:error, message} -> {:error, error("invalid_args", message)}
-    end
+  defp parse("get_action", args) do
+    %__MODULE__.GetActionArgs{
+      action_id: args["action_id"],
+      pack_ref: args["pack_ref"],
+      target: args["target"],
+      runner_refs: args["runner_refs"] || []
+    }
   end
 
   defp error(code, message) do
@@ -745,45 +588,5 @@ defmodule EmisarWeb.MCP.CatalogTools do
       error: %{code: code, message: message, retryable: false},
       dispatch_started: false
     }
-  end
-
-  defmodule ListPacksArgs do
-    @moduledoc false
-    defstruct pack_id: nil,
-              pack_ref: nil,
-              runner_refs: [],
-              availability: "executable",
-              limit: 15,
-              cursor: nil
-  end
-
-  defmodule ListRunnersArgs do
-    @moduledoc false
-    defstruct query: nil,
-              runner_refs: [],
-              statuses: [],
-              pack_id: nil,
-              pack_ref: nil,
-              action_id: nil,
-              issues_only: false,
-              limit: 15,
-              cursor: nil
-  end
-
-  defmodule FindActionsArgs do
-    @moduledoc false
-    defstruct query: nil,
-              action_id: nil,
-              pack_id: nil,
-              pack_ref: nil,
-              target: nil,
-              runner_refs: [],
-              limit: 15,
-              cursor: nil
-  end
-
-  defmodule GetActionArgs do
-    @moduledoc false
-    defstruct action_id: nil, pack_ref: nil, target: nil, runner_refs: []
   end
 end

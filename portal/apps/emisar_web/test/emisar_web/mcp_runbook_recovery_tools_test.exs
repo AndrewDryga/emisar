@@ -8,6 +8,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   @hash "sha256:" <> String.duplicate("b", 64)
   @pack_ref "operations@1.0.0/#{@hash}"
+  @typed_output_schema %{"type" => "object"}
 
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
@@ -34,49 +35,47 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
      raw: raw}
   end
 
-  test "scalar limits coerce string forms and a limit fault names the field", %{conn: conn} do
-    # LLM clients routinely send integers as JSON strings; a canonical string
-    # coerces instead of failing the read.
-    coerced = call(conn, "recent_runs", %{"limit" => "50"})
-    assert coerced["error"] == nil
-    assert coerced["runs"] == []
+  test "published limit types reject string forms", %{conn: conn} do
+    for {tool, limit} <- [{"recent_runs", "50"}, {"list_runbooks", "10"}] do
+      invalid = call(conn, tool, %{"limit" => limit})
 
-    junk = call(conn, "recent_runs", %{"limit" => "many"})
+      assert invalid["error"]["message"] ==
+               "Tool arguments do not match the published input schema."
 
-    # The fault names the field and the received type — not the generic
-    # "arguments do not match the fixed contract" that hides which field broke.
-    assert junk["error"]["message"] ==
-             "limit must be a JSON integer from 1 to 100; it was sent as a string."
+      assert invalid["error"]["details"] == %{
+               "schema_version" => 1,
+               "stage" => "arguments",
+               "kind" => "type",
+               "issues" => [%{"path" => "$.limit", "code" => "type"}]
+             }
+    end
 
-    runbooks = call(conn, "list_runbooks", %{"limit" => "10"})
-    assert runbooks["error"] == nil
-
-    # This exact call used to flatten into "list_runbooks arguments are
-    # invalid" — no field named.
-    runbook_junk = call(conn, "list_runbooks", %{"limit" => "many"})
-
-    assert runbook_junk["error"]["message"] ==
-             "limit must be a JSON integer from 1 to 50; it was sent as a string."
+    assert call(conn, "recent_runs", %{"limit" => 50})["runs"] == []
+    assert call(conn, "list_runbooks", %{"limit" => 10})["runbooks"] == []
   end
 
-  test "every recent_runs fault names its field instead of the generic contract error", %{
+  test "every recent_runs schema fault identifies its kind and field", %{
     conn: conn
   } do
     unknown = call(conn, "recent_runs", %{"limits" => 10})
-
-    assert unknown["error"]["message"] ==
-             "unknown argument(s): limits. Allowed: operation_id, runbook_execution_id, step_id, runner_ref, action_id, pack_ref, scope, limit, cursor."
+    assert unknown["error"]["details"]["kind"] == "unknown"
+    assert %{"path" => "$.limits", "code" => "unknown"} in unknown["error"]["details"]["issues"]
 
     scope = call(conn, "recent_runs", %{"scope" => "all"})
-    assert scope["error"]["message"] == ~s(scope must be "own" or "account".)
+    assert scope["error"]["details"]["kind"] == "enum"
+    assert %{"path" => "$.scope", "code" => "enum"} in scope["error"]["details"]["issues"]
 
     ref = call(conn, "recent_runs", %{"runner_ref" => "not-a-ref"})
+    assert ref["error"]["details"]["kind"] == "format"
 
-    assert ref["error"]["message"] ==
-             "runner_ref is malformed — copy the exact value from a prior tool result."
+    assert %{"path" => "$.runner_ref", "code" => "format"} in ref["error"]["details"]["issues"]
 
     orphan_step = call(conn, "recent_runs", %{"step_id" => "check"})
-    assert orphan_step["error"]["message"] == "step_id requires runbook_execution_id."
+    assert orphan_step["error"]["details"]["kind"] == "missing"
+
+    assert %{"path" => "$.runbook_execution_id", "code" => "required"} in orphan_step["error"][
+             "details"
+           ]["issues"]
 
     combined =
       call(conn, "recent_runs", %{
@@ -84,8 +83,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "runner_ref" => "db-primary~" <> String.duplicate("a", 32)
       })
 
-    assert combined["error"]["message"] ==
-             "operation_id cannot be combined with runbook_execution_id, step_id, runner_ref, action_id, or pack_ref."
+    assert combined["error"]["details"]["kind"] == "conflict"
+    assert combined["error"]["details"]["issues"] == [%{"path" => "$", "code" => "conflict"}]
   end
 
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
@@ -756,6 +755,71 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(successful_summary, "error_message")
   end
 
+  test "recent history returns typed output intact and omits it under the aggregate budget", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "typed-summary")
+
+    typed_run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        structured_output_expected: true,
+        output_schema_snapshot: @typed_output_schema
+      })
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(typed_run, %{
+               "status" => "success",
+               "structured_output" => %{"count" => 7, "status" => "ok"}
+             })
+
+    typed_summary =
+      conn
+      |> call("recent_runs", %{})
+      |> Map.fetch!("runs")
+      |> Enum.find(&(&1["run_id"] == typed_run.id))
+
+    assert typed_summary["structured_output"] == %{"count" => 7, "status" => "ok"}
+    refute Map.has_key?(typed_summary, "structured_output_omitted")
+    refute Map.has_key?(typed_summary, "next")
+
+    for index <- 2..17 do
+      run =
+        create_mcp_history_run!(account, runner, key, index, %{
+          structured_output_expected: true,
+          output_schema_snapshot: @typed_output_schema
+        })
+
+      assert {:ok, _finished} =
+               Fixtures.Runs.finish(run, %{
+                 "status" => "success",
+                 "structured_output" => %{"value" => String.duplicate("x", 5_000)}
+               })
+    end
+
+    summaries = call(conn, "recent_runs", %{"limit" => 50})["runs"]
+    omitted = Enum.filter(summaries, &(&1["structured_output_omitted"] == true))
+
+    assert length(omitted) == 16
+    assert Enum.all?(omitted, &(not Map.has_key?(&1, "structured_output")))
+
+    assert Enum.all?(omitted, fn summary ->
+             summary["next"] == %{
+               "tool" => "wait_for_run",
+               "arguments" => %{"run_id" => summary["run_id"], "timeout" => "0"}
+             }
+           end)
+
+    [first | _rest] = omitted
+    recovered = call(conn, "wait_for_run", first["next"]["arguments"])["run"]
+
+    assert recovered["structured_output"] == %{"value" => String.duplicate("x", 5_000)}
+    refute Map.has_key?(recovered, "structured_output_omitted")
+    refute Map.has_key?(recovered, "next")
+  end
+
   test "recent runs byte-bound terminal failure causes without breaking UTF-8", %{
     conn: conn,
     account: account,
@@ -862,7 +926,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })
 
     assert result["error"]["code"] == "invalid_args"
-    assert result["error"]["message"] =~ "60s"
+    assert result["error"]["details"]["kind"] == "format"
+
+    assert result["error"]["details"]["issues"] == [
+             %{"path" => "$.timeout", "code" => "format"}
+           ]
   end
 
   test "wait_for_run rejects timeout values outside the public grammar", %{conn: conn} do

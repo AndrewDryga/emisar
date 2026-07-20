@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MCP.SchemaRegistryTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.MCP.SchemaRegistry
+  alias EmisarWeb.MCP.{ResponseBudget, SchemaRegistry}
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
   @schema_path Path.expand("../../../../../../docs/mcp-api-schemas.json", __DIR__)
@@ -28,31 +28,100 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     expected_fields = ~w(annotations description inputSchema name title)
     assert Enum.all?(tools, &(Enum.sort(Map.keys(&1)) == expected_fields))
+    assert tools == Enum.map(SchemaRegistry.contracts(), &Map.delete(&1, "outputSchema"))
 
+    # The wire catalog stays lean: response schemas live in the internal
+    # contracts, never in tools/list.
     assert byte_size(Jason.encode!(tools)) <= 32_768
+
+    frame = %{
+      jsonrpc: "2.0",
+      id: String.duplicate("\0", ResponseBudget.max_request_id_bytes()),
+      result: %{tools: tools}
+    }
+
+    assert {:ok, encoded} = ResponseBudget.encode_frame(frame)
+    assert byte_size(encoded) <= ResponseBudget.max_frame_bytes()
   end
 
   test "pins model-facing descriptions for reasons, waits, and pack availability" do
     list_packs = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_packs"))
     run_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "run_action"))
+    get_action = Enum.find(SchemaRegistry.contracts(), &(&1["name"] == "get_action"))
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
              "List packs observed on in-scope runners, with their bounded action catalogs. Returns the executable capabilities you can run right now."
 
-    assert run_action["inputSchema"]["properties"]["reason"]["description"] ==
+    assert get_in(run_action, ["inputSchema", "$defs", "reason", "description"]) ==
              "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
 
     assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
              "Maximum time to block before returning the current state."
 
-    assert wait_for_run["inputSchema"]["allOf"]
-           |> List.first()
-           |> get_in(["properties", "timeout", "description"]) ==
+    assert "contract_ref" in run_action["inputSchema"]["required"]
+
+    get_action_success =
+      Enum.find(
+        get_action["outputSchema"]["oneOf"],
+        &(get_in(&1, ["properties", "ok", "const"]) == true)
+      )
+
+    assert "contract_ref" in get_action_success["required"]
+
+    assert get_in(wait_for_run, [
+             "inputSchema",
+             "$defs",
+             "wait_for_run_arguments",
+             "properties",
+             "timeout",
+             "description"
+           ]) ==
              "Maximum time to block before returning the current state."
   end
 
-  test "complete internal contracts retain self-contained response schemas" do
+  test "omitted typed output requires one immediate wait continuation" do
+    run_summary =
+      @schema_path
+      |> File.read!()
+      |> Jason.decode!()
+      |> get_in(["$defs", "run_summary"])
+
+    immediate =
+      @schema_path
+      |> File.read!()
+      |> Jason.decode!()
+      |> get_in(["$defs", "next_wait_run_immediate"])
+
+    assert %{"const" => "0"} =
+             immediate
+             |> get_in(["allOf"])
+             |> List.last()
+             |> get_in(["properties", "arguments", "properties", "timeout"])
+
+    assert ["run_id", "timeout"] =
+             immediate
+             |> get_in(["allOf"])
+             |> List.last()
+             |> get_in(["properties", "arguments", "required"])
+
+    refute get_in(immediate, ["allOf", Access.at(1), "properties", "arguments", "properties"])
+           |> Map.has_key?("runbook_execution_id")
+
+    omission_rule =
+      Enum.find(
+        run_summary["allOf"],
+        &(&1["if"] == %{"required" => ["structured_output_omitted"]})
+      )
+
+    assert "next" in omission_rule["then"]["required"]
+
+    assert omission_rule["then"]["properties"]["next"] == %{
+             "$ref" => "#/$defs/next_wait_run_immediate"
+           }
+  end
+
+  test "published contracts retain self-contained input and response schemas" do
     registry = @schema_path |> File.read!() |> Jason.decode!()
 
     Enum.each(SchemaRegistry.contracts(), fn contract ->
@@ -60,7 +129,8 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
         registry
         |> Map.fetch!("tools")
         |> Map.fetch!(contract["name"])
-        |> Compiler.resolve!(registry)
+        |> Map.update!("inputSchema", &Compiler.bundle!(&1, registry))
+        |> Map.update!("outputSchema", &Compiler.bundle!(&1, registry))
         |> Map.put("name", contract["name"])
 
       assert contract == expected
@@ -68,37 +138,92 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     end)
   end
 
-  test "reference resolution preserves sibling schema keywords" do
-    registry = %{
-      "$defs" => %{
-        "duration" => %{"type" => "string", "pattern" => "^[0-9]+s$"}
+  test "invalid_args requires exact bounded validation details" do
+    schema =
+      SchemaRegistry.contracts()
+      |> Enum.find(&(&1["name"] == "list_packs"))
+      |> Map.fetch!("outputSchema")
+
+    assert {:ok, schema} = JSONSchex.compile(schema, format_assertion: true)
+
+    base = %{
+      "ok" => false,
+      "dispatch_started" => false,
+      "error" => %{
+        "code" => "invalid_args",
+        "message" => "Invalid.",
+        "retryable" => false
       }
     }
 
-    assert Compiler.resolve!(
+    assert {:error, _reason} = JSONSchex.validate(schema, base)
+
+    details = %{
+      "schema_version" => 1,
+      "stage" => "arguments",
+      "kind" => "type",
+      "issues" => [%{"path" => "$.limit", "code" => "type"}]
+    }
+
+    valid = put_in(base, ["error", "details"], details)
+    assert :ok = JSONSchex.validate(schema, valid)
+
+    assert {:error, _reason} =
+             JSONSchex.validate(
+               schema,
+               put_in(valid, ["error", "details"], Map.put(details, "extra", true))
+             )
+
+    assert {:error, _reason} =
+             JSONSchex.validate(
+               schema,
+               put_in(valid, ["error", "details", "kind"], "attacker-kind")
+             )
+
+    too_many =
+      Enum.map(1..9, fn index -> %{"path" => "$.field#{index}", "code" => "type"} end)
+
+    assert {:error, _reason} =
+             JSONSchex.validate(schema, put_in(valid, ["error", "details", "issues"], too_many))
+  end
+
+  test "schema bundling preserves references and includes only reachable definitions" do
+    registry = %{
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$defs" => %{
+        "duration" => %{"type" => "string", "pattern" => "^[0-9]+s$"},
+        "unused" => %{"type" => "boolean"}
+      }
+    }
+
+    assert Compiler.bundle!(
              %{"$ref" => "#/$defs/duration", "default" => "60s"},
              registry
            ) == %{
-             "type" => "string",
-             "pattern" => "^[0-9]+s$",
+             "$ref" => "#/$defs/duration",
+             "$schema" => "https://json-schema.org/draft/2020-12/schema",
+             "$defs" => %{
+               "duration" => %{"type" => "string", "pattern" => "^[0-9]+s$"}
+             },
              "default" => "60s"
            }
   end
 
-  test "reference resolution rejects unresolved, external, and cyclic references" do
+  test "schema bundling rejects unresolved, external, and cyclic references" do
     assert_raise ArgumentError, ~r/unresolved MCP schema reference/, fn ->
-      Compiler.resolve!(%{"$ref" => "#/$defs/missing"}, %{"$defs" => %{}})
+      Compiler.bundle!(%{"$ref" => "#/$defs/missing"}, %{"$defs" => %{}})
     end
 
-    assert_raise ArgumentError, ~r/must be internal/, fn ->
-      Compiler.resolve!(%{"$ref" => "https://example.com/schema.json"}, %{})
+    assert_raise ArgumentError, ~r/must be an internal definition/, fn ->
+      Compiler.bundle!(%{"$ref" => "https://example.com/schema.json"}, %{})
     end
 
     assert_raise ArgumentError, ~r/must be a string/, fn ->
-      Compiler.resolve!(%{"$ref" => 42}, %{})
+      Compiler.bundle!(%{"$ref" => 42}, %{})
     end
 
     registry = %{
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
       "$defs" => %{
         "a" => %{"$ref" => "#/$defs/b"},
         "b" => %{"$ref" => "#/$defs/a"}
@@ -106,7 +231,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     }
 
     assert_raise ArgumentError, ~r/cyclic MCP schema reference/, fn ->
-      Compiler.resolve!(%{"$ref" => "#/$defs/a"}, registry)
+      Compiler.bundle!(%{"$ref" => "#/$defs/a"}, registry)
     end
   end
 
@@ -140,19 +265,30 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
       schema = Map.fetch!(tool, field)
 
       assert schema["type"] == "object"
-      refute contains_key?(schema, "$ref")
-      refute contains_key?(schema, "$defs")
+      definitions = Map.get(schema, "$defs", %{})
+
+      assert schema |> referenced_definitions() |> Enum.sort() ==
+               definitions |> Map.keys() |> Enum.sort()
+
       assert schema == schema |> Jason.encode!() |> Jason.decode!()
     end)
   end
 
-  defp contains_key?(%{} = value, key) do
-    Map.has_key?(value, key) or
-      Enum.any?(value, fn {_key, child} -> contains_key?(child, key) end)
+  defp referenced_definitions(%{} = value) do
+    own =
+      case value["$ref"] do
+        "#/$defs/" <> name -> [name]
+        nil -> []
+      end
+
+    Enum.reduce(value, own, fn {_key, child}, names ->
+      referenced_definitions(child) ++ names
+    end)
+    |> Enum.uniq()
   end
 
-  defp contains_key?(value, key) when is_list(value),
-    do: Enum.any?(value, &contains_key?(&1, key))
+  defp referenced_definitions(value) when is_list(value),
+    do: value |> Enum.flat_map(&referenced_definitions/1) |> Enum.uniq()
 
-  defp contains_key?(_value, _key), do: false
+  defp referenced_definitions(_value), do: []
 end

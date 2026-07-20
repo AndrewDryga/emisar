@@ -6,15 +6,16 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   account/user scope, but expose only rows with the complete fixed MCP contract.
   """
 
-  alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runs}
+  alias Emisar.{Crypto, MCPOperations, Runbooks, Runs}
   alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, ResponseBudget}
-  alias EmisarWeb.MCP.{RunbookTools, Service, ToolParams, WaitLimiter}
+  alias EmisarWeb.MCP.{RunbookTools, Service, WaitLimiter}
 
-  @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
-  @action_id ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
-  @runner_ref ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}\z/
-  @step_id ~r/\A[a-z][a-z0-9_-]{0,79}\z/
   @recheck_ms 2_000
+
+  defmodule RecentInput do
+    @moduledoc false
+    defstruct ~w[operation_id runbook_execution_id step_id runner_ref action_id pack_ref scope limit cursor]a
+  end
 
   @doc "Executes one of the three fixed recovery tools."
   def call(conn, "get_operation", args), do: get_operation(conn, args)
@@ -22,11 +23,8 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   def call(conn, "recent_runs", args), do: recent_runs(conn, args)
 
   defp get_operation(conn, args) do
-    with :ok <- exact_fields(args, ~w(operation_id), ~w(operation_id)),
-         operation_id when is_binary(operation_id) <- args["operation_id"],
-         true <- Regex.match?(@operation_id, operation_id),
-         {:ok, operation} <-
-           MCPOperations.fetch_recovery(operation_id, conn.assigns.current_subject),
+    with {:ok, operation} <-
+           MCPOperations.fetch_recovery(args["operation_id"], conn.assigns.current_subject),
          {:ok, projection} <- operation_projection(conn, operation) do
       {:ok, %{ok: true, operation: projection}}
     else
@@ -46,12 +44,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            "operation_incomplete",
            "The operation exists, but its durable resource is unavailable."
          )}
-
-      {:error, {:invalid_field, message}} ->
-        {:error, error("invalid_args", message)}
-
-      _ ->
-        {:error, error("invalid_args", "get_operation requires one exact operation_id.")}
     end
   end
 
@@ -103,10 +95,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   end
 
   defp wait_for_run(conn, args) do
-    with {:ok, target} <- validate_wait(args),
-         {:ok, payload} <- wait_for_target(conn, target) do
-      {:ok, Map.put(payload, :ok, true)}
-    else
+    case wait_for_target(conn, wait_target(args)) do
+      {:ok, payload} ->
+        {:ok, Map.put(payload, :ok, true)}
+
       {:error, :cancelled} ->
         :cancelled
 
@@ -122,37 +114,17 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            "wait_saturated",
            "This credential already has eight active waits. Retry after one finishes."
          )}
-
-      {:error, {:invalid_field, message}} ->
-        {:error, error("invalid_args", message)}
-
-      {:error, :invalid_wait} ->
-        {:error,
-         error("invalid_args", "wait_for_run requires one id and a timeout no longer than 60s.")}
     end
   end
 
-  defp validate_wait(args) do
-    with :ok <-
-           exact_fields(
-             args,
-             [],
-             ~w(run_id runbook_execution_id timeout)
-           ),
-         run_id <- args["run_id"],
-         execution_id <- args["runbook_execution_id"],
-         true <- exactly_one?(run_id, execution_id),
-         true <- valid_uuid_or_nil?(run_id) and valid_uuid_or_nil?(execution_id),
-         {:ok, timeout_ms} <- Service.parse_wait(args["timeout"] || "60s") do
-      target =
-        if run_id,
-          do: %{kind: :run, id: run_id, timeout_ms: timeout_ms},
-          else: %{kind: :execution, id: execution_id, timeout_ms: timeout_ms}
+  # The published inputSchema's oneOf guarantees exactly one id, and its
+  # wait_short pattern mirrors parse_wait's grammar exactly.
+  defp wait_target(args) do
+    {:ok, timeout_ms} = Service.parse_wait(args["timeout"] || "60s")
 
-      {:ok, target}
-    else
-      {:error, {:invalid_field, _message} = fault} -> {:error, fault}
-      _ -> {:error, :invalid_wait}
+    case args do
+      %{"run_id" => run_id} -> %{kind: :run, id: run_id, timeout_ms: timeout_ms}
+      %{"runbook_execution_id" => id} -> %{kind: :execution, id: id, timeout_ms: timeout_ms}
     end
   end
 
@@ -279,10 +251,11 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   end
 
   defp recent_runs(conn, args) do
-    with {:ok, input} <- validate_recent_runs(args),
-         scope <- cursor_scope(conn),
-         cursor_filters <- recent_cursor_filters(input),
-         {:ok, page_cursor} <-
+    input = parse_recent_runs(args)
+    scope = cursor_scope(conn)
+    cursor_filters = recent_cursor_filters(input)
+
+    with {:ok, page_cursor} <-
            CatalogCursor.decode(input.cursor, "recent_runs", scope, cursor_filters),
          {:ok, payload} <-
            recent_runs_page(conn, input, page_cursor, scope, cursor_filters, input.limit) do
@@ -294,12 +267,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read run history.")}
-
-      {:error, {:invalid_field, message}} ->
-        {:error, error("invalid_args", message)}
-
-      {:error, :invalid_recent_runs} ->
-        {:error, error("invalid_args", "recent_runs arguments do not match the fixed contract.")}
 
       {:error, :response_too_large} ->
         {:error,
@@ -345,76 +312,21 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     end
   end
 
-  defp validate_recent_runs(args) do
-    allowed =
-      ~w(operation_id runbook_execution_id step_id runner_ref action_id pack_ref scope limit cursor)
-
-    with :ok <- exact_fields(args, [], allowed),
-         :ok <- optional_match(args["operation_id"], @operation_id, "operation_id"),
-         :ok <- optional_uuid(args["runbook_execution_id"], "runbook_execution_id"),
-         :ok <- optional_match(args["step_id"], @step_id, "step_id"),
-         :ok <- optional_match(args["runner_ref"], @runner_ref, "runner_ref"),
-         :ok <- optional_match(args["action_id"], @action_id, "action_id"),
-         :ok <- optional_pack_ref(args["pack_ref"]),
-         {:ok, scope} <- recent_scope(args["scope"]),
-         {:ok, limit} <- ToolParams.limit(args["limit"], 15, 100),
-         :ok <- recent_cursor(args["cursor"]),
-         :ok <- valid_recent_combination(args) do
-      {:ok,
-       struct!(__MODULE__.RecentInput, %{
-         operation_id: args["operation_id"],
-         runbook_execution_id: args["runbook_execution_id"],
-         step_id: args["step_id"],
-         runner_ref: args["runner_ref"],
-         action_id: args["action_id"],
-         pack_ref: args["pack_ref"],
-         scope: if(scope == "own", do: :own, else: :account),
-         limit: limit,
-         cursor: args["cursor"]
-       })}
-    else
-      # Every fault names its field — the generic contract error below once
-      # sent a model hunting the wrong parameter entirely.
-      {:error, {:invalid_field, _message} = fault} -> {:error, fault}
-      {:error, message} when is_binary(message) -> {:error, {:invalid_field, message}}
-      _ -> {:error, :invalid_recent_runs}
-    end
-  end
-
-  defp recent_scope(nil), do: {:ok, "own"}
-  defp recent_scope(scope) when scope in ["own", "account"], do: {:ok, scope}
-
-  defp recent_scope(_scope),
-    do: {:error, {:invalid_field, ~s(scope must be "own" or "account".)}}
-
-  defp recent_cursor(cursor) when is_nil(cursor) or is_binary(cursor), do: :ok
-
-  defp recent_cursor(_cursor) do
-    {:error,
-     {:invalid_field, "cursor must be the exact next_cursor string from the previous page."}}
-  end
-
-  defmodule RecentInput do
-    @moduledoc false
-    defstruct ~w[operation_id runbook_execution_id step_id runner_ref action_id pack_ref scope limit cursor]a
-  end
-
-  defp valid_recent_combination(args) do
-    other_identity? =
-      Enum.any?(~w(runbook_execution_id step_id runner_ref action_id pack_ref), &args[&1])
-
-    cond do
-      args["operation_id"] && other_identity? ->
-        {:error,
-         {:invalid_field,
-          "operation_id cannot be combined with runbook_execution_id, step_id, runner_ref, action_id, or pack_ref."}}
-
-      args["step_id"] && is_nil(args["runbook_execution_id"]) ->
-        {:error, {:invalid_field, "step_id requires runbook_execution_id."}}
-
-      true ->
-        :ok
-    end
+  # The controller already validated `args` against the published recent_runs
+  # inputSchema, including its identity-combination rules; this builder only
+  # applies the documented defaults.
+  defp parse_recent_runs(args) do
+    %__MODULE__.RecentInput{
+      operation_id: args["operation_id"],
+      runbook_execution_id: args["runbook_execution_id"],
+      step_id: args["step_id"],
+      runner_ref: args["runner_ref"],
+      action_id: args["action_id"],
+      pack_ref: args["pack_ref"],
+      scope: if(args["scope"] == "account", do: :account, else: :own),
+      limit: args["limit"] || 15,
+      cursor: args["cursor"]
+    }
   end
 
   defp recent_cursor_filters(input) do
@@ -459,77 +371,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp run_token(run), do: {run.status, run.updated_at}
   defp terminal_execution?(status), do: status not in ~w(pending running pending_approval)
-
-  defp exactly_one?(left, right),
-    do: (is_binary(left) and is_nil(right)) or (is_nil(left) and is_binary(right))
-
-  defp valid_uuid_or_nil?(nil), do: true
-  defp valid_uuid_or_nil?(value), do: is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value))
-
-  defp optional_match(nil, _regex, _name), do: :ok
-
-  defp optional_match(value, regex, name) do
-    if is_binary(value) and Regex.match?(regex, value) do
-      :ok
-    else
-      {:error,
-       {:invalid_field, "#{name} is malformed — copy the exact value from a prior tool result."}}
-    end
-  end
-
-  defp optional_uuid(nil, _name), do: :ok
-
-  defp optional_uuid(value, name) do
-    if is_binary(value) and match?({:ok, _}, Ecto.UUID.cast(value)) do
-      :ok
-    else
-      {:error, {:invalid_field, "#{name} must be the UUID returned by the tool that created it."}}
-    end
-  end
-
-  defp optional_pack_ref(nil), do: :ok
-
-  defp optional_pack_ref(value) do
-    case Catalog.MCPProjection.parse_pack_ref(value) do
-      {:ok, _parts} ->
-        :ok
-
-      _ ->
-        {:error,
-         {:invalid_field,
-          "pack_ref is malformed — copy the exact pack_ref from list_packs or get_action."}}
-    end
-  end
-
-  # Names the offending fields so a model can self-correct in one step — a
-  # generic contract error sent one hunting the wrong parameter entirely.
-  # Echoed keys are model-supplied text: cap the count and each key's length.
-  defp exact_fields(map, required, allowed) when is_map(map) do
-    missing = Enum.reject(required, &Map.has_key?(map, &1))
-    unknown = Map.keys(map) |> Enum.reject(&(&1 in allowed)) |> bounded_field_names()
-
-    cond do
-      missing != [] ->
-        {:error, {:invalid_field, "missing required argument(s): #{Enum.join(missing, ", ")}."}}
-
-      unknown != [] ->
-        {:error,
-         {:invalid_field,
-          "unknown argument(s): #{Enum.join(unknown, ", ")}. Allowed: #{Enum.join(allowed, ", ")}."}}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp exact_fields(_map, _required, _allowed),
-    do: {:error, {:invalid_field, "arguments must be a JSON object."}}
-
-  defp bounded_field_names(names) do
-    names
-    |> Enum.take(5)
-    |> Enum.map(&String.slice(&1, 0, 64))
-  end
 
   defp error(code, message) do
     %{

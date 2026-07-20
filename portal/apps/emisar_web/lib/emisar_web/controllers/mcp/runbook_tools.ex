@@ -8,11 +8,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runners, Runs, Slug}
   alias EmisarWeb.MCP.{ActionContract, CatalogCursor, ResponseBudget, RunbookContract}
-  alias EmisarWeb.MCP.ToolParams
+  alias EmisarWeb.MCP.ValidationError
 
-  @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
-  @step_id ~r/\A[a-z][a-z0-9_-]{0,79}\z/
   @default_limit 15
 
   @doc "Executes one of the four fixed runbook tools."
@@ -26,15 +24,17 @@ defmodule EmisarWeb.MCP.RunbookTools do
     do: create_draft(conn, args, operation_id)
 
   defp list_runbooks(conn, args) do
-    with {:ok, parsed} <- validate_list(args),
-         {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, summaries} <- published_summaries(conn, parsed.query, snapshot),
+    query = args["query"]
+    limit = args["limit"] || @default_limit
+
+    with {:ok, snapshot} <- catalog_snapshot(conn),
+         {:ok, summaries} <- published_summaries(conn, query, snapshot),
          scope <- cursor_scope(conn),
-         filters <- %{"query" => parsed.query, "limit" => parsed.limit},
+         filters <- %{"query" => query, "limit" => limit},
          {:ok, after_key} <-
-           CatalogCursor.decode(parsed.cursor, "list_runbooks", scope, filters) do
-      page = drop_through(summaries, after_key) |> Enum.take(parsed.limit + 1)
-      {items, more?} = split_more(page, parsed.limit)
+           CatalogCursor.decode(args["cursor"], "list_runbooks", scope, filters) do
+      page = drop_through(summaries, after_key) |> Enum.take(limit + 1)
+      {items, more?} = split_more(page, limit)
       observed_at = DateTime.utc_now()
 
       {:ok, fit_runbook_page(items, more?, observed_at, scope, filters)}
@@ -45,16 +45,14 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read runbooks.")}
-
-      {:error, %{} = payload} ->
-        {:error, payload}
     end
   end
 
   defp get_runbook(conn, args) do
-    with :ok <- exact_fields(args, ~w(runbook_ref), ~w(runbook_ref)),
-         {:ok, {slug, version}} <- parse_runbook_ref(args["runbook_ref"]),
-         {:ok, runbook} <-
+    # Schema-validated: runbook_ref always matches the published pattern.
+    {:ok, {slug, version}} = parse_runbook_ref(args["runbook_ref"])
+
+    with {:ok, runbook} <-
            Runbooks.fetch_published_runbook_version(slug, version, conn.assigns.current_subject),
          {:ok, snapshot} <- catalog_snapshot(conn),
          {:ok, public_runbook} <- RunbookContract.project(runbook, snapshot) do
@@ -68,19 +66,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, :incomplete_contract} ->
         {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
-      _ ->
-        {:error, error("invalid_args", "get_runbook requires one exact runbook_ref.")}
     end
   end
 
   defp create_draft(conn, args, operation_id) do
-    with true <- valid_operation_id?(operation_id),
-         {:ok, input} <- validate_draft(args),
-         fingerprint <- mutation_fingerprint("create_runbook_draft", draft_facts(input)),
-         operation_attrs <- draft_operation_attrs(input, operation_id, fingerprint, conn),
-         result <- create_or_replay_draft(conn, input, operation_attrs) do
-      case result do
+    with {:ok, input} <- validate_draft(args) do
+      fingerprint = mutation_fingerprint("create_runbook_draft", draft_facts(input))
+      operation_attrs = draft_operation_attrs(input, operation_id, fingerprint, conn)
+
+      case create_or_replay_draft(conn, input, operation_attrs) do
         {:ok, _kind, runbook} ->
           {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
 
@@ -109,12 +103,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
         {:error, %{} = payload} ->
           {:error, payload}
       end
-    else
-      false ->
-        {:error, error("invalid_operation", "The operation identity is invalid.")}
-
-      {:error, %{} = payload} ->
-        {:error, payload}
     end
   end
 
@@ -148,21 +136,20 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp execute_runbook(conn, args, operation_id) do
-    with true <- valid_operation_id?(operation_id),
-         {:ok, input} <- validate_execute(args),
-         fingerprint <-
-           mutation_fingerprint("execute_runbook", %{
-             "runbook_ref" => input.runbook_ref,
-             "reason" => input.reason
-           }),
-         operation_attrs <- execution_operation_attrs(input, operation_id, fingerprint, conn),
-         {:ok, execution, runbook} <- execute_or_replay(conn, input, operation_attrs),
+    input = %{runbook_ref: args["runbook_ref"], reason: args["reason"]}
+
+    fingerprint =
+      mutation_fingerprint("execute_runbook", %{
+        "runbook_ref" => input.runbook_ref,
+        "reason" => input.reason
+      })
+
+    operation_attrs = execution_operation_attrs(input, operation_id, fingerprint, conn)
+
+    with {:ok, execution, runbook} <- execute_or_replay(conn, input, operation_attrs),
          {:ok, payload} <- execution_payload(conn, execution, runbook) do
       {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
     else
-      false ->
-        {:error, error("invalid_operation", "The operation identity is invalid.")}
-
       {:error, :operation_conflict} ->
         {:error,
          error("operation_conflict", "This operation_id already belongs to another mutation.")}
@@ -194,9 +181,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot execute this runbook.")}
-
-      {:error, %{} = payload} ->
-        {:error, payload}
 
       {:error, reason} ->
         {:error, error("execution_failed", execution_error(reason))}
@@ -329,28 +313,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end)
   end
 
-  defp validate_list(args) do
-    with :ok <- exact_fields(args, [], ~w(query limit cursor)),
-         {:ok, query} <- optional_string(args["query"], 256),
-         {:ok, limit} <- limit(args["limit"], 50),
-         true <- is_nil(args["cursor"]) or is_binary(args["cursor"]) do
-      {:ok, %{query: query, limit: limit, cursor: args["cursor"]}}
-    else
-      # A field-specific fault keeps its message — the generic line below once
-      # flattened a mistyped limit into "arguments are invalid", hiding which
-      # field (and which fix) the model needed.
-      {:error, %{} = payload} -> {:error, payload}
-      _ -> {:error, error("invalid_args", "list_runbooks arguments are invalid.")}
-    end
-  end
-
+  # The controller already validated the published create_runbook_draft
+  # inputSchema; the aggregate byte budget it documents as x-maxEncodedUtf8Bytes
+  # is enforced here, where the whole-arguments encoding is at hand.
   defp validate_draft(args) do
-    with :ok <- exact_fields(args, ~w(title steps), ~w(title slug description steps)),
-         true <- byte_size(Jason.encode!(args)) <= 57_344,
-         true <- valid_string?(args["title"], 1, 80) and String.trim(args["title"]) != "",
-         true <- is_nil(args["slug"]) or Regex.match?(~r/\A[a-z][a-z0-9_-]{0,79}\z/, args["slug"]),
-         true <- is_nil(args["description"]) or valid_string?(args["description"], 0, 4_096),
-         true <- is_list(args["steps"]) and length(args["steps"]) in 1..32 do
+    with :ok <- encoded_size(args, 57_344) do
       {:ok,
        %{
          title: args["title"],
@@ -358,18 +325,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
          description: args["description"] || "",
          steps: args["steps"]
        }}
-    else
-      _ -> {:error, error("invalid_args", "create_runbook_draft arguments are invalid.")}
-    end
-  end
-
-  defp validate_execute(args) do
-    with :ok <- exact_fields(args, ~w(runbook_ref reason), ~w(runbook_ref reason)),
-         {:ok, _ref} <- parse_runbook_ref(args["runbook_ref"]),
-         true <- valid_string?(args["reason"], 1, 255) and String.trim(args["reason"]) != "" do
-      {:ok, %{runbook_ref: args["runbook_ref"], reason: args["reason"]}}
-    else
-      _ -> {:error, error("invalid_args", "execute_runbook arguments are invalid.")}
     end
   end
 
@@ -395,16 +350,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp normalize_draft_step(step, snapshot) when is_map(step) do
-    with :ok <-
-           exact_fields(
-             step,
-             ~w(step_id action_id pack_ref args runner_selector),
-             ~w(step_id action_id pack_ref args runner_selector)
-           ),
-         true <- is_binary(step["step_id"]) and Regex.match?(@step_id, step["step_id"]),
-         true <- is_binary(step["action_id"]),
-         true <- is_map(step["args"]) and byte_size(Jason.encode!(step["args"])) <= 32_768,
+  # The published runbook_step schema owns field shapes; this keeps only what
+  # it cannot express — the per-step args byte budget it documents as
+  # x-maxRawUtf8Bytes, the trusted-contract match, and selector resolution.
+  defp normalize_draft_step(step, snapshot) do
+    with true <- byte_size(Jason.encode!(step["args"])) <= 32_768,
          %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == step["pack_ref"])),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == step["action_id"])),
          :ok <- ActionContract.validate(step["args"], action),
@@ -423,16 +373,12 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp normalize_draft_step(_step, _snapshot), do: {:error, :invalid_step}
-
-  defp normalize_selector(%{"runner_refs" => refs} = selector, snapshot, action)
-       when map_size(selector) == 1 and is_list(refs) and refs != [] and length(refs) <= 16 do
+  defp normalize_selector(%{"runner_refs" => refs}, snapshot, action) do
     by_ref = Map.new(snapshot.runners, &{&1.runner_ref, &1})
     compatible = MapSet.new(action.compatible_runner_ids)
     selected = Enum.map(refs, &Map.get(by_ref, &1))
 
-    if MapSet.size(MapSet.new(refs)) == length(refs) and
-         Enum.all?(selected, &(&1 && MapSet.member?(compatible, &1.id))) do
+    if Enum.all?(selected, &(&1 && MapSet.member?(compatible, &1.id))) do
       {:ok, %{"runner_id" => Enum.map(selected, & &1.id), "runner_refs" => refs},
        length(selected)}
     else
@@ -440,15 +386,12 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp normalize_selector(%{"groups" => groups} = selector, snapshot, action)
-       when map_size(selector) == 1 and is_list(groups) and groups != [] and length(groups) <= 16 do
+  defp normalize_selector(%{"groups" => groups}, snapshot, action) do
     compatible = MapSet.new(action.compatible_runner_ids)
     visible_ids = MapSet.new(snapshot.runners, & &1.id)
     selected = Enum.filter(snapshot.account_runners, &(&1.group in groups))
 
-    if MapSet.size(MapSet.new(groups)) == length(groups) and
-         Enum.all?(groups, &valid_string?(&1, 1, 80)) and
-         length(selected) in 1..16 and
+    if length(selected) in 1..16 and
          Enum.all?(selected, fn runner ->
            MapSet.member?(visible_ids, runner.id) and MapSet.member?(compatible, runner.id)
          end) do
@@ -457,8 +400,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, :invalid_selector}
     end
   end
-
-  defp normalize_selector(_selector, _snapshot, _action), do: {:error, :invalid_selector}
 
   defp draft_attrs(input, steps) do
     slug = draft_slug(input)
@@ -698,32 +639,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp parse_runbook_ref(_value), do: {:error, :invalid_runbook_ref}
   defp runbook_ref(runbook), do: "#{runbook.slug}@#{runbook.version}"
 
-  defp valid_operation_id?(value), do: is_binary(value) and Regex.match?(@operation_id, value)
-
-  defp exact_fields(map, required, allowed) when is_map(map) do
-    if Enum.all?(required, &Map.has_key?(map, &1)) and Enum.all?(Map.keys(map), &(&1 in allowed)),
-      do: :ok,
-      else: {:error, :invalid_fields}
-  end
-
-  defp exact_fields(_map, _required, _allowed), do: {:error, :invalid_fields}
-
-  defp optional_string(nil, _max), do: {:ok, nil}
-
-  defp optional_string(value, max) do
-    if valid_string?(value, 1, max), do: {:ok, value}, else: {:error, :invalid_string}
-  end
-
-  defp valid_string?(value, min, max),
-    do: is_binary(value) and byte_size(value) in min..max
-
-  # Full error payload, not an atom: the callers' else blocks pass a
-  # `%{} = payload` through, while `:invalid_limit` fell into the generic
-  # "arguments are invalid" catch-all that hid which field was wrong.
-  defp limit(value, max) do
-    case ToolParams.limit(value, @default_limit, max) do
-      {:ok, parsed} -> {:ok, parsed}
-      {:error, message} -> {:error, error("invalid_args", message)}
+  defp encoded_size(args, max) do
+    if byte_size(Jason.encode!(args)) <= max do
+      :ok
+    else
+      {:error,
+       ValidationError.payload("Arguments exceed the size limit.",
+         stage: :arguments,
+         issues: [ValidationError.issue([], :size)]
+       )}
     end
   end
 
@@ -783,7 +707,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp error(code, message, dispatch_started \\ false, details \\ nil) do
+  defp error(code, message, dispatch_started \\ false, details \\ nil)
+
+  defp error(code, message, dispatch_started, details) do
     error = %{code: code, message: message, retryable: false}
     error = if details, do: Map.put(error, :details, details), else: error
     %{ok: false, error: error, dispatch_started: dispatch_started}

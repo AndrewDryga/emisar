@@ -98,7 +98,7 @@ func runActionFrame(args string, runnerRefs []string) []byte {
 		panic(err)
 	}
 	return []byte(fmt.Sprintf(
-		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":%q,"pack_ref":%q,"runner_refs":%s,"args":%s,"reason":"planned maintenance","wait":"60s"}}}`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":%q,"pack_ref":%q,"contract_ref":"receipt.payload.signature","runner_refs":%s,"args":%s,"reason":"planned maintenance","wait":"60s"}}}`,
 		testActionID, testPackRef, refs, args,
 	))
 }
@@ -192,6 +192,13 @@ func TestSignFrameProducesExactRunnerVerifiableClaim(t *testing.T) {
 	if envelope.Cert == nil || envelope.Cert.PublicKey != hex.EncodeToString(publicKey) {
 		t.Fatalf("attestation cert = %#v, want leaf public key", envelope.Cert)
 	}
+	encodedEnvelope, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encodedEnvelope, []byte("contract_ref")) || bytes.Contains(encodedEnvelope, []byte("receipt.payload.signature")) {
+		t.Fatal("contract_ref leaked into the action attestation")
+	}
 
 	claim := attest.Claim{
 		ActionID:     envelope.ActionID,
@@ -248,7 +255,7 @@ func TestSignFrameBindsExactRawArguments(t *testing.T) {
 func TestSignFrameOnlySignsWellFormedRunAction(t *testing.T) {
 	signer, _ := testSigner(t)
 	validRefs, _ := json.Marshal([]string{testRunnerRefA})
-	validPrefix := fmt.Sprintf(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":%q,"pack_ref":%q,"runner_refs":%s,`, testActionID, testPackRef, validRefs)
+	validPrefix := fmt.Sprintf(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":%q,"pack_ref":%q,"contract_ref":"receipt.payload.signature","runner_refs":%s,`, testActionID, testPackRef, validRefs)
 	tests := []struct {
 		name      string
 		frame     string

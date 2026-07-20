@@ -5,13 +5,14 @@ defmodule EmisarWeb.MCPContractAssertions do
   alias EmisarWeb.MCP.SchemaRegistry
 
   @schemas Map.new(SchemaRegistry.contracts(), fn contract ->
-             {contract["name"], JsonXema.new(contract["outputSchema"])}
+             {:ok, schema} = JSONSchex.compile(contract["outputSchema"], format_assertion: true)
+             {contract["name"], schema}
            end)
 
   def assert_valid_tool_result(tool, result) when is_binary(tool) and is_map(result) do
     schema = Map.fetch!(@schemas, tool)
 
-    case JsonXema.validate(schema, result) do
+    case JSONSchex.validate(schema, result) do
       :ok ->
         result
 

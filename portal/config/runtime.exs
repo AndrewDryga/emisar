@@ -137,6 +137,7 @@ if config_env() == :prod do
   # so every node agrees and an attacker can't recompute a day's ids.
   config :emisar, :analytics_salt, secret_key_base
   config :emisar, :email_link_secret, secret_key_base
+  config :emisar, :mcp_telemetry_salt, secret_key_base
 
   host = System.get_env("PHX_HOST") || "emisar.dev"
 

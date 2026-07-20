@@ -9,121 +9,127 @@ defmodule EmisarWeb.MCP.ActionTools do
   """
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
-  alias EmisarWeb.MCP.{ActionContract, Attestation, RawJSON, Service}
-
-  @required ~w(action_id pack_ref runner_refs args reason)
-  @allowed @required ++ ~w(wait)
-  @action_id ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+\z/
-  @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
-  @max_runner_refs 16
+  alias EmisarWeb.MCP.ActionContract
+  alias EmisarWeb.MCP.ActionContractRef
+  alias EmisarWeb.MCP.Attestation
+  alias EmisarWeb.MCP.RawJSON
+  alias EmisarWeb.MCP.Service
+  alias EmisarWeb.MCP.ValidationError
 
   @doc "Validates and dispatches one exact fixed-catalog action call."
   @spec call(Plug.Conn.t(), map(), binary(), String.t(), [String.t()]) ::
           {:ok, map()} | {:error, map()} | :cancelled
   def call(conn, args, args_raw, operation_id, attestation_headers) do
-    with {:ok, input} <- validate(args, args_raw, operation_id),
-         {:ok, wait_ms} <- parse_wait(input.wait),
-         fingerprint <- operation_fingerprint(input, args_raw),
-         operation_attrs <- operation_attrs(input, operation_id, fingerprint),
-         result <-
-           run_or_replay(
-             conn,
-             input,
-             args_raw,
-             operation_attrs,
-             wait_ms,
-             attestation_headers
-           ) do
-      case result do
-        {:ok, runs} ->
-          {:ok,
-           %{
-             ok: true,
-             operation_id: operation_id,
-             action_id: input.action_id,
-             pack_ref: input.pack_ref,
-             runs: runs
-           }}
+    input = intake(args, args_raw)
 
-        {:error, :cancelled} ->
-          :cancelled
+    # The published wait_short pattern mirrors parse_wait's grammar exactly,
+    # so a schema-validated wait always parses.
+    {:ok, wait_ms} = Service.parse_wait(input.wait)
+    fingerprint = operation_fingerprint(input, args_raw)
+    operation_attrs = operation_attrs(input, operation_id, fingerprint)
 
-        {:error, :operation_conflict} ->
-          {:error,
-           error(
-             "operation_conflict",
-             "This operation_id already belongs to different action facts."
-           )}
+    result =
+      run_or_replay(
+        conn,
+        input,
+        args_raw,
+        operation_attrs,
+        wait_ms,
+        attestation_headers
+      )
 
-        {:error, :operation_incomplete} ->
-          {:error,
-           error(
-             "operation_incomplete",
-             "The operation record is incomplete. Reconcile it before retrying.",
-             true,
-             %{operation_id: operation_id}
-           )}
+    handle_result(result, input, operation_id)
+  end
 
-        {:error, :attestation_stale} ->
-          {:error,
-           error(
-             "invalid_attestation",
-             "The signed action is outside its runner freshness or certificate window."
-           )}
+  defp handle_result(result, input, operation_id) do
+    case result do
+      {:ok, runs} ->
+        {:ok,
+         %{
+           ok: true,
+           operation_id: operation_id,
+           action_id: input.action_id,
+           pack_ref: input.pack_ref,
+           runs: runs
+         }}
 
-        {:error, :invalid_attestation} ->
-          {:error,
-           error(
-             "invalid_attestation",
-             "The signed action header is invalid or does not match this call."
-           )}
+      {:error, :cancelled} ->
+        :cancelled
 
-        {:error, {:signature_required, runner_refs}} ->
-          {:error,
-           error(
-             "signature_required",
-             "At least one selected runner requires a signed action call.",
-             false,
-             %{runner_refs: runner_refs}
-           )}
+      {:error, :operation_conflict} ->
+        {:error,
+         error(
+           "operation_conflict",
+           "This operation_id already belongs to different action facts."
+         )}
 
-        {:error, reason}
-        when reason in [
-               :runner_not_found,
-               :runner_out_of_scope,
-               :action_not_found,
-               :action_unavailable,
-               :pack_ref_mismatch,
-               :pack_untrusted,
-               :pack_retired
-             ] ->
-          target_contract_changed(input)
+      {:error, :operation_incomplete} ->
+        {:error,
+         error(
+           "operation_incomplete",
+           "The operation record is incomplete. Reconcile it before retrying.",
+           true,
+           %{operation_id: operation_id}
+         )}
 
-        {:error, :unauthorized} ->
-          {:error, error("not_allowed", "This key cannot dispatch actions.")}
+      {:error, :attestation_stale} ->
+        {:error,
+         error(
+           "invalid_attestation",
+           "The signed action is outside its runner freshness or certificate window."
+         )}
 
-        {:error, %Ecto.Changeset{} = changeset} ->
-          {:error,
-           error("invalid_args", "The action call failed persistence validation.", false, %{
-             fields: changeset_errors(changeset)
-           })}
+      {:error, :invalid_attestation} ->
+        {:error,
+         error(
+           "invalid_attestation",
+           "The signed action header is invalid or does not match this call."
+         )}
 
-        {:error, %{} = payload} ->
-          {:error, payload}
+      {:error, {:signature_required, runner_refs}} ->
+        {:error,
+         error(
+           "signature_required",
+           "At least one selected runner requires a signed action call.",
+           false,
+           %{runner_refs: runner_refs}
+         )}
 
-        {:error, _reason} ->
-          {:error,
-           error(
-             "dispatch_failed",
-             "The action operation could not be committed. No target was dispatched."
-           )}
-      end
-    else
+      {:error, reason}
+      when reason in [
+             :runner_not_found,
+             :runner_out_of_scope,
+             :action_not_found,
+             :action_unavailable,
+             :pack_ref_mismatch,
+             :pack_untrusted,
+             :pack_retired,
+             :action_contract_changed,
+             :invalid_contract_ref
+           ] ->
+        target_contract_changed(input)
+
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot dispatch actions.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:error,
+         error(
+           "dispatch_failed",
+           "The action call failed persistence validation. No target was dispatched.",
+           false,
+           %{fields: changeset_errors(changeset)}
+         )}
+
       {:error, %{} = payload} ->
         {:error, payload}
 
-      {:error, :invalid_wait} ->
-        {:error, error("invalid_args", "wait must be 0 or a duration no longer than 60s.")}
+      {:error, _reason} ->
+        {:error,
+         error(
+           "dispatch_failed",
+           "The action operation could not be committed. No target was dispatched."
+         )}
     end
   end
 
@@ -144,7 +150,8 @@ defmodule EmisarWeb.MCP.ActionTools do
   end
 
   defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
-    with {:ok, targets, action} <- resolve_targets(conn, input),
+    with :ok <- verify_contract_ref(conn, input),
+         {:ok, targets, action} <- resolve_targets(conn, input),
          :ok <- validate_action_args(input.args, action),
          facts <- attestation_facts(conn, input, args_raw, operation_attrs.operation_id),
          {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
@@ -173,61 +180,38 @@ defmodule EmisarWeb.MCP.ActionTools do
     }
   end
 
-  defp validate(args, args_raw, operation_id) when is_map(args) and is_binary(args_raw) do
-    with :ok <- exact_fields(args),
-         true <- is_binary(args["action_id"]) and Regex.match?(@action_id, args["action_id"]),
-         {:ok, _parts} <- Catalog.MCPProjection.parse_pack_ref(args["pack_ref"]),
-         {:ok, runner_refs} <- runner_refs(args["runner_refs"]),
-         true <- is_map(args["args"]),
-         true <- byte_size(args_raw) <= 32_768,
-         {:ok, exact_args} <- RawJSON.decode_object(args_raw),
-         true <- valid_reason?(args["reason"]),
-         true <- is_binary(operation_id) and Regex.match?(@operation_id, operation_id),
-         true <- is_nil(args["wait"]) or is_binary(args["wait"]) do
-      {:ok,
-       %{
-         action_id: args["action_id"],
-         pack_ref: args["pack_ref"],
-         runner_refs: runner_refs,
-         args: exact_args,
-         reason: args["reason"],
-         wait: args["wait"] || "60s"
-       }}
-    else
-      _ ->
-        {:error, error("invalid_args", "run_action arguments do not match the fixed contract.")}
-    end
+  # The controller already validated `args` against the published run_action
+  # inputSchema and `args_raw` is the exact, byte-bounded `params.arguments.args`
+  # slice RawJSON.tool_call extracted from the same request body, so decoding
+  # here preserves exact number spelling for dispatch and cannot fail.
+  defp intake(args, args_raw) do
+    {:ok, exact_args} = RawJSON.decode_object(args_raw)
+
+    %{
+      action_id: args["action_id"],
+      pack_ref: args["pack_ref"],
+      contract_ref: args["contract_ref"],
+      runner_refs: args["runner_refs"],
+      args: exact_args,
+      reason: args["reason"],
+      wait: args["wait"] || "60s"
+    }
   end
 
-  defp validate(_args, _args_raw, _operation_id),
-    do: {:error, error("invalid_args", "run_action arguments do not match the fixed contract.")}
+  defp verify_contract_ref(conn, input) do
+    case ActionContractRef.verify(
+           conn.assigns.current_subject,
+           conn.assigns.api_key,
+           input.contract_ref,
+           input.action_id,
+           input.pack_ref
+         ) do
+      :ok ->
+        :ok
 
-  defp exact_fields(args) do
-    keys = Map.keys(args)
-
-    if Enum.all?(@required, &Map.has_key?(args, &1)) and Enum.all?(keys, &(&1 in @allowed)),
-      do: :ok,
-      else: {:error, :invalid_args}
-  end
-
-  defp runner_refs(refs) when is_list(refs) and length(refs) in 1..@max_runner_refs do
-    if Enum.all?(refs, &(is_binary(&1) and byte_size(&1) in 1..113)) and
-         MapSet.size(MapSet.new(refs)) == length(refs) do
-      {:ok, refs}
-    else
-      {:error, :invalid_runner_refs}
-    end
-  end
-
-  defp runner_refs(_refs), do: {:error, :invalid_runner_refs}
-
-  defp valid_reason?(reason),
-    do: is_binary(reason) and byte_size(reason) in 1..255 and String.trim(reason) != ""
-
-  defp parse_wait(wait) do
-    case Service.parse_wait(wait) do
-      {:ok, wait_ms} -> {:ok, wait_ms}
-      :error -> {:error, :invalid_wait}
+      {:error, reason} ->
+        :ok = ValidationError.log_contract_ref(conn, reason)
+        {:error, :invalid_contract_ref}
     end
   end
 
@@ -260,10 +244,13 @@ defmodule EmisarWeb.MCP.ActionTools do
         :ok
 
       {:error, issue} ->
+        path = if issue.code == "unknown_arg", do: [:args], else: [:args, issue.arg]
+
         {:error,
-         error("invalid_args", "Action arguments do not match the trusted contract.", false, %{
-           fields: %{issue.arg => %{code: issue.code, message: issue.message}}
-         })}
+         ValidationError.payload("Action arguments do not match the trusted contract.",
+           stage: :action_arguments,
+           issues: [ValidationError.issue(path, issue.code)]
+         )}
     end
   end
 
@@ -302,7 +289,7 @@ defmodule EmisarWeb.MCP.ActionTools do
     payload =
       error(
         "target_contract_changed",
-        "The selected action, pack, or runner generation is no longer executable."
+        "The selected action contract or runner generation must be refreshed."
       )
 
     next = %{
@@ -368,7 +355,9 @@ defmodule EmisarWeb.MCP.ActionTools do
     |> Crypto.hash_hex()
   end
 
-  defp error(code, message, dispatch_started \\ false, details \\ nil) do
+  defp error(code, message, dispatch_started \\ false, details \\ nil)
+
+  defp error(code, message, dispatch_started, details) do
     error = %{code: code, message: message, retryable: false}
     error = if details, do: Map.put(error, :details, details), else: error
     %{ok: false, error: error, dispatch_started: dispatch_started}

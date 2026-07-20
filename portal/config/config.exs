@@ -33,6 +33,9 @@ config :emisar,
   # Secret salt for the cookieless daily anonymous-visitor hash. Prod overrides
   # it with SECRET_KEY_BASE (runtime.exs); this non-secret default is dev/test.
   analytics_salt: "emisar-dev-analytics-salt",
+  # HMAC key for privacy-safe MCP client/call correlation in logs. Production
+  # derives it from SECRET_KEY_BASE; this non-secret value is for dev/test.
+  mcp_telemetry_salt: "emisar-dev-mcp-telemetry-salt",
   # Signing secret for stateless emailed links (the monthly-report
   # unsubscribe token). Prod derives it from SECRET_KEY_BASE (runtime.exs);
   # this non-secret default is dev/test.
@@ -108,6 +111,18 @@ config :logger, :console,
     :runner_id,
     :run_id,
     :req_id,
+    :mcp_tool,
+    :mcp_validation_stage,
+    :mcp_validation_kind,
+    :mcp_validation_issues,
+    :mcp_contract_ref_reason,
+    :mcp_call_fingerprint,
+    :mcp_unknown_tool_shape,
+    :mcp_schema_version,
+    :mcp_client_lineage,
+    :mcp_client_name,
+    :mcp_client_version,
+    :mcp_bridge_version,
     :policy_decision,
     :paddle_subscription_id,
     :reason,

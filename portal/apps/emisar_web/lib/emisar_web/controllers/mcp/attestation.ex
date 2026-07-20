@@ -73,7 +73,7 @@ defmodule EmisarWeb.MCP.Attestation do
          true <- matches?(envelope["args_sha256"], @lower_hex_64),
          {:ok, runner_refs} <- canonical_runner_refs(envelope["runner_refs"]),
          true <- runner_refs == envelope["runner_refs"],
-         :ok <- bounded_string(envelope["reason"], 1, 255),
+         :ok <- bounded_chars(envelope["reason"], 1, 255),
          true <- matches?(envelope["operation_id"], @operation_id),
          true <- matches?(envelope["sig"], @lower_hex_128),
          true <- matches?(envelope["nonce"], @lower_hex_32),
@@ -186,6 +186,12 @@ defmodule EmisarWeb.MCP.Attestation do
 
   defp bounded_string(value, min, max) do
     if bounded_string?(value, min, max),
+      do: :ok,
+      else: {:error, :invalid_attestation}
+  end
+
+  defp bounded_chars(value, min, max) do
+    if is_binary(value) and String.length(value) in min..max,
       do: :ok,
       else: {:error, :invalid_attestation}
   end

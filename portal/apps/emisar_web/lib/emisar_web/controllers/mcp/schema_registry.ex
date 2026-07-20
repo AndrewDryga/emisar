@@ -34,39 +34,67 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
       end
 
       descriptor
-      |> resolve!(registry)
+      |> Map.update!("inputSchema", &bundle!(&1, registry))
+      |> Map.update!("outputSchema", &bundle!(&1, registry))
       |> Map.put("name", name)
     end)
   end
 
-  @spec resolve!(term(), map()) :: term()
-  def resolve!(value, registry), do: resolve(value, registry, [])
+  @doc "Bundles one schema with only the registry definitions it transitively references."
+  @spec bundle!(map(), map()) :: map()
+  def bundle!(schema, registry) when is_map(schema) do
+    case collect_definitions(schema, registry, %{}, []) do
+      definitions when map_size(definitions) == 0 ->
+        schema
 
-  defp resolve(%{"$ref" => ref} = value, registry, stack) when is_binary(ref) do
+      definitions ->
+        schema
+        |> Map.put("$schema", Map.fetch!(registry, "$schema"))
+        |> Map.put("$defs", definitions)
+    end
+  end
+
+  @doc "Expands one bundled schema for internal compile-time introspection."
+  @spec expand!(term(), map()) :: term()
+  def expand!(value, registry), do: expand(value, registry, [])
+
+  @doc "Collects one expanded object schema's root properties, following allOf."
+  @spec root_properties(map()) :: %{optional(String.t()) => term()}
+  def root_properties(schema) when is_map(schema) do
+    direct = Map.get(schema, "properties", %{})
+
+    schema
+    |> Map.get("allOf", [])
+    |> Enum.reduce(direct, &Map.merge(&2, root_properties(&1)))
+  end
+
+  defp expand(%{"$ref" => ref} = value, registry, stack) when is_binary(ref) do
     if ref in stack do
       chain = [ref | stack] |> Enum.reverse() |> Enum.join(" -> ")
       raise ArgumentError, "cyclic MCP schema reference: #{chain}"
     end
 
-    target = registry |> resolve_pointer!(ref) |> resolve(registry, [ref | stack])
-    siblings = value |> Map.delete("$ref") |> resolve(registry, stack)
+    name = definition_name!(ref)
+    target = registry |> fetch_definition!(name, ref) |> expand(registry, [ref | stack])
+    siblings = value |> Map.delete("$ref") |> expand(registry, stack)
 
     merge_reference(target, siblings, ref)
   end
 
-  defp resolve(%{"$ref" => ref}, _registry, _stack) do
-    raise ArgumentError, "MCP schema reference must be a string: #{inspect(ref)}"
+  defp expand(%{"$ref" => ref}, _registry, _stack), do: definition_name!(ref)
+
+  defp expand(%{} = value, registry, stack) do
+    value
+    |> Map.delete("$defs")
+    |> Map.delete("$schema")
+    |> Map.new(fn {key, child} -> {key, expand(child, registry, stack)} end)
   end
 
-  defp resolve(%{} = value, registry, stack) do
-    Map.new(value, fn {key, child} -> {key, resolve(child, registry, stack)} end)
+  defp expand(value, registry, stack) when is_list(value) do
+    Enum.map(value, &expand(&1, registry, stack))
   end
 
-  defp resolve(value, registry, stack) when is_list(value) do
-    Enum.map(value, &resolve(&1, registry, stack))
-  end
-
-  defp resolve(value, _registry, _stack), do: value
+  defp expand(value, _registry, _stack), do: value
 
   defp merge_reference(target, siblings, _ref) when map_size(siblings) == 0, do: target
 
@@ -83,17 +111,61 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
           "MCP schema reference #{inspect(ref)} has siblings but targets a non-object"
   end
 
-  defp resolve_pointer!(registry, "#"), do: registry
+  defp collect_definitions(%{"$ref" => ref} = value, registry, definitions, stack) do
+    name = definition_name!(ref)
 
-  defp resolve_pointer!(registry, "#/" <> pointer = ref) do
-    pointer
-    |> String.split("/", trim: false)
-    |> Enum.map(&decode_pointer_token!(&1, ref))
-    |> Enum.reduce(registry, fn token, value -> fetch_pointer_token!(value, token, ref) end)
+    cond do
+      ref in stack ->
+        chain = [ref | stack] |> Enum.reverse() |> Enum.join(" -> ")
+        raise ArgumentError, "cyclic MCP schema reference: #{chain}"
+
+      Map.has_key?(definitions, name) ->
+        collect_definitions(Map.delete(value, "$ref"), registry, definitions, stack)
+
+      true ->
+        definition = fetch_definition!(registry, name, ref)
+        definitions = Map.put(definitions, name, definition)
+
+        definitions =
+          collect_definitions(definition, registry, definitions, [ref | stack])
+
+        collect_definitions(Map.delete(value, "$ref"), registry, definitions, stack)
+    end
   end
 
-  defp resolve_pointer!(_registry, ref) do
-    raise ArgumentError, "MCP schema reference must be internal: #{inspect(ref)}"
+  defp collect_definitions(%{} = value, registry, definitions, stack) do
+    Enum.reduce(value, definitions, fn {_key, child}, collected ->
+      collect_definitions(child, registry, collected, stack)
+    end)
+  end
+
+  defp collect_definitions(value, registry, definitions, stack) when is_list(value) do
+    Enum.reduce(value, definitions, &collect_definitions(&1, registry, &2, stack))
+  end
+
+  defp collect_definitions(_value, _registry, definitions, _stack), do: definitions
+
+  defp definition_name!("#/$defs/" <> encoded = ref) do
+    if String.contains?(encoded, "/") do
+      raise ArgumentError, "MCP schema reference must name one definition: #{inspect(ref)}"
+    end
+
+    decode_pointer_token!(encoded, ref)
+  end
+
+  defp definition_name!(ref) when is_binary(ref) do
+    raise ArgumentError, "MCP schema reference must be an internal definition: #{inspect(ref)}"
+  end
+
+  defp definition_name!(ref) do
+    raise ArgumentError, "MCP schema reference must be a string: #{inspect(ref)}"
+  end
+
+  defp fetch_definition!(registry, name, ref) do
+    case get_in(registry, ["$defs", name]) do
+      nil -> raise ArgumentError, "unresolved MCP schema reference #{inspect(ref)}"
+      definition -> definition
+    end
   end
 
   defp decode_pointer_token!(token, ref) do
@@ -105,34 +177,15 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     |> String.replace("~1", "/")
     |> String.replace("~0", "~")
   end
-
-  defp fetch_pointer_token!(%{} = value, token, ref) do
-    case Map.fetch(value, token) do
-      {:ok, child} -> child
-      :error -> raise ArgumentError, "unresolved MCP schema reference #{inspect(ref)}"
-    end
-  end
-
-  defp fetch_pointer_token!(value, token, ref) when is_list(value) do
-    with {index, ""} when index >= 0 <- Integer.parse(token),
-         {:ok, child} <- Enum.fetch(value, index) do
-      child
-    else
-      _ -> raise ArgumentError, "unresolved MCP schema reference #{inspect(ref)}"
-    end
-  end
-
-  defp fetch_pointer_token!(_value, _token, ref) do
-    raise ArgumentError, "unresolved MCP schema reference #{inspect(ref)}"
-  end
 end
 
 defmodule EmisarWeb.MCP.SchemaRegistry do
   @moduledoc """
   The fixed MCP tool catalog compiled from the normative schema registry.
 
-  Internal JSON Schema references are resolved at compile time so every tool
-  descriptor is self-contained on the wire.
+  Every tool schema carries only the local definitions it transitively uses, so
+  descriptors stay complete and self-contained without recursively duplicating
+  shared schemas.
   """
 
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
@@ -154,9 +207,11 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
 
   @schema_path Path.expand("../../../../../../../docs/mcp-api-schemas.json", __DIR__)
   @external_resource @schema_path
+  @schema_version @schema_path |> File.read!() |> Jason.decode!() |> Map.fetch!("schema_version")
   @contracts Compiler.compile!(@schema_path, @tool_names)
   @tools Enum.map(@contracts, &Map.delete(&1, "outputSchema"))
 
+  @doc "Returns the lean wire descriptors served by tools/list."
   @spec tools() :: [map()]
   def tools, do: @tools
 
@@ -166,4 +221,7 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
 
   @spec tool_names() :: [String.t()]
   def tool_names, do: @tool_names
+
+  @spec schema_version() :: pos_integer()
+  def schema_version, do: @schema_version
 end
