@@ -36,6 +36,7 @@ paths:
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/caddy"
+    - "/opt/emisar/packs/showcase"
 
 execution:
   inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]

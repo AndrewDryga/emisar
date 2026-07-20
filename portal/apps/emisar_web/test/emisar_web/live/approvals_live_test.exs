@@ -8,6 +8,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   alias Emisar.Approvals
   alias Emisar.Runs
 
+  @grant_pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("a", 64)
+
   defp pending_request!(account, requester_id, reason) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -38,6 +40,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "mcp",
+        pack_ref: @grant_pack_ref,
         api_key_id: key.id,
         args: %{},
         args_sha256: "abc123",

@@ -4,13 +4,15 @@ defmodule Emisar.Approvals.Grant do
   pending-approval gate. Created from an `Emisar.Approvals.Request`
   when an operator approves with a duration > "once-only".
 
-  Match rules (the `peek_matching_grant/5` lookup in `Emisar.Approvals`):
+  Match rules (the `peek_matching_grant/6` lookup in `Emisar.Approvals`):
 
     * `api_key_id` always matches the calling key exactly. Grants are
       scoped per key so that approving an action for one operator's
       LLM doesn't silently apply to a different key with different
       scopes.
     * `action_id` always matches exactly.
+    * `pack_ref` always matches exactly, binding the approval to the trusted
+      action bytes the operator approved.
     * `runner_id` matches the runner, OR is `nil` which means "any
       runner advertising the action".
     * `args_sha256` matches the dispatched args' SHA-256, OR is `nil`
@@ -25,6 +27,7 @@ defmodule Emisar.Approvals.Grant do
 
   schema "approval_grants" do
     field :action_id, :string
+    field :pack_ref, :string
     field :args_sha256, :string
 
     field :granted_at, :utc_datetime_usec

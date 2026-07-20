@@ -8,6 +8,7 @@ defmodule Emisar.Approvals.Grant.Changeset do
       :account_id,
       :api_key_id,
       :action_id,
+      :pack_ref,
       :runner_id,
       :args_sha256,
       :granted_by_id,
@@ -18,7 +19,7 @@ defmodule Emisar.Approvals.Grant.Changeset do
       :last_used_at,
       :approval_request_id
     ])
-    |> validate_required([:account_id, :api_key_id, :action_id, :granted_at])
+    |> validate_required([:account_id, :api_key_id, :action_id, :pack_ref, :granted_at])
   end
 
   def revoke(%Grant{} = grant, by_user_id) do

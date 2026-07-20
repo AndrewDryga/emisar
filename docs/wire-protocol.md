@@ -236,13 +236,16 @@ transient persistence fault recovers without waiting for a reconnect. The
 reconnect replay remains the backstop. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
 truncation flags, redaction counts, masked executed command, reason, and the
-local audit event ID.
+local audit event ID. A successful action with an opted-in `output.schema` also
+carries `structured_output`: one JSON object, validated after runner-side
+redaction and bounded to 8 KiB, 16 nesting levels, and 1,024 values. It is
+omitted for every non-success result and every action without an output schema.
 If the terminal or refusal event could not be persisted, `event_id` is absent
 and `local_audit_failed` is true; the action's actual status does not change.
 The remote executed command is at most 16 KiB of valid UTF-8 and sets
 `executed_command_truncated` when shortened; the local runner audit keeps the
 full masked command.
-Output bytes are not repeated in the terminal message. Emitted hashes describe
+Raw output bytes are not repeated in the terminal message. Emitted hashes describe
 every normalized, redacted byte admitted by the action's output caps; truncation
 flags disclose bytes omitted at those caps. The hashes do not claim that every
 emitted chunk reached the portal. The portal accepts unique chunks idempotently,
@@ -253,6 +256,11 @@ the runner reports no local drops.
 Stable result statuses are `success`, `failed`, `error`, `validation_failed`,
 `unknown_action`, `timed_out`, `blocked_by_admission`, `cancelled`,
 `pack_hash_mismatch`, and `signature_invalid`.
+
+For an otherwise-successful action, required JSON parse failures, output
+truncation, typed-result complexity/size failures, and schema mismatches use
+`validation_failed`. Timeout, cancellation, start failure, and an unsuccessful
+exit retain their execution status and never carry a structured result.
 
 Results are authenticated by the runner websocket, not end-to-end signed. The
 portal must not describe them as CA-verified runner receipts.

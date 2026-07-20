@@ -149,6 +149,47 @@ defmodule Emisar.Runs.ActionRunTest do
       assert Keyword.has_key?(changeset.errors, :mcp_client_metadata)
     end
 
+    test "requires a valid schema exactly when structured output is expected" do
+      schema = %{"type" => "object"}
+
+      valid =
+        ActionRun.Changeset.create(
+          create_attrs(%{
+            structured_output_expected: true,
+            output_schema_snapshot: schema
+          })
+        )
+
+      assert valid.valid?
+
+      assert Ecto.Changeset.get_field(valid, :output_schema_snapshot) == schema
+
+      missing =
+        ActionRun.Changeset.create(create_attrs(%{structured_output_expected: true}))
+
+      refute missing.valid?
+      assert {"is required for typed output", _} = missing.errors[:output_schema_snapshot]
+
+      malformed =
+        ActionRun.Changeset.create(
+          create_attrs(%{
+            structured_output_expected: true,
+            output_schema_snapshot: %{"type" => "string"}
+          })
+        )
+
+      refute malformed.valid?
+      assert {"must be a valid output schema", _} = malformed.errors[:output_schema_snapshot]
+
+      unexpected =
+        ActionRun.Changeset.create(create_attrs(%{output_schema_snapshot: schema}))
+
+      refute unexpected.valid?
+
+      assert {"must be absent for untyped output", _} =
+               unexpected.errors[:output_schema_snapshot]
+    end
+
     test "accepts the canonical unsigned runner options envelope" do
       opts = %{
         "timeout" => 5_000_000_000,

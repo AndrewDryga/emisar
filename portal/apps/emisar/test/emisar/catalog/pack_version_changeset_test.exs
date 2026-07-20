@@ -16,9 +16,25 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
     # in tests) composes override_retirement onto trust/2 — this proves the
     # changeset-input arm keeps the trust changes AND adds the override.
     test "composes onto trust/2 — keeps the trust flip and adds the override" do
+      {:ok, manifest} =
+        Emisar.Catalog.TrustedManifest.from_catalog_actions([
+          %{
+            "id" => "a.b",
+            "title" => "A",
+            "summary" => "A",
+            "description" => "A",
+            "kind" => "exec",
+            "risk" => "low",
+            "side_effects" => [],
+            "args" => [],
+            "examples" => [],
+            "search_terms" => []
+          }
+        ])
+
       changeset =
         %PackVersion{pending_hash: "sha256:NEW", trust_state: :pending}
-        |> Changeset.trust(%{"a.b" => %{}})
+        |> Changeset.trust(manifest)
         |> Changeset.override_retirement("user-9")
 
       assert changeset.valid?

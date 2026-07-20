@@ -4,6 +4,8 @@ defmodule Emisar.CatalogTest do
   alias Emisar.Catalog.{PackVersion, RunnerAction}
   alias Emisar.Fixtures
 
+  @dispatch_hash "sha256:" <> String.duplicate("d", 64)
+
   defp state_payload(opts) do
     %{
       "hostname" => Keyword.get(opts, :hostname, "host-1"),
@@ -1744,6 +1746,84 @@ defmodule Emisar.CatalogTest do
 
     test "a pack-less action (no pack_id) → {:ok, nil}" do
       assert {:ok, nil} = Catalog.check_pack_trusted(%RunnerAction{pack_id: nil})
+    end
+  end
+
+  describe "fetch_dispatch_contract/5" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"p" => %{"version" => "1.0", "hash" => @dispatch_hash}},
+                   actions: [
+                     action("p.inspect",
+                       pack_id: "p",
+                       title: "Inspect",
+                       risk: "high",
+                       args: [
+                         %{
+                           "name" => "token",
+                           "type" => "string",
+                           "required" => true,
+                           "sensitive" => true
+                         }
+                       ]
+                     )
+                   ]
+                 )
+               )
+
+      {:ok, [pack_version], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      %{account: account, runner: runner, trusted: trusted}
+    end
+
+    test "returns the persisted trusted descriptor and locked deployment row", %{
+      account: account,
+      runner: runner,
+      trusted: trusted
+    } do
+      pack_ref = "p@1.0/" <> @dispatch_hash
+
+      assert {:ok, contract} =
+               Catalog.fetch_dispatch_contract(
+                 Repo,
+                 account.id,
+                 runner.id,
+                 "p.inspect",
+                 pack_ref
+               )
+
+      assert contract.pack_hash == @dispatch_hash
+      assert contract.action.runner_id == runner.id
+      assert contract.descriptor == trusted.trusted_manifest["actions"]["p.inspect"]
+      assert contract.descriptor["risk"] == "high"
+    end
+
+    test "rejects a mutable descriptor that diverges under the trusted hash", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, action} =
+        Catalog.fetch_action_for_account("p.inspect", runner.id, account.id)
+
+      action
+      |> Ecto.Changeset.change(risk: :low, output_schema: %{"type" => "object"})
+      |> Repo.update!()
+
+      assert {:error, :action_contract_changed} =
+               Catalog.fetch_dispatch_contract(
+                 Repo,
+                 account.id,
+                 runner.id,
+                 "p.inspect",
+                 "p@1.0/" <> @dispatch_hash
+               )
     end
   end
 

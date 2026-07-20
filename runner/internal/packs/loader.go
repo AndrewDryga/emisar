@@ -28,6 +28,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
@@ -176,6 +177,14 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 			)
 			return fmt.Errorf("packs: duplicate action id %q (first=%s second=%s)",
 				action.ID, existing.SourcePath, action.SourcePath)
+		}
+		outputValidator, normalizedSchema, err := outputschema.Compile(action.ID, action.Output)
+		if err != nil {
+			return err
+		}
+		if outputValidator != nil {
+			action.Output.Schema = normalizedSchema
+			reg.outputSchemas[action.ID] = outputValidator
 		}
 		if action.Kind == actionspec.KindScript {
 			si, scriptBytes, err := resolveScript(absRoot, action.Execution.Script.Path, action.ID, pack.AllowSymlinks)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
@@ -29,6 +30,7 @@ type Registry struct {
 	packs          map[string]*packspec.Pack
 	actions        map[string]*actionspec.Action
 	scripts        map[string]ScriptInfo
+	outputSchemas  map[string]*outputschema.Validator
 	packHashes     map[string]string
 	packHashInputs map[string][]hashEntry
 	degraded       []DegradedPack
@@ -39,9 +41,16 @@ func newRegistry() *Registry {
 		packs:          map[string]*packspec.Pack{},
 		actions:        map[string]*actionspec.Action{},
 		scripts:        map[string]ScriptInfo{},
+		outputSchemas:  map[string]*outputschema.Validator{},
 		packHashes:     map[string]string{},
 		packHashInputs: map[string][]hashEntry{},
 	}
+}
+
+// OutputSchema returns the compiled typed-result contract for an action.
+func (r *Registry) OutputSchema(actionID string) (*outputschema.Validator, bool) {
+	validator, ok := r.outputSchemas[actionID]
+	return validator, ok
 }
 
 // Pack returns a pack by id.
@@ -152,6 +161,7 @@ func (r *Registry) removePack(packID string) {
 		if action.PackID == packID {
 			delete(r.actions, id)
 			delete(r.scripts, id)
+			delete(r.outputSchemas, id)
 		}
 	}
 }

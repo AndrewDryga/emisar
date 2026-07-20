@@ -155,6 +155,7 @@ func descriptorFor(a *actionspec.Action) ActionDescriptor {
 		},
 		Output: DescriptorOutput{
 			Parser:            a.Output.Parser,
+			ParserRequired:    a.Output.ParserRequired,
 			MaxStdoutBytes:    a.Output.MaxStdoutBytes,
 			MaxStdoutBytesMin: a.Output.MaxStdoutBytesMin,
 			MaxStdoutBytesMax: a.Output.MaxStdoutBytesMax,

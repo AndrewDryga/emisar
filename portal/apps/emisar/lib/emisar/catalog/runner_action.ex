@@ -18,6 +18,7 @@ defmodule Emisar.Catalog.RunnerAction do
     field :description, :string
     field :side_effects, {:array, :string}, default: []
     field :args_schema, :map, default: %{}
+    field :output_schema, :map
     field :examples, {:array, :map}, default: []
     field :search_terms, {:array, :string}, default: []
     # Mutable host evidence. Nil means an older runner did not advertise this

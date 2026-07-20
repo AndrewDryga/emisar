@@ -28,6 +28,9 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_action_id(queryable, action_id),
     do: where(queryable, [grants: g], g.action_id == ^action_id)
 
+  def by_pack_ref(queryable, pack_ref),
+    do: where(queryable, [grants: g], g.pack_ref == ^pack_ref)
+
   def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
     do: where(queryable, [grants: _], false)
 
@@ -72,14 +75,15 @@ defmodule Emisar.Approvals.Grant.Query do
     do: where(queryable, [grants: g], is_nil(g.args_sha256) or g.args_sha256 == ^args_sha)
 
   @doc """
-  Candidates for `peek_matching_grant/5` — narrows by api_key + action
-  + un-revoked + not-yet-expired. Caller composes runner / args_sha
-  match on top.
+  Candidates for `peek_matching_grant/6` — narrows by api_key + exact
+  action contract + un-revoked + not-yet-expired. Caller composes runner /
+  args_sha match on top.
   """
-  def candidates_for_dispatch(api_key_id, action_id, now) do
+  def candidates_for_dispatch(api_key_id, action_id, pack_ref, now) do
     all()
     |> by_api_key_id(api_key_id)
     |> by_action_id(action_id)
+    |> by_pack_ref(pack_ref)
     |> not_revoked()
     |> not_expired(now)
     |> ordered_by_granted()

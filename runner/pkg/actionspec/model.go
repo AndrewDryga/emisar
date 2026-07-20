@@ -7,16 +7,17 @@ import "strings"
 // the same projection as deployment evidence, so exact-hash comparisons cannot
 // drift between serializers.
 type ModelDescriptor struct {
-	ID          string         `json:"id"`
-	Title       string         `json:"title"`
-	Summary     string         `json:"summary"`
-	Description string         `json:"description"`
-	Kind        string         `json:"kind"`
-	Risk        string         `json:"risk"`
-	SideEffects []string       `json:"side_effects"`
-	Args        []ModelArg     `json:"args"`
-	Examples    []ModelExample `json:"examples"`
-	SearchTerms []string       `json:"search_terms"`
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Summary      string         `json:"summary"`
+	Description  string         `json:"description"`
+	Kind         string         `json:"kind"`
+	Risk         string         `json:"risk"`
+	SideEffects  []string       `json:"side_effects"`
+	Args         []ModelArg     `json:"args"`
+	Examples     []ModelExample `json:"examples"`
+	SearchTerms  []string       `json:"search_terms"`
+	OutputSchema map[string]any `json:"output_schema,omitempty"`
 }
 
 // ModelArg is the JSON-safe public argument contract. Durations are strings,
@@ -60,16 +61,17 @@ func (a *Action) ModelDescriptor() ModelDescriptor {
 	summary, _ := a.ModelSummary()
 
 	return ModelDescriptor{
-		ID:          a.ID,
-		Title:       normalizeModelText(a.Title),
-		Summary:     summary,
-		Description: normalizeModelText(a.Description),
-		Kind:        string(a.Kind),
-		Risk:        string(a.Risk),
-		SideEffects: modelSideEffects(a.SideEffects),
-		Args:        modelArgs(a.Args),
-		Examples:    modelExamples(a.Examples),
-		SearchTerms: normalizedModelStrings(a.SearchTerms),
+		ID:           a.ID,
+		Title:        normalizeModelText(a.Title),
+		Summary:      summary,
+		Description:  normalizeModelText(a.Description),
+		Kind:         string(a.Kind),
+		Risk:         string(a.Risk),
+		SideEffects:  modelSideEffects(a.SideEffects),
+		Args:         modelArgs(a.Args),
+		Examples:     modelExamples(a.Examples),
+		SearchTerms:  normalizedModelStrings(a.SearchTerms),
+		OutputSchema: a.Output.Schema,
 	}
 }
 

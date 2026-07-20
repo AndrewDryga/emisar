@@ -15,12 +15,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
+	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -316,140 +316,7 @@ func decodeActionArgs(raw json.RawMessage) (map[string]any, error) {
 }
 
 func validateUniqueJSON(raw []byte) error {
-	if !utf8.Valid(raw) {
-		return fmt.Errorf("JSON is not valid UTF-8")
-	}
-	if err := validateUnicodeSurrogates(raw); err != nil {
-		return err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := consumeUniqueJSONValue(decoder, 0); err != nil {
-		return err
-	}
-	if token, err := decoder.Token(); err != io.EOF {
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("unexpected trailing token %v", token)
-	}
-	return nil
-}
-
-func validateUnicodeSurrogates(raw []byte) error {
-	inString := false
-	for i := 0; i < len(raw); i++ {
-		switch raw[i] {
-		case '"':
-			inString = !inString
-		case '\\':
-			if !inString || i+1 >= len(raw) {
-				continue
-			}
-			if raw[i+1] != 'u' {
-				i++
-				continue
-			}
-			code, ok := decodeHex4(raw, i+2)
-			if !ok {
-				continue // encoding/json reports malformed escape syntax.
-			}
-			i += 5
-			switch {
-			case code >= 0xd800 && code <= 0xdbff:
-				if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
-					return fmt.Errorf("JSON string contains an unpaired high surrogate")
-				}
-				low, ok := decodeHex4(raw, i+3)
-				if !ok || low < 0xdc00 || low > 0xdfff {
-					return fmt.Errorf("JSON string contains an unpaired high surrogate")
-				}
-				i += 6
-			case code >= 0xdc00 && code <= 0xdfff:
-				return fmt.Errorf("JSON string contains an unpaired low surrogate")
-			}
-		}
-	}
-	return nil
-}
-
-func decodeHex4(raw []byte, start int) (uint16, bool) {
-	if start+4 > len(raw) {
-		return 0, false
-	}
-	var value uint16
-	for _, char := range raw[start : start+4] {
-		value <<= 4
-		switch {
-		case char >= '0' && char <= '9':
-			value |= uint16(char - '0')
-		case char >= 'a' && char <= 'f':
-			value |= uint16(char-'a') + 10
-		case char >= 'A' && char <= 'F':
-			value |= uint16(char-'A') + 10
-		default:
-			return 0, false
-		}
-	}
-	return value, true
-}
-
-func consumeUniqueJSONValue(decoder *json.Decoder, depth int) error {
-	if depth > 64 {
-		return fmt.Errorf("JSON nesting exceeds 64 levels")
-	}
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch delim {
-	case '{':
-		seen := map[string]struct{}{}
-		for decoder.More() {
-			keyToken, err := decoder.Token()
-			if err != nil {
-				return err
-			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return fmt.Errorf("object key is not a string")
-			}
-			if _, duplicate := seen[key]; duplicate {
-				return fmt.Errorf("duplicate object key %q", key)
-			}
-			seen[key] = struct{}{}
-			if err := consumeUniqueJSONValue(decoder, depth+1); err != nil {
-				return err
-			}
-		}
-		closing, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		if closing != json.Delim('}') {
-			return fmt.Errorf("object has invalid closing delimiter")
-		}
-	case '[':
-		for decoder.More() {
-			if err := consumeUniqueJSONValue(decoder, depth+1); err != nil {
-				return err
-			}
-		}
-		closing, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		if closing != json.Delim(']') {
-			return fmt.Errorf("array has invalid closing delimiter")
-		}
-	default:
-		return fmt.Errorf("unexpected delimiter %q", delim)
-	}
-	return nil
+	return jsonvalue.Validate(raw, jsonvalue.Limits{MaxDepth: 64})
 }
 
 // RunOpts is the per-call override envelope. Each field is clamped to the
@@ -555,6 +422,7 @@ type DescriptorLimits struct {
 // DescriptorOutput is the output-shape cloud sees.
 type DescriptorOutput struct {
 	Parser            actionspec.Parser `json:"parser,omitempty"`
+	ParserRequired    bool              `json:"parser_required,omitempty"`
 	MaxStdoutBytes    int               `json:"max_stdout_bytes"`
 	MaxStdoutBytesMin int               `json:"max_stdout_bytes_min,omitempty"`
 	MaxStdoutBytesMax int               `json:"max_stdout_bytes_max,omitempty"`
@@ -601,6 +469,7 @@ type ActionResultMsg struct {
 	Redactions            []RedactionSummary `json:"redactions,omitempty"`
 	Reason                string             `json:"reason,omitempty"`
 	Error                 string             `json:"error,omitempty"`
+	StructuredOutput      json.RawMessage    `json:"structured_output,omitempty"`
 	EventID               string             `json:"event_id,omitempty"`
 	LocalAuditFailed      bool               `json:"local_audit_failed,omitempty"`
 	// ExecutedCommand is the bounded command the runner ran, shell-quoted,

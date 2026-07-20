@@ -32,6 +32,7 @@ paths:
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/postgres"
+    - "/opt/emisar/packs/showcase"
 
 execution:
   # PG* forward the libpq connection to the psql actions (the postgres pack's

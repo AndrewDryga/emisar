@@ -131,6 +131,16 @@ defmodule Emisar.Runs.ActionRun do
     field :local_audit_failed, :boolean, default: false
     field :reason_text, :string
     field :error_message, :string
+    # Parsed JSON object validated against the pack's declared output schema by
+    # the runner and re-validated by the portal before it is stored.
+    field :structured_output, :map
+    # Snapshotted from the trusted action descriptor during authorization, so
+    # result handling never trusts the runner to decide whether output is typed.
+    field :structured_output_expected, :boolean, default: false
+    # The trusted schema authorized for this run. Result ingestion validates
+    # against this snapshot, so later catalog drift/deletion cannot reinterpret
+    # a runner result.
+    field :output_schema_snapshot, :map
     # The exact shell command the runner executed, with sensitive arg
     # values redacted by the runner. The remote copy is bounded; the runner's
     # local audit retains the full masked command.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://emisar.dev/v1/schemas/pack.v2.schema.json",
+  "$id": "https://emisar.dev/v1/schemas/pack.v3.schema.json",
   "title": "emisar pack manifest (pack.yaml)",
   "description": "Authoring schema for a pack's pack.yaml. Documentation and editor validation only — the runner's loader (runner/pkg/packspec) is the authoritative validator and the content hash is the trust source.",
   "type": "object",

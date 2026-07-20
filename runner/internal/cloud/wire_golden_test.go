@@ -218,6 +218,20 @@ func canonicalWireFrames() []wireFrameCase {
 			},
 		},
 		{
+			name: "action_result_typed",
+			marshal: func() ([]byte, error) {
+				return json.Marshal(ActionResultMsg{
+					Envelope:           envelope(MsgActionResult, "req_wire_typed_result"),
+					Status:             "success",
+					DurationMS:         42,
+					StructuredOutput:   json.RawMessage(`{"count":9007199254740993,"status":"ok"}`),
+					EventID:            "evt_wire_typed_result_0001",
+					EmittedStdoutBytes: 41,
+					ProgressChunks:     1,
+				})
+			},
+		},
+		{
 			name: string(MsgHeartbeat),
 			marshal: func() ([]byte, error) {
 				return json.Marshal(HeartbeatMsg{
@@ -404,6 +418,12 @@ func canonicalActionDescriptor() ActionDescriptor {
 			}},
 			Examples:    []actionspec.ModelExample{{Title: "Pause nightly backup", Args: map[string]any{"job_id": 42}}},
 			SearchTerms: []string{"pause", "database", "job"},
+			OutputSchema: map[string]any{
+				"type":                 "object",
+				"required":             []string{"status"},
+				"properties":           map[string]any{"status": map[string]any{"const": "ok"}},
+				"additionalProperties": false,
+			},
 		},
 		PackID:                     "database",
 		PrimaryExecutableAvailable: true,
@@ -414,6 +434,7 @@ func canonicalActionDescriptor() ActionDescriptor {
 		},
 		Output: DescriptorOutput{
 			Parser:            actionspec.ParserJSON,
+			ParserRequired:    true,
 			MaxStdoutBytes:    65536,
 			MaxStdoutBytesMin: 1024,
 			MaxStdoutBytesMax: 131072,

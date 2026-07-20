@@ -73,7 +73,10 @@ defmodule Emisar.MixProject do
       {:gen_smtp, "~> 1.3"},
 
       # Misc primitives
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      # Draft 2020-12 compilation at the runner-manifest trust boundary.
+      # Wrapped by Emisar.OutputSchema; remote refs stay disabled.
+      {:jsonschex, "~> 0.8"}
     ]
   end
 

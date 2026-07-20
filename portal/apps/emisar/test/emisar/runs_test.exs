@@ -761,6 +761,27 @@ defmodule Emisar.RunsTest do
                      500
     end
 
+    test "snapshots whether the trusted action requires structured output" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          risk: "low",
+          output_schema: %{"type" => "object"}
+        )
+
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = owner_subject_for(account)
+
+      assert {:ok, :running, %ActionRun{structured_output_expected: true} = run} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      assert run.output_schema_snapshot == %{"type" => "object"}
+    end
+
     test "a viewer (view-only) is refused — dispatch executes infra, so it gates on :dispatch" do
       # A viewer holds only `view_runs_permission`; dispatching is the
       # most dangerous write in the system (it runs real infra), so the
@@ -1857,6 +1878,75 @@ defmodule Emisar.RunsTest do
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
+    end
+
+    test "rejects targets inconsistent with the reserved operation intent" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D7")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      mismatches = [
+        Map.put(target, :operation_id, "op_424NN9NMDZ1T76NARWCKM5A0D8"),
+        Map.put(target, :action_id, "linux.other"),
+        Map.put(target, :pack_ref, "linux-core@1.0.1/sha256:changed-contract")
+      ]
+
+      Enum.each(mismatches, fn mismatch ->
+        assert {:error, :invalid_targets} =
+                 Runs.dispatch_mcp_fanout(operation, [mismatch], subject)
+
+        refute Repo.exists?(MCPOperations.Operation)
+        refute Repo.exists?(ActionRun)
+      end)
+    end
+
+    test "uses the trusted risk and rejects an advertisement that lowers it" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["high"])
+      operation = mcp_operation_attrs("op_434NN9NMDZ1T76NARWCKM5A0D6")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      {:ok, action} =
+        Catalog.fetch_action_for_account("linux.uptime", runner.id, subject.account.id)
+
+      action
+      |> Ecto.Changeset.change(risk: :low)
+      |> Repo.update!()
+
+      assert {:error, :action_contract_changed} =
+               Runs.dispatch_mcp_fanout(operation, [target], subject)
+
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(ActionRun)
+    end
+
+    test "one descriptor mismatch rolls back the complete fan-out" do
+      %{subject: subject, runners: [ready, changed], key: key} =
+        mcp_fanout_fixture(["low", "low"])
+
+      :ok = Emisar.Runners.subscribe_runner_transport(ready)
+      operation = mcp_operation_attrs("op_444NN9NMDZ1T76NARWCKM5A0D6")
+      targets = Enum.map([ready, changed], &mcp_target_attrs(&1, key, operation.operation_id))
+
+      {:ok, action} =
+        Catalog.fetch_action_for_account("linux.uptime", changed.id, subject.account.id)
+
+      action
+      |> Ecto.Changeset.change(
+        args_schema: %{
+          "args" => [
+            %{"name" => "token", "type" => "string", "required" => true, "sensitive" => true}
+          ]
+        },
+        output_schema: %{"type" => "object", "required" => ["forged"]}
+      )
+      |> Repo.update!()
+
+      assert {:error, :action_contract_changed} =
+               Runs.dispatch_mcp_fanout(operation, targets, subject)
+
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(ActionRun)
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
   end
 
@@ -4034,6 +4124,151 @@ defmodule Emisar.RunsTest do
   end
 
   describe "finalize_from_connection/5" do
+    test "persists bounded structured output and terminalizes hostile values" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      typed_schema = %{
+        "type" => "object",
+        "required" => ["ok"],
+        "properties" => %{"ok" => %{"type" => "boolean"}},
+        "additionalProperties" => false
+      }
+
+      typed_attrs = %{
+        structured_output_expected: true,
+        output_schema_snapshot: typed_schema
+      }
+
+      {:ok, valid_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+      assert {:ok, %ActionRun{status: :success, structured_output: %{"ok" => true}}} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{
+                   "request_id" => valid_run.request_id,
+                   "status" => "success",
+                   "structured_output" => %{"ok" => true}
+                 }
+               )
+
+      {:ok, hostile_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+      assert {:ok,
+              %ActionRun{
+                status: :validation_failed,
+                structured_output: nil,
+                error_message: "runner sent an invalid structured output value"
+              }} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{
+                   "request_id" => hostile_run.request_id,
+                   "status" => "success",
+                   "structured_output" => %{"value" => String.duplicate("x", 8_192)}
+                 }
+               )
+
+      for hostile_output <- [
+            Enum.reduce(1..16, %{"leaf" => true}, fn _index, child -> %{"next" => child} end),
+            %{"values" => Enum.to_list(1..1_024)}
+          ] do
+        {:ok, hostile_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+        assert {:ok, %ActionRun{status: :validation_failed, structured_output: nil}} =
+                 Runs.finalize_from_connection(
+                   account.id,
+                   runner.id,
+                   runner.connection_generation,
+                   runner.connection_lease_id,
+                   %{
+                     "request_id" => hostile_run.request_id,
+                     "status" => "success",
+                     "structured_output" => hostile_output
+                   }
+                 )
+      end
+
+      {:ok, mismatched_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+      assert {:ok,
+              %ActionRun{
+                status: :validation_failed,
+                structured_output: nil,
+                error_message: "runner structured output does not match the trusted schema"
+              }} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{
+                   "request_id" => mismatched_run.request_id,
+                   "status" => "success",
+                   "structured_output" => %{"ok" => "true"}
+                 }
+               )
+
+      {:ok, missing_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+      assert {:ok,
+              %ActionRun{
+                status: :validation_failed,
+                error_message: "runner omitted required structured output"
+              }} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{"request_id" => missing_run.request_id, "status" => "success"}
+               )
+
+      {:ok, unexpected_run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok,
+              %ActionRun{
+                status: :validation_failed,
+                error_message: "runner sent structured output for an untyped action"
+              }} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{
+                   "request_id" => unexpected_run.request_id,
+                   "status" => "success",
+                   "structured_output" => %{"ok" => true}
+                 }
+               )
+    end
+
+    test "drops structured output attached to a stronger execution failure" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, %ActionRun{status: :failed, structured_output: nil}} =
+               Runs.finalize_from_connection(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 runner.connection_lease_id,
+                 %{
+                   "request_id" => run.request_id,
+                   "status" => "failed",
+                   "structured_output" => %{"untrusted" => true}
+                 }
+               )
+    end
+
     test "accepts a result from the current owner after reconnect" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)

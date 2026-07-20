@@ -10,6 +10,8 @@ defmodule EmisarWeb.GrantsLiveTest do
   alias Emisar.Approvals.Grant
   alias Emisar.Runners.Runner
 
+  @grant_pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("a", 64)
+
   defp seed_account(conn) do
     {conn, user, account} = register_and_log_in(conn)
     subject = owner_subject(user, account)
@@ -45,6 +47,7 @@ defmodule EmisarWeb.GrantsLiveTest do
           account_id: account.id,
           api_key_id: key.id,
           action_id: "linux.uptime",
+          pack_ref: @grant_pack_ref,
           granted_at: DateTime.utc_now()
         },
         Map.new(opts)

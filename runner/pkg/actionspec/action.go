@@ -92,6 +92,7 @@ type Script struct {
 type Output struct {
 	Parser            Parser          `yaml:"parser,omitempty"`
 	ParserRequired    bool            `yaml:"parser_required,omitempty"`
+	Schema            map[string]any  `yaml:"schema,omitempty"`
 	MaxStdoutBytes    int             `yaml:"max_stdout_bytes,omitempty"`
 	MaxStdoutBytesMin int             `yaml:"max_stdout_bytes_min,omitempty"`
 	MaxStdoutBytesMax int             `yaml:"max_stdout_bytes_max,omitempty"`
@@ -100,6 +101,9 @@ type Output struct {
 	MaxStderrBytesMax int             `yaml:"max_stderr_bytes_max,omitempty"`
 	Redact            []RedactionRule `yaml:"redact,omitempty"`
 }
+
+// HasSchema reports whether this action opts into a typed result contract.
+func (o Output) HasSchema() bool { return o.Schema != nil }
 
 // RedactionRule is a redaction directive (regex or literal) attached to an
 // action or to global config.
@@ -212,6 +216,9 @@ func (a *Action) Validate() error {
 	}
 	if err := validateOutputBounds(a); err != nil {
 		return err
+	}
+	if a.Output.HasSchema() && (a.Output.Parser != ParserJSON || !a.Output.ParserRequired) {
+		return fmt.Errorf("action %s: output.schema requires parser json and parser_required true", a.ID)
 	}
 	switch a.Kind {
 	case KindExec:

@@ -454,6 +454,13 @@ func TestAction_Validate(t *testing.T) {
 		{"bad redaction rule", func(a *Action) {
 			a.Output.Redact = []RedactionRule{{Name: "r", Type: "nope"}}
 		}, "redaction"},
+		{"schema without required json parser", func(a *Action) {
+			a.Output.Schema = map[string]any{"type": "object"}
+		}, "parser json"},
+		{"schema without parser_required", func(a *Action) {
+			a.Output.Parser = ParserJSON
+			a.Output.Schema = map[string]any{"type": "object"}
+		}, "parser_required true"},
 		{"env LD_PRELOAD", func(a *Action) {
 			a.Execution.Env = map[string]string{"LD_PRELOAD": "/tmp/evil.so"}
 		}, "hijack"},

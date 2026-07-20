@@ -55518,13 +55518,13 @@
     {
       "id": "showcase",
       "name": "Showcase pack",
-      "version": "0.2.6",
+      "version": "0.2.8",
       "description": "Synthetic pack that demonstrates every action-schema feature in one place: all arg types, every validation, both parsers, both kinds, opts envelope bounds, and per-action redaction rules. Not a production pack — use it as a reference when authoring real ones.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/showcase",
-      "content_hash": "sha256:74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85",
-      "tarball_url": "https://registry.emisar.dev/v1/packs/showcase/0.2.6/74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85/pack.tar.gz",
+      "content_hash": "sha256:92e43b8bb96d3c607f7d88812fe13c5aa5662167e6d7958efa9993dd31e798d9",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/showcase/0.2.8/92e43b8bb96d3c607f7d88812fe13c5aa5662167e6d7958efa9993dd31e798d9/pack.tar.gz",
       "requires": {
         "os": [],
         "binaries": []
@@ -55717,6 +55717,28 @@
             }
           ],
           "search_terms": [],
+          "output_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "pattern": "^[a-zA-Z0-9_-]{1,32}$",
+                "type": "string"
+              },
+              "session_token": {
+                "const": "[REDACTED]"
+              },
+              "status": {
+                "const": "ok"
+              }
+            },
+            "required": [
+              "name",
+              "session_token",
+              "status"
+            ],
+            "type": "object"
+          },
           "command": {
             "binary": "echo",
             "argv": [
@@ -55884,6 +55906,365 @@
             }
           ],
           "search_terms": []
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.2.6",
+          "content_hash": "sha256:74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85",
+          "tarball_url": "https://registry.emisar.dev/v1/packs/showcase/0.2.6/74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85/pack.tar.gz",
+          "actions": [
+            {
+              "id": "showcase.every_arg_type",
+              "title": "One arg of every type",
+              "summary": "Show a reference action: one argument of every supported type with a representative validation. Look here when you need to remember the YAML shape for `string_array`, `integer_array`, `duration`, etc.",
+              "description": "Show a reference action: one argument of every supported type with a representative validation. Look here when you need to remember the YAML shape for `string_array`, `integer_array`, `duration`, etc.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Runs /bin/echo with the rendered argv.",
+                "Touches no files."
+              ],
+              "args": [
+                {
+                  "name": "mode",
+                  "type": "string",
+                  "required": true,
+                  "description": "Discrete choice of mode.",
+                  "validation": {
+                    "enum": [
+                      "fast",
+                      "slow",
+                      "balanced"
+                    ]
+                  }
+                },
+                {
+                  "name": "identifier",
+                  "type": "string",
+                  "required": false,
+                  "default": "abc123",
+                  "description": "Free-form identifier matching a regex.",
+                  "validation": {
+                    "pattern": "^[a-z0-9_]{3,32}$"
+                  }
+                },
+                {
+                  "name": "note",
+                  "type": "string",
+                  "required": false,
+                  "default": "",
+                  "description": "Free-form note attached to the run.",
+                  "validation": {
+                    "max_length": 4096
+                  }
+                },
+                {
+                  "name": "port",
+                  "type": "integer",
+                  "required": false,
+                  "default": 8080,
+                  "description": "Listen port, restricted to a known set.",
+                  "validation": {
+                    "allowed": [
+                      80,
+                      443,
+                      8080,
+                      8443
+                    ]
+                  }
+                },
+                {
+                  "name": "ratio",
+                  "type": "number",
+                  "required": false,
+                  "default": 0.5,
+                  "description": "Fractional ratio between 0 and 1.",
+                  "validation": {
+                    "min": 0,
+                    "max": 1
+                  }
+                },
+                {
+                  "name": "verbose",
+                  "type": "boolean",
+                  "required": false,
+                  "default": false,
+                  "description": "Toggle verbose output. Boolean args have no validation block."
+                },
+                {
+                  "name": "window",
+                  "type": "duration",
+                  "required": false,
+                  "default": "5m",
+                  "description": "Lookback window; capped at 1 hour.",
+                  "validation": {
+                    "min_duration": "1s",
+                    "max_duration": "1h0m0s"
+                  }
+                },
+                {
+                  "name": "tags",
+                  "type": "string_array",
+                  "required": false,
+                  "default": [],
+                  "description": "Free-form tag list. Use {{ args.tags }} in argv to expand.",
+                  "validation": {
+                    "max_items": 16
+                  }
+                },
+                {
+                  "name": "ids",
+                  "type": "integer_array",
+                  "required": false,
+                  "default": [],
+                  "description": "List of numeric ids.",
+                  "validation": {
+                    "max_items": 32
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Minimal call (only the required arg)",
+                  "args": {
+                    "mode": "fast"
+                  }
+                },
+                {
+                  "title": "Tags expand into multiple argv elements",
+                  "args": {
+                    "ids": [
+                      1,
+                      2,
+                      3
+                    ],
+                    "mode": "balanced",
+                    "tags": [
+                      "red",
+                      "green",
+                      "blue"
+                    ]
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "echo",
+                "argv": [
+                  "mode={{ args.mode }}",
+                  "identifier={{ args.identifier }}",
+                  "port={{ args.port }}",
+                  "ratio={{ args.ratio }}",
+                  "verbose={{ args.verbose }}",
+                  "window={{ args.window }}",
+                  "--",
+                  "{{ args.tags }}",
+                  "--",
+                  "{{ args.ids }}"
+                ]
+              }
+            },
+            {
+              "id": "showcase.json_output",
+              "title": "Parse stdout as JSON, with action-local redaction",
+              "summary": "Demonstrates `parser: json` plus an extra regex redaction rule scoped to this action. The rule sits *in front of* the global rules — useful when an action emits a known secret shape that the global rules don't cover.",
+              "description": "Demonstrates `parser: json` plus an extra regex redaction rule scoped to this action. The rule sits *in front of* the global rules — useful when an action emits a known secret shape that the global rules don't cover.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Calls /bin/echo with a synthetic JSON payload.",
+                "Does not modify state."
+              ],
+              "args": [
+                {
+                  "name": "name",
+                  "type": "string",
+                  "required": true,
+                  "description": "Name to include in the synthetic payload.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Emit a parsed JSON object",
+                  "args": {
+                    "name": "alice"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "echo",
+                "argv": [
+                  "{\"name\":\"{{ args.name }}\",\"session_token\":\"sk_live_abcd1234\",\"status\":\"ok\"}"
+                ]
+              }
+            },
+            {
+              "id": "showcase.opts_envelope",
+              "title": "Demonstrate opts.timeout and opts.max_stdout_bytes clamping",
+              "summary": "Sleeps briefly and emits a fixed payload. The interesting bit is the execution/output envelope: cloud-supplied opts.timeout is clamped to [2s, 30s] regardless of what the LLM asked for, and stdout caps are bounded between 1 KiB and 64 KiB.",
+              "description": "Sleeps briefly and emits a fixed payload. The interesting bit is the execution/output envelope: cloud-supplied opts.timeout is clamped to [2s, 30s] regardless of what the LLM asked for, and stdout caps are bounded between 1 KiB and 64 KiB.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Sleeps then emits a small payload."
+              ],
+              "args": [
+                {
+                  "name": "payload",
+                  "type": "string",
+                  "required": false,
+                  "default": "ok",
+                  "description": "Free-form payload string echoed at end.",
+                  "validation": {
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Default opts",
+                  "args": {
+                    "payload": "ok"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "/bin/sh",
+                "argv": [
+                  "-c",
+                  "sleep 1; echo {{ args.payload }}"
+                ]
+              }
+            },
+            {
+              "id": "showcase.path_validation",
+              "title": "Read-only file inspection with path allowlist",
+              "summary": "Show a reference action for path-typed arguments. Demonstrates allowed prefixes plus an explicit deny list. The combined effect: the caller may inspect anything under /var/log or /tmp, except /var/log/secure and anything under /tmp/private.",
+              "description": "Show a reference action for path-typed arguments. Demonstrates allowed prefixes plus an explicit deny list. The combined effect: the caller may inspect anything under /var/log or /tmp, except /var/log/secure and anything under /tmp/private.",
+              "kind": "exec",
+              "risk": "low",
+              "side_effects": [
+                "Reads file metadata via stat.",
+                "Does not read file contents."
+              ],
+              "args": [
+                {
+                  "name": "file",
+                  "type": "path",
+                  "required": true,
+                  "description": "A path under /var/log or /tmp, excluding the denied set.",
+                  "validation": {
+                    "denied_paths": [
+                      "/var/log/secure"
+                    ],
+                    "allowed_prefixes": [
+                      "/var/log",
+                      "/tmp"
+                    ],
+                    "denied_prefixes": [
+                      "/tmp/private"
+                    ]
+                  }
+                },
+                {
+                  "name": "extras",
+                  "type": "string_array",
+                  "required": false,
+                  "default": [],
+                  "description": "Additional paths to inspect. Every element is validated the same way as `file`: the runner applies the path allow/deny rules and max_length to each element (not just the whole-array validators), so the same /var/log,/tmp containment holds for extras.",
+                  "validation": {
+                    "denied_paths": [
+                      "/var/log/secure"
+                    ],
+                    "allowed_prefixes": [
+                      "/var/log",
+                      "/tmp"
+                    ],
+                    "denied_prefixes": [
+                      "/tmp/private"
+                    ],
+                    "max_items": 4,
+                    "max_length": 256
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Inspect one allowlisted file",
+                  "args": {
+                    "file": "/var/log/syslog"
+                  }
+                },
+                {
+                  "title": "Inspect a tmp file with extras",
+                  "args": {
+                    "extras": [
+                      "/tmp/run.lock"
+                    ],
+                    "file": "/tmp/run.pid"
+                  }
+                }
+              ],
+              "search_terms": [],
+              "command": {
+                "binary": "stat",
+                "argv": [
+                  "{{ args.file }}",
+                  "{{ args.extras }}"
+                ]
+              }
+            },
+            {
+              "id": "showcase.script_action",
+              "title": "Run a packaged shell script",
+              "summary": "Calls a packaged shell script. The interpreter is explicit (/bin/bash), the script path is resolved relative to the pack root, and the script's SHA-256 is journaled with every invocation so tampering is detectable after the fact.",
+              "description": "Calls a packaged shell script. The interpreter is explicit (/bin/bash), the script path is resolved relative to the pack root, and the script's SHA-256 is journaled with every invocation so tampering is detectable after the fact.",
+              "kind": "script",
+              "risk": "low",
+              "side_effects": [
+                "Runs the bundled scripts/echo_args.sh.",
+                "Writes nothing."
+              ],
+              "args": [
+                {
+                  "name": "message",
+                  "type": "string",
+                  "required": true,
+                  "description": "A string passed to the script as --message.",
+                  "validation": {
+                    "pattern": "^[ -~]{1,80}$"
+                  }
+                },
+                {
+                  "name": "repeat",
+                  "type": "integer",
+                  "required": false,
+                  "default": 1,
+                  "description": "Number of times to echo the message.",
+                  "validation": {
+                    "min": 1,
+                    "max": 5
+                  }
+                }
+              ],
+              "examples": [
+                {
+                  "title": "Echo twice",
+                  "args": {
+                    "message": "hello",
+                    "repeat": 2
+                  }
+                }
+              ],
+              "search_terms": []
+            }
+          ]
         }
       ]
     },

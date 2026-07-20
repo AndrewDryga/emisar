@@ -2,9 +2,9 @@ schema_version: 1
 
 # Demonstrates `output.parser: json` plus per-action redaction rules.
 # When parser is "json", the runner parses stdout into a structured object
-# and returns it on the action result alongside the raw stdout. If
-# parsing fails, parser_error is set on the result; if `parser_required`
-# is true, the call's status becomes "failed".
+# and validates the redacted object against the declared output schema. A
+# required parse or schema failure becomes `validation_failed` and carries no
+# structured result.
 
 id: showcase.json_output
 title: Parse stdout as JSON, with action-local redaction
@@ -41,14 +41,27 @@ execution:
 
 output:
   parser: json
-  parser_required: true     # if stdout doesn't parse as JSON, fail.
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [name, session_token, status]
+    properties:
+      name:
+        type: string
+        pattern: "^[a-zA-Z0-9_-]{1,32}$"
+      session_token:
+        const: "[REDACTED]"
+      status:
+        const: ok
   max_stdout_bytes: 4096
   max_stderr_bytes: 1024
   redact:
     - name: sk_live_token
       type: regex
       pattern: 'sk_live_[A-Za-z0-9]+'
-      replacement: '[REDACTED_SK]'
+      replacement: '[REDACTED]'
 
 examples:
   - title: Emit a parsed JSON object

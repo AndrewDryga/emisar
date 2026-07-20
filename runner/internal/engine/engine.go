@@ -100,25 +100,27 @@ type ProgressFunc func(stream executor.Stream, line []byte)
 
 // Result is the durable, redacted result of one action call.
 type Result struct {
-	Status           Status       `json:"status"`
-	EventID          string       `json:"event_id"`
-	LocalAuditFailed bool         `json:"local_audit_failed,omitempty"`
-	ActionID         string       `json:"action_id"`
-	ExitCode         int          `json:"exit_code"`
-	Stdout           string       `json:"stdout,omitempty"`
-	Stderr           string       `json:"stderr,omitempty"`
-	Output           any          `json:"output,omitempty"`
-	ParserError      string       `json:"parser_error,omitempty"`
-	DurationMS       int64        `json:"duration_ms"`
-	Redactions       []redact.Hit `json:"redactions,omitempty"`
-	Reason           string       `json:"reason,omitempty"`
-	TimedOut         bool         `json:"timed_out,omitempty"`
-	StdoutSHA256     string       `json:"stdout_sha256,omitempty"`
-	StderrSHA256     string       `json:"stderr_sha256,omitempty"`
-	StdoutBytes      int          `json:"stdout_bytes,omitempty"`
-	StderrBytes      int          `json:"stderr_bytes,omitempty"`
-	TruncatedOut     bool         `json:"truncated_stdout,omitempty"`
-	TruncatedErr     bool         `json:"truncated_stderr,omitempty"`
+	Status           Status          `json:"status"`
+	EventID          string          `json:"event_id"`
+	LocalAuditFailed bool            `json:"local_audit_failed,omitempty"`
+	ActionID         string          `json:"action_id"`
+	ExitCode         int             `json:"exit_code"`
+	Stdout           string          `json:"stdout,omitempty"`
+	Stderr           string          `json:"stderr,omitempty"`
+	Output           any             `json:"output,omitempty"`
+	StructuredOutput json.RawMessage `json:"structured_output,omitempty"`
+	ParserError      string          `json:"parser_error,omitempty"`
+	DurationMS       int64           `json:"duration_ms"`
+	Redactions       []redact.Hit    `json:"redactions,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	Error            string          `json:"error,omitempty"`
+	TimedOut         bool            `json:"timed_out,omitempty"`
+	StdoutSHA256     string          `json:"stdout_sha256,omitempty"`
+	StderrSHA256     string          `json:"stderr_sha256,omitempty"`
+	StdoutBytes      int             `json:"stdout_bytes,omitempty"`
+	StderrBytes      int             `json:"stderr_bytes,omitempty"`
+	TruncatedOut     bool            `json:"truncated_stdout,omitempty"`
+	TruncatedErr     bool            `json:"truncated_stderr,omitempty"`
 	// ExecutedCommand is the exact command that ran, shell-quoted, with
 	// sensitive arg values masked. The cloud transport bounds its remote copy;
 	// the local audit keeps this complete value.
@@ -513,8 +515,6 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		hits = redact.MergeHits(hs1, hs2)
 	}
 
-	parsed, parserError := parseOutput(act.Output.Parser, redactedStdout)
-
 	evType := audit.EventExecutionCompleted
 	status := StatusSuccess
 	if execRes.Status == executor.StatusTimeout {
@@ -530,6 +530,48 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		status = StatusFailed
 	}
 
+	var (
+		parsed           any
+		structuredOutput json.RawMessage
+		parserError      string
+		resultError      string
+		reason           = reasonForStatus(status, execRes)
+	)
+	if status == StatusSuccess && act.Output.HasSchema() {
+		if execRes.Truncated.Stdout {
+			status = StatusValidationFailed
+			reason = "output_truncated"
+			resultError = "structured output was truncated before validation"
+			parserError = resultError
+		} else {
+			validator, ok := reg.OutputSchema(act.ID)
+			if !ok {
+				status = StatusValidationFailed
+				reason = "output_schema_unavailable"
+				resultError = "structured output schema is unavailable"
+				parserError = resultError
+			} else if value, raw, validationError := validator.Validate([]byte(redactedStdout)); validationError != nil {
+				status = StatusValidationFailed
+				reason = validationError.Code
+				resultError = validationError.Message
+				parserError = validationError.Message
+			} else {
+				parsed = value
+				structuredOutput = raw
+			}
+		}
+	} else if !act.Output.HasSchema() {
+		parsed, parserError = parseOutput(act.Output.Parser, redactedStdout)
+		if status == StatusSuccess && act.Output.ParserRequired && parserError != "" {
+			status = StatusValidationFailed
+			reason = "output_invalid_json"
+			resultError = "required output is not valid JSON"
+		}
+	}
+	if status == StatusValidationFailed {
+		evType = audit.EventValidationFailed
+	}
+
 	// The exact command that ran, with sensitive arg values masked for every
 	// durable or remote representation. Raw argv exists only inside the live
 	// executor result and is discarded after this method returns.
@@ -543,11 +585,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan, auditArgv)
 	ev.Execution.ExecutedCommand = executedCommand
 	ev.Redactions = toAuditRedactions(hits)
+	ev.Error = resultError
 	journaled := e.journal(ctx, ev)
-
-	if act.Output.ParserRequired && parserError != "" {
-		status = StatusFailed
-	}
 
 	return &Result{
 		Status:           status,
@@ -558,11 +597,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		Stdout:           redactedStdout,
 		Stderr:           redactedStderr,
 		Output:           parsed,
+		StructuredOutput: structuredOutput,
 		ParserError:      parserError,
 		DurationMS:       execRes.DurationMS,
 		Redactions:       hits,
 		TimedOut:         execRes.TimedOut,
-		Reason:           reasonForStatus(status, execRes),
+		Reason:           reason,
+		Error:            resultError,
 		StdoutSHA256:     hashOutput(redactedStdout),
 		StderrSHA256:     hashOutput(redactedStderr),
 		StdoutBytes:      len(redactedStdout),

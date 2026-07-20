@@ -24,6 +24,9 @@ defmodule Emisar.Catalog.TrustedManifest do
     summary
     title
   )
+  # Typed actions additionally carry their opt-in output contract; a descriptor
+  # without one never has the key, so absence stays distinguishable from nil.
+  @descriptor_fields_with_output_schema Enum.sort(["output_schema" | @descriptor_fields])
   @kinds ~w(exec script)
   @risks ~w(low medium high critical)
 
@@ -38,6 +41,7 @@ defmodule Emisar.Catalog.TrustedManifest do
   @max_search_terms 16
   @max_search_term_length 80
   @max_descriptor_bytes 32_768
+  @max_output_schema_bytes 8_192
   @max_manifest_bytes 1_048_576
   @max_compact_pack_bytes 57_344
   @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
@@ -134,7 +138,9 @@ defmodule Emisar.Catalog.TrustedManifest do
       "search_terms" => action["search_terms"] || []
     }
 
-    {:ok, action["id"], descriptor}
+    with {:ok, descriptor} <- put_output_schema(descriptor, action["output_schema"]) do
+      {:ok, action["id"], descriptor}
+    end
   end
 
   defp catalog_descriptor(_action), do: {:error, :invalid_manifest}
@@ -152,10 +158,24 @@ defmodule Emisar.Catalog.TrustedManifest do
       "search_terms" => action.search_terms || []
     }
 
-    {:ok, action.action_id, descriptor}
+    with {:ok, descriptor} <- put_output_schema(descriptor, action.output_schema) do
+      {:ok, action.action_id, descriptor}
+    end
   end
 
   defp runner_descriptor(_action), do: {:error, :invalid_manifest}
+
+  defp put_output_schema(descriptor, nil), do: {:ok, descriptor}
+
+  defp put_output_schema(descriptor, %{} = schema) do
+    if Emisar.OutputSchema.valid?(schema) do
+      {:ok, Map.put(descriptor, "output_schema", schema)}
+    else
+      {:error, :invalid_manifest}
+    end
+  end
+
+  defp put_output_schema(_descriptor, _schema), do: {:error, :invalid_manifest}
 
   defp summary(description) when is_binary(description) do
     description
@@ -169,7 +189,7 @@ defmodule Emisar.Catalog.TrustedManifest do
   defp valid_action_count?(actions), do: map_size(actions) <= @max_actions
 
   defp valid_descriptor?(action_id, %{} = descriptor) do
-    descriptor |> Map.keys() |> Enum.sort() == @descriptor_fields and
+    valid_descriptor_fields?(descriptor) and
       valid_action_id?(action_id) and
       valid_string?(descriptor["title"], 1, @max_title_length) and
       valid_string?(descriptor["summary"], 1, @max_summary_length) and
@@ -183,6 +203,7 @@ defmodule Emisar.Catalog.TrustedManifest do
         false
       ) and
       valid_args_schema?(descriptor["args_schema"]) and
+      valid_output_schema?(descriptor) and
       valid_map_list?(descriptor["examples"], @max_examples) and
       valid_string_list?(
         descriptor["search_terms"],
@@ -195,6 +216,21 @@ defmodule Emisar.Catalog.TrustedManifest do
   end
 
   defp valid_descriptor?(_action_id, _descriptor), do: false
+
+  defp valid_descriptor_fields?(descriptor) do
+    keys = descriptor |> Map.keys() |> Enum.sort()
+    keys == @descriptor_fields or keys == @descriptor_fields_with_output_schema
+  end
+
+  defp valid_output_schema?(descriptor) do
+    case Map.fetch(descriptor, "output_schema") do
+      :error ->
+        true
+
+      {:ok, schema} ->
+        Emisar.OutputSchema.valid?(schema) and encoded_within?(schema, @max_output_schema_bytes)
+    end
+  end
 
   defp valid_action_id?(action_id) do
     valid_string?(action_id, 1, @max_action_id_length) and

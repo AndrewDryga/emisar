@@ -455,6 +455,64 @@ output:
   max_stderr_bytes: 1024
 `
 
+const typedJSONAction = `
+schema_version: 1
+id: t.typed_json
+title: Typed JSON
+kind: exec
+risk: low
+description: Returns a redacted typed object.
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: echo
+    argv: ['{"token":"sk_live_secret","status":"ok"}']
+  timeout: 5s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [token, status]
+    properties:
+      token: {const: "[REDACTED]"}
+      status: {const: ok}
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+  redact:
+    - name: token
+      type: regex
+      pattern: 'sk_live_[A-Za-z0-9]+'
+      replacement: '[REDACTED]'
+`
+
+const typedJSONFailureAction = `
+schema_version: 1
+id: t.typed_failure
+title: Typed failure
+kind: exec
+risk: low
+description: Exits unsuccessfully with invalid JSON.
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "echo not-json; exit 7"]
+  timeout: 5s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    type: object
+    additionalProperties: false
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
 func setupEngineExtra(t *testing.T, extras map[string]string) (*Engine, *audit.Journal, string) {
 	t.Helper()
 	e, j, root := setupEngine(t)
@@ -586,11 +644,71 @@ func TestEngine_JSONParserError_RequiredFlipsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Status != StatusFailed {
-		t.Fatalf("status=%s (parser_required: true must flip to failed)", res.Status)
+	if res.Status != StatusValidationFailed {
+		t.Fatalf("status=%s (parser_required: true must flip to validation_failed)", res.Status)
 	}
 	if res.ParserError == "" {
 		t.Fatal("parser_error should still be set")
+	}
+}
+
+func TestEngine_TypedOutputValidatesAfterRedaction(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"typed.yaml": typedJSONAction})
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{ActionID: "t.typed_json", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%s error=%s", res.Status, res.Reason, res.Error)
+	}
+	if string(res.StructuredOutput) != `{"status":"ok","token":"[REDACTED]"}` {
+		t.Fatalf("structured output was not redacted first: %s", res.StructuredOutput)
+	}
+	if strings.Contains(fmt.Sprint(res.StructuredOutput), "sk_live_secret") {
+		t.Fatal("unredacted secret reached structured output")
+	}
+}
+
+func TestEngine_TypedOutputFailureMatchesAudit(t *testing.T) {
+	badSchema := strings.Replace(typedJSONAction, "const: ok", "const: bad", 1)
+	e, j, root := setupEngineExtra(t, map[string]string{"typed.yaml": badSchema})
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{ActionID: "t.typed_json", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusValidationFailed || res.Reason != "output_schema_mismatch" {
+		t.Fatalf("result=%+v", res)
+	}
+	if res.StructuredOutput != nil {
+		t.Fatalf("invalid output escaped: %#v", res.StructuredOutput)
+	}
+	events := readJournalEvents(t, root)
+	terminal := events[len(events)-1]
+	if terminal.Type != audit.EventValidationFailed {
+		t.Fatalf("terminal audit type=%s, want validation_failed", terminal.Type)
+	}
+	if terminal.Error != "structured output does not match its declared schema" {
+		t.Fatalf("terminal audit error=%q", terminal.Error)
+	}
+}
+
+func TestEngine_ExecutionFailureTakesPrecedenceOverTypedOutput(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"typed_failure.yaml": typedJSONFailureAction})
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{ActionID: "t.typed_failure", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusFailed || res.ExitCode != 7 {
+		t.Fatalf("result=%+v", res)
+	}
+	if res.StructuredOutput != nil {
+		t.Fatalf("failed execution carried structured output: %#v", res.StructuredOutput)
 	}
 }
 

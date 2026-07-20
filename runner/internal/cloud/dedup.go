@@ -15,6 +15,8 @@ import (
 	"sync"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
+	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
+	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 )
 
 const (
@@ -381,6 +383,18 @@ func validActionResult(result ActionResultMsg, requestID string) bool {
 	}
 	if result.LocalAuditFailed != (result.EventID == "") {
 		return false
+	}
+	if len(result.StructuredOutput) > 0 {
+		if result.Status != "success" {
+			return false
+		}
+		if _, err := jsonvalue.DecodeObject(result.StructuredOutput, jsonvalue.Limits{
+			MaxBytes: outputschema.MaxResultBytes,
+			MaxDepth: outputschema.MaxResultDepth,
+			MaxNodes: outputschema.MaxResultNodes,
+		}); err != nil {
+			return false
+		}
 	}
 	return validActionResultStatus(result.Status)
 }

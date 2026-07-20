@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://emisar.dev/v1/schemas/action.v2.schema.json",
+  "$id": "https://emisar.dev/v1/schemas/action.v3.schema.json",
   "title": "emisar action definition (actions/*.yaml)",
   "description": "Authoring schema for a single action YAML. Documentation and editor validation only — the runner's loader (runner/pkg/actionspec) is the authoritative validator, and per-value argument validation happens at execution time.",
   "type": "object",
@@ -109,9 +109,25 @@
     "output": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"required": ["schema"]},
+          "then": {
+            "required": ["parser", "parser_required"],
+            "properties": {
+              "parser": {"const": "json"},
+              "parser_required": {"const": true}
+            }
+          }
+        }
+      ],
       "properties": {
         "parser": {"type": "string", "enum": ["", "text", "json"]},
         "parser_required": {"type": "boolean"},
+        "schema": {
+          "type": "object",
+          "description": "A bounded Draft 2020-12 object schema. The runner rejects external references and unsafe identity, vocabulary, dynamic-reference, and content-assertion keywords, then compiles it when the pack loads."
+        },
         "max_stdout_bytes": {"type": "integer"},
         "max_stdout_bytes_min": {"type": "integer"},
         "max_stdout_bytes_max": {"type": "integer"},

@@ -1,11 +1,14 @@
 defmodule Emisar.ApprovalsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{Accounts, Approvals, Audit, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Catalog, Repo, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.Runs.ActionRun
+
+  @grant_pack_hash "sha256:" <> String.duplicate("a", 64)
+  @grant_pack_ref "linux-core@1.0.0/" <> @grant_pack_hash
 
   defp run_fixture(opts \\ []) do
     account =
@@ -88,6 +91,7 @@ defmodule Emisar.ApprovalsTest do
           account_id: account.id,
           api_key_id: key.id,
           action_id: "linux.uptime",
+          pack_ref: @grant_pack_ref,
           granted_by_id: opts[:granted_by_id] || Fixtures.Users.create_user().id,
           granted_at: DateTime.utc_now()
         },
@@ -95,6 +99,37 @@ defmodule Emisar.ApprovalsTest do
       )
     )
     |> Repo.insert!()
+  end
+
+  defp observe_trusted_grant_action(account, user, runner, risk) do
+    assert {:ok, _runner} =
+             Catalog.observe_state(runner, %{
+               "hostname" => runner.hostname,
+               "version" => runner.runner_version,
+               "labels" => runner.labels,
+               "packs" => %{
+                 "linux-core" => %{"version" => "1.0.0", "hash" => @grant_pack_hash}
+               },
+               "actions" => [
+                 %{
+                   "id" => "linux.uptime",
+                   "pack_id" => "linux-core",
+                   "title" => "Uptime",
+                   "kind" => "exec",
+                   "risk" => risk,
+                   "summary" => "Reports uptime",
+                   "description" => "Reports uptime",
+                   "side_effects" => [],
+                   "args" => [],
+                   "examples" => [],
+                   "search_terms" => []
+                 }
+               ]
+             })
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    assert {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+    assert {:ok, _pack_version} = Catalog.trust_pack_version(pack_version.id, subject)
   end
 
   # An MCP-sourced run (carries api_key_id) parked behind a pending
@@ -120,6 +155,7 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
+        pack_ref: @grant_pack_ref,
         api_key_id: key.id,
         initiating_membership_id: key.created_by_membership_id,
         args: %{},
@@ -1174,6 +1210,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: run.runner_id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc",
@@ -1220,6 +1257,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1233,6 +1271,7 @@ defmodule Emisar.ApprovalsTest do
 
       [grant] = Fixtures.Approvals.grants_for_api_key(key.id)
       assert grant.action_id == "linux.uptime"
+      assert grant.pack_ref == @grant_pack_ref
       assert grant.args_sha256 == "abc123"
       assert grant.expires_at != nil
       assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :hour) in 23..24
@@ -1257,6 +1296,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1287,6 +1327,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "postgres.vacuum",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{"table" => "users", "full" => true},
           args_sha256: "deadbeef",
@@ -1326,6 +1367,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1376,6 +1418,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -2311,7 +2354,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "peek_matching_grant/5" do
+  describe "peek_matching_grant/6" do
     setup do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -2322,7 +2365,14 @@ defmodule Emisar.ApprovalsTest do
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Approvals.peek_matching_grant(account.id, key.id, "x.y", runner.id, "sha") == nil
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "x.y",
+               @grant_pack_ref,
+               runner.id,
+               "sha"
+             ) == nil
     end
 
     test "wildcards: nil runner_id and nil args_sha256 match anything", %{
@@ -2340,6 +2390,7 @@ defmodule Emisar.ApprovalsTest do
                  account.id,
                  key.id,
                  "linux.uptime",
+                 @grant_pack_ref,
                  runner_a.id,
                  "sha-a"
                )
@@ -2349,9 +2400,36 @@ defmodule Emisar.ApprovalsTest do
                  account.id,
                  key.id,
                  "linux.uptime",
+                 @grant_pack_ref,
                  runner_b.id,
                  "sha-b"
                )
+    end
+
+    test "does not reuse approval across pack contracts", %{account: account, user: user} do
+      {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ = insert_grant(account, key, action_id: "linux.uptime", granted_by_id: user.id)
+
+      assert %Grant{} =
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key.id,
+                 "linux.uptime",
+                 @grant_pack_ref,
+                 runner.id,
+                 "sha"
+               )
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "linux.uptime",
+               "linux-core@1.0.1/sha256:changed-contract",
+               runner.id,
+               "sha"
+             ) == nil
     end
 
     test "exact runner match: grant on runner_a doesn't match runner_b", %{
@@ -2365,8 +2443,24 @@ defmodule Emisar.ApprovalsTest do
       _ =
         insert_grant(account, key, action_id: "x", runner_id: runner_a.id, granted_by_id: user.id)
 
-      assert %Grant{} = Approvals.peek_matching_grant(account.id, key.id, "x", runner_a.id, "any")
-      assert Approvals.peek_matching_grant(account.id, key.id, "x", runner_b.id, "any") == nil
+      assert %Grant{} =
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key.id,
+                 "x",
+                 @grant_pack_ref,
+                 runner_a.id,
+                 "any"
+               )
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "x",
+               @grant_pack_ref,
+               runner_b.id,
+               "any"
+             ) == nil
     end
 
     test "expired grant is filtered out", %{account: account, user: user} do
@@ -2383,7 +2477,14 @@ defmodule Emisar.ApprovalsTest do
           expires_at: past
         )
 
-      assert Approvals.peek_matching_grant(account.id, key.id, "x", runner.id, "sha") == nil
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "x",
+               @grant_pack_ref,
+               runner.id,
+               "sha"
+             ) == nil
     end
 
     test "revoked grant is filtered out", %{account: account, user: user} do
@@ -2394,7 +2495,14 @@ defmodule Emisar.ApprovalsTest do
       grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
       {:ok, _} = Approvals.revoke_grant(grant, subject)
 
-      assert Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha") == nil
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "x",
+               @grant_pack_ref,
+               nil,
+               "sha"
+             ) == nil
     end
 
     test "a different API key's grant doesn't leak", %{account: account, user: user} do
@@ -2403,8 +2511,24 @@ defmodule Emisar.ApprovalsTest do
 
       _ = insert_grant(account, key_a, action_id: "x", granted_by_id: user.id)
 
-      assert %Grant{} = Approvals.peek_matching_grant(account.id, key_a.id, "x", nil, "sha")
-      assert Approvals.peek_matching_grant(account.id, key_b.id, "x", nil, "sha") == nil
+      assert %Grant{} =
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key_a.id,
+                 "x",
+                 @grant_pack_ref,
+                 nil,
+                 "sha"
+               )
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key_b.id,
+               "x",
+               @grant_pack_ref,
+               nil,
+               "sha"
+             ) == nil
     end
 
     test "cap 0 (standing grants disabled) makes a live matching grant inert", %{
@@ -2415,12 +2539,28 @@ defmodule Emisar.ApprovalsTest do
       _ = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
 
       # The grant matches while grants are enabled…
-      assert %Grant{} = Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha")
+      assert %Grant{} =
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key.id,
+                 "x",
+                 @grant_pack_ref,
+                 nil,
+                 "sha"
+               )
 
       # …and stops matching the moment the account flips the kill switch —
       # no revocation required.
       Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
-      assert Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha") == nil
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               "x",
+               @grant_pack_ref,
+               nil,
+               "sha"
+             ) == nil
     end
   end
 
@@ -2441,7 +2581,7 @@ defmodule Emisar.ApprovalsTest do
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
       mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
+      observe_trusted_grant_action(account, user, runner, "high")
       Emisar.Runners.subscribe_runner_transport(runner)
 
       _ =
@@ -2472,6 +2612,7 @@ defmodule Emisar.ApprovalsTest do
         args: %{},
         reason: "go",
         source: "mcp",
+        pack_ref: @grant_pack_ref,
         api_key_id: key.id
       }
 
@@ -2526,7 +2667,7 @@ defmodule Emisar.ApprovalsTest do
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
       mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
+      observe_trusted_grant_action(account, user, runner, "high")
 
       _ =
         Fixtures.Policies.create_policy(
@@ -2559,6 +2700,7 @@ defmodule Emisar.ApprovalsTest do
         args: %{},
         reason: "first call",
         source: "mcp",
+        pack_ref: @grant_pack_ref,
         api_key_id: key.id
       }
 
@@ -2630,6 +2772,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           args: %{},
           api_key_id: key.id,
           status: :pending_approval
@@ -2978,6 +3121,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
+          pack_ref: @grant_pack_ref,
           args: %{},
           api_key_id: key.id,
           status: :pending_approval

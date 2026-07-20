@@ -90,6 +90,17 @@ output:
   max_stderr_bytes: 8192
 ```
 
+Actions that need a machine-readable result can opt in with a complete bounded
+Draft 2020-12 object schema. This is legal only with `parser: json` and
+`parser_required: true`. The runner redacts stdout first, strictly parses one
+JSON object, validates it against the schema, and returns it only on success.
+External references and schemas/results above the documented complexity and
+8 KiB wire limits are rejected. Schema numbers must survive a float64 round
+trip — an integer above 2^53 fails pack load and catalog build with the
+canonical form to write instead — and `multipleOf` must be a positive integer.
+See [`showcase.json_output`](showcase/actions/json_output.yaml) for the
+executable reference.
+
 The caller chooses `unit`; it cannot replace `systemctl`, add another flag, or
 name a service outside the enum. The runner validates the same schema again on
 the host before execution.

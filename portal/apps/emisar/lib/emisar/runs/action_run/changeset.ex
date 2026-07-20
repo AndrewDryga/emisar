@@ -8,6 +8,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
     ip_address user_agent opts attestation reason source requested_by_id api_key_id initiating_membership_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
+    structured_output_expected output_schema_snapshot
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at
   ]a
@@ -18,6 +19,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     emitted_stdout_sha256 emitted_stderr_sha256 emitted_stdout_bytes emitted_stderr_bytes
     output_complete stdout_truncated stderr_truncated event_id local_audit_failed reason_text error_message
     executed_command executed_command_truncated
+    structured_output
   ]a
 
   # Generous caps — well above any real action's args (the largest, the shell
@@ -41,6 +43,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_executed_command_bytes 16_384
   @max_db_string_length 255
   @max_action_args_bytes 32_768
+  @max_structured_output_bytes 8_192
   @min_db_integer -2_147_483_648
   @max_db_integer 2_147_483_647
   @max_db_bigint 9_223_372_036_854_775_807
@@ -63,6 +66,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_signed_run_opts()
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
+    |> RepoChangeset.validate_json_size(:output_schema_snapshot, @max_structured_output_bytes)
+    |> validate_output_schema_snapshot()
     |> unique_constraint([:account_id, :request_id])
     |> unique_constraint([:mcp_operation_record_id, :runner_id],
       name: :action_runs_mcp_operation_runner_index
@@ -70,6 +75,25 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> unique_constraint([:runbook_execution_id, :runbook_step_id, :runner_id],
       name: :action_runs_execution_step_runner_index
     )
+  end
+
+  defp validate_output_schema_snapshot(changeset) do
+    expected? = get_field(changeset, :structured_output_expected)
+    snapshot = get_field(changeset, :output_schema_snapshot)
+
+    cond do
+      expected? and is_nil(snapshot) ->
+        add_error(changeset, :output_schema_snapshot, "is required for typed output")
+
+      expected? and not Emisar.OutputSchema.valid?(snapshot) ->
+        add_error(changeset, :output_schema_snapshot, "must be a valid output schema")
+
+      not expected? and not is_nil(snapshot) ->
+        add_error(changeset, :output_schema_snapshot, "must be absent for untyped output")
+
+      true ->
+        changeset
+    end
   end
 
   defp validate_request_id(:request_id, request_id) do
@@ -142,6 +166,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
     |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
+    |> validate_structured_output()
     |> validate_number(:exit_code,
       greater_than_or_equal_to: @min_db_integer,
       less_than_or_equal_to: @max_db_integer
@@ -158,6 +183,19 @@ defmodule Emisar.Runs.ActionRun.Changeset do
       greater_than_or_equal_to: 0,
       less_than_or_equal_to: @max_db_integer
     )
+  end
+
+  defp validate_structured_output(changeset) do
+    validate_change(changeset, :structured_output, fn :structured_output, output ->
+      with true <- is_map(output),
+           :ok <- Emisar.JSONValue.validate(output, max_depth: 16, max_nodes: 1_024),
+           {:ok, encoded} <- Jason.encode(output),
+           true <- byte_size(encoded) <= @max_structured_output_bytes do
+        []
+      else
+        _other -> [structured_output: "must be a bounded JSON object"]
+      end
+    end)
   end
 
   defp validate_executed_command(:executed_command, command) do

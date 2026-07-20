@@ -27,6 +27,7 @@ defmodule Emisar.Fixtures.Catalog do
       description: attrs[:description] || "Reports uptime + load.",
       side_effects: attrs[:side_effects] || ["reads /proc"],
       args_schema: attrs[:args_schema] || %{"args" => []},
+      output_schema: Map.get(attrs, :output_schema),
       examples: attrs[:examples] || [],
       primary_executable_available: Map.get(attrs, :primary_executable_available),
       missing_executable: attrs[:missing_executable],

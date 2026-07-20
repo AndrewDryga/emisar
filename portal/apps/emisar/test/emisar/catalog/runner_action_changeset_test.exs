@@ -52,6 +52,30 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       refute changeset.valid?
       assert Keyword.has_key?(changeset.errors, :args_schema)
     end
+
+    test "bounds output schemas independently" do
+      valid = %{
+        "type" => "object",
+        "properties" => %{"status" => %{"type" => "string"}}
+      }
+
+      assert RunnerAction.Changeset.upsert(base_attrs(%{output_schema: valid})).valid?
+
+      huge = %{"type" => "object", "description" => String.duplicate("x", 8_192)}
+      changeset = RunnerAction.Changeset.upsert(base_attrs(%{output_schema: huge}))
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :output_schema)
+
+      for invalid <- [
+            %{"type" => "object", "required" => "status"},
+            %{"type" => "object", "$ref" => "#/$defs/missing"},
+            %{"type" => "object", "$ref" => "https://example.com/schema"}
+          ] do
+        changeset = RunnerAction.Changeset.upsert(base_attrs(%{output_schema: invalid}))
+        refute changeset.valid?
+        assert Keyword.has_key?(changeset.errors, :output_schema)
+      end
+    end
   end
 
   describe "upsert/1 action_id shape" do

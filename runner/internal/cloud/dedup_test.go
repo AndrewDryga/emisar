@@ -75,6 +75,37 @@ func TestDedupRing_ReserveCompleteAndLookup(t *testing.T) {
 	}
 }
 
+func TestValidActionResultBoundsStructuredOutput(t *testing.T) {
+	base := testActionResult("typed", ActionResultMsg{
+		Status:           "success",
+		EventID:          "evt_typed",
+		StructuredOutput: json.RawMessage(`{"count":9007199254740993}`),
+	})
+	if !validActionResult(base, "typed") {
+		t.Fatal("valid structured output rejected")
+	}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*ActionResultMsg)
+	}{
+		{"non-success", func(result *ActionResultMsg) { result.Status = "failed" }},
+		{"non-object", func(result *ActionResultMsg) { result.StructuredOutput = json.RawMessage(`[]`) }},
+		{"duplicate key", func(result *ActionResultMsg) { result.StructuredOutput = json.RawMessage(`{"a":1,"a":2}`) }},
+		{"oversize", func(result *ActionResultMsg) {
+			result.StructuredOutput = json.RawMessage(`{"value":"` + strings.Repeat("x", 8192) + `"}`)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := base
+			tc.mutate(&result)
+			if validActionResult(result, "typed") {
+				t.Fatal("invalid structured output accepted")
+			}
+		})
+	}
+}
+
 func TestDedupRing_EvictsOldest(t *testing.T) {
 	d := newDedupRing(2, "", "", nil)
 	for _, id := range []string{"a", "b", "c"} {

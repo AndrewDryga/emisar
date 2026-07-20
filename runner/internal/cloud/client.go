@@ -886,6 +886,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			TruncatedErr:             res.TruncatedErr,
 			Redactions:               toProtocolRedactions(res.Redactions),
 			Reason:                   res.Reason,
+			Error:                    res.Error,
+			StructuredOutput:         res.StructuredOutput,
 			EventID:                  res.EventID,
 			LocalAuditFailed:         res.LocalAuditFailed,
 			ExecutedCommand:          executedCommand,

@@ -12,6 +12,7 @@ defmodule Emisar.Runs do
   alias Emisar.Audit
   alias Emisar.Auth
   alias Emisar.Auth.Subject
+  alias Emisar.Catalog
   alias Emisar.Crypto
   alias Emisar.MCPOperations
   alias Emisar.Repo
@@ -615,7 +616,7 @@ defmodule Emisar.Runs do
              Authorizer.dispatch_run_permission()
            ),
          :ok <- require_subject_membership(subject),
-         :ok <- validate_mcp_targets(target_attrs) do
+         :ok <- validate_mcp_targets(operation_attrs, target_attrs) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
           attrs
@@ -630,18 +631,42 @@ defmodule Emisar.Runs do
   def dispatch_mcp_fanout(_operation_attrs, _target_attrs, %Subject{}),
     do: {:error, :invalid_targets}
 
-  defp validate_mcp_targets(target_attrs) do
+  defp validate_mcp_targets(
+         %{
+           tool: :run_action,
+           operation_id: operation_id,
+           action_id: action_id,
+           pack_ref: pack_ref
+         },
+         target_attrs
+       )
+       when is_binary(operation_id) and is_binary(action_id) and is_binary(pack_ref) do
+    valid_targets? =
+      Enum.all?(target_attrs, fn
+        %{
+          runner_id: runner_id,
+          operation_id: ^operation_id,
+          action_id: ^action_id,
+          pack_ref: ^pack_ref
+        }
+        when is_binary(runner_id) ->
+          true
+
+        _attrs ->
+          false
+      end)
+
     runner_ids = Enum.map(target_attrs, &Map.get(&1, :runner_id))
 
-    if length(target_attrs) in 1..@max_mcp_fanout and
-         Enum.all?(target_attrs, &is_map/1) and
-         Enum.all?(runner_ids, &is_binary/1) and
+    if length(target_attrs) in 1..@max_mcp_fanout and valid_targets? and
          MapSet.size(MapSet.new(runner_ids)) == length(runner_ids) do
       :ok
     else
       {:error, :invalid_targets}
     end
   end
+
+  defp validate_mcp_targets(_operation_attrs, _target_attrs), do: {:error, :invalid_targets}
 
   defp commit_mcp_fanout(operation_attrs, target_attrs, subject, use_grants?) do
     with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
@@ -785,25 +810,25 @@ defmodule Emisar.Runs do
            attestation_fresh(attrs[:attestation], Emisar.Runners.peek_runner_by_id(runner_id)),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
-         {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
-         :ok <- ensure_primary_executable_available(action),
-         :ok <- check_pack_ref(action, attrs[:pack_ref]),
-         {:ok, pack_hash} <- check_pack_trust(action, account_id) do
+         {:ok, contract} <-
+           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+         action = contract.action,
+         :ok <- ensure_primary_executable_available(action) do
       attrs =
         attrs
         |> persist_initiating_membership()
-        |> put_action_arguments(action)
+        |> put_action_arguments(contract)
         |> Map.put(:runner_ref, runner_ref)
-        |> Map.put(:expected_pack_hash, pack_hash)
+        |> Map.put(:expected_pack_hash, contract.pack_hash)
         |> Map.put(:requires_approval, false)
         |> Map.put(:mcp_operation_record_id, operation_record_id)
 
-      plan_mcp_policy(attrs, account_id, action, use_grants?)
+      plan_mcp_policy(attrs, account_id, contract.descriptor, use_grants?)
     end
   end
 
-  defp plan_mcp_policy(attrs, account_id, action, use_grants?) do
-    eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
+  defp plan_mcp_policy(attrs, account_id, descriptor, use_grants?) do
+    eval_attrs = Map.merge(attrs, %{risk: descriptor["risk"], kind: descriptor["kind"]})
     group = runner_group(attrs[:runner_id])
 
     case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs, group) do
@@ -1068,19 +1093,19 @@ defmodule Emisar.Runs do
          :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
-         {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
-         :ok <- ensure_primary_executable_available(action),
-         :ok <- check_pack_ref(action, attrs[:pack_ref]),
-         {:ok, pack_hash} <- check_pack_trust(action, account_id) do
+         {:ok, contract} <-
+           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+         action = contract.action,
+         :ok <- ensure_primary_executable_available(action) do
       attrs
       |> persist_initiating_membership()
-      |> put_action_arguments(action)
+      |> put_action_arguments(contract)
       |> Map.put(:runner_ref, runner_ref)
       # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
       # so the run ships the exact bytes authorized here, not a send-time re-read.
-      |> Map.put(:expected_pack_hash, pack_hash)
+      |> Map.put(:expected_pack_hash, contract.pack_hash)
       |> Map.put(:requires_approval, false)
-      |> evaluate_and_dispatch(account_id, action)
+      |> evaluate_and_dispatch(account_id, contract.descriptor)
     end
   end
 
@@ -1253,20 +1278,6 @@ defmodule Emisar.Runs do
 
   defp ensure_primary_executable_available(_action), do: :ok
 
-  defp check_pack_ref(_action, nil), do: :ok
-
-  defp check_pack_ref(action, pack_ref) when is_binary(pack_ref) do
-    with {:ok, {pack_id, pack_version, pack_hash}} <-
-           Emisar.Catalog.MCPProjection.parse_pack_ref(pack_ref),
-         true <-
-           action.pack_id == pack_id and action.pack_version == pack_version and
-             action.pack_hash == pack_hash do
-      :ok
-    else
-      _ -> {:error, :pack_ref_mismatch}
-    end
-  end
-
   # Refuse a portal-originated (operator / runbook / API-key) dispatch to a
   # runner that advertises it enforces client signatures. The runner would
   # reject an unsigned run anyway; blocking here means no run row is created and
@@ -1296,31 +1307,47 @@ defmodule Emisar.Runs do
     end
   end
 
-  # Refuse dispatch if the action's pack is in `pending_trust`. The
-  # runner is advertising a hash that diverges from what an operator
-  # has previously trusted (or from the baseline we ship) — execution
-  # waits for a human decision in the /app/packs UI.
-  # Returns `{:ok, trusted_hash | nil}` — the hash to SNAPSHOT onto the run (nil
-  # for a pack-less / not-yet-versioned action) — or `{:error, :pack_untrusted}`.
-  defp check_pack_trust(action, account_id) do
-    case Emisar.Catalog.check_pack_trusted(action) do
-      {:ok, hash} ->
-        {:ok, hash}
+  defp fetch_dispatch_contract(account_id, runner_id, action_id, pack_ref) do
+    case Catalog.fetch_dispatch_contract(Repo, account_id, runner_id, action_id, pack_ref) do
+      {:ok, _contract} = ok ->
+        ok
 
       {:error, :pack_untrusted, pack_info} ->
-        Audit.record(Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, action))
+        audit_dispatch_contract_error(
+          account_id,
+          runner_id,
+          action_id,
+          &Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, &1)
+        )
+
         {:error, :pack_untrusted}
 
       {:error, :pack_retired, pack_version} ->
-        Audit.record(Audit.Events.dispatch_blocked_pack_retired(account_id, pack_version, action))
+        audit_dispatch_contract_error(
+          account_id,
+          runner_id,
+          action_id,
+          &Audit.Events.dispatch_blocked_pack_retired(account_id, pack_version, &1)
+        )
+
         {:error, :pack_retired}
+
+      other ->
+        other
+    end
+  end
+
+  defp audit_dispatch_contract_error(account_id, runner_id, action_id, event_fun) do
+    case fetch_advertised_action(runner_id, action_id, account_id) do
+      {:ok, action} -> Audit.record(event_fun.(action))
+      {:error, :action_not_found} -> :ok
     end
   end
 
   # The policy sees catalog-authoritative risk + kind so a caller can't
   # spoof "low" to bypass a `:require_approval` on `high`.
-  defp evaluate_and_dispatch(attrs, account_id, action) do
-    eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
+  defp evaluate_and_dispatch(attrs, account_id, descriptor) do
+    eval_attrs = Map.merge(attrs, %{risk: descriptor["risk"], kind: descriptor["kind"]})
     group = runner_group(attrs[:runner_id])
 
     case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs, group) do
@@ -1474,11 +1501,13 @@ defmodule Emisar.Runs do
 
   # PEEK only — the grant is CONSUMED later, atomically with the run insert (see
   # dispatch_with_grant), so a use is never burned without a durable run.
-  defp lookup_grant(%{api_key_id: api_key_id} = attrs) when is_binary(api_key_id) do
+  defp lookup_grant(%{api_key_id: api_key_id, pack_ref: pack_ref} = attrs)
+       when is_binary(api_key_id) and is_binary(pack_ref) do
     case Emisar.Approvals.peek_matching_grant(
            attrs[:account_id],
            api_key_id,
            attrs[:action_id],
+           attrs[:pack_ref],
            attrs[:runner_id],
            attrs[:args_sha256]
          ) do
@@ -1489,11 +1518,12 @@ defmodule Emisar.Runs do
 
   defp lookup_grant(_attrs), do: :none
 
-  defp put_action_arguments(attrs, action) do
+  defp put_action_arguments(attrs, contract) do
+    descriptor = contract.descriptor
     attrs = put_action_arguments_raw(attrs)
 
     sensitive_arg_names =
-      action.args_schema
+      descriptor["args_schema"]
       |> Map.get("args", [])
       |> Enum.filter(&(&1["sensitive"] == true))
       |> Enum.map(& &1["name"])
@@ -1502,6 +1532,8 @@ defmodule Emisar.Runs do
     attrs
     |> Map.put(:args_sha256, Crypto.hash_hex(attrs[:args_raw]))
     |> Map.put(:sensitive_arg_names, sensitive_arg_names)
+    |> Map.put(:structured_output_expected, is_map(descriptor["output_schema"]))
+    |> Map.put(:output_schema_snapshot, descriptor["output_schema"])
   end
 
   defp put_action_arguments_raw(attrs) do
@@ -1827,26 +1859,29 @@ defmodule Emisar.Runs do
   end
 
   defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
-    case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
-      {:ok, action} ->
-        with :ok <- ensure_primary_executable_available(action) do
-          case check_pack_trust(action, run.account_id) do
-            {:ok, hash} when is_nil(run.expected_pack_hash) or hash == run.expected_pack_hash ->
-              :ok
+    with {:ok, contract} <-
+           fetch_dispatch_contract(
+             run.account_id,
+             run.runner_id,
+             run.action_id,
+             run.pack_ref
+           ),
+         :ok <- ensure_primary_executable_available(contract.action),
+         true <- contract.pack_hash == run.expected_pack_hash do
+      :ok
+    else
+      # Current trust no longer matches the run's snapshotted hash — a trust
+      # decision moved underneath the parked run.
+      false ->
+        {:error, :pack_untrusted}
 
-            {:ok, _different_hash} ->
-              {:error, :pack_untrusted}
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-        end
-
+      # A pack-less run has no snapshot to re-verify; a since-vanished
+      # advertisement surfaces at delivery instead of blocking the approval.
       {:error, :action_not_found} when is_nil(run.expected_pack_hash) ->
         :ok
 
-      {:error, :action_not_found} ->
-        {:error, :action_not_found}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -2073,14 +2108,18 @@ defmodule Emisar.Runs do
     "pack_hash_mismatch" => :refused
   }
 
+  @max_structured_output_bytes 8_192
+  @max_structured_output_depth 16
+  @max_structured_output_nodes 1_024
+
   defp mark_finished(%ActionRun{} = run, result_payload, connection) do
-    status = Map.get(@result_statuses, result_payload["status"], :failed)
+    {status, structured_output, output_error} = result_outcome(run, result_payload)
 
     case transition_from(
            run,
            :any_nonterminal,
            status,
-           result_attrs(run, result_payload),
+           result_attrs(run, result_payload, structured_output, output_error),
            connection
          ) do
       {:ok, finished} = ok ->
@@ -2100,7 +2139,7 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp result_attrs(%ActionRun{} = run, payload) do
+  defp result_attrs(%ActionRun{} = run, payload, structured_output, output_error) do
     current = peek_run_by_id(run.id) || run
 
     %{
@@ -2121,15 +2160,81 @@ defmodule Emisar.Runs do
       # Exact shell command the runner ran, already redacted runner-side.
       executed_command: payload["executed_command"],
       executed_command_truncated: payload["executed_command_truncated"] || false,
+      structured_output: structured_output,
       # The failure cause belongs in error_message (not reason_text, which holds
       # the operator's freeform reason). The runner sends a terse `reason` code
       # (e.g. "bad_signature", "stale") AND a human `error` sentence ("refused:
       # signature does not match…") on a refusal; prefer the sentence so the
       # operator can act, falling back to the code when there's no `error`
       # (omitempty drops it on an ordinary failure, so this stays the reason).
-      error_message: payload["error"] || payload["reason"]
+      error_message: output_error || payload["error"] || payload["reason"]
     }
   end
+
+  defp result_outcome(%ActionRun{} = run, payload) do
+    status = Map.get(@result_statuses, payload["status"], :failed)
+    output_present? = Map.has_key?(payload, "structured_output")
+
+    cond do
+      status != :success ->
+        {status, nil, nil}
+
+      run.structured_output_expected and not output_present? ->
+        {:validation_failed, nil, "runner omitted required structured output"}
+
+      not run.structured_output_expected and output_present? ->
+        {:validation_failed, nil, "runner sent structured output for an untyped action"}
+
+      not output_present? ->
+        {status, nil, nil}
+
+      true ->
+        case output_contract_schema(run) do
+          {:ok, schema} ->
+            case check_structured_output(payload["structured_output"], schema) do
+              {:ok, output} ->
+                {status, output, nil}
+
+              {:error, :invalid_structured_output} ->
+                {:validation_failed, nil, "runner sent an invalid structured output value"}
+
+              {:error, :schema_mismatch} ->
+                {:validation_failed, nil,
+                 "runner structured output does not match the trusted schema"}
+            end
+
+          {:error, :invalid_contract} ->
+            {:validation_failed, nil, "trusted output schema snapshot is unavailable"}
+        end
+    end
+  end
+
+  defp output_contract_schema(%ActionRun{} = run) do
+    if Emisar.OutputSchema.valid?(run.output_schema_snapshot),
+      do: {:ok, run.output_schema_snapshot},
+      else: {:error, :invalid_contract}
+  end
+
+  # The runner-sent value is hostile until it passes the run's snapshotted
+  # contract plus the same structural and byte ceilings the runner enforces —
+  # a compromised runner must not grow rows or bypass typing.
+  defp check_structured_output(%{} = output, schema) do
+    with :ok <-
+           Emisar.JSONValue.validate(output,
+             max_depth: @max_structured_output_depth,
+             max_nodes: @max_structured_output_nodes
+           ),
+         {:ok, encoded} <- Jason.encode(output),
+         true <- byte_size(encoded) <= @max_structured_output_bytes,
+         :ok <- Emisar.OutputSchema.validate_instance(schema, output) do
+      {:ok, output}
+    else
+      {:error, :schema_mismatch} = error -> error
+      _other -> {:error, :invalid_structured_output}
+    end
+  end
+
+  defp check_structured_output(_output, _schema), do: {:error, :invalid_structured_output}
 
   defp cancelled_at(%{"status" => "cancelled"}), do: DateTime.utc_now()
   defp cancelled_at(_payload), do: nil

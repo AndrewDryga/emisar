@@ -14,6 +14,7 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
         Keyword.get(opts, :args_schema, %{
           "args" => [%{"name" => "limit", "type" => "integer"}]
         }),
+      output_schema: Keyword.get(opts, :output_schema),
       examples: Keyword.get(opts, :examples, [%{"title" => "Example", "args" => %{}}]),
       search_terms: Keyword.get(opts, :search_terms, [])
     }
@@ -113,6 +114,7 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
           description: "Changed description.",
           side_effects: ["Writes state."],
           args_schema: %{"args" => [%{"name" => "force", "type" => "boolean"}]},
+          output_schema: %{"type" => "object", "properties" => %{"ok" => %{"type" => "boolean"}}},
           examples: [%{"title" => "Changed", "args" => %{"force" => true}}],
           search_terms: ["changed"]
         )

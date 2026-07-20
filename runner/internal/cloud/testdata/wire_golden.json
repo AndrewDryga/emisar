@@ -44,6 +44,22 @@
       "executed_command": "dbctl pause --job [REDACTED]",
       "executed_command_truncated": true
     },
+    "action_result_typed": {
+      "type": "action_result",
+      "protocol_version": 1,
+      "request_id": "req_wire_typed_result",
+      "status": "success",
+      "exit_code": 0,
+      "duration_ms": 42,
+      "emitted_stdout_bytes": 41,
+      "emitted_stderr_bytes": 0,
+      "progress_chunks": 1,
+      "structured_output": {
+        "count": 9007199254740993,
+        "status": "ok"
+      },
+      "event_id": "evt_wire_typed_result_0001"
+    },
     "action_started": {
       "type": "action_started",
       "protocol_version": 1,
@@ -200,6 +216,18 @@
             "database",
             "job"
           ],
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
           "pack_id": "database",
           "primary_executable_available": true,
           "limits": {
@@ -209,6 +237,7 @@
           },
           "output": {
             "parser": "json",
+            "parser_required": true,
             "max_stdout_bytes": 65536,
             "max_stdout_bytes_min": 1024,
             "max_stdout_bytes_max": 131072,

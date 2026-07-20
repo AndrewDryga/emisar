@@ -1508,15 +1508,18 @@ if existing_runs == [] do
   # specific actions without re-asking. Demonstrates the "ask once,
   # then run autonomously" workflow on the Grants page.
 
-  for {action, runner_id, scope, duration} <- [
-        {"caddy.access_log_tail", edge.id, :any_args, :thirty_days},
-        {"postgres.replication_lag", database.id, :any_args, :thirty_days}
+  for {pack_id, action, runner_id, scope, duration} <- [
+        {"caddy", "caddy.access_log_tail", edge.id, :any_args, :thirty_days},
+        {"postgres", "postgres.replication_lag", database.id, :any_args, :thirty_days}
       ] do
+    %{"version" => version, "hash" => hash} = pack_descriptor.(pack_id)
+
     fake_run = %Runs.ActionRun{
       account_id: account.id,
       api_key_id: agent_key.id,
       runner_id: runner_id,
       action_id: action,
+      pack_ref: "#{pack_id}@#{version}/#{hash}",
       args_sha256: :crypto.hash(:sha256, "{}") |> Base.encode16(case: :lower)
     }
 

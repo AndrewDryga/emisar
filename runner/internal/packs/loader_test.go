@@ -1,11 +1,76 @@
 package packs
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoad_NormalizesOutputSchema(t *testing.T) {
+	action := strings.Replace(actionYAML("testpack.a"), `  parser: text`, `  parser: json
+  parser_required: true
+  schema:
+    type: object
+    properties:
+      ratio:
+        type: number
+        const: 0.5
+    required: [ratio]
+    additionalProperties: false`, 1)
+	root := writePack(t, t.TempDir(), "p", map[string]string{
+		"pack.yaml":      packYAML("testpack"),
+		"actions/a.yaml": action,
+	})
+
+	reg, err := LoadOne(root, LoadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok := reg.Action("testpack.a")
+	if !ok {
+		t.Fatal("action not registered")
+	}
+	constant := loaded.Output.Schema["properties"].(map[string]any)["ratio"].(map[string]any)["const"]
+	if got, isNumber := constant.(json.Number); !isNumber || got.String() != "0.5" {
+		t.Fatalf("const = %#v, want normalized json.Number 0.5", constant)
+	}
+	encoded, err := json.Marshal(loaded.ModelDescriptor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"const":0.5`) {
+		t.Fatalf("descriptor lost the schema literal: %s", encoded)
+	}
+	validator, ok := reg.OutputSchema("testpack.a")
+	if !ok {
+		t.Fatal("output validator not registered")
+	}
+	if _, _, outputErr := validator.Validate([]byte(`{"ratio":0.5}`)); outputErr != nil {
+		t.Fatalf("conforming result rejected: %v", outputErr)
+	}
+	if _, _, outputErr := validator.Validate([]byte(`{"ratio":0.25}`)); outputErr == nil {
+		t.Fatal("non-conforming result accepted")
+	}
+}
+
+func TestLoad_RejectsNonCanonicalOutputSchemaNumbers(t *testing.T) {
+	action := strings.Replace(actionYAML("testpack.a"), `  parser: text`, `  parser: json
+  parser_required: true
+  schema:
+    type: object
+    properties:
+      count: {type: integer, maximum: 9007199254740993}`, 1)
+	root := writePack(t, t.TempDir(), "p", map[string]string{
+		"pack.yaml":      packYAML("testpack"),
+		"actions/a.yaml": action,
+	})
+
+	if _, err := LoadOne(root, LoadOptions{}); err == nil || !strings.Contains(err.Error(), "float64 round trip") {
+		t.Fatalf("non-canonical schema number should fail pack loading, got %v", err)
+	}
+}
 
 func writePack(t *testing.T, tmp, name string, files map[string]string) string {
 	t.Helper()

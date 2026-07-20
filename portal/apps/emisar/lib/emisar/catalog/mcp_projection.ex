@@ -381,7 +381,7 @@ defmodule Emisar.Catalog.MCPProjection do
   end
 
   defp runner_descriptor(%RunnerAction{} = action) do
-    %{
+    descriptor = %{
       "title" => action.title,
       "summary" => action.summary || summary(action.description),
       "description" => action.description,
@@ -392,7 +392,16 @@ defmodule Emisar.Catalog.MCPProjection do
       "examples" => action.examples || [],
       "search_terms" => action.search_terms || []
     }
+
+    # Trusted descriptors omit the key for untyped actions, so the advertised
+    # side must too or every typed action reads as a permanent mismatch.
+    put_output_schema(descriptor, action.output_schema)
   end
+
+  defp put_output_schema(descriptor, nil), do: descriptor
+
+  defp put_output_schema(descriptor, %{} = schema),
+    do: Map.put(descriptor, "output_schema", schema)
 
   defp summary(description) when is_binary(description) do
     description

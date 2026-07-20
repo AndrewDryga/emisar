@@ -30,6 +30,7 @@ paths:
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/systemd-deep"
+    - "/opt/emisar/packs/showcase"
 
 execution:
   inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]

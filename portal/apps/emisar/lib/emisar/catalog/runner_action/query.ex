@@ -40,6 +40,10 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_pack_hash(queryable, pack_hash),
     do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
 
+  @doc "Locks one advertised action after its owning pack-version lock is held."
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
   # Distinct runner ids advertising the filtered actions — the blast radius
   # of trusting a pack (which hosts will run it).
   def distinct_runner_ids(queryable),

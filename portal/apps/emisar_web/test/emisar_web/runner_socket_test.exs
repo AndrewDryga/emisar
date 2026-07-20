@@ -533,6 +533,47 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert unchanged.exit_code == 0
     end
 
+    test "hostile structured output terminalizes and is acked", %{state: state, run: run} do
+      frame_in =
+        result_frame(run.request_id, "success",
+          structured_output: %{"value" => String.duplicate("x", 8_192)}
+        )
+
+      assert {:push, ack, _state} = RunnerSocket.handle_in({frame_in, text()}, state)
+      assert %{"type" => "ack_result", "request_id" => request_id} = decode(ack)
+      assert request_id == run.request_id
+
+      finalized = Repo.get!(ActionRun, run.id)
+      assert finalized.status == :validation_failed
+      assert finalized.structured_output == nil
+      assert finalized.error_message == "runner sent structured output for an untyped action"
+    end
+
+    test "stores schema-valid structured output as a canonical map", %{state: state, run: run} do
+      run
+      |> Ecto.Changeset.change(
+        structured_output_expected: true,
+        output_schema_snapshot: %{
+          "type" => "object",
+          "required" => ["ratio"],
+          "properties" => %{"ratio" => %{"type" => "number"}},
+          "additionalProperties" => false
+        }
+      )
+      |> Repo.update!()
+
+      # Structured output is float-canonical JSON: a long fractional spelling
+      # lands as the nearest double, not an exact decimal.
+      frame_in =
+        ~s({"type":"action_result","protocol_version":1,"request_id":"#{run.request_id}","status":"success","structured_output":{"ratio":0.123456789012345678901}})
+
+      assert {:push, _ack, _state} = RunnerSocket.handle_in({frame_in, text()}, state)
+
+      finalized = Repo.get!(ActionRun, run.id)
+      assert finalized.status == :success
+      assert finalized.structured_output == %{"ratio" => 0.12345678901234568}
+    end
+
     test "a result for an unknown request_id is acked and remembered", %{state: state} do
       request_id = "req_0000000000000000000000"
       frame_in = result_frame(request_id, "success", [])
@@ -1079,6 +1120,42 @@ defmodule EmisarWeb.RunnerSocketTest do
         |> Repo.all()
 
       assert Enum.any?(observed, &(&1.action_id == "linux.df"))
+    end
+
+    test "runner_state stores a typed action's advertised output schema", %{
+      state: state,
+      runner: runner
+    } do
+      raw =
+        runner_frame(%{
+          "type" => "runner_state",
+          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:deadbeef"}},
+          "actions" => [
+            %{
+              "id" => "linux.typed",
+              "pack_id" => "linux",
+              "risk" => "low",
+              "kind" => "exec",
+              "output_schema" => %{
+                "type" => "object",
+                "required" => ["ok"],
+                "properties" => %{"ok" => %{"type" => "boolean"}},
+                "additionalProperties" => false
+              }
+            }
+          ]
+        })
+
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      observed =
+        Emisar.Catalog.RunnerAction.Query.all()
+        |> Emisar.Catalog.RunnerAction.Query.by_runner_id(runner.id)
+        |> Repo.all()
+        |> Enum.find(&(&1.action_id == "linux.typed"))
+
+      assert observed
+      assert observed.output_schema["required"] == ["ok"]
     end
 
     # (IL-14) — advertised pack/action names are runner input

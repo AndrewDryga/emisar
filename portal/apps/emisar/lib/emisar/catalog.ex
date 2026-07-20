@@ -31,7 +31,7 @@ defmodule Emisar.Catalog do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline}
+  alias Emisar.Catalog.{ActionSetDiff, Authorizer, MCPProjection, PackBaseline}
   alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
   require Logger
 
@@ -950,6 +950,125 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Internal — `Runs` composes this into the dispatch transaction. Locks the
+  pack version and the runner-action row, then authorizes dispatch from the
+  TRUSTED manifest descriptor rather than the mutable runner advertisement:
+  policy inputs (risk, kind, args schema, output schema) come from what the
+  operator reviewed, and a drifted advertisement fails closed as
+  `:action_contract_changed`.
+
+  Unversioned legacy actions have no pack manifest to lock and retain their
+  row-authoritative dispatch semantics.
+  """
+  def fetch_dispatch_contract(repo, account_id, runner_id, action_id, pack_ref) do
+    case fetch_action_for_account(action_id, runner_id, account_id) do
+      {:ok, observed} -> fetch_dispatch_contract_for_action(repo, observed, pack_ref)
+      {:error, :not_found} -> {:error, :action_not_found}
+    end
+  end
+
+  defp fetch_dispatch_contract_for_action(repo, %RunnerAction{} = observed, nil)
+       when is_nil(observed.pack_id) or is_nil(observed.pack_version) do
+    with {:ok, action} <- lock_runner_action(repo, observed),
+         true <- is_nil(action.pack_id) or is_nil(action.pack_version),
+         {:ok, descriptor} <- runner_action_descriptor(action) do
+      {:ok, %{action: action, descriptor: descriptor, pack_hash: nil}}
+    else
+      {:error, :not_found} -> {:error, :action_not_found}
+      _other -> {:error, :action_contract_changed}
+    end
+  end
+
+  defp fetch_dispatch_contract_for_action(repo, %RunnerAction{} = observed, pack_ref) do
+    with {:ok, {pack_id, version, hash}} <- dispatch_pack_identity(observed, pack_ref),
+         {:ok, pack_version} <-
+           lock_dispatch_pack_version(repo, observed.account_id, pack_id, version),
+         {:ok, trusted_hash} <- trusted_pack_version_hash(pack_version),
+         :ok <- ensure_requested_hash_trusted(trusted_hash, hash, pack_version),
+         {:ok, trusted_actions} <- TrustedManifest.actions(pack_version.trusted_manifest),
+         %{} = descriptor <- Map.get(trusted_actions, observed.action_id),
+         {:ok, action} <- lock_runner_action(repo, observed),
+         true <- action.pack_id == pack_id,
+         true <- action.pack_version == version,
+         true <- action.pack_hash == hash,
+         {:ok, current_descriptor} <- runner_action_descriptor(action),
+         true <- current_descriptor == descriptor do
+      {:ok, %{action: action, descriptor: descriptor, pack_hash: trusted_hash}}
+    else
+      {:error, :not_found} -> {:error, :action_not_found}
+      {:error, :pack_retired, _pack_version} = error -> error
+      {:error, :pack_untrusted, _pack_version} = error -> error
+      _other -> {:error, :action_contract_changed}
+    end
+  end
+
+  # Trust moved to a different hash since the caller's snapshot — that is a
+  # trust decision (`:pack_untrusted`, with its own audit event), not mere
+  # descriptor drift.
+  defp ensure_requested_hash_trusted(trusted_hash, trusted_hash, _pack_version), do: :ok
+
+  defp ensure_requested_hash_trusted(_trusted_hash, _hash, pack_version),
+    do: {:error, :pack_untrusted, pack_version}
+
+  defp dispatch_pack_identity(observed, nil) do
+    if is_binary(observed.pack_id) and is_binary(observed.pack_version) and
+         is_binary(observed.pack_hash) do
+      {:ok, {observed.pack_id, observed.pack_version, observed.pack_hash}}
+    else
+      {:error, :pack_ref_mismatch}
+    end
+  end
+
+  defp dispatch_pack_identity(_observed, pack_ref), do: MCPProjection.parse_pack_ref(pack_ref)
+
+  defp lock_dispatch_pack_version(repo, account_id, pack_id, version) do
+    queryable =
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_account_id(account_id)
+      |> PackVersion.Query.by_pack_id_and_version(pack_id, version)
+      |> PackVersion.Query.lock_for_update()
+
+    case repo.fetch(queryable, PackVersion.Query) do
+      {:ok, %PackVersion{} = pack_version} -> {:ok, pack_version}
+      {:error, :not_found} -> {:error, :pack_untrusted, :no_pin}
+    end
+  end
+
+  defp trusted_pack_version_hash(%PackVersion{trust_state: :trusted} = pack_version) do
+    retired? = PackBaseline.retired?(pack_version.pack_id, pack_version.version)
+    trusted_row_dispatch_decision(pack_version, retired?)
+  end
+
+  defp trusted_pack_version_hash(%PackVersion{} = pack_version),
+    do: {:error, :pack_untrusted, pack_version}
+
+  defp lock_runner_action(repo, %RunnerAction{} = observed) do
+    queryable =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_account_runner_and_action(
+        observed.account_id,
+        observed.runner_id,
+        observed.action_id
+      )
+      |> RunnerAction.Query.lock_for_update()
+
+    repo.fetch(queryable, RunnerAction.Query)
+  end
+
+  # One action rendered through the same builder as a trusted manifest, so the
+  # drift comparison covers every model-facing field, including the optional
+  # output contract.
+  defp runner_action_descriptor(%RunnerAction{} = action) do
+    with {:ok, manifest} <- TrustedManifest.from_runner_actions([action]),
+         {:ok, actions} <- TrustedManifest.actions(manifest),
+         %{} = descriptor <- Map.get(actions, action.action_id) do
+      {:ok, descriptor}
+    else
+      _other -> {:error, :invalid_manifest}
+    end
+  end
+
+  @doc """
   Internal — the dispatch decision for a TRUSTED pack-version row, given
   whether the shipped catalog retired its version. Pattern-matched clause
   heads carry the exhaustive branch coverage because the compiled
@@ -1096,6 +1215,7 @@ defmodule Emisar.Catalog do
       description: descriptor["description"],
       side_effects: descriptor["side_effects"] || [],
       args_schema: %{"args" => descriptor["args"] || []},
+      output_schema: descriptor["output_schema"],
       examples: descriptor["examples"] || [],
       search_terms: descriptor["search_terms"] || [],
       primary_executable_available: primary_executable_available,

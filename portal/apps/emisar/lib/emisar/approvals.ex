@@ -902,14 +902,15 @@ defmodule Emisar.Approvals do
   internal lookups.
 
   Matching is api_key-scoped (a grant given to one key never silently
-  covers another). `runner_id` and `args_sha256` may each be either
-  exact-match or NULL-as-wildcard on the grant side. Expired/revoked/
-  fully-consumed grants are filtered out by `Grant.usable?/1` after
-  the SQL pass — the SQL pre-filter narrows the candidate set, and
-  `usable?/1` makes the final call.
+  covers another), and `pack_ref` binds it to the exact trusted action
+  contract. `runner_id` and `args_sha256` may each be either exact-match or
+  NULL-as-wildcard on the grant side. Expired/revoked/fully-consumed grants
+  are filtered out by `Grant.usable?/1` after the SQL pass — the SQL
+  pre-filter narrows the candidate set, and `usable?/1` makes the final call.
   """
-  def peek_matching_grant(account_id, api_key_id, action_id, runner_id, args_sha256)
-      when is_binary(account_id) and is_binary(api_key_id) and is_binary(action_id) do
+  def peek_matching_grant(account_id, api_key_id, action_id, pack_ref, runner_id, args_sha256)
+      when is_binary(account_id) and is_binary(api_key_id) and is_binary(action_id) and
+             is_binary(pack_ref) do
     # The account-level kill switch (cap = 0) lives HERE, inside matching —
     # disabling standing grants makes existing rows inert immediately, and a
     # future caller can't forget the check.
@@ -918,7 +919,7 @@ defmodule Emisar.Approvals do
     else
       now = DateTime.utc_now()
 
-      Grant.Query.candidates_for_dispatch(api_key_id, action_id, now)
+      Grant.Query.candidates_for_dispatch(api_key_id, action_id, pack_ref, now)
       |> Grant.Query.by_runner_or_wildcard(runner_id)
       |> Grant.Query.by_args_sha_or_wildcard(args_sha256)
       |> Repo.all()
@@ -979,6 +980,7 @@ defmodule Emisar.Approvals do
         account_id: request.account_id,
         api_key_id: run.api_key_id,
         action_id: run.action_id,
+        pack_ref: run.pack_ref,
         runner_id: run.runner_id,
         args_sha256: if(attrs[:scope] == :any_args, do: nil, else: run.args_sha256),
         granted_by_id: granted_by_id,
