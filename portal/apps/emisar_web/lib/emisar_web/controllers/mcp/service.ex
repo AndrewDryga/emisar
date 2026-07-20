@@ -28,6 +28,8 @@ defmodule EmisarWeb.MCP.Service do
           args: intent.args,
           args_raw: intent.args_raw,
           reason: intent.reason,
+          evidence: intent.evidence,
+          expected: intent.expected,
           source: "mcp",
           api_key_id: api_key.id,
           client_info: api_key.last_client_info || %{},

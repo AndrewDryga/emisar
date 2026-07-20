@@ -10,6 +10,8 @@ defmodule Emisar.Approvals.Request.Changeset do
       :requested_by_id,
       :requested_at,
       :reason,
+      :evidence,
+      :expected,
       :context,
       :expires_at,
       :min_approvals,

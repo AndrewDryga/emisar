@@ -24,6 +24,11 @@ required tool/action that never succeeded, or an agent process that timed out
 or exited nonzero. Everything else — including the
 final answer captured in the agent's stdout — is reported, not scored.
 
+The optional `run_action` evidence/expected justification chain is reported, not
+scored: the summary counts how often the agent supplied each (`evidence_given`,
+`expected_given`) as presence booleans only — never the field text, since
+reports upload as public CI artifacts.
+
 ## Run locally
 
 Boot the dev stack from the repo root, then run the eval against it:

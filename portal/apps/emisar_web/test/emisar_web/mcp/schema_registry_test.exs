@@ -66,6 +66,12 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert get_in(run_action, ["inputSchema", "$defs", "reason", "description"]) ==
              "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
 
+    assert get_in(run_action, ["inputSchema", "$defs", "evidence", "description"]) ==
+             "Optional: what you already observed that makes this action necessary — prior findings, error signatures, or the run ids you inspected. State it so approvers and the audit log see the basis. Not verified."
+
+    assert get_in(run_action, ["inputSchema", "$defs", "expected", "description"]) ==
+             "Optional: the outcome you expect if this action works — the hypothesis a follow-up check would confirm. Records what success looks like for approvers and the audit log. Not required and not verified."
+
     assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
              "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."
 

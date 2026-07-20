@@ -142,6 +142,7 @@ func summarize(result report) string {
 	s := result.Score
 	fmt.Fprintf(&out, "  calls=%d errors=%d policy_blocked=%d invalid_args=%d inspection_violations=%d placeholder_reasons=%d runs_started=%d runs_terminal=%d\n",
 		s.TotalCalls, s.ErrorCalls, s.PolicyBlockedCalls, s.InvalidArgsCalls, s.InspectionViolations, s.PlaceholderReasons, s.RunsStarted, s.RunsTerminal)
+	fmt.Fprintf(&out, "  evidence_given=%d expected_given=%d\n", s.EvidenceGiven, s.ExpectedGiven)
 	if s.Passed {
 		out.WriteString("  PASS\n")
 		return out.String()

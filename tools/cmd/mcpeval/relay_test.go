@@ -28,7 +28,7 @@ func TestRelayRecordsMetadataAndNeverBearerOrArgumentValues(t *testing.T) {
 	r.start()
 	defer r.close()
 	r.recorder.inspected["linux.uptime\x00linux-core@1/sha256:abc"] = true
-	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"linux-core@1/sha256:abc","runner_refs":["edge~abc"],"args":{"password":"argument-sentinel"},"reason":"reason-sentinel"}}}`
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"linux-core@1/sha256:abc","runner_refs":["edge~abc"],"args":{"password":"argument-sentinel"},"reason":"reason-sentinel","evidence":"evidence-sentinel","expected":"expected-sentinel"}}}`
 	response, err := http.Post(r.endpoint(), "application/json", bytes.NewBufferString(body))
 	if err != nil {
 		t.Fatal(err)
@@ -46,11 +46,26 @@ func TestRelayRecordsMetadataAndNeverBearerOrArgumentValues(t *testing.T) {
 	if calls[0].ResponseError {
 		t.Fatalf("clean run marked as error: %#v", calls[0])
 	}
+	// The justification chain is recorded as presence booleans only — never the
+	// prose, which is asserted redacted below.
+	if !calls[0].EvidencePresent || !calls[0].ExpectedPresent {
+		t.Fatalf("chain presence not recorded: %#v", calls[0])
+	}
 	encoded, _ := json.Marshal(calls)
-	for _, secret := range []string{apiKey, "argument-sentinel", "reason-sentinel"} {
+	for _, secret := range []string{apiKey, "argument-sentinel", "reason-sentinel", "evidence-sentinel", "expected-sentinel"} {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("record leaked %q: %s", secret, encoded)
 		}
+	}
+}
+
+func TestRecorderRecordsChainPresenceBooleansOnly(t *testing.T) {
+	r := newRecorder(scenario{AllowedTools: []string{"run_action"}, AllowedActions: []string{"linux.uptime"}})
+	// A blank evidence and an absent expected both read as not-present.
+	r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"inspect the disk","evidence":"   "}}}`))
+	call := r.snapshot()[0]
+	if call.EvidencePresent || call.ExpectedPresent {
+		t.Fatalf("blank/absent chain recorded as present: %#v", call)
 	}
 }
 

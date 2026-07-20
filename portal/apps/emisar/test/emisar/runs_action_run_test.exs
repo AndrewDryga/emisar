@@ -126,11 +126,39 @@ defmodule Emisar.Runs.ActionRunTest do
       assert {"must be a canonical run request id", _} = changeset.errors[:request_id]
     end
 
-    test "rejects an oversized operator reason before the DB string column does" do
-      changeset = ActionRun.Changeset.create(create_attrs(%{reason: String.duplicate("x", 256)}))
+    test "accepts the raised 2000-char reason and rejects one char past it" do
+      ok = ActionRun.Changeset.create(create_attrs(%{reason: String.duplicate("x", 2_000)}))
+      assert ok.valid?
 
-      refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :reason)
+      over = ActionRun.Changeset.create(create_attrs(%{reason: String.duplicate("x", 2_001)}))
+      refute over.valid?
+      assert "should be at most 2000 character(s)" in errors_on(over).reason
+    end
+
+    test "bounds the optional evidence chain field at 4000 chars" do
+      ok = ActionRun.Changeset.create(create_attrs(%{evidence: String.duplicate("e", 4_000)}))
+      assert ok.valid?
+
+      over = ActionRun.Changeset.create(create_attrs(%{evidence: String.duplicate("e", 4_001)}))
+      refute over.valid?
+      assert "should be at most 4000 character(s)" in errors_on(over).evidence
+    end
+
+    test "bounds the optional expected chain field at 2000 chars" do
+      ok = ActionRun.Changeset.create(create_attrs(%{expected: String.duplicate("x", 2_000)}))
+      assert ok.valid?
+
+      over = ActionRun.Changeset.create(create_attrs(%{expected: String.duplicate("x", 2_001)}))
+      refute over.valid?
+      assert "should be at most 2000 character(s)" in errors_on(over).expected
+    end
+
+    test "leaves the justification chain nil when the caller omits it" do
+      changeset = ActionRun.Changeset.create(create_attrs(%{}))
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_field(changeset, :evidence) == nil
+      assert Ecto.Changeset.get_field(changeset, :expected) == nil
     end
 
     test "casts self-reported mcp_client_metadata" do

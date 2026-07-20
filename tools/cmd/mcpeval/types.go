@@ -33,6 +33,8 @@ type callRecord struct {
 	PackRef              string     `json:"pack_ref,omitempty"`
 	RunnerCount          int        `json:"runner_count,omitempty"`
 	ReasonPlaceholder    bool       `json:"reason_placeholder,omitempty"`
+	EvidencePresent      bool       `json:"evidence_present,omitempty"`
+	ExpectedPresent      bool       `json:"expected_present,omitempty"`
 	BlockedByPolicy      bool       `json:"blocked_by_policy,omitempty"`
 	ResponseError        bool       `json:"response_error"`
 	ResponseCode         string     `json:"response_code,omitempty"`
@@ -71,6 +73,8 @@ type score struct {
 	InvalidArgsCalls       int      `json:"invalid_args_calls"`
 	InspectionViolations   int      `json:"inspection_violations"`
 	PlaceholderReasons     int      `json:"placeholder_reasons"`
+	EvidenceGiven          int      `json:"evidence_given"`
+	ExpectedGiven          int      `json:"expected_given"`
 	RepeatedFailedCalls    int      `json:"repeated_failed_calls"`
 	RunsStarted            int      `json:"runs_started"`
 	RunsTerminal           int      `json:"runs_terminal"`

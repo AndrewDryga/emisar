@@ -159,6 +159,8 @@ defmodule EmisarWeb.MCP.ActionTools do
         args: input.args,
         args_raw: args_raw,
         reason: input.reason,
+        evidence: input.evidence,
+        expected: input.expected,
         operation_attrs: operation_attrs,
         attestation: attestation
       }
@@ -190,6 +192,11 @@ defmodule EmisarWeb.MCP.ActionTools do
       runner_refs: args["runner_refs"],
       args: exact_args,
       reason: args["reason"],
+      # Optional, unenforced justification chain — persisted and rendered for
+      # approvers/audit, never a policy/attestation input (so they stay out of
+      # the signed facts + operation fingerprint below).
+      evidence: args["evidence"],
+      expected: args["expected"],
       wait: args["wait"] || "60s"
     }
   end

@@ -1627,6 +1627,28 @@ defmodule Emisar.RunsTest do
                {:error, :runner_not_found}
     end
 
+    test "persists the optional evidence/expected justification chain on each run" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+      operation = mcp_operation_attrs("op_534NN9NMDZ1T76NARWCKM5A0D6")
+
+      target =
+        Map.merge(mcp_target_attrs(runner, key, operation.operation_id), %{
+          evidence: "run 0f9c showed the queue depth climbing for 20m",
+          expected: "queue depth drops to zero within a minute"
+        })
+
+      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert run.evidence == "run 0f9c showed the queue depth climbing for 20m"
+      assert run.expected == "queue depth drops to zero within a minute"
+
+      # Echo: the chain round-trips through the persisted row, not just the
+      # in-memory insert struct.
+      assert {:ok, fetched} = Runs.fetch_mcp_run_by_id(run.id, subject)
+      assert fetched.evidence == run.evidence
+      assert fetched.expected == run.expected
+    end
+
     test "commits every target before delivery and exact replay never redelivers" do
       %{subject: subject, runners: [runner_a, runner_b], key: key} =
         mcp_fanout_fixture(["low", "low"])

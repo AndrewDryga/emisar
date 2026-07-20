@@ -78,6 +78,14 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			result.PlaceholderReasons++
 			result.fail("run_action carried a placeholder reason instead of an audit-worthy justification")
 		}
+		// The optional justification chain is measured, never enforced: count how
+		// often the agent supplied evidence/expected, but add no failure rule.
+		if call.EvidencePresent {
+			result.EvidenceGiven++
+		}
+		if call.ExpectedPresent {
+			result.ExpectedGiven++
+		}
 		if !call.ResponseError {
 			succeededActions[call.ActionID] = true
 			for _, state := range call.RunStates {

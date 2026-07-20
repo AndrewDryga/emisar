@@ -68,6 +68,34 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "high"
   end
 
+  test "the decision surface renders the agent's snapshotted evidence/expected chain",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        reason: "restart the stuck worker",
+        evidence: "run 0f9c showed the queue depth climbing for 20m",
+        expected: "queue depth drops to zero within a minute",
+        args: %{},
+        status: :pending_approval
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Evidence"
+    assert html =~ "run 0f9c showed the queue depth climbing for 20m"
+    assert html =~ "Expected"
+    assert html =~ "queue depth drops to zero within a minute"
+  end
+
   test "shows the resolved command when the pinned pack hash matches ours", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)

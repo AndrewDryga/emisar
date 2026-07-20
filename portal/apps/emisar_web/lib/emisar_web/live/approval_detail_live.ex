@@ -715,7 +715,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- ONE why-cluster ON THE CANVAS (the run-detail grammar) — plain
                field keys, both alike (one icon on one label read as two kinds
                of fact). --%>
-            <section :if={(@request.reason && @request.reason != "") || (@run && @run.policy_reason)}>
+            <section :if={
+              (@request.reason && @request.reason != "") ||
+                (@request.evidence && @request.evidence != "") ||
+                (@request.expected && @request.expected != "") || (@run && @run.policy_reason)
+            }>
               <.section_header title="Why" />
               <dl class="space-y-5">
                 <div :if={@request.reason && @request.reason != ""}>
@@ -723,6 +727,25 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     Reason
                   </dt>
                   <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
+                </div>
+                <%!-- The agent's justification chain, snapshotted on the request:
+                     what it observed, then the outcome it expected. An approver
+                     reads it before deciding; shown only when the agent gave it. --%>
+                <div :if={@request.evidence && @request.evidence != ""}>
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Evidence
+                  </dt>
+                  <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+                    {@request.evidence}
+                  </dd>
+                </div>
+                <div :if={@request.expected && @request.expected != ""}>
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Expected
+                  </dt>
+                  <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+                    {@request.expected}
+                  </dd>
                 </div>
                 <div :if={@run && @run.policy_reason}>
                   <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">

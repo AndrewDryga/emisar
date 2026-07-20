@@ -12,7 +12,12 @@ defmodule Emisar.Approvals.Request do
 
   schema "approval_requests" do
     field :requested_at, :utc_datetime_usec
+    # Snapshot of the run's dispatch justification chain at request creation, so
+    # the decision surface renders the full reason → evidence → expected the
+    # agent gave without depending on the run row surviving.
     field :reason, :string
+    field :evidence, :string
+    field :expected, :string
     field :context, :map, default: %{}
 
     field :status, Ecto.Enum,

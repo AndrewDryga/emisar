@@ -74,6 +74,34 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "Requires approval"
   end
 
+  test "the Why cluster renders the optional evidence/expected chain, only when present",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    with_chain =
+      run_with(account, %{
+        reason: "restart the stuck worker",
+        evidence: "run 0f9c showed the queue depth climbing for 20m",
+        expected: "queue depth drops to zero within a minute"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{with_chain.id}")
+
+    assert html =~ "Evidence"
+    assert html =~ "run 0f9c showed the queue depth climbing for 20m"
+    assert html =~ "Expected"
+    assert html =~ "queue depth drops to zero within a minute"
+
+    # A reason-only run (operator dispatch carries no chain) renders neither row.
+    # Reuse the runner — a second one would collide on the per-account name.
+    reason_only = run_with(account, %{runner_id: with_chain.runner_id, reason: "manual restart"})
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{reason_only.id}")
+
+    assert html =~ "Reason"
+    refute html =~ "Evidence"
+    refute html =~ "Expected"
+  end
+
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 

@@ -348,6 +348,11 @@ defmodule Emisar.Approvals do
       requested_at: now,
       expires_at: expires_at,
       reason: reason,
+      # Evidence + expected are the run's own snapshot — no caller overrides them,
+      # so read them off the run rather than threading two more params through the
+      # dispatch (reason stays a param because a direct create_request can set it).
+      evidence: run.evidence,
+      expected: run.expected,
       min_approvals: Keyword.get(opts, :min_approvals, 1),
       allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
       context: %{

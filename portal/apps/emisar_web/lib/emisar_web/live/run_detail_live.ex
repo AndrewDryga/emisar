@@ -396,7 +396,10 @@ defmodule EmisarWeb.RunDetailLive do
              verdict is told ONCE by the status badge above; this carries the
              WHY plus the matched-rules/version audit trail. Policy hidden for
              `allow` (the boring default the run wouldn't exist without). --%>
-        <section :if={@run.reason not in [nil, ""] or show_policy?(@run)}>
+        <section :if={
+          @run.reason not in [nil, ""] or @run.evidence not in [nil, ""] or
+            @run.expected not in [nil, ""] or show_policy?(@run)
+        }>
           <.section_header title="Why" />
           <dl class="space-y-5">
             <div :if={@run.reason && @run.reason != ""}>
@@ -404,6 +407,25 @@ defmodule EmisarWeb.RunDetailLive do
                 Reason
               </dt>
               <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
+            </div>
+            <%!-- The optional justification chain the agent gave alongside the
+                 reason — what it observed, then the outcome it expected. Rendered
+                 only when populated (operator runs carry neither). --%>
+            <div :if={@run.evidence && @run.evidence != ""}>
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                Evidence
+              </dt>
+              <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+                {@run.evidence}
+              </dd>
+            </div>
+            <div :if={@run.expected && @run.expected != ""}>
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                Expected
+              </dt>
+              <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+                {@run.expected}
+              </dd>
             </div>
             <div :if={show_policy?(@run)}>
               <%!-- Plain field-key like REASON above — one icon on one label

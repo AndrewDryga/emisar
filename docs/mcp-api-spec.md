@@ -703,6 +703,8 @@ never relies on pagination or truncation.
   ],
   "args": {},
   "reason": "Confirm ring health before rerolling the canary.",
+  "evidence": "get_action showed cass-103 flapping; run 6b4b… reported two nodes DN.",
+  "expected": "All nodes report UN, so the canary reroll can proceed.",
   "wait": "60s"
 }
 ```
@@ -713,13 +715,23 @@ never relies on pagination or truncation.
 | `pack_ref` | Required exact ref returned with the action. |
 | `runner_refs` | Required exact refs, 1 through 16, distinct. |
 | `args` | Required object validated against this action in this pack; `{}` for none. |
-| `reason` | Required nonblank UTF-8 audit context, at most 255 bytes. |
+| `reason` | Required nonblank UTF-8 justification, at most 2000 characters. |
+| `evidence` | Optional nonblank justification, at most 4000 characters: what was already observed — prior findings or the run ids inspected — that motivates this action. |
+| `expected` | Optional nonblank justification, at most 2000 characters: the outcome that would confirm the action worked. |
 | `wait` | `0`, or an integer duration in `ms`/`s`; default and maximum 60 seconds. |
 
 Bare durations, minutes, negative values, and values above 60 seconds are
-rejected rather than clamped. A whitespace-only `reason`, including Unicode
-space characters, is invalid. Callers cannot supply `attestation`,
-`operation_id`, or exact argument bytes. The transport owns them.
+rejected rather than clamped. A whitespace-only `reason`, `evidence`, or
+`expected`, including Unicode space characters, is invalid. Callers cannot
+supply `attestation`, `operation_id`, or exact argument bytes. The transport
+owns them.
+
+`reason`, `evidence`, and `expected` form an optional justification chain. Only
+`reason` is required; `evidence` and `expected` are unenforced — nothing
+validates the cited run ids and no policy requires them — but Emisar persists
+all three and renders the chain to human approvers and in the audit log, so a
+caller that states what it observed and what it expects leaves a record an
+operator can follow.
 
 ### Exact argument-byte contract
 

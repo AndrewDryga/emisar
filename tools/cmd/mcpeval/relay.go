@@ -284,8 +284,12 @@ func (r *recorder) request(body []byte) requestMetadata {
 	}
 	if tool == "run_action" {
 		// Only the verdict is recorded, never the reason text — reports upload
-		// as public CI artifacts, and audit prose stays out of them.
+		// as public CI artifacts, and audit prose stays out of them. The same
+		// rule holds for the optional evidence/expected chain: record presence
+		// booleans, never the field text.
 		record.ReasonPlaceholder = placeholderReason(stringValue(args["reason"]), record.ActionID)
+		record.EvidencePresent = nonBlank(stringValue(args["evidence"]))
+		record.ExpectedPresent = nonBlank(stringValue(args["expected"]))
 	}
 
 	r.mu.Lock()
@@ -474,6 +478,10 @@ func stringValue(value any) string {
 func boolValue(value any) bool {
 	flag, _ := value.(bool)
 	return flag
+}
+
+func nonBlank(value string) bool {
+	return strings.TrimSpace(value) != ""
 }
 
 func stringSlice(value any) []string {

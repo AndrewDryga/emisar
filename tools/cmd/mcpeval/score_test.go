@@ -148,3 +148,17 @@ func TestScoreRejectsPlaceholderRunActionReason(t *testing.T) {
 		t.Fatalf("placeholder reason passed: %#v", got)
 	}
 }
+
+func TestScoreCountsJustificationChainWithoutFailing(t *testing.T) {
+	calls := conformingCalls()
+	calls[2].EvidencePresent = true
+	calls[2].ExpectedPresent = true
+
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if !got.Passed {
+		t.Fatalf("the optional chain must never fail scoring: %v", got.Failures)
+	}
+	if got.EvidenceGiven != 1 || got.ExpectedGiven != 1 {
+		t.Fatalf("chain counts = %#v", got)
+	}
+}

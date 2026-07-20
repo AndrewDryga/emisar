@@ -19,11 +19,11 @@ defmodule EmisarWeb.MCP.InputContractTest do
     assert {:ok, %{"limit" => 15}} = InputContract.validate("recent_runs", %{"limit" => 15.0})
   end
 
-  test "bounds reason to the published 255-character limit" do
-    action = valid_action_args(%{"reason" => String.duplicate("😀", 255)})
+  test "bounds reason to the published 2000-character limit" do
+    action = valid_action_args(%{"reason" => String.duplicate("😀", 2_000)})
     assert {:ok, _arguments} = InputContract.validate("run_action", action)
 
-    action = valid_action_args(%{"reason" => String.duplicate("😀", 256)})
+    action = valid_action_args(%{"reason" => String.duplicate("😀", 2_001)})
 
     assert {:error, [%{path: "$.reason", code: "max_length"}]} =
              InputContract.validate("run_action", action)
@@ -32,6 +32,33 @@ defmodule EmisarWeb.MCP.InputContractTest do
 
     assert {:error, [%{path: "$.reason", code: "format"}]} =
              InputContract.validate("run_action", action)
+  end
+
+  test "accepts the optional evidence/expected chain and bounds each" do
+    action =
+      valid_action_args(%{
+        "evidence" => "prior run 0f9c showed disk at 98%",
+        "expected" => "df reports under 80% after cleanup"
+      })
+
+    assert {:ok, arguments} = InputContract.validate("run_action", action)
+    assert arguments["evidence"] == "prior run 0f9c showed disk at 98%"
+    assert arguments["expected"] == "df reports under 80% after cleanup"
+
+    over_evidence = valid_action_args(%{"evidence" => String.duplicate("e", 4_001)})
+
+    assert {:error, [%{path: "$.evidence", code: "max_length"}]} =
+             InputContract.validate("run_action", over_evidence)
+
+    over_expected = valid_action_args(%{"expected" => String.duplicate("x", 2_001)})
+
+    assert {:error, [%{path: "$.expected", code: "max_length"}]} =
+             InputContract.validate("run_action", over_expected)
+
+    blank_evidence = valid_action_args(%{"evidence" => "   "})
+
+    assert {:error, [%{path: "$.evidence", code: "format"}]} =
+             InputContract.validate("run_action", blank_evidence)
   end
 
   test "preserves specific JSONSchex size and uniqueness rules" do

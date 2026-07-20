@@ -123,7 +123,21 @@
       "type": "string",
       "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval.",
       "minLength": 1,
-      "maxLength": 255,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "evidence": {
+      "type": "string",
+      "description": "Optional: what you already observed that makes this action necessary — prior findings, error signatures, or the run ids you inspected. State it so approvers and the audit log see the basis. Not verified.",
+      "minLength": 1,
+      "maxLength": 4000,
+      "pattern": "\\S"
+    },
+    "expected": {
+      "type": "string",
+      "description": "Optional: the outcome you expect if this action works — the hypothesis a follow-up check would confirm. Records what success looks like for approvers and the audit log. Not required and not verified.",
+      "minLength": 1,
+      "maxLength": 2000,
       "pattern": "\\S"
     },
     "list_packs_arguments": {
@@ -889,6 +903,8 @@
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
           "reason": {"$ref": "#/$defs/reason"},
+          "evidence": {"$ref": "#/$defs/evidence"},
+          "expected": {"$ref": "#/$defs/expected"},
           "wait": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
         }
       },

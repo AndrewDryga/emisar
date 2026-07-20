@@ -844,6 +844,30 @@ defmodule Emisar.ApprovalsTest do
              ).min_approvals
     end
 
+    test "snapshots the run's evidence/expected justification chain onto the request" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          reason: "restart the stuck worker",
+          evidence: "run 0f9c showed the queue depth climbing for 20m",
+          expected: "queue depth drops to zero within a minute",
+          args: %{},
+          status: :pending_approval
+        })
+
+      assert {:ok, request} =
+               Approvals.create_request(run, Fixtures.Users.create_user().id, run.reason)
+
+      assert request.evidence == "run 0f9c showed the queue depth climbing for 20m"
+      assert request.expected == "queue depth drops to zero within a minute"
+    end
+
     test "a duplicate request for the same run is rejected by the unique constraint" do
       {_account, run} = run_fixture()
       {:ok, _} = Approvals.create_request(run, Fixtures.Users.create_user().id, "first")

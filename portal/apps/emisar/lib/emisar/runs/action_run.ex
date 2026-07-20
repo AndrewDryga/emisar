@@ -32,7 +32,13 @@ defmodule Emisar.Runs.ActionRun do
     # one row per runner under the same operation id; retries reuse those rows.
     field :operation_id, :string
     field :source, Ecto.Enum, values: [:operator, :runbook, :mcp, :scheduled], default: :operator
+    # The dispatch justification. `reason` is what/why; `evidence` and `expected`
+    # are the optional, unenforced justification chain an MCP caller may add —
+    # what it already observed (prior findings / run ids) and the outcome it
+    # expects to confirm success. Both nil for operator/runbook dispatch.
     field :reason, :string
+    field :evidence, :string
+    field :expected, :string
 
     # The only persisted argument representation. MCP calls retain the exact
     # signed token; other callers encode their typed map once at creation.

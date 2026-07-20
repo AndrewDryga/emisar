@@ -6,7 +6,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
   @create_fields ~w[
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
-    ip_address user_agent opts attestation reason source requested_by_id api_key_id initiating_membership_id
+    ip_address user_agent opts attestation reason evidence expected source requested_by_id api_key_id initiating_membership_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     structured_output_expected output_schema_snapshot
     policy_id policy_version policy_decision
@@ -27,7 +27,13 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # otherwise write a multi-MB row and fan it onto the runner's PubSub topic.
   # The runner re-validates args per-spec at execution, but the cloud-side cost
   # is paid before that rejection.
-  @max_reason_length 255
+  @max_reason_length 2_000
+  # The optional justification chain (evidence: what was observed; expected: the
+  # outcome that confirms success). Caps mirror the published input schema so a
+  # hostile MCP client can't write an unbounded row; both are free-text, so the
+  # DB backstops as text and the changeset fails first.
+  @max_evidence_length 4_000
+  @max_expected_length 2_000
   # A normal v2 attestation is comfortably below 2 KB (cert, signature, nonce,
   # timestamp, and up to 16 runner ids); 8 KB is generous headroom while bounding
   # the jsonb row + relayed wire envelope. The MCP boundary already caps every
@@ -58,6 +64,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source, :args_raw])
     |> validate_change(:request_id, &validate_request_id/2)
     |> validate_length(:reason, max: @max_reason_length)
+    |> validate_length(:evidence, max: @max_evidence_length)
+    |> validate_length(:expected, max: @max_expected_length)
     |> validate_length(:operation_id, max: @max_db_string_length)
     |> validate_length(:pack_ref, max: @max_db_string_length)
     |> validate_length(:runner_ref, max: 113)
@@ -160,7 +168,10 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     run
     |> cast(attrs, @transition_fields)
     |> put_change(:status, status)
-    |> validate_length(:reason_text, max: @max_reason_length)
+    # reason_text is the runner's terminal reason — a varchar(255) column, so it
+    # keeps the DB string cap. Only the dispatch justification `reason` (now a
+    # text column) carries the raised @max_reason_length.
+    |> validate_length(:reason_text, max: @max_db_string_length)
     |> validate_length(:error_message, max: @max_runner_text_length)
     |> validate_change(:executed_command, &validate_executed_command/2)
     |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
