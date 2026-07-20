@@ -35,8 +35,23 @@ paths:
   # connect (no manual Trust step).
   packs:
     - "/opt/emisar/packs/linux-core"
-    - "/opt/emisar/packs/caddy"
+    - "/opt/emisar/packs/systemd-deep"
+    - "/opt/emisar/packs/debian"
+    - "/opt/emisar/packs/debugging"
+    - "/opt/emisar/packs/time-sync"
     - "/opt/emisar/packs/showcase"
+    - "/opt/emisar/packs/caddy"
+    - "/opt/emisar/packs/haproxy"
+    - "/opt/emisar/packs/traefik"
+    - "/opt/emisar/packs/envoy"
+    - "/opt/emisar/packs/network-tls"
+    - "/opt/emisar/packs/firewall"
+    - "/opt/emisar/packs/tailscale"
+    - "/opt/emisar/packs/nic"
+    - "/opt/emisar/packs/bonding"
+    - "/opt/emisar/packs/vector"
+    - "/opt/emisar/packs/cloud-init"
+    - "/opt/emisar/packs/fs-search"
 
 execution:
   inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]

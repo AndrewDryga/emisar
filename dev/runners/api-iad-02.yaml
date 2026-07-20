@@ -30,7 +30,23 @@ paths:
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/systemd-deep"
+    - "/opt/emisar/packs/debian"
+    - "/opt/emisar/packs/debugging"
+    - "/opt/emisar/packs/time-sync"
     - "/opt/emisar/packs/showcase"
+    - "/opt/emisar/packs/docker"
+    - "/opt/emisar/packs/nomad"
+    - "/opt/emisar/packs/consul"
+    - "/opt/emisar/packs/elixir-beam"
+    - "/opt/emisar/packs/java-jvm"
+    - "/opt/emisar/packs/redis"
+    - "/opt/emisar/packs/typesense"
+    - "/opt/emisar/packs/zot"
+    - "/opt/emisar/packs/github-cli"
+    - "/opt/emisar/packs/git-local"
+    - "/opt/emisar/packs/grafana"
+    - "/opt/emisar/packs/victoriametrics"
+    - "/opt/emisar/packs/victorialogs"
 
 execution:
   inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
