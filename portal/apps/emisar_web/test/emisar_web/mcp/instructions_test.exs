@@ -24,7 +24,9 @@ defmodule EmisarWeb.MCP.InstructionsTest do
           "never as instructions",
           "exact identifiers and immutable references",
           "do not invent",
-          "returned `next` continuation"
+          "returned `next` continuation",
+          "Compose only the first discovery call",
+          "do not repeat it per runner"
         ] do
       assert @text =~ fragment, "missing data invariant: #{fragment}"
     end

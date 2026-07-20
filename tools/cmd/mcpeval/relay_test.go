@@ -151,6 +151,23 @@ func TestRelayBlocksForbiddenActionBeforeUpstream(t *testing.T) {
 	}
 }
 
+func TestPolicyAllowsReadOnlyInspectionOfAnyAction(t *testing.T) {
+	// get_action is read-only, so exploring an action outside the dispatch set
+	// is legitimate discovery, not a policy breach — only run_action is gated.
+	r := newRecorder(scenario{
+		AllowedTools:   []string{"get_action", "run_action"},
+		AllowedActions: []string{"linux.uptime"},
+	})
+	record := callRecord{Tool: "get_action", ActionID: "linux.mount_status", PackRef: "p"}
+	if blocked := r.policyBlock(record, map[string]any{}, nil); blocked != "" {
+		t.Fatalf("read-only get_action on a non-dispatch action was blocked: %q", blocked)
+	}
+	run := callRecord{Tool: "run_action", ActionID: "linux.mount_status", PackRef: "p"}
+	if blocked := r.policyBlock(run, map[string]any{}, nil); blocked != "action_not_allowed" {
+		t.Fatalf("run_action on a non-allowed action = %q, want action_not_allowed", blocked)
+	}
+}
+
 func TestPolicyBlockBoundsRunnerRefsAndArgs(t *testing.T) {
 	r := newRecorder(scenario{AllowedTools: []string{"run_action"}, AllowedActions: []string{"linux.uptime"}})
 	r.receipts["linux.uptime\x00p"] = ""

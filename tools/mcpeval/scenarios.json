@@ -17,7 +17,7 @@
         "recent_runs"
       ],
       "allowed_actions": ["linux.uptime", "linux.disk_usage", "showcase.json_output"],
-      "required_tools": ["list_runners", "find_actions", "get_action", "run_action"],
+      "required_tools": ["find_actions", "get_action", "run_action"],
       "required_actions": ["linux.uptime", "linux.disk_usage", "showcase.json_output"],
       "require_contract_ref": true
     }

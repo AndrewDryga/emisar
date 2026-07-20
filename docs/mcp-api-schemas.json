@@ -59,7 +59,8 @@
     "cursor": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 4096
+      "maxLength": 4096,
+      "description": "Opaque continuation token. Use only a `next_cursor` returned by an identical prior call; never invent, reuse across a different query, or send when the prior `next_cursor` was null."
     },
     "next_cursor": {
       "oneOf": [
@@ -744,19 +745,19 @@
     },
     "find_actions": {
       "title": "Find actions",
-      "description": "Find bounded action candidates by operational task (passed as the `query` string) or exact filters. This does not execute or return argument schemas; call get_action for the chosen exact action and pack_ref.",
+      "description": "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref and it returns every compatible runner. The exact filters only narrow a known target; `query` is the normal path.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "query": {"type": "string", "minLength": 1, "maxLength": 256, "description": "The operational task to search for, as free text."},
+          "query": {"type": "string", "minLength": 1, "maxLength": 256, "description": "The operational task to search for, as free text. This is the normal input; omit the exact filters unless narrowing a known target."},
           "action_id": {"$ref": "#/$defs/action_id"},
           "pack_id": {"$ref": "#/$defs/pack_id"},
           "pack_ref": {"$ref": "#/$defs/pack_ref"},
-          "target": {"type": "string", "minLength": 1, "maxLength": 256},
+          "target": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Human target query (host, cluster, service) restricting results to actions executable on at least one match. Mutually exclusive with runner_refs."},
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
-          "limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15, "description": "Maximum candidates to return, 1 through 15 (default 15). Omit unless you deliberately want fewer."},
           "cursor": {"$ref": "#/$defs/cursor"}
         },
         "allOf": [

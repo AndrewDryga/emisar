@@ -191,13 +191,15 @@ func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedAr
 	if !stringSet(r.policy.AllowedTools)[record.Tool] {
 		return "tool_not_allowed"
 	}
-	if record.Tool == "get_action" || record.Tool == "run_action" {
-		if !stringSet(r.policy.AllowedActions)[record.ActionID] || record.PackRef == "" {
-			return "action_not_allowed"
-		}
-	}
+	// Read-only discovery (find_actions, get_action) may inspect any real
+	// action — that cannot mutate anything, and find_actions already surfaces
+	// actions outside the dispatch set. The allowed-action gate is a MUTATION
+	// boundary: only run_action must target the scenario's permitted actions.
 	if record.Tool != "run_action" {
 		return ""
+	}
+	if !stringSet(r.policy.AllowedActions)[record.ActionID] || record.PackRef == "" {
+		return "action_not_allowed"
 	}
 	if !record.priorContractMatched {
 		return "inspection_required"

@@ -53,6 +53,17 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert list_packs["description"] ==
              "List packs observed on in-scope runners, with their bounded action catalogs. Returns the executable capabilities you can run right now."
 
+    find_actions = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "find_actions"))
+
+    assert find_actions["description"] ==
+             "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref and it returns every compatible runner. The exact filters only narrow a known target; `query` is the normal path."
+
+    assert find_actions["inputSchema"]["properties"]["limit"]["description"] ==
+             "Maximum candidates to return, 1 through 15 (default 15). Omit unless you deliberately want fewer."
+
+    assert get_in(find_actions, ["inputSchema", "$defs", "cursor", "description"]) =~
+             "Opaque continuation token"
+
     assert get_in(run_action, ["inputSchema", "$defs", "reason", "description"]) ==
              "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
 
