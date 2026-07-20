@@ -572,9 +572,15 @@ identifiers are filters, never fuzzy search terms.
       }
     }
   ],
-  "next_cursor": null
+  "next": null
 }
 ```
+
+`find_actions` returns the top-ranked candidates. When more remain, top-level
+`next` is a ready-to-send `find_actions` continuation carrying the original
+query and a fresh `cursor`; the model follows it verbatim rather than
+hand-assembling a cursor call. It is `null` when there is no further page. Each
+candidate's own `next` continues to `get_action` for that exact action.
 
 Search returns candidates; it never selects or executes. Ranking lanes are:
 

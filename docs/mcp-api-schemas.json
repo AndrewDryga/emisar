@@ -52,11 +52,39 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 4096,
-      "description": "Opaque continuation token. Use only a `next_cursor` returned by an identical prior call; never invent, reuse across a different query, or send when the prior `next_cursor` was null."
+      "description": "Opaque continuation token. Copy it verbatim from the `next` continuation (or `next_cursor`) an identical prior call returned; never invent one or reuse one across a different query."
     },
     "next_cursor": {
       "oneOf": [
         {"$ref": "#/$defs/cursor"},
+        {"type": "null"}
+      ]
+    },
+    "next_find_actions": {
+      "type": "object",
+      "required": ["tool", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {"const": "find_actions"},
+        "arguments": {
+          "type": "object",
+          "required": ["cursor"],
+          "additionalProperties": false,
+          "properties": {
+            "query": {"type": "string", "minLength": 1, "maxLength": 256},
+            "action_id": {"$ref": "#/$defs/action_id"},
+            "pack_id": {"$ref": "#/$defs/pack_id"},
+            "pack_ref": {"$ref": "#/$defs/pack_ref"},
+            "target": {"type": "string", "minLength": 1, "maxLength": 256},
+            "runner_refs": {"$ref": "#/$defs/runner_refs"},
+            "cursor": {"$ref": "#/$defs/cursor"}
+          }
+        }
+      }
+    },
+    "nullable_next_find_actions": {
+      "oneOf": [
+        {"$ref": "#/$defs/next_find_actions"},
         {"type": "null"}
       ]
     },
@@ -764,7 +792,7 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "observed_at", "candidates", "next_cursor"],
+            "required": ["ok", "observed_at", "candidates", "next"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
@@ -788,7 +816,7 @@
                   }
                 }
               },
-              "next_cursor": {"$ref": "#/$defs/next_cursor"}
+              "next": {"$ref": "#/$defs/nullable_next_find_actions"}
             }
           }
         ]

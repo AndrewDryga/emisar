@@ -23,7 +23,7 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 		"-p", "inspect the fleet",
 		"--output-format", "json",
 		"--model", "claude-sonnet-4-5",
-		"--bare",
+		"--setting-sources", "project,local",
 		"--strict-mcp-config",
 		"--mcp-config", configPath,
 		"--tools", "",

@@ -214,6 +214,48 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
   end
 
+  test "find_actions hands the next page back as a copy-ready continuation", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "search-host")
+
+    packs =
+      Map.new(1..16, fn index ->
+        {"pack#{String.pad_leading(Integer.to_string(index), 2, "0")}",
+         %{"version" => "1.0.0", "hash" => @hash}}
+      end)
+
+    actions =
+      Enum.map(1..16, fn index ->
+        action(
+          "demo.search#{index}",
+          "pack#{String.pad_leading(Integer.to_string(index), 2, "0")}",
+          title: "Searchable action #{index}",
+          search_terms: ["maintenance"]
+        )
+      end)
+
+    observe!(runner, packs, actions)
+    trust_all!(subject)
+
+    first = call(conn, "find_actions", %{"query" => "maintenance"})
+    assert first["ok"]
+    assert length(first["candidates"]) == 15
+
+    # The continuation is a ready-to-send find_actions call carrying the query
+    # AND the cursor — the model copies it verbatim, so it never strips down to
+    # a bare cursor the portal rejects.
+    assert first["next"]["tool"] == "find_actions"
+    assert first["next"]["arguments"]["query"] == "maintenance"
+    assert is_binary(first["next"]["arguments"]["cursor"])
+
+    second = call(conn, "find_actions", first["next"]["arguments"])
+    assert length(second["candidates"]) == 1
+    assert second["next"] == nil
+  end
+
   test "runner catalog results identify signature enforcement", %{
     conn: conn,
     account: account,

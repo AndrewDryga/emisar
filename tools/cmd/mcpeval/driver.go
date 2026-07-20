@@ -34,12 +34,16 @@ func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 }
 
 // claudeInvocation runs Claude Code headless. Flags verified against the
-// installed `claude --help` (2.1.212): --bare restricts auth to
-// ANTHROPIC_API_KEY and skips CLAUDE.md/plugin/keychain discovery,
-// --strict-mcp-config limits MCP to our generated config, --tools ""
-// disables every built-in tool, and --allowedTools pre-approves exactly the
-// scenario's MCP tools (named mcp__<server>__<tool>) so headless mode never
-// stalls on a permission prompt.
+// installed `claude --help` (2.1.212). Isolation without `--bare`: `--bare`
+// disables keychain reads, so it forces ANTHROPIC_API_KEY and cannot use a
+// local subscription login; instead `--setting-sources project,local` skips
+// the user's global config/memory/plugins (the throwaway workspace has no
+// project/local settings), and `--strict-mcp-config` limits MCP to our
+// generated relay config. `--tools ""` disables every built-in tool and
+// `--allowedTools` pre-approves exactly the scenario's MCP tools
+// (mcp__<server>__<tool>) so headless mode never stalls on a permission
+// prompt. Auth resolves the same way for both lanes: the local keychain OAuth
+// login when present, or ANTHROPIC_API_KEY in CI.
 func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
 	configPath, err := writeClaudeMCPConfig(workspace, endpoint)
 	if err != nil {
@@ -55,7 +59,7 @@ func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) 
 			"-p", item.Prompt,
 			"--output-format", "json",
 			"--model", cfg.Model,
-			"--bare",
+			"--setting-sources", "project,local",
 			"--strict-mcp-config",
 			"--mcp-config", configPath,
 			"--tools", "",

@@ -483,18 +483,38 @@ defmodule EmisarWeb.MCP.CatalogTools do
         {page, more?} = split_more(items, args.limit)
         {page, rendered, more?} = fit_page(page, render, more?)
 
-        next_cursor =
+        cursor =
           if more? do
             CatalogCursor.encode(tool, scope, filters, key.(List.last(page)))
           end
 
-        result = %{ok: true, observed_at: observed_at(), next_cursor: next_cursor}
+        result =
+          Map.merge(%{ok: true, observed_at: observed_at()}, pagination(tool, args, cursor))
+
         {:ok, Map.put(result, field, rendered)}
 
       {:error, :invalid_cursor} ->
         {:error,
          error("invalid_cursor", "The cursor is invalid, expired, or belongs to another query.")}
     end
+  end
+
+  # find_actions hands back the whole next page as a copy-ready `next`
+  # continuation (the model must re-supply the query with the cursor, so a bare
+  # cursor is not enough); the other paginated reads keep their `next_cursor`.
+  defp pagination("find_actions", args, cursor), do: %{next: find_actions_next(args, cursor)}
+  defp pagination(_tool, _args, cursor), do: %{next_cursor: cursor}
+
+  defp find_actions_next(_args, nil), do: nil
+
+  defp find_actions_next(args, cursor) do
+    search =
+      args
+      |> Map.take([:query, :action_id, :pack_id, :pack_ref, :target, :runner_refs])
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)
+      |> Map.new()
+
+    %{tool: "find_actions", arguments: Map.put(search, :cursor, cursor)}
   end
 
   defp split_more(items, limit) do
