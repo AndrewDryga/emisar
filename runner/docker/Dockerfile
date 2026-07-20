@@ -75,13 +75,17 @@ RUN apt-get update -y \
 
 # DEV-ONLY: the docker-compose demo stack flips DEV_TOOLS=true to add the
 # client binaries the seeded demo packs shell out to (postgres -> psql,
-# caddy / HTTP reads -> curl). Off by default so a real or self-hosted
+# caddy / HTTP reads -> curl, redis -> redis-cli, time-sync -> chronyc,
+# network probes -> mtr/dig). Off by default so a real or self-hosted
 # runner image stays minimal — operators install only the binaries the
-# packs they actually run require.
+# packs they actually run require. Packs whose client can never be real
+# in a container (a JDK, tailscaled, ipmitool against a BMC) stay
+# advertised-but-unavailable, which is the honest fleet shape.
 ARG DEV_TOOLS=false
 RUN if [ "$DEV_TOOLS" = "true" ]; then \
         apt-get update -y \
-        && apt-get install -y --no-install-recommends postgresql-client curl \
+        && apt-get install -y --no-install-recommends \
+            postgresql-client curl redis-tools chrony mtr-tiny bind9-dnsutils \
         && apt-get clean \
         && rm -rf /var/lib/apt/lists/*; \
     fi
