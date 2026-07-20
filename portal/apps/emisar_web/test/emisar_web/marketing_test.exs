@@ -199,6 +199,8 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "Team"
     assert html =~ "Enterprise"
     assert html =~ "365-day audit retention"
+    assert length(Regex.scan(~r/Dedicated Slack support channel/, html)) == 2
+    refute html =~ "Priority support"
     refute html =~ "99.9% uptime SLA"
     refute html =~ "On-prem / self-hosted option"
   end
