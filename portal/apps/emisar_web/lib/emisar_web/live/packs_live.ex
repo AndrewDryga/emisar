@@ -52,6 +52,7 @@ defmodule EmisarWeb.PacksLive do
     socket = assign(socket, :risk_filter, "")
     socket = assign(socket, :pack_action_index, %{})
     socket = assign(socket, :matched_actions, %{})
+    socket = assign(socket, :refresh_queued?, false)
 
     if connected?(socket) do
       {:ok, socket |> load_packs() |> assign(:loading?, false)}
@@ -589,14 +590,17 @@ defmodule EmisarWeb.PacksLive do
   defp retention_set_flash(nil), do: "Automatic cleanup turned off — pack versions are kept."
 
   defp retention_set_flash(days),
-    do: "Automatic cleanup on — pack versions unseen for #{days} days are removed daily."
+    do: "Automatic cleanup on — pack versions unseen for #{days_phrase(days)} are removed daily."
 
   defp cleanup_flash(1), do: "Removed 1 pack version no runner has advertised recently."
 
   defp cleanup_flash(count),
     do: "Removed #{count} pack versions no runner has advertised recently."
 
-  defp retention_days_label(days), do: "after #{days} days unseen"
+  defp retention_days_label(days), do: "after #{days_phrase(days)} unseen"
+
+  defp days_phrase(1), do: "1 day"
+  defp days_phrase(days), do: "#{days} days"
 
   defp pack_retention_options(current) do
     [
@@ -606,6 +610,7 @@ defmodule EmisarWeb.PacksLive do
         selected: is_nil(current),
         disabled: false
       },
+      %{value: "1", label: "After 1 day unseen", selected: current == 1, disabled: false},
       %{value: "7", label: "After 7 days unseen", selected: current == 7, disabled: false},
       %{value: "14", label: "After 14 days unseen", selected: current == 14, disabled: false},
       %{value: "30", label: "After 30 days unseen", selected: current == 30, disabled: false},
@@ -678,9 +683,30 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
-  # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
+  # The catalog changed under us — a runner advertised something new, a peer
+  # trusted/rejected/deleted a version, or the retention sweep ran (the
+  # pack-trust broadcasts the on_mount badge hook already subscribes this page
+  # to), or fleet presence shifted which runners advertise. Coalesce bursts —
+  # a reconnecting fleet fires one broadcast per runner — into a single
+  # reload a beat later.
+  def handle_info({:pack_trust_changed, _account_id}, socket),
+    do: {:noreply, queue_refresh(socket)}
+
+  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, queue_refresh(socket)}
+
+  def handle_info(:refresh_packs, socket),
+    do: {:noreply, socket |> assign(:refresh_queued?, false) |> load_packs()}
+
+  # No-op for the remaining broadcasts the on_mount hooks forward (approvals
+  # cues stay with the nav).
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp queue_refresh(%{assigns: %{refresh_queued?: true}} = socket), do: socket
+
+  defp queue_refresh(socket) do
+    Process.send_after(self(), :refresh_packs, 200)
+    assign(socket, :refresh_queued?, true)
+  end
 
   # The action + risk rows a pack version contains — shared by the pending
   # "Trust new contents" panel and the trusted "View contents" disclosure so
@@ -1670,8 +1696,9 @@ defmodule EmisarWeb.PacksLive do
                   on_confirm={JS.push("cleanup_now")}
                 >
                   <:body>
-                    Deletes every pack version no runner has advertised in the last {@current_account.settings.pack_unseen_retention_days} days
-                    — trust decisions included. Runners still advertising one will
+                    Deletes every pack version no runner has advertised in the last {days_phrase(
+                      @current_account.settings.pack_unseen_retention_days
+                    )} — trust decisions included. Runners still advertising one will
                     re-insert it as a fresh trust decision.
                   </:body>
                   Clean up now

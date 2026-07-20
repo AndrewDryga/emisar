@@ -1132,6 +1132,31 @@ defmodule EmisarWeb.PacksLiveTest do
     end
   end
 
+  describe "live catalog refresh" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "a pack advertised after mount appears without navigation", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _dead_html} = live(conn, ~p"/app/#{account}/packs")
+      refute render(lv) =~ "acme-tools"
+
+      _pack_version = observe_pending_pack!(account)
+
+      # The observe broadcast queues a coalesced delayed reload; fire the
+      # timer message directly (the runners-page :reveal_troubleshooting
+      # precedent) instead of sleeping through the debounce.
+      send(lv.pid, {:pack_trust_changed, account.id})
+      send(lv.pid, :refresh_packs)
+
+      assert render(lv) =~ "acme-tools"
+    end
+  end
+
   describe "automatic cleanup" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
@@ -1161,6 +1186,21 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "Automatic cleanup on — pack versions unseen for 30 days are removed daily."
       assert has_element?(lv, ~s(#packs-cleanup option[value="30"][selected]))
+    end
+
+    test "the 1-day window is offered and reads in the singular", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      html =
+        lv
+        |> element("#packs-cleanup form")
+        |> render_change(%{"days" => "1"})
+
+      assert html =~ "Automatic cleanup on — pack versions unseen for 1 day are removed daily."
+      assert has_element?(lv, ~s(#packs-cleanup option[value="1"][selected]))
     end
 
     test "Clean up now removes versions past the window", %{
