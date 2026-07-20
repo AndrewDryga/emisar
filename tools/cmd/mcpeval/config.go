@@ -37,9 +37,14 @@ func loadScenario(path, id string) (scenario, error) {
 				}
 			}
 			allowedActions := stringSet(item.AllowedActions)
-			for _, action := range item.RequiredActions {
-				if !allowedActions[action] {
-					return scenario{}, fmt.Errorf("scenario %q requires disallowed action %q", id, action)
+			for _, group := range item.RequiredActions {
+				if len(group) == 0 {
+					return scenario{}, fmt.Errorf("scenario %q has an empty required-action group", id)
+				}
+				for _, action := range group {
+					if !allowedActions[action] {
+						return scenario{}, fmt.Errorf("scenario %q requires disallowed action %q", id, action)
+					}
 				}
 			}
 			return item, nil

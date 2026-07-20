@@ -16,12 +16,16 @@ type scenarioFile struct {
 }
 
 type scenario struct {
-	ID              string   `json:"id"`
-	Prompt          string   `json:"prompt"`
-	AllowedTools    []string `json:"allowed_tools"`
-	AllowedActions  []string `json:"allowed_actions"`
-	RequiredTools   []string `json:"required_tools"`
-	RequiredActions []string `json:"required_actions"`
+	ID             string   `json:"id"`
+	Prompt         string   `json:"prompt"`
+	AllowedTools   []string `json:"allowed_tools"`
+	AllowedActions []string `json:"allowed_actions"`
+	RequiredTools  []string `json:"required_tools"`
+	// Each group is a set of equivalent actions; any one member succeeding
+	// satisfies the group. The eval scores outcomes ("the disk got checked"),
+	// not one recipe — catalog enrichment legitimately shifts which equivalent
+	// an agent picks.
+	RequiredActions [][]string `json:"required_actions"`
 }
 
 type callRecord struct {

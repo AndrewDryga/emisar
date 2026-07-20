@@ -8,7 +8,7 @@ import (
 
 func TestLoadScenario(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "scenarios.json")
-	data := `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["run_action"],"required_actions":["linux.uptime"]}]}`
+	data := `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["run_action"],"required_actions":[["linux.uptime"]]}]}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestLoadScenarioRequiresPositiveEvidence(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string]string{
 		"no_required":         `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"]}]}`,
-		"required_disallowed": `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["list_runners"],"required_actions":["linux.uptime"]}]}`,
+		"required_disallowed": `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["list_runners"],"required_actions":[["linux.uptime"]]}]}`,
 	} {
 		path := filepath.Join(dir, name+".json")
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {

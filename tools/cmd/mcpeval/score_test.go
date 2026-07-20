@@ -10,7 +10,7 @@ func conformingScenario() scenario {
 		AllowedTools:    []string{"list_runners", "find_actions", "get_action", "run_action", "wait_for_run"},
 		RequiredTools:   []string{"list_runners", "get_action", "run_action"},
 		AllowedActions:  []string{"linux.uptime"},
-		RequiredActions: []string{"linux.uptime"},
+		RequiredActions: [][]string{{"linux.uptime"}},
 	}
 }
 
@@ -96,12 +96,23 @@ func TestScoreRejectsRunLeftNonTerminal(t *testing.T) {
 func TestScoreRejectsMissingRequiredToolsAndActions(t *testing.T) {
 	item := conformingScenario()
 	item.RequiredTools = []string{"list_runners", "get_action", "run_action", "find_actions"}
-	item.RequiredActions = []string{"linux.uptime", "linux.disk_usage"}
+	item.RequiredActions = [][]string{{"linux.uptime"}, {"linux.disk_usage"}}
 	got := scoreReport(item, conformingCalls(), agentResult{})
 	if got.Passed ||
 		len(got.MissingRequiredTools) != 1 || got.MissingRequiredTools[0] != "find_actions" ||
 		len(got.MissingRequiredActions) != 1 || got.MissingRequiredActions[0] != "linux.disk_usage" {
 		t.Fatalf("missing coverage passed: %#v", got)
+	}
+}
+
+func TestScoreAcceptsAnyEquivalentInRequiredActionGroup(t *testing.T) {
+	item := conformingScenario()
+	item.AllowedActions = append(item.AllowedActions, "debugging.loadavg")
+	// The agent satisfied the group via the second-listed equivalent.
+	item.RequiredActions = [][]string{{"debugging.loadavg", "linux.uptime"}}
+	got := scoreReport(item, conformingCalls(), agentResult{})
+	if !got.Passed || len(got.MissingRequiredActions) != 0 {
+		t.Fatalf("equivalent member did not satisfy its group: %#v", got)
 	}
 }
 

@@ -127,9 +127,16 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	if len(result.MissingRequiredTools) > 0 {
 		result.fail("required tools never succeeded: " + strings.Join(result.MissingRequiredTools, ", "))
 	}
-	for _, action := range item.RequiredActions {
-		if !succeededActions[action] {
-			result.MissingRequiredActions = append(result.MissingRequiredActions, action)
+	for _, group := range item.RequiredActions {
+		satisfied := false
+		for _, action := range group {
+			if succeededActions[action] {
+				satisfied = true
+				break
+			}
+		}
+		if !satisfied {
+			result.MissingRequiredActions = append(result.MissingRequiredActions, strings.Join(group, "|"))
 		}
 	}
 	if len(result.MissingRequiredActions) > 0 {

@@ -72,6 +72,9 @@ this eval.
 Add an entry to `scenarios.json`: a realistic outcome-stated prompt (no
 procedural steering), fail-closed `allowed_tools` / `allowed_actions`, and the
 `required_tools` / `required_actions` that must succeed for the run to pass.
-Required entries must be subsets of the allowlists — the loader rejects
-anything else. Keep scenarios read-only unless the fixture stack is designed
-for the mutation.
+`required_actions` is a list of GROUPS of equivalent actions — any one member
+succeeding satisfies its group (`[["linux.uptime", "debugging.loadavg"], ...]`)
+— because the eval scores outcomes, not one recipe: catalog changes
+legitimately shift which equivalent an agent picks. Required entries must be
+subsets of the allowlists — the loader rejects anything else. Keep scenarios
+read-only unless the fixture stack is designed for the mutation.

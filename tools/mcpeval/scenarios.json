@@ -18,7 +18,11 @@
       ],
       "allowed_actions": ["linux.uptime", "linux.disk_usage", "debugging.loadavg", "debugging.disk_free", "showcase.json_output"],
       "required_tools": ["find_actions", "get_action", "run_action"],
-      "required_actions": ["linux.uptime", "linux.disk_usage", "showcase.json_output"]
+      "required_actions": [
+        ["linux.uptime", "debugging.loadavg"],
+        ["linux.disk_usage", "debugging.disk_free"],
+        ["showcase.json_output"]
+      ]
     }
   ]
 }
