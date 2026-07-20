@@ -92,14 +92,13 @@ resource "google_monitoring_uptime_check_config" "pack_registry_semantic" {
     validate_ssl = true
   }
 
+  # String containment, not JSONPath: uptime checks inspect only the first
+  # 1 MB of a response, and the catalog is larger — a JSONPath matcher needs
+  # the complete document to parse, while the schema_version field sits in
+  # the first bytes and string containment tolerates the truncation.
   content_matchers {
-    content = "1"
-    matcher = "MATCHES_JSON_PATH"
-
-    json_path_matcher {
-      json_path    = "$.schema_version"
-      json_matcher = "EXACT_MATCH"
-    }
+    content = "\"schema_version\": 1"
+    matcher = "CONTAINS_STRING"
   }
 
   monitored_resource {

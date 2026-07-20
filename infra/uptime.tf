@@ -140,10 +140,16 @@ resource "betteruptime_monitor" "portal" {
   domain_expiration = 14
 }
 
-# The unauthenticated `emisar pack install` path.
+# The unauthenticated `emisar pack install` path. HEAD, not a keyword GET:
+# the catalog legitimately outgrew Better Stack's 3 MB body cap (every pack
+# publish carries the full retained version window), so a GET check fails on
+# size while the registry is healthy. HEAD still exercises DNS, TLS, the LB,
+# and the bucket serving path; catalog CONTENT semantics are watched by the
+# GCP semantic check in monitoring.tf, which inspects only the first bytes.
 resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
-  monitor_type = "keyword"
+  monitor_type = "status"
+  http_method  = "HEAD"
 
   pronounceable_name = "Emisar Action Pack Registry"
 
@@ -154,7 +160,6 @@ resource "betteruptime_monitor" "pack_registry" {
   remember_cookies = false
   verify_ssl       = true
   ip_version       = "ipv4"
-  required_keyword = "\"schema_version\": 1"
 
   ssl_expiration    = 7
   domain_expiration = 14
@@ -162,7 +167,8 @@ resource "betteruptime_monitor" "pack_registry" {
 
 resource "betteruptime_monitor" "pack_registry_ipv6" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
-  monitor_type = "keyword"
+  monitor_type = "status"
+  http_method  = "HEAD"
 
   pronounceable_name = "Emisar Action Pack Registry IPv6"
 
@@ -173,7 +179,6 @@ resource "betteruptime_monitor" "pack_registry_ipv6" {
   remember_cookies = false
   verify_ssl       = true
   ip_version       = "ipv6"
-  required_keyword = "\"schema_version\": 1"
 }
 
 # ── Public status page ────────────────────────────────────────────────────────
