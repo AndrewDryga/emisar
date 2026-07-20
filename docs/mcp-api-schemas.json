@@ -741,7 +741,7 @@
                     {"$ref": "#/$defs/runner_brief"},
                     {
                       "type": "object",
-                      "required": ["last_seen_at", "labels", "packs_next", "issues"],
+                      "required": ["last_seen_at", "labels", "packs", "packs_next", "issues"],
                       "properties": {
                         "last_seen_at": {"oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
                         "labels": {
@@ -750,6 +750,7 @@
                           "propertyNames": {"type": "string", "minLength": 1, "maxLength": 80},
                           "additionalProperties": {"type": "string", "maxLength": 256, "x-maxUtf8Bytes": 1024}
                         },
+                        "packs": {"type": "array", "maxItems": 50, "uniqueItems": true, "items": {"$ref": "#/$defs/pack_id"}, "description": "Bare pack ids this runner has a trusted, descriptor-matched deployment for and can dispatch right now, deduplicated and sorted. Pack presence does not promise every action is executable; per-action availability lives in find_actions, get_action, and list_packs."},
                         "packs_next": {"$ref": "#/$defs/next_list_packs"},
                         "issues": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/issue"}}
                       }

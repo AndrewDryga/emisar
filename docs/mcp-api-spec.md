@@ -490,6 +490,7 @@ when the caller may see them.
         "datacenter": "dc1",
         "rack": "rack3"
       },
+      "packs": ["cassandra", "linux-core"],
       "packs_next": {
         "tool": "list_packs",
         "arguments": {
@@ -510,6 +511,10 @@ when the caller may see them.
 `summary` counts the scoped filtered set before pagination. One runner object is
 at most 56 KiB encoded, with at most 32 bounded labels and eight issues; runner
 registration/advertisement rejects values that cannot satisfy that projection.
+`packs` inlines the bare pack ids this runner can dispatch right now — its
+trusted, descriptor-matched deployments, deduplicated and sorted — but does not
+promise every action in a listed pack is executable; per-action availability
+stays in `find_actions`, `get_action`, and `list_packs`.
 Pack deployments do not nest inside the runner item: `packs_next` uses the
 paginated `list_packs(runner_refs: ...)` surface. When a pack/action filter is
 present, returned runner issues are scoped to that compatibility check. The

@@ -120,7 +120,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
              scope,
              args,
              :runners,
-             &runner_result/1
+             &runner_result(&1, snapshot.packs)
            ) do
       {:ok, Map.put(page, :summary, summary)}
     end
@@ -293,18 +293,36 @@ defmodule EmisarWeb.MCP.CatalogTools do
     |> Enum.any?(&String.contains?(String.downcase(&1), query))
   end
 
-  defp runner_result(runner) do
+  defp runner_result(runner, packs) do
     runner
     |> runner_brief()
     |> Map.merge(%{
       last_seen_at: runner.last_seen_at,
       labels: runner.labels,
+      packs: dispatchable_pack_ids(runner, packs),
       packs_next: %{
         tool: "list_packs",
         arguments: %{runner_refs: [runner.runner_ref], availability: "all", limit: @default_limit}
       },
       issues: runner.issues
     })
+  end
+
+  # Bare pack ids the portal could dispatch on this runner right now — a trusted,
+  # descriptor-matched, connected deployment with at least one executable action,
+  # the same compatible set dispatch reads. Deduped (two trusted versions of one
+  # pack collapse to one id) and sorted so the response is deterministic.
+  defp dispatchable_pack_ids(runner, packs) do
+    packs
+    |> Enum.filter(fn pack ->
+      case Map.get(pack.compatibility, runner.id) do
+        nil -> false
+        compatibility -> compatibility.compatible_action_ids != []
+      end
+    end)
+    |> Enum.map(& &1.pack_id)
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 
   defp runner_summary(runners) do

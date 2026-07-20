@@ -334,6 +334,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              listed_runner["issues"],
              &(&1["code"] == "primary_executable_missing")
            )
+
+    # The pack still dispatches one action, so it appears in packs — presence
+    # never promises every action is executable.
+    assert listed_runner["packs"] == ["elixir-beam"]
   end
 
   test "find_actions recalls natural multi-term queries and ranks term coverage", %{
@@ -600,6 +604,55 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert result["ok"]
     assert Enum.map(result["runners"], & &1["name"]) == ["runner-a"]
+  end
+
+  test "list_runners inlines each runner's trusted, descriptor-matched pack ids", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    carrier = Fixtures.Runners.create_runner(account_id: account.id, name: "carrier")
+    bare = Fixtures.Runners.create_runner(account_id: account.id, name: "bare")
+
+    # carrier advertises two packs the operator will trust and one left
+    # untrusted; only the trusted, descriptor-matched pair is dispatchable.
+    observe!(
+      carrier,
+      %{
+        "postgres" => %{"version" => "1.0.0", "hash" => @hash},
+        "linux-core" => %{"version" => "1.0.0", "hash" => @hash},
+        "awaiting" => %{"version" => "1.0.0", "hash" => @hash}
+      },
+      [
+        action("postgres.status", "postgres"),
+        action("linux-core.uptime", "linux-core"),
+        action("awaiting.read", "awaiting")
+      ]
+    )
+
+    # bare advertises only the untrusted pack — it can dispatch nothing.
+    observe!(bare, %{"awaiting" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("awaiting.read", "awaiting")
+    ])
+
+    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+
+    Enum.each(versions, fn version ->
+      if version.pack_id in ["postgres", "linux-core"] do
+        assert {:ok, _trusted} = Catalog.trust_pack_version(version.id, subject)
+      end
+    end)
+
+    packs_by_name =
+      conn
+      |> call("list_runners", %{})
+      |> Map.fetch!("runners")
+      |> Map.new(&{&1["name"], &1["packs"]})
+
+    assert packs_by_name == %{
+             "carrier" => ["linux-core", "postgres"],
+             "bare" => []
+           }
   end
 
   test "run_action preserves exact argument bytes, binds the v4 header, and replays one run", %{
