@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -152,12 +153,23 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 		cacheControl = "public, max-age=31536000, immutable"
 	}
 	metadata := struct {
-		Name         string `json:"name"`
-		ContentType  string `json:"contentType"`
-		CacheControl string `json:"cacheControl"`
-	}{obj.Path, obj.ContentType, cacheControl}
+		Name            string `json:"name"`
+		ContentType     string `json:"contentType"`
+		ContentEncoding string `json:"contentEncoding,omitempty"`
+		CacheControl    string `json:"cacheControl"`
+	}{obj.Path, obj.ContentType, obj.ContentEncoding, cacheControl}
 	if err := json.NewEncoder(metadataPart).Encode(metadata); err != nil {
 		return false, fmt.Errorf("catalog: encode metadata for %s: %w", obj.Path, err)
+	}
+	// An encoded object stores the compressed bytes; GCS then serves them
+	// decompressed to plain clients (transcoding) and as-is to gzip-accepting
+	// ones, so every consumer still reads the manifest's plain bytes.
+	body := data
+	if obj.ContentEncoding == "gzip" {
+		body, err = gzipBytes(data)
+		if err != nil {
+			return false, fmt.Errorf("catalog: gzip %s: %w", obj.Path, err)
+		}
 	}
 	dataHeader := make(textproto.MIMEHeader)
 	dataHeader.Set("Content-Type", obj.ContentType)
@@ -165,7 +177,7 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	if err != nil {
 		return false, fmt.Errorf("catalog: create data part for %s: %w", obj.Path, err)
 	}
-	if _, err := dataPart.Write(data); err != nil {
+	if _, err := dataPart.Write(body); err != nil {
 		return false, fmt.Errorf("catalog: encode data for %s: %w", obj.Path, err)
 	}
 	if err := writer.Close(); err != nil {
@@ -184,7 +196,7 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 		return false, fmt.Errorf("catalog: upload %s: %w", obj.Path, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
@@ -201,8 +213,23 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 		}
 		return false, nil
 	default:
-		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(body))
+		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(respBody))
 	}
+}
+
+func gzipBytes(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := zw.Write(data); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func getObject(ctx context.Context, client *http.Client, endpoint, bucket, name string, expectedSize int) ([]byte, error) {

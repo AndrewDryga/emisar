@@ -92,13 +92,15 @@ resource "google_monitoring_uptime_check_config" "pack_registry_semantic" {
     validate_ssl = true
   }
 
-  # String containment, not JSONPath: uptime checks inspect only the first
+  # Regex containment, not JSONPath: uptime checks inspect only the first
   # 1 MB of a response, and the catalog is larger — a JSONPath matcher needs
   # the complete document to parse, while the schema_version field sits in
-  # the first bytes and string containment tolerates the truncation.
+  # the first bytes. The \s* tolerates both the compact form packctl now
+  # publishes and the pretty-printed catalog still live until the next
+  # pack release.
   content_matchers {
-    content = "\"schema_version\": 1"
-    matcher = "CONTAINS_STRING"
+    content = "\"schema_version\":\\s*1"
+    matcher = "MATCHES_REGEX"
   }
 
   monitored_resource {

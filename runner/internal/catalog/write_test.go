@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -84,6 +85,37 @@ func buildFixtureCatalog(t *testing.T) (*packs.Registry, *Catalog) {
 		t.Fatal(err)
 	}
 	return reg, cat
+}
+
+func TestWrite_CatalogIsCompactAndJSONDeclaresGzipEncoding(t *testing.T) {
+	reg, cat := buildFixtureCatalog(t)
+	out := t.TempDir()
+	m, err := Write(reg, cat, out)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(out, "v1", "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, data); err != nil {
+		t.Fatalf("catalog.json is not valid JSON: %v", err)
+	}
+	if got := strings.TrimSuffix(string(data), "\n"); got != compacted.String() {
+		t.Error("catalog.json is not compact — indentation was a third of the served bytes")
+	}
+
+	for _, o := range m.Objects {
+		want := ""
+		if o.ContentType == contentTypeJSON {
+			want = "gzip"
+		}
+		if o.ContentEncoding != want {
+			t.Errorf("%s content_encoding = %q, want %q", o.Path, o.ContentEncoding, want)
+		}
+	}
 }
 
 func TestWrite_ObjectSetAndImmutability(t *testing.T) {

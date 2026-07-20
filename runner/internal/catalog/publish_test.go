@@ -1,8 +1,11 @@
 package catalog
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -48,6 +51,8 @@ type fakeGCS struct {
 	auth     map[string]string // object name -> Authorization header
 	readAuth map[string]string // object name -> Authorization header on collision verification
 	cache    map[string]string // object name -> Cache-Control metadata
+	encoding map[string]string // object name -> Content-Encoding metadata ("" if absent)
+	stored   map[string][]byte // object name -> uploaded data-part bytes
 	status   map[string]int    // object name -> forced status
 	objects  map[string][]byte // bytes returned when an existing object is verified
 	order    []string          // object names in the order they were uploaded
@@ -59,6 +64,8 @@ func newFakeGCS() *fakeGCS {
 		auth:     map[string]string{},
 		readAuth: map[string]string{},
 		cache:    map[string]string{},
+		encoding: map[string]string{},
+		stored:   map[string][]byte{},
 		status:   map[string]int{},
 		objects:  map[string][]byte{},
 	}
@@ -96,18 +103,32 @@ func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		part, err := multipart.NewReader(r.Body, params["boundary"]).NextPart()
+		reader := multipart.NewReader(r.Body, params["boundary"])
+		part, err := reader.NextPart()
 		if err != nil {
 			t.Errorf("read metadata part: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		var metadata struct {
-			Name         string `json:"name"`
-			CacheControl string `json:"cacheControl"`
+			Name            string `json:"name"`
+			ContentEncoding string `json:"contentEncoding"`
+			CacheControl    string `json:"cacheControl"`
 		}
 		if err := json.NewDecoder(part).Decode(&metadata); err != nil {
 			t.Errorf("decode metadata: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		dataPart, err := reader.NextPart()
+		if err != nil {
+			t.Errorf("read data part: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(dataPart)
+		if err != nil {
+			t.Errorf("read data part bytes: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -116,6 +137,8 @@ func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 		f.requests[name] = r.URL.Query().Get("ifGenerationMatch")
 		f.auth[name] = r.Header.Get("Authorization")
 		f.cache[name] = metadata.CacheControl
+		f.encoding[name] = metadata.ContentEncoding
+		f.stored[name] = body
 		f.order = append(f.order, name)
 		code := f.status[name]
 		f.mu.Unlock()
@@ -181,6 +204,58 @@ func TestPublish_PreconditionsPerObjectKind(t *testing.T) {
 		}
 		if cacheControl != "public, max-age=31536000, immutable" {
 			t.Errorf("immutable %s Cache-Control = %q", name, cacheControl)
+		}
+	}
+}
+
+func TestPublish_JSONUploadsGzipEncodedTarballsPlain(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	srv := f.server(t)
+
+	if _, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	plain, err := os.ReadFile(filepath.Join(dir, "v1", "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.encoding["v1/catalog.json"]; got != "gzip" {
+		t.Fatalf("catalog.json Content-Encoding = %q, want gzip", got)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(f.stored["v1/catalog.json"]))
+	if err != nil {
+		t.Fatalf("stored catalog.json is not gzip: %v", err)
+	}
+	unzipped, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(unzipped, plain) {
+		t.Error("gunzipped upload does not match the plain dist catalog bytes")
+	}
+
+	m := readManifest(t, dir)
+	for _, obj := range m.Objects {
+		if obj.ContentType != contentTypeGzip {
+			continue
+		}
+		// A tarball is already gzip content; an encoding layer would let GCS
+		// transcode it on download and break content-hash pinning.
+		if got := f.encoding[obj.Path]; got != "" {
+			t.Errorf("tarball %s Content-Encoding = %q, want none", obj.Path, got)
+		}
+		disk, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(obj.Path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(f.stored[obj.Path], disk) {
+			t.Errorf("tarball %s uploaded bytes differ from dist bytes", obj.Path)
 		}
 	}
 }

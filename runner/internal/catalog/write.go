@@ -25,8 +25,15 @@ type Object struct {
 	// on bucket versioning to retain prior generations.
 	Immutable   bool   `json:"immutable"`
 	ContentType string `json:"content_type"`
-	Size        int    `json:"size"`
-	SHA256      string `json:"sha256"`
+	// ContentEncoding is the transport encoding the object uploads with
+	// ("gzip" for JSON objects). Size and SHA256 always describe the PLAIN
+	// bytes — content addressing and post-publish verification compare what
+	// consumers actually read, since GCS serves encoded objects decompressed
+	// (transcoding for plain clients, transparent decompression for gzip-
+	// accepting ones).
+	ContentEncoding string `json:"content_encoding,omitempty"`
+	Size            int    `json:"size"`
+	SHA256          string `json:"sha256"`
 }
 
 // Manifest describes a built artifact tree. It is written to the tree root
@@ -58,12 +65,21 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		if err := writeObject(outDir, path, data); err != nil {
 			return err
 		}
+		// JSON objects upload gzip-encoded (the catalog compresses ~10x).
+		// Tarballs never do: they are already gzip CONTENT, and an encoding
+		// layer would let GCS transcode them on download, breaking the
+		// content-hash pinning installs verify.
+		encoding := ""
+		if ct == contentTypeJSON {
+			encoding = "gzip"
+		}
 		m.Objects = append(m.Objects, Object{
-			Path:        path,
-			Immutable:   immutable,
-			ContentType: ct,
-			Size:        len(data),
-			SHA256:      hex.EncodeToString(sha256Sum(data)),
+			Path:            path,
+			Immutable:       immutable,
+			ContentType:     ct,
+			ContentEncoding: encoding,
+			Size:            len(data),
+			SHA256:          hex.EncodeToString(sha256Sum(data)),
 		})
 		return nil
 	}
@@ -126,14 +142,15 @@ func writeObject(outDir, objPath string, data []byte) error {
 	return os.WriteFile(full, data, 0o644)
 }
 
-// marshalJSON encodes v deterministically with 2-space indentation and
-// without HTML escaping, so argv templates and descriptions containing
-// <, >, & stay legible. The trailing newline the encoder adds is kept.
+// marshalJSON encodes v deterministically, compact, and without HTML
+// escaping, so argv templates and descriptions containing <, >, & survive
+// verbatim. Compact on purpose: the catalog is a machine artifact fetched by
+// every runner, and indentation was a third of its served bytes — humans
+// pretty-print with jq. The trailing newline the encoder adds is kept.
 func marshalJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
