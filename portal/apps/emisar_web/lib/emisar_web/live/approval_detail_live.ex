@@ -735,16 +735,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     Evidence
                   </dt>
-                  <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-                    {@request.evidence}
+                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
+                    <span class="whitespace-pre-wrap">{@request.evidence}</span>
                   </dd>
                 </div>
                 <div :if={@request.expected && @request.expected != ""}>
                   <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     Expected
                   </dt>
-                  <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-                    {@request.expected}
+                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
+                    <span class="whitespace-pre-wrap">{@request.expected}</span>
                   </dd>
                 </div>
                 <div :if={@run && @run.policy_reason}>

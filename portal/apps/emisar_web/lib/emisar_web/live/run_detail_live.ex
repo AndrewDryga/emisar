@@ -415,16 +415,16 @@ defmodule EmisarWeb.RunDetailLive do
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Evidence
               </dt>
-              <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-                {@run.evidence}
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
+                <span class="whitespace-pre-wrap">{@run.evidence}</span>
               </dd>
             </div>
             <div :if={@run.expected && @run.expected != ""}>
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Expected
               </dt>
-              <dd class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-                {@run.expected}
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
+                <span class="whitespace-pre-wrap">{@run.expected}</span>
               </dd>
             </div>
             <div :if={show_policy?(@run)}>
