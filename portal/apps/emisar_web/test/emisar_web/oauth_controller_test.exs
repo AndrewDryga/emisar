@@ -527,7 +527,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute html =~ ~s(type="hidden" name="account_id")
     end
 
-    test "CSP form-action names the server and registered callback origins", %{
+    test "CSP form-action permits sandboxed HTTPS navigation on the consent page", %{
       conn: conn,
       user: user
     } do
@@ -555,7 +555,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       server_origin = EmisarWeb.Endpoint.url()
 
-      assert csp =~ "form-action 'self' #{server_origin} https://chatgpt.com"
+      assert csp =~ "form-action 'self' https: #{server_origin} https://chatgpt.com"
       refute csp =~ "connector/oauth"
       refute csp =~ "attacker.example"
     end
@@ -982,6 +982,10 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html_response(conn, 400) =~ "Authorization error"
       # An error page, not a 302 — there is no Location header to an unvetted origin.
       assert get_resp_header(conn, "location") == []
+
+      [csp] = get_resp_header(conn, "content-security-policy")
+      assert csp =~ "; form-action 'self';"
+      refute csp =~ "form-action 'self' https:"
     end
 
     # an absent redirect_uri hits check_redirect's

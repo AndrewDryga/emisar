@@ -49,3 +49,4 @@ updated: <YYYY-MM-DD>                # last edit
 ## Index
 
 - [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — PGHOST=db reaches the sibling postgres; box BEAM/Go builds live under the coop-cache volume (MIX_BUILD_ROOT), never the host's _build; the portal output guard warms deps unscanned
+- [oauth-consent-form-action](oauth-consent-form-action.md) — ChatGPT's sandboxed OAuth document needs a consent-only HTTPS form-action source; rejected requests and every other page keep the strict self-only policy

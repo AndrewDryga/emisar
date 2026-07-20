@@ -239,10 +239,11 @@ defmodule EmisarWeb.OAuthController do
     redirect_back(conn, redirect_uri, %{error: error_code, state: state})
   end
 
-  # Sandboxed OAuth webviews can give this document an opaque origin, where
-  # CSP `'self'` no longer matches our same-origin consent POST. Name the
-  # configured server origin explicitly, plus the already-validated client
-  # callback for browsers that apply `form-action` across the final redirect.
+  # ChatGPT's sandboxed OAuth document rejects host sources for the consent POST,
+  # even when the configured server origin is named explicitly. Allow HTTPS
+  # navigation on this validated consent page only; exact redirect-uri matching
+  # still controls where the authorization code can land. Keep explicit origins
+  # for local HTTP endpoints and registered loopback callbacks.
   defp allow_oauth_form_navigation(conn, redirect_uri) do
     origins =
       [EmisarWeb.Endpoint.url(), redirect_uri]
@@ -250,10 +251,12 @@ defmodule EmisarWeb.OAuthController do
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
+    sources = ["https:" | origins]
+
     extra =
       conn.assigns
       |> Map.get(:csp_extra, %{})
-      |> Map.update("form-action", origins, &Enum.uniq(&1 ++ origins))
+      |> Map.update("form-action", sources, &Enum.uniq(&1 ++ sources))
 
     assign(conn, :csp_extra, extra)
   end
