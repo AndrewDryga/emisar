@@ -17,6 +17,40 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-20],
+      slug: "real-agent-evals-and-symptom-language-search",
+      title: "Real-agent MCP evals and symptom-language action search",
+      tag: "v0.32.0",
+      summary:
+        "Real agents now certify the MCP surface before it ships: a scheduled eval drives Claude and Codex through a fail-closed relay against a live stack and hard-fails on policy violations, invalid mutation arguments, dispatches without prior inspection, and placeholder run reasons — an API change that confuses a model now fails a build, not a customer. And search learned how operators actually talk: packs carry 562 phrases of operator vocabulary, ranking weighs rare words over common ones, and page-one recall on a symptom-language benchmark against the production catalog went from 46% to 100% — \"the db is slow\" finds the right postgres action on the first call.",
+      details: [
+        {"MCP",
+         [
+           "run_action takes an optional justification chain — evidence for what the agent observed, expected for the outcome it predicts — beside a reason that can now run to 2000 characters. Approvals and run details render the chain, so a reviewer sees the basis and the hypothesis, not just the request.",
+           "Paginated reads hand back a copy-ready next call instead of a bare cursor; an agent continues a search by echoing one object.",
+           "list_runners names each runner's dispatchable packs inline, answering what a named host can do in one call.",
+           "Actions can opt into typed JSON results, dispatched against the pinned trusted descriptor."
+         ]},
+        {"Packs",
+         [
+           "A curated synonym map expands operator shorthand like db, mem, and k8s during search.",
+           "The registry serves the catalog compact and gzip-encoded behind a CDN — about a tenth of the previous transfer.",
+           "The Nomad Autopilot health action is fixed."
+         ]},
+        {"Runner",
+         [
+           "Runner access is explicit: a member is scoped to the runners and groups they may use, chosen in a clearer scope picker.",
+           "A missing client binary travels as separate host readiness evidence: the action stays advertised for manifest verification and is simply not offered for dispatch."
+         ]},
+        {"Also",
+         [
+           "Empty runner onboarding points at installing a pack catalog instead of a run that cannot succeed.",
+           "The ChatGPT connector's OAuth consent page renders correctly under its sandboxed CSP.",
+           "Enterprise plans name their dedicated Slack support channel."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-07-17],
       slug: "installer-preserves-commented-zed-config",
       title: "The MCP installer preserves a commented Zed config",
