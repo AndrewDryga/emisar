@@ -13,6 +13,10 @@ description: >
 side_effects:
   - One docker events query bounded to the requested window.
   - Read-only.
+search_terms:
+  - restart loop
+  - crash loop
+  - oom killed
 args:
   - name: minutes
     type: integer

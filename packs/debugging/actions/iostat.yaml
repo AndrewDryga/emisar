@@ -16,6 +16,10 @@ side_effects:
   - Read-only.
   - Requires sysstat package.
 
+search_terms:
+  - iowait
+  - disk latency
+
 args:
   - name: samples
     type: integer

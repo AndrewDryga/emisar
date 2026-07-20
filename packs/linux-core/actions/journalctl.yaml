@@ -16,6 +16,11 @@ side_effects:
   - Output is run through the runner's redactor before leaving the host.
   - Does not modify anything.
 
+search_terms:
+  - app crash
+  - keeps crashing
+  - crash loop
+
 args:
   - name: unit
     type: string

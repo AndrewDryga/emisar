@@ -8,6 +8,9 @@ side_effects:
   - Node stops accepting new allocations.
   - Existing allocations are migrated according to job spec (Migrate stanza).
   - May take minutes to complete depending on workload.
+search_terms:
+  - evacuate node
+  - host maintenance
 args:
   - name: node_id
     type: string

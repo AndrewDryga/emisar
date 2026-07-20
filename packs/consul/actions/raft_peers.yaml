@@ -7,6 +7,8 @@ description: List the server peers with voter status, suffix, address.
 side_effects:
   - One agent call.
   - Read-only.
+search_terms:
+  - lost quorum
 args: []
 execution:
   command:

@@ -7,6 +7,8 @@ description: >
   Show full per-session detail at print level 3 — target IQN, portal, session
   and connection state, negotiated parameters, and the attached SCSI disks.
 side_effects: ["One iscsiadm read.", "Read-only."]
+search_terms:
+  - missing lun
 args: []
 execution:
   command: {binary: iscsiadm, argv: ["-m", "session", "-P", "3"]}

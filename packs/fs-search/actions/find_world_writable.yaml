@@ -7,6 +7,8 @@ description: 'Find files with the "world-writable" bit set under one path. Secur
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - insecure permissions
 args:
   - name: path
     type: path

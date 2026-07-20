@@ -11,6 +11,8 @@ description: >
 side_effects:
   - Reads the Typesense server log file.
   - Read-only.
+search_terms:
+  - slow queries
 args:
   - name: log_path
     type: string

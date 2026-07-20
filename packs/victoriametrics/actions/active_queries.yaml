@@ -10,6 +10,9 @@ description: >
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.
   - Read-only.
+search_terms:
+  - runaway query
+  - query stuck
 args: []
 execution:
   script:

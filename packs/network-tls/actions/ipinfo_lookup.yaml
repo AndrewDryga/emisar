@@ -7,6 +7,8 @@ description: Looks up an IP at ipinfo.io. Returns city/region/country/org/asn. O
 side_effects:
   - One HTTPS query to ipinfo.io.
   - Read-only.
+search_terms:
+  - who owns this ip
 args:
   - name: ip
     type: string

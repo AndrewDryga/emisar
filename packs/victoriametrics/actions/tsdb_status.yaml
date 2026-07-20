@@ -10,6 +10,11 @@ description: >
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.
   - Read-only.
+search_terms:
+  - metrics missing
+  - series gone
+  - cardinality explosion
+  - too many series
 args:
   - name: top_n
     type: integer

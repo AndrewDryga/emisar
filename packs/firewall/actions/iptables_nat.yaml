@@ -7,6 +7,8 @@ description: List all nat-table rules — DNAT/SNAT/MASQUERADE.
 side_effects:
   - One netfilter query.
   - Read-only.
+search_terms:
+  - port forwarding
 args: []
 execution:
   command:

@@ -9,6 +9,10 @@ side_effects:
   - Target process is paused for the duration of the gdb session (typically 0.5-3 seconds).
   - Requires CAP_SYS_PTRACE or matching uid.
   - On detach, target resumes.
+search_terms:
+  - stack trace
+  - process hung
+  - where is it stuck
 args:
   - name: pid
     type: integer

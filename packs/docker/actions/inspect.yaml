@@ -18,6 +18,10 @@ side_effects:
   - One docker inspect invocation.
   - Read-only, but exposes the container's env (may include secrets).
 
+search_terms:
+  - environment variables
+  - exit reason
+
 args:
   - name: container
     type: string

@@ -7,6 +7,9 @@ description: Marks one node ineligible for new allocations. Existing allocations
 side_effects:
   - Node refuses new allocations.
   - Existing allocations stay running.
+search_terms:
+  - cordon
+  - mark unschedulable
 args:
   - name: node_id
     type: string

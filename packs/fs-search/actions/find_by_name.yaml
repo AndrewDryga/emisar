@@ -7,6 +7,8 @@ description: Find files matching one shell glob under one path. Capped at 1000 r
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - locate
 args:
   - name: path
     type: path

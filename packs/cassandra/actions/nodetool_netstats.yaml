@@ -5,6 +5,10 @@ kind: exec
 risk: low
 description: 'Show streaming + read repair stats: completed/pending bytes, files transferred, pool stats.'
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - streaming progress
+  - streaming stuck
+  - bootstrap progress
 args: []
 execution:
   command: {binary: nodetool, argv: ["netstats"]}

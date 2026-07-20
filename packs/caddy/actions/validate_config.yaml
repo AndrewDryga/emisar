@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Validates a Caddyfile or JSON config without loading it.
 side_effects: ["One forked process.", "Read-only."]
+search_terms:
+  - syntax errors
 args:
   - name: file
     type: string

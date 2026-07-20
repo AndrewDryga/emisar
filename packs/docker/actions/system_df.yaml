@@ -13,6 +13,10 @@ side_effects:
   - One docker system df invocation.
   - Read-only.
 
+search_terms:
+  - disk full
+  - out of disk
+
 args: []
 
 execution:

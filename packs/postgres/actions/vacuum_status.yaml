@@ -14,6 +14,10 @@ side_effects:
   - One SELECT against pg_stat_user_tables.
   - No locks held.
 
+search_terms:
+  - vacuum not running
+  - table bloat
+
 args:
   - name: schema
     type: string

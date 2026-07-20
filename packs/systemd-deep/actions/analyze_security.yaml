@@ -7,6 +7,9 @@ description: 'Scores one unit by its sandboxing posture — NoNewPrivileges, Pro
 side_effects:
   - One systemd-analyze invocation.
   - Read-only.
+search_terms:
+  - hardening
+  - exposure
 args:
   - name: unit
     type: string

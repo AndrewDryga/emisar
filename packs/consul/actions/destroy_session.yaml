@@ -8,6 +8,9 @@ side_effects:
   - Session is destroyed immediately.
   - Held KV locks released (or keys deleted, if behavior=delete).
   - Distributed lock holders may need to handle the loss.
+search_terms:
+  - release stuck lock
+  - force unlock
 args:
   - name: session_id
     type: string

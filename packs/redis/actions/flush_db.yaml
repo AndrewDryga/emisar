@@ -18,6 +18,10 @@ side_effects:
   - Replicas FLUSHDB in turn.
   - No way to recover except by restore.
 
+search_terms:
+  - clear cache
+  - empty cache
+
 args:
   - name: db
     type: integer

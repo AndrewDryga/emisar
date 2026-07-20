@@ -7,6 +7,10 @@ description: Show logs from failed jobs in one run. Use for "why did CI break?".
 side_effects:
   - Downloads logs.
   - Read-only.
+search_terms:
+  - ci broken
+  - build failed
+  - pipeline failure
 args:
   - name: repo
     type: string

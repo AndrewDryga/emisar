@@ -17,6 +17,11 @@ description: >
 side_effects:
   - Two read-only HTTP GETs to the Traefik API.
   - Read-only.
+search_terms:
+  - site down
+  - website unreachable
+  - is the site up
+  - website down
 args:
   - name: host
     type: string

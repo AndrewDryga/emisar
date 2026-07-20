@@ -11,6 +11,10 @@ description: >
 side_effects:
   - One read-only HTTP GET to the VictoriaLogs query API.
   - Read-only — never ingests or deletes logs.
+search_terms:
+  - log search
+  - search logs
+  - grep logs
 args:
   - name: query
     type: string

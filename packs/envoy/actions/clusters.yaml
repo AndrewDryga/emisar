@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List all clusters with endpoint health + stats. Use for "which upstream is unhealthy?".
 side_effects: ["One admin GET.", "Read-only."]
+search_terms:
+  - backend down
+  - dead backend
 args: []
 execution:
   command:

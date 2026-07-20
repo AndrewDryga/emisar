@@ -8,6 +8,9 @@ description: >
 side_effects:
   - Sends the chosen signal directly to the container's PID 1.
   - "SIGKILL: instant termination; in-flight requests dropped."
+search_terms:
+  - force stop
+  - stuck container
 args:
   - name: container
     type: string

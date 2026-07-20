@@ -7,6 +7,9 @@ description: Force-runs one periodic job NOW, ignoring schedule.
 side_effects:
   - A new periodic child job is created and dispatched.
   - Counts toward normal job history.
+search_terms:
+  - run cron now
+  - trigger scheduled job
 args:
   - name: job
     type: string

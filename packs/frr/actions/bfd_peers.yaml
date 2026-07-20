@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List BFD peer sessions — local/remote state (Up/Down), last diagnostic, and timers.
 side_effects: ["One vtysh show command.", "Read-only."]
+search_terms:
+  - fast failover
+  - link failure detection
 args: []
 execution:
   command: {binary: vtysh, argv: ["-c", "show bfd peers"]}

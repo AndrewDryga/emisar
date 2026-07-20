@@ -7,6 +7,10 @@ description: Stops sending new traffic to one backend server (in-flight requests
 side_effects:
   - Server is marked MAINT — no new traffic.
   - Existing requests finish.
+search_terms:
+  - drain
+  - maintenance mode
+  - out of rotation
 args:
   - name: backend
     type: string

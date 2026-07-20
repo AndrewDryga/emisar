@@ -460,6 +460,10 @@ defmodule EmisarWeb.MCP.CatalogTools do
     Enum.any?(variants, fn variant -> Enum.any?(words, &word_match?(&1, variant)) end)
   end
 
+  defp candidate_matches?(candidate, variants) do
+    Enum.any?(candidate.search_words, fn {_field, words} -> variants_match?(words, variants) end)
+  end
+
   # Prefix in either direction covers plural and inflected forms
   # (inode/inodes, sync/synchronization); the reverse direction requires a
   # substantial word so a short token cannot re-open the substring floodgate.
@@ -503,13 +507,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
 
     Map.new(tokens, fn token ->
       variants = token_variants(token)
-
-      hits =
-        Enum.count(searchable, fn candidate ->
-          Enum.any?(candidate.search_words, fn {_field, words} ->
-            variants_match?(words, variants)
-          end)
-        end)
+      hits = Enum.count(searchable, &candidate_matches?(&1, variants))
 
       weight =
         if hits == 0 do

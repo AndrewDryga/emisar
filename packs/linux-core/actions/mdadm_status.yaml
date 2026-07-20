@@ -14,6 +14,11 @@ side_effects:
   - One cat + one mdadm --detail per array.
   - Read-only.
 
+search_terms:
+  - raid rebuild
+  - raid degraded
+  - failed drive
+
 args: []
 
 execution:

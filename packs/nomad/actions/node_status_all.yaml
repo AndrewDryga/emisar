@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List all clients (nodes) with status, datacenter, drain state, eligibility.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - node down
+  - lost node
 args: []
 execution:
   command: {binary: nomad, argv: ["node", "status", "-verbose"]}

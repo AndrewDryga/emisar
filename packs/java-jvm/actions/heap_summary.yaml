@@ -7,6 +7,11 @@ description: 'Show heap geometry — used/committed per generation (Eden, Surviv
 side_effects:
   - One jcmd invocation.
   - Read-only.
+search_terms:
+  - memory pressure
+  - heap full
+  - old gen full
+  - out of memory
 args:
   - name: pid
     type: integer

@@ -9,6 +9,8 @@ side_effects:
   - Forces a garbage collection of every process in the release; expect a brief latency impact while it runs.
   - One release rpc call with a fixed expression.
   - Does not modify application data.
+search_terms:
+  - memory not dropping
 args:
   - name: limit
     type: integer

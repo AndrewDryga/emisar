@@ -16,6 +16,12 @@ side_effects:
   - In-flight requests on that container are dropped.
   - Container restarts and re-runs its entrypoint.
 
+search_terms:
+  - container down
+  - hung container
+  - unresponsive container
+  - bounce container
+
 args:
   - name: container
     type: string

@@ -16,6 +16,9 @@ side_effects:
   - Triggers a rolling update of the task group — allocations are replaced per its update stanza.
   - Setting memory below the task's real working set can cause OOM kills on the new allocations.
   - Refuses to write if the job changed since it was read (JobModifyIndex mismatch).
+search_terms:
+  - raise memory limit
+  - bump cpu
 args:
   - name: job
     type: string

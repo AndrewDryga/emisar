@@ -7,6 +7,11 @@ description: Find the top files by size under one path. Use to find disk-pressur
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - large files
+  - big files
+  - disk filling up
+  - where did the space go
 args:
   - name: path
     type: path

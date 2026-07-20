@@ -12,6 +12,9 @@ description: >
 side_effects:
   - One read-only DCMI power-statistics query.
   - Read-only.
+search_terms:
+  - power consumption
+  - energy usage
 args:
   - name: host
     type: string

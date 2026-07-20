@@ -7,6 +7,10 @@ description: 'Show current time, timezone, NTP-active state, RTC sync state.'
 side_effects:
   - One systemd-timesyncd query.
   - Read-only.
+search_terms:
+  - clock wrong
+  - time skew
+  - clock drift
 args: []
 execution:
   command:

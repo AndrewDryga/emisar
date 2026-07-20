@@ -8,6 +8,8 @@ side_effects:
   - Other replicas stream the dead node's data to their successors.
   - Heavy network + disk during stream.
   - Token range reassigned permanently.
+search_terms:
+  - remove dead node
 args:
   - name: host_id
     type: string

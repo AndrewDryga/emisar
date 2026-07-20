@@ -5,6 +5,11 @@ kind: exec
 risk: low
 description: Show the top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded.
 side_effects: ["One SELECT against pg_stat_statements.", "Read-only."]
+search_terms:
+  - db is slow
+  - database slow
+  - slow db
+  - expensive queries
 args: []
 execution:
   command:

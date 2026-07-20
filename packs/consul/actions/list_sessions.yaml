@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: 'List active sessions cluster-wide: ID, node, TTL, behavior.'
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - who holds locks
 args: []
 execution:
   command:

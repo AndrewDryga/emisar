@@ -5,6 +5,10 @@ kind: exec
 risk: low
 description: List each blocked backend with its blocker. Use to find the head of a stuck lock chain.
 side_effects: ["One SELECT joining pg_locks.", "Read-only."]
+search_terms:
+  - lock contention
+  - who is blocking
+  - waiting on lock
 args: []
 execution:
   command:

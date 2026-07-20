@@ -13,6 +13,10 @@ side_effects:
   - One rule inserted at INPUT[1].
   - Traffic from that IP dropped immediately.
   - Rule is in-memory; lost on iptables restart unless saved.
+search_terms:
+  - ban ip
+  - blacklist
+  - block attacker
 args:
   - name: ip
     type: string

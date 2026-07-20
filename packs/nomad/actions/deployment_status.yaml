@@ -5,6 +5,10 @@ kind: exec
 risk: low
 description: 'Show one deployment''s state — per-task-group desired/placed/healthy/unhealthy.'
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - deploy stuck
+  - rollout stalled
+  - deploy failing
 args:
   - name: deployment_id
     type: string

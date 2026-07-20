@@ -7,6 +7,8 @@ description: List top classes by retained-heap size after a forced full GC. Use 
 side_effects:
   - Triggers a full GC.
   - JVM pause for the duration of the GC.
+search_terms:
+  - memory leak
 args:
   - name: pid
     type: integer

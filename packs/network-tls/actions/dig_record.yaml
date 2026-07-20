@@ -8,6 +8,9 @@ description: >
 side_effects:
   - One DNS query.
   - Read-only.
+search_terms:
+  - resolve hostname
+  - dns not resolving
 args:
   - name: name
     type: string

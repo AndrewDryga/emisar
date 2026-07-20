@@ -10,6 +10,9 @@ description: >
 side_effects:
   - One API call.
   - Read-only.
+search_terms:
+  - no leader
+  - leader election
 args: []
 execution:
   command:

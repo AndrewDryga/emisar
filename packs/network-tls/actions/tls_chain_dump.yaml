@@ -7,6 +7,8 @@ description: Dumps the full certificate chain a server returns. Use to debug "br
 side_effects:
   - One openssl s_client connection.
   - Read-only.
+search_terms:
+  - missing intermediate
 args:
   - name: host
     type: string

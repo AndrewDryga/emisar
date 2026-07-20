@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'Show one evaluation''s status — placement failures, queued allocations, blocked count.'
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - stuck pending
+  - not scheduling
 args:
   - name: eval_id
     type: string

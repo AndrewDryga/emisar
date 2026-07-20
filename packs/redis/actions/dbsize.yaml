@@ -14,6 +14,10 @@ side_effects:
   - Issues one DBSIZE command.
   - No keys read or written.
 
+search_terms:
+  - key count
+  - how many keys
+
 args:
   - name: db
     type: integer

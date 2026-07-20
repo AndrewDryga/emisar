@@ -12,6 +12,11 @@ description: >
 side_effects:
   - Outbound HTTP(S) to the URL.
   - Read-only.
+search_terms:
+  - site down
+  - website unreachable
+  - is the site up
+  - slow website
 args:
   - name: url
     type: string

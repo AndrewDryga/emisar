@@ -17,6 +17,10 @@ side_effects:
   - Touches no files.
   - Does not mount, unmount, or modify anything.
 
+search_terms:
+  - no space left on device
+  - out of space
+
 args:
   - name: paths
     type: string_array

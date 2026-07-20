@@ -14,6 +14,9 @@ side_effects:
   - One lsof invocation.
   - Read-only; may be slow on large systems.
 
+search_terms:
+  - too many open files
+
 args: []
 
 execution:

@@ -14,6 +14,12 @@ side_effects:
   - One ss invocation.
   - Read-only.
 
+search_terms:
+  - hammering
+  - traffic spike
+  - bandwidth
+  - top talkers
+
 args:
   - name: limit
     type: integer

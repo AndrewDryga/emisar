@@ -15,6 +15,9 @@ side_effects:
   - Subscribes to a component's output stream on the local Vector instance.
   - Slight runtime overhead while sampling; auto-exits after duration_ms.
   - Read-only — observes events, never modifies the pipeline.
+search_terms:
+  - logs stopped flowing
+  - log pipeline
 args:
   - name: component
     type: string

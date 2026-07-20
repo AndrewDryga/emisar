@@ -8,6 +8,9 @@ description: >
 side_effects:
   - One docker compose ps invocation.
   - Read-only.
+search_terms:
+  - services down
+  - compose stack
 args:
   - name: file
     type: string

@@ -8,6 +8,9 @@ description: >
 side_effects:
   - One openssl s_client connection.
   - Read-only.
+search_terms:
+  - renewal
+  - certificate error
 args:
   - name: host
     type: string

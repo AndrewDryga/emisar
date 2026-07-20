@@ -16,6 +16,10 @@ side_effects:
   - For an anycast VIP, upstream ECMP drops this node within a BFD interval and traffic shifts to the remaining advertisers.
   - Running-config only — not written to startup-config, so an FRR restart or reboot re-advertises.
   - Reversible with `no neighbor <peer> shutdown` (re-advertise when the node is healthy again).
+search_terms:
+  - drain traffic
+  - take node out of rotation
+  - maintenance drain
 args:
   - name: asn
     type: integer

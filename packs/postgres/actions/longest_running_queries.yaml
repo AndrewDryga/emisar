@@ -5,6 +5,12 @@ kind: exec
 risk: low
 description: List backends in 'active' state, oldest first. Use to spot stuck/runaway work.
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - db is slow
+  - database slow
+  - slow db
+  - long running query
+  - stuck query
 args: []
 execution:
   command:

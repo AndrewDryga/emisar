@@ -7,6 +7,9 @@ description: Restarts one task (or all tasks if not specified) in one allocation
 side_effects:
   - Task(s) receive SIGTERM then SIGKILL after kill_timeout.
   - In-flight requests drop unless shutdown_delay is set.
+search_terms:
+  - restart pod
+  - bounce task
 args:
   - name: alloc_id
     type: string

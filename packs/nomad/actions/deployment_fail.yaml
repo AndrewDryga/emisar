@@ -11,6 +11,9 @@ description: >
 side_effects:
   - The rollout stops; no further canaries or placements from this deployment.
   - With auto_revert, the job rolls back to its last stable version.
+search_terms:
+  - abort rollout
+  - cancel deployment
 args:
   - name: deployment_id
     type: string

@@ -7,6 +7,10 @@ description: Show persisted server state — health, weight, admin overrides. Re
 side_effects:
   - One admin socket command.
   - Read-only.
+search_terms:
+  - dead backend
+  - backend down
+  - unhealthy
 args: []
 execution:
   command:

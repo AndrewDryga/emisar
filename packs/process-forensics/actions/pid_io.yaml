@@ -7,6 +7,9 @@ description: Show cumulative read/write byte counts for one PID. Use to identify
 side_effects:
   - One /proc read.
   - Read-only.
+search_terms:
+  - io hog
+  - disk io per process
 args:
   - name: pid
     type: integer

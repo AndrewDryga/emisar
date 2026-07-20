@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List every check currently in CRITICAL state across the catalog.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - what is failing
+  - failing services
 args: []
 execution:
   command:

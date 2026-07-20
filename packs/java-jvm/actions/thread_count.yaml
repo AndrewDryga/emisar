@@ -7,6 +7,8 @@ description: Counts /proc/<pid>/task entries — fastest way to spot "do we have
 side_effects:
   - One /proc read.
   - Read-only.
+search_terms:
+  - thread leak
 args:
   - name: pid
     type: integer

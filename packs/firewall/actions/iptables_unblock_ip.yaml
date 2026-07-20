@@ -10,6 +10,8 @@ description: >
 side_effects:
   - One matching DROP rule removed (or error if no match).
   - Traffic from that IP can flow again, subject to other rules.
+search_terms:
+  - unban
 args:
   - name: ip
     type: string

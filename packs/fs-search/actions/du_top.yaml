@@ -7,6 +7,10 @@ description: Show the top 20 immediate subdirs of one path by size.
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - where did the space go
+  - disk filling up
+  - biggest directories
 args:
   - name: path
     type: path

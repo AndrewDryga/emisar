@@ -7,6 +7,10 @@ description: Adjusts the count for one task group.
 side_effects:
   - Scheduler creates or stops allocations to reach the target count.
   - Stopped allocations follow the kill_timeout / shutdown_delay stanzas.
+search_terms:
+  - scale up
+  - scale down
+  - more replicas
 args:
   - name: job
     type: string

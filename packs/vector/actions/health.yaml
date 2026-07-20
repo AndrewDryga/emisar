@@ -10,6 +10,10 @@ description: >
   migration. Requires api.enabled=true in the Vector config; binds
   127.0.0.1:8686.
 side_effects: ["One read-only HTTP GET to the local Vector API.", "Read-only."]
+search_terms:
+  - logs stopped flowing
+  - log pipeline
+  - not shipping logs
 args: []
 execution:
   command:

@@ -7,6 +7,8 @@ description: Sends N ICMP echo requests with explicit per-probe timeout.
 side_effects:
   - Outbound ICMP.
   - Read-only.
+search_terms:
+  - unreachable
 args:
   - name: host
     type: string

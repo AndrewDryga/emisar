@@ -18,6 +18,10 @@ side_effects:
   - Iterates user crontabs + reads /etc/cron.*.
   - Requires root; exposes cron command lines (may include inline secrets).
 
+search_terms:
+  - scheduled jobs
+  - scheduled tasks
+
 args: []
 
 execution:

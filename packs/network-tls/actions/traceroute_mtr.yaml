@@ -8,6 +8,10 @@ description: >
 side_effects:
   - Outbound ICMP/UDP probes.
   - Read-only.
+search_terms:
+  - packet loss
+  - network path
+  - flaky connection
 args:
   - name: host
     type: string

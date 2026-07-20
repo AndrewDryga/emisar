@@ -13,6 +13,9 @@ side_effects:
   - Overrides the next boot's device selection (one-time, not persistent).
   - Does not power-cycle the host; the override applies at the next boot.
   - Changes which OS/installer the next boot lands in — wrong choice can boot an unintended image.
+search_terms:
+  - pxe boot
+  - boot to bios
 args:
   - name: host
     type: string

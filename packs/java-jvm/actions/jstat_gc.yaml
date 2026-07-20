@@ -7,6 +7,11 @@ description: 'Show ten 1-second samples of GC stats. Surfaces young + old GC tim
 side_effects:
   - One jstat invocation lasting ~10s.
   - Read-only.
+search_terms:
+  - gc thrashing
+  - gc storm
+  - memory pressure
+  - heap churn
 args:
   - name: pid
     type: integer

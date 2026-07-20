@@ -7,6 +7,9 @@ description: 'Send a UNIX signal to one task (or all tasks). Common uses: SIGHUP
 side_effects:
   - Targeted task(s) receive the signal.
   - Effect depends on the application's signal handling.
+search_terms:
+  - send sighup
+  - reload config
 args:
   - name: alloc_id
     type: string

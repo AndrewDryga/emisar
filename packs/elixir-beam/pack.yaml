@@ -2,7 +2,7 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.1
+version: 0.1.2
 description: >
   Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
   inside Docker containers: toolchain versions, EPMD registrations, BEAM OS

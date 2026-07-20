@@ -7,6 +7,10 @@ description: Tabulates each thread's state (R/S/D/Z) from /proc/PID/task/*/statu
 side_effects:
   - Reads /proc/PID/task/.
   - Read-only.
+search_terms:
+  - d state
+  - uninterruptible sleep
+  - zombie threads
 args:
   - name: pid
     type: integer

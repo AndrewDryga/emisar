@@ -7,6 +7,9 @@ description: Show aggregated memory stats — Rss, Pss, Shared, Private. Better 
 side_effects:
   - One /proc read.
   - Read-only.
+search_terms:
+  - memory leak
+  - process memory usage
 args:
   - name: pid
     type: integer

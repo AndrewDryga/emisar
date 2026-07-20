@@ -16,6 +16,11 @@ side_effects:
   - Starts a short-lived JMX connection.
   - Output can be large for clusters with many tables.
 
+search_terms:
+  - sstable count
+  - tombstones
+  - space used per table
+
 args:
   - name: keyspace
     type: string

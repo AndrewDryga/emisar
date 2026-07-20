@@ -16,6 +16,11 @@ side_effects:
   - One SELECT against pg_stat_replication.
   - No locks held.
 
+search_terms:
+  - replica out of sync
+  - replication behind
+  - standby lag
+
 args: []
 
 execution:

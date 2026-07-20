@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Tail the access log (path configurable via CADDY_ACCESS_LOG env).
 side_effects: ["One file read.", "Read-only."]
+search_terms:
+  - recent requests
 args:
   - name: lines
     type: integer

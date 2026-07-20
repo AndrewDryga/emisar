@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.9
+version: 0.2.10
 retired_below: 0.2.9
 description: >
   General-purpose Linux diagnostics + low-level remediation: process

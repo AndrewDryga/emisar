@@ -10,6 +10,11 @@ description: >
 side_effects:
   - One read-only HTTP GET to the Typesense /health endpoint.
   - Read-only — never writes or mutates data.
+search_terms:
+  - search down
+  - out of memory
+  - out of disk
+  - writes rejected
 execution:
   script:
     path: scripts/tsget.sh

@@ -16,6 +16,10 @@ side_effects:
   - Does not modify Cassandra data or configuration.
   - May create temporary files inside the runner's work directory.
 
+search_terms:
+  - disk full
+  - running out of space
+
 args:
   - name: keyspace_filter
     type: string

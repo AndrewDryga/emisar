@@ -11,6 +11,8 @@ side_effects:
   - One fork; brief CPU + memory spike.
   - Writes an RDB file to disk.
   - Concurrent BGREWRITEAOF will queue behind this.
+search_terms:
+  - backup now
 args: []
 execution:
   command:

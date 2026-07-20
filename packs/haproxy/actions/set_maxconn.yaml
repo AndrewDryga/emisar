@@ -6,6 +6,8 @@ risk: high
 description: Live-update the maxconn cap on one frontend without a reload.
 side_effects:
   - Lowering below current conns rejects new connections until count drops.
+search_terms:
+  - connection limit
 args:
   - name: frontend
     type: string

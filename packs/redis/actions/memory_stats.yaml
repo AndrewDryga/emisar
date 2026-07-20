@@ -15,6 +15,10 @@ side_effects:
   - Issues one MEMORY STATS command.
   - No keys read or written.
 
+search_terms:
+  - memory breakdown
+  - oom warnings
+
 args: []
 
 execution:

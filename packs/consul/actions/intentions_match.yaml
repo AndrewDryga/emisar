@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List all intentions whose destination is the named service. Use to answer "what can talk to X?".
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - what can talk to this service
+  - connection denied
 args:
   - name: destination
     type: string

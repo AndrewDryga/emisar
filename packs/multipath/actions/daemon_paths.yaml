@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Show per-path state from the running multipathd (dev, dm state, path checker, latency).
 side_effects: ["One multipathd query.", "Read-only."]
+search_terms:
+  - failed paths
 args: []
 execution:
   command: {binary: multipathd, argv: ["show", "paths"]}

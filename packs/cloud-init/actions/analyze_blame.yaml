@@ -9,6 +9,9 @@ description: >
 side_effects:
   - One CLI call.
   - Read-only.
+search_terms:
+  - slow boot
+  - slow provisioning
 args: []
 execution:
   command:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dell-ipmi
 name: Dell iDRAC / IPMI (ipmitool)
-version: 0.1.0
+version: 0.1.1
 description: >
   Out-of-band BMC monitoring and power control over IPMI 2.0 (RMCP+/lanplus)
   with ipmitool — sensor data records, full sensor readings with thresholds,

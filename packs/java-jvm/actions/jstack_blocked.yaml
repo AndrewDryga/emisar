@@ -7,6 +7,9 @@ description: Runs jstack and filters output to threads in BLOCKED state plus the
 side_effects:
   - One jstack invocation.
   - Read-only.
+search_terms:
+  - deadlock
+  - lock contention
 args:
   - name: pid
     type: integer

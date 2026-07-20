@@ -10,6 +10,10 @@ description: >
 side_effects:
   - One MEMORY DOCTOR command.
   - Read-only.
+search_terms:
+  - cache health
+  - cache unhealthy
+  - memory fragmentation
 args: []
 execution:
   command:

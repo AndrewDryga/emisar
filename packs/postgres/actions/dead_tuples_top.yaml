@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'List tables where n_dead_tup / (n_live_tup + n_dead_tup) is high. Bloat suspects.'
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - table bloat
+  - autovacuum not keeping up
 args: []
 execution:
   command:

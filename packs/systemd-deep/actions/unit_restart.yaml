@@ -12,6 +12,8 @@ side_effects:
   - Service stopped then started.
   - In-flight requests/connections terminated mid-restart.
   - PID changes; any reverse-proxy or supervisor must re-resolve.
+search_terms:
+  - bounce service
 args:
   - name: unit
     type: string

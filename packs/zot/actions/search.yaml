@@ -12,6 +12,8 @@ description: >
 side_effects:
   - One read-only HTTP POST to the zot /v2/_zot/ext/search GraphQL endpoint.
   - Read-only — the query only reads; it never pushes, deletes, or mutates.
+search_terms:
+  - cve
 execution:
   script:
     path: scripts/zotget.sh

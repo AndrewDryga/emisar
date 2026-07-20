@@ -2,7 +2,7 @@ schema_version: 1
 
 id: frr
 name: FRRouting (FRR)
-version: 0.1.3
+version: 0.1.4
 description: >
   Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
   BFD peers, IP route summary, and interface state — plus one gated mutation:

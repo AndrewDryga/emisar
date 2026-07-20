@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Show IP route table summary — route and FIB counts grouped by source protocol.
 side_effects: ["One vtysh show command.", "Read-only."]
+search_terms:
+  - routing table size
 args: []
 execution:
   command: {binary: vtysh, argv: ["-c", "show ip route summary"]}

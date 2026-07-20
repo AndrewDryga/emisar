@@ -7,6 +7,9 @@ description: Removes one service registration from this agent.
 side_effects:
   - Service immediately disappears from discovery on this node.
   - Other nodes' registrations are unaffected.
+search_terms:
+  - stale service
+  - ghost instance
 args:
   - name: service_id
     type: string

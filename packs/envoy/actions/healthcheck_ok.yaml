@@ -9,6 +9,8 @@ description: >
 side_effects:
   - Envoy reports healthy on /healthcheck.
   - Upstream LB begins routing traffic back.
+search_terms:
+  - back into rotation
 args:
   - name: admin
     type: string

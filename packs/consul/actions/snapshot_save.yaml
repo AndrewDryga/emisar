@@ -8,6 +8,8 @@ side_effects:
   - One read of the entire state store.
   - File written at the configured path on the runner host.
   - Brief leader IO; no service impact.
+search_terms:
+  - cluster backup
 args:
   - name: path
     type: string

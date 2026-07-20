@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: Show local-node read/write/sstable/partition-size histograms for one table.
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - p99 latency
+  - wide partitions
 args:
   - name: keyspace
     type: string

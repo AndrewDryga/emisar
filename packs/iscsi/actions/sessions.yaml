@@ -8,6 +8,10 @@ description: >
   Returns nothing and succeeds when there are no active sessions (iscsiadm
   exits 21 in that case, which is treated as success, not failure).
 side_effects: ["One iscsiadm read.", "Read-only."]
+search_terms:
+  - san connectivity
+  - logged in targets
+  - storage disconnected
 args: []
 execution:
   command: {binary: iscsiadm, argv: ["-m", "session"]}

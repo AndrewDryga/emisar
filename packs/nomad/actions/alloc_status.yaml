@@ -5,6 +5,11 @@ kind: script
 risk: low
 description: Show one allocation's full state — task states, restarts, last events.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - crash loop
+  - tasks flapping
+  - oom killed
+  - restart loop
 args:
   - name: alloc_id
     type: string

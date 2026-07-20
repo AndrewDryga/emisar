@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'Show this node: uptime, heap, load, exceptions, key+row+counter cache hit rates.'
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - node uptime
+  - heap usage
 args: []
 execution:
   command: {binary: nodetool, argv: ["info"]}

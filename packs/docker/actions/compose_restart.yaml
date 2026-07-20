@@ -8,6 +8,9 @@ description: >
 side_effects:
   - SIGTERM (then SIGKILL) the service's containers.
   - Containers restart and re-run their entrypoint.
+search_terms:
+  - bounce service
+  - service hung
 args:
   - name: file
     type: string

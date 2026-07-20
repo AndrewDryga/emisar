@@ -10,6 +10,11 @@ description: >
 side_effects:
   - Reads the Traefik access log.
   - Read-only.
+search_terms:
+  - internal server error
+  - bad gateway
+  - 500 errors
+  - 502 errors
 args:
   - name: lines
     type: integer

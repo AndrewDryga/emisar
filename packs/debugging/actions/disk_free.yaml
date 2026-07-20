@@ -14,6 +14,11 @@ side_effects:
   - One df invocation.
   - Read-only.
 
+search_terms:
+  - disk full
+  - no space left on device
+  - out of space
+
 args: []
 
 execution:

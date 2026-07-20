@@ -13,6 +13,9 @@ side_effects:
   - Apps observe a time discontinuity.
   - Cron jobs in the skipped window do NOT fire.
   - TLS cert validation may briefly fail mid-step.
+search_terms:
+  - force time sync
+  - fix the clock
 args: []
 execution:
   command:

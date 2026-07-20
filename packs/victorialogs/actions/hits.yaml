@@ -10,6 +10,9 @@ description: >
 side_effects:
   - One read-only HTTP GET to the VictoriaLogs query API.
   - Read-only.
+search_terms:
+  - error rate
+  - log volume
 args:
   - name: query
     type: string

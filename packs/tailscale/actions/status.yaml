@@ -7,6 +7,10 @@ description: >
   Show tailnet status as JSON — the peer/online map: Self, Peer{}, Online,
   ExitNodeStatus, TailscaleIPs, and Health.
 side_effects: ["One tailscale read.", "Read-only."]
+search_terms:
+  - vpn
+  - mesh network
+  - offline peers
 args: []
 execution:
   command: {binary: tailscale, argv: ["status", "--json"]}

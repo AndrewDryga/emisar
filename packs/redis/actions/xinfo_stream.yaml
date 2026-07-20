@@ -9,6 +9,10 @@ description: >
 side_effects:
   - One XINFO STREAM command.
   - Read-only.
+search_terms:
+  - queue backed up
+  - stream backlog
+  - consumer lag
 args:
   - name: key
     type: string

@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'Show the cluster name, partitioner, snitch, and schema versions per host. Schema disagreement here is a sign of partial DDL propagation.'
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - schema disagreement
+  - schema mismatch
 args: []
 execution:
   command: {binary: nodetool, argv: ["describecluster"]}

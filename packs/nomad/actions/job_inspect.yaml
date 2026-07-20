@@ -12,6 +12,9 @@ description: >
 side_effects:
   - One API call.
   - Read-only, but exposes the job's env/template blocks (may include secrets).
+search_terms:
+  - jobspec
+  - job definition
 args:
   - name: job
     type: string

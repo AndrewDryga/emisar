@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'Show a quick "how many idle / active / idle-in-transaction" health snapshot.'
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - too many connections
+  - connection pileup
 args: []
 execution:
   command:

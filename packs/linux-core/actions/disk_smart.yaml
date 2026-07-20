@@ -18,6 +18,10 @@ side_effects:
   - One smartctl invocation.
   - Reads SMART registers; no writes to the disk.
 
+search_terms:
+  - failing drive
+  - bad sectors
+
 args:
   - name: device
     type: string

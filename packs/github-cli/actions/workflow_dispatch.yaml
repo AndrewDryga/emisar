@@ -11,6 +11,9 @@ side_effects:
   - Workflow run begins.
   - Compute consumed.
   - Effects depend entirely on the workflow definition.
+search_terms:
+  - trigger deploy
+  - manual release
 args:
   - name: workflow
     type: string

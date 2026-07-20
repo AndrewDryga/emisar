@@ -22,6 +22,11 @@ side_effects:
   - Can run for minutes to hours depending on dataset size.
   - May worsen latency on the local node and on replica nodes for the duration.
 
+search_terms:
+  - anti-entropy
+  - inconsistent replicas
+  - data consistency
+
 args:
   - name: keyspace
     type: string

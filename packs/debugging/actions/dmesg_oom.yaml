@@ -16,6 +16,10 @@ side_effects:
   - One dmesg (or journalctl -k) invocation.
   - Read-only.
 
+search_terms:
+  - out of memory
+  - process disappeared
+
 args: []
 
 execution:

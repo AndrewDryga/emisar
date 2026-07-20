@@ -7,6 +7,8 @@ description: Show the full nftables ruleset across all families.
 side_effects:
   - One netfilter query.
   - Read-only.
+search_terms:
+  - firewall rules
 args: []
 execution:
   command:

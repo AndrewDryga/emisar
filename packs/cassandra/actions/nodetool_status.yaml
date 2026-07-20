@@ -16,6 +16,11 @@ side_effects:
   - May fail if JMX auth is misconfigured.
   - Does not modify Cassandra data or cluster state.
 
+search_terms:
+  - ring health
+  - node down
+  - cluster health
+
 args:
   - name: host
     type: string

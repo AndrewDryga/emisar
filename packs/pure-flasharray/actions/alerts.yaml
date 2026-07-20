@@ -11,6 +11,10 @@ description: >
 side_effects:
   - One read-only HTTP GET to the FlashArray REST API.
   - Read-only — never writes, acknowledges, or clears alerts.
+search_terms:
+  - array degraded
+  - failed drive
+  - storage alarms
 args: []
 execution:
   script:

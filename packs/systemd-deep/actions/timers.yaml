@@ -7,6 +7,8 @@ description: '`systemctl list-timers` — every timer with its next-elapse and l
 side_effects:
   - One systemctl invocation.
   - Read-only.
+search_terms:
+  - scheduled jobs
 args: []
 execution:
   command:

@@ -16,6 +16,9 @@ side_effects:
   - Issues one LATENCY LATEST command.
   - No keys read or written.
 
+search_terms:
+  - intermittent stalls
+
 args: []
 
 execution:

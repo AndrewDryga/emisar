@@ -7,6 +7,9 @@ description: Find files with setuid or setgid bits. Audit for privilege escalati
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - suid
+  - sgid
 args:
   - name: path
     type: path

@@ -8,6 +8,8 @@ description: >
 side_effects:
   - Deletes every unattached volume.
   - Irreversible — there is no recycle bin for docker volumes.
+search_terms:
+  - orphaned volumes
 args: []
 execution:
   command:

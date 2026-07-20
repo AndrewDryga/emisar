@@ -14,6 +14,11 @@ side_effects:
   - One docker logs invocation.
   - Read-only.
 
+search_terms:
+  - container crashed
+  - crash output
+  - app errors
+
 args:
   - name: container
     type: string

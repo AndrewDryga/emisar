@@ -7,6 +7,9 @@ description: List all filter-table rules with packet + byte counters.
 side_effects:
   - One netfilter query.
   - Read-only.
+search_terms:
+  - firewall rules
+  - blocked traffic
 args: []
 execution:
   command:

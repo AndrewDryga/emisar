@@ -14,6 +14,9 @@ side_effects:
   - Issues one INFO commandstats command.
   - No keys read or written.
 
+search_terms:
+  - hot commands
+
 args: []
 
 execution:

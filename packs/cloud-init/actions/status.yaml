@@ -10,6 +10,8 @@ description: >
 side_effects:
   - One CLI call.
   - Read-only.
+search_terms:
+  - provisioning
 args: []
 execution:
   command:

@@ -10,6 +10,9 @@ description: >
 side_effects:
   - Reads the Traefik access log.
   - Read-only.
+search_terms:
+  - 404 errors
+  - client errors
 args:
   - name: lines
     type: integer

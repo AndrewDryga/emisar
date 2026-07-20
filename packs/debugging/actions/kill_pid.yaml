@@ -12,6 +12,10 @@ side_effects:
   - Signal delivered.
   - SIGTERM, SIGINT, SIGHUP allow cleanup.
   - SIGKILL terminates immediately; open files closed by kernel; pid may be reused.
+search_terms:
+  - terminate
+  - stuck process
+  - hung process
 args:
   - name: pid
     type: integer

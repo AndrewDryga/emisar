@@ -16,6 +16,10 @@ side_effects:
   - Starts a short-lived JMX connection.
   - Touches no files.
 
+search_terms:
+  - dropped mutations
+  - dropped messages
+
 args: []
 
 execution:

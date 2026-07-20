@@ -14,6 +14,9 @@ side_effects:
   - One df invocation.
   - Read-only.
 
+search_terms:
+  - out of inodes
+
 args: []
 
 execution:

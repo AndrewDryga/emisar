@@ -8,6 +8,10 @@ side_effects:
   - Targeted backend's connection is severed.
   - Open transactions roll back.
   - Held locks are released.
+search_terms:
+  - kill connection
+  - kill session
+  - force disconnect
 args:
   - name: pid
     type: integer

@@ -18,6 +18,10 @@ side_effects:
   - "reset: hard reset with no power-off."
   - "diag: pulses an NMI to the CPUs (triggers a crash/diagnostic dump), not a power-state change."
   - All non-graceful options drop every running service and open connection at once.
+search_terms:
+  - power cycle
+  - hard reset
+  - reboot server
 args:
   - name: host
     type: string

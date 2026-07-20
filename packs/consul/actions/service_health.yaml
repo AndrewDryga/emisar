@@ -7,6 +7,8 @@ description: Show per-node health for one service.
 side_effects:
   - One health request.
   - Read-only.
+search_terms:
+  - service unhealthy
 args:
   - name: service
     type: string

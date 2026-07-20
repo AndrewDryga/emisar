@@ -13,6 +13,10 @@ side_effects:
   - One docker images invocation.
   - Read-only.
 
+search_terms:
+  - old images
+  - image missing
+
 args: []
 
 execution:

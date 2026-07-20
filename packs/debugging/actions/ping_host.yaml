@@ -15,6 +15,10 @@ side_effects:
   - One ping process running for ~N seconds.
   - Outgoing ICMP to the target.
 
+search_terms:
+  - unreachable
+  - host down
+
 args:
   - name: host
     type: string

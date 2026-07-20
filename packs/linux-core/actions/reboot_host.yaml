@@ -17,6 +17,11 @@ side_effects:
   - One-minute timer set; kernel shutdown begins after.
   - Every running service stops; all open connections drop.
 
+search_terms:
+  - restart host
+  - reboot box
+  - restart server
+
 args:
   - name: note
     type: string

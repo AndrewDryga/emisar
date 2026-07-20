@@ -21,6 +21,9 @@ side_effects:
   - May trigger downstream alerts if the unit takes time to recover.
   - Does not modify configuration or on-disk state.
 
+search_terms:
+  - bounce service
+
 args:
   - name: unit
     type: string

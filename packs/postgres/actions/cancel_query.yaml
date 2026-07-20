@@ -17,6 +17,10 @@ side_effects:
   - The client connection stays open and the transaction is rolled back.
   - Does not affect other sessions.
 
+search_terms:
+  - kill query
+  - stop query
+
 args:
   - name: pid
     type: integer

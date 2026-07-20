@@ -11,6 +11,8 @@ description: >
 side_effects:
   - One read-only HTTP GET to the Typesense /stats.json endpoint.
   - Read-only — never writes or mutates data.
+search_terms:
+  - slow searches
 execution:
   script:
     path: scripts/tsget.sh

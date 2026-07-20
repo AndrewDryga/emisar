@@ -12,6 +12,9 @@ side_effects:
   - Runtime behavior changes immediately.
   - Some parameters affect persistence, replication, eviction.
   - Not persisted across restart without CONFIG REWRITE.
+search_terms:
+  - set maxmemory
+  - change eviction policy
 args:
   - name: parameter
     type: string

@@ -9,6 +9,10 @@ side_effects:
   - One release rpc call with a fixed expression.
   - Does not read process dictionaries or mailbox contents.
   - Read-only.
+search_terms:
+  - message queue backlog
+  - mailbox growing
+  - busiest processes
 args:
   - name: limit
     type: integer

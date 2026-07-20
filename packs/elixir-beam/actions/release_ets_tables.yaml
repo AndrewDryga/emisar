@@ -9,6 +9,9 @@ side_effects:
   - One release rpc call with a fixed expression.
   - Reads table metadata only, never table contents.
   - Read-only.
+search_terms:
+  - ets leak
+  - table growing
 args:
   - name: limit
     type: integer

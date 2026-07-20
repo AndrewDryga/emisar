@@ -7,6 +7,8 @@ description: List recent workflow runs across the repo.
 side_effects:
   - One API call.
   - Read-only.
+search_terms:
+  - recent builds
 args:
   - name: repo
     type: string

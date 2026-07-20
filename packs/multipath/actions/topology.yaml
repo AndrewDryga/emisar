@@ -8,6 +8,10 @@ description: >
   vendor/product), its path groups, and per-path state (active/enabled,
   dm status, path checker result).
 side_effects: ["One multipath read.", "Read-only."]
+search_terms:
+  - path failure
+  - all paths down
+  - lun paths
 args: []
 execution:
   command: {binary: multipath, argv: ["-ll"]}

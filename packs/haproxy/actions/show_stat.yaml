@@ -7,6 +7,8 @@ description: Show per-proxy + per-server stats (sessions, queues, bytes, errors,
 side_effects:
   - One admin socket command.
   - Read-only.
+search_terms:
+  - backend health
 args: []
 execution:
   command:

@@ -7,6 +7,9 @@ description: Show local HEAD-movement history. Use to find recent rebases / rese
 side_effects:
   - One git reflog.
   - Read-only.
+search_terms:
+  - lost commits
+  - recover commit
 args:
   - name: count
     type: integer

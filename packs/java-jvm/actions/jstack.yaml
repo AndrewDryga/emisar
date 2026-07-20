@@ -7,6 +7,10 @@ description: Dump full thread state with lock info. The canonical "what are all 
 side_effects:
   - One jstack invocation.
   - Read-only; introduces a STW pause on the JVM (~ms).
+search_terms:
+  - app hung
+  - threads stuck
+  - app frozen
 args:
   - name: pid
     type: integer

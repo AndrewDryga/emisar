@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: List all reverse-proxy upstreams with current health.
 side_effects: ["One admin GET.", "Read-only."]
+search_terms:
+  - backend down
+  - dead backend
 args: []
 execution:
   command:

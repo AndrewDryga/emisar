@@ -8,6 +8,9 @@ description: >
 side_effects:
   - Outbound HTTPS to the registry.
   - Writes layers to /var/lib/docker.
+search_terms:
+  - download image
+  - update image
 args:
   - name: image
     type: string

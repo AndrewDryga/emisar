@@ -8,6 +8,8 @@ description: >
 side_effects:
   - Target process runs ~3-10x slower during the window.
   - Requires CAP_SYS_PTRACE or matching uid.
+search_terms:
+  - syscall counts
 args:
   - name: pid
     type: integer

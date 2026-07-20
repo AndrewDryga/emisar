@@ -7,6 +7,8 @@ description: List the last N commits with author + date + subject.
 side_effects:
   - One git log.
   - Read-only.
+search_terms:
+  - what changed recently
 args:
   - name: count
     type: integer

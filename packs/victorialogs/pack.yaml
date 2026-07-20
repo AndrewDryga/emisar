@@ -2,7 +2,7 @@ schema_version: 1
 
 id: victorialogs
 name: VictoriaLogs queries
-version: 0.1.3
+version: 0.1.4
 description: >
   Read-only LogsQL access to VictoriaLogs over its HTTP API: search log
   entries, hit histograms over time, stats aggregations (instant + range),

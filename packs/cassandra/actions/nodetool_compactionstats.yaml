@@ -15,6 +15,11 @@ side_effects:
   - Starts a short-lived JMX connection.
   - Touches no files.
 
+search_terms:
+  - compactions backed up
+  - compaction backlog
+  - pending compactions
+
 args: []
 
 execution:

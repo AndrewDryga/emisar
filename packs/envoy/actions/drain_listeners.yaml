@@ -12,6 +12,8 @@ side_effects:
   - All listeners stop accepting new connections.
   - Existing connections drain over the configured grace.
   - Health checks may fail externally during drain.
+search_terms:
+  - graceful shutdown
 args:
   - name: admin
     type: string

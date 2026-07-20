@@ -7,6 +7,8 @@ description: List active traffic-control disciplines per interface + their count
 side_effects:
   - One netlink query.
   - Read-only.
+search_terms:
+  - bandwidth limit
 args: []
 execution:
   command:

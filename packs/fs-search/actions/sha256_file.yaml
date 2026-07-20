@@ -7,6 +7,9 @@ description: Show the SHA-256 of one file. Use to confirm a binary matches a kno
 side_effects:
   - One read of the file.
   - Read-only.
+search_terms:
+  - checksum
+  - integrity
 args:
   - name: path
     type: path

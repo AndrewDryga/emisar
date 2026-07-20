@@ -5,6 +5,10 @@ kind: exec
 risk: low
 description: List every database with pg_database_size.
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - database out of space
+  - db size
+  - disk usage
 args: []
 execution:
   command:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: zot
 name: zot OCI registry
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only inspection of a zot OCI registry over its HTTP API: the OCI
   distribution endpoints (version check, catalog, tags, manifests) plus the

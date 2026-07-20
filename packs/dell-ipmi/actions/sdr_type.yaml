@@ -11,6 +11,10 @@ description: >
 side_effects:
   - One read-only IPMI SDR read filtered by sensor type.
   - Read-only.
+search_terms:
+  - fans loud
+  - fan speed
+  - temperature readings
 args:
   - name: host
     type: string

@@ -7,6 +7,8 @@ description: List all CI checks for one PR + pass/fail status.
 side_effects:
   - One API call.
   - Read-only.
+search_terms:
+  - checks red
 args:
   - name: repo
     type: string

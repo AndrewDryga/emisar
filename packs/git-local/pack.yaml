@@ -2,7 +2,7 @@ schema_version: 1
 
 id: git-local
 name: Host-side git
-version: 0.1.4
+version: 0.1.5
 retired_below: 0.1.4
 description: >
   Read-only git operations against a checkout living on the runner host

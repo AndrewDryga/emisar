@@ -7,6 +7,11 @@ description: Reverts a job to a prior version. Equivalent to re-submitting that 
 side_effects:
   - Job spec replaced with the prior version.
   - Triggers a rolling update (per the new/old spec's update stanza).
+search_terms:
+  - rollback
+  - roll back deployment
+  - undo deploy
+  - previous version
 args:
   - name: job
     type: string

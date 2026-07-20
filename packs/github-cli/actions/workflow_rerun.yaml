@@ -10,6 +10,9 @@ side_effects:
   - Workflow run starts again.
   - Compute consumed.
   - Notifications fire.
+search_terms:
+  - retry build
+  - flaky failure
 args:
   - name: run_id
     type: integer

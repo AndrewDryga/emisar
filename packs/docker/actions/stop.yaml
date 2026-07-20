@@ -8,6 +8,8 @@ description: >
 side_effects:
   - SIGTERM the container; SIGKILL on timeout.
   - In-flight requests dropped unless the app handles graceful drain.
+search_terms:
+  - graceful shutdown
 args:
   - name: container
     type: string

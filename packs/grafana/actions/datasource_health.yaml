@@ -5,6 +5,11 @@ kind: exec
 risk: low
 description: Check health of one datasource (tests connectivity).
 side_effects: ["One API call that probes the downstream datasource.", "Read-only."]
+search_terms:
+  - datasource down
+  - metrics missing
+  - dashboards empty
+  - no data
 args:
   - name: uid
     type: string

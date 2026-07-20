@@ -11,6 +11,9 @@ description: >
 side_effects:
   - One read-only IPMI FRU inventory read.
   - Read-only.
+search_terms:
+  - service tag
+  - serial number
 args:
   - name: host
     type: string

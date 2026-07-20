@@ -9,6 +9,9 @@ description: >
   one deployment's full canary/health detail, or nomad.job_deployments for one
   job's history.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - deploy stuck
+  - rollout stalled
 args:
   - name: namespace
     type: string

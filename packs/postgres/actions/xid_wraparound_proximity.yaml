@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: 'Show per-database age(datfrozenxid). 2^31 (~2.1B) is the wraparound limit. >1B = pay attention; >1.8B = emergency.'
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - transaction id wraparound
+  - vacuum freeze age
 args: []
 execution:
   command:

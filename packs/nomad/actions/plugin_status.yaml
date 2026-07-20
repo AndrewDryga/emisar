@@ -9,6 +9,9 @@ description: >
   not in the volume itself. Omit plugin_id to list every plugin; pass one for
   its detail (from the list, or nomad.csi_volume_status's "Plugin ID").
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - volume stuck
+  - mount failing
 args:
   - name: plugin_id
     type: string

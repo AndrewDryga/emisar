@@ -7,6 +7,8 @@ description: Show how much disk the systemd journal is using.
 side_effects:
   - One journalctl invocation.
   - Read-only.
+search_terms:
+  - journal size
 args: []
 execution:
   command:

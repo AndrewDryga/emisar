@@ -16,6 +16,9 @@ side_effects:
   - In-flight commands on that connection are not replied to.
   - The client must reconnect.
 
+search_terms:
+  - stuck client
+
 args:
   - name: target
     type: string

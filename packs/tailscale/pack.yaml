@@ -2,7 +2,7 @@ schema_version: 1
 
 id: tailscale
 name: Tailscale
-version: 0.1.4
+version: 0.1.5
 retired_below: 0.1.4
 description: >
   Inspect the host's Tailscale node via the tailscale CLI: tailnet

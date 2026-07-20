@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: Show detailed BGP neighbor state — capabilities, timers, and message + prefix counters per peer.
 side_effects: ["One vtysh show command.", "Read-only."]
+search_terms:
+  - peer flapping
+  - session resets
 args: []
 execution:
   command: {binary: vtysh, argv: ["-c", "show bgp neighbors"]}

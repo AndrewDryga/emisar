@@ -5,6 +5,10 @@ kind: script
 risk: low
 description: Show one job's full status — task groups, allocations, deployment.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - pods restarting
+  - crash loop
+  - tasks flapping
 args:
   - name: job
     type: string

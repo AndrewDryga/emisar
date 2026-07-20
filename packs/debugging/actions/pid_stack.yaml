@@ -14,6 +14,10 @@ side_effects:
   - One /proc read.
   - Read-only.
 
+search_terms:
+  - uninterruptible sleep
+  - d state
+
 args:
   - name: pid
     type: integer

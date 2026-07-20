@@ -5,6 +5,11 @@ kind: exec
 risk: low
 description: Show coordinator-side read/write latency histograms — what clients actually see.
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - p99 latency
+  - latency percentiles
+  - reads are slow
+  - writes are slow
 args: []
 execution:
   command: {binary: nodetool, argv: ["proxyhistograms"]}

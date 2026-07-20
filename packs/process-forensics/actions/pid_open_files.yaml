@@ -7,6 +7,10 @@ description: List all open files (regular, sockets, pipes) for one PID. Richer t
 side_effects:
   - lsof walks /proc + kernel tables.
   - Read-only.
+search_terms:
+  - fd leak
+  - file descriptor leak
+  - too many open files
 args:
   - name: pid
     type: integer

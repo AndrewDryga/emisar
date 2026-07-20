@@ -10,6 +10,9 @@ description: >
 side_effects:
   - One MEMORY USAGE command.
   - Reads metadata but not the value.
+search_terms:
+  - big key
+  - key size
 args:
   - name: key
     type: string

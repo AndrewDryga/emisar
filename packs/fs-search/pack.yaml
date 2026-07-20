@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.5
+version: 0.1.6
 description: >
   Generic filesystem operations an LLM-driven runner needs constantly:
   bounded find, recursive grep, file head/tail/hash, du, ls -la, stat.

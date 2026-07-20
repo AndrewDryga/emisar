@@ -7,6 +7,11 @@ description: Show Chrony's view of clock drift, frequency, last update.
 side_effects:
   - One chrony query.
   - Read-only.
+search_terms:
+  - clock drift
+  - time skew
+  - clock wrong
+  - out of sync
 args: []
 execution:
   command:

@@ -18,6 +18,13 @@ side_effects:
   - Output includes source IPs and usernames (PII).
   - Read-only.
 
+search_terms:
+  - under attack
+  - intrusion
+  - brute force
+  - break-in
+  - hacked
+
 args:
   - name: count
     type: integer

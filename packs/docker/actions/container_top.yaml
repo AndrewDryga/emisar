@@ -8,6 +8,8 @@ description: >
 side_effects:
   - One docker top invocation.
   - Read-only.
+search_terms:
+  - runaway process
 args:
   - name: container
     type: string

@@ -9,6 +9,9 @@ description: >
 side_effects:
   - One CLUSTER INFO command.
   - Read-only.
+search_terms:
+  - cluster down
+  - clusterdown
 args: []
 execution:
   command:

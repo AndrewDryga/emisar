@@ -7,6 +7,10 @@ description: Count entries in a stream.
 side_effects:
   - One XLEN command.
   - Read-only.
+search_terms:
+  - queue depth
+  - queue backed up
+  - stream backlog
 args:
   - name: key
     type: string

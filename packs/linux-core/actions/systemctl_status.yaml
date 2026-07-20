@@ -14,6 +14,11 @@ side_effects:
   - Reads systemd state.
   - Touches no files.
 
+search_terms:
+  - service won't start
+  - unit down
+  - not running
+
 args:
   - name: unit
     type: string

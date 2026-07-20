@@ -7,6 +7,8 @@ description: Show active connection-tracking entry count + per-state breakdown.
 side_effects:
   - One conntrack query.
   - Read-only.
+search_terms:
+  - table full
 args: []
 execution:
   command:

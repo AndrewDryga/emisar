@@ -2,7 +2,7 @@ schema_version: 1
 
 id: iscsi
 name: iSCSI initiator
-version: 0.1.2
+version: 0.1.3
 description: >
   Inspect the host's iSCSI initiator (open-iscsi): active sessions,
   per-session detail (targets, connections, negotiated parameters),

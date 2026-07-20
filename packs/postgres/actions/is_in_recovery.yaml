@@ -5,6 +5,9 @@ kind: exec
 risk: low
 description: Show whether this instance is a replica (boolean — true if in recovery).
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - primary or replica
+  - is this the primary
 args: []
 execution:
   command:

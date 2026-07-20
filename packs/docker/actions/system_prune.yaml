@@ -17,6 +17,11 @@ side_effects:
   - Deletes networks not used by any container.
   - Frees disk; cannot be undone.
 
+search_terms:
+  - free disk space
+  - reclaim space
+  - disk full
+
 args: []
 
 execution:

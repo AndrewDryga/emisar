@@ -12,6 +12,10 @@ description: >
 side_effects:
   - Reads the acme.json storage file (public certificate fields only).
   - Read-only.
+search_terms:
+  - expired
+  - expiring soon
+  - renewal failed
 args:
   - name: acme_path
     type: string

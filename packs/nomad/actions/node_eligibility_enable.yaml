@@ -6,6 +6,8 @@ risk: medium
 description: Re-enables a node for new allocations.
 side_effects:
   - Node may immediately receive new allocations.
+search_terms:
+  - uncordon
 args:
   - name: node_id
     type: string

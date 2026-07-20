@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: List active TLS certs known to Envoy — subjects, expiry, days remaining.
 side_effects: ["One admin GET.", "Read-only."]
+search_terms:
+  - expired
 args: []
 execution:
   command:

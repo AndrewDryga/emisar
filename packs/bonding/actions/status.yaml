@@ -8,6 +8,9 @@ description: >
   status, and for 802.3ad (LACP) the actor/partner state plus each
   slave's link state and aggregator id.
 side_effects: ["One file read under /proc.", "Read-only."]
+search_terms:
+  - degraded
+  - failover
 args:
   - name: bond
     type: string

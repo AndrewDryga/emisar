@@ -9,6 +9,10 @@ side_effects:
   - Target process runs ~5-20x slower during the strace window.
   - On detach, target resumes normal speed.
   - Requires CAP_SYS_PTRACE or matching uid.
+search_terms:
+  - what is this process doing
+  - process hung
+  - trace system calls
 args:
   - name: pid
     type: integer

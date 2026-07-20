@@ -6,6 +6,8 @@ risk: high
 description: Re-enables one backend server that was administratively disabled.
 side_effects:
   - Server begins receiving traffic again (subject to health checks).
+search_terms:
+  - back into rotation
 args:
   - name: backend
     type: string

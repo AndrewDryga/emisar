@@ -12,6 +12,10 @@ description: >
 side_effects:
   - One read-only IPMI chassis-status query.
   - Read-only.
+search_terms:
+  - bmc power
+  - server power state
+  - drive fault
 args:
   - name: host
     type: string

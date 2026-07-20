@@ -8,6 +8,8 @@ description: >
 side_effects:
   - One docker history invocation.
   - Read-only.
+search_terms:
+  - image bloat
 args:
   - name: image
     type: string

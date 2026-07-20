@@ -7,6 +7,9 @@ description: 'Show per-classloader statistics — instance count, loaded classes
 side_effects:
   - One jcmd call.
   - Read-only.
+search_terms:
+  - classloader leak
+  - metaspace leak
 args:
   - name: pid
     type: integer

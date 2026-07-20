@@ -10,6 +10,9 @@ description: >
 side_effects:
   - One SCAN command.
   - Read-only metadata; values are not fetched.
+search_terms:
+  - list keys
+  - find keys by pattern
 args:
   - name: cursor
     type: string

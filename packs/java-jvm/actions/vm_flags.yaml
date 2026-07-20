@@ -7,6 +7,9 @@ description: Returns the JVM command-line and tuning flags. Use to confirm "is -
 side_effects:
   - One jcmd call.
   - Read-only.
+search_terms:
+  - xmx
+  - heap size
 args:
   - name: pid
     type: integer

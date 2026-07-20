@@ -15,6 +15,12 @@ side_effects:
   - One SELECT against pg_stat_statements.
   - No locks held.
 
+search_terms:
+  - db is slow
+  - database slow
+  - slow db
+  - query performance
+
 args:
   - name: limit
     type: integer

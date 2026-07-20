@@ -9,6 +9,8 @@ description: >
 side_effects:
   - One read-only HTTP GET to the zot /v2/{repo}/tags/list endpoint.
   - Read-only — never pushes or deletes.
+search_terms:
+  - image versions
 args:
   - name: repo
     type: string

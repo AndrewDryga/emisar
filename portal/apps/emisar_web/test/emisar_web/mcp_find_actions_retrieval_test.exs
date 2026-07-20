@@ -116,6 +116,50 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
     {"cloud-init status", ~w(cloud-init.status)}
   ]
 
+  # Symptom-language goldens — vocabulary an operator types under pressure,
+  # deliberately using none of the catalog's own words. These are the queries
+  # the search_terms enrichment exists for; keep them harder than @goldens.
+  @hard_goldens [
+    {"the db is slow",
+     ~w(postgres.slow_queries postgres.pg_stat_statements_top postgres.longest_running_queries)},
+    {"database out of space", ~w(postgres.db_sizes postgres.table_sizes linux.disk_usage)},
+    {"the site is down", ~w(traefik.http_host_readiness net.http_probe haproxy.show_stat)},
+    {"too many open connections to the database",
+     ~w(postgres.connections postgres.activity_states)},
+    {"something is eating all the memory", ~w(debugging.mem_top linux.memory)},
+    {"something is eating the cpu", ~w(debugging.processes_top)},
+    {"server feels sluggish", ~w(debugging.loadavg linux.uptime debugging.processes_top)},
+    {"who is hammering the network",
+     ~w(debugging.tcp_summary debugging.netstat_connections fw.conntrack_list)},
+    {"we might be under attack",
+     ~w(linux.failed_logins fw.conntrack_count debugging.netstat_connections)},
+    {"disk filling up fast", ~w(linux.disk_usage fs.du_top fs.find_large_files)},
+    {"where did all the space go", ~w(fs.du_top fs.find_large_files linux.disk_usage)},
+    {"app keeps crashing", ~w(systemd.failed_units linux.journalctl debugging.dmesg_oom)},
+    {"service won't start", ~w(linux.systemctl_status systemd.failed_units linux.journalctl)},
+    {"is the cache healthy", ~w(redis.info redis.memory_doctor)},
+    {"queue is backed up", ~w(redis.xinfo_stream redis.xlen)},
+    {"deploy is stuck", ~w(nomad.deployment_status nomad.deployment_list)},
+    {"pods keep restarting", ~w(nomad.alloc_status nomad.job_status_one docker.ps)},
+    {"certificate about to expire", ~w(net.tls_cert_expiry traefik.acme_cert_expiry)},
+    {"clock drift on the host", ~w(time.chrony_tracking time.timedatectl)},
+    {"dns not resolving", ~w(net.dig_record tailscale.dns_status)},
+    {"packet loss to the datacenter",
+     ~w(net.traceroute_mtr debugging.ping_host net.ping_extended)},
+    {"load balancer sending traffic to a dead backend",
+     ~w(haproxy.show_servers_state traefik.http_services_summary consul.list_checks_critical)},
+    {"vpn is flaky", ~w(tailscale.status tailscale.netcheck tailscale.ping)},
+    {"storage array degraded", ~w(pure.alerts pure.drives pure.hardware)},
+    {"raid rebuild progress", ~w(linux.mdadm_status)},
+    {"fans spinning loud", ~w(ipmi.sensor ipmi.sdr_type)},
+    {"box needs a restart", ~w(linux.reboot_host)},
+    {"what changed on this host recently", ~w(debian.dpkg_changes fs.find_recent_modified)},
+    {"jvm is thrashing", ~w(jvm.jstat_gc jvm.heap_summary)},
+    {"metrics are missing", ~w(vm.tsdb_status vector.health grafana.datasource_health)},
+    {"logs stopped flowing", ~w(vector.health vector.tap vl.streams)},
+    {"replica out of sync", ~w(postgres.replication_lag redis.role cassandra.nodetool_netstats)}
+  ]
+
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
     user = Fixtures.Users.create_user()
@@ -174,6 +218,27 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
         assert unknown == [],
                "golden expects actions absent from the catalog: #{inspect(unknown)}"
 
+        found =
+          conn
+          |> find_actions(query)
+          |> Enum.map(& &1["action_id"])
+
+        if Enum.any?(accepted, &(&1 in found)) do
+          []
+        else
+          [{query, accepted, Enum.take(found, 5)}]
+        end
+      end)
+
+    assert misses == [],
+           Enum.map_join(misses, "\n", fn {query, accepted, found} ->
+             "#{inspect(query)} wanted #{inspect(accepted)}, page one led with #{inspect(found)}"
+           end)
+  end
+
+  test "hard symptom-language queries surface their action on page one", %{conn: conn} do
+    misses =
+      Enum.flat_map(@hard_goldens, fn {query, accepted} ->
         found =
           conn
           |> find_actions(query)

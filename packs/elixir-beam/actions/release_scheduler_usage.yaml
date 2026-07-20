@@ -8,6 +8,9 @@ side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
   - One release rpc call with a fixed expression that samples scheduler wall time for sample_ms.
   - Read-only.
+search_terms:
+  - high cpu
+  - cpu pegged
 args:
   - name: sample_ms
     type: integer

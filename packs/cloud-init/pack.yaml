@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.9
+version: 0.1.10
 retired_below: 0.1.9
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when

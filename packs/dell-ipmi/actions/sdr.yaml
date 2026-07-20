@@ -12,6 +12,10 @@ description: >
 side_effects:
   - One read-only IPMI SDR repository read.
   - Read-only.
+search_terms:
+  - temperatures
+  - fan speed
+  - voltages
 args:
   - name: host
     type: string

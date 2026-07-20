@@ -8,6 +8,8 @@ description: >
 side_effects:
   - Up to 4 outbound TLS handshakes.
   - Read-only.
+search_terms:
+  - weak tls
 args:
   - name: host
     type: string

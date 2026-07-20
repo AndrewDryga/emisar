@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Show per-peer gossip state — schema version, status, load, dc, rack, generation.
 side_effects: ["One JMX call.", "Read-only."]
+search_terms:
+  - node stuck joining
 args: []
 execution:
   command: {binary: nodetool, argv: ["gossipinfo"]}

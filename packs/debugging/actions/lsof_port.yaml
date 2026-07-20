@@ -15,6 +15,11 @@ side_effects:
   - One ss invocation.
   - Read-only.
 
+search_terms:
+  - address already in use
+  - port in use
+  - port conflict
+
 args:
   - name: port
     type: integer

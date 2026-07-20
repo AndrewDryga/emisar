@@ -8,6 +8,8 @@ description: >
   and latency. Terminates on its own — the bounded count (default 5, max
   20) means it stops after that many replies or attempts.
 side_effects: ["Sends Tailscale ping probes to one peer.", "Read-only."]
+search_terms:
+  - peer unreachable
 args:
   - name: host
     type: string

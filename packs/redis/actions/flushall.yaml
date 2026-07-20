@@ -10,6 +10,8 @@ side_effects:
   - All databases emptied.
   - Replicas wipe in turn.
   - No recovery except restore.
+search_terms:
+  - clear all caches
 args:
   - name: mode
     type: string

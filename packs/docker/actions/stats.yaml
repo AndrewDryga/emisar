@@ -13,6 +13,11 @@ side_effects:
   - One docker stats invocation.
   - Read-only.
 
+search_terms:
+  - high cpu
+  - cpu spike
+  - memory hog
+
 args: []
 
 execution:

@@ -10,6 +10,8 @@ description: >
 side_effects:
   - One read-only HTTP GET to the zot /v2/_catalog endpoint.
   - Read-only — never pushes or deletes.
+search_terms:
+  - list images
 execution:
   script:
     path: scripts/zotget.sh

@@ -5,6 +5,10 @@ kind: exec
 risk: low
 description: List backends sitting in 'idle in transaction' state — they hold locks + bloat vacuum's xmin horizon.
 side_effects: ["One SELECT.", "Read-only."]
+search_terms:
+  - stuck transaction
+  - uncommitted transaction
+  - connection leak
 args: []
 execution:
   command:

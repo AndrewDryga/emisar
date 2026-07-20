@@ -12,6 +12,10 @@ description: >
 side_effects:
   - One read-only IPMI System Event Log read.
   - Read-only.
+search_terms:
+  - hardware errors
+  - ecc errors
+  - thermal trip
 args:
   - name: host
     type: string

@@ -9,6 +9,9 @@ side_effects:
   - All memtables flushed.
   - Native + Thrift transports closed.
   - Only restart restores the node.
+search_terms:
+  - safe shutdown
+  - flush before restart
 args: []
 execution:
   command: {binary: nodetool, argv: ["drain"]}

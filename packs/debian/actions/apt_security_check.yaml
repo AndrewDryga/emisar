@@ -15,6 +15,11 @@ side_effects:
   - Reads /var/lib/apt/lists.
   - Briefly takes a shared apt lock.
 
+search_terms:
+  - vulnerabilities
+  - cve
+  - unpatched
+
 args: []
 
 execution:

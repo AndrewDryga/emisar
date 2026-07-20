@@ -302,10 +302,10 @@ defmodule EmisarWeb.PacksTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PacksRegistry.get("redis").content_hash ==
-               "sha256:383032ecf8048bf5b735ffcb35c8f6fa9be1a33babbf34a7ae0496ea7bd01378"
+               "sha256:b425f218f25b9f5006060ac206000d553e07ff3ed11d6e7f60dbea00c59f789e"
 
       assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:807338a04b1dc7757d8d615ee9d941c62f89572311eda5390a0fbefdb77ad743"
+               "sha256:aaa6fac0a1390437382a9e68b7493d252808a40a19fe45a73e8cda8c75d5da3f"
     end
 
     test "tarball_url/1 returns the immutable content-addressed URL for a known id" do
@@ -552,10 +552,14 @@ defmodule EmisarWeb.PacksTest do
         assert prev |> Map.keys() |> Enum.sort() == ~w(hash tarball version)
       end
 
-      # Redis's security fix retires every pre-fix version, so the current
-      # version is the floor and no vulnerable history remains in the window.
-      assert entry["previous_versions"] == []
-      assert entry["retired_below"] == pack.version
+      # Redis's security fix set a retirement floor; the version window may
+      # keep post-fix history, but no version below the floor — vulnerable
+      # history never reappears as the pack keeps releasing.
+      assert entry["retired_below"] == "0.3.6"
+
+      for prev <- entry["previous_versions"] do
+        assert Version.compare(prev["version"], entry["retired_below"]) in [:eq, :gt]
+      end
     end
 
     test "GET /packs/:id/pack.tar.gz redirect is briefly cacheable", %{conn: conn} do

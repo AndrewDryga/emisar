@@ -11,6 +11,8 @@ description: >
 side_effects:
   - One read-only HTTP GET to the FlashArray REST API.
   - Read-only — never writes or mutates array state.
+search_terms:
+  - controller failover
 args: []
 execution:
   script:

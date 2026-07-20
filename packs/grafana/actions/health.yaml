@@ -5,6 +5,8 @@ kind: exec
 risk: low
 description: Show liveness + DB-ok state.
 side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - grafana down
 args: []
 execution:
   command:

@@ -7,6 +7,8 @@ description: List NTP sources + reach + stratum + offset.
 side_effects:
   - One chrony query.
   - Read-only.
+search_terms:
+  - ntp servers
 args: []
 execution:
   command:
