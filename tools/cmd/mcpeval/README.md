@@ -50,10 +50,14 @@ temp workspace with a stripped environment.
 ## The scheduled workflow
 
 [`mcp-eval.yml`](../../../.github/workflows/mcp-eval.yml) runs weekly (and on
-manual dispatch, with optional `model` / `codex_model` inputs): it boots the
-compose stack, waits for three connected fixture runners, installs a pinned
-Claude Code CLI, runs the eval with `ANTHROPIC_API_KEY` from repo secrets, and
-uploads the JSON report as an artifact. The job fails on any hard violation.
+manual dispatch, with optional `claude_model` / `codex_model` inputs): it boots
+the compose stack, waits for three connected fixture runners, then runs BOTH
+provider lanes — Claude and Codex — each gated only on its own repo secret
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). A lane whose secret is absent is
+skipped; the job fails if neither is configured, and fails if either lane
+violates conformance. Both JSON reports upload as artifacts. Codex is a
+first-class scheduled lane, not opt-in — the ChatGPT trace is what motivated
+this eval.
 
 ## Adding scenarios
 
