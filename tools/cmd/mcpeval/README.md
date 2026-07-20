@@ -14,11 +14,14 @@ portal — any tool or action outside the scenario allowlist, plus any
 and pack.
 
 Hard failures (exit nonzero): a policy-blocked call, a portal `invalid_args`
-rejection, an inspection-continuity violation (a `run_action` with no prior
-`get_action` for the same action and pack), the same failing call repeated
-more than twice, a started run not driven to a terminal status via the returned
-continuations, a required tool/action that never succeeded, or an agent
-process that timed out or exited nonzero. Everything else — including the
+rejection on a mutation, an inspection-continuity violation (a `run_action`
+with no prior `get_action` for the same action and pack), a placeholder
+`run_action` reason (filler like "test" or the bare action id — only the
+boolean verdict is recorded, never the reason text, since reports upload as
+public CI artifacts), the same failing call repeated more than twice, a
+started run not driven to a terminal status via the returned continuations, a
+required tool/action that never succeeded, or an agent process that timed out
+or exited nonzero. Everything else — including the
 final answer captured in the agent's stdout — is reported, not scored.
 
 ## Run locally

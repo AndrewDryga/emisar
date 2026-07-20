@@ -209,3 +209,21 @@ func TestCollectRunStatesReadsRunsAndWaitShapes(t *testing.T) {
 		t.Fatalf("run without operation_id accepted: %#v", states)
 	}
 }
+
+func TestPlaceholderReasonFlagsFillerAndAcceptsHonestSentences(t *testing.T) {
+	for reason, placeholder := range map[string]bool{
+		"":             true,
+		"test":         true,
+		"Testing":      true,
+		"check":        true,
+		"linux.uptime": true,
+		"short":        true,
+		"Check uptime and load before the maintenance window": false,
+		"verify replication catch-up after failover":          false,
+		"Collect disk usage for the capacity report":          false,
+	} {
+		if got := placeholderReason(reason, "linux.uptime"); got != placeholder {
+			t.Errorf("placeholderReason(%q) = %t, want %t", reason, got, placeholder)
+		}
+	}
+}

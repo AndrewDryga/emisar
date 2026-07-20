@@ -282,6 +282,11 @@ func (r *recorder) request(body []byte) requestMetadata {
 		RunnerCount: len(stringSlice(args["runner_refs"])),
 		StartedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
+	if tool == "run_action" {
+		// Only the verdict is recorded, never the reason text — reports upload
+		// as public CI artifacts, and audit prose stays out of them.
+		record.ReasonPlaceholder = placeholderReason(stringValue(args["reason"]), record.ActionID)
+	}
 
 	r.mu.Lock()
 	if tool == "run_action" {
@@ -497,4 +502,27 @@ func nestedString(value map[string]any, path ...string) string {
 		current = object[key]
 	}
 	return stringValue(current)
+}
+
+// placeholderReason flags the audit-quality floor for run_action reasons: the
+// published contract asks for what-and-why an approver can act on, so a
+// throwaway filler or the bare action id is a conformance failure. Thresholds
+// are deliberately conservative — any honest sentence passes.
+func placeholderReason(reason, actionID string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reason))
+	if len(normalized) < 12 {
+		return true
+	}
+	if normalized == strings.ToLower(actionID) {
+		return true
+	}
+	for _, filler := range []string{
+		"test", "testing", "test run", "run action", "running action",
+		"because", "reason", "no reason", "checking", "check", "demo", "example",
+	} {
+		if normalized == filler {
+			return true
+		}
+	}
+	return false
 }

@@ -139,3 +139,12 @@ func TestTerminalStatusesMatchPublishedActionRunContract(t *testing.T) {
 		}
 	}
 }
+
+func TestScoreRejectsPlaceholderRunActionReason(t *testing.T) {
+	calls := conformingCalls()
+	calls[2].ReasonPlaceholder = true
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if got.Passed || got.PlaceholderReasons != 1 {
+		t.Fatalf("placeholder reason passed: %#v", got)
+	}
+}
