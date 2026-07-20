@@ -344,6 +344,33 @@ defmodule EmisarWeb.MCP.CatalogTools do
                  my of on or our that the this to was we what when which why with
                  you your)
 
+  # Generic ops abbreviation/equivalence families only — a query token matches
+  # through any member of its group. Symptom vocabulary ("sluggish", "under
+  # attack") deliberately does NOT live here: it belongs in each action's
+  # reviewed `search_terms`, where a human vouches that the action answers it.
+  @synonym_groups [
+    ~w(db database databases),
+    ~w(mem memory ram),
+    ~w(fs filesystem filesystems),
+    ~w(net network networking),
+    ~w(cert certificate certificates tls ssl),
+    ~w(config configuration conf),
+    ~w(conn connection connections),
+    ~w(repl replication replica replicas),
+    ~w(proc process processes pid),
+    ~w(auth authentication login logins),
+    ~w(perf performance),
+    ~w(dir directory directories folder),
+    ~w(restart reboot),
+    ~w(container containers docker),
+    ~w(k8s kubernetes)
+  ]
+  @synonyms Map.new(
+              Enum.flat_map(@synonym_groups, fn group ->
+                Enum.map(group, &{&1, group})
+              end)
+            )
+
   defp score_candidate(candidate, %{action_id: action_id}, _weights)
        when is_binary(action_id) do
     if candidate.action["action_id"] == action_id,
@@ -420,9 +447,17 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   defp matching_fields(token, search_words) do
+    variants = token_variants(token)
+
     search_words
-    |> Enum.filter(fn {_field, words} -> Enum.any?(words, &word_match?(&1, token)) end)
+    |> Enum.filter(fn {_field, words} -> variants_match?(words, variants) end)
     |> Enum.map(&elem(&1, 0))
+  end
+
+  defp token_variants(token), do: Map.get(@synonyms, token, [token])
+
+  defp variants_match?(words, variants) do
+    Enum.any?(variants, fn variant -> Enum.any?(words, &word_match?(&1, variant)) end)
   end
 
   # Prefix in either direction covers plural and inflected forms
@@ -467,10 +502,12 @@ defmodule EmisarWeb.MCP.CatalogTools do
     total = max(length(searchable), 2)
 
     Map.new(tokens, fn token ->
+      variants = token_variants(token)
+
       hits =
         Enum.count(searchable, fn candidate ->
           Enum.any?(candidate.search_words, fn {_field, words} ->
-            Enum.any?(words, &word_match?(&1, token))
+            variants_match?(words, variants)
           end)
         end)
 
