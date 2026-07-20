@@ -42,7 +42,7 @@ func TestCommittedScenarioCorpusLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.AllowedTools) != 7 || len(got.RequiredActions) != 3 || !got.RequireContractRef {
+	if len(got.AllowedTools) != 8 || len(got.RequiredActions) != 3 || !got.RequireContractRef {
 		t.Fatalf("committed scenario = %#v", got)
 	}
 }

@@ -744,13 +744,13 @@
     },
     "find_actions": {
       "title": "Find actions",
-      "description": "Find bounded action candidates by operational task or exact filters. This does not execute or return argument schemas; call get_action for the chosen exact action and pack_ref.",
+      "description": "Find bounded action candidates by operational task (passed as the `query` string) or exact filters. This does not execute or return argument schemas; call get_action for the chosen exact action and pack_ref.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "query": {"type": "string", "minLength": 1, "maxLength": 256},
+          "query": {"type": "string", "minLength": 1, "maxLength": 256, "description": "The operational task to search for, as free text."},
           "action_id": {"$ref": "#/$defs/action_id"},
           "pack_id": {"$ref": "#/$defs/pack_id"},
           "pack_ref": {"$ref": "#/$defs/pack_ref"},
