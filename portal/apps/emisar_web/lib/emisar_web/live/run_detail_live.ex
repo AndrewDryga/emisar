@@ -406,7 +406,7 @@ defmodule EmisarWeb.RunDetailLive do
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Reason
               </dt>
-              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.reason}</dd>
             </div>
             <%!-- The optional justification chain the agent gave alongside the
                  reason — what it observed, then the outcome it expected. Rendered

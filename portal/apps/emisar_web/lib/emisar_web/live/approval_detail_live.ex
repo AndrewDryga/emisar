@@ -726,7 +726,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     Reason
                   </dt>
-                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
+                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@request.reason}</dd>
                 </div>
                 <%!-- The agent's justification chain, snapshotted on the request:
                      what it observed, then the outcome it expected. An approver
