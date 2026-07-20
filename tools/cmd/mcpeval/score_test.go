@@ -46,11 +46,19 @@ func TestScoreRejectsPolicyBlockedCall(t *testing.T) {
 	}
 }
 
-func TestScoreRejectsPortalInvalidArgs(t *testing.T) {
-	calls := append(conformingCalls(), callRecord{Tool: "find_actions", ResponseError: true, ResponseCode: "invalid_args"})
+func TestScoreRejectsPortalInvalidArgsOnMutations(t *testing.T) {
+	calls := append(conformingCalls(), callRecord{Tool: "run_action", ResponseError: true, ResponseCode: "invalid_args"})
 	got := scoreReport(conformingScenario(), calls, agentResult{})
 	if got.Passed || got.InvalidArgsCalls != 1 {
-		t.Fatalf("invalid_args passed: %#v", got)
+		t.Fatalf("mutation invalid_args passed: %#v", got)
+	}
+}
+
+func TestScoreReportsButAllowsDiscoveryInvalidArgs(t *testing.T) {
+	calls := append(conformingCalls(), callRecord{Tool: "find_actions", ResponseError: true, ResponseCode: "invalid_args"})
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if !got.Passed || got.InvalidArgsCalls != 1 {
+		t.Fatalf("recovered discovery probe should pass with the count reported: %#v", got)
 	}
 }
 

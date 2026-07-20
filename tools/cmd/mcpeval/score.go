@@ -15,15 +15,25 @@ var terminalStatuses = map[string]bool{
 	"denied": true,
 }
 
+// mutationTools are the calls that must be composed from a retrieved contract
+// on the first attempt; discovery reads self-heal by design.
+var mutationTools = map[string]bool{
+	"run_action": true, "execute_runbook": true, "create_runbook_draft": true,
+}
+
 // scoreReport applies only hard conformance rules — facts the relay recorded
 // about API behavior, robust to model drift. How the model phrases its answer
 // is reported (agent stdout), never scored.
 //
 // Hard failures: (a) a policy-blocked call, (b) a portal invalid_args
-// rejection, (c) run_action without its get_action receipt, (d) the same
-// failing call repeated more than twice, (e) a started run left non-terminal,
-// (f) a required tool or action that never succeeded, and an agent process
-// that timed out or exited nonzero.
+// rejection on a MUTATION (discovery reads are designed to self-heal — every
+// rejection carries a recovery pointer, and unsteered models probe read
+// filters differently each run; a read-side invalid_args is counted and
+// reported, and still hard-fails via rule (d) if repeated identically), (c)
+// run_action without its get_action receipt, (d) the same failing call
+// repeated more than twice, (e) a started run left non-terminal, (f) a
+// required tool or action that never succeeded, and an agent process that
+// timed out or exited nonzero.
 func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	result := score{Passed: true}
 	succeededTools := map[string]bool{}
@@ -49,7 +59,9 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		}
 		if call.ResponseCode == "invalid_args" {
 			result.InvalidArgsCalls++
-			result.fail(call.Tool + " sent schema-invalid arguments (portal rejected them as invalid_args)")
+			if mutationTools[call.Tool] {
+				result.fail(call.Tool + " sent schema-invalid arguments (portal rejected them as invalid_args)")
+			}
 		}
 		for _, state := range call.RunStates {
 			runStatus[state.RunID] = state.Status

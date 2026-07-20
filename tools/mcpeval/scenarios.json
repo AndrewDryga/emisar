@@ -7,6 +7,8 @@
       "allowed_tools": [
         "list_packs",
         "list_runners",
+        "list_runbooks",
+        "get_runbook",
         "find_actions",
         "get_action",
         "run_action",
