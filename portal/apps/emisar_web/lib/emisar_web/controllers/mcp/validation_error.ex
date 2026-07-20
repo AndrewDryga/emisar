@@ -41,7 +41,6 @@ defmodule EmisarWeb.MCP.ValidationError do
     "dependency" => "dependency",
     "schema" => "schema"
   }
-  @contract_ref_reasons ~w(claims_mismatch expired invalid)
   @action_id ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
   @max_issues 8
   @max_message_chars 512
@@ -116,16 +115,6 @@ defmodule EmisarWeb.MCP.ValidationError do
       |> Kernel.++(client_metadata(conn, tool))
 
     Logger.info("mcp.validation_failed", metadata)
-  end
-
-  @doc "Emits one safe event when a well-formed action-contract receipt is rejected."
-  @spec log_contract_ref(Plug.Conn.t(), term()) :: :ok
-  def log_contract_ref(conn, reason) do
-    metadata =
-      [mcp_contract_ref_reason: fixed(reason, @contract_ref_reasons, "invalid")]
-      |> Kernel.++(client_metadata(conn, "run_action"))
-
-    Logger.info("mcp.contract_ref_rejected", metadata)
   end
 
   @doc "Emits one privacy-safe event for a well-formed but unknown string tool name."

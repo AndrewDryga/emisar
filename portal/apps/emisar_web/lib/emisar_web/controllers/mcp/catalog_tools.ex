@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
   """
 
   alias Emisar.{Catalog, Crypto, Runners}
-  alias EmisarWeb.MCP.{ActionContractRef, CatalogCursor, ToolSchema}
+  alias EmisarWeb.MCP.{CatalogCursor, ToolSchema}
 
   @default_limit 15
   @max_search_score 9_999
@@ -145,7 +145,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     )
   end
 
-  defp execute("get_action", snapshot, _scope, args, conn) do
+  defp execute("get_action", snapshot, _scope, args, _conn) do
     with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == args.pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == args.action_id)),
          runners when runners != [] <- compatible_runners(snapshot.runners, action, args) do
@@ -156,13 +156,6 @@ defmodule EmisarWeb.MCP.CatalogTools do
        %{
          ok: true,
          observed_at: observed_at(),
-         contract_ref:
-           ActionContractRef.issue(
-             conn.assigns.current_subject,
-             conn.assigns.api_key,
-             action["action_id"],
-             pack.pack_ref
-           ),
          action:
            %{
              action_id: action["action_id"],

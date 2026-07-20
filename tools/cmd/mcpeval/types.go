@@ -16,13 +16,12 @@ type scenarioFile struct {
 }
 
 type scenario struct {
-	ID                 string   `json:"id"`
-	Prompt             string   `json:"prompt"`
-	AllowedTools       []string `json:"allowed_tools"`
-	AllowedActions     []string `json:"allowed_actions"`
-	RequiredTools      []string `json:"required_tools"`
-	RequiredActions    []string `json:"required_actions"`
-	RequireContractRef bool     `json:"require_contract_ref"`
+	ID              string   `json:"id"`
+	Prompt          string   `json:"prompt"`
+	AllowedTools    []string `json:"allowed_tools"`
+	AllowedActions  []string `json:"allowed_actions"`
+	RequiredTools   []string `json:"required_tools"`
+	RequiredActions []string `json:"required_actions"`
 }
 
 type callRecord struct {
@@ -33,8 +32,6 @@ type callRecord struct {
 	ActionID             string     `json:"action_id,omitempty"`
 	PackRef              string     `json:"pack_ref,omitempty"`
 	RunnerCount          int        `json:"runner_count,omitempty"`
-	ContractRefPresent   bool       `json:"contract_ref_present,omitempty"`
-	ContractRefMatched   bool       `json:"contract_ref_matched,omitempty"`
 	BlockedByPolicy      bool       `json:"blocked_by_policy,omitempty"`
 	ResponseError        bool       `json:"response_error"`
 	ResponseCode         string     `json:"response_code,omitempty"`
@@ -71,7 +68,7 @@ type score struct {
 	ErrorCalls             int      `json:"error_calls"`
 	PolicyBlockedCalls     int      `json:"policy_blocked_calls"`
 	InvalidArgsCalls       int      `json:"invalid_args_calls"`
-	ReceiptViolations      int      `json:"receipt_violations"`
+	InspectionViolations   int      `json:"inspection_violations"`
 	RepeatedFailedCalls    int      `json:"repeated_failed_calls"`
 	RunsStarted            int      `json:"runs_started"`
 	RunsTerminal           int      `json:"runs_terminal"`

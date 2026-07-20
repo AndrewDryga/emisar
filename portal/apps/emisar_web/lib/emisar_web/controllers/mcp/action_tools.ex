@@ -10,7 +10,6 @@ defmodule EmisarWeb.MCP.ActionTools do
 
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
   alias EmisarWeb.MCP.ActionContract
-  alias EmisarWeb.MCP.ActionContractRef
   alias EmisarWeb.MCP.Attestation
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.MCP.Service
@@ -104,8 +103,7 @@ defmodule EmisarWeb.MCP.ActionTools do
              :pack_ref_mismatch,
              :pack_untrusted,
              :pack_retired,
-             :action_contract_changed,
-             :invalid_contract_ref
+             :action_contract_changed
            ] ->
         target_contract_changed(input)
 
@@ -150,8 +148,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   end
 
   defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
-    with :ok <- verify_contract_ref(conn, input),
-         {:ok, targets, action} <- resolve_targets(conn, input),
+    with {:ok, targets, action} <- resolve_targets(conn, input),
          :ok <- validate_action_args(input.args, action),
          facts <- attestation_facts(conn, input, args_raw, operation_attrs.operation_id),
          {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
@@ -190,29 +187,11 @@ defmodule EmisarWeb.MCP.ActionTools do
     %{
       action_id: args["action_id"],
       pack_ref: args["pack_ref"],
-      contract_ref: args["contract_ref"],
       runner_refs: args["runner_refs"],
       args: exact_args,
       reason: args["reason"],
       wait: args["wait"] || "60s"
     }
-  end
-
-  defp verify_contract_ref(conn, input) do
-    case ActionContractRef.verify(
-           conn.assigns.current_subject,
-           conn.assigns.api_key,
-           input.contract_ref,
-           input.action_id,
-           input.pack_ref
-         ) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        :ok = ValidationError.log_contract_ref(conn, reason)
-        {:error, :invalid_contract_ref}
-    end
   end
 
   defp resolve_targets(conn, input) do

@@ -92,8 +92,8 @@ func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
 // same way `codex mcp add <name> --url <url>` writes it.
 // run_action truthfully advertises non-readonly MCP annotations, and headless
 // Codex synthesizes "user cancelled MCP tool call" for annotation-gated tools
-// — the burn-in run scored clean discovery (receipts threaded correctly) and
-// zero dispatches. No supported config unlocks MCP approval alone
+// — the burn-in run scored clean discovery (get_action inspection threaded
+// correctly) and zero dispatches. No supported config unlocks MCP approval alone
 // (`--ask-for-approval` exists only on the top-level command, and
 // `approval_policy="never"` governs shell commands), so dispatch requires the
 // documented bypass flag, gated behind an explicit opt-in for externally

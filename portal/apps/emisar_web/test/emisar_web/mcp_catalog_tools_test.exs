@@ -367,7 +367,6 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     arguments = %{"action_id" => "demo.read", "pack_ref" => pack_ref}
 
     discovered = call(conn, "get_action", arguments)
-    assert is_binary(discovered["contract_ref"])
     assert length(discovered["compatible_runners"]) == 15
     assert discovered["more_compatible_runners"]
     assert discovered["next"]["tool"] == "list_runners"
@@ -398,7 +397,6 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
           "{}",
           "Inspect the last discovered runner",
           "0",
-          discovered["contract_ref"],
           "demo.read"
         )
       )
@@ -562,89 +560,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert Enum.map(result["runners"], & &1["name"]) == ["runner-a"]
   end
 
-  test "run_action requires a matching contract receipt and accepts it after key rotation", %{
-    conn: conn,
-    account: account,
-    subject: subject,
-    key: key
-  } do
-    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "receipt-runner")
-    pack_ref = "database@1.0.0/#{@hash}"
-
-    observe!(runner, %{"database" => %{"version" => "1.0.0", "hash" => @hash}}, [
-      action("database.pause_job", "database", args: job_args())
-    ])
-
-    trust_all!(subject)
-    :ok = Runners.subscribe_runner_transport(runner)
-    runner_ref = "receipt-runner~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
-    receipt = contract_ref(conn, pack_ref)
-
-    base = %{
-      "action_id" => "database.pause_job",
-      "pack_ref" => pack_ref,
-      "runner_refs" => [runner_ref],
-      "args" => %{"job_id" => 7},
-      "reason" => "Verify the contract receipt",
-      "wait" => "0"
-    }
-
-    missing = call(conn, "run_action", base)
-    assert missing["error"]["code"] == "invalid_args"
-    assert hd(missing["error"]["details"]["issues"])["path"] == "$.contract_ref"
-
-    malformed = call(conn, "run_action", Map.put(base, "contract_ref", "not-a-token"))
-    assert malformed["error"]["code"] == "invalid_args"
-    assert malformed["error"]["details"]["kind"] == "format"
-
-    stale = call(conn, "run_action", Map.put(base, "contract_ref", "a.b.c"))
-    assert stale["error"]["code"] == "target_contract_changed"
-
-    assert stale["error"]["next"] == %{
-             "tool" => "get_action",
-             "arguments" => %{
-               "action_id" => "database.pause_job",
-               "pack_ref" => pack_ref
-             }
-           }
-
-    expired =
-      call(
-        conn,
-        "run_action",
-        Map.put(
-          base,
-          "contract_ref",
-          expired_contract_ref(subject, key, "database.pause_job", pack_ref)
-        )
-      )
-
-    assert expired["error"]["code"] == "target_contract_changed"
-    assert expired["error"]["next"] == stale["error"]["next"]
-    assert {:ok, [], _meta} = Runs.list_runs(subject)
-    refute_receive {:cloud_to_runner, _generation, _payload}, 100
-
-    {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(key, subject)
-    successor_conn = authorize(build_conn(), successor_raw)
-
-    accepted = call(successor_conn, "run_action", Map.put(base, "contract_ref", receipt))
-    assert accepted["ok"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
-
-    {:ok, independent_raw, _independent} =
-      ApiKeys.create_key(%{name: "independent", kind: :mcp}, subject)
-
-    independent_conn = authorize(build_conn(), independent_raw)
-    refused = call(independent_conn, "run_action", Map.put(base, "contract_ref", receipt))
-    assert refused["error"]["code"] == "target_contract_changed"
-    refute_receive {:cloud_to_runner, _generation, _payload}, 100
-  end
-
   test "run_action preserves exact argument bytes, binds the v4 header, and replays one run", %{
     conn: conn,
     account: account,
-    subject: subject,
-    key: key
+    subject: subject
   } do
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary")
     pack_ref = "database@1.0.0/#{@hash}"
@@ -662,9 +581,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     operation_id = "op_724NN9NMDZ1T76NARWCKM5A0D6"
     args_raw = ~s({ "job_id": 9007199254740993, "ratio": 0.1234567890123456789 })
     reason = String.duplicate("界", 255)
-    contract_ref = contract_ref(conn, pack_ref)
     header = attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason)
-    body = run_action_body(pack_ref, runner_ref, args_raw, reason, "0", contract_ref)
+    body = run_action_body(pack_ref, runner_ref, args_raw, reason, "0")
 
     response = raw_action(conn, body, operation_id, header)
     assert response["ok"]
@@ -690,9 +608,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
     observe!(runner, %{}, [])
-    expired_ref = expired_contract_ref(subject, key, "database.pause_job", pack_ref)
-    expired_body = run_action_body(pack_ref, runner_ref, args_raw, reason, "0", expired_ref)
-    drifted_replay = raw_action(conn, expired_body, operation_id)
+    drifted_replay = raw_action(conn, body, operation_id)
     assert get_in(drifted_replay, ["runs", Access.at(0), "run_id"]) == run_id
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
   end
@@ -712,10 +628,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     trust_all!(subject)
     runner_ref = "db-primary~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
     operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
-    contract_ref = contract_ref(conn, pack_ref)
 
     body =
-      run_action_body(pack_ref, runner_ref, ~s({"ratio":2}), "Pause the job", "0", contract_ref)
+      run_action_body(pack_ref, runner_ref, ~s({"ratio":2}), "Pause the job", "0")
 
     response = raw_action(conn, body, operation_id)
 
@@ -730,14 +645,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert response["error"]["details"]["kind"] == "missing"
 
     type_body =
-      run_action_body(
-        pack_ref,
-        runner_ref,
-        ~s({"job_id":"seven"}),
-        "Pause the job",
-        "0",
-        contract_ref
-      )
+      run_action_body(pack_ref, runner_ref, ~s({"job_id":"seven"}), "Pause the job", "0")
 
     type_response = raw_action(conn, type_body)
 
@@ -766,17 +674,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     :ok = Runners.subscribe_runner_transport(runner)
     runner_ref = "duration-runner~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
     duration = "1.0000000000000000000000000000000000000001ns"
-    contract_ref = contract_ref(conn, pack_ref)
 
     body =
-      run_action_body(
-        pack_ref,
-        runner_ref,
-        ~s({"job_id":7,"delay":"#{duration}"}),
-        "Run",
-        "0",
-        contract_ref
-      )
+      run_action_body(pack_ref, runner_ref, ~s({"job_id":7,"delay":"#{duration}"}), "Run", "0")
 
     response = raw_action(conn, body)
     assert response["ok"]
@@ -802,17 +702,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     :ok = Runners.subscribe_runner_transport(runner)
 
     runner_ref = "native-http~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
-    contract_ref = contract_ref(conn, pack_ref)
 
     body =
-      run_action_body(
-        pack_ref,
-        runner_ref,
-        ~s({"job_id":9007199254740993}),
-        "Native call",
-        "0",
-        contract_ref
-      )
+      run_action_body(pack_ref, runner_ref, ~s({"job_id":9007199254740993}), "Native call", "0")
 
     first = raw_action(conn, body)
     assert first["ok"]
@@ -849,17 +741,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     runner_ref = "saturated-wait~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
     operation_id = "op_424NN9NMDZ1T76NARWCKM5A0D6"
-    contract_ref = contract_ref(conn, pack_ref)
 
     body =
-      run_action_body(
-        pack_ref,
-        runner_ref,
-        ~s({"job_id":7}),
-        "Bound the wait",
-        "60s",
-        contract_ref
-      )
+      run_action_body(pack_ref, runner_ref, ~s({"job_id":7}), "Bound the wait", "60s")
 
     limiter_conn =
       conn
@@ -910,8 +794,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
     args_raw = ~s({"job_id":9007199254740993})
     reason = "Pause the maintenance job"
-    contract_ref = contract_ref(conn, pack_ref)
-    body = run_action_body(pack_ref, runner_ref, args_raw, reason, "0", contract_ref)
+    body = run_action_body(pack_ref, runner_ref, args_raw, reason, "0")
 
     unsigned = raw_action(conn, body, operation_id)
     assert unsigned["error"]["code"] == "signature_required"
@@ -929,7 +812,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
     changed_args = ~s({"job_id":9007199254740994})
-    changed_body = run_action_body(pack_ref, runner_ref, changed_args, reason, "0", contract_ref)
+    changed_body = run_action_body(pack_ref, runner_ref, changed_args, reason, "0")
 
     changed_header =
       attestation_header(conn, pack_ref, runner_ref, operation_id, changed_args, reason)
@@ -941,7 +824,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     stale_runner_ref = "missing~" <> String.duplicate("0", 32)
 
     stale_body =
-      run_action_body(pack_ref, stale_runner_ref, changed_args, reason, "0", contract_ref)
+      run_action_body(pack_ref, stale_runner_ref, changed_args, reason, "0")
 
     stale_operation_id = "op_524NN9NMDZ1T76NARWCKM5A0D6"
 
@@ -967,8 +850,6 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     |> put_req_header("content-type", "application/json")
     |> post(~p"/api/mcp/rpc", Jason.encode!(body))
   end
-
-  defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, name, arguments) do
     result =
@@ -1003,59 +884,11 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
   end
 
   defp run_action_body(pack_ref, runner_ref, args_raw, reason, wait) do
-    run_action_body(
-      pack_ref,
-      runner_ref,
-      args_raw,
-      reason,
-      wait,
-      "a.b.c",
-      "database.pause_job"
-    )
+    run_action_body(pack_ref, runner_ref, args_raw, reason, wait, "database.pause_job")
   end
 
-  defp run_action_body(pack_ref, runner_ref, args_raw, reason, wait, contract_ref) do
-    run_action_body(
-      pack_ref,
-      runner_ref,
-      args_raw,
-      reason,
-      wait,
-      contract_ref,
-      "database.pause_job"
-    )
-  end
-
-  defp run_action_body(pack_ref, runner_ref, args_raw, reason, wait, contract_ref, action_id) do
-    ~s({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"#{action_id}","pack_ref":"#{pack_ref}","contract_ref":"#{contract_ref}","runner_refs":["#{runner_ref}"],"args":#{args_raw},"reason":"#{reason}","wait":"#{wait}"}}})
-  end
-
-  defp contract_ref(conn, pack_ref) do
-    detail =
-      call(conn, "get_action", %{
-        "action_id" => "database.pause_job",
-        "pack_ref" => pack_ref
-      })
-
-    assert is_binary(detail["contract_ref"])
-    detail["contract_ref"]
-  end
-
-  defp expired_contract_ref(subject, key, action_id, pack_ref) do
-    claims = %{
-      "v" => 1,
-      "subject_ref" =>
-        Crypto.hash_hex(
-          "mcp-action-contract-subject-v1\0" <>
-            subject.account.id <> "\0" <> key.credential_lineage_id
-        ),
-      "action_id" => action_id,
-      "pack_ref" => pack_ref
-    }
-
-    Phoenix.Token.sign(EmisarWeb.Endpoint, "mcp-action-contract-ref-v1", claims,
-      signed_at: System.system_time(:second) - 901
-    )
+  defp run_action_body(pack_ref, runner_ref, args_raw, reason, wait, action_id) do
+    ~s({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"#{action_id}","pack_ref":"#{pack_ref}","runner_refs":["#{runner_ref}"],"args":#{args_raw},"reason":"#{reason}","wait":"#{wait}"}}})
   end
 
   defp hold_waits(conn, count) do

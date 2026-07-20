@@ -140,8 +140,8 @@ func summarize(result report) string {
 	fmt.Fprintf(&out, "mcpeval: provider=%s model=%s scenario=%s in %.1fs\n",
 		result.Provider, result.Model, result.Scenario, float64(result.DurationMS)/1000)
 	s := result.Score
-	fmt.Fprintf(&out, "  calls=%d errors=%d policy_blocked=%d invalid_args=%d receipt_violations=%d runs_started=%d runs_terminal=%d\n",
-		s.TotalCalls, s.ErrorCalls, s.PolicyBlockedCalls, s.InvalidArgsCalls, s.ReceiptViolations, s.RunsStarted, s.RunsTerminal)
+	fmt.Fprintf(&out, "  calls=%d errors=%d policy_blocked=%d invalid_args=%d inspection_violations=%d runs_started=%d runs_terminal=%d\n",
+		s.TotalCalls, s.ErrorCalls, s.PolicyBlockedCalls, s.InvalidArgsCalls, s.InspectionViolations, s.RunsStarted, s.RunsTerminal)
 	if s.Passed {
 		out.WriteString("  PASS\n")
 		return out.String()

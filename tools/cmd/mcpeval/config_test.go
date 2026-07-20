@@ -8,7 +8,7 @@ import (
 
 func TestLoadScenario(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "scenarios.json")
-	data := `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["run_action"],"required_actions":["linux.uptime"],"require_contract_ref":true}]}`
+	data := `{"version":1,"scenarios":[{"id":"health","prompt":"inspect","allowed_tools":["run_action"],"allowed_actions":["linux.uptime"],"required_tools":["run_action"],"required_actions":["linux.uptime"]}]}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +16,7 @@ func TestLoadScenario(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Prompt != "inspect" || !got.RequireContractRef {
+	if got.Prompt != "inspect" {
 		t.Fatalf("scenario = %#v", got)
 	}
 }
@@ -42,7 +42,7 @@ func TestCommittedScenarioCorpusLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.AllowedTools) != 10 || len(got.RequiredActions) != 3 || !got.RequireContractRef {
+	if len(got.AllowedTools) != 10 || len(got.RequiredActions) != 3 {
 		t.Fatalf("committed scenario = %#v", got)
 	}
 }

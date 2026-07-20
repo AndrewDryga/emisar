@@ -30,10 +30,10 @@ var mutationTools = map[string]bool{
 // rejection carries a recovery pointer, and unsteered models probe read
 // filters differently each run; a read-side invalid_args is counted and
 // reported, and still hard-fails via rule (d) if repeated identically), (c)
-// run_action without its get_action receipt, (d) the same failing call
-// repeated more than twice, (e) a started run left non-terminal, (f) a
-// required tool or action that never succeeded, and an agent process that
-// timed out or exited nonzero.
+// run_action without a prior get_action for the same action and pack, (d) the
+// same failing call repeated more than twice, (e) a started run left
+// non-terminal, (f) a required tool or action that never succeeded, and an
+// agent process that timed out or exited nonzero.
 func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	result := score{Passed: true}
 	succeededTools := map[string]bool{}
@@ -69,15 +69,9 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.Tool != "run_action" {
 			continue
 		}
-		if !call.BlockedByPolicy {
-			if !call.priorContractMatched {
-				result.ReceiptViolations++
-				result.fail("run_action was sent without a prior successful matching get_action")
-			}
-			if item.RequireContractRef && !call.ContractRefMatched {
-				result.ReceiptViolations++
-				result.fail("run_action omitted the contract_ref receipt returned by get_action")
-			}
+		if !call.BlockedByPolicy && !call.priorContractMatched {
+			result.InspectionViolations++
+			result.fail("run_action was sent without a prior successful get_action for the same action and pack")
 		}
 		if !call.ResponseError {
 			succeededActions[call.ActionID] = true

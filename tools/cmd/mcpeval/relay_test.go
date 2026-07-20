@@ -27,7 +27,7 @@ func TestRelayRecordsMetadataAndNeverBearerOrArgumentValues(t *testing.T) {
 	}
 	r.start()
 	defer r.close()
-	r.recorder.receipts["linux.uptime\x00linux-core@1/sha256:abc"] = ""
+	r.recorder.inspected["linux.uptime\x00linux-core@1/sha256:abc"] = true
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"linux-core@1/sha256:abc","runner_refs":["edge~abc"],"args":{"password":"argument-sentinel"},"reason":"reason-sentinel"}}}`
 	response, err := http.Post(r.endpoint(), "application/json", bytes.NewBufferString(body))
 	if err != nil {
@@ -75,40 +75,36 @@ func TestRelayRejectsWrongPathToken(t *testing.T) {
 	}
 }
 
-func TestRecorderTracksPriorActionContract(t *testing.T) {
+func TestRecorderTracksPriorInspection(t *testing.T) {
 	r := newRecorder(scenario{
 		AllowedTools: []string{"get_action", "run_action"}, AllowedActions: []string{"linux.uptime"},
-		RequireContractRef: true,
 	})
 	get := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"get_action","arguments":{"action_id":"linux.uptime","pack_ref":"p"}}}`))
-	r.response(get, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"contract_ref":"receipt"}}}`), 200)
-	run := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","contract_ref":"receipt","runner_refs":["r"],"args":{},"reason":"inspect"}}}`))
+	r.response(get, []byte(`{"id":1,"result":{"structuredContent":{"ok":true}}}`), 200)
+	run := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"inspect"}}}`))
 	if run.blockCode != "" {
-		t.Fatalf("receipt-carrying run_action blocked: %q", run.blockCode)
+		t.Fatalf("run_action after a prior get_action blocked: %q", run.blockCode)
 	}
 	r.response(run, []byte(`{"id":2,"result":{"structuredContent":{"ok":true,"operation_id":"op_1","runs":[{"run_id":"r1","operation_id":"op_1","runner_ref":"r","status":"success"}]}}}`), 200)
 	calls := r.snapshot()
-	if !calls[1].priorContractMatched || !calls[1].ContractRefMatched {
-		t.Fatalf("run_action did not match the prior get_action receipt: %#v", calls[1])
+	if !calls[1].priorContractMatched {
+		t.Fatalf("run_action did not record inspection continuity from the prior get_action: %#v", calls[1])
 	}
 }
 
-func TestRecorderBlocksRunActionWithStaleContractRef(t *testing.T) {
+func TestRecorderBlocksRunActionWithoutPriorInspection(t *testing.T) {
 	r := newRecorder(scenario{
 		AllowedTools: []string{"get_action", "run_action"}, AllowedActions: []string{"linux.uptime"},
-		RequireContractRef: true,
 	})
-	get := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"get_action","arguments":{"action_id":"linux.uptime","pack_ref":"p"}}}`))
-	r.response(get, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"contract_ref":"receipt"}}}`), 200)
-	run := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","contract_ref":"forged","runner_refs":["r"],"args":{},"reason":"inspect"}}}`))
-	if run.blockCode != "contract_ref_required" {
+	run := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"inspect"}}}`))
+	if run.blockCode != "inspection_required" {
 		t.Fatalf("block code = %q", run.blockCode)
 	}
 }
 
 func TestRecorderRejectsMismatchedRunOperationID(t *testing.T) {
 	r := newRecorder(scenario{AllowedTools: []string{"run_action"}, AllowedActions: []string{"linux.uptime"}})
-	r.receipts["linux.uptime\x00p"] = ""
+	r.inspected["linux.uptime\x00p"] = true
 	request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"inspect"}}}`))
 	r.response(request, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"operation_id":"op_expected","runs":[{"run_id":"r1","operation_id":"op_other","runner_ref":"r","status":"success"}]}}}`), 200)
 	call := r.snapshot()[0]
@@ -170,7 +166,7 @@ func TestPolicyAllowsReadOnlyInspectionOfAnyAction(t *testing.T) {
 
 func TestPolicyBlockBoundsRunnerRefsAndArgs(t *testing.T) {
 	r := newRecorder(scenario{AllowedTools: []string{"run_action"}, AllowedActions: []string{"linux.uptime"}})
-	r.receipts["linux.uptime\x00p"] = ""
+	r.inspected["linux.uptime\x00p"] = true
 	for name, arguments := range map[string]string{
 		"empty_refs":     `{"action_id":"linux.uptime","pack_ref":"p","runner_refs":[],"args":{},"reason":"x"}`,
 		"duplicate_refs": `{"action_id":"linux.uptime","pack_ref":"p","runner_refs":["r","r"],"args":{},"reason":"x"}`,

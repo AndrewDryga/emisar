@@ -62,24 +62,13 @@ func TestScoreReportsButAllowsDiscoveryInvalidArgs(t *testing.T) {
 	}
 }
 
-func TestScoreRejectsRunActionWithoutReceipt(t *testing.T) {
+func TestScoreRejectsRunActionWithoutPriorInspection(t *testing.T) {
 	item := conformingScenario()
 	calls := conformingCalls()
 	calls[2].priorContractMatched = false
 	got := scoreReport(item, calls, agentResult{})
-	if got.Passed || got.ReceiptViolations != 1 {
-		t.Fatalf("receiptless run_action passed: %#v", got)
-	}
-
-	item.RequireContractRef = true
-	calls = conformingCalls()
-	got = scoreReport(item, calls, agentResult{})
-	if got.Passed || got.ReceiptViolations != 1 {
-		t.Fatalf("missing contract_ref passed: %#v", got)
-	}
-	calls[2].ContractRefMatched = true
-	if got := scoreReport(item, calls, agentResult{}); !got.Passed {
-		t.Fatalf("matched contract_ref failed: %v", got.Failures)
+	if got.Passed || got.InspectionViolations != 1 {
+		t.Fatalf("run_action without a prior get_action passed: %#v", got)
 	}
 }
 

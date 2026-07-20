@@ -57,7 +57,7 @@ defmodule EmisarWeb.MCP.InputContractTest do
 
   test "exposes published root argument names for safe log paths" do
     assert MapSet.member?(InputContract.known_root_fields("list_packs"), "limit")
-    assert MapSet.member?(InputContract.known_root_fields("run_action"), "contract_ref")
+    assert MapSet.member?(InputContract.known_root_fields("run_action"), "action_id")
     assert InputContract.known_root_fields("not_a_tool") == MapSet.new()
   end
 
@@ -66,7 +66,6 @@ defmodule EmisarWeb.MCP.InputContractTest do
       %{
         "action_id" => "demo.inspect",
         "pack_ref" => @pack_ref,
-        "contract_ref" => "a.b.c",
         "runner_refs" => [@runner_ref],
         "args" => %{},
         "reason" => "Inspect"

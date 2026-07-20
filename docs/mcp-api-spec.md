@@ -629,7 +629,6 @@ compatibility details. Unknown properties are rejected.
 {
   "ok": true,
   "observed_at": "2026-07-13T14:42:10Z",
-  "contract_ref": "<opaque receipt from Emisar>",
   "action": {
     "action_id": "cassandra.nodetool_status",
     "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
@@ -672,13 +671,6 @@ original normalized target as its `query`. Continuation never broadens a target
 filter. Compatibility is informational and current only at `observed_at`;
 `run_action` always preflights again.
 
-`contract_ref` is a 15-minute action-contract retrieval receipt. It binds the
-authenticated account and credential lineage to the exact `(action_id,
-pack_ref)` returned by this call. It does not bind the paginated runner list,
-grant authorization, or replace dispatch-time policy and target checks. The
-caller copies it unchanged into `run_action`; a rotated key in the same
-credential lineage may use it.
-
 The encoded `action` object is at most 32 KiB and each of the at most 16 runner
 briefs is at most 1.5 KiB, leaving 8 KiB for the result envelope inside the
 64 KiB semantic budget. Pack ingestion and runner registration reject metadata
@@ -695,7 +687,6 @@ never relies on pagination or truncation.
 {
   "action_id": "cassandra.nodetool_status",
   "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
-  "contract_ref": "<exact receipt returned by get_action>",
   "runner_refs": [
     "cassandra-dbcas103~8e9a70d2d45a1f23c8b4ae63da1384f1"
   ],
@@ -709,7 +700,6 @@ never relies on pagination or truncation.
 | --- | --- |
 | `action_id` | Required exact ID returned by discovery. |
 | `pack_ref` | Required exact ref returned with the action. |
-| `contract_ref` | Required exact, short-lived receipt returned by `get_action` for this action and pack. |
 | `runner_refs` | Required exact refs, 1 through 16, distinct. |
 | `args` | Required object validated against this action in this pack; `{}` for none. |
 | `reason` | Required nonblank UTF-8 audit context, at most 255 bytes. |
@@ -807,12 +797,6 @@ facts above; `execute_runbook` uses exact runbook ref and reason; draft creation
 uses fixed JSON over its validated title, slug, description, and ordered step
 facts. Tool name is always part of the fingerprint, so different mutations
 cannot collide.
-The short-lived `contract_ref` is deliberately excluded from the fingerprint
-and action attestation. It proves that this credential lineage retrieved the
-immutable action contract; the exact action and pack are already fingerprinted
-and signed. An existing matching operation replay is therefore recoverable
-after the receipt expires, while every fresh dispatch must present a current
-matching receipt before target resolution.
 `execute_runbook` and `create_runbook_draft` reserve the same lineage-local
 operation identity and persist their fingerprint atomically with the execution
 or draft described below; they do not use the action-specific run-set steps
@@ -855,16 +839,14 @@ fields are end-to-end verified against the customer CA.
 Before the operation transaction, the portal validates the whole fan-out:
 
 1. Input shape, bounds, and exact action-ID grammar.
-2. A current `contract_ref` matches the authenticated credential lineage and
-   exact `(action_id, pack_ref)`.
-3. Current account scope and exact runner refs.
-4. Every runner is connected, enabled, and advertises `(pack_ref, action_id)`.
-5. The complete descriptor matches the trusted pack manifest.
-6. Pack trust and retirement rules still allow dispatch.
-7. Exact argument bytes match the portable trusted-schema constraints. Action
+2. Current account scope and exact runner refs.
+3. Every runner is connected, enabled, and advertises `(pack_ref, action_id)`.
+4. The complete descriptor matches the trusted pack manifest.
+5. Pack trust and retirement rules still allow dispatch.
+6. Exact argument bytes match the portable trusted-schema constraints. Action
    regexes and host-dependent path constraints remain authoritative at the
    runner and are rechecked before execution.
-8. When any selected runner enforces signed dispatch, an attestation is present,
+7. When any selected runner enforces signed dispatch, an attestation is present,
    structurally valid, currently inside the runner-advertised freshness and
    certificate windows, and agrees with every preflight fact. The runner remains
    the cryptographic authority. A pending approval is capped at the earliest of
@@ -1503,12 +1485,6 @@ messages, reasons, runner refs, attestations, bearer material, User-Agent text,
 or `Emisar-Client-Metadata`. Authentication, authorization, policy, operation,
 cursor, runtime, and success outcomes do not emit this event.
 
-A structurally valid but rejected `contract_ref` emits one separate
-`mcp.contract_ref_rejected` info event with the same bounded client metadata and
-one closed reason: `expired`, `invalid`, `noncanonical`, or `claims_mismatch`.
-The receipt and its decoded claims are never logged. The public response still
-collapses every such reason to `target_contract_changed`.
-
 Tool-domain errors use the common structured error shape. Initial stable codes:
 
 | Code | Meaning | Automatic action |
@@ -1529,7 +1505,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `runbook_not_found` | Exact visible published ref is absent. | List runbooks; do not substitute a slug. |
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
-| `target_contract_changed` | Action receipt or selected runner contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |
+| `target_contract_changed` | The selected runner's exact pack/action contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |
 
 Pack trust, retirement, descriptor mismatch, connectivity, and skew are stable
 catalog issue codes inside read results. At dispatch they collapse to

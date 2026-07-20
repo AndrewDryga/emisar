@@ -47,7 +47,6 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
   test "pins model-facing descriptions for reasons, waits, and pack availability" do
     list_packs = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_packs"))
     run_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "run_action"))
-    get_action = Enum.find(SchemaRegistry.contracts(), &(&1["name"] == "get_action"))
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
@@ -69,16 +68,6 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
              "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."
-
-    assert "contract_ref" in run_action["inputSchema"]["required"]
-
-    get_action_success =
-      Enum.find(
-        get_action["outputSchema"]["oneOf"],
-        &(get_in(&1, ["properties", "ok", "const"]) == true)
-      )
-
-    assert "contract_ref" in get_action_success["required"]
 
     assert get_in(wait_for_run, [
              "inputSchema",

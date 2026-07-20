@@ -10,12 +10,13 @@ The relay is the safety boundary: it alone holds `EMISAR_API_KEY` (the bearer
 is injected upstream; the agent process never sees it), accepts only a
 random-token loopback endpoint, bounds every frame, and blocks — before the
 portal — any tool or action outside the scenario allowlist, plus any
-`run_action` that lacks a prior successful matching `get_action` and its
-`contract_ref` receipt.
+`run_action` that lacks a prior successful `get_action` for the same action
+and pack.
 
 Hard failures (exit nonzero): a policy-blocked call, a portal `invalid_args`
-rejection, a receipt violation, the same failing call repeated more than
-twice, a started run not driven to a terminal status via the returned
+rejection, an inspection-continuity violation (a `run_action` with no prior
+`get_action` for the same action and pack), the same failing call repeated
+more than twice, a started run not driven to a terminal status via the returned
 continuations, a required tool/action that never succeeded, or an agent
 process that timed out or exited nonzero. Everything else — including the
 final answer captured in the agent's stdout — is reported, not scored.

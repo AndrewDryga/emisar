@@ -5,7 +5,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   alias Emisar.{ApiKeys, Crypto, Repo}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.MCPOperations.Operation
-  alias EmisarWeb.MCP.{SchemaRegistry, ValidationError}
+  alias EmisarWeb.MCP.SchemaRegistry
 
   setup do
     account = Fixtures.Accounts.create_account()
@@ -310,7 +310,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
          %{
            "action_id" => 7,
            "pack_ref" => "linux@1.0.0/sha256:" <> String.duplicate("a", 64),
-           "contract_ref" => "a.b.c",
            "runner_refs" => ["node~" <> String.duplicate("a", 32)],
            "args" => %{},
            "reason" => "Inspect uptime"
@@ -319,7 +318,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
          %{
            "action_id" => "linux.uptime",
            "pack_ref" => "linux@1.0.0/sha256:" <> String.duplicate("a", 64),
-           "contract_ref" => "a.b.c",
            "runner_refs" => ["not-a-runner-ref"],
            "args" => %{},
            "reason" => "Inspect uptime"
@@ -328,7 +326,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
          %{
            "action_id" => "linux.uptime",
            "pack_ref" => "linux@1.0.0/sha256:" <> String.duplicate("a", 64),
-           "contract_ref" => "a.b.c",
            "runner_refs" => [7],
            "args" => %{},
            "reason" => "Inspect uptime"
@@ -479,7 +476,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
               "arguments" => %{
                 "action_id" => "linux.uptime",
                 "pack_ref" => "linux@1.0.0/sha256:" <> String.duplicate("a", 64),
-                "contract_ref" => "a.b.c",
                 "runner_refs" => ["node~" <> String.duplicate("a", 32)],
                 "args" => %{},
                 "reason" => "Inspect uptime"
@@ -510,29 +506,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert clean_log =~ ~r/mcp_call_fingerprint=[0-9a-f]{64}/
       refute clean_log =~ sentinel
       refute clean_log =~ raw
-    end
-
-    test "logs only bounded metadata for a rejected action-contract receipt", %{
-      conn: conn,
-      key: key
-    } do
-      :ok = Logger.put_application_level(:emisar_web, :info)
-      on_exit(fn -> Logger.delete_application_level(:emisar_web) end)
-
-      conn =
-        conn
-        |> Plug.Conn.assign(:api_key, key)
-        |> put_req_header("user-agent", "emisar-mcp/1.2.3 token_DO_NOT_LOG")
-
-      log =
-        capture_log([level: :info], fn -> ValidationError.log_contract_ref(conn, :expired) end)
-
-      assert log =~ "mcp.contract_ref_rejected"
-      assert log =~ "mcp_contract_ref_reason=expired"
-      assert log =~ "mcp_tool=run_action"
-      assert log =~ "mcp_client_lineage="
-      assert log =~ "mcp_bridge_version=1.2.3"
-      refute log =~ "token_DO_NOT_LOG"
     end
   end
 

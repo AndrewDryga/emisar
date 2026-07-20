@@ -38,14 +38,6 @@
       "type": "string",
       "pattern": "^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
-    "contract_ref": {
-      "type": "string",
-      "description": "Opaque short-lived action-contract receipt. Copy the exact value from get_action for the same action_id and pack_ref.",
-      "minLength": 1,
-      "maxLength": 4096,
-      "x-maxUtf8Bytes": 4096,
-      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+){2}$"
-    },
     "runbook_execution_id": {
       "type": "string",
       "format": "uuid",
@@ -816,12 +808,11 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "observed_at", "contract_ref", "action", "compatible_runners", "more_compatible_runners", "next"],
+            "required": ["ok", "observed_at", "action", "compatible_runners", "more_compatible_runners", "next"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
               "observed_at": {"$ref": "#/$defs/timestamp"},
-              "contract_ref": {"$ref": "#/$defs/contract_ref"},
               "action": {
                 "type": "object",
                 "x-maxEncodedUtf8Bytes": 32768,
@@ -861,12 +852,11 @@
       "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
-        "required": ["action_id", "pack_ref", "contract_ref", "runner_refs", "args", "reason"],
+        "required": ["action_id", "pack_ref", "runner_refs", "args", "reason"],
         "additionalProperties": false,
         "properties": {
           "action_id": {"$ref": "#/$defs/action_id"},
           "pack_ref": {"$ref": "#/$defs/pack_ref"},
-          "contract_ref": {"$ref": "#/$defs/contract_ref"},
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
           "reason": {"$ref": "#/$defs/reason"},

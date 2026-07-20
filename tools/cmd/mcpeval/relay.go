@@ -165,16 +165,16 @@ func copyMCPHeaders(dst, src http.Header) {
 }
 
 // recorder keeps a bounded, metadata-only trace of every tools/call: names,
-// digests, policy verdicts, receipt continuity, and run/operation states —
+// digests, policy verdicts, inspection continuity, and run/operation states —
 // never argument values, the bearer, or raw payloads.
 type recorder struct {
 	mu       sync.Mutex
 	policy   scenario
 	sequence int
 	calls    []callRecord
-	// receipts maps action_id+pack_ref of a successful get_action to the
-	// contract_ref it returned; run_action must present a matching pair.
-	receipts map[string]string
+	// inspected is the set of action_id+pack_ref that a successful get_action
+	// has observed; run_action must follow one for the same pair.
+	inspected map[string]bool
 }
 
 type requestMetadata struct {
@@ -184,7 +184,7 @@ type requestMetadata struct {
 }
 
 func newRecorder(item scenario) *recorder {
-	return &recorder{policy: item, receipts: map[string]string{}}
+	return &recorder{policy: item, inspected: map[string]bool{}}
 }
 
 func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedArgs []byte) string {
@@ -203,9 +203,6 @@ func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedAr
 	}
 	if !record.priorContractMatched {
 		return "inspection_required"
-	}
-	if r.policy.RequireContractRef && !record.ContractRefMatched {
-		return "contract_ref_required"
 	}
 	refs, ok := args["runner_refs"].([]any)
 	if !ok || len(refs) == 0 || len(refs) > maxRunnerRefs || !uniqueStrings(refs) {
@@ -282,17 +279,13 @@ func (r *recorder) request(body []byte) requestMetadata {
 		Tool: tool, ArgumentKeys: boundedKeys(args),
 		ArgumentsDigest: hashBytes(encodedArgs),
 		ActionID:        stringValue(args["action_id"]), PackRef: stringValue(args["pack_ref"]),
-		RunnerCount:        len(stringSlice(args["runner_refs"])),
-		ContractRefPresent: stringValue(args["contract_ref"]) != "",
-		StartedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+		RunnerCount: len(stringSlice(args["runner_refs"])),
+		StartedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 
 	r.mu.Lock()
 	if tool == "run_action" {
-		expectedContract, found := r.receipts[record.ActionID+"\x00"+record.PackRef]
-		record.priorContractMatched = found
-		providedContract := stringValue(args["contract_ref"])
-		record.ContractRefMatched = providedContract != "" && expectedContract != "" && providedContract == expectedContract
+		record.priorContractMatched = r.inspected[record.ActionID+"\x00"+record.PackRef]
 	}
 	blockCode := r.policyBlock(record, args, encodedArgs)
 	record.BlockedByPolicy = blockCode != ""
@@ -332,7 +325,7 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 		}
 	}
 	if call.Tool == "get_action" && !call.ResponseError && call.ActionID != "" && call.PackRef != "" {
-		r.receipts[call.ActionID+"\x00"+call.PackRef] = stringValue(structured["contract_ref"])
+		r.inspected[call.ActionID+"\x00"+call.PackRef] = true
 	}
 }
 
