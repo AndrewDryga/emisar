@@ -57,7 +57,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
 
     assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
-             "Maximum time to block before returning the current state."
+             "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."
 
     assert "contract_ref" in run_action["inputSchema"]["required"]
 
@@ -77,7 +77,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "timeout",
              "description"
            ]) ==
-             "Maximum time to block before returning the current state."
+             "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."
   end
 
   test "omitted typed output requires one immediate wait continuation" do

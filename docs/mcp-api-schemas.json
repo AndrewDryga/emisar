@@ -168,7 +168,7 @@
       "properties": {
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state."}
+        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
@@ -869,7 +869,7 @@
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
           "reason": {"$ref": "#/$defs/reason"},
-          "wait": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state."}
+          "wait": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
         }
       },
       "outputSchema": {
