@@ -1,0 +1,58 @@
+# mcpeval — real-agent MCP conformance eval
+
+`mcpeval` proves that a real, unsteered coding agent can drive the Emisar MCP
+API correctly end to end. It starts a loopback HTTP relay in front of a local
+portal, runs a headless agent (Claude Code by default, Codex as a best-effort
+second lane) against that relay, and scores the recorded API behavior — never
+the model's prose — so the signal survives model drift.
+
+The relay is the safety boundary: it alone holds `EMISAR_API_KEY` (the bearer
+is injected upstream; the agent process never sees it), accepts only a
+random-token loopback endpoint, bounds every frame, and blocks — before the
+portal — any tool or action outside the scenario allowlist, plus any
+`run_action` that lacks a prior successful matching `get_action` and its
+`contract_ref` receipt.
+
+Hard failures (exit nonzero): a policy-blocked call, a portal `invalid_args`
+rejection, a receipt violation, the same failing call repeated more than
+twice, a started run not driven to a terminal status via the returned
+continuations, a required tool/action that never succeeded, or an agent
+process that timed out or exited nonzero. Everything else — including the
+final answer captured in the agent's stdout — is reported, not scored.
+
+## Run locally
+
+Boot the dev stack from the repo root, then run the eval against it:
+
+```sh
+docker compose up -d --wait portal
+docker compose up -d --wait runner-1 runner-2 runner-3
+
+export EMISAR_API_KEY="emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # the seeded dev key
+export ANTHROPIC_API_KEY=...  # the driver runs `claude --bare`, which auths only via this key
+
+cd tools && go run ./cmd/mcpeval -provider claude -out /tmp/mcpeval.json
+```
+
+`-provider codex` uses the Codex CLI instead (auth via `OPENAI_API_KEY` or an
+existing `codex login`; pass `-model` to pin one). `-scenario` selects from
+[`tools/mcpeval/scenarios.json`](../../mcpeval/scenarios.json); `-model`,
+`-timeout`, and `-budget-usd` pin the run. The agent executes in a throwaway
+temp workspace with a stripped environment.
+
+## The scheduled workflow
+
+[`mcp-eval.yml`](../../../.github/workflows/mcp-eval.yml) runs weekly (and on
+manual dispatch, with optional `model` / `codex_model` inputs): it boots the
+compose stack, waits for three connected fixture runners, installs a pinned
+Claude Code CLI, runs the eval with `ANTHROPIC_API_KEY` from repo secrets, and
+uploads the JSON report as an artifact. The job fails on any hard violation.
+
+## Adding scenarios
+
+Add an entry to `scenarios.json`: a realistic outcome-stated prompt (no
+procedural steering), fail-closed `allowed_tools` / `allowed_actions`, and the
+`required_tools` / `required_actions` that must succeed for the run to pass.
+Required entries must be subsets of the allowlists — the loader rejects
+anything else. Keep scenarios read-only unless the fixture stack is designed
+for the mutation.

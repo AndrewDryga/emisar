@@ -1,0 +1,158 @@
+name: MCP Conformance Eval
+
+# Weekly real-agent conformance eval. Boots the local docker compose stack
+# (portal + seeded fixture runners), then drives a REAL headless Claude Code
+# session through tools/cmd/mcpeval's policy-enforcing MCP relay and fails on
+# hard API-conformance violations: policy-blocked calls, portal invalid_args
+# rejections, run_action without its get_action receipt, the same failing call
+# repeated more than twice, runs left non-terminal, or required tools/actions
+# that never succeeded. The model's prose is captured in the report artifact
+# but never scored, so the signal survives model drift.
+#
+# Scheduled + manual only — never PR-triggered: it spends real provider
+# tokens and reads the ANTHROPIC_API_KEY repo secret, which pull-request code
+# must not reach. The relay holds the (well-known, dev-only) Emisar key; the
+# agent process never sees it. No deploy permissions, no production URLs.
+on:
+  schedule:
+    # Weekly. Offset from :00/:30 — GitHub delays top-of-hour scheduled runs.
+    - cron: "27 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Claude model to evaluate (empty = mcpeval's pinned default)
+        required: false
+        type: string
+      codex_model:
+        description: >-
+          Also evaluate Codex with this model (best-effort lane; requires the
+          OPENAI_API_KEY secret; empty = skip)
+        required: false
+        type: string
+
+# One serialized lane: a manual dispatch never races the schedule tick into
+# double provider spend.
+concurrency:
+  group: mcp-eval
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: Real-agent conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+      # The compose stack's seeded WELL-KNOWN dev key (docker-compose.yml,
+      # EMISAR_DEV_FIXED_MCP_KEY): the public base64url encoding of 32 zero
+      # bytes — deliberately not a secret, valid only inside this stack.
+      EMISAR_API_KEY: "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Require the provider secret
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ANTHROPIC_API_KEY" || {
+            echo "::error::the ANTHROPIC_API_KEY repository secret is not configured"
+            exit 1
+          }
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Build stack images
+        run: docker compose build portal runner-1
+
+      - name: Boot the e2e stack
+        run: |
+          set -euo pipefail
+          docker compose up -d --wait --wait-timeout 300 portal
+          docker compose up -d --wait --wait-timeout 240 runner-1 runner-2 runner-3
+
+      - name: Wait for three connected runners
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 24); do
+            connected=$(curl -fsS -X POST http://localhost:4010/api/mcp/rpc \
+              -H "Authorization: Bearer $EMISAR_API_KEY" \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_runners","arguments":{}}}' \
+              | jq '[.result.structuredContent.runners[]? | select(.status == "connected")] | length' || echo 0)
+            if [ "$connected" -ge 3 ]; then
+              echo "$connected connected runners after ~$((i * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::the fixture runners did not all connect within 120 seconds"
+          exit 1
+
+      - name: Install Claude Code CLI (pinned)
+        env:
+          # The mcpeval driver's flags are verified against this version.
+          CLAUDE_CODE_VERSION: "2.1.212"
+        run: |
+          set -euo pipefail
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+
+      - name: Run Claude conformance eval
+        working-directory: tools
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model }}
+        run: |
+          set -euo pipefail
+          args=(-provider claude -out /tmp/mcpeval-claude.json)
+          if [ -n "$EVAL_MODEL" ]; then
+            args+=(-model "$EVAL_MODEL")
+          fi
+          go run ./cmd/mcpeval "${args[@]}"
+
+      - name: Run Codex conformance eval (best-effort opt-in)
+        if: inputs.codex_model != ''
+        working-directory: tools
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_MODEL: ${{ inputs.codex_model }}
+          # The mcpeval driver's flags are verified against this version.
+          CODEX_CLI_VERSION: "0.144.5"
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::codex_model was set but the OPENAI_API_KEY secret is not configured"
+            exit 1
+          fi
+          npm install -g "@openai/codex@${CODEX_CLI_VERSION}"
+          codex --version
+          # Key rides stdin, never argv (argv is visible in process listings).
+          printenv OPENAI_API_KEY | codex login --with-api-key
+          go run ./cmd/mcpeval -provider codex -model "$CODEX_MODEL" -out /tmp/mcpeval-codex.json
+
+      - name: Show stack logs
+        if: failure()
+        run: docker compose logs --tail 40 portal seeder runner-1 runner-2 runner-3
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mcp-eval-report-${{ github.run_id }}
+          path: /tmp/mcpeval-*.json
+          retention-days: 30
+          # A harness failure before the eval starts legitimately leaves no
+          # report; the job status already carries the signal.
+          if-no-files-found: warn
