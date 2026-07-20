@@ -127,10 +127,16 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   defp execute("find_actions", snapshot, scope, args, _conn) do
-    candidates =
+    searchable =
       snapshot.packs
       |> Enum.flat_map(&searchable_actions(&1, snapshot.runners, args))
-      |> Enum.map(&score_candidate(&1, args))
+      |> Enum.map(&put_search_words/1)
+
+    weights = token_weights(args, searchable)
+
+    candidates =
+      searchable
+      |> Enum.map(&score_candidate(&1, args, weights))
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{-&1.score, &1.action["action_id"], &1.pack_ref})
 
@@ -328,23 +334,33 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp score_candidate(candidate, %{action_id: action_id}) when is_binary(action_id) do
+  # Operator queries arrive as questions ("is autovacuum keeping up?"), so raw
+  # substring token matching let filler words ("is" inside "redis", "up" inside
+  # "group") outscore the real target, and plurals missed containment entirely.
+  # Tokens therefore drop stop words, match on word prefixes in either
+  # direction (inode/inodes), and weigh by rarity across the searchable set —
+  # a token appearing in one action outweighs one appearing in forty.
+  @stop_words ~w(a an and are be can do does for how i in is it its keep keeping
+                 my of on or our that the this to was we what when which why with
+                 you your)
+
+  defp score_candidate(candidate, %{action_id: action_id}, _weights)
+       when is_binary(action_id) do
     if candidate.action["action_id"] == action_id,
       do: Map.merge(candidate, %{score: 10_000, matched_fields: ["action_id"]})
   end
 
-  defp score_candidate(candidate, %{query: nil}),
+  defp score_candidate(candidate, %{query: nil}, _weights),
     do: Map.merge(candidate, %{score: 1, matched_fields: []})
 
-  defp score_candidate(candidate, %{query: query}) do
+  defp score_candidate(candidate, %{query: query}, weights) do
     query = query |> String.downcase() |> String.trim()
     action = candidate.action
     id = String.downcase(action["action_id"])
     title = String.downcase(action["title"])
-    summary = String.downcase(action["summary"])
     terms = Enum.map(action["search_terms"], &String.downcase/1)
-    tokens = query |> String.split() |> Enum.uniq()
-    {term_score, term_fields} = score_query_terms(tokens, id, title, summary, terms)
+    tokens = Map.keys(weights)
+    {term_score, term_fields} = score_query_terms(tokens, weights, candidate.search_words)
 
     {score, fields} =
       cond do
@@ -360,19 +376,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
         query in terms ->
           {6_000, ["search_terms"]}
 
-        length(tokens) == 1 and Enum.all?(tokens, &String.contains?(id, &1)) ->
-          {5_000, ["action_id"]}
-
-        length(tokens) == 1 and Enum.all?(tokens, &String.contains?(title, &1)) ->
-          {4_000, ["title"]}
-
-        length(tokens) == 1 and
-            Enum.all?(tokens, fn token ->
-              String.contains?(summary, token) or Enum.any?(terms, &String.contains?(&1, token))
-            end) ->
-          {3_000, ["summary", "search_terms"]}
-
-        length(tokens) > 1 and term_score > 0 ->
+        term_score > 0 ->
           {term_score, term_fields}
 
         String.jaro_distance(query, id) >= 0.88 ->
@@ -388,38 +392,100 @@ defmodule EmisarWeb.MCP.CatalogTools do
     if score > 0, do: Map.merge(candidate, %{score: score, matched_fields: fields})
   end
 
-  defp score_query_terms(tokens, id, title, summary, terms) do
-    matched_fields_by_term = Enum.map(tokens, &matching_fields(&1, id, title, summary, terms))
-    matched_fields = Enum.reject(matched_fields_by_term, &(&1 == []))
+  defp score_query_terms(tokens, weights, search_words) do
+    matched =
+      tokens
+      |> Enum.map(fn token -> {token, matching_fields(token, search_words)} end)
+      |> Enum.reject(fn {_token, fields} -> fields == [] end)
 
-    if matched_fields == [] do
+    if matched == [] do
       {0, []}
     else
+      rarity = matched |> Enum.map(fn {token, _fields} -> weights[token] end) |> Enum.sum()
+
       score =
         min(
           @max_search_score,
-          3_000 +
-            length(matched_fields) * 1_000 +
-            Enum.count(matched_fields, &("action_id" in &1)) * 300 +
-            Enum.count(matched_fields, &("title" in &1)) * 200 +
-            Enum.count(matched_fields, &("summary" in &1 or "search_terms" in &1)) * 100
+          3_000 + rarity +
+            Enum.count(matched, fn {_token, fields} -> "action_id" in fields end) * 300 +
+            Enum.count(matched, fn {_token, fields} -> "title" in fields end) * 200 +
+            Enum.count(matched, fn {_token, fields} ->
+              "summary" in fields or "search_terms" in fields
+            end) * 100
         )
 
-      fields = matched_fields_by_term |> List.flatten() |> Enum.uniq()
+      fields = matched |> Enum.flat_map(&elem(&1, 1)) |> Enum.uniq()
       {score, fields}
     end
   end
 
-  defp matching_fields(token, id, title, summary, terms) do
-    [
-      {"action_id", String.contains?(id, token)},
-      {"title", String.contains?(title, token)},
-      {"summary", String.contains?(summary, token)},
-      {"search_terms", Enum.any?(terms, &String.contains?(&1, token))}
-    ]
-    |> Enum.filter(fn {_field, matched?} -> matched? end)
+  defp matching_fields(token, search_words) do
+    search_words
+    |> Enum.filter(fn {_field, words} -> Enum.any?(words, &word_match?(&1, token)) end)
     |> Enum.map(&elem(&1, 0))
   end
+
+  # Prefix in either direction covers plural and inflected forms
+  # (inode/inodes, sync/synchronization); the reverse direction requires a
+  # substantial word so a short token cannot re-open the substring floodgate.
+  defp word_match?(word, token) do
+    String.starts_with?(word, token) or
+      (byte_size(word) >= 4 and String.starts_with?(token, word))
+  end
+
+  defp put_search_words(candidate) do
+    action = candidate.action
+
+    search_words = [
+      {"action_id", field_words(action["action_id"])},
+      {"title", field_words(action["title"])},
+      {"summary", field_words(action["summary"])},
+      {"search_terms", Enum.flat_map(action["search_terms"], &field_words/1)}
+    ]
+
+    Map.put(candidate, :search_words, search_words)
+  end
+
+  defp field_words(nil), do: []
+
+  defp field_words(text) do
+    text |> String.downcase() |> String.split(~r/[^a-z0-9]+/, trim: true)
+  end
+
+  # Rarity weight per salient query token: a token matching one action scores
+  # ~1,000, one matching every action scores 0. Stop words are dropped unless
+  # the whole query is stop words.
+  defp token_weights(%{query: query}, searchable) when is_binary(query) do
+    tokens =
+      query
+      |> String.downcase()
+      |> String.split(~r/[^a-z0-9]+/, trim: true)
+      |> Enum.uniq()
+
+    salient = Enum.reject(tokens, &(&1 in @stop_words))
+    tokens = if salient == [], do: tokens, else: salient
+    total = max(length(searchable), 2)
+
+    Map.new(tokens, fn token ->
+      hits =
+        Enum.count(searchable, fn candidate ->
+          Enum.any?(candidate.search_words, fn {_field, words} ->
+            Enum.any?(words, &word_match?(&1, token))
+          end)
+        end)
+
+      weight =
+        if hits == 0 do
+          0
+        else
+          round(1_000 * :math.log(total / hits) / :math.log(total))
+        end
+
+      {token, weight}
+    end)
+  end
+
+  defp token_weights(_args, _searchable), do: %{}
 
   defp candidate_result(candidate) do
     action = candidate.action
