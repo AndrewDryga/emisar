@@ -104,4 +104,8 @@ type runConfig struct {
 	BudgetUSD    string
 	OutputPath   string
 	Timeout      time.Duration
+	// Codex-only: pass --dangerously-bypass-approvals-and-sandbox so headless
+	// runs can dispatch annotation-gated MCP tools. Only for externally
+	// sandboxed environments (the CI job) or an explicit local opt-in.
+	CodexBypassSandbox bool
 }

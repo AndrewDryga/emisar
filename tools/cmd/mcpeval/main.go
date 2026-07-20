@@ -41,6 +41,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	budget := flags.String("budget-usd", "10", "spend cap passed to claude --max-budget-usd")
 	timeout := flags.Duration("timeout", 10*time.Minute, "agent run timeout")
 	output := flags.String("out", "", "write the JSON report to this path (otherwise printed)")
+	codexBypass := flags.Bool("codex-bypass-sandbox", false,
+		"pass --dangerously-bypass-approvals-and-sandbox to codex; required for dispatch "+
+			"(headless codex cancels annotation-gated MCP tools), intended for externally "+
+			"sandboxed environments like the CI job")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -57,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		ScenarioPath: rootedPath(repoRoot, *scenarioPath), ScenarioID: *scenarioID,
 		PortalURL: *portalURL, APIKey: apiKey,
 		Model: *model, Binary: *binary, BudgetUSD: *budget,
-		OutputPath: *output, Timeout: *timeout,
+		OutputPath: *output, Timeout: *timeout, CodexBypassSandbox: *codexBypass,
 	}
 	if cfg.Binary == "" {
 		cfg.Binary = cfg.Provider

@@ -65,6 +65,19 @@ func TestCodexInvocationRegistersHTTPRelayAndPinsModel(t *testing.T) {
 	}
 }
 
+func TestCodexInvocationBypassIsExplicitOptIn(t *testing.T) {
+	item := scenario{Prompt: "inspect the fleet"}
+	cfg := runConfig{Provider: "codex", Binary: "codex", CodexBypassSandbox: true}
+	got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got.args, " ")
+	if !strings.Contains(joined, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("bypass opt-in missing from argv: %#v", got.args)
+	}
+}
+
 func TestBuildInvocationRejectsUnknownProvider(t *testing.T) {
 	if _, err := buildInvocation(runConfig{Provider: "gemini"}, scenario{}, "http://127.0.0.1:1/t", t.TempDir()); err == nil {
 		t.Fatal("unknown provider was accepted")

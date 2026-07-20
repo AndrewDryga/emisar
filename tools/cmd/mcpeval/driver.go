@@ -90,6 +90,14 @@ func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
 // --ephemeral persists no session files, --sandbox read-only confines
 // model-generated shell commands, and the -c override registers the relay the
 // same way `codex mcp add <name> --url <url>` writes it.
+// run_action truthfully advertises non-readonly MCP annotations, and headless
+// Codex synthesizes "user cancelled MCP tool call" for annotation-gated tools
+// — the burn-in run scored clean discovery (receipts threaded correctly) and
+// zero dispatches. No supported config unlocks MCP approval alone
+// (`--ask-for-approval` exists only on the top-level command, and
+// `approval_policy="never"` governs shell commands), so dispatch requires the
+// documented bypass flag, gated behind an explicit opt-in for externally
+// sandboxed environments.
 func codexInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
 	args := []string{
 		"exec",
@@ -99,6 +107,9 @@ func codexInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 		"--sandbox", "read-only",
 		"--color", "never",
 		"-c", fmt.Sprintf("mcp_servers.emisar_eval.url=%q", endpoint),
+	}
+	if cfg.CodexBypassSandbox {
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	if cfg.Model != "" {
 		args = append(args, "--model", cfg.Model)

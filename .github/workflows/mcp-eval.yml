@@ -140,7 +140,10 @@ jobs:
           codex --version
           # Key rides stdin, never argv (argv is visible in process listings).
           printenv OPENAI_API_KEY | codex login --with-api-key
-          go run ./cmd/mcpeval -provider codex -model "$CODEX_MODEL" -out /tmp/mcpeval-codex.json
+          # The bypass opt-in is safe here per its own contract: the runner VM
+          # is disposable, and headless codex otherwise cancels the
+          # annotation-gated run_action dispatches the scenario must score.
+          go run ./cmd/mcpeval -provider codex -model "$CODEX_MODEL" -codex-bypass-sandbox -out /tmp/mcpeval-codex.json
 
       - name: Show stack logs
         if: failure()

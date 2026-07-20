@@ -35,7 +35,13 @@ cd tools && go run ./cmd/mcpeval -provider claude -out /tmp/mcpeval.json
 ```
 
 `-provider codex` uses the Codex CLI instead (auth via `OPENAI_API_KEY` or an
-existing `codex login`; pass `-model` to pin one). `-scenario` selects from
+existing `codex login`; pass `-model` to pin one). Headless Codex cancels
+annotation-gated MCP tools ("user cancelled MCP tool call"), so a codex run
+that must dispatch also needs `-codex-bypass-sandbox` — it passes
+`--dangerously-bypass-approvals-and-sandbox`, which per its own contract
+belongs in externally sandboxed environments (the CI job) or a deliberate
+local opt-in. Without it a codex run scores discovery conformance only.
+`-scenario` selects from
 [`tools/mcpeval/scenarios.json`](../../mcpeval/scenarios.json); `-model`,
 `-timeout`, and `-budget-usd` pin the run. The agent executes in a throwaway
 temp workspace with a stripped environment.
