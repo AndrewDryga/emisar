@@ -47,18 +47,21 @@ func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 //     subscription keychain login while still isolating from the user's global
 //     config (the throwaway workspace has no project/local settings).
 //
-// `--strict-mcp-config` limits MCP to our generated relay config, `--tools ""`
-// disables every built-in tool, and `--allowedTools` pre-approves exactly the
-// scenario's MCP tools (mcp__<server>__<tool>) so headless mode never stalls
-// on a permission prompt.
+// `--strict-mcp-config` limits MCP to our generated relay config and
+// `--tools ""` disables every built-in tool, so the only tools are the relay's.
+// `--dangerously-skip-permissions` is required, not optional: under API-key
+// headless auth, `--allowedTools` did not pre-approve the MCP tools — Claude
+// fetched the relay's tools/list (the handshake reaches the relay) but excluded
+// them from the model's tool set pending an approval no headless run can give,
+// so the model saw only the server name and role-played tool calls as text
+// (calls=0, empty permission_denials — the tools were never offered, not
+// denied). Skipping permissions is the same bypass the Codex lane needs for
+// headless dispatch; the relay's fail-closed allowlist, not the agent's
+// permission prompt, is the real security boundary here.
 func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
 	configPath, err := writeClaudeMCPConfig(workspace, endpoint)
 	if err != nil {
 		return invocation{}, err
-	}
-	allowed := make([]string, len(item.AllowedTools))
-	for index, tool := range item.AllowedTools {
-		allowed[index] = "mcp__emisar_eval__" + tool
 	}
 	isolation := []string{"--setting-sources", "project,local"}
 	if os.Getenv("ANTHROPIC_API_KEY") != "" {
@@ -70,7 +73,7 @@ func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) 
 		"--strict-mcp-config",
 		"--mcp-config", configPath,
 		"--tools", "",
-		"--allowedTools", strings.Join(allowed, ","),
+		"--dangerously-skip-permissions",
 		"--no-session-persistence",
 		"--max-budget-usd", cfg.BudgetUSD,
 	)

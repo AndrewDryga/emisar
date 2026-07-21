@@ -11,35 +11,49 @@ import (
 )
 
 func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
-	workspace := t.TempDir()
 	item := scenario{Prompt: "inspect the fleet", AllowedTools: []string{"list_runners", "run_action"}}
 	cfg := runConfig{Provider: "claude", Binary: "claude", Model: "claude-sonnet-4-5", BudgetUSD: "10"}
-	got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(workspace, "mcp-eval.json")
-	want := []string{
-		"-p", "inspect the fleet",
-		"--output-format", "json",
-		"--model", "claude-sonnet-4-5",
-		"--setting-sources", "project,local",
-		"--strict-mcp-config",
-		"--mcp-config", configPath,
-		"--tools", "",
-		"--allowedTools", "mcp__emisar_eval__list_runners,mcp__emisar_eval__run_action",
-		"--no-session-persistence",
-		"--max-budget-usd", "10",
-	}
-	if got.binary != "claude" || !reflect.DeepEqual(got.args, want) {
-		t.Fatalf("claude argv = %q %#v", got.binary, got.args)
-	}
-	config, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(config) != `{"mcpServers":{"emisar_eval":{"type":"http","url":"http://127.0.0.1:9999/token"}}}`+"\n" {
-		t.Fatalf("mcp config = %s", config)
+	// The isolation flag is chosen by ANTHROPIC_API_KEY presence: --bare for the
+	// CI API-key path, --setting-sources project,local for the local keychain
+	// path. Everything else is identical, and --dangerously-skip-permissions is
+	// present in both so headless mode can actually invoke the relay's tools.
+	for name, isolation := range map[string][]string{
+		"local keychain (no key)": {"--setting-sources", "project,local"},
+		"CI api key":              {"--bare"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if isolation[0] == "--bare" {
+				t.Setenv("ANTHROPIC_API_KEY", "sk-ant-present")
+			} else {
+				t.Setenv("ANTHROPIC_API_KEY", "")
+			}
+			workspace := t.TempDir()
+			got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(workspace, "mcp-eval.json")
+			want := []string{"-p", "inspect the fleet", "--output-format", "json", "--model", "claude-sonnet-4-5"}
+			want = append(want, isolation...)
+			want = append(want,
+				"--strict-mcp-config",
+				"--mcp-config", configPath,
+				"--tools", "",
+				"--dangerously-skip-permissions",
+				"--no-session-persistence",
+				"--max-budget-usd", "10",
+			)
+			if got.binary != "claude" || !reflect.DeepEqual(got.args, want) {
+				t.Fatalf("claude argv = %q %#v", got.binary, got.args)
+			}
+			config, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(config) != `{"mcpServers":{"emisar_eval":{"type":"http","url":"http://127.0.0.1:9999/token"}}}`+"\n" {
+				t.Fatalf("mcp config = %s", config)
+			}
+		})
 	}
 }
 
