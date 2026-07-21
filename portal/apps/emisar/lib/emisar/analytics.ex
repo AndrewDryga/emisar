@@ -63,11 +63,25 @@ defmodule Emisar.Analytics do
   @spec set_people(String.t(), map(), keyword()) :: :ok
   def set_people(distinct_id, set_properties, opts \\ []) when is_binary(distinct_id) do
     enabled_dispatch(fn ->
-      update =
-        %{"$distinct_id" => distinct_id, "$ip" => "0", "$set" => compact(set_properties)}
-        |> put_present("$set_once", opts[:set_once] && compact(opts[:set_once]), blank: @blanks)
+      base = %{"$distinct_id" => distinct_id, "$ip" => "0"}
+      set_update = Map.put(base, "$set", compact(set_properties))
 
-      MixpanelClient.engage([update])
+      updates =
+        case opts[:set_once] do
+          set_once when is_map(set_once) ->
+            case compact(set_once) do
+              set_once when map_size(set_once) > 0 ->
+                [set_update, Map.put(base, "$set_once", set_once)]
+
+              _empty ->
+                [set_update]
+            end
+
+          _absent ->
+            [set_update]
+        end
+
+      MixpanelClient.engage(updates)
     end)
   end
 

@@ -22,7 +22,8 @@ defmodule EmisarWeb.AnalyticsTest do
     test "a marketing GET fires page_viewed with a cookieless $device: id", %{conn: conn} do
       conn = get(conn, ~p"/pricing")
 
-      # Cookieless: nothing analytics-related is written to the session.
+      # No browser identifier is stored; campaign metadata is only written
+      # when a UTM exists.
       refute Plug.Conn.get_session(conn, :analytics_device_id)
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["path"] == "/pricing"
@@ -60,18 +61,85 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["$current_url"] =~ "/pricing"
     end
 
-    test "tracks regardless of DNT / GPC (cookieless first-party — nothing to opt out of)",
+    test "credential-bearing paths and referrers are redacted", %{conn: conn} do
+      conn
+      |> put_req_header(
+        "referer",
+        "https://emisar.dev/accept_invitation/referrer-secret?source=email"
+      )
+      |> get("/accept_invitation/request-secret")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["path"] == "/accept_invitation/:token"
+      assert props["$current_url"] == "http://www.example.com/accept_invitation/:token"
+      assert props["$referrer"] == "https://emisar.dev/accept_invitation/:token"
+      refute inspect(props) =~ "request-secret"
+      refute inspect(props) =~ "referrer-secret"
+    end
+
+    test "referrer query strings are never sent", %{conn: conn} do
+      conn
+      |> put_req_header(
+        "referer",
+        "https://emisar.dev/sign_in/sso/callback?code=credential&state=handoff"
+      )
+      |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["$referrer"] == "https://emisar.dev/sign_in/sso/callback"
+      refute inspect(props) =~ "credential"
+      refute inspect(props) =~ "handoff"
+    end
+
+    test "tracks regardless of DNT / GPC (server-side first-party — nothing to opt out of)",
          %{conn: conn} do
       conn |> put_req_header("dnt", "1") |> put_req_header("sec-gpc", "1") |> get(~p"/pricing")
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
     end
 
-    test "first-touch UTM rides the pageview", %{conn: conn} do
-      get(conn, "/?utm_source=hn&utm_campaign=launch")
+    test "first-touch UTM persists across subsequent pageviews", %{conn: conn} do
+      conn =
+        get(
+          conn,
+          "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch&utm_term=mcp&utm_content=ad_1"
+        )
 
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
-      assert props["utm_source"] == "hn"
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
       assert props["utm_campaign"] == "launch"
+      assert props["utm_term"] == "mcp"
+      assert props["utm_content"] == "ad_1"
+
+      conn
+      |> recycle()
+      |> put_req_header("user-agent", @browser_user_agent)
+      |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
+      assert props["utm_campaign"] == "launch"
+      assert props["utm_term"] == "mcp"
+      assert props["utm_content"] == "ad_1"
+    end
+
+    test "first-touch UTM is byte-bounded and is not replaced later in the session", %{conn: conn} do
+      long_campaign = String.duplicate("界", 100)
+      query = URI.encode_query(%{"utm_source" => "first", "utm_campaign" => long_campaign})
+      conn = get(conn, "/?#{query}")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      conn
+      |> recycle()
+      |> put_req_header("user-agent", @browser_user_agent)
+      |> get("/pricing?utm_source=second&utm_campaign[bad]=nested")
+
+      assert_receive {:mixpanel_track, [%{"properties" => props}]}
+      assert props["utm_source"] == "first"
+      assert props["utm_campaign"] == String.duplicate("界", 85)
+      assert byte_size(props["utm_campaign"]) == 255
     end
 
     test "an in-app browser without a Safari token still fires page_viewed", %{conn: conn} do
@@ -122,12 +190,18 @@ defmodule EmisarWeb.AnalyticsTest do
     end
   end
 
-  test "footer subscribe fires lead_captured", %{conn: conn} do
+  test "footer subscribe carries the session's first-touch attribution", %{conn: conn} do
+    conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+    assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
     email = "lead-#{System.unique_integer([:positive])}@example.com"
-    post(conn, ~p"/subscribe", %{"email" => email, "source" => "footer"})
+    conn |> recycle() |> post(~p"/subscribe", %{"email" => email, "source" => "footer"})
 
     assert_receive {:mixpanel_track, [%{"event" => "lead_captured", "properties" => props}]}
     assert props["source"] == "footer"
+    assert props["utm_source"] == "x"
+    assert props["utm_medium"] == "paid_social"
+    assert props["utm_campaign"] == "launch"
   end
 
   describe "identity" do
@@ -148,21 +222,65 @@ defmodule EmisarWeb.AnalyticsTest do
       # Drive the real passwordless flow: request the link, pull token_id + the
       # 6-character secret from the email, then confirm from the same browser (the
       # nonce cookie rides `recycle`). `log_in_user` fires the analytics event.
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+
       assert_received {:email, sent}
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      conn = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      refute get_session(conn, :analytics_campaign_attribution)
 
-      assert_receive {:mixpanel_engage, [%{"$distinct_id" => id, "$set" => set}]}
+      assert_receive {:mixpanel_engage, [%{"$distinct_id" => id, "$set" => set} = update]}
+
       assert id == user.id
       assert set["$email"] == user.email
       assert set["$name"] == "Jane Op"
+      refute Map.has_key?(update, "$set_once")
 
       assert_receive {:mixpanel_track, [%{"event" => "signed_in", "properties" => props}]}
       assert props["distinct_id"] == user.id
       assert props["$user_id"] == user.id
       assert props["auth_method"] == "magic_link"
       assert props["mfa"] == false
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
+      assert props["utm_campaign"] == "launch"
+      refute Map.has_key?(props, "$current_url")
+    end
+
+    test "a completed registration carries first-touch attribution", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert_receive {:mixpanel_engage, [set_update, %{"$set_once" => set_once}]}
+      assert set_update["$set"]["$email"] == user.email
+      assert set_once["initial_utm_source"] == "x"
+      assert set_once["initial_utm_medium"] == "paid_social"
+      assert set_once["initial_utm_campaign"] == "launch"
+
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_completed", "properties" => props}]}
+
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
+      assert props["utm_campaign"] == "launch"
     end
 
     test "logout fires signed_out", %{conn: conn, user: user} do

@@ -164,25 +164,31 @@
 
   <h2 id="cookies">7. Cookies & analytics</h2>
   <p>
-    We use a small set of strictly-functional, first-party cookies — and nothing else. A
-    signed, HTTP-only <strong>session cookie</strong> keeps you signed in and carries the CSRF
-    token protecting your forms. A signed <strong>recent-teams cookie</strong> remembers which
-    teams this browser has signed into, so the sign-on page can offer them as one-click
-    buttons. And while you complete a passwordless sign-in, a short-lived signed cookie ties
-    the emailed code to this browser. No advertising cookies and no <strong>analytics cookies</strong>. And aside from the Paddle checkout page — which loads
-    Paddle's own payment and retention scripts (Paddle.js and Paddle Retain) that may set their own cookies
-    — no third-party tracker or analytics script runs in your browser.
+    We use a small set of first-party cookies — and nothing else. A
+    signed, HTTP-only <strong>session cookie</strong>
+    keeps you signed in and carries the CSRF
+    token protecting your forms. Until sign-in or the browser session ends, that encrypted
+    session also carries the bounded campaign parameters that brought you here, so a later
+    sign-up can be attributed to the right campaign; it contains no analytics identifier. A
+    signed <strong>recent-teams cookie</strong>
+    remembers which teams this browser has signed into,
+    so the sign-on page can offer them as one-click buttons. And while you complete a passwordless
+    sign-in, a short-lived signed cookie ties the emailed code to this browser. No advertising
+    cookies or <strong>analytics identifier cookies</strong>. And aside from the Paddle checkout
+    page — which loads Paddle's own payment and retention scripts (Paddle.js and Paddle Retain)
+    that may set their own cookies — no third-party tracker or analytics script runs in your browser.
   </p>
   <p>
     To understand which features get used and how people find us, we record a small
-    set of marketing and account events — pageviews, sign-ups, sign-ins, sign-outs
-    (<code>signed_out</code>), and plan changes — in <strong>Mixpanel</strong>, a product-analytics
+    set of marketing and account events — pageviews, sign-ups, sign-ins, sign-outs,
+    and plan changes — in <strong>Mixpanel</strong>, a product-analytics
     service, <em>server-side</em>. When you are signed in, Mixpanel receives your email address,
     name, and IP address with this product-analytics data so we can associate it with your account.
     We never send the contents of your runs, action arguments, or audit records. Logged-out visitors
-    are counted <strong>without a cookie</strong>: their pageviews use a weekly-rotating salted hash
-    of IP address and browser instead of an account identity. Mixpanel still receives the request IP
-    for location enrichment. Once you sign in, your activity is tied to your account.
+    are counted <strong>without an analytics identifier cookie</strong>: their pageviews use a
+    weekly-rotating salted hash of IP address and browser instead of an account identity. Mixpanel
+    still receives the request IP for location enrichment. Once you sign in, your activity is tied
+    to your account.
   </p>
 
   <h2 id="contact">8. Contact</h2>

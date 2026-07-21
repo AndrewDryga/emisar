@@ -32,6 +32,7 @@ defmodule EmisarWeb.UserAuth do
     # registration — magic-link round-trip or SSO JIT — fires sign_up_completed.
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
+    attribution = Analytics.campaign_attribution(conn)
 
     token =
       Auth.create_session_token!(
@@ -48,7 +49,7 @@ defmodule EmisarWeb.UserAuth do
     |> renew_session()
     |> put_token_in_session(token)
     |> maybe_flash_just_registered(user, registered?)
-    |> Analytics.track_authentication(user, auth_method, mfa, registered?)
+    |> Analytics.track_authentication(user, auth_method, mfa, registered?, attribution)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
 

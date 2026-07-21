@@ -89,16 +89,26 @@ defmodule Emisar.AnalyticsTest do
       assert update["$set"] == %{"$email" => "a@b.co", "plan" => "team"}
     end
 
-    test "compacts profile properties and preserves a supplied $set_once" do
+    test "compacts and emits $set and $set_once as separate update operations" do
       Analytics.set_people(
         "user-9",
         %{"plan" => "team", "empty" => ""},
         set_once: %{"created_at" => "2026-07-09", "empty" => nil}
       )
 
-      assert_receive {:mixpanel_engage, [update]}, 500
-      assert update["$set"] == %{"plan" => "team"}
-      assert update["$set_once"] == %{"created_at" => "2026-07-09"}
+      assert_receive {:mixpanel_engage, [set_update, set_once_update]}, 500
+
+      assert set_update == %{
+               "$distinct_id" => "user-9",
+               "$ip" => "0",
+               "$set" => %{"plan" => "team"}
+             }
+
+      assert set_once_update == %{
+               "$distinct_id" => "user-9",
+               "$ip" => "0",
+               "$set_once" => %{"created_at" => "2026-07-09"}
+             }
     end
   end
 

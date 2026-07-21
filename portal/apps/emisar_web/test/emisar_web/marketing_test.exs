@@ -1381,18 +1381,19 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
       assert html =~ "Mixpanel"
-      assert html =~ "without a cookie"
+      assert html =~ "without an analytics identifier cookie"
+      assert html =~ "campaign parameters that brought you here"
       refute html =~ "no third-party trackers in the application"
       # The "no third-party tracker or analytics script runs in your browser" claim must
       # carry the Paddle checkout carve-out — that page loads Paddle.js + Paddle Retain.
-      assert html =~ "aside from the Paddle checkout page"
-      # We do NOT honor DNT/GPC (cookieless first-party isn't a sale) — the page
+      assert html =~ ~r/aside from the Paddle checkout\s+page/
+      # We do NOT honor DNT/GPC (first-party analytics isn't a sale) — the page
       # must not promise it.
       refute html =~ "Do Not Track"
       refute html =~ "Global Privacy Control"
     end
 
-    test "the privacy page discloses every functional cookie it actually sets", %{conn: conn} do
+    test "the privacy page discloses every first-party cookie it actually sets", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
       # We set more than one first-party functional cookie — the disclosure must not
@@ -1400,7 +1401,7 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "We use one cookie"
       assert html =~ "session cookie"
       assert html =~ "recent-teams cookie"
-      assert html =~ "passwordless sign-in"
+      assert html =~ ~r/passwordless\s+sign-in/
       # The remember-me cookie mechanism exists in code but no sign-in path writes it,
       # so the page must not claim we set one.
       refute html =~ "remember-me cookie"

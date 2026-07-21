@@ -756,8 +756,8 @@ defmodule EmisarWeb.MarketingController do
 
   defp capture_subscribe(conn, params) do
     case Emisar.Marketing.capture_signup(%{email: params["email"], source: params["source"]}) do
-      {:ok, _signup} ->
-        EmisarWeb.Analytics.track_lead_captured(conn, params["source"] || "footer")
+      {:ok, signup} ->
+        EmisarWeb.Analytics.track_lead_captured(conn, signup.source || "footer")
         thank_subscriber(conn)
 
       {:error, _changeset} ->
