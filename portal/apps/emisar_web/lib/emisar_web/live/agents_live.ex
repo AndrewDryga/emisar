@@ -366,7 +366,7 @@ defmodule EmisarWeb.AgentsLive do
 
   # The issuing human — the grouping key for the list. Falls back to "Auto"
   # for system-minted keys with no creator.
-  defp owner_label(%{created_by: %{} = user}), do: user.full_name || user.email
+  defp owner_label(%{created_by: %{} = user}), do: user_display_name(user)
   defp owner_label(_), do: "Auto-minted"
 
   # Pre-sort by owner so each `group_by={&owner_label/1}` cluster is one

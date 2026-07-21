@@ -49,6 +49,21 @@ defmodule EmisarWeb.TimeHelpersTest do
     end
   end
 
+  describe "user identity labels" do
+    test "uses a nonblank name and only returns a distinct secondary email" do
+      named = %{full_name: "Maya Chen", email: "maya@example.test"}
+      unnamed = %{full_name: nil, email: "owner@example.test"}
+      blank = %{full_name: "  ", email: "blank@example.test"}
+
+      assert user_display_name(named) == "Maya Chen"
+      assert secondary_user_email(named) == "maya@example.test"
+      assert user_display_name(unnamed) == "owner@example.test"
+      assert secondary_user_email(unnamed) == nil
+      assert user_display_name(blank) == "blank@example.test"
+      assert secondary_user_email(blank) == nil
+    end
+  end
+
   describe "format_json/1" do
     test "pretty-prints maps; nil is an empty object" do
       assert format_json(nil) == "{}"

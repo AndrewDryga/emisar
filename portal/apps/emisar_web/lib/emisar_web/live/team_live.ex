@@ -862,7 +862,7 @@ defmodule EmisarWeb.TeamLive do
   defp sync_count(count, word), do: "#{count} #{word}#{if count == 1, do: "", else: "s"}"
 
   defp request_label(request),
-    do: request.full_name || request.email || request.provider_identifier
+    do: user_display_name(request) || request.provider_identifier
 
   defp approve_title(%{email: email}), do: "Link this connection to #{email}?"
 
@@ -1181,13 +1181,13 @@ defmodule EmisarWeb.TeamLive do
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="truncate text-sm text-zinc-200">
-                  {request.full_name || request.email || "Unknown user"}
+                  {user_display_name(request) || "Unknown user"}
                 </span>
                 <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
               </div>
               <div class="mt-0.5 truncate text-xs text-zinc-400">
-                <span :if={request.email}>{request.email}</span>
-                <span :if={request.email} class="text-zinc-500">·</span>
+                <span :if={email = secondary_user_email(request)}>{email}</span>
+                <span :if={secondary_user_email(request)} class="text-zinc-500">·</span>
                 <span class="font-mono">{request.provider_identifier}</span>
               </div>
               <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
@@ -1308,19 +1308,18 @@ defmodule EmisarWeb.TeamLive do
                       "flex min-w-0 flex-1 items-start gap-4",
                       Accounts.Membership.disabled?(membership) && "opacity-60"
                     ]}>
-                      <.avatar name={
-                        (membership.user && (membership.user.full_name || membership.user.email)) ||
-                          "?"
-                      } />
+                      <.avatar name={user_display_name(membership.user) || "?"} />
 
                       <div class="min-w-0 flex-1">
                         <%!-- flex-wrap: the member's name is their identity — on a
                          phone the status chips wrap to the next line instead of
                          crushing the name to "Theo A…". --%>
                         <div class="flex flex-wrap items-center gap-2">
-                          <span class="truncate font-medium text-zinc-100">
-                            {(membership.user && (membership.user.full_name || membership.user.email)) ||
-                              "(unknown)"}
+                          <span
+                            id={"member-name-#{membership.id}"}
+                            class="truncate font-medium text-zinc-100"
+                          >
+                            {user_display_name(membership.user) || "(unknown)"}
                           </span>
                           <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
                             Suspended
@@ -1379,8 +1378,11 @@ defmodule EmisarWeb.TeamLive do
                        otherwise let HEEx trim before each component tag. --%>
                         <%!-- Wraps below sm — single-line truncation ate the
                          sign-in-recency tail on every long email. --%>
-                        <div class="text-xs text-zinc-400 sm:truncate">
-                          {membership.user && membership.user.email} · joined{" "}<.local_time
+                        <div
+                          id={"member-metadata-#{membership.id}"}
+                          class="text-xs text-zinc-400 sm:truncate"
+                        >
+                          <span :if={email = secondary_user_email(membership.user)}>{email} · </span>joined{" "}<.local_time
                             id={"member-joined-#{membership.id}"}
                             value={membership.inserted_at}
                             mode={:relative}
@@ -2157,7 +2159,7 @@ defmodule EmisarWeb.TeamLive do
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
-    do: membership.user && (membership.user.full_name || membership.user.email)
+    do: user_display_name(membership.user)
 
   # Role-change confirm copy for our styled dialog — the title carries the
   # escalation question, the body the consequence. Promoting to a privileged role

@@ -1994,10 +1994,15 @@ defmodule EmisarWeb.CoreComponents do
           class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-white/[0.04]"
           aria-label="Open profile settings"
         >
-          <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
+          <.avatar name={TimeHelpers.user_display_name(@current_user)} size={:sm} />
           <div class="min-w-0 flex-1">
-            <div class="truncate font-medium">{@current_user.full_name || @current_user.email}</div>
-            <div class="truncate text-xs text-zinc-400">{@current_user.email}</div>
+            <div class="truncate font-medium">{TimeHelpers.user_display_name(@current_user)}</div>
+            <div
+              :if={email = TimeHelpers.secondary_user_email(@current_user)}
+              class="truncate text-xs text-zinc-400"
+            >
+              {email}
+            </div>
           </div>
         </.link>
         <.link
@@ -2311,7 +2316,7 @@ defmodule EmisarWeb.CoreComponents do
   (the shell user block, the team roster), `:square` for workspaces (the
   account switcher rows).
 
-      <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
+      <.avatar name={TimeHelpers.user_display_name(@current_user)} size={:sm} />
       <.avatar name={account.name} shape={:square} size={:xs} />
   """
   attr :name, :string, required: true

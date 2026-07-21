@@ -1302,6 +1302,33 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "never signed in"
     end
+
+    test "an email-fallback identity is not duplicated or followed by a leading separator", %{
+      conn: conn,
+      account: account
+    } do
+      member = Fixtures.Users.create_user(%{full_name: nil})
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#member-name-#{membership.id}", member.email)
+
+      metadata_html =
+        lv
+        |> element("#member-metadata-#{membership.id}")
+        |> render()
+
+      assert metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*joined\s<time/
+      refute metadata_html =~ member.email
+      refute metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*·/
+    end
   end
 
   describe "real-time roster updates (PubSub)" do

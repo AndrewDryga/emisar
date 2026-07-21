@@ -533,7 +533,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     <.meta_line class="mt-1">
                       <:seg>via {grant_key_label(g)}</:seg>
                       <:seg :if={g.granted_by}>
-                        granted by {g.granted_by.full_name || g.granted_by.email}
+                        granted by {user_display_name(g.granted_by)}
                         <.local_time
                           id={"grant-created-#{g.id}"}
                           value={g.inserted_at}

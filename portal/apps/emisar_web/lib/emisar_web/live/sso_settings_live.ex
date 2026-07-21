@@ -1512,13 +1512,13 @@ defmodule EmisarWeb.SSOSettingsLive do
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="truncate text-sm text-zinc-200">
-                    {request.full_name || request.email || "Unknown user"}
+                    {user_display_name(request) || "Unknown user"}
                   </span>
                   <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
                 </div>
                 <div class="mt-0.5 truncate text-xs text-zinc-400">
-                  <span :if={request.email}>{request.email}</span>
-                  <span :if={request.email} class="text-zinc-500">·</span>
+                  <span :if={email = secondary_user_email(request)}>{email}</span>
+                  <span :if={secondary_user_email(request)} class="text-zinc-500">·</span>
                   <span class="font-mono">{request.provider_identifier}</span>
                 </div>
                 <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
@@ -2955,7 +2955,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="truncate text-sm text-zinc-200">
-                {member.identity.user.full_name || member.identity.user.email}
+                {user_display_name(member.identity.user)}
               </span>
               <.chip :if={is_nil(member.membership)} tone={:rose}>Removed</.chip>
               <.chip
@@ -3128,5 +3128,5 @@ defmodule EmisarWeb.SSOSettingsLive do
     do: "#{count} #{singular}#{if count == 1, do: "", else: "s"}"
 
   defp request_label(request),
-    do: request.full_name || request.email || request.provider_identifier
+    do: user_display_name(request) || request.provider_identifier
 end

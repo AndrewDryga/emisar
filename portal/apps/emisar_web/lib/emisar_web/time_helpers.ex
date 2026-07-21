@@ -243,11 +243,20 @@ defmodule EmisarWeb.TimeHelpers do
   defp run_via(%{source: :scheduled}), do: "schedule"
   defp run_via(_run), do: nil
 
-  defp user_display_name(%{full_name: name, email: email}) when is_binary(name) do
+  @doc "Returns a user's nonblank full name, falling back to their email."
+  def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
     if String.trim(name) == "", do: email, else: name
   end
 
-  defp user_display_name(%{email: email}), do: email
+  def user_display_name(%{email: email}), do: email
+  def user_display_name(_user), do: nil
+
+  @doc "Returns a user's email only when it is distinct from their display name."
+  def secondary_user_email(%{email: email} = user) when is_binary(email) do
+    if user_display_name(user) == email, do: nil, else: email
+  end
+
+  def secondary_user_email(_user), do: nil
 
   @doc """
   The single-line accountable actor label for `source_badge`: a nonblank human
