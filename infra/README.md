@@ -273,25 +273,30 @@ Google user email. Terraform provisions that identity as a Cloud SQL IAM user,
 grants connector login only on the `emisar` instance, grants the project-level
 console discovery permissions Cloud SQL Studio requires, and assigns the
 non-superuser `emisar_owner` database role. The database principal itself exists
-only on `emisar`. Cloud SQL Studio is the normal interactive path because the
-database has no public IP. Select the `emisar` database and IAM authentication in
-the instance's Studio view; there is no database password.
+only on `emisar`. Cloud SQL Studio is the browser-based path: select the `emisar`
+database and IAM authentication in the instance's Studio view; there is no
+database password.
 
-For a CLI session, the proxy host must already have a route to `emisar-vpc`:
+For a local session from an operator workstation, authenticate both gcloud and
+Application Default Credentials as that provisioned user, then run the database
+helper:
 
 ```bash
 gcloud auth application-default login
-cloud-sql-proxy --private-ip --auto-iam-authn --port 15432 \
-  emisar:us-central1:emisar
-
-database_user=$(gcloud config get-value account)
-psql --host=127.0.0.1 --port=15432 --dbname=emisar \
-  --username="$database_user"
+scripts/database                     # Postico 2
+scripts/database --psql              # interactive psql
+scripts/database --psql -- --command='select current_user;'
 ```
 
-The proxy does not create a route into the VPC. A workstation without VPN or
-equivalent private routing must use Cloud SQL Studio rather than weakening the
-instance with a public address.
+The helper selects a running portal VM, opens a local SOCKS5 route to it through
+IAP and OS Login, and sends the local Cloud SQL Auth Proxy's private-IP traffic
+through that route. The Auth Proxy still runs on the workstation under the
+operator's ADC identity, so automatic IAM database authentication and pgAudit
+attribution remain personal; the portal VM supplies network reachability only.
+By default the helper opens Postico 2 and keeps the tunnel alive until Ctrl-C.
+Use `--psql` for a terminal client, or `--proxy-only` to print local connection
+settings for another client and keep the tunnel open. The database remains
+private-only.
 
 The built-in `emisar` principal remains because it owns pgAudit's protected
 event triggers. Terraform gives it a generated apply-only password that is

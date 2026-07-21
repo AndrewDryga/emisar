@@ -1,0 +1,364 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: infra/scripts/database [options] [-- psql-args...]
+
+Connect from this workstation to the Emisar production database as the
+attributable Cloud SQL IAM operator. The helper opens an IAP SOCKS tunnel
+through a running portal VM, starts the local Cloud SQL Auth Proxy, and opens
+Postico 2 by default. No public database address or database password is used.
+
+Options:
+  --project PROJECT   GCP project (defaults to EMISAR_GCP_PROJECT or gcloud config)
+  --host NAME         Portal VM used only for private network routing
+  --port PORT         Local PostgreSQL port (defaults to the first free port from 15432)
+  --user EMAIL        Cloud SQL IAM user matching ADC (defaults to active gcloud account)
+  --psql              Open psql instead of Postico 2
+  --proxy-only        Keep the tunnel open without starting a database client
+  -h, --help          Show this help
+
+Examples:
+  infra/scripts/database
+  infra/scripts/database --host emisar-example-a
+  infra/scripts/database --psql
+  infra/scripts/database --psql -- --command='select current_user;'
+  infra/scripts/database --proxy-only
+EOF
+}
+
+die() {
+  printf 'Error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed."
+}
+
+port_is_busy() {
+  nc -z 127.0.0.1 "$1" >/dev/null 2>&1
+}
+
+find_free_port() {
+  local candidate="$1"
+
+  while [[ "$candidate" -le 65535 ]]; do
+    if ! port_is_busy "$candidate"; then
+      printf '%s' "$candidate"
+      return
+    fi
+    candidate=$((candidate + 1))
+  done
+
+  return 1
+}
+
+wait_for_listener() {
+  local label="$1"
+  local port="$2"
+  local pid="$3"
+  local attempt=0
+
+  while [[ "$attempt" -lt 100 ]]; do
+    if port_is_busy "$port"; then
+      return
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid" || true
+      die "$label stopped before listening on 127.0.0.1:$port."
+    fi
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+
+  die "timed out waiting for $label on 127.0.0.1:$port."
+}
+
+urlencode() {
+  local value="$1"
+  local encoded=""
+  local character
+  local hex
+  local i
+
+  for ((i = 0; i < ${#value}; i++)); do
+    character="${value:i:1}"
+    case "$character" in
+      [a-zA-Z0-9.~_-]) encoded+="$character" ;;
+      *)
+        printf -v hex '%%%02X' "'$character"
+        encoded+="$hex"
+        ;;
+    esac
+  done
+
+  printf '%s' "$encoded"
+}
+
+uuid5() {
+  local value="$1"
+  local hash
+
+  hash="$({
+    printf '%s' 6ba7b8109dad11d180b400c04fd430c8 | xxd -r -p
+    printf '%s' "$value"
+  } | shasum -a 1 | awk '{print $1}')"
+
+  printf '%s-%s-%04x-%04x-%s\n' \
+    "${hash:0:8}" \
+    "${hash:8:4}" \
+    "$((16#${hash:12:4} & 0x0fff | 0x5000))" \
+    "$((16#${hash:16:4} & 0x3fff | 0x8000))" \
+    "${hash:20:12}"
+}
+
+PROJECT="${EMISAR_GCP_PROJECT:-}"
+PORTAL_HOST=""
+DB_PORT=""
+DB_USER="${EMISAR_DATABASE_USER:-}"
+USE_PSQL=0
+PROXY_ONLY=0
+PSQL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project)
+      [[ $# -ge 2 ]] || die "--project requires a value."
+      PROJECT="$2"
+      shift 2
+      ;;
+    --host)
+      [[ $# -ge 2 ]] || die "--host requires a value."
+      PORTAL_HOST="$2"
+      shift 2
+      ;;
+    --port)
+      [[ $# -ge 2 ]] || die "--port requires a value."
+      DB_PORT="$2"
+      shift 2
+      ;;
+    --user)
+      [[ $# -ge 2 ]] || die "--user requires a value."
+      DB_USER="$2"
+      shift 2
+      ;;
+    --psql)
+      USE_PSQL=1
+      shift
+      ;;
+    --proxy-only)
+      PROXY_ONLY=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      if [[ $# -gt 0 ]]; then
+        PSQL_ARGS=("$@")
+      fi
+      break
+      ;;
+    *)
+      die "unknown option: $1"
+      ;;
+  esac
+done
+
+[[ -z "$PORTAL_HOST" || "$PORTAL_HOST" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ ]] || \
+  die "invalid portal host name: $PORTAL_HOST"
+[[ -z "$DB_PORT" || "$DB_PORT" =~ ^[0-9]+$ ]] || die "port must be numeric."
+if [[ -n "$DB_PORT" ]]; then
+  [[ "$DB_PORT" -ge 1024 && "$DB_PORT" -le 65534 ]] || \
+    die "port must be between 1024 and 65534."
+fi
+[[ -z "$DB_USER" || "$DB_USER" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || \
+  die "user must be a Google account email address."
+[[ "$PROXY_ONLY" -eq 0 || "$USE_PSQL" -eq 0 ]] || \
+  die "--proxy-only cannot be combined with --psql."
+[[ "$USE_PSQL" -eq 1 || ${#PSQL_ARGS[@]} -eq 0 ]] || \
+  die "psql arguments after -- require --psql."
+
+require_command gcloud
+require_command cloud-sql-proxy
+require_command nc
+if [[ "$USE_PSQL" -eq 1 ]]; then
+  require_command psql
+elif [[ "$PROXY_ONLY" -eq 0 ]]; then
+  require_command open
+  require_command shasum
+  require_command xxd
+fi
+
+if [[ -z "$PROJECT" ]]; then
+  PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
+fi
+[[ -n "$PROJECT" && "$PROJECT" != "(unset)" ]] || \
+  die "no GCP project configured; pass --project or set EMISAR_GCP_PROJECT."
+
+if [[ -z "$DB_USER" ]]; then
+  DB_USER="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -n 1)"
+fi
+[[ -n "$DB_USER" ]] || die "no active gcloud account; run gcloud auth login."
+[[ "$DB_USER" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || \
+  die "active gcloud account is not a user email; pass --user explicitly."
+
+if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+  die "Application Default Credentials are unavailable; run 'gcloud auth application-default login' as $DB_USER."
+fi
+
+DATABASE_USERS="$(
+  gcloud sql users list \
+    --project="$PROJECT" \
+    --instance=emisar \
+    --filter='type=CLOUD_IAM_USER' \
+    --format='value(name)'
+)"
+grep -Fqx "$DB_USER" <<<"$DATABASE_USERS" || \
+  die "$DB_USER is not provisioned as the Emisar Cloud SQL IAM operator."
+
+PORTAL_INVENTORY="$(
+  gcloud compute instances list \
+    --project="$PROJECT" \
+    --filter='labels.cluster_name=emisar AND status=RUNNING' \
+    --sort-by=name \
+    --format='value(name,zone.basename())'
+)"
+[[ -n "$PORTAL_INVENTORY" ]] || die "no running Emisar portal VM is available for private routing."
+
+if [[ -n "$PORTAL_HOST" ]]; then
+  PORTAL_MATCHES="$(awk -F '\t' -v host="$PORTAL_HOST" '$1 == host' <<<"$PORTAL_INVENTORY")"
+  [[ -n "$PORTAL_MATCHES" ]] || die "running portal host not found: $PORTAL_HOST"
+  [[ "$(wc -l <<<"$PORTAL_MATCHES" | tr -d ' ')" -eq 1 ]] || \
+    die "portal host name is ambiguous across zones: $PORTAL_HOST"
+  PORTAL_SELECTION="$PORTAL_MATCHES"
+else
+  PORTAL_SELECTION="$(head -n 1 <<<"$PORTAL_INVENTORY")"
+fi
+IFS=$'\t' read -r PORTAL_HOST PORTAL_ZONE <<<"$PORTAL_SELECTION"
+
+CONNECTION_NAME="$(
+  gcloud sql instances describe emisar \
+    --project="$PROJECT" \
+    --format='value(connectionName)'
+)"
+[[ -n "$CONNECTION_NAME" ]] || die "Cloud SQL instance emisar was not found in project $PROJECT."
+
+if [[ -z "$DB_PORT" ]]; then
+  DB_PORT="$(find_free_port 15432)" || die "no free local PostgreSQL port is available."
+elif port_is_busy "$DB_PORT"; then
+  die "local port $DB_PORT is already in use."
+fi
+
+SOCKS_START=$((DB_PORT + 1))
+SOCKS_PORT="$(find_free_port "$SOCKS_START")" || die "no free local SOCKS port is available."
+
+SSH_PID=""
+PROXY_PID=""
+# ShellCheck cannot follow this function reference through trap.
+# shellcheck disable=SC2329
+cleanup() {
+  trap - EXIT
+
+  if [[ -n "$PROXY_PID" ]] && kill -0 "$PROXY_PID" 2>/dev/null; then
+    kill "$PROXY_PID" 2>/dev/null || true
+    wait "$PROXY_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$SSH_PID" ]] && kill -0 "$SSH_PID" 2>/dev/null; then
+    kill "$SSH_PID" 2>/dev/null || true
+    wait "$SSH_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+printf 'Opening private route through %s (%s)...\n' "$PORTAL_HOST" "$PORTAL_ZONE" >&2
+gcloud compute ssh "$PORTAL_HOST" \
+  --project="$PROJECT" \
+  --zone="$PORTAL_ZONE" \
+  --tunnel-through-iap \
+  -- -N -D "127.0.0.1:$SOCKS_PORT" -o ExitOnForwardFailure=yes >&2 &
+SSH_PID=$!
+wait_for_listener "IAP SOCKS tunnel" "$SOCKS_PORT" "$SSH_PID"
+
+printf 'Starting Cloud SQL Auth Proxy on 127.0.0.1:%s...\n' "$DB_PORT" >&2
+ALL_PROXY="socks5://127.0.0.1:$SOCKS_PORT" \
+  cloud-sql-proxy \
+    --private-ip \
+    --auto-iam-authn \
+    --run-connection-test \
+    --address=127.0.0.1 \
+    --port="$DB_PORT" \
+    "$CONNECTION_NAME" >&2 &
+PROXY_PID=$!
+wait_for_listener "Cloud SQL Auth Proxy" "$DB_PORT" "$PROXY_PID"
+
+if [[ "$PROXY_ONLY" -eq 1 ]]; then
+  cat <<EOF
+Database tunnel ready. Press Ctrl-C to stop it.
+
+Host:     127.0.0.1
+Port:     $DB_PORT
+Database: emisar
+User:     $DB_USER
+Password: none (automatic IAM authentication)
+EOF
+
+  while kill -0 "$SSH_PID" 2>/dev/null && kill -0 "$PROXY_PID" 2>/dev/null; do
+    sleep 1
+  done
+  die "database tunnel stopped unexpectedly."
+fi
+
+if [[ "$USE_PSQL" -eq 1 ]]; then
+  printf 'Connecting to emisar as %s with psql...\n' "$DB_USER" >&2
+  if [[ ${#PSQL_ARGS[@]} -gt 0 ]]; then
+    PGAPPNAME=emisar-database-helper PGCONNECT_TIMEOUT=15 PGPASSWORD='' PGSSLMODE=disable \
+      psql "${PSQL_ARGS[@]}" \
+        --host=127.0.0.1 \
+        --port="$DB_PORT" \
+        --dbname=emisar \
+        --username="$DB_USER" \
+        --no-password
+  else
+    PGAPPNAME=emisar-database-helper PGCONNECT_TIMEOUT=15 PGPASSWORD='' PGSSLMODE=disable \
+      psql \
+        --host=127.0.0.1 \
+        --port="$DB_PORT" \
+        --dbname=emisar \
+        --username="$DB_USER" \
+        --no-password
+  fi
+  exit
+fi
+
+POSTICO_CONNECTION_ID="$CONNECTION_NAME/emisar/$DB_USER"
+POSTICO_CONNECTION_UUID="$(uuid5 "$POSTICO_CONNECTION_ID")"
+POSTICO_URL="postico://$(urlencode "$DB_USER")@127.0.0.1:$DB_PORT/emisar"
+POSTICO_URL+="?uuid=$POSTICO_CONNECTION_UUID&nickname=$(urlencode 'Emisar Production')"
+
+printf 'Opening Emisar Production in Postico 2 as %s...\n' "$DB_USER" >&2
+if ! open -a 'Postico 2' "$POSTICO_URL"; then
+  die "Postico 2 could not be opened. Use --psql for a terminal session."
+fi
+
+cat <<EOF
+Postico 2 opened. Keep this terminal open while using the database.
+Press Ctrl-C to stop the private tunnel.
+
+Host:     127.0.0.1
+Port:     $DB_PORT
+Database: emisar
+User:     $DB_USER
+Password: none (automatic IAM authentication)
+EOF
+
+while kill -0 "$SSH_PID" 2>/dev/null && kill -0 "$PROXY_PID" 2>/dev/null; do
+  sleep 1
+done
+die "database tunnel stopped unexpectedly."
