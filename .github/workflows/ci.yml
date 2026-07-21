@@ -344,6 +344,11 @@ jobs:
           }
           echo "readyz OK"
 
+          if docker logs "$cid" 2>&1 | grep -Fq '[UNIX-ESSIO] Failed open sctp dynamic library'; then
+            echo "::error::Portal image is missing the SCTP runtime library"
+            exit 1
+          fi
+
           location=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
             -H 'x-forwarded-proto: https' \
             http://localhost:4000/packs/linux-core/pack.tar.gz)

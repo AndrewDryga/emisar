@@ -110,8 +110,10 @@ FROM ${RUNNER_IMAGE}
 # The apt snapshot makes package bytes reproducible. Bump the snapshot and base
 # digests together; the required CI vulnerability scan reviews that exact image.
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
+# The builder's OTP has SCTP enabled and loads libsctp.so.1 at VM startup; keep
+# its runtime library here so migrations and the server boot without warnings.
 RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libtinfo6 locales ca-certificates netcat-openbsd \
+  && apt-get install -y --no-install-recommends libstdc++6 libsctp1 openssl libtinfo6 locales ca-certificates netcat-openbsd \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
