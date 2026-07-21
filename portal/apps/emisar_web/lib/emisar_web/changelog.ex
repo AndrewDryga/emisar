@@ -18,6 +18,38 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-07-20],
+      slug: "trust-aware-action-discovery-and-runner-re-enrollment",
+      title: "Trust-aware action discovery and clean runner re-enrollment",
+      tag: "v0.33.0",
+      summary:
+        "Action discovery now follows the runner's current pack trust: MCP catalog, search, exact lookup, and runbook recovery expose only complete manifests for exact versions an operator still trusts, while the console keeps an untrusted advertised action visible for diagnosis but locks Run with the reason. Dispatch rechecks the same contract, so revoking trust closes stale pages and tool calls too. Runner uninstall now removes the cached token and generated identity, and reinstalling with a different enrollment key asks whether to preserve that identity or reset it.",
+      details: [
+        {"Security",
+         [
+           "Pending, rejected, revoked, retired, hash-mismatched, and incomplete pack versions no longer enter model-visible discovery; trust failures stay on operator surfaces and in the audit trail.",
+           "An advertised runner action whose exact pack version cannot dispatch remains visible for diagnosis, but Run is locked with the reason. Transaction-level dispatch revalidates trust so stale console state cannot execute.",
+           "OAuth return targets survive SSO and registration, including the original query string, without accepting an external redirect."
+         ]},
+        {"Runner",
+         [
+           "Default uninstall removes the cached token, legacy token file, and generated runner identity while preserving configuration, local evidence, and logs; --purge still removes everything.",
+           "A changed enrollment key prompts whether to preserve the external runner identity or reset it. Unattended resets require an explicit --reset-identity flag, and the runner guide carries the equivalent manual recovery steps."
+         ]},
+        {"MCP",
+         [
+           "Catalog tools and runbook recovery fail closed when trust changes between inspection and execution without introducing the hidden pack version into model-visible results.",
+           "ChatGPT tool annotations distinguish read-only calls from mutations, and domain verification accepts OpenAI's text challenge.",
+           "Claude evals select MCP authentication by mode and skip interactive permission prompts during headless runs."
+         ]},
+        {"Also",
+         [
+           "A public incident-response skill gives customer agents a bounded observe, diagnose, act, and verify workflow.",
+           "The Packs page follows the live catalog and gives unadvertised versions one day to disappear before cleanup."
+         ]}
+      ]
+    },
+    %{
+      date: ~D[2026-07-20],
       slug: "real-agent-evals-and-symptom-language-search",
       title: "Real-agent MCP evals and symptom-language action search",
       tag: "v0.32.0",
