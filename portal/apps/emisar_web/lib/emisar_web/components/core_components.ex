@@ -4193,6 +4193,7 @@ defmodule EmisarWeb.CoreComponents do
         variant={confirm_zone_button_variant(@tone)}
         tone={confirm_zone_button_tone(@tone)}
         size={:md}
+        type="button"
         {@rest}
       >
         {render_slot(@inner_block)}

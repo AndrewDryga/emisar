@@ -1768,7 +1768,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <.confirm_zone
                   title="Delete this connection"
                   phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
-                  type="button"
                 >
                   <:body>
                     Removes the connection and stops new sign-ins through it. Members who sign in

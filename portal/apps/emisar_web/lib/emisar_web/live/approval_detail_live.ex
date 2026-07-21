@@ -651,7 +651,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
              stretched on a large screen. --%>
         <div class={[
           "grid grid-cols-1 gap-x-12 gap-y-12",
-          if(verdict == :pending, do: "lg:grid-cols-[minmax(0,1fr)_340px]", else: "max-w-4xl")
+          if(verdict == :pending, do: "xl:grid-cols-[minmax(0,1fr)_340px]", else: "max-w-4xl")
         ]}>
           <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>
@@ -798,7 +798,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
              (sticky on desktop so it stays in reach past a long args/reason). A
              decided or lapsed request has no rail — its outcome leads the page in
              the verdict callout above, so the column goes full-width. --%>
-          <aside :if={verdict == :pending} class="lg:sticky lg:top-6 lg:self-start">
+          <aside :if={verdict == :pending} class="xl:sticky xl:top-6 xl:self-start">
             <.decision_panel
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
               grant_duration={@grant_duration}

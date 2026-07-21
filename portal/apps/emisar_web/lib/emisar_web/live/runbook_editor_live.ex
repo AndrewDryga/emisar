@@ -494,7 +494,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       </:actions>
 
       <div class="mt-4">
-        <div class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section>
             <%!-- ONE add affordance: the dashed composer row below the list
                (where the next step lands) — a twin title-row button
@@ -560,10 +560,10 @@ defmodule EmisarWeb.RunbookEditorLive do
             </div>
           </section>
 
-          <%!-- Details first on phones: naming the runbook is the first thing
-             a new one asks for, and the rail is three compact fields — the
-             step list below it can run long. --%>
-          <aside class="order-first space-y-8 lg:order-none">
+          <%!-- Details first on narrow screens: naming the runbook is the first
+               thing a new one asks for, and the rail is three compact fields —
+               the step list below it can run long. --%>
+          <aside class="order-first space-y-8 xl:order-none">
             <section>
               <.section_header title="Details" />
               <form

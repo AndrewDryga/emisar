@@ -260,11 +260,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
            jumps: the form (or its success reveal) is the task on the left; the
            "what is this" explainer fills the rail on the right. --%>
       <%!-- Task column is sized to a readable FORM width (36rem), not 1fr —
-           a 3-field form shouldn't stretch to fill the 7xl column; the rail
-           sits right beside it. --%>
+           a 3-field form shouldn't stretch to fill the 7xl column; at xl the
+           rail sits right beside it without becoming wider than the task. --%>
       <div
         :if={@live_action == :new}
-        class="lg:grid lg:grid-cols-[minmax(0,36rem)_22rem] lg:gap-x-16"
+        class="xl:grid xl:grid-cols-[minmax(0,36rem)_22rem] xl:gap-x-16"
       >
         <div class="space-y-8">
           <.runner_cap_callout billing={@billing} current_account={@current_account} />
@@ -362,7 +362,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         <%!-- The reading rail — what an enrollment key IS and how its lifecycle
              works, so an operator issuing one understands the exchange and
              the revoke semantics before they mint a root-capable secret. --%>
-        <aside class="mt-10 lg:mt-0">
+        <aside class="mt-10 xl:mt-0">
           <.section_header title="What an enrollment key is" />
           <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
             <p>

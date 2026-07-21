@@ -1414,7 +1414,7 @@ defmodule EmisarWeb.AgentsLive do
          grammar) at the same 7xl column as the list it's reached from, so the
          header never jumps: the picker + per-client setup are the task on the
          left; the "how keys work" explainer fills the rail on the right. --%>
-    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-16">
+    <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-16">
       <div>
         <%!-- Client picker on the canvas — grouped into two transport families.
            Cloud first (the no-install path most new users want); Local below
@@ -1640,10 +1640,10 @@ defmodule EmisarWeb.AgentsLive do
 
       <%!-- The reading rail — the shared what's-an-agent + how-its-key-behaves
            explainer (the same one the agents list shows below its table). Hidden
-           below lg (where the grid collapses to one column) so the connect steps
+           below xl (where the grid collapses to one column) so the connect steps
            lead; condensed to one section, it no longer overshoots a short
            local-client install panel. --%>
-      <div class="hidden lg:block">
+      <div class="hidden xl:block">
         <.agent_docs_rail />
       </div>
     </div>
