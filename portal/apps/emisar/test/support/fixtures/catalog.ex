@@ -21,6 +21,7 @@ defmodule Emisar.Fixtures.Catalog do
       action_id: attrs[:action_id] || "linux.uptime",
       pack_id: attrs[:pack_id] || "linux-core",
       pack_version: attrs[:pack_version],
+      pack_hash: attrs[:pack_hash],
       title: attrs[:title] || "Uptime",
       kind: attrs[:kind] || "exec",
       risk: attrs[:risk] || "low",

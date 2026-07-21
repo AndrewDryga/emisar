@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   and per-user runner scope both read as "not found", never 403.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Runners
+  alias Emisar.{Catalog, Runners}
 
   setup %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
@@ -198,6 +198,41 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     assert html =~ "/runs/new/#{runner.id}/linux.uptime"
     refute html =~ "Signed dispatch only"
+  end
+
+  test "revoked pack trust disables Run with an accessible explanation", %{
+    conn: conn,
+    user: user,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    pack_version =
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: "custom",
+        version: "1.0",
+        hash: "sha256:trusted"
+      )
+
+    assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "custom.inspect",
+        pack_id: "custom",
+        pack_version: "1.0",
+        pack_hash: "sha256:trusted"
+      )
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert has_element?(lv, "#action-pack-lock-#{action.id}-tt button[disabled]", "Run")
+    assert has_element?(lv, "#action-pack-lock-#{action.id}[role=tooltip]", "isn't trusted")
+    assert html =~ "Review and trust it on the Packs page"
+    refute html =~ "/runs/new/#{runner.id}/custom.inspect"
   end
 
   test "a missing primary executable disables only that action's Run affordance", %{

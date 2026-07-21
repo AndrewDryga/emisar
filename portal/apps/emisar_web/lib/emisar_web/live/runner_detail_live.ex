@@ -114,6 +114,14 @@ defmodule EmisarWeb.RunnerDetailLive do
     end
   end
 
+  defp pack_dispatch_tooltip(:pack_untrusted) do
+    "This exact pack version isn't trusted. Review and trust it on the Packs page before running this action."
+  end
+
+  defp pack_dispatch_tooltip(:pack_retired) do
+    "This pack version was retired by a newer release. Update it on the runner or re-trust it on the Packs page."
+  end
+
   # A runner connected/disconnected somewhere in the account — re-fetch
   # so the status badge and heartbeat refresh from presence.
   def handle_info(%{event: "presence_diff"}, socket) do
@@ -430,6 +438,26 @@ defmodule EmisarWeb.RunnerDetailLive do
                         <%!-- Viewers read the catalog; the Run affordance isn't
                            theirs to have (§4 — hidden, not dead). --%>
                         <span></span>
+                      <% action.dispatch_block_reason in [:pack_untrusted, :pack_retired] -> %>
+                        <%!-- Keep the advertised capability visible for diagnosis, but
+                           make the catalog's current trust decision explicit before an
+                           operator reaches the transaction-level dispatch backstop. --%>
+                        <.tooltip
+                          id={"action-pack-lock-#{action.id}"}
+                          text={pack_dispatch_tooltip(action.dispatch_block_reason)}
+                          class="shrink-0"
+                        >
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="hero-lock-closed"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
                       <% action.primary_executable_available == false -> %>
                         <.button
                           size={:sm}

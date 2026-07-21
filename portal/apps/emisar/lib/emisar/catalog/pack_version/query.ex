@@ -35,6 +35,9 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def by_pack_ids(queryable \\ all(), pack_ids),
     do: where(queryable, [packs: p], p.pack_id in ^pack_ids)
 
+  def by_versions(queryable \\ all(), versions),
+    do: where(queryable, [packs: p], p.version in ^versions)
+
   def last_seen_before(queryable \\ all(), cutoff),
     do: where(queryable, [packs: p], p.last_seen_at < ^cutoff)
 

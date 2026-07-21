@@ -1311,17 +1311,67 @@ defmodule Emisar.Catalog do
   Returns `{:ok, [runner_action], %Paginator.Metadata{}}`.
   """
   def list_actions_for_runner(runner_id, %Subject{} = subject, opts \\ []) do
+    # No pre-ordering: the query module's cursor drives the ORDER BY so it
+    # matches the keyset WHERE.
+    queryable =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_runner_id(runner_id)
+      |> Authorizer.for_subject(subject)
+
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_catalog_permission()
-           ) do
-      # No pre-ordering: the query module's cursor drives the ORDER BY so it
-      # matches the keyset WHERE.
-      RunnerAction.Query.all()
-      |> RunnerAction.Query.by_runner_id(runner_id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(RunnerAction.Query, opts)
+           ),
+         {:ok, actions, metadata} <-
+           Repo.list(queryable, RunnerAction.Query, opts) do
+      {:ok, annotate_dispatch_blocks(actions, subject), metadata}
+    end
+  end
+
+  defp annotate_dispatch_blocks([], %Subject{}), do: []
+
+  defp annotate_dispatch_blocks(actions, %Subject{} = subject) do
+    versioned_actions =
+      Enum.filter(actions, &(is_binary(&1.pack_id) and is_binary(&1.pack_version)))
+
+    pack_versions =
+      if versioned_actions == [] do
+        []
+      else
+        pack_ids = Enum.map(versioned_actions, & &1.pack_id) |> Enum.uniq()
+        versions = Enum.map(versioned_actions, & &1.pack_version) |> Enum.uniq()
+
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_pack_ids(pack_ids)
+        |> PackVersion.Query.by_versions(versions)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+      end
+
+    versions_by_ref = Map.new(pack_versions, &{{&1.pack_id, &1.version}, &1})
+
+    Enum.map(actions, fn action ->
+      %{action | dispatch_block_reason: dispatch_block_reason(action, versions_by_ref)}
+    end)
+  end
+
+  defp dispatch_block_reason(%RunnerAction{pack_id: nil}, _versions_by_ref), do: nil
+  defp dispatch_block_reason(%RunnerAction{pack_version: nil}, _versions_by_ref), do: nil
+
+  defp dispatch_block_reason(%RunnerAction{} = action, versions_by_ref) do
+    case Map.get(versions_by_ref, {action.pack_id, action.pack_version}) do
+      %PackVersion{trust_state: :trusted} = pack_version ->
+        retired? = PackBaseline.retired?(pack_version.pack_id, pack_version.version)
+
+        case trusted_row_dispatch_decision(pack_version, retired?) do
+          {:ok, hash} when is_binary(action.pack_hash) and action.pack_hash == hash -> nil
+          {:error, :pack_retired, _pack_version} -> :pack_retired
+          _untrusted_or_mismatched -> :pack_untrusted
+        end
+
+      _missing_or_untrusted ->
+        :pack_untrusted
     end
   end
 

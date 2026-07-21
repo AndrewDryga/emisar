@@ -27,6 +27,11 @@ defmodule Emisar.Catalog.RunnerAction do
     field :missing_executable, :string
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec
+    # Filled by the runner-detail catalog read. Nil means dispatch is allowed;
+    # the transaction still rechecks the exact pack trust before creating a run.
+    field :dispatch_block_reason, Ecto.Enum,
+      values: [:pack_untrusted, :pack_retired],
+      virtual: true
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]

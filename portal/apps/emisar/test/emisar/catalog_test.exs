@@ -1997,6 +1997,64 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(actions, & &1.action_id) |> Enum.sort() == ["linux.df", "linux.uptime"]
     end
 
+    test "annotates exact pack trust for dispatch without hiding advertised actions", %{
+      subject: subject,
+      runner: runner
+    } do
+      assert {:ok, _} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:ONE"}},
+                   actions: [action("custom.inspect", pack_id: "custom")]
+                 )
+               )
+
+      assert {:ok, [%RunnerAction{dispatch_block_reason: :pack_untrusted}], _meta} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+
+      {:ok, [pack_version], _meta} = Catalog.list_pack_versions(subject)
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, [%RunnerAction{dispatch_block_reason: nil}], _meta} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+
+      assert {:ok, _} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:TWO"}},
+                   actions: [action("custom.inspect", pack_id: "custom")]
+                 )
+               )
+
+      assert {:ok, [%RunnerAction{dispatch_block_reason: :pack_untrusted}], _meta} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      assert {:ok, [%RunnerAction{dispatch_block_reason: :pack_untrusted}], _meta} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "a missing pack pin fails closed in the runner action list", %{
+      subject: subject,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "missing.inspect",
+        pack_id: "missing",
+        pack_version: "1.0",
+        pack_hash: "sha256:missing"
+      )
+
+      assert {:ok, [%RunnerAction{dispatch_block_reason: :pack_untrusted}], _meta} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
     test "another account's subject sees none of this runner's actions (cross-account)", %{
       runner: runner
     } do
