@@ -208,6 +208,47 @@ defmodule EmisarWeb.SSOControllerTest do
       assert auth.user_identity_id
     end
 
+    test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      claims = %{"sub" => "okta|oauth", "email" => "oauth@acme.test", "hd" => "acme.test"}
+      verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
+
+      {:ok, client} =
+        Emisar.OAuth.register_client(%{
+          "client_name" => "Cloud LLM",
+          "redirect_uris" => ["https://llm.example/oauth/callback"]
+        })
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: "https://llm.example/oauth/callback",
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "resume-sso",
+        resource: EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
+      }
+
+      authorize_path = ~p"/oauth/authorize?#{params}"
+      conn = get(conn, authorize_path)
+      assert redirected_to(conn) == ~p"/sign_in"
+
+      conn = conn |> recycle() |> get(~p"/sign_in/sso/#{provider.id}")
+
+      conn =
+        conn
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+      assert redirected_to(conn) == authorize_path
+
+      html = conn |> recycle() |> get(authorize_path) |> html_response(200)
+      assert html =~ "Authorize"
+    end
+
     test "a successful callback records the user.signed_in audit with method sso", %{conn: conn} do
       # the callback calls `record_sign_in(user, "sso", …)`
       # before `log_in_user` renews the session, so the sign-in is attributable to

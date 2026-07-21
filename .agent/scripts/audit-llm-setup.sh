@@ -182,6 +182,41 @@ check_public_skills() {
   ok "public skills have portable metadata and remain separate from contributor skills"
 }
 
+check_public_skill_mcp_tools() {
+  local schema tools_file file line quoted tool
+  schema="docs/mcp-api-schemas.json"
+
+  if [[ ! -f "$schema" ]]; then
+    fail "$schema is required to validate MCP tool names in public skills"
+    return
+  fi
+
+  tools_file="$(mktemp)"
+  sed -n '/^  "tools": {$/,/^  }$/p' "$schema" |
+    sed -n 's/^    "\([a-z][a-z0-9_]*\)": {$/\1/p' >"$tools_file"
+
+  if [[ ! -s "$tools_file" ]]; then
+    rm -f "$tools_file"
+    fail "$schema contains no parseable MCP tool names"
+    return
+  fi
+
+  while IFS=: read -r file line quoted; do
+    tool="${quoted#\`}"
+    tool="${tool%\`}"
+    if ! grep -Fxq "$tool" "$tools_file"; then
+      fail "$file:$line cites unknown MCP tool '$tool'; update it from $schema"
+    fi
+  done < <(
+    rg -n -o \
+      '`(list|find|get|run|wait_for|recent|execute|create)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`' \
+      skills/*/SKILL.md || true
+  )
+
+  rm -f "$tools_file"
+  ok "public skill MCP tool names exist in $schema"
+}
+
 for project in . infra mcp packs portal runner; do
   expect_link "$project/CLAUDE.md" AGENTS.md
 done
@@ -210,6 +245,7 @@ check_task_dirs
 check_rule_names
 check_skills
 check_public_skills
+check_public_skill_mcp_tools
 check_sweep_guard
 
 if [[ "$failures" -gt 0 ]]; then

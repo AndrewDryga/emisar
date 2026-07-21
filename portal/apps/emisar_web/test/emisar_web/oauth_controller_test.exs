@@ -845,6 +845,85 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
     end
 
+    test "an existing operator resumes the exact authorization request after sign-in", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "resume-existing",
+        resource: @resource
+      }
+
+      authorize_path = ~p"/oauth/authorize?#{params}"
+      conn = get(conn, authorize_path)
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_return_to) == authorize_path
+
+      {:ok, _live_view, html} = live(recycle(conn), ~p"/sign_in")
+      assert html =~ ~s(action="/sign_in/magic/start")
+      assert html =~ ~s(href="/sign_up")
+
+      conn = post(recycle(conn), ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r|/sign_in/magic/([^/]+)/([0-9A-Z]{6})|, sent.text_body)
+
+      conn = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      assert redirected_to(conn) == authorize_path
+
+      html = conn |> recycle() |> get(authorize_path) |> html_response(200)
+      assert html =~ "Authorize"
+    end
+
+    test "a newly created operator resumes authorization after magic-link sign-in", %{
+      conn: conn,
+      client: client,
+      challenge: challenge
+    } do
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "resume-registration",
+        resource: @resource
+      }
+
+      authorize_path = ~p"/oauth/authorize?#{params}"
+      conn = conn |> get(authorize_path) |> recycle()
+      {:ok, live_view, _html} = live(conn, ~p"/sign_up")
+      email = "oauth-signup-#{System.unique_integer([:positive])}@example.test"
+
+      form =
+        form(live_view, "#registration_form", %{
+          "user" => %{"full_name" => "OAuth Operator", "email" => email},
+          "account_name" => "OAuth Workspace"
+        })
+
+      assert render_submit(form) =~ "phx-trigger-action"
+      conn = follow_trigger_action(form, conn)
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r|/sign_in/magic/([^/]+)/([0-9A-Z]{6})|, sent.text_body)
+
+      conn = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      assert redirected_to(conn) == authorize_path
+
+      html = conn |> recycle() |> get(authorize_path) |> html_response(200)
+      assert html =~ "Authorize"
+    end
+
     # a bad response_type is an OAuth error the client
     # CAN be told about (client + redirect already validated), so it redirects
     # back with error=unsupported_response_type rather than showing an error page.

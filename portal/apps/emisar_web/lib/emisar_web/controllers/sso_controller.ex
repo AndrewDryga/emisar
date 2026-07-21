@@ -50,14 +50,13 @@ defmodule EmisarWeb.SSOController do
          {:ok, account} <- Accounts.fetch_account_by_id(provider.account_id) do
       Users.record_sign_in(user, "sso", context)
 
-      # Land on the account whose IdP this is (not the user's stale default), and
-      # remember it for the SSO landing page's one-click return. `mfa: true` — the
-      # IdP performed the second factor when the provider enforces it (provenance,
-      # not the gate). `user_return_to` is read by log_in_user *before* it renews
-      # the session; the recent-accounts cookie is separate, so renew keeps it.
+      # Keep a protected destination that sent the user to sign-in (including an
+      # OAuth authorization request). Otherwise land on the account whose IdP
+      # this is, not the user's stale default. `user_return_to` is server-owned;
+      # no callback parameter can choose the post-login destination.
       conn
       |> delete_session(@stash_key)
-      |> put_session(:user_return_to, ~p"/app/#{account}")
+      |> put_default_return_to(~p"/app/#{account}")
       |> RecentAccounts.put(%{slug: account.slug, name: account.name})
       |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider),
         user_identity_id: identity.id,
@@ -67,6 +66,13 @@ defmodule EmisarWeb.SSOController do
       nil -> sso_error(conn, "Your sign-in session expired. Start again.")
       {:pending, request} -> redirect_to_pending(conn, request)
       {:error, reason} -> sso_error(conn, callback_error_message(reason))
+    end
+  end
+
+  defp put_default_return_to(conn, path) do
+    case get_session(conn, :user_return_to) do
+      return_to when is_binary(return_to) and return_to != "" -> conn
+      _ -> put_session(conn, :user_return_to, path)
     end
   end
 
