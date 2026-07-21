@@ -4,9 +4,10 @@
 // LiveSocket / hooks / topbar — that's ~50 KiB of JS the crawler and
 // every visitor would download and never use.
 //
-// Marketing needs exactly two things:
+// Marketing needs a small set of local interactions:
 //   * copy-to-clipboard buttons (install snippets, pack detail) — shared
 //     with the app console via copy.js
+//   * dismissible, auto-closing flashes after controller redirects
 //   * the animated "watch emisar work" home-page terminal demo (a no-op
 //     on every page that doesn't render it)
 //   * restrained on-scroll reveals (a no-op when no [data-reveal] is present)
@@ -17,6 +18,7 @@
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initDocsToc} from "./docs-toc.js"
 import {initEmisarDemo} from "./emisar_demo.js"
+import {initStaticFlashes} from "./flash.js"
 import {initLegalToc} from "./legal_toc.js"
 import {initMobileNav} from "./mobile_nav.js"
 import {initPackSearch} from "./pack_search.js"
@@ -26,6 +28,7 @@ import {initScrollFocusable} from "./scroll_focusable.js"
 import {initSubscribeGuard} from "./subscribe_guard.js"
 
 setupCopyToClipboardDelegation()
+initStaticFlashes()
 initEmisarDemo()
 // The docs shell and the legal pages share the [data-toc-link] TOC contract but
 // drive the active state differently, so run exactly one scroll-spy per page —

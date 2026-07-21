@@ -19,6 +19,7 @@ defmodule EmisarWeb.Components.FlashTest do
         rendered_to_string(~H"<CoreComponents.flash kind={:info}>Saved.</CoreComponents.flash>")
 
       assert html =~ "Saved."
+      assert html =~ ~r/\sdata-flash(?:\s|="")/
       assert html =~ ~s(phx-hook="FlashAutoClose")
       assert html =~ ~s(data-close-ms="5000")
       # the subtle bottom bar, tinted to the info tone, clipped by overflow-hidden

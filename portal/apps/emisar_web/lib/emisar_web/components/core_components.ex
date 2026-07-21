@@ -57,6 +57,7 @@ defmodule EmisarWeb.CoreComponents do
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
+      data-flash
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       phx-hook={@auto_close && "FlashAutoClose"}
       data-close-ms={@auto_close && @close_ms}
