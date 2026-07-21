@@ -1,6 +1,6 @@
 ---
 name: install-emisar
-description: Install, configure, repair, and certify the Emisar runner on a host end to end for customer onboarding. Use for first-run setup, runner installation, guided pack discovery and selection, pack credentials, upgrades, supervised-service migration, authenticated MCP dispatch, or any request to diagnose and report runner health across the host, control plane, registry, action execution, and audit trail. After runner setup, offer to connect the operator's agent through the connect-llm skill.
+description: Install, configure, repair, and certify the Emisar runner on a host end to end for customer onboarding. Use for first-run setup, runner installation, guided pack discovery and selection, host capability coverage, custom-pack recommendations, pack credentials, upgrades, supervised-service migration, authenticated MCP dispatch, or any request to diagnose and report runner health across the host, control plane, registry, action execution, and audit trail. After runner setup, reuse the current authenticated Emisar MCP connection or offer to connect the operator's agent through connect-llm; when a required host job has no suitable pack, offer the public author-pack workflow.
 ---
 
 # Install and certify the Emisar runner
@@ -27,9 +27,10 @@ Verify commands before running them:
   doctor --help` as the installed-version contracts.
 - Use the signed-in **Runners > Install** page for current enrollment
   credentials.
-- Use the public `connect-llm` skill for MCP client installation, registration,
-  authentication, and client-side functional proof. Do not duplicate or
-  reconstruct its client-specific flow here.
+- Reuse an authenticated Emisar MCP connection already available in the current
+  agent session. When none exists, use the public `connect-llm` skill for client
+  installation, registration, authentication, and functional proof. Do not
+  duplicate or reconstruct its client-specific flow here.
 - Use the public guides at `https://emisar.dev/docs/quickstart` and
   `https://emisar.dev/docs/action-packs` when more detail is needed.
 
@@ -194,11 +195,27 @@ pack-preserving upgrade so recommendations follow the current installed CLI.
    entire catalog into the prompt; link to `${EMISAR_URL%/}/packs` and offer to
    search it. Never recommend `shell` for production, and never include it in a
    default selection on any host.
-5. Do not use host matching when this shell is not the managed host. For cloud
+5. Build a capability-coverage view from the intended host responsibilities,
+   the safe host inventory, the full catalog, and the actions in each
+   candidate pack. A detected process, binary, or port is evidence, not proof
+   that the operator wants an agent to manage it. Report a gap only when there
+   is a concrete operational job and no suitable declared action; do not label
+   every unmatched service as missing coverage:
+
+   ```text
+   Capability coverage for <target>
+   Workload/job       Evidence             Coverage               Next step
+   <service + job>    <intent/host fact>   <pack/actions | gap>    <install/search/author/defer>
+   ```
+
+   For each gap, state whether the need is a read, a mutation, or both; the
+   target and likely arguments; the expected result; and why the current
+   catalog does not fit. Never propose a generic shell action as coverage.
+6. Do not use host matching when this shell is not the managed host. For cloud
    shells, CI workers, and control containers, label host recommendations
    unavailable instead of treating their client toolbelt as service evidence.
    Show compatible core packs and operator-intent matches separately.
-6. Present one explicit choice before changing packs. Include exact ids and
+7. Present one explicit choice before changing packs. Include exact ids and
    versions, concise catalog descriptions, and the evidence for each
    recommendation:
 
@@ -222,11 +239,36 @@ pack-preserving upgrade so recommendations follow the current installed CLI.
    operator explicitly requested unattended provisioning with exact pack ids. No
    answer means stop before pack changes. Declining a recommendation never
    authorizes uninstalling an existing pack.
-7. Reconcile the answer into `keep`, `install`, and `remove` sets and show the
+8. Reconcile the answer into `keep`, `install`, and `remove` sets and show the
    final diff. Removal requires separate explicit authorization. For every new
    pack, obtain its exact `hash` from the trusted full catalog and install with
    `emisar pack install <id> --hash sha256:...`. Never parse catalog JSON with
    regex, install an unknown id, or accept an unreviewed custom hash.
+9. After the registry-pack decision, present uncovered required jobs separately:
+
+   ```text
+   Custom pack opportunities
+   <service/job> - <why no current action fits>
+
+   Choose one for each:
+   1. Author a custom Emisar pack
+   2. Keep it as an explicitly uncovered capability
+   3. It is not an Emisar-managed responsibility
+   ```
+
+   Require an explicit answer; do not start authoring from host discovery
+   alone. For choice 1, invoke the installed public `author-pack` skill. If it
+   is unavailable, point the operator to
+   `https://github.com/AndrewDryga/emisar/tree/main/skills/author-pack` and ask
+   them to install that public skill; do not improvise or duplicate its
+   security-sensitive pack workflow. Give it the workload/job, safe inventory
+   evidence, desired arguments and output, credential route, target fleet, and
+   honest initial risk assessment. The operator still reviews, trusts,
+   distributes, and certifies the exact pack through that workflow.
+
+   A declined or irrelevant gap does not make runner health fail. A capability
+   the operator declared required remains `SKIPPED` with an owner until its
+   pack is trusted, deployed, and certified.
 
 ## 4. Configure pack prerequisites and credentials
 
@@ -312,7 +354,19 @@ run must come through an authenticated MCP client in the next section.
 
 ## 5. Offer agent connection and prove authenticated dispatch
 
-After the runner is connected and its pack configuration is healthy, ask one
+After the runner is connected and its pack configuration is healthy, check
+whether the current session already exposes authenticated Emisar MCP tools. A
+successful `list_runners` call is sufficient connection proof; confirm that it
+can see the intended runner. If the plugin or connector is present but requests
+authentication, ask the operator to complete that client-managed OAuth prompt,
+then retry `list_runners`. Never ask for an OAuth token in chat.
+
+When the current session is authenticated, reuse it and proceed directly to the
+functional proof below. Do not ask the operator to install `connect-llm`; a
+catalog-installed Emisar plugin is already the persistent client being
+certified.
+
+Only when the current session has no usable Emisar MCP connection, ask one
 explicit question:
 
 ```text
@@ -331,14 +385,15 @@ client config instructions here, mint a throwaway credential, or substitute a
 portal/API probe. If the skill is not installed, report that public prerequisite
 and ask the operator to install it; do not improvise the connection flow.
 
-The `connect-llm` verification must dispatch through the operator's persistent,
-authenticated MCP client. Prefer a selected pack's low-risk `setup.verify`
-action, resolve it with `find_actions` and `get_action`, then use the exact pack,
-runner, schema, and argument refs returned by the server. Run it with
-`run_action`, follow it with `wait_for_run` to terminal success, and confirm the
-same run with `recent_runs`. Never invent arguments, auto-approve, widen policy,
-or accept a portal-dispatched run as equivalent. Reuse this run as the functional
-proof for both the runner and client reports; do not dispatch a duplicate action.
+The verification must dispatch through the operator's persistent, authenticated
+MCP client, whether it was already present or connected through `connect-llm`.
+Prefer a selected pack's low-risk `setup.verify` action, resolve it with
+`find_actions` and `get_action`, then use the exact pack, runner, schema, and
+argument refs returned by the server. Run it with `run_action`, follow it with
+`wait_for_run` to terminal success, and confirm the same run with `recent_runs`.
+Never invent arguments, auto-approve, widen policy, or accept a portal-dispatched
+run as equivalent. Reuse this run as the functional proof for both the runner
+and client reports; do not dispatch a duplicate action.
 
 For choice 3, do not dispatch by another route. Mark agent connection,
 authenticated MCP dispatch, and client-attributed audit proof `SKIPPED`, with the
@@ -361,6 +416,7 @@ runner connectivity, and action execution are distinct checks:
 | Portal readiness | Independent bounded `GET ${EMISAR_URL%/}/readyz` returns healthy JSON |
 | Registry | `${EMISAR_URL%/}/packs.json`, `${EMISAR_URL%/}/packs/suggest.json`, and the configured registry catalog return valid bounded JSON |
 | Pack selection | Catalog sources, host-scan applicability, recommendation evidence, and the operator's confirmed choice |
+| Capability coverage | Intended host jobs mapped to exact actions or explicitly classified gaps; required gaps have an owner |
 | Local packs | Pack state, hashes, required tools, setup requirements, dry-run drift |
 | Pack credentials | Approved auth route; required env names or host files configured, protected, and loaded without exposing values |
 | MCP client | Client identity, authenticated registration, and durable credential location without its value |
@@ -402,6 +458,7 @@ runner artifact    PASS        ...
 
 Installed: runner <version>; packs <id@version/hash, ...>
 Pack decision: kept <ids>; installed <ids>; removed <ids>; declined <ids>
+Capability gaps: <job: author/defer/not managed + owner; ... | none>
 Pack setup: <id: auth route + configured names/files, no values; ...>
 Agent connection: <client and auth mode | deferred>
 Functional proof: <MCP client, action, runner_ref, run_id, terminal status>
