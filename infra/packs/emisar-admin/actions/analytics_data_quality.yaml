@@ -1,0 +1,14 @@
+schema_version: 1
+id: emisar.admin.analytics.data_quality
+title: Product data quality
+kind: script
+risk: low
+description: Return canonical row counts used to spot ingestion or retention discontinuities.
+side_effects: [Read-only aggregate analytics.]
+args: []
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.analytics.data_quality"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 131072, max_stderr_bytes: 8192}

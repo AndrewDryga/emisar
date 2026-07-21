@@ -1,0 +1,20 @@
+schema_version: 1
+id: emisar.admin.account.show
+title: Show account
+kind: script
+risk: low
+description: Show one account's identity, lifecycle state, and billing provenance.
+side_effects: [Read-only.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.account.show"
+    - "account={{ args.account }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

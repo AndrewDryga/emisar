@@ -6,8 +6,9 @@ repository. Pull requests run `.github/workflows/ci.yml`. After a push to
 commit, then performs delivery:
 
 1. `Required - CI` completes for the exact commit.
-2. The already-smoke-tested and vulnerability-scanned portal image is published
-   by digest and attested with its CI-produced SBOM. No second image build occurs.
+2. The selected, already-smoke-tested and vulnerability-scanned portal image is
+   published by digest and attested with its CI-produced SBOM. No second image
+   is built for the private admin runner; COS installs its pinned runner release.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP
    Terraform configuration version and planned with the immutable image digest.
 4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's

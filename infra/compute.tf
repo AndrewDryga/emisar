@@ -1,5 +1,6 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
+  admin_runner_version  = "0.14.0"
   # The release image, instance firewall, MIG named port, and load-balancer
   # probes share this contract. Changing it requires a staged successor fleet;
   # it is not a routine workspace input.
@@ -42,13 +43,29 @@ locals {
     database_pool_size       = local.portal_database_pool_size
     release_cookie_ready     = var.release_cookie_ready
   })
+  admin_runner_config = templatefile("${path.module}/templates/admin-runner-config.yaml", {
+    domain = var.domain
+  })
+  admin_runner_start_script = templatefile("${path.module}/templates/start-admin-runner.sh", {
+    project_id                = var.project_id
+    runner_version            = local.admin_runner_version
+    enrollment_secret_version = google_secret_manager_secret_version.admin_runner_enrollment_key.version
+  })
+  admin_runner_pack_files = {
+    for relative_path in fileset("${path.module}/packs/emisar-admin", "**") :
+    "emisar-admin/${relative_path}" => filebase64("${path.module}/packs/emisar-admin/${relative_path}")
+  }
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
-    container_image          = var.container_image
-    cloud_sql_proxy_image    = local.cloud_sql_proxy_image
-    app_port                 = local.portal_port
-    database_connection_name = google_sql_database_instance.emisar.connection_name
-    ensure_image_script      = local.ensure_image_script
-    start_script             = local.start_script
+    container_image           = var.container_image
+    cloud_sql_proxy_image     = local.cloud_sql_proxy_image
+    app_port                  = local.portal_port
+    database_connection_name  = google_sql_database_instance.emisar.connection_name
+    ensure_image_script       = local.ensure_image_script
+    start_script              = local.start_script
+    admin_runner_config       = local.admin_runner_config
+    admin_runner_start_script = local.admin_runner_start_script
+    admin_runner_install      = file("${path.module}/../install.sh")
+    admin_runner_pack_files   = local.admin_runner_pack_files
   })
 
   zone_reservation_counts = {
@@ -296,6 +313,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_sql_database.emisar,
     google_secret_manager_secret_version.release_cookie,
     google_secret_manager_secret_version.optional,
+    google_secret_manager_secret_version.admin_runner_enrollment_key,
     google_sql_user.pgaudit_owner,
     google_sql_user.emisar_vm,
   ]

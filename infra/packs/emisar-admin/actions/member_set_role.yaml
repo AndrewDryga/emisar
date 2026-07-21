@@ -1,0 +1,32 @@
+schema_version: 1
+id: emisar.admin.member.set_role
+title: Set account member role
+kind: script
+risk: high
+description: Change one member's role while preserving last-owner and directory-managed guards.
+side_effects: [Changes the member's permissions and may disconnect sessions after a reduction.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: member
+    type: string
+    required: true
+    description: Exact membership UUID or member email.
+    validation: {max_length: 320}
+  - name: role
+    type: string
+    required: true
+    description: New account role.
+    validation: {enum: [owner, admin, billing_manager, operator, viewer]}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.member.set_role"
+    - "account={{ args.account }}"
+    - "member={{ args.member }}"
+    - "role={{ args.role }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

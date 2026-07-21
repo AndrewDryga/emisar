@@ -1,0 +1,24 @@
+schema_version: 1
+
+runner:
+  group: emisar-admin
+  labels:
+    purpose: emisar-admin
+    environment: production
+
+cloud:
+  url: "https://${domain}"
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
+
+paths:
+  data_dir: /var/lib/emisar-admin-runner/data
+  packs:
+    - /var/lib/emisar-admin-runner/packs/emisar-admin
+
+admission:
+  allow:
+    - "emisar.admin.*"
+  max_risk: critical
+
+events:
+  jsonl_path: /var/lib/emisar-admin-runner/log/events.jsonl

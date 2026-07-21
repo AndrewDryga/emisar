@@ -1,0 +1,21 @@
+schema_version: 1
+id: emisar.admin.analytics.executive
+title: Product executive summary
+kind: script
+risk: low
+description: Return bounded product growth and run-status totals for a date window.
+side_effects: [Read-only aggregate analytics.]
+args: &window_args
+  - name: days
+    type: integer
+    required: false
+    default: 30
+    description: Lookback window in days.
+    validation: {min: 1, max: 3650}
+execution: &callback
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.analytics.executive"
+    - "days={{ args.days? }}"
+  timeout: 30s
+output: &json_output {parser: json, parser_required: true, max_stdout_bytes: 131072, max_stderr_bytes: 8192}

@@ -1,0 +1,28 @@
+schema_version: 1
+id: emisar.admin.account.disable
+title: Disable account
+kind: script
+risk: high
+description: Reversibly disable all browser, API, OAuth, SCIM, dispatch, and runner access for an account.
+side_effects:
+  - Revokes current member sessions and disconnects live browser and runner connections.
+  - Retains machine credentials so enable can restore service.
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: reason
+    type: string
+    required: true
+    description: Support reason recorded in audit.
+    validation: {max_length: 500}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.account.disable"
+    - "account={{ args.account }}"
+    - "reason={{ args.reason }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

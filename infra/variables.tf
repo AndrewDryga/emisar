@@ -246,6 +246,17 @@ variable "livebook_iap_iam_user" {
 # the release treats the feature as off. Paddle is all-or-nothing unless
 # disable_billing = true — enforced by a plan-time precondition (compute.tf).
 
+variable "emisar_runner_enrollment_key" {
+  type        = string
+  description = "Reusable enrollment key for the per-VM private admin runners. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^emkey-enroll-[A-Za-z0-9_-]{16,}$", var.emisar_runner_enrollment_key))
+    error_message = "emisar_runner_enrollment_key must be an emkey-enroll- runner enrollment credential."
+  }
+}
+
 variable "paddle_api_key" {
   type        = string
   description = "Paddle API key (billing). Empty + disable_billing=false fails the plan."

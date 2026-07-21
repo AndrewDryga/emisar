@@ -1,0 +1,20 @@
+schema_version: 1
+id: emisar.admin.billing.sync
+title: Sync account billing
+kind: script
+risk: medium
+description: Reconcile one Paddle-managed subscription into the local billing mirror.
+side_effects: [Reads Paddle and updates the subscription mirror and plan audit when changed.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.billing.sync"
+    - "account={{ args.account }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

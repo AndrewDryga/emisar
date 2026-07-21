@@ -1,0 +1,32 @@
+schema_version: 1
+id: emisar.admin.owner.transfer
+title: Transfer account ownership
+kind: script
+risk: high
+description: Promote a new owner and optionally demote a previous owner to admin.
+side_effects: [Changes owner-level permissions; never leaves the account without an owner.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: new_owner
+    type: string
+    required: true
+    description: Exact membership UUID or member email to promote.
+    validation: {max_length: 320}
+  - name: previous_owner
+    type: string
+    required: false
+    description: Exact membership UUID or member email to demote after promotion.
+    validation: {max_length: 320}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.owner.transfer"
+    - "account={{ args.account }}"
+    - "new_owner={{ args.new_owner }}"
+    - "previous_owner={{ args.previous_owner? }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

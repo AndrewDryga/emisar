@@ -38,7 +38,10 @@ the separate, creds-gated deploy step.
    externally-issued credentials enter as SENSITIVE workspace variables
    (`variables.tf`), machine secrets such as SECRET_KEY_BASE are generated
    ephemerally in-config, and write-only provider arguments keep payloads out of
-   new state snapshots while delivering them to Secret Manager or Cloud SQL.
+   new state snapshots while delivering them to Secret Manager or Cloud SQL. A
+   required high-entropy credential with a write-only version trigger derives
+   that trigger from a bounded payload hash; rotation must not require a second
+   hand-maintained counter when the workspace value can be its source of truth.
    Never put a secret value in git, a `.tf` default, or a tfvars file — the TFC
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
    to it is production access. A new secret = a sensitive variable + an
@@ -80,10 +83,14 @@ the separate, creds-gated deploy step.
    Enforce create-only immutable prefixes and pointer-only create/delete needed
    for replacement through conditional IAM; do not add a history bucket, mirror
    publisher, or route cutover.
-11. **Infrastructure sidecars stay out of the portal image.** Run the Cloud SQL
-   Auth Proxy and future host-level helpers as separately pinned, cloud-init-managed
-   containers. The portal Dockerfile contains the application release only; never
-   bake a VM sidecar binary into it or couple application rollback to that binary.
+11. **Infrastructure helpers stay out of the portal image.** Run the Cloud SQL
+   Auth Proxy as a separately pinned, cloud-init-managed container. Install a
+   host-native helper such as the private self-administration runner from its
+   pinned, checksum-verified release and supervise it with systemd. The portal
+   Dockerfile contains only the application release; never use it as a bundle for
+   binaries that COS can install directly. COS mounts writable persistent paths
+   `noexec`: invoke stored scripts through their interpreter, keep durable helper
+   state under `/var`, and place boot-recreatable executables under `/run`.
 12. **Validate notebook runtimes in their real writable paths.** Livebook's
    `Mix.install/1` executes downloaded build tools from `HOME`, so its bounded,
    ephemeral home tmpfs must opt into `exec` while retaining `nosuid` and `nodev`.

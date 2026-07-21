@@ -1,0 +1,49 @@
+schema_version: 1
+id: emisar-admin
+name: Emisar private administration
+version: 0.1.0
+description: >
+  Private production administration for emisar itself. Every action is a
+  bounded release RPC into the colocated portal; this pack is
+  deployed from infra and is never published in the public catalog.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+requires:
+  os: [linux]
+setup:
+  summary: Runs only on the dedicated emisar-admin runner beside the portal.
+  notes:
+    - "Private means unlisted, not secret: the repository is public."
+    - "Actions call the colocated portal release through one fixed RPC script."
+  verify: emisar.admin.runtime.status
+actions:
+  - actions/account_find.yaml
+  - actions/account_show.yaml
+  - actions/account_create.yaml
+  - actions/account_disable.yaml
+  - actions/account_enable.yaml
+  - actions/account_erase.yaml
+  - actions/user_erase.yaml
+  - actions/plan_grant.yaml
+  - actions/plan_revoke.yaml
+  - actions/access_diagnose.yaml
+  - actions/invitation_resend.yaml
+  - actions/member_invite.yaml
+  - actions/member_suspend.yaml
+  - actions/member_reinstate.yaml
+  - actions/member_set_role.yaml
+  - actions/sessions_revoke.yaml
+  - actions/mfa_reset.yaml
+  - actions/owner_transfer.yaml
+  - actions/billing_sync.yaml
+  - actions/analytics_executive.yaml
+  - actions/analytics_revenue.yaml
+  - actions/analytics_engagement.yaml
+  - actions/analytics_reliability.yaml
+  - actions/analytics_mcp.yaml
+  - actions/analytics_security.yaml
+  - actions/analytics_data_quality.yaml
+  - actions/runtime_status.yaml
+  - actions/runtime_jobs.yaml
+  - actions/runtime_database.yaml
+  - actions/runtime_recent_failures.yaml

@@ -17,11 +17,9 @@ defmodule Emisar.Billing.Subscription.Changeset do
       # redeliveries are already caught by the `paddle_processed_events` dedup.
       change(subscription)
     else
-      # `status` deliberately stays an open `:string` (no Ecto.Enum, no
-      # inclusion list): Paddle owns the value space, and a status this
-      # code has never seen must still persist — a validation error here
-      # would 500 the webhook and strand the account's entitlement on
-      # every redelivery.
+      # `status` stays open: Paddle owns most values and support uses the
+      # local `complimentary` value. An unseen vendor status must still persist
+      # or a webhook would 500 and strand the account's entitlement.
       subscription
       |> cast(attrs, @fields)
       |> validate_required([:account_id, :plan, :status])

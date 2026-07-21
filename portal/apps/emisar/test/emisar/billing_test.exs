@@ -265,6 +265,150 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "support_plan/1" do
+    test "reports free, complimentary, and Paddle sources without credentials" do
+      free_account = Fixtures.Accounts.create_account()
+      assert {:ok, %{plan: "free", source: "free"}} = Billing.support_plan(free_account)
+
+      assert {:ok, %Subscription{status: "complimentary"}} =
+               Billing.grant_complimentary_plan(free_account, "team")
+
+      assert {:ok, complimentary} = Billing.support_plan(free_account)
+      assert complimentary.plan == "team"
+      assert complimentary.source == "complimentary"
+      assert complimentary.subscription_status == "complimentary"
+      assert is_nil(complimentary.paddle_subscription_id)
+
+      paddle_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(paddle_account, "enterprise",
+        paddle_subscription_id: "sub_support_plan"
+      )
+
+      assert {:ok, paddle} = Billing.support_plan(paddle_account)
+      assert paddle.plan == "enterprise"
+      assert paddle.source == "paddle"
+      assert paddle.subscription_status == "active"
+      assert paddle.paddle_subscription_id == "sub_support_plan"
+    end
+  end
+
+  describe "sync_subscription_for_support/1" do
+    test "reconciles one Paddle-managed subscription through the vendor seam" do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        paddle_subscription_id: "sub_support_sync"
+      )
+
+      assert {:ok,
+              %Subscription{
+                plan: "enterprise",
+                status: "active",
+                paddle_price_id: "pri_stub_team_month",
+                quantity: 2
+              }} = Billing.sync_subscription_for_support(account)
+    end
+
+    test "refuses accounts without a Paddle subscription id" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert Billing.sync_subscription_for_support(account) ==
+               {:error, :not_paddle_managed}
+    end
+  end
+
+  describe "grant_complimentary_plan/2" do
+    test "grants and replaces the existing subscription row" do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, %Subscription{plan: "team", status: "complimentary"} = team} =
+               Billing.grant_complimentary_plan(account, "team")
+
+      assert Billing.account_plan(account) == "team"
+      assert Billing.sso_available?(account)
+
+      assert {:ok, %Subscription{plan: "enterprise", status: "complimentary"} = enterprise} =
+               Billing.grant_complimentary_plan(account, "enterprise")
+
+      assert enterprise.id == team.id
+      assert Billing.account_plan(account) == "enterprise"
+      assert Billing.directory_sync_available?(account)
+
+      audits =
+        Emisar.Audit.Event.Query.all()
+        |> Emisar.Audit.Event.Query.by_account_id(account.id)
+        |> Emisar.Audit.Event.Query.by_event_type("subscription.changed")
+        |> Repo.all()
+
+      assert Enum.map(audits, & &1.payload["to"]) == ["team", "enterprise"]
+    end
+
+    test "is idempotent for an already-active plan" do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, first} = Billing.grant_complimentary_plan(account, "team")
+      assert {:ok, repeated} = Billing.grant_complimentary_plan(account, "team")
+
+      assert repeated.id == first.id
+
+      assert Repo.aggregate(
+               Subscription.Query.all()
+               |> Subscription.Query.by_account_id(account.id),
+               :count
+             ) == 1
+    end
+
+    test "refuses Paddle or legacy subscription state and invalid input" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert Billing.grant_complimentary_plan(account, "enterprise") ==
+               {:error, :paddle_or_legacy_subscription_present}
+
+      free_account = Fixtures.Accounts.create_account()
+
+      assert Billing.grant_complimentary_plan(free_account, "free") ==
+               {:error, :invalid_complimentary_plan}
+    end
+
+    test "a real Paddle subscription replaces complimentary state" do
+      account = Fixtures.Accounts.create_account()
+      assert {:ok, complimentary} = Billing.grant_complimentary_plan(account, "team")
+
+      assert {:ok, paddle} =
+               Billing.upsert_subscription(account.id, %{
+                 plan: "enterprise",
+                 status: "active",
+                 paddle_subscription_id: "sub_after_complimentary"
+               })
+
+      assert paddle.id == complimentary.id
+      assert {:ok, %{source: "paddle", plan: "enterprise"}} = Billing.support_plan(account)
+    end
+  end
+
+  describe "revoke_complimentary_plan/1" do
+    test "deletes only complimentary state and is idempotent" do
+      account = Fixtures.Accounts.create_account()
+      assert {:ok, _subscription} = Billing.grant_complimentary_plan(account, "enterprise")
+
+      assert {:ok, %Subscription{status: "complimentary"}} =
+               Billing.revoke_complimentary_plan(account)
+
+      assert Billing.account_plan(account) == "free"
+      assert Billing.revoke_complimentary_plan(account) == {:ok, :already_free}
+    end
+
+    test "refuses to delete a Paddle or legacy subscription" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert Billing.revoke_complimentary_plan(account) == {:error, :not_complimentary}
+    end
+  end
+
   describe "upsert_subscription/2 — unique_constraint backstop" do
     test "a concurrent first-insert loses on the per-account unique index" do
       # upsert_subscription peeks-then-inserts, so two callers that both peek-miss

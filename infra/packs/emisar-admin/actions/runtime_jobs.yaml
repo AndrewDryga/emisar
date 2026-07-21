@@ -1,0 +1,14 @@
+schema_version: 1
+id: emisar.admin.runtime.jobs
+title: Recurrent job status
+kind: script
+risk: low
+description: Show whether each recurrent job currently has a cluster leader and on which node.
+side_effects: [Read-only.]
+args: []
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.runtime.jobs"
+  timeout: 15s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

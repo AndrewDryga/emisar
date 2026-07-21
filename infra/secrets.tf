@@ -140,6 +140,38 @@ resource "google_secret_manager_secret_version" "secret_key_base" {
   deletion_policy        = "ABANDON"
 }
 
+resource "google_secret_manager_secret" "admin_runner_enrollment_key" {
+  project             = var.project_id
+  secret_id           = "emisar-admin-runner-enrollment-key"
+  deletion_protection = true
+
+  replication {
+    auto {}
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "admin_runner_enrollment_key" {
+  secret         = google_secret_manager_secret.admin_runner_enrollment_key.id
+  secret_data_wo = var.emisar_runner_enrollment_key
+  # The provider requires a numeric trigger for write-only updates. Thirteen
+  # hex digits stay exactly representable while making accidental reuse remote.
+  secret_data_wo_version = nonsensitive(parseint(substr(sha256(var.emisar_runner_enrollment_key), 0, 13), 16))
+  deletion_policy        = "ABANDON"
+}
+
+resource "google_secret_manager_secret_iam_member" "admin_runner_enrollment_key_access" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.admin_runner_enrollment_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.vm.email}"
+}
+
 resource "google_secret_manager_secret_version" "release_cookie" {
   count                  = var.release_cookie_ready || var.livebook_enabled ? 1 : 0
   secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id

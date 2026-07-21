@@ -1,0 +1,14 @@
+schema_version: 1
+id: emisar.admin.analytics.revenue
+title: Revenue and plan posture
+kind: script
+risk: low
+description: Return account counts grouped by Paddle subscription posture and active complimentary plan.
+side_effects: [Read-only aggregate analytics.]
+args: []
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.analytics.revenue"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 131072, max_stderr_bytes: 8192}

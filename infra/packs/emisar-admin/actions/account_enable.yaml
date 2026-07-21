@@ -1,0 +1,26 @@
+schema_version: 1
+id: emisar.admin.account.enable
+title: Enable account
+kind: script
+risk: high
+description: Re-enable a disabled account and allow retained credentials and runners to recover.
+side_effects: [Restores access for the account's retained credentials and memberships.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: reason
+    type: string
+    required: true
+    description: Support reason recorded in audit.
+    validation: {max_length: 500}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.account.enable"
+    - "account={{ args.account }}"
+    - "reason={{ args.reason }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

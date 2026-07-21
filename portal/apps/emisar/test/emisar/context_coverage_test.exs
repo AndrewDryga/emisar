@@ -20,7 +20,7 @@ defmodule Emisar.ContextCoverageTest do
   use ExUnit.Case, async: true
 
   @contexts ~w[
-    accounts api_keys approvals audit auth billing catalog mail marketing mcp_operations
+    accounts admin api_keys approvals audit auth billing catalog mail marketing mcp_operations
     oauth policies runbooks runners runs sso users
   ]a
 

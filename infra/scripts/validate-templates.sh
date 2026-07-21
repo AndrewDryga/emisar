@@ -39,16 +39,70 @@ cloud-init schema --config-file "$livebook_rendered"
 grep -Fq "ensure_image \"$proxy_image\"" "$rendered"
 grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$rendered"
 grep -Fq 'Wants=emisar-cloud-sql-proxy.service' "$rendered"
+grep -Fq '/var/lib/emisar-admin-runner/install.sh' "$rendered"
+grep -Fq 'runner=/run/emisar-admin-runner/bin/emisar' "$rendered"
+grep -Fq 'BIN_DIR=/run/emisar-admin-runner/bin' "$rendered"
+grep -Fq '/bin/bash /var/lib/emisar-admin-runner/install.sh' "$rendered"
+grep -Fq -- '--version "0.14.0"' "$rendered"
+grep -Fq -- '--no-service' "$rendered"
+grep -Fq 'emisar version 0.14.0' "$rendered"
+grep -Fq 'docker exec emisar /app/bin/emisar pid' "$rendered"
+grep -Fq 'exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml' "$rendered"
+grep -Fq 'Requires=emisar.service' "$rendered"
+grep -Fq 'PartOf=emisar.service' "$rendered"
+grep -Fq 'group: emisar-admin' "$rendered"
+grep -Fq 'max_risk: critical' "$rendered"
+grep -Fq '/var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml' "$rendered"
+if [ "$(wc -c < "$rendered")" -gt 262144 ]; then
+  echo "rendered cloud-init exceeds Compute Engine's per-value metadata limit" >&2
+  exit 1
+fi
 if grep -Eq '^[[:space:]]+(Requires|BindsTo|PartOf|Requisite|PropagatesStopTo)=.*emisar-cloud-sql-proxy' "$rendered"; then
   echo "portal service must not restart with the Cloud SQL Auth Proxy" >&2
   exit 1
 fi
-ruby -ryaml -e '
+
+mock_bin="$tmp/mock-bin"
+mkdir "$mock_bin"
+printf '%s\n' \
+  '#!/bin/sh' \
+  '[ "$1" = exec ] || exit 2' \
+  'shift' \
+  'while [ "${1-}" = --env ]; do export "$2"; shift 2; done' \
+  '[ "$1" = emisar ] && [ "$2" = /app/bin/emisar ] && [ "$3" = rpc ]' \
+  '[ "$EMISAR_ADMIN_ACTION_ID" = emisar.admin.account.show ]' \
+  '[ "$EMISAR_ADMIN_ARG_COUNT" = 1 ]' \
+  '[ "$EMISAR_ADMIN_ARG_1" = "account=demo=west" ]' \
+  'case "$4" in *"Emisar.Admin.execute(action_id, args)"*) ;; *) exit 3 ;; esac' \
+  'if [ "${MOCK_RPC_ERROR:-0}" = 1 ]; then' \
+  '  printf "__EMISAR_ADMIN_ERROR__{\"ok\":false,\"error\":\"not_found\"}\\n"' \
+  'else' \
+  '  printf "__EMISAR_ADMIN_OK__{\"ok\":true,\"result\":{\"release\":\"test\"}}\\n"' \
+  'fi' >"$mock_bin/docker"
+chmod 0755 "$mock_bin/docker"
+
+rpc_output=$(PATH="$mock_bin:$PATH" \
+  /bin/sh "${infra_dir}/packs/emisar-admin/scripts/callback.sh" \
+    emisar.admin.account.show 'account=demo=west')
+[ "$rpc_output" = '{"ok":true,"result":{"release":"test"}}' ]
+
+if PATH="$mock_bin:$PATH" MOCK_RPC_ERROR=1 \
+  /bin/sh "${infra_dir}/packs/emisar-admin/scripts/callback.sh" \
+    emisar.admin.account.show 'account=demo=west' \
+  >"$tmp/rpc-error.out" 2>"$tmp/rpc-error.err"; then
+  echo "admin RPC domain errors must fail the action" >&2
+  exit 1
+fi
+grep -Fq '"error":"not_found"' "$tmp/rpc-error.err"
+
+ruby -ryaml -rbase64 -e '
   document = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
   document.fetch("write_files").each do |entry|
     next unless entry.fetch("path").end_with?(".sh")
-    destination = File.join(ARGV.fetch(1), File.basename(entry.fetch("path")))
-    File.write(destination, entry.fetch("content"))
+    name = entry.fetch("path").delete_prefix("/").tr("/", "-")
+    destination = File.join(ARGV.fetch(1), name)
+    content = entry["encoding"] == "b64" ? Base64.strict_decode64(entry.fetch("content")) : entry.fetch("content")
+    File.write(destination, content)
   end
 ' "$rendered" "$tmp"
 

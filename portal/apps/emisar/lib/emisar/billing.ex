@@ -1,13 +1,15 @@
 defmodule Emisar.Billing do
   @moduledoc """
-  Plan + subscription glue. Paddle is the source of truth; we mirror
-  the subset (plan + status + period end + entitlements) needed to enforce
-  limits without round-tripping per request. Paid-plan limits live in the
-  Paddle product's custom_data (see `Billing.Entitlements`) so pricing/limit
-  changes need no deploy; the compiled `@plans` map is the free tier, the
-  per-field fallback, and display copy. The Paddle HTTP layer is swappable
-  via `Application.fetch_env!(:emisar, :paddle_client)` — production
-  binds the live client, tests use the in-process stub.
+  Plan + subscription glue. Paddle is the source of truth for paid
+  subscriptions; a subscription row without a Paddle id may carry a manually
+  granted complimentary plan. We mirror the subset (plan + status + period end
+  + entitlements) needed to enforce limits without round-tripping per request.
+  Paid-plan limits live in the Paddle product's custom_data (see
+  `Billing.Entitlements`) so pricing/limit changes need no deploy; the compiled
+  `@plans` map is the free tier, per-field fallback, and display copy. The
+  Paddle HTTP layer is swappable via
+  `Application.fetch_env!(:emisar, :paddle_client)` — production binds the live
+  client, tests use the in-process stub.
   """
   use Supervisor
   import Emisar.Maps, only: [put_present: 3]
@@ -202,6 +204,114 @@ defmodule Emisar.Billing do
     |> Subscription.Query.by_account_id(account_id)
     |> Repo.peek()
   end
+
+  @doc "Internal support read: return plan and its source without exposing Paddle secrets."
+  def support_plan(%Accounts.Account{} = account) do
+    subscription = peek_subscription_for_account(account.id)
+
+    {:ok,
+     %{
+       plan: plan_from_subscription(subscription),
+       source: plan_source(subscription),
+       subscription_status: subscription && subscription.status,
+       paddle_subscription_id: subscription && subscription.paddle_subscription_id
+     }}
+  end
+
+  @doc "Internal support write: reconcile one Paddle-managed subscription now."
+  def sync_subscription_for_support(%Accounts.Account{} = account) do
+    case peek_subscription_for_account(account.id) do
+      %Subscription{paddle_subscription_id: paddle_id} when is_binary(paddle_id) ->
+        with {:ok, subscription_data} <- PaddleClient.retrieve_subscription(paddle_id) do
+          plan = Entitlements.plan_slug(subscription_data)
+          entitlements = Entitlements.from_paddle_subscription(subscription_data)
+
+          attrs =
+            %{status: subscription_data["status"]}
+            |> Map.merge(subscription_item_attrs(subscription_data))
+            |> put_present(:plan, plan)
+            |> put_present(:entitlements, entitlements)
+            |> put_present(:current_period_end, extract_next_billed_at(subscription_data))
+            |> put_present(:paddle_updated_at, extract_paddle_updated_at(subscription_data))
+
+          upsert_subscription(account.id, attrs)
+        end
+
+      _ ->
+        {:error, :not_paddle_managed}
+    end
+  end
+
+  @doc "Internal support write: grant or replace a non-Paddle complimentary plan."
+  def grant_complimentary_plan(%Accounts.Account{} = account, plan)
+      when plan in ["team", "enterprise"] do
+    case peek_subscription_for_account(account.id) do
+      nil ->
+        upsert_subscription(account.id, %{plan: plan, status: "complimentary"})
+
+      %Subscription{paddle_subscription_id: nil, status: "complimentary"} ->
+        old_plan = account_plan(account)
+
+        queryable =
+          Subscription.Query.complimentary()
+          |> Subscription.Query.by_account_id(account.id)
+
+        with {:ok, %Subscription{plan: new_plan} = subscription} <-
+               Repo.fetch_and_update(queryable, Subscription.Query,
+                 with:
+                   &Subscription.Changeset.upsert(&1, %{
+                     plan: plan,
+                     status: "complimentary"
+                   })
+               ) do
+          _ = maybe_audit_plan_change(account.id, old_plan, new_plan)
+          {:ok, subscription}
+        end
+
+      %Subscription{} ->
+        {:error, :paddle_or_legacy_subscription_present}
+    end
+  end
+
+  def grant_complimentary_plan(%Accounts.Account{}, _plan),
+    do: {:error, :invalid_complimentary_plan}
+
+  @doc "Internal support write: revoke only a complimentary subscription row."
+  def revoke_complimentary_plan(%Accounts.Account{} = account) do
+    case peek_subscription_for_account(account.id) do
+      nil ->
+        {:ok, :already_free}
+
+      %Subscription{paddle_subscription_id: nil, status: "complimentary"} = subscription ->
+        Multi.new()
+        |> Multi.run(:subscription, fn repo, _changes ->
+          Subscription.Query.complimentary()
+          |> Subscription.Query.by_account_id(account.id)
+          |> Subscription.Query.lock_for_update()
+          |> repo.fetch(Subscription.Query)
+        end)
+        |> Multi.delete(:deleted, fn %{subscription: subscription} -> subscription end)
+        |> Multi.insert(
+          :audit,
+          Audit.Events.subscription_changed(account.id, subscription.plan, "free")
+        )
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{deleted: subscription}} -> {:ok, subscription}
+          {:error, error} -> {:error, error}
+        end
+
+      %Subscription{} ->
+        {:error, :not_complimentary}
+    end
+  end
+
+  defp plan_source(%Subscription{paddle_subscription_id: nil, status: "complimentary"}),
+    do: "complimentary"
+
+  defp plan_source(%Subscription{paddle_subscription_id: id}) when is_binary(id), do: "paddle"
+  defp plan_source(%Subscription{}), do: "legacy_manual"
+  defp plan_source(nil), do: "free"
 
   @doc false
   # Internal write — called from webhook handlers and the subscription sync job,

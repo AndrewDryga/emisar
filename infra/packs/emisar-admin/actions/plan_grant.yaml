@@ -1,0 +1,34 @@
+schema_version: 1
+id: emisar.admin.plan.grant
+title: Grant complimentary plan
+kind: script
+risk: high
+description: Grant Team or Enterprise without modifying Paddle subscription state.
+side_effects:
+  - Changes plan limits and feature entitlements immediately.
+  - Refuses accounts with Paddle or legacy subscription rows.
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: plan
+    type: string
+    required: true
+    description: Complimentary plan to grant.
+    validation: {enum: [team, enterprise]}
+  - name: reason
+    type: string
+    required: true
+    description: Commercial or support reason recorded in audit.
+    validation: {max_length: 500}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.plan.grant"
+    - "account={{ args.account }}"
+    - "plan={{ args.plan }}"
+    - "reason={{ args.reason }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

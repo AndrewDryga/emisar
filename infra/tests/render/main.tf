@@ -30,13 +30,32 @@ locals {
     })
   }))
 
+  admin_runner_config = templatefile("${path.module}/../../templates/admin-runner-config.yaml", {
+    domain = local.common.domain
+  })
+
+  admin_runner_start = templatefile("${path.module}/../../templates/start-admin-runner.sh", {
+    project_id                = local.common.project_id
+    runner_version            = "0.14.0"
+    enrollment_secret_version = "1"
+  })
+
+  admin_runner_pack_files = {
+    for relative_path in fileset("${path.module}/../../packs/emisar-admin", "**") :
+    "emisar-admin/${relative_path}" => filebase64("${path.module}/../../packs/emisar-admin/${relative_path}")
+  }
+
   cloud_init = templatefile("${path.module}/../../templates/cloud-init.yaml", {
-    ensure_image_script      = local.ensure_image
-    start_script             = local.start
-    container_image          = local.common.container_image
-    cloud_sql_proxy_image    = local.common.cloud_sql_proxy_image
-    database_connection_name = local.common.database_connection_name
-    app_port                 = local.common.app_port
+    ensure_image_script       = local.ensure_image
+    start_script              = local.start
+    admin_runner_config       = local.admin_runner_config
+    admin_runner_start_script = local.admin_runner_start
+    admin_runner_install      = file("${path.module}/../../../install.sh")
+    admin_runner_pack_files   = local.admin_runner_pack_files
+    container_image           = local.common.container_image
+    cloud_sql_proxy_image     = local.common.cloud_sql_proxy_image
+    database_connection_name  = local.common.database_connection_name
+    app_port                  = local.common.app_port
   })
 
   livebook = {

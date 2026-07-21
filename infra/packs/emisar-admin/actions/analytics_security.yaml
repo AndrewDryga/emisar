@@ -1,0 +1,21 @@
+schema_version: 1
+id: emisar.admin.analytics.security
+title: Security and approval analytics
+kind: script
+risk: low
+description: Return approval-request counts grouped by decision status for a date window.
+side_effects: [Read-only aggregate analytics.]
+args:
+  - name: days
+    type: integer
+    required: false
+    default: 30
+    description: Lookback window in days.
+    validation: {min: 1, max: 3650}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.analytics.security"
+    - "days={{ args.days? }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 131072, max_stderr_bytes: 8192}

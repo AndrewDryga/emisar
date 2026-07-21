@@ -12,6 +12,7 @@ Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
                          |-> regional MIG of private COS instances
                          |      |-> Secret Manager
                          |      |-> Cloud SQL PostgreSQL over private IP
+                         |      |-> host-supervised private emisar admin runner
                          |      `-> Cloud Logging and Monitoring
                          |-> optional private Livebook instance through IAP
                          |      |-> persistent notebook disk
@@ -28,12 +29,12 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 
 | Area | Configuration |
 |---|---|
-| Compute | Regional managed instance group plus optional single-node Livebook workbench, Shielded VMs, no external VM IPs, zero-unavailable portal rolling updates |
+| Compute | Regional managed instance group plus a host-supervised private admin runner per portal VM, optional single-node Livebook workbench, Shielded VMs, no external VM IPs, zero-unavailable portal rolling updates |
 | Database | Cloud SQL PostgreSQL 18, private IP, IAM database authentication through a local proxy, PITR, automated backups, deletion protection |
 | Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH |
 | TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
 | Secrets | Explicit Secret Manager versions fingerprint the VM template; VM access is per-secret and read-only |
-| Supply chain | Production runs an immutable GHCR digest built and tested by CI; pack artifacts are versioned in GCS |
+| Supply chain | Production runs an immutable portal GHCR digest built and tested by CI; COS installs a pinned immutable runner release with checksum verification, private packs are rendered by Terraform, and public pack artifacts are versioned in GCS |
 | DNS | Authoritative Cloud DNS zone with DNSSEC signing and the complete web and email record set |
 | Monitoring | Google Cloud alerts to email and Slack, with severe silent-failure alarms paging the Better Stack on-call; independent Better Stack probes, escalation, and status page |
 
@@ -63,7 +64,8 @@ versions overlap, so schema changes use expand/contract sequencing. Rollback is
 another reviewed plan that sets `container_image` to a previously published
 IAM-capable digest. Images from before the IAM database runtime are not rollback
 candidates. The Cloud SQL Auth Proxy is a separately pinned infrastructure
-container, so changing the portal image never changes or removes it.
+container. The private admin runner is independently pinned in cloud-init and
+continues to invoke the colocated portal release through its stable RPC boundary.
 
 Readiness-contract replacements build a complete successor backend, wait for
 every expected VM to pass `/readyz`, switch the URL map, and retain the previous
@@ -80,7 +82,9 @@ instance's internal IP to `NODE_IP`, runs Ecto migrations under their advisory
 lock, and starts the already-cached immutable container digest. A separately
 pinned loopback Cloud SQL Auth Proxy container obtains short-lived
 database credentials from the VM identity; the application assumes the non-login
-`emisar_owner` role. The portal image contains only the application release.
+`emisar_owner` role. Cloud-init installs the pinned runner release directly on
+the COS host and writes the private packs from the reviewed Terraform module;
+the portal container contains only the application release.
 `Emisar.Cluster.GCE` discovers running peers by
 the `cluster_name` label through the Compute API. Erlang distribution is limited
 to tagged application instances plus explicit connections originating from the
@@ -90,6 +94,38 @@ portal discovery never adds it automatically.
 The load balancer uses DB-independent `/healthz` for auto-healing and DB-aware
 `/readyz` for traffic eligibility. Backend HTTP accepts only Google proxy and
 health-check source ranges. Public traffic terminates TLS at the load balancer.
+
+## Private emisar administration
+
+Every portal VM runs a dedicated `emisar-admin` runner directly under systemd.
+Cloud-init uses the checked-in installer to fetch the pinned immutable runner
+release, verify its published checksum, and install it under
+`/run/emisar-admin-runner/bin`; COS mounts writable persistent paths `noexec`, so
+config, identity, packs, and logs remain under `/var/lib/emisar-admin-runner`
+while the boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the unlisted
+`infra/packs/emisar-admin` pack directly from the Terraform module. The runner advertises group
+`emisar-admin` with `purpose=emisar-admin`; local admission accepts only
+`emisar.admin.*` actions.
+
+Set the reusable runner enrollment credential as the sensitive HCP
+Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create
+several runners and replaces their boot disks during rollouts, so a single-use
+key is insufficient. Issue the key in the management account with enough uses
+for the fleet and rollout surge. Changing the variable automatically writes and
+deploys a new exact Secret Manager version without storing the payload in state.
+
+This is a fully trusted administration runner. It runs on the COS host and its
+fixed script uses `docker exec emisar /app/bin/emisar rpc` to call the
+colocated release, so compromising the runner is equivalent to compromising the
+portal VM. The fixed pack passes its already-validated action arguments to one
+private Elixir entrypoint; the normal action run remains the audit record.
+
+After the first rollout, trust the exact `emisar-admin@0.1.0` hash advertised by
+the new runners in the management account. Critical erasure actions remain
+subject to the management account's normal policy and approval rules.
+
+The pinned `runner-v0.14.0` release already exposes every contract this private
+pack uses; the pack does not require a custom runner build.
 
 ## Portal VM operations
 

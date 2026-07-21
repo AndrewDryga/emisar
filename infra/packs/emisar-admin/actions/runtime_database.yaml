@@ -1,0 +1,14 @@
+schema_version: 1
+id: emisar.admin.runtime.database
+title: Database status
+kind: script
+risk: low
+description: Verify the local portal's PostgreSQL connection, role, replica state, and query latency.
+side_effects: [Runs one fixed read-only PostgreSQL query.]
+args: []
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.runtime.database"
+  timeout: 15s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

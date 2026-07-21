@@ -1,0 +1,32 @@
+schema_version: 1
+id: emisar.admin.member.invite
+title: Invite account member
+kind: script
+risk: medium
+description: Create a member invitation with explicit role and full runner access.
+side_effects: [Creates a user placeholder when needed, creates membership, and sends invitation email.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: email
+    type: string
+    required: true
+    description: Invitee email address.
+    validation: {max_length: 320, pattern: "^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]+$"}
+  - name: role
+    type: string
+    required: true
+    description: Initial account role.
+    validation: {enum: [owner, admin, billing_manager, operator, viewer]}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.member.invite"
+    - "account={{ args.account }}"
+    - "email={{ args.email }}"
+    - "role={{ args.role }}"
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

@@ -1,0 +1,34 @@
+schema_version: 1
+id: emisar.admin.account.erase
+title: Permanently erase account
+kind: script
+risk: critical
+description: Permanently delete one account and all account-owned data after exact UUID confirmation.
+side_effects:
+  - Irreversibly deletes the account and cascaded product data.
+  - Cannot be undone; use only for a verified erasure request with two-person approval.
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Exact account UUID to erase.
+    validation: {pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", max_length: 36}
+  - name: confirmation
+    type: string
+    required: true
+    description: Repeat the exact account UUID.
+    validation: {pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", max_length: 36}
+  - name: reason
+    type: string
+    required: true
+    description: Verified erasure request and approval reference.
+    validation: {max_length: 500}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.account.erase"
+    - "account_id={{ args.account_id }}"
+    - "confirmation={{ args.confirmation }}"
+    - "reason={{ args.reason }}"
+  timeout: 120s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

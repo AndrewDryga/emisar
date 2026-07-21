@@ -70,7 +70,7 @@ while IFS= read -r -d '' file; do
   esac
   if [ "$pack_source" = true ]; then packs_release=true; fi
 
-  case "$file" in infra/*) infra=true ;; .tool-versions) infra=true ;; esac
+  case "$file" in infra/*|install.sh) infra=true ;; .tool-versions) infra=true ;; esac
   case "$file" in
     portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*)
       deps=true

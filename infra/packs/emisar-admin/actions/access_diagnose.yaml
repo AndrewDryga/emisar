@@ -1,0 +1,26 @@
+schema_version: 1
+id: emisar.admin.access.diagnose
+title: Diagnose member access
+kind: script
+risk: low
+description: Show account, membership, confirmation, MFA, session, and API-key access state for one member.
+side_effects: [Read-only.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: member
+    type: string
+    required: true
+    description: Exact membership UUID or member email.
+    validation: {max_length: 320}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.access.diagnose"
+    - "account={{ args.account }}"
+    - "member={{ args.member }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

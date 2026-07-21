@@ -1,0 +1,20 @@
+schema_version: 1
+id: emisar.admin.account.find
+title: Find accounts
+kind: script
+risk: low
+description: Find up to 25 accounts by name, slug, or member email.
+side_effects: [Read-only.]
+args:
+  - name: query
+    type: string
+    required: true
+    description: Account name, slug, or member email fragment.
+    validation: {max_length: 320}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.account.find"
+    - "query={{ args.query }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

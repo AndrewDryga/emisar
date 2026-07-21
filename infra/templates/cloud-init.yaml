@@ -1,6 +1,6 @@
 #cloud-config
-# Container-Optimized OS. Systemd supervises separately pinned portal and Cloud
-# SQL Auth Proxy containers; neither service pulls an image on routine restart.
+# Container-Optimized OS. Systemd supervises the portal container, a pinned
+# host-installed admin runner, and the Cloud SQL Auth Proxy container.
 
 write_files:
 
@@ -13,6 +13,29 @@ write_files:
     permissions: "0755"
     content: |
       ${indent(6, start_script)}
+
+  - path: /var/lib/emisar-admin-runner/config.yaml
+    permissions: "0444"
+    content: |
+      ${indent(6, admin_runner_config)}
+
+  - path: /var/lib/emisar-admin-runner/start.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, admin_runner_start_script)}
+
+  - path: /var/lib/emisar-admin-runner/install.sh
+    permissions: "0444"
+    content: |
+      ${indent(6, admin_runner_install)}
+
+%{ for path, content in admin_runner_pack_files ~}
+  - path: /var/lib/emisar-admin-runner/packs/${path}
+    encoding: b64
+    permissions: "${endswith(path, ".sh") ? "0755" : "0444"}"
+    content: ${content}
+
+%{ endfor ~}
 
   - path: /etc/systemd/system/emisar-image.service
     permissions: "0644"
@@ -65,6 +88,22 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /etc/systemd/system/emisar-admin-runner.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=emisar private administration runner
+      Requires=emisar.service
+      PartOf=emisar.service
+      After=emisar.service
+      [Service]
+      Restart=always
+      RestartSec=5
+      TimeoutStopSec=130
+      ExecStart=/bin/bash /var/lib/emisar-admin-runner/start.sh
+      [Install]
+      WantedBy=multi-user.target
+
 runcmd:
   - /sbin/iptables -A INPUT -p tcp --dport ${app_port} -j ACCEPT
   - /sbin/iptables -A INPUT -p tcp --dport 4369 -j ACCEPT
@@ -72,3 +111,4 @@ runcmd:
   - systemctl daemon-reload
   - systemctl enable --now emisar-cloud-sql-proxy.service
   - systemctl enable --now emisar.service
+  - systemctl enable --now emisar-admin-runner.service
