@@ -1635,8 +1635,11 @@ runner, never production actions.
 ## Security invariants
 
 - Discovery never widens account or runner scope and never authorizes execution.
-- Only exact operator-trusted complete pack manifests become model-visible
-  content; trust and retirement failures remain operator-only facts.
+- Only exact operator-trusted complete pack manifests enter discovery. Pending,
+  rejected, revoked, and retirement-blocked refs remain operator-only catalog
+  facts. A run already authorized against a then-visible ref may report that its
+  selected contract later became undeliverable; that lifecycle status never
+  introduces a hidden ref.
 - `(pack_ref, action_id)` never bypasses current scope, trust, retirement,
   policy, approval, audit, schema validation, or runner verification.
 - Every target is explicit and generation-bound. Enforcing targets verify the

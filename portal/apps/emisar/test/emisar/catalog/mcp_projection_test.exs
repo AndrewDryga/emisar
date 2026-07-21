@@ -31,11 +31,15 @@ defmodule Emisar.Catalog.MCPProjectionTest do
   end
 
   test "retirement hides a trusted ref until an operator override exists" do
-    {pack_id, _watermark} =
+    retired_entry =
       Enum.find(PackBaseline.retired_below(), fn {id, _watermark} ->
         PackBaseline.retired?(id, "0.0.0")
       end)
 
+    assert retired_entry,
+           "expected the frozen pack baseline to contain a watermark above version 0.0.0"
+
+    {pack_id, _watermark} = retired_entry
     {trusted, action, runner} = deployment(pack_id, "0.0.0", @hash)
     assert MCPProjection.build([trusted], [action], [runner]).packs == []
 
@@ -59,6 +63,68 @@ defmodule Emisar.Catalog.MCPProjectionTest do
 
     assert [%{pack_ref: "custom@1.0.0/#{@hash}", issues: issues}] = snapshot.packs
     refute Enum.any?(issues, &(&1.code == "version_skew"))
+  end
+
+  test "two visible trusted versions both report version skew" do
+    {trusted_a, action_a, runner_a} = deployment("custom", "1.0.0", @hash)
+    {trusted_b, action_b, runner_b} = deployment("custom", "2.0.0", @other_hash)
+
+    packs =
+      MCPProjection.build(
+        [trusted_a, trusted_b],
+        [action_a, action_b],
+        [runner_a, runner_b]
+      ).packs
+
+    assert length(packs) == 2
+
+    assert Enum.all?(packs, fn pack ->
+             Enum.any?(pack.issues, &(&1.code == "version_skew"))
+           end)
+  end
+
+  test "a trusted disconnected drift remains visible without a mismatch alarm" do
+    {trusted, action, runner} = deployment("custom", "1.0.0", @hash)
+
+    disconnected = %{
+      runner
+      | online?: false,
+        last_connected_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    }
+
+    drifted_action = %{action | title: "Runner-supplied drift"}
+    snapshot = MCPProjection.build([trusted], [drifted_action], [disconnected])
+
+    assert [%{availability: "unavailable", issues: pack_issues}] = snapshot.packs
+    assert Enum.map(pack_issues, & &1.code) == ["no_connected_runner"]
+
+    assert [%{status: "disconnected", issues: runner_issues}] = snapshot.runners
+    assert Enum.map(runner_issues, & &1.code) == ["runner_disconnected"]
+  end
+
+  test "a partially deployed trusted pack reports its degraded coverage" do
+    {trusted, action, connected} = deployment("custom", "1.0.0", @hash)
+    disconnected_id = Ecto.UUID.generate()
+
+    disconnected = %{
+      connected
+      | id: disconnected_id,
+        name: "runner-#{String.slice(disconnected_id, 0, 8)}",
+        external_id: Ecto.UUID.generate(),
+        online?: false,
+        last_connected_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    }
+
+    disconnected_action = %{action | id: nil, runner_id: disconnected_id}
+
+    assert [%{availability: "executable", issues: issues}] =
+             MCPProjection.build(
+               [trusted],
+               [action, disconnected_action],
+               [connected, disconnected]
+             ).packs
+
+    assert Enum.any?(issues, &(&1.code == "partially_deployed"))
   end
 
   defp deployment(pack_id, version, hash) do

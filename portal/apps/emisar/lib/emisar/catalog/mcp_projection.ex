@@ -263,11 +263,7 @@ defmodule Emisar.Catalog.MCPProjection do
   defp trusted_actions(%PackVersion{}, _hash), do: :hidden
   defp trusted_actions(nil, _hash), do: :hidden
 
-  defp deployment_compatibility(
-         deployment,
-         rows,
-         trusted_actions
-       ) do
+  defp deployment_compatibility(deployment, rows, trusted_actions) do
     expected_action_ids = trusted_actions |> Map.keys() |> MapSet.new()
 
     matching_action_ids =

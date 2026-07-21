@@ -12,6 +12,19 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
   @default_limit 15
+  @hidden_contract_reasons [
+    :action_contract_changed,
+    :action_not_found,
+    :action_unavailable,
+    :incomplete_contract,
+    :not_found,
+    :pack_ref_mismatch,
+    :pack_retired,
+    :pack_untrusted,
+    :runner_not_found,
+    :runner_out_of_scope,
+    :target_contract_changed
+  ]
 
   @doc "Executes one of the four fixed runbook tools."
   def call(conn, "list_runbooks", args, _operation_id), do: list_runbooks(conn, args)
@@ -170,21 +183,40 @@ defmodule EmisarWeb.MCP.RunbookTools do
            "A runbook cannot execute on a signed-only runner because the bridge signs only direct run_action calls."
          )}
 
-      {:error, :target_contract_changed} ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
-      {:error, :incomplete_contract} ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
-      {:error, :not_found} ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot execute this runbook.")}
 
       {:error, reason} ->
-        {:error, error("execution_failed", execution_error(reason))}
+        {:error, execution_failure(reason)}
     end
+  end
+
+  @doc false
+  def execution_failure(reason) when reason in @hidden_contract_reasons do
+    error("runbook_not_found", "No published runbook has that exact ref.")
+  end
+
+  def execution_failure(:runner_requires_attestation) do
+    error(
+      "signed_runbook_unsupported",
+      "A runbook cannot execute on a signed-only runner because the bridge signs only direct run_action calls."
+    )
+  end
+
+  def execution_failure({:step_no_runners, step}) do
+    error("execution_failed", "Step #{step} has no executable runner.")
+  end
+
+  def execution_failure({:step_fan_out_too_large, max}) do
+    error("execution_failed", "One resolved runbook step exceeds #{max} runners.")
+  end
+
+  def execution_failure({:fan_out_too_large, max}) do
+    error("execution_failed", "The resolved runbook exceeds #{max} runs.")
+  end
+
+  def execution_failure(_reason) do
+    error("execution_failed", "The runbook could not be started.")
   end
 
   defp execute_or_replay(conn, input, operation_attrs) do
@@ -694,15 +726,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       end)
     end)
   end
-
-  defp execution_error({:step_no_runners, step}), do: "Step #{step} has no executable runner."
-
-  defp execution_error({:step_fan_out_too_large, max}),
-    do: "One resolved runbook step exceeds #{max} runners."
-
-  defp execution_error({:fan_out_too_large, max}), do: "The resolved runbook exceeds #{max} runs."
-  defp execution_error(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp execution_error(_reason), do: "The runbook could not be started."
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

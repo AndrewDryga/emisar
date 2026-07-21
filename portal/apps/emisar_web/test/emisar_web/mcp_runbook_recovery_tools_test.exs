@@ -4,7 +4,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   alias Emisar.{ApiKeys, Approvals, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
   alias Emisar.MCPOperations.Operation
   alias Emisar.Runs.ActionRun
-  alias EmisarWeb.MCP.ResponseBudget
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools}
 
   @hash "sha256:" <> String.duplicate("b", 64)
   @pack_ref "operations@1.0.0/#{@hash}"
@@ -52,6 +52,36 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert call(conn, "recent_runs", %{"limit" => 50})["runs"] == []
     assert call(conn, "list_runbooks", %{"limit" => 10})["runbooks"] == []
+  end
+
+  test "transaction-time runbook contract failures do not expose hidden reasons" do
+    for reason <- [
+          :action_contract_changed,
+          :action_not_found,
+          :action_unavailable,
+          :incomplete_contract,
+          :not_found,
+          :pack_ref_mismatch,
+          :pack_retired,
+          :pack_untrusted,
+          :runner_not_found,
+          :runner_out_of_scope,
+          :target_contract_changed
+        ] do
+      result = RunbookTools.execution_failure(reason)
+
+      assert result.error.code == "runbook_not_found"
+      assert result.error.message == "No published runbook has that exact ref."
+
+      if reason in [:pack_untrusted, :pack_retired] do
+        refute Jason.encode!(result) =~ Atom.to_string(reason)
+      end
+    end
+
+    generic = RunbookTools.execution_failure(:unexpected_internal_reason)
+    assert generic.error.code == "execution_failed"
+    assert generic.error.message == "The runbook could not be started."
+    refute Jason.encode!(generic) =~ "unexpected_internal_reason"
   end
 
   test "every recent_runs schema fault identifies its kind and field", %{
