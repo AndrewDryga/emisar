@@ -92,13 +92,27 @@ defmodule EmisarWeb.ConnCase do
   end
 
   @doc """
-  Clicks the Confirm button (`label`) inside the `<.confirm_dialog>` with the
-  given `dialog_id`, dispatching the destructive event its `on_confirm` carries.
-  Returns the rendered HTML.
+  Confirms the `<.confirm_dialog>` with the given `dialog_id`: typed dialogs
+  submit their confirmation form, while plain dialogs click the Confirm button
+  (`label`). Returns the rendered HTML.
   """
   def confirm_dialog(lv, dialog_id, label) do
-    lv
-    |> Phoenix.LiveViewTest.element("##{dialog_id} button", label)
-    |> Phoenix.LiveViewTest.render_click()
+    form_selector = "##{dialog_id} form"
+
+    if Phoenix.LiveViewTest.has_element?(lv, form_selector) do
+      button_selector = "##{dialog_id} button"
+
+      if Phoenix.LiveViewTest.has_element?(lv, "#{button_selector}[disabled]", label) do
+        raise ArgumentError, "cannot submit disabled confirmation button"
+      end
+
+      lv
+      |> Phoenix.LiveViewTest.element(form_selector)
+      |> Phoenix.LiveViewTest.render_submit()
+    else
+      lv
+      |> Phoenix.LiveViewTest.element("##{dialog_id} button", label)
+      |> Phoenix.LiveViewTest.render_click()
+    end
   end
 end

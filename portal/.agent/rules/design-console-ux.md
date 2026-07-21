@@ -177,6 +177,12 @@ Confirm friction scales with blast radius; the copy states the **consequence**, 
 One ladder, no per-page taste: if two pages confirm the same class of action differently,
 one of them is wrong.
 
+**Keyboard contract.** A typed confirmation is one form: its exact token match enables
+the Confirm submitter, and Enter in the input runs the same action as clicking Confirm.
+Before the match, the disabled submitter keeps both paths inert. Plain confirmation
+modals have no input and remain click-only; opening one must not turn Enter elsewhere
+on the page into acceptance.
+
 **The dialog's LOOK is the calm note grammar, not an alarm wall.** A `confirm_dialog` is a
 NEUTRAL raised surface (`bg-zinc-900 ring-white/10` — the console dropdown recipe), and its
 header IS a `<.status_note tone={:rose} primary>` — a bare toned icon, a **zinc** title, a

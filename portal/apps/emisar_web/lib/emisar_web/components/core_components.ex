@@ -4213,8 +4213,8 @@ defmodule EmisarWeb.CoreComponents do
   Centered, danger-toned confirmation modal with a **typed-confirm**: the
   operator must type `confirm_token` (the member's email, the runner's name, …)
   before the Confirm button enables. Reserve it for IRREVERSIBLE destructive
-  actions — removing a member, deleting a runner, revoking a key. Low-stakes
-  reversible actions ("End all sessions", "Suspend") keep native `data-confirm`.
+  actions — removing a member, deleting a runner, revoking a key. Lower-stakes
+  reversible actions ("End all sessions", "Suspend") use a plain confirm modal.
 
   **The typed-confirm is UX friction to prevent accidents, NOT authorization.**
   It only decides whether Confirm *dispatches the event in the UI*; the real gate
@@ -4225,9 +4225,11 @@ defmodule EmisarWeb.CoreComponents do
   Gating is LiveView-state (verifiable in a test): the `<.input>` is
   `phx-change="confirm_typed"`, so the page holds the typed value in `@typed`
   (via `EmisarWeb.ConfirmDialog`); the Confirm `<.button>` is
-  `disabled={@typed != @confirm_token}`. Open the dialog from the trigger with
-  `show_confirm_dialog(id)`; it closes on Cancel, Escape, or backdrop click,
-  resetting the typed value each time so a stale entry can't pre-enable Confirm.
+  `disabled={@typed != @confirm_token}`. Once it enables, clicking it or pressing
+  Enter in the confirmation input runs the same `on_confirm` command. Open the
+  dialog from the trigger with `show_confirm_dialog(id)`; it closes on Cancel,
+  Escape, or backdrop click, resetting the typed value each time so a stale entry
+  can't pre-enable Confirm.
 
   `on_confirm` is the JS/event the enabled Confirm runs — build it at the call
   site so the destructive event carries its own value and closes the dialog:
@@ -4319,13 +4321,13 @@ defmodule EmisarWeb.CoreComponents do
                below is disabled until it equals the token. Server authz is
                unaffected — this is friction only. The token renders through
                HEEx escaped (IL-16) — it's operator data. The input lives in a
-               form so `phx-change` serializes it; Enter (`phx-submit`) just
-               re-stores the value — it never dispatches the destructive event,
-               which only fires from the Confirm button. --%>
+               form so `phx-change` serializes it; the enabled Confirm button is
+               that form's submitter, so click and Enter run the same action. --%>
           <form
             :if={not is_nil(@confirm_token)}
+            id={"#{@id}-form"}
             phx-change="confirm_typed"
-            phx-submit="confirm_typed"
+            phx-submit={@on_confirm}
             class="mt-5"
           >
             <.label for={"#{@id}-input"} variant={:eyebrow}>
@@ -4358,11 +4360,12 @@ defmodule EmisarWeb.CoreComponents do
               variant={:secondary}
               tone={@tone}
               size={:md}
-              type="button"
+              type={if is_nil(@confirm_token), do: "button", else: "submit"}
+              form={if is_nil(@confirm_token), do: nil, else: "#{@id}-form"}
               disabled={
                 @confirm_token == "" or (not is_nil(@confirm_token) and @typed != @confirm_token)
               }
-              phx-click={@on_confirm}
+              phx-click={if is_nil(@confirm_token), do: @on_confirm}
             >
               {@confirm_label}
             </.button>

@@ -58,6 +58,13 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     # The typed-confirm field is present, wired to the shared change handler.
     assert html =~ ~s(name="confirm_token")
     assert html =~ ~s(phx-change="confirm_typed")
+    assert html =~ ~s(id="del-form")
+    assert html =~ ~s(phx-submit="delete")
+
+    confirm_tag = confirm_button_tag(html)
+    assert confirm_tag =~ ~s(type="submit")
+    assert confirm_tag =~ ~s(form="del-form")
+    refute confirm_tag =~ "phx-click"
   end
 
   test "Confirm is disabled until the typed value matches the token" do
@@ -156,6 +163,11 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     refute html =~ ~s(name="confirm_token")
     refute html =~ "to confirm"
     refute confirm_button_disabled?(html)
+
+    confirm_tag = confirm_button_tag(html)
+    assert confirm_tag =~ ~s(type="button")
+    assert confirm_tag =~ ~s(phx-click="revoke")
+    refute confirm_tag =~ "form="
   end
 
   test "the token and title render escaped (IL-16 — operator/runner data)" do
@@ -235,11 +247,15 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
   # when the button is disabled and omits it otherwise — so check whether the
   # Confirm button's opening tag carries `disabled`.
   defp confirm_button_disabled?(html) do
-    # The Confirm button's opening <button ...> tag through to its label.
-    [tag] = Regex.run(~r/<button[^>]*>\s*(?:Delete runner|Reject pack|Revoke key)/, html)
+    tag = confirm_button_tag(html)
 
     # The bare boolean attribute is `disabled` followed by a space or `>` — not
     # the Tailwind `disabled:` utility classes (which contain a colon).
     Regex.match?(~r/\sdisabled[\s>]/, tag)
+  end
+
+  defp confirm_button_tag(html) do
+    [tag] = Regex.run(~r/<button[^>]*>\s*(?:Delete runner|Reject pack|Revoke key)/, html)
+    tag
   end
 end
