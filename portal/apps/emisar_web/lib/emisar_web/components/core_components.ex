@@ -4569,7 +4569,8 @@ defmodule EmisarWeb.CoreComponents do
          operator's own timeline — act (command + credential), wait (the live
          ping line), recover (troubleshooting, revealed in place) — then the
          script's trust facts as reference; the READING (what's a runner,
-         resources) is a right rail at lg, stacking below on mobile. Columns
+         resources) is a right rail at xl, stacking below when the work canvas
+         cannot keep the primary task wider than the rail. Columns
          separate by AIR alone — hairlines are row-lattice grammar, never
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
@@ -4581,7 +4582,7 @@ defmodule EmisarWeb.CoreComponents do
         Two minutes — pick a Linux or macOS host, paste the one-liner.
       </p>
 
-      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-x-12">
+      <div class="mt-8 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-12">
         <div>
           <%= cond do %>
             <% is_binary(@install_command) -> %>
@@ -4749,7 +4750,7 @@ defmodule EmisarWeb.CoreComponents do
              multi-use keys, packs), true for every wizard state (a failed
              mint still deserves the manual-install door). Quiet rows on the
              canvas, never island cards competing with the task. --%>
-        <aside class="mt-10 space-y-8 lg:mt-0">
+        <aside class="mt-10 space-y-8 xl:mt-0">
           <%!-- Beginner framing first — someone installing their first runner
                needs "what is this and why" before "what the script does". --%>
           <section>
