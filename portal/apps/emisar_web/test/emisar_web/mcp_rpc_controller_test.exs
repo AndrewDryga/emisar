@@ -2,7 +2,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   use EmisarWeb.ConnCase, async: false
   import EmisarWeb.MCPContractAssertions
   import ExUnit.CaptureLog
-  alias Emisar.{ApiKeys, Crypto, Repo}
+  alias Emisar.{Accounts, ApiKeys, Crypto, Repo}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.MCPOperations.Operation
   alias EmisarWeb.MCP.SchemaRegistry
@@ -62,6 +62,30 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(401)
 
       assert revoked["error"]["code"] == -32_001
+    end
+
+    test "a disabled account's static key is unauthorized without usage side effects", %{
+      account: account,
+      key: key,
+      raw: raw,
+      subject: subject
+    } do
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "support incident",
+                 subject
+               )
+
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> rpc("ping")
+        |> json_response(401)
+
+      assert body["error"] == %{"code" => -32_001, "message" => "unauthorized"}
+      assert is_nil(Repo.reload(key).last_used_at)
     end
 
     test "decoded duplicate keys are rejected before authentication", %{conn: conn} do

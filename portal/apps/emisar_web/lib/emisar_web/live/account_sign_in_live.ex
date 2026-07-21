@@ -12,9 +12,12 @@ defmodule EmisarWeb.AccountSignInLive do
   alias Emisar.{Accounts, SSO}
 
   def mount(%{"account_id_or_slug" => ref}, _session, socket) do
-    case Accounts.fetch_account_by_id_or_slug(ref) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(ref) do
       {:ok, account} ->
-        providers = SSO.list_enabled_providers_for_account(account.id)
+        providers =
+          if is_nil(account.disabled_at),
+            do: SSO.list_enabled_providers_for_account(account.id),
+            else: []
 
         {:ok,
          socket
@@ -31,6 +34,13 @@ defmodule EmisarWeb.AccountSignInLive do
   def render(assigns) do
     ~H"""
     <.auth_layout title={"Sign in to #{@account.name}"}>
+      <p :if={@account.disabled_at} class="text-sm leading-6 text-zinc-300">
+        This account is disabled. Contact
+        <a class="font-medium text-white underline" href="mailto:support@emisar.dev">
+          support@emisar.dev
+        </a>
+        to restore access.
+      </p>
       <div :if={@providers != []} class="space-y-3">
         <%!-- Full redirect (begin is a controller that bounces to the IdP), not live nav. --%>
         <.button :for={provider <- @providers} href={~p"/sign_in/sso/#{provider.id}"} class="w-full">
@@ -46,14 +56,14 @@ defmodule EmisarWeb.AccountSignInLive do
       />
 
       <p
-        :if={@providers == [] or not @account.settings.require_sso}
+        :if={is_nil(@account.disabled_at) and (@providers == [] or not @account.settings.require_sso)}
         class="mb-4 text-sm text-zinc-400"
       >
         Enter your email for a one-time sign-in link and a 6-character code.
       </p>
 
       <.simple_form
-        :if={@providers == [] or not @account.settings.require_sso}
+        :if={is_nil(@account.disabled_at) and (@providers == [] or not @account.settings.require_sso)}
         for={@form}
         action={~p"/sign_in/magic/start"}
         method="post"
@@ -68,7 +78,7 @@ defmodule EmisarWeb.AccountSignInLive do
         </:actions>
       </.simple_form>
 
-      <.auth_footer_link navigate={~p"/sign_in/sso"}>
+      <.auth_footer_link :if={is_nil(@account.disabled_at)} navigate={~p"/sign_in/sso"}>
         Sign in to a different team
       </.auth_footer_link>
     </.auth_layout>

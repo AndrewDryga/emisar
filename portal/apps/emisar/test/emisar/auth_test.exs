@@ -1,9 +1,7 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
-  alias Emisar.Auth
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, RequestContext}
   alias Emisar.Auth.UserToken
-  alias Emisar.Crypto
-  alias Emisar.Fixtures
   alias Emisar.Users.User
 
   # Backdate every user_token row so its `inserted_at` lands `minutes` in
@@ -63,6 +61,57 @@ defmodule Emisar.AuthTest do
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert String.length(stored.metadata["user_agent"]) == 255
+    end
+  end
+
+  describe "complete_account_sign_in/6" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject, user: user}
+    end
+
+    test "records the sign-in and mints the session while the account is active", %{
+      account: account,
+      user: user
+    } do
+      context = RequestContext.new(%{ip_address: "203.0.113.9"})
+
+      assert {:ok, token} =
+               Auth.complete_account_sign_in(
+                 user,
+                 account.id,
+                 :magic_link,
+                 false,
+                 context
+               )
+
+      assert {:ok, %User{id: id}, %UserToken{metadata: %{"ip_address" => "203.0.113.9"}}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
+      assert id == user.id
+    end
+
+    test "does not mint a session after the account is disabled", %{
+      account: account,
+      subject: subject,
+      user: user
+    } do
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "support incident",
+                 subject
+               )
+
+      assert {:error, :account_disabled} =
+               Auth.complete_account_sign_in(
+                 user,
+                 account.id,
+                 :magic_link,
+                 false,
+                 %RequestContext{}
+               )
     end
   end
 

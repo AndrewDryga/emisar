@@ -44,6 +44,17 @@ defmodule Emisar.Runners.Runner.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runners: r], r.account_id == ^account_id)
 
+  def with_active_account(queryable) do
+    join(
+      queryable,
+      :inner,
+      [runners: r],
+      account in ^Emisar.Accounts.Account.Query.active(),
+      on: r.account_id == account.id,
+      as: :account
+    )
+  end
+
   def by_bootstrap_enrollment_key_id(queryable, enrollment_key_id),
     do: where(queryable, [runners: r], r.bootstrap_enrollment_key_id == ^enrollment_key_id)
 

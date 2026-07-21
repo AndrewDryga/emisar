@@ -16,8 +16,8 @@ defmodule Emisar.ApiKeys do
   """
   use Supervisor
   alias Ecto.Multi
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, Authorizer, DeviceGrant}
-  alias Emisar.{Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -182,6 +182,7 @@ defmodule Emisar.ApiKeys do
         ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
 
       Multi.new()
+      |> put_active_account_lock(account_id)
       |> Multi.insert(:key, changeset)
       |> Multi.insert(:audit, fn %{key: key} ->
         Audit.Events.api_key_created(subject, key)
@@ -218,6 +219,7 @@ defmodule Emisar.ApiKeys do
         |> Authorizer.for_subject(subject)
 
       Multi.new()
+      |> put_active_account_lock(subject.account.id)
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
              true <- is_nil(source.revoked_at) do
@@ -268,6 +270,7 @@ defmodule Emisar.ApiKeys do
         |> ApiKey.Query.lock_for_update()
 
       Multi.new()
+      |> put_active_account_lock(account.id)
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
              true <- auto_rotation_eligible?(source) do
@@ -298,6 +301,12 @@ defmodule Emisar.ApiKeys do
 
   def install_auto_rotation_successor(_prefix, _hash, %Subject{}),
     do: {:error, :not_eligible}
+
+  defp put_active_account_lock(multi, account_id) do
+    Multi.run(multi, :active_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(account_id, repo: repo)
+    end)
+  end
 
   defp auto_rotation_eligible?(%ApiKey{} = key) do
     key.kind == :mcp and ApiKey.usable?(key) and expiring_soon?(key.expires_at)
@@ -636,6 +645,12 @@ defmodule Emisar.ApiKeys do
         Multi.new()
         |> Multi.run(:candidate, fn repo, _changes ->
           authenticate_candidate(repo, queryable, hash)
+        end)
+        |> Multi.run(:account, fn _repo, %{candidate: key} ->
+          case Accounts.fetch_account_by_id(key.account_id) do
+            {:ok, account} -> {:ok, account}
+            {:error, :not_found} -> {:error, :invalid}
+          end
         end)
         |> Multi.update(:key, fn %{candidate: key} -> ApiKey.Changeset.usage(key) end)
         |> Multi.run(:audit, &insert_bound_audit/2)
@@ -1024,6 +1039,12 @@ defmodule Emisar.ApiKeys do
         |> DeviceGrant.Query.lock_for_update()
 
       judge_claimable(repo.peek(queryable), repo)
+    end)
+    |> Multi.run(:account, fn repo, %{grant: grant} ->
+      case Accounts.fetch_and_lock_account(grant.account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :access_denied}
+      end
     end)
     |> Multi.run(:client_keys, fn repo, %{grant: grant} ->
       mint_grant_keys(repo, grant)

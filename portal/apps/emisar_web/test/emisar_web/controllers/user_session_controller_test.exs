@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.{Accounts, Auth, Repo, Users}
   alias Emisar.Audit.Event
-  alias Emisar.{Auth, Repo, Users}
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff, RegistrationHandoff}
 
   describe "split-code magic link" do
@@ -27,6 +27,37 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       assert conn.resp_cookies["emisar_magic"]
+    end
+
+    test "a disabled branded account keeps the uniform response but issues no link", %{
+      conn: conn,
+      user: user
+    } do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 owner_subject(user, account)
+               )
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "return_to" => "/app/#{account.slug}"
+        })
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      refute conn.resp_cookies["emisar_magic"]
+      refute_received {:email, _message}
     end
 
     # The sign-up form posts a signed registration handoff to /start; the
@@ -477,6 +508,32 @@ defmodule EmisarWeb.UserSessionControllerTest do
       # The second factor is stamped onto the token so it reaches every audit row.
       assert session_token.mfa == true
       refute get_session(conn, :mfa_pending_user_id)
+    end
+
+    test "mfa completion rechecks a disabled branded account before minting a session", %{
+      conn: conn
+    } do
+      %{user: user, account: account} = enrolled_mfa_user()
+      handoff = MfaChallengeHandoff.sign(user.id)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 owner_subject(user, account)
+               )
+
+      conn =
+        conn
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          user_return_to: "/app/#{account.slug}"
+        })
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
     end
 
     test "mfa_complete with a handoff but NO pending session is refused (the bypass)", %{

@@ -518,6 +518,7 @@ defmodule Emisar.Runs do
 
     result =
       Multi.new()
+      |> put_active_account_lock(attrs[:account_id], :active_account)
       |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
       |> put_run_audit_event()
       |> put_decision_audit(opts[:audit])
@@ -669,7 +670,9 @@ defmodule Emisar.Runs do
   defp validate_mcp_targets(_operation_attrs, _target_attrs), do: {:error, :invalid_targets}
 
   defp commit_mcp_fanout(operation_attrs, target_attrs, subject, use_grants?) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+    base = put_active_account_lock(Multi.new(), subject.account.id, :active_account)
+
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(base, operation_attrs, subject) do
       result =
         multi
         |> Multi.merge(fn
@@ -752,7 +755,9 @@ defmodule Emisar.Runs do
         end)
 
       {:ok,
-       Multi.merge(multi, fn _changes ->
+       multi
+       |> put_active_account_lock(subject.account.id, {:active_account, namespace})
+       |> Multi.merge(fn _changes ->
          compose_dispatch_batch(
            target_attrs,
            subject.account.id,
@@ -2307,10 +2312,23 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp authorize_dispatch_transition(repo, run, :pending, :sent),
-    do: ensure_run_initiator_authorized(repo, run)
+  defp authorize_dispatch_transition(repo, run, :pending, :sent) do
+    with {:ok, _account} <- Accounts.fetch_and_lock_account(run.account_id, repo: repo) do
+      ensure_run_initiator_authorized(repo, run)
+    end
+  end
 
   defp authorize_dispatch_transition(_repo, _run, _expected_status, _status), do: :ok
+
+  defp put_active_account_lock(multi, account_id, key) do
+    if Repo.valid_uuid?(account_id) do
+      Multi.run(multi, key, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(account_id, repo: repo)
+      end)
+    else
+      multi
+    end
+  end
 
   defp put_connection_guard(multi, nil), do: multi
 

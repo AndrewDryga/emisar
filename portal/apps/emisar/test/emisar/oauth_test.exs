@@ -344,6 +344,31 @@ defmodule Emisar.OAuthTest do
       assert Repo.get!(Emisar.OAuth.AuthorizationCode, code_row.id).used_at == nil
     end
 
+    test "a disabled account cannot exchange a retained authorization code",
+         %{account: account, subject: subject, client: client} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+
+      assert Repo.get_by!(Emisar.OAuth.AuthorizationCode, code_hash: Emisar.Crypto.hash(code)).used_at ==
+               nil
+    end
+
     test "rejects a tampered PKCE verifier", %{subject: subject, client: client} do
       {_verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -566,6 +591,32 @@ defmodule Emisar.OAuthTest do
                })
     end
 
+    test "a disabled account cannot refresh, and re-enable restores the retained grant",
+         %{account: account, client: client, tokens: tokens} do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 support_subject
+               )
+
+      params = %{"refresh_token" => tokens.refresh_token, "client_id" => client.id}
+      assert {:error, :invalid_grant} = OAuth.refresh(params)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 false,
+                 "Hold resolved",
+                 support_subject
+               )
+
+      assert {:ok, _fresh} = OAuth.refresh(params)
+    end
+
     test "rejects a refresh token presented by the wrong client",
          %{tokens: tokens} do
       other = register!("Other")
@@ -675,6 +726,21 @@ defmodule Emisar.OAuthTest do
       account
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Repo.update!()
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+    end
+
+    test "a disabled account's retained access token resolves generically as invalid",
+         %{account: account, tokens: tokens} do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 support_subject
+               )
 
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end

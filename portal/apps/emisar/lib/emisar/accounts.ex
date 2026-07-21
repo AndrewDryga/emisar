@@ -45,7 +45,7 @@ defmodule Emisar.Accounts do
   """
   def fetch_account_by_id(id) do
     if Repo.valid_uuid?(id) do
-      Account.Query.not_deleted()
+      Account.Query.active()
       |> Account.Query.by_id(id)
       |> Repo.fetch(Account.Query)
     else
@@ -54,7 +54,7 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — lock the account row (`FOR NO KEY UPDATE`) inside the CALLER's
+  Internal — lock the active account row (`FOR NO KEY UPDATE`) inside the CALLER's
   transaction (pass the Multi's `repo`) so concurrent per-account work serializes
   on it.
 
@@ -66,7 +66,7 @@ defmodule Emisar.Accounts do
     if Repo.valid_uuid?(account_id) do
       repo = Keyword.get(opts, :repo, Repo)
 
-      Account.Query.not_deleted()
+      Account.Query.active()
       |> Account.Query.by_id(account_id)
       |> Account.Query.lock_for_update()
       |> repo.fetch(Account.Query)
@@ -105,7 +105,7 @@ defmodule Emisar.Accounts do
   """
   def fetch_account_settings(account_id) do
     if Repo.valid_uuid?(account_id) do
-      Account.Query.not_deleted()
+      Account.Query.active()
       |> Account.Query.by_id(account_id)
       |> Repo.fetch(Account.Query)
       |> case do
@@ -125,6 +125,18 @@ defmodule Emisar.Accounts do
   slug gate on the authenticated routes is the authz boundary).
   """
   def fetch_account_by_id_or_slug(id_or_slug) when is_binary(id_or_slug) do
+    queryable = Account.Query.active()
+
+    queryable =
+      if Repo.valid_uuid?(id_or_slug),
+        do: Account.Query.by_id(queryable, id_or_slug),
+        else: Account.Query.by_slug(queryable, id_or_slug)
+
+    Repo.fetch(queryable, Account.Query)
+  end
+
+  @doc "Internal pre-auth/support lookup that includes disabled accounts."
+  def fetch_account_by_id_or_slug_including_disabled(id_or_slug) when is_binary(id_or_slug) do
     queryable = Account.Query.not_deleted()
 
     queryable =
@@ -133,6 +145,84 @@ defmodule Emisar.Accounts do
         else: Account.Query.by_slug(queryable, id_or_slug)
 
     Repo.fetch(queryable, Account.Query)
+  end
+
+  @doc """
+  Internal support operation. A trusted admin or release-task boundary supplies
+  the audit subject; this function is not exposed to ordinary account callers.
+  The transition is idempotent and its audit row commits atomically.
+  """
+  def set_account_disabled_for_support(
+        account_id,
+        disabled?,
+        reason,
+        %Subject{} = subject
+      )
+      when is_boolean(disabled?) and is_binary(reason) and byte_size(reason) in 1..500 do
+    Account.Query.not_deleted()
+    |> Account.Query.by_id(account_id)
+    |> Repo.fetch_and_update(Account.Query,
+      with: &account_lifecycle_changeset(&1, disabled?),
+      audit: &account_lifecycle_audit(&1, &2, subject, reason),
+      after_commit: &after_account_lifecycle_change/2
+    )
+  end
+
+  def set_account_disabled_for_support(_account_id, _disabled?, _reason, %Subject{}),
+    do: {:error, :invalid_reason}
+
+  defp account_lifecycle_changeset(%Account{disabled_at: %DateTime{}} = account, true),
+    do: Ecto.Changeset.change(account)
+
+  defp account_lifecycle_changeset(%Account{} = account, true),
+    do: Account.Changeset.disable(account, DateTime.utc_now())
+
+  defp account_lifecycle_changeset(%Account{disabled_at: nil} = account, false),
+    do: Ecto.Changeset.change(account)
+
+  defp account_lifecycle_changeset(%Account{} = account, false),
+    do: Account.Changeset.enable(account)
+
+  defp account_lifecycle_audit(account, changeset, subject, reason) do
+    if Map.has_key?(changeset.changes, :disabled_at) do
+      if is_nil(account.disabled_at),
+        do: Audit.Events.account_enabled_by_support(subject, account, reason),
+        else: Audit.Events.account_disabled_by_support(subject, account, reason)
+    end
+  end
+
+  defp after_account_lifecycle_change(account, _changeset) do
+    if account.disabled_at do
+      :ok = broadcast_account_disabled(account.id)
+      disconnect_account_members(account.id)
+    else
+      :ok
+    end
+  end
+
+  defp disconnect_account_members(account_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.with_preloaded_user()
+    |> Repo.all()
+    |> Enum.each(&Auth.disconnect_and_revoke_all_sessions(&1.user))
+
+    :ok
+  end
+
+  # -- PubSub -----------------------------------------------------------
+
+  @doc "Subscribe to reversible account lifecycle changes."
+  def subscribe_account_lifecycle(account_id),
+    do: Emisar.PubSub.subscribe(account_lifecycle_topic(account_id))
+
+  defp account_lifecycle_topic(account_id), do: "account:#{account_id}:lifecycle"
+
+  defp broadcast_account_disabled(account_id) do
+    Emisar.PubSub.broadcast(
+      account_lifecycle_topic(account_id),
+      {:account_disabled, account_id}
+    )
   end
 
   @doc """
@@ -195,7 +285,7 @@ defmodule Emisar.Accounts do
   only ever list your own memberships.
   """
   def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}}, opts \\ []) do
-    Account.Query.not_deleted()
+    Account.Query.active()
     |> Account.Query.by_membership_user_id(user_id)
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
@@ -2163,6 +2253,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
+      |> Membership.Query.with_joined_account()
       |> apply_membership_preloads(preloads)
 
     case Repo.fetch(queryable, Membership.Query) do
@@ -2179,6 +2270,7 @@ defmodule Emisar.Accounts do
     queryable =
       Membership.Query.not_deleted()
       |> Membership.Query.by_invitation_token_digest(digest)
+      |> Membership.Query.with_joined_account()
 
     case Repo.peek(queryable) do
       %Membership{invitation_accepted_at: nil} -> {:error, :expired}
@@ -2200,17 +2292,22 @@ defmodule Emisar.Accounts do
   def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %Users.User{
         id: user_id
       }) do
-    # Locked re-read judged on the FRESH row: a concurrently-accepted,
-    # expired, or revoked invitation is :not_found — first accept wins,
-    # never a blind re-stamp of the caller's stale snapshot.
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_id(membership.id)
-    |> Membership.Query.pending_invitation()
-    |> Membership.Query.invitation_not_expired()
-    |> Repo.fetch_and_update(Membership.Query,
-      with: &Membership.Changeset.accept_invitation/1,
-      audit: &Audit.Events.membership_invitation_accepted/1
-    )
+    Multi.new()
+    |> put_active_account_lock(membership.account_id, :active_account)
+    |> Multi.run(:membership, fn repo, _changes ->
+      lock_pending_invitation(repo, membership)
+    end)
+    |> Multi.update(:accepted, fn %{membership: membership} ->
+      Membership.Changeset.accept_invitation(membership)
+    end)
+    |> Multi.insert(:audit, fn %{accepted: membership} ->
+      Audit.Events.membership_invitation_accepted(membership)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{accepted: membership}} -> {:ok, membership}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def mark_invitation_accepted(%Membership{}, %Users.User{}), do: {:error, :unauthorized}
@@ -2226,6 +2323,7 @@ defmodule Emisar.Accounts do
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
     Multi.new()
+    |> put_active_account_lock(membership.account_id, :active_account)
     # Lock + re-judge the invitation FIRST: a token burnt between the
     # page mount and this submit (a second link holder racing the first
     # acceptor) must fail :not_found here — before register_invited_user
@@ -2265,6 +2363,12 @@ defmodule Emisar.Accounts do
     if loaded_membership,
       do: {:ok, loaded_membership},
       else: {:error, :not_found}
+  end
+
+  defp put_active_account_lock(multi, account_id, key) do
+    Multi.run(multi, key, fn repo, _changes ->
+      fetch_and_lock_account(account_id, repo: repo)
+    end)
   end
 
   # -- Internal (Billing flows) -------------------------------------------

@@ -81,6 +81,10 @@ var (
 	// ErrRunnerDisabled means the credential is valid but the reversible runner
 	// state currently forbids a connection. Callers should retain it and retry.
 	ErrRunnerDisabled = errors.New("cloud: runner disabled")
+
+	// ErrAccountDisabled is the tenant-wide equivalent. The account can be
+	// re-enabled without changing this runner identity, so retain the token.
+	ErrAccountDisabled = errors.New("cloud: account disabled")
 )
 
 const (
@@ -127,9 +131,13 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 		if resp != nil {
 			defer resp.Body.Close()
 		}
-		if resp != nil && resp.StatusCode == http.StatusForbidden &&
-			serverErrorMessage(resp.Body) == "runner_disabled" {
-			return nil, fmt.Errorf("%w: ws upgrade returned 403", ErrRunnerDisabled)
+		if resp != nil && resp.StatusCode == http.StatusForbidden {
+			switch serverErrorMessage(resp.Body) {
+			case "runner_disabled":
+				return nil, fmt.Errorf("%w: ws upgrade returned 403", ErrRunnerDisabled)
+			case "account_disabled":
+				return nil, fmt.Errorf("%w: ws upgrade returned 403", ErrAccountDisabled)
+			}
 		}
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			// Token was rejected — drop the file so the next process start

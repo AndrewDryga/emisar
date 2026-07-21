@@ -12,9 +12,7 @@ defmodule EmisarWeb.SSOController do
   use EmisarWeb, :controller
   alias Emisar.Accounts
   alias Emisar.SSO
-  alias Emisar.Users
   alias EmisarWeb.RecentAccounts
-  alias EmisarWeb.RequestContext
   alias EmisarWeb.UserAuth
 
   # The login transaction secrets the callback needs, kept server-side in the
@@ -41,27 +39,34 @@ defmodule EmisarWeb.SSOController do
   end
 
   def callback(conn, params) do
-    context = RequestContext.from_conn(conn)
-
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
          {:ok, %{user: user, identity: identity, created?: created?}} <-
            SSO.complete_auth(provider, params, stash),
-         {:ok, account} <- Accounts.fetch_account_by_id(provider.account_id) do
-      Users.record_sign_in(user, "sso", context)
-
+         {:ok, account} <-
+           Accounts.fetch_account_by_id_or_slug_including_disabled(provider.account_id) do
       # Keep a protected destination that sent the user to sign-in (including an
       # OAuth authorization request). Otherwise land on the account whose IdP
       # this is, not the user's stale default. `user_return_to` is server-owned;
       # no callback parameter can choose the post-login destination.
-      conn
-      |> delete_session(@stash_key)
-      |> put_default_return_to(~p"/app/#{account}")
-      |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-      |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider),
-        user_identity_id: identity.id,
-        registered?: created?
-      )
+      conn =
+        conn
+        |> delete_session(@stash_key)
+        |> put_default_return_to(~p"/app/#{account}")
+        |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+
+      case UserAuth.log_in_user_for_account(
+             conn,
+             user,
+             account.id,
+             :sso,
+             SSO.provider_satisfies_mfa?(provider),
+             user_identity_id: identity.id,
+             registered?: created?
+           ) do
+        {:ok, conn} -> conn
+        {:error, :account_disabled} -> redirect_to_disabled_account(conn, account)
+      end
     else
       nil -> sso_error(conn, "Your sign-in session expired. Start again.")
       {:pending, request} -> redirect_to_pending(conn, request)
@@ -107,5 +112,11 @@ defmodule EmisarWeb.SSOController do
     |> delete_session(@stash_key)
     |> put_flash(:error, message)
     |> redirect(to: ~p"/sign_in")
+  end
+
+  defp redirect_to_disabled_account(conn, account) do
+    conn
+    |> delete_session(:user_return_to)
+    |> redirect(to: ~p"/app/#{account}/sign_in")
   end
 end

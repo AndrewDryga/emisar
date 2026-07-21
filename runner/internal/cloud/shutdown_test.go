@@ -185,6 +185,7 @@ func TestClient_RunShutdownReconnectPolicy(t *testing.T) {
 	}{
 		{name: "cloud shutdown reconnects", reason: "cloud_shutdown", reconnect: true},
 		{name: "disabled runner reconnects", reason: "runner_disabled", reconnect: true},
+		{name: "disabled account reconnects", reason: "account_disabled", reconnect: true},
 		{name: "terminal shutdown stops", reason: "runner_version_unsupported", reconnect: false},
 	}
 

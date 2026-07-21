@@ -23,7 +23,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Catalog, Compat, Crypto, RequestContext, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, Compat, Crypto, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
@@ -43,6 +43,8 @@ defmodule EmisarWeb.RunnerSocket do
     request_context =
       RequestContext.new(%{ip_address: upgrade[:ip_address], user_agent: upgrade[:user_agent]})
 
+    Accounts.subscribe_account_lifecycle(runner.account_id)
+
     case Runners.connect_runner(runner) do
       {:ok, runner} ->
         state = connected_state(runner, token, request_context)
@@ -58,6 +60,11 @@ defmodule EmisarWeb.RunnerSocket do
          {1013,
           "This runner identity already has a live connection. Check for a cloned data directory."},
          state}
+
+      {:error, :account_disabled} ->
+        state = %{account_id: runner.account_id, pending_account_disabled?: true}
+        send(self(), {:account_disabled, runner.account_id})
+        {:ok, state}
 
       {:error, reason} ->
         Logger.error("runner connection claim failed runner=#{runner.id}: #{inspect(reason)}")
@@ -84,6 +91,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @impl true
   def handle_in(_frame, %{rejected?: true} = state), do: {:stop, :normal, state}
+  def handle_in(_frame, %{pending_account_disabled?: true} = state), do: {:stop, :normal, state}
 
   def handle_in({raw, [opcode: :text]}, state) do
     if connection_owner?(state) do
@@ -124,6 +132,18 @@ defmodule EmisarWeb.RunnerSocket do
 
   @impl true
   def handle_info(_message, %{rejected?: true} = state), do: {:stop, :normal, state}
+
+  def handle_info({:account_disabled, account_id}, %{account_id: account_id} = state) do
+    disabled = %{
+      type: "shutdown",
+      protocol_version: @protocol_version,
+      reason: "account_disabled",
+      message: "This account is disabled. The runner will retry after it is enabled."
+    }
+
+    send(self(), :stop_after_drain)
+    {:push, {:text, Jason.encode!(disabled)}, state}
+  end
 
   def handle_info({:cloud_to_runner, expected_generation, msg}, state) do
     cond do
@@ -226,6 +246,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @impl true
   def terminate(_reason, %{rejected?: true}), do: :ok
+  def terminate(_reason, %{pending_account_disabled?: true}), do: :ok
 
   def terminate(reason, state) do
     case Runners.mark_disconnected(

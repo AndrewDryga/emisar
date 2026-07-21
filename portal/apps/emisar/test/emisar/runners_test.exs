@@ -987,6 +987,21 @@ defmodule Emisar.RunnersTest do
 
       assert {:error, :not_found} = Runners.connect_runner(runner)
     end
+
+    test "refuses a stale connection after its account is disabled" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :account_disabled} = Runners.connect_runner(runner)
+    end
   end
 
   describe "mark_disconnected/4" do
@@ -1613,6 +1628,33 @@ defmodule Emisar.RunnersTest do
 
       refute_receive {:cloud_to_runner, _generation, _msg}
     end
+
+    test "a disabled account cannot receive a queued runner envelope" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      :ok = Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :not_connected} =
+               Runners.current_connection_generation(account.id, runner.id)
+
+      assert {:error, :not_connected} =
+               Runners.deliver_to_runner(
+                 account.id,
+                 runner.id,
+                 runner.connection_generation,
+                 %{"cmd" => "late"}
+               )
+
+      refute_receive {:cloud_to_runner, _generation, _msg}
+    end
   end
 
   describe "mint_install_key/2" do
@@ -1836,6 +1878,46 @@ defmodule Emisar.RunnersTest do
       {:ok, _enabled} = Runners.enable_runner(disabled, subject)
       runner_id = runner.id
       assert {:ok, %Token{}, %Runner{id: ^runner_id}} = Runners.verify_runner_token(raw)
+    end
+
+    test "returns account_disabled without consuming the retained token" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+      other_runner = Fixtures.Runners.create_runner(connected?: false)
+      {other_raw, _other_token} = Runners.mint_runner_token(other_runner)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert Runners.verify_runner_token(raw) == {:error, :account_disabled}
+      assert {:ok, %Token{}, %Runner{id: other_id}} = Runners.verify_runner_token(other_raw)
+      assert other_id == other_runner.id
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 false,
+                 "Hold resolved",
+                 subject
+               )
+
+      assert {:ok, %Token{}, %Runner{id: runner_id}} = Runners.verify_runner_token(raw)
+      assert runner_id == runner.id
+    end
+
+    test "a deleted account remains terminal rather than retryable" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Runners.verify_runner_token(raw) == {:error, :token_invalid}
     end
 
     test "returns {:error, :token_invalid} for a deleted runner's token" do

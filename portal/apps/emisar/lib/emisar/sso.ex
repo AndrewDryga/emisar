@@ -442,6 +442,7 @@ defmodule Emisar.SSO do
     if Repo.valid_uuid?(id) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.enabled()
+      |> IdentityProvider.Query.with_active_account()
       |> IdentityProvider.Query.by_id(id)
       |> peek_or_not_found()
     else
@@ -484,17 +485,25 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
 
     case Repo.peek(queryable) do
-      %UserIdentity{} = identity -> touch_and_load(identity)
+      %UserIdentity{} = identity -> touch_and_load(provider, identity)
       nil -> provision_for(provider, identifier, claims)
     end
   end
 
-  defp touch_and_load(%UserIdentity{} = identity) do
-    changeset = UserIdentity.Changeset.touch_last_seen(identity)
+  defp touch_and_load(provider, %UserIdentity{} = identity) do
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
+    |> Multi.run(:user, fn _repo, %{identity: identity} ->
+      Users.fetch_user_by_id(identity.user_id)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{user: user, identity: identity}} ->
+        {:ok, %{user: user, identity: identity, created?: false}}
 
-    with {:ok, %UserIdentity{} = identity} <- Repo.update(changeset),
-         {:ok, user} <- Users.fetch_user_by_id(identity.user_id) do
-      {:ok, %{user: user, identity: identity, created?: false}}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -555,10 +564,17 @@ defmodule Emisar.SSO do
 
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
-    Repo.insert(changeset,
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> Multi.insert(:request, changeset,
       on_conflict: {:replace, [:email, :full_name, :claims, :matched_user_id, :updated_at]},
       conflict_target: [:provider_id, :provider_identifier]
     )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{request: request}} -> {:ok, request}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Collision variant (for `:jit`/SCIM): park a link request ONLY when the email
@@ -598,6 +614,7 @@ defmodule Emisar.SSO do
     user_attrs = %{email: verified_email(claims), full_name: claims["name"]}
 
     Multi.new()
+    |> put_active_account_lock(provider.account_id)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_identity(provider, user, identifier, claims, created_by, provisioned_via)
@@ -611,6 +628,12 @@ defmodule Emisar.SSO do
       )
     end)
     |> Multi.insert(:audit, fn %{user: user} -> audit.(user) end)
+  end
+
+  defp put_active_account_lock(multi, account_id) do
+    Multi.run(multi, :active_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(account_id, repo: repo)
+    end)
   end
 
   defp create_identity(%IdentityProvider{} = provider, user, identifier, claims, created_by, via) do
@@ -709,6 +732,7 @@ defmodule Emisar.SSO do
       queryable =
         IdentityProvider.Query.not_deleted()
         |> IdentityProvider.Query.scim_enabled()
+        |> IdentityProvider.Query.with_active_account()
         |> IdentityProvider.Query.by_scim_token_prefix(prefix)
 
       with %IdentityProvider{scim_token_hash: hash} = provider <- Repo.peek(queryable),

@@ -61,7 +61,10 @@ The portal sends `shutdown` before lifecycle-driven disconnects. A reversible
 disable uses `reason: "runner_disabled"`; the runner retains its bearer token and
 retries with bounded backoff. While disabled, websocket upgrades return
 `403 {"error":"runner_disabled"}`. Enabling the same runner lets the next retry
-connect without a host restart. Deleting the runner uses terminal
+connect without a host restart. A tenant-wide disable uses the same retryable
+behavior with `reason: "account_disabled"` and
+`403 {"error":"account_disabled"}`; its runners recover with their existing
+tokens after the account is enabled. Deleting the runner uses terminal
 `reason: "runner_revoked"`; invalid or removed credentials return `401`, the
 runner discards the cached token, and the process stops rather than retrying a
 revoked identity. `reason: "cloud_shutdown"` is also retryable, while

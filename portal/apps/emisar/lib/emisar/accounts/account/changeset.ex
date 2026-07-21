@@ -43,6 +43,11 @@ defmodule Emisar.Accounts.Account.Changeset do
   def mark_report_sent(%Account{} = account),
     do: change(account, last_report_sent_at: DateTime.utc_now())
 
+  def disable(%Account{} = account, %DateTime{} = disabled_at),
+    do: change(account, disabled_at: disabled_at)
+
+  def enable(%Account{} = account), do: change(account, disabled_at: nil)
+
   # Settings is non-nil by construction: a brand-new account whose attrs carry
   # no settings still gets the embedded defaults, so `account.settings.<field>`
   # is always safe to read across the app.

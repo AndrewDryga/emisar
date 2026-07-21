@@ -1,6 +1,6 @@
 defmodule Emisar.ApiKeysTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{ApiKeys, Audit, Crypto, Repo, RequestContext}
+  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
@@ -344,6 +344,20 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.create_key(%{name: "ci"}, subject)
     end
 
+    test "a stale subject cannot create a key after the account is disabled" do
+      {_user, account, subject} = owner_subject_pair()
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :not_found} = ApiKeys.create_key(%{name: "late"}, subject)
+    end
+
     # Minting a SIEM export token writes an `api_key.created` audit row in the
     # SAME transaction (create_key's Multi.insert(:audit, …)), stamped with the
     # new key as target + its kind in the payload. The mint of a log-shipping
@@ -417,6 +431,21 @@ defmodule Emisar.ApiKeysTest do
       assert {:error, :revoked} = ApiKeys.rotate_api_key(key, subject)
     end
 
+    test "a stale subject cannot rotate a key after the account is disabled" do
+      {_owner, account, subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "paused"}, subject)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :not_found} = ApiKeys.rotate_api_key(key, subject)
+    end
+
     test "an owner of account B cannot rotate account A's key (cross-account → :not_found)" do
       {_owner_a, _account_a, subject_a} = owner_subject_pair()
 
@@ -471,6 +500,25 @@ defmodule Emisar.ApiKeysTest do
 
       assert %ApiKey{id: successor_id} = ApiKeys.peek_api_key_by_secret(successor_raw)
       assert successor_id == successor.id
+    end
+
+    test "a stale key subject cannot install a successor after the account is disabled" do
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "paused", expires_at: soon}, subject)
+      key_subject = Subject.for_api_key(key, account)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :not_found} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
     end
 
     test "a different proposal cannot replace an already-installed successor" do
@@ -888,6 +936,26 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
       refute ApiKeys.peek_api_key_by_secret(raw)
+    end
+
+    test "disabling one account rejects its key without affecting another account's key" do
+      {_user_a, account_a, subject_a} = owner_subject_pair()
+      {_user_b, account_b, _subject_b} = owner_subject_pair()
+      {raw_a, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
+      {raw_b, key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account_a.id,
+                 true,
+                 "Temporary hold",
+                 subject_a
+               )
+
+      refute ApiKeys.peek_api_key_by_secret(raw_a)
+      assert is_nil(Repo.reload!(key_a).last_used_at)
+      assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_secret(raw_b)
+      assert id == key_b.id
     end
 
     test "returns nil for an expired key" do
@@ -1494,6 +1562,36 @@ defmodule Emisar.ApiKeysTest do
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
+    end
+
+    test "a disabled account cannot claim, and re-enable preserves the approved grant" do
+      {_user, account, subject} = owner_subject_pair()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      assert {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+      assert Repo.all(ApiKey) == []
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 false,
+                 "Hold resolved",
+                 subject
+               )
+
+      assert {:ok, %{"claude-code" => _raw_key}} = ApiKeys.claim_device_grant(device_code)
     end
   end
 

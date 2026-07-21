@@ -217,6 +217,7 @@ defmodule Emisar.Runners do
   def runner_active_in_account?(runner_id, account_id) do
     Runner.Query.not_deleted()
     |> Runner.Query.not_disabled()
+    |> Runner.Query.with_active_account()
     |> Runner.Query.by_id(runner_id)
     |> Runner.Query.by_account_id(account_id)
     |> Repo.exists?()
@@ -573,6 +574,7 @@ defmodule Emisar.Runners do
     result =
       Runner.Query.not_deleted()
       |> Runner.Query.not_disabled()
+      |> Runner.Query.with_active_account()
       |> Runner.Query.by_id(runner.id)
       |> Runner.Query.by_account_id(runner.account_id)
       |> Runner.Query.lease_available(now)
@@ -608,10 +610,16 @@ defmodule Emisar.Runners do
   end
 
   defp normalize_connection_claim({:error, :not_found}, runner) do
-    if runner_active_in_account?(runner.id, runner.account_id) do
-      {:error, :already_connected}
-    else
-      {:error, :not_found}
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(runner.account_id) do
+      {:ok, %{disabled_at: %DateTime{}}} ->
+        {:error, :account_disabled}
+
+      _ ->
+        if runner_active_in_account?(runner.id, runner.account_id) do
+          {:error, :already_connected}
+        else
+          {:error, :not_found}
+        end
     end
   end
 
@@ -964,6 +972,7 @@ defmodule Emisar.Runners do
     runner =
       Runner.Query.not_deleted()
       |> Runner.Query.not_disabled()
+      |> Runner.Query.with_active_account()
       |> Runner.Query.by_account_id(account_id)
       |> Runner.Query.by_id(runner_id)
       |> Repo.peek()
@@ -1164,7 +1173,8 @@ defmodule Emisar.Runners do
   @doc """
   Internal — runner socket upgrade controller, before any Subject exists:
   verifies a presented runner token. Returns `{:ok, token, runner}`,
-  `{:error, :runner_disabled}`, or `{:error, :token_invalid}`.
+  `{:error, :runner_disabled}`, `{:error, :account_disabled}`, or
+  `{:error, :token_invalid}`.
   """
   def verify_runner_token(raw) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
@@ -1179,8 +1189,17 @@ defmodule Emisar.Runners do
            runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
            %Runner{} = runner <- Repo.peek(runner_queryable) do
         if is_nil(runner.disabled_at) do
-          {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
-          {:ok, token, runner}
+          case Accounts.fetch_account_by_id_or_slug_including_disabled(runner.account_id) do
+            {:ok, %{disabled_at: nil}} ->
+              {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
+              {:ok, token, runner}
+
+            {:ok, _disabled_account} ->
+              {:error, :account_disabled}
+
+            {:error, :not_found} ->
+              {:error, :token_invalid}
+          end
         else
           {:error, :runner_disabled}
         end

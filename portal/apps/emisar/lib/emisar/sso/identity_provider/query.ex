@@ -17,6 +17,17 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [providers: p], p.account_id == ^account_id)
 
+  def with_active_account(queryable) do
+    join(
+      queryable,
+      :inner,
+      [providers: p],
+      account in ^Emisar.Accounts.Account.Query.active(),
+      on: p.account_id == account.id,
+      as: :account
+    )
+  end
+
   def enabled(queryable),
     do: where(queryable, [providers: p], p.enabled)
 

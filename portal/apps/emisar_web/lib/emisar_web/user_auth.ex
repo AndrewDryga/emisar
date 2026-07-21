@@ -43,6 +43,32 @@ defmodule EmisarWeb.UserAuth do
         opts
       )
 
+    finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution)
+  end
+
+  @doc """
+  Completes a branded account sign-in under the account lifecycle lock. Returns
+  `{:error, :account_disabled}` when support disabled the account before the
+  session credential could be inserted.
+  """
+  def log_in_user_for_account(conn, user, account_id, auth_method, mfa, opts \\ []) do
+    {registered?, opts} = Keyword.pop(opts, :registered?, false)
+    context = RequestContext.from_conn(conn)
+    attribution = Analytics.campaign_attribution(conn)
+
+    case Auth.complete_account_sign_in(user, account_id, auth_method, mfa, context, opts) do
+      {:ok, token} ->
+        {:ok, finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution)}
+
+      {:error, :account_disabled} = error ->
+        error
+
+      {:error, reason} ->
+        raise "could not complete account sign-in: #{inspect(reason)}"
+    end
+  end
+
+  defp finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution) do
     user_return_to = get_session(conn, :user_return_to)
 
     conn
@@ -435,28 +461,34 @@ defmodule EmisarWeb.UserAuth do
   def on_mount(:ensure_account_slug, %{"account_id_or_slug" => account_ref}, _session, socket) do
     user = socket.assigns.current_user
 
-    case Accounts.fetch_membership_by_account_id_or_slug(user, account_ref) do
-      {:ok, membership} ->
-        subject =
-          Subject.for_user(
-            user,
-            membership.account,
-            membership,
-            RequestContext.from_socket(socket),
-            auth_opts(socket.assigns)
-          )
+    with {:ok, membership} <- Accounts.fetch_membership_by_account_id_or_slug(user, account_ref),
+         {:ok, membership} <-
+           subscribe_and_refetch_account(socket, user, account_ref, membership) do
+      subject =
+        Subject.for_user(
+          user,
+          membership.account,
+          membership,
+          RequestContext.from_socket(socket),
+          auth_opts(socket.assigns)
+        )
 
-        {:cont,
-         socket
-         |> Phoenix.Component.assign(:current_account, membership.account)
-         |> Phoenix.Component.assign(:current_membership, membership)
-         |> Phoenix.Component.assign(:current_subject, subject)
-         |> Phoenix.LiveView.attach_hook(
-           :ensure_slug_unchanged,
-           :handle_params,
-           &ensure_slug_unchanged/3
-         )}
-
+      {:cont,
+       socket
+       |> Phoenix.Component.assign(:current_account, membership.account)
+       |> Phoenix.Component.assign(:current_membership, membership)
+       |> Phoenix.Component.assign(:current_subject, subject)
+       |> Phoenix.LiveView.attach_hook(
+         :ensure_slug_unchanged,
+         :handle_params,
+         &ensure_slug_unchanged/3
+       )
+       |> Phoenix.LiveView.attach_hook(
+         :account_lifecycle,
+         :handle_info,
+         &handle_account_lifecycle/2
+       )}
+    else
       {:error, :not_found} ->
         raise EmisarWeb.NotFoundError
     end
@@ -578,6 +610,23 @@ defmodule EmisarWeb.UserAuth do
        &resend_confirmation_email/3
      )}
   end
+
+  defp subscribe_and_refetch_account(socket, user, account_ref, membership) do
+    if Phoenix.LiveView.connected?(socket) do
+      :ok = Accounts.subscribe_account_lifecycle(membership.account_id)
+      Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
+    else
+      {:ok, membership}
+    end
+  end
+
+  defp handle_account_lifecycle(
+         {:account_disabled, account_id},
+         %{assigns: %{current_account: %{id: account_id}}} = socket
+       ),
+       do: {:halt, socket}
+
+  defp handle_account_lifecycle(_message, socket), do: {:cont, socket}
 
   # Defense-in-depth for cross-slug `live_patch` (attached by :ensure_account_slug):
   # on_mount runs once, so a patch that changes the URL's account ref WITHOUT a

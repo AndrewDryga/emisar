@@ -108,6 +108,25 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(conn, @stash_key)
     end
 
+    test "a provider on a disabled account cannot begin sign-in", %{conn: conn} do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = provider_fixture(account)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      conn = get(conn, ~p"/sign_in/sso/#{provider.id}")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no longer available"
+      refute get_session(conn, @stash_key)
+    end
+
     test "an unknown provider flashes and redirects to /sign_in", %{conn: conn} do
       conn = get(conn, ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
 
@@ -206,6 +225,28 @@ defmodule EmisarWeb.SSOControllerTest do
       assert user.email == "cb@acme.test"
       assert auth.auth_method == :sso
       assert auth.user_identity_id
+    end
+
+    test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = provider_fixture(account)
+      claims = %{"sub" => "okta|disabled", "email" => "disabled@acme.test", "hd" => "acme.test"}
+
+      conn = conn |> init_test_session(%{}) |> get(~p"/sign_in/sso/#{provider.id}")
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      conn = conn |> recycle() |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("disabled@acme.test")
     end
 
     test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do

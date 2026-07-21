@@ -14,7 +14,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * Unauthenticated → 401
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Audit, PublicUrl}
+  alias Emisar.{Accounts, Audit, PublicUrl}
 
   setup do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -104,6 +104,24 @@ defmodule EmisarWeb.AuditExportControllerTest do
       body = json_response(conn, 403)
       assert body["error"] == "wrong_key_kind"
       assert body["required"] == "audit_export"
+    end
+
+    test "401 when the key belongs to a disabled account", %{
+      conn: conn,
+      account: account,
+      raw_key: raw,
+      subject: subject
+    } do
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "support incident",
+                 subject
+               )
+
+      conn = conn |> bearer(raw) |> get(~p"/api/audit")
+      assert json_response(conn, 401) == %{"error" => "unauthorized"}
     end
   end
 

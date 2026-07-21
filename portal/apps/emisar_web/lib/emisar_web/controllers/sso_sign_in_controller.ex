@@ -16,7 +16,7 @@ defmodule EmisarWeb.SSOSignInController do
   end
 
   def create(conn, %{"team" => %{"slug" => slug}}) when is_binary(slug) do
-    case Accounts.fetch_account_by_id_or_slug(String.trim(slug)) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(String.trim(slug)) do
       {:ok, account} ->
         redirect(conn, to: ~p"/app/#{account}/sign_in")
 

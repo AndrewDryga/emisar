@@ -7,6 +7,9 @@ defmodule Emisar.Accounts.Account.Query do
   def not_deleted(queryable \\ all()),
     do: where(queryable, [accounts: a], is_nil(a.deleted_at))
 
+  def active(queryable \\ not_deleted()),
+    do: where(queryable, [accounts: a], is_nil(a.disabled_at))
+
   def by_id(queryable, id),
     do: where(queryable, [accounts: a], a.id == ^id)
 

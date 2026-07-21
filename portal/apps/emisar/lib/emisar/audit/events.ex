@@ -96,6 +96,22 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def account_disabled_by_support(
+        %Subject{} = subject,
+        %Accounts.Account{} = account,
+        reason
+      ) do
+    account_lifecycle_by_support(subject, account, "account.disabled", reason)
+  end
+
+  def account_enabled_by_support(
+        %Subject{} = subject,
+        %Accounts.Account{} = account,
+        reason
+      ) do
+    account_lifecycle_by_support(subject, account, "account.enabled", reason)
+  end
+
   # -- Membership ------------------------------------------------------
 
   def membership_role_changed(%Subject{} = subject, %Accounts.Membership{} = membership, new_role) do
@@ -1566,6 +1582,20 @@ defmodule Emisar.Audit.Events do
       membership.account_id,
       event_type,
       actor(subject) ++ [target_kind: "user", target_id: membership.user_id]
+    )
+  end
+
+  defp account_lifecycle_by_support(subject, account, event_type, reason) do
+    Audit.changeset(
+      account.id,
+      event_type,
+      actor(subject) ++
+        [
+          target_kind: "account",
+          target_id: account.id,
+          target_label: account.name,
+          payload: %{reason: reason}
+        ]
     )
   end
 

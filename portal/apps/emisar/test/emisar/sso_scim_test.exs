@@ -82,6 +82,32 @@ defmodule Emisar.SSOSCIMTest do
       assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
     end
 
+    test "a disabled account's retained SCIM token is unauthorized until re-enabled", %{
+      account: account,
+      token: token,
+      subject: subject
+    } do
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 false,
+                 "Hold resolved",
+                 subject
+               )
+
+      assert {:ok, _provider} = SSO.authenticate_scim_token(token)
+    end
+
     test "token A resolves to provider A only — never account B's provider", %{
       provider: provider_a,
       token: token_a

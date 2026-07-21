@@ -35,7 +35,7 @@ defmodule Mix.Tasks.Emisar.SetPlan do
       Mix.raise("Unknown plan #{inspect(plan)} — one of #{inspect(plans)}")
     end
 
-    case Emisar.Accounts.fetch_account_by_id_or_slug(id_or_slug) do
+    case Emisar.Accounts.fetch_account_by_id_or_slug_including_disabled(id_or_slug) do
       {:ok, account} ->
         {:ok, _sub} =
           Emisar.Billing.upsert_subscription(account.id, %{plan: plan, status: "active"})

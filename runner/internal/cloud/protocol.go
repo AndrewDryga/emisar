@@ -345,8 +345,8 @@ type AckResultMsg struct {
 }
 
 // ShutdownMsg tells the runner why the portal is closing the current session.
-// cloud_shutdown and runner_disabled reconnect; a revoked or unsupported runner
-// must stop until an operator replaces its identity or binary.
+// cloud_shutdown, runner_disabled, and account_disabled reconnect; a revoked or
+// unsupported runner must stop until an operator replaces its identity or binary.
 type ShutdownMsg struct {
 	Envelope
 	Reason  string `json:"reason"`

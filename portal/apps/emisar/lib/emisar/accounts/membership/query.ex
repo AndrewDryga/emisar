@@ -90,10 +90,10 @@ defmodule Emisar.Accounts.Membership.Query do
     do: queryable |> order_by([memberships: m], asc: m.inserted_at, asc: m.id) |> limit(1)
 
   @doc """
-  Inner-join the membership's (non-deleted) account, idempotently. Use it
+  Inner-join the membership's active account, idempotently. Use it
   on its own to filter on account columns; pair with a preload via
-  `with_preloaded_account/1`. A membership whose account is soft-deleted
-  is dropped (inner join to `not_deleted/0`).
+  `with_preloaded_account/1`. A membership whose account is deleted or disabled
+  is dropped (inner join to `active/0`).
   """
   def with_joined_account(queryable) do
     with_named_binding(queryable, :account, fn queryable, binding ->
@@ -101,7 +101,7 @@ defmodule Emisar.Accounts.Membership.Query do
         queryable,
         :inner,
         [memberships: m],
-        account in ^Emisar.Accounts.Account.Query.not_deleted(),
+        account in ^Emisar.Accounts.Account.Query.active(),
         on: m.account_id == account.id,
         as: ^binding
       )

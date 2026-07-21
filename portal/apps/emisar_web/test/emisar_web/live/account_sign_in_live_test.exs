@@ -91,6 +91,28 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     assert html =~ ~s|action="/sign_in/magic/start"|
   end
 
+  test "a disabled account shows support contact and no authentication controls", %{conn: conn} do
+    {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+    account = Fixtures.Accounts.create_account(%{name: "Paused Co"})
+    provider = enabled_provider(account, "Paused Okta")
+
+    assert {:ok, _account} =
+             Emisar.Accounts.set_account_disabled_for_support(
+               account.id,
+               true,
+               "Temporary hold",
+               support_subject
+             )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
+
+    assert html =~ "This account is disabled"
+    assert html =~ "support@emisar.dev"
+    refute html =~ ~p"/sign_in/sso/#{provider.id}"
+    refute html =~ ~s|action="/sign_in/magic/start"|
+    refute html =~ "Sign in to a different team"
+  end
+
   test "an unknown slug is a 404 — and a soft-deleted account is the SAME 404 (no leak)", %{
     conn: conn
   } do

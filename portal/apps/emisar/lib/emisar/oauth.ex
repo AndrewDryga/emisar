@@ -203,6 +203,12 @@ defmodule Emisar.OAuth do
         _ -> {:error, :invalid_grant}
       end
     end)
+    |> Multi.run(:account, fn repo, %{code: code} ->
+      case Accounts.fetch_and_lock_account(code.account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :invalid_grant}
+      end
+    end)
     # Burn the code (single use) before issuing tokens.
     |> Multi.run(:burned, fn repo, %{code: code} ->
       repo.update(AuthorizationCode.Changeset.consume(code))
@@ -250,6 +256,12 @@ defmodule Emisar.OAuth do
       else
         {:error, reason} -> {:error, reason}
         _ -> {:error, :invalid_grant}
+      end
+    end)
+    |> Multi.run(:account, fn repo, %{token: token} ->
+      case Accounts.fetch_and_lock_account(token.account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :invalid_grant}
       end
     end)
     # Rotate: revoke the old row, issue a new pair from the same key.

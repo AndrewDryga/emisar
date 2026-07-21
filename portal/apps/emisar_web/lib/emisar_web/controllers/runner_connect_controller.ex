@@ -110,6 +110,11 @@ defmodule EmisarWeb.RunnerConnectController do
         conn
         |> put_status(:forbidden)
         |> json(%{error: "runner_disabled"})
+
+      {:error, :account_disabled} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "account_disabled"})
     end
   end
 

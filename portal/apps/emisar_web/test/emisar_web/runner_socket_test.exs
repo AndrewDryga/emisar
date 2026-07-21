@@ -728,6 +728,21 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert_receive :stop_after_drain
     end
 
+    test "account disable pushes its distinct retryable shutdown", %{state: state} do
+      assert {:push, frame, ^state} =
+               RunnerSocket.handle_info({:account_disabled, state.account_id}, state)
+
+      assert decode(frame) == %{
+               "message" =>
+                 "This account is disabled. The runner will retry after it is enabled.",
+               "protocol_version" => 1,
+               "reason" => "account_disabled",
+               "type" => "shutdown"
+             }
+
+      assert_receive :stop_after_drain
+    end
+
     test "removal pushes a terminal revoked envelope first, then stops", %{state: state} do
       assert {:push, frame, ^state} = RunnerSocket.handle_info(:runner_socket_revoked, state)
 

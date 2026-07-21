@@ -820,6 +820,27 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
     end
 
+    test "a stale subject cannot dispatch after its account is disabled" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = owner_subject_for(account)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :runner_not_found} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      refute_receive {:cloud_to_runner, _generation, _message}, 100
+    end
+
     test "an MCP subject cannot attribute a dispatch to another API key" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1601,6 +1622,25 @@ defmodule Emisar.RunsTest do
                {:error, :unauthorized}
     end
 
+    test "a stale MCP subject cannot reserve or create fan-out work" do
+      %{account: account, subject: subject, runners: [runner], key: key} =
+        mcp_fanout_fixture(["low"])
+
+      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D7")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert {:error, :not_found} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      refute Repo.exists?(ActionRun)
+    end
+
     test "rejects a permission-bearing subject without a concrete membership" do
       %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
       operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D8")
@@ -2084,6 +2124,24 @@ defmodule Emisar.RunsTest do
 
       assert {:error, :runner_out_of_scope} =
                Runs.dispatch_run_for_account(attrs, account.id)
+    end
+
+    test "stops subjectless continuation while the account is disabled", %{
+      account: account,
+      runner: runner
+    } do
+      support_subject = owner_subject_for(account)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 support_subject
+               )
+
+      assert {:error, :runner_not_found} =
+               Runs.dispatch_run_for_account(base_attrs(account.id, runner.id), account.id)
     end
   end
 
@@ -2841,6 +2899,27 @@ defmodule Emisar.RunsTest do
       # The row-locked claim must refuse it before anything reaches the runner.
       assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
       refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "does not publish pending work after the account is disabled", %{
+      account: account,
+      runner: runner
+    } do
+      Emisar.Runners.subscribe_runner_transport(runner)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      support_subject = owner_subject_for(account)
+
+      assert {:ok, _account} =
+               Emisar.Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 support_subject
+               )
+
+      assert :ok = Runs.dispatch_to_runner(run)
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+      assert Runs.peek_run_by_id(run.id).status == :pending
     end
 
     test "leaves an offline run pending for the next connection", %{

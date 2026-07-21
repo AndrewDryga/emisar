@@ -7,7 +7,7 @@ defmodule Emisar.Auth do
   semantics + validity window.
   """
   alias Ecto.Multi
-  alias Emisar.Audit
+  alias Emisar.{Accounts, Audit}
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
   alias Emisar.Crypto
@@ -33,6 +33,44 @@ defmodule Emisar.Auth do
     {token, digest} = Crypto.session_token()
     Repo.insert!(UserToken.Changeset.session(user, digest, metadata, auth_method, mfa, opts))
     token
+  end
+
+  @doc """
+  Internal branded sign-in completion. Holds the active account row lock while
+  recording the sign-in and inserting the user-global session credential, so a
+  concurrent account disable either revokes this session afterward or prevents
+  it from being minted.
+  """
+  def complete_account_sign_in(
+        %Users.User{} = user,
+        account_id,
+        auth_method,
+        mfa,
+        %RequestContext{} = context,
+        opts \\ []
+      ) do
+    {token, digest} = Crypto.session_token()
+    metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
+
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :account_disabled}
+      end
+    end)
+    |> Multi.run(:sign_in, fn _repo, _changes ->
+      Users.record_sign_in(user, Atom.to_string(auth_method), context)
+    end)
+    |> Multi.insert(
+      :token,
+      UserToken.Changeset.session(user, digest, metadata, auth_method, mfa, opts)
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, _changes} -> {:ok, token}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc """

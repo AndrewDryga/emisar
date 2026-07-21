@@ -360,6 +360,176 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_account_by_id_or_slug_including_disabled/1" do
+    test "includes a disabled account by id and slug" do
+      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, disabled} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Customer requested a temporary hold",
+                 subject
+               )
+
+      assert Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
+
+      assert {:ok, %Account{id: id}} =
+               Accounts.fetch_account_by_id_or_slug_including_disabled(account.id)
+
+      assert id == disabled.id
+
+      assert {:ok, %Account{id: ^id}} =
+               Accounts.fetch_account_by_id_or_slug_including_disabled(account.slug)
+    end
+
+    test "does not include a soft-deleted account" do
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.mark_account_as_deleted()
+
+      assert Accounts.fetch_account_by_id_or_slug_including_disabled(account.id) ==
+               {:error, :not_found}
+    end
+  end
+
+  describe "set_account_disabled_for_support/4" do
+    test "disables and re-enables an account with atomic audit attribution" do
+      {actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      :ok = Accounts.subscribe_account_lifecycle(account.id)
+
+      assert {:ok, %Account{disabled_at: %DateTime{}}} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Abuse investigation",
+                 subject
+               )
+
+      assert_receive {:account_disabled, account_id}
+      assert account_id == account.id
+      assert Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
+
+      disabled_audit =
+        AuditEvent.Query.all()
+        |> AuditEvent.Query.by_account_id(account.id)
+        |> AuditEvent.Query.by_event_type("account.disabled")
+        |> Repo.one()
+
+      assert disabled_audit.actor_id == actor.id
+      assert disabled_audit.payload["reason"] == "Abuse investigation"
+
+      assert {:ok, %Account{disabled_at: nil}} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 false,
+                 "Investigation resolved",
+                 subject
+               )
+
+      assert {:ok, %Account{id: ^account_id}} = Accounts.fetch_account_by_id(account.id)
+    end
+
+    test "repeating the current state is a no-op" do
+      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      :ok = Accounts.subscribe_account_lifecycle(account.id)
+
+      assert {:ok, disabled} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert_receive {:account_disabled, account_id}
+      assert account_id == account.id
+
+      assert {:ok, repeated} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Repeated delivery",
+                 subject
+               )
+
+      assert repeated.disabled_at == disabled.disabled_at
+      assert_receive {:account_disabled, ^account_id}
+
+      count =
+        AuditEvent.Query.all()
+        |> AuditEvent.Query.by_account_id(account.id)
+        |> AuditEvent.Query.by_event_type("account.disabled")
+        |> Repo.aggregate(:count)
+
+      assert count == 1
+    end
+
+    test "rejects an invalid reason and an unknown account" do
+      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      assert Accounts.set_account_disabled_for_support(account.id, true, "", subject) ==
+               {:error, :invalid_reason}
+
+      assert Accounts.set_account_disabled_for_support(
+               Ecto.UUID.generate(),
+               true,
+               "Temporary hold",
+               subject
+             ) == {:error, :not_found}
+    end
+
+    test "revokes member sessions without affecting another account's users" do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Users.create_user()
+      outsider = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      member_token = Emisar.Auth.create_session_token!(member, :magic_link, false)
+      outsider_token = Emisar.Auth.create_session_token!(outsider, :magic_link, false)
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 support_subject
+               )
+
+      assert Emisar.Auth.fetch_user_and_token_by_session_token(member_token) ==
+               {:error, :not_found}
+
+      assert {:ok, %User{id: outsider_id}, _session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(outsider_token)
+
+      assert outsider_id == outsider.id
+    end
+  end
+
+  describe "subscribe_account_lifecycle/1" do
+    test "subscribes only to the named account lifecycle topic" do
+      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      :ok = Accounts.subscribe_account_lifecycle(account.id)
+
+      assert {:ok, _other_account} =
+               Accounts.set_account_disabled_for_support(
+                 other_account.id,
+                 true,
+                 "Other account hold",
+                 subject
+               )
+
+      refute_receive {:account_disabled, _account_id}
+    end
+  end
+
   describe "list_accounts_for_user/2" do
     test "lists every account the user is a non-suspended member of, name-ordered" do
       user = Fixtures.Users.create_user()
@@ -3087,6 +3257,28 @@ defmodule Emisar.AccountsTest do
                Accounts.fetch_invitation_by_token(token, preload: [:account, :user])
     end
 
+    test "does not resolve an invitation for a disabled account" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          "tok-disabled-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject
+        )
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
     test "an empty/blank/nil token is :not_found (the guard clauses)" do
       assert Accounts.fetch_invitation_by_token("") == {:error, :not_found}
       assert Accounts.fetch_invitation_by_token(nil) == {:error, :not_found}
@@ -3175,6 +3367,31 @@ defmodule Emisar.AccountsTest do
       assert {:ok, found} = Accounts.fetch_invitation_by_token(token)
       assert found.id == membership.id
     end
+
+    test "a stale invitation cannot be accepted after the account is disabled" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: membership, user: user}} =
+        Accounts.invite_user_to_account(
+          "mark-disabled-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject
+        )
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert Accounts.mark_invitation_accepted(membership, user) == {:error, :not_found}
+      reloaded = Repo.reload!(membership)
+      assert is_nil(reloaded.invitation_accepted_at)
+      assert is_binary(reloaded.invitation_token_digest)
+    end
   end
 
   describe "accept_invitation/2" do
@@ -3229,6 +3446,35 @@ defmodule Emisar.AccountsTest do
                "full_name" => "Second",
                "password" => "another-strong-password"
              }) == {:error, :not_found}
+    end
+
+    test "a stale invitation cannot provision a user after the account is disabled" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: membership, user: invitee}} =
+        Accounts.invite_user_to_account(
+          "accept-disabled-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject
+        )
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert Accounts.accept_invitation(membership, %{
+               "full_name" => "Late Member",
+               "password" => "a-very-strong-password"
+             }) == {:error, :not_found}
+
+      {:ok, reloaded} = Users.fetch_user_by_id(invitee.id)
+      assert is_nil(reloaded.confirmed_at)
+      assert is_nil(reloaded.full_name)
     end
   end
 

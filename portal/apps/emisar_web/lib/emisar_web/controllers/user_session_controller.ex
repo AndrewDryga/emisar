@@ -56,7 +56,8 @@ defmodule EmisarWeb.UserSessionController do
 
     conn =
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
-           {:ok, user} <- Users.fetch_user_by_email(email) do
+           {:ok, user} <- Users.fetch_user_by_email(email),
+           :active <- branded_account_status(return_to) do
         registration_user_id = registration_user_id(registration_handoff, user)
         registered? = is_binary(registration_user_id)
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
@@ -212,14 +213,13 @@ defmodule EmisarWeb.UserSessionController do
          ^user_id <- get_session(conn, :mfa_pending_user_id),
          {:ok, user} <- Users.fetch_user_by_id(user_id) do
       registered? = get_session(conn, :mfa_pending_registered?) || false
-      Users.record_sign_in(user, "magic_link", RequestContext.from_conn(conn))
+      context = RequestContext.from_conn(conn)
 
       conn
       |> clear_mfa_pending()
-      |> complete_branded_sign_in(
-        user,
-        &UserAuth.log_in_user(&1, user, :magic_link, true, registered?: registered?)
-      )
+      |> complete_branded_sign_in(user, fn conn, account ->
+        log_in_magic_user(conn, user, account, true, registered?, context)
+      end)
     else
       _ ->
         conn
@@ -368,13 +368,9 @@ defmodule EmisarWeb.UserSessionController do
       |> put_session(:mfa_pending_registered?, registered?)
       |> redirect(to: ~p"/sign_in/mfa")
     else
-      Users.record_sign_in(user, "magic_link", context)
-
-      complete_branded_sign_in(
-        conn,
-        user,
-        &UserAuth.log_in_user(&1, user, :magic_link, false, registered?: registered?)
-      )
+      complete_branded_sign_in(conn, user, fn conn, account ->
+        log_in_magic_user(conn, user, account, false, registered?, context)
+      end)
     end
   end
 
@@ -394,31 +390,87 @@ defmodule EmisarWeb.UserSessionController do
         # `log_in_user`'s session renewal keeps it (same as the SSO callback).
         conn
         |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-        |> log_in.()
+        |> finish_sign_in(account, log_in)
+
+      {:disabled, account} ->
+        redirect_to_disabled_account(conn, account)
 
       :not_member ->
         # The flash is set AFTER `log_in_user` — its `renew_session` clears the
         # session (flash included); the flash plug's before_send re-persists this.
-        conn
-        |> delete_session(:user_return_to)
-        |> log_in.()
-        |> put_flash(:info, @branded_denied_message)
+        conn =
+          conn
+          |> delete_session(:user_return_to)
+          |> finish_sign_in(nil, log_in)
+
+        put_flash(conn, :info, @branded_denied_message)
 
       :no_branded_target ->
-        log_in.(conn)
+        finish_sign_in(conn, nil, log_in)
     end
   end
 
   defp branded_return_membership(conn, %Users.User{} = user) do
-    case get_session(conn, :user_return_to) do
-      "/app/" <> ref ->
+    case branded_account_ref(get_session(conn, :user_return_to)) do
+      {:ok, ref} ->
         case Accounts.fetch_membership_by_account_id_or_slug(user, ref) do
           {:ok, membership} -> {:member, membership.account}
-          {:error, :not_found} -> :not_member
+          {:error, :not_found} -> disabled_account_or_not_member(ref)
         end
 
       _ ->
         :no_branded_target
     end
+  end
+
+  defp branded_account_ref("/app/" <> path) do
+    case String.split(path, "/", parts: 2) do
+      [ref | _rest] when ref != "" -> {:ok, ref}
+      _ -> :error
+    end
+  end
+
+  defp branded_account_ref(_return_to), do: :error
+
+  defp branded_account_status(return_to) do
+    with {:ok, ref} <- branded_account_ref(return_to),
+         {:ok, %{disabled_at: %DateTime{}} = account} <-
+           Accounts.fetch_account_by_id_or_slug_including_disabled(ref) do
+      {:disabled, account}
+    else
+      _ -> :active
+    end
+  end
+
+  defp disabled_account_or_not_member(ref) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(ref) do
+      {:ok, %{disabled_at: %DateTime{}} = account} -> {:disabled, account}
+      _ -> :not_member
+    end
+  end
+
+  defp log_in_magic_user(conn, user, nil, mfa, registered?, context) do
+    Users.record_sign_in(user, "magic_link", context)
+
+    {:ok, UserAuth.log_in_user(conn, user, :magic_link, mfa, registered?: registered?)}
+  end
+
+  defp log_in_magic_user(conn, user, account, mfa, registered?, _context) do
+    UserAuth.log_in_user_for_account(conn, user, account.id, :magic_link, mfa,
+      registered?: registered?
+    )
+  end
+
+  defp finish_sign_in(conn, account, log_in) do
+    case log_in.(conn, account) do
+      {:ok, conn} -> conn
+      {:error, :account_disabled} -> redirect_to_disabled_account(conn, account)
+    end
+  end
+
+  defp redirect_to_disabled_account(conn, account) do
+    conn
+    |> delete_session(:user_return_to)
+    |> redirect(to: ~p"/app/#{account}/sign_in")
   end
 end
