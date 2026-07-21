@@ -2,7 +2,11 @@ defmodule EmisarWeb.AnalyticsTest do
   # async: false — flips the global `:mixpanel_enabled` app env.
   use EmisarWeb.ConnCase, async: false
 
-  setup do
+  @browser_user_agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " <>
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " <>
+                        "Chrome/126.0.0.0 Safari/537.36"
+
+  setup %{conn: conn} do
     Application.put_env(:emisar, :mixpanel_enabled, true)
     Application.put_env(:emisar, :analytics_test_pid, self())
 
@@ -11,7 +15,7 @@ defmodule EmisarWeb.AnalyticsTest do
       Application.delete_env(:emisar, :analytics_test_pid)
     end)
 
-    :ok
+    {:ok, conn: put_req_header(conn, "user-agent", @browser_user_agent)}
   end
 
   describe "pageview plug" do
@@ -23,7 +27,7 @@ defmodule EmisarWeb.AnalyticsTest do
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["path"] == "/pricing"
       assert props["authenticated"] == false
-      # Anonymous distinct_id is the $device:-prefixed daily hash, so Mixpanel
+      # Anonymous distinct_id is the $device:-prefixed weekly hash, so Mixpanel
       # treats it as a mergeable device, not a separate identified user.
       assert "$device:" <> _ = props["distinct_id"]
     end
@@ -36,7 +40,7 @@ defmodule EmisarWeb.AnalyticsTest do
       get(base, ~p"/security")
       assert_receive {:mixpanel_track, [%{"properties" => %{"distinct_id" => second}}]}
 
-      # Same IP + UA (same day) → same daily hash → countable as one visitor,
+      # Same IP + UA (same week) → same weekly hash → countable as one visitor,
       # stitched on login, all without a client-stored identifier.
       assert first == second
       assert "$device:" <> _ = first
@@ -68,6 +72,47 @@ defmodule EmisarWeb.AnalyticsTest do
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["utm_source"] == "hn"
       assert props["utm_campaign"] == "launch"
+    end
+
+    test "an in-app browser without a Safari token still fires page_viewed", %{conn: conn} do
+      user_agent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) " <>
+          "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+
+      conn |> put_req_header("user-agent", user_agent) |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
+    end
+
+    test "health probes never fire page_viewed", %{conn: conn} do
+      get(conn, ~p"/healthz")
+      get(conn, ~p"/readyz")
+
+      refute_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
+    end
+
+    test "automated and non-browser fetches do not fire page_viewed", %{conn: conn} do
+      user_agents = [
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Mozilla/5.0 Twitterbot/1.0",
+        "Mozilla/5.0 HeadlessChrome/126.0.0.0 Safari/537.36",
+        "Mozilla/5.0 GoogleStackdriverMonitoring-UptimeChecks/1.0",
+        "Mozilla/5.0 facebookexternalhit/1.1",
+        "Mozilla/5.0 WhatsApp/2.23.20",
+        "curl/8.5.0"
+      ]
+
+      for user_agent <- user_agents do
+        conn |> put_req_header("user-agent", user_agent) |> get(~p"/pricing")
+      end
+
+      refute_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
+    end
+
+    test "a request without a user agent does not fire page_viewed", %{conn: conn} do
+      conn |> delete_req_header("user-agent") |> get(~p"/pricing")
+
+      refute_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
     end
 
     test "the console (/app) is not pageview-tracked", %{conn: conn} do

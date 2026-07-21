@@ -2,7 +2,7 @@ defmodule EmisarWeb.Plugs.Analytics do
   @moduledoc """
   Server-side funnel pageview tracking. On an eligible browser GET it fires a
   `page_viewed` once the response is known to be a 200 HTML render. Writes no
-  session state — the anonymous id is a cookieless daily hash (see
+  session state — the anonymous id is a cookieless weekly hash (see
   `EmisarWeb.Analytics`). No-op for non-GET requests and `/app/*` — console
   pageviews come from the LiveView `:track_pageviews` on_mount hook instead
   (console navigation is over the websocket, so there's no controller request
@@ -13,6 +13,32 @@ defmodule EmisarWeb.Plugs.Analytics do
 
   import Plug.Conn
   alias EmisarWeb.Analytics
+
+  @browser_signatures ["mozilla/", "applewebkit/"]
+  @automation_signatures [
+    "bot",
+    "crawler",
+    "spider",
+    "preview",
+    "unfurl",
+    "headless",
+    "lighthouse",
+    "monitor",
+    "uptime",
+    "healthcheck",
+    "health-check",
+    "probe",
+    "checker",
+    "facebookexternalhit",
+    "whatsapp",
+    "skypeuripreview",
+    "googlehc",
+    "curl/",
+    "wget/",
+    "go-http-client/",
+    "python-requests/",
+    "postmanruntime/"
+  ]
 
   @impl true
   def init(opts), do: opts
@@ -34,11 +60,28 @@ defmodule EmisarWeb.Plugs.Analytics do
   # Off ⇒ a complete no-op (no `page_viewed`), so the analytics HTTP calls only
   # happen when the feature is live.
   defp eligible?(conn) do
-    Emisar.Analytics.enabled?() and conn.method == "GET" and not console_path?(conn)
+    Emisar.Analytics.enabled?() and conn.method == "GET" and not console_path?(conn) and
+      browser_request?(conn)
   end
 
   defp console_path?(%{path_info: ["app" | _]}), do: true
   defp console_path?(_conn), do: false
+
+  defp browser_request?(conn) do
+    conn
+    |> get_req_header("user-agent")
+    |> List.first()
+    |> browser_user_agent?()
+  end
+
+  defp browser_user_agent?(user_agent) when is_binary(user_agent) do
+    user_agent = String.downcase(user_agent)
+
+    Enum.any?(@browser_signatures, &String.contains?(user_agent, &1)) and
+      not Enum.any?(@automation_signatures, &String.contains?(user_agent, &1))
+  end
+
+  defp browser_user_agent?(_user_agent), do: false
 
   defp html?(conn) do
     case get_resp_header(conn, "content-type") do
