@@ -38,7 +38,10 @@ docker compose up -d --wait portal
 docker compose up -d --wait runner-1 runner-2 runner-3
 
 export EMISAR_API_KEY="emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # the seeded dev key
-export ANTHROPIC_API_KEY=...  # the driver runs `claude --bare`, which auths only via this key
+# Claude auth is by presence: set ANTHROPIC_API_KEY and the driver runs `claude
+# --bare` (API-key headless, MCP wired); leave it unset and the driver keeps
+# `--setting-sources project,local` so a local subscription keychain login works.
+export ANTHROPIC_API_KEY=...  # optional locally; required in CI
 
 cd tools && go run ./cmd/mcpeval -provider claude -out /tmp/mcpeval.json
 ```

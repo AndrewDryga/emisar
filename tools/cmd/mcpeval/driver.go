@@ -34,16 +34,23 @@ func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 }
 
 // claudeInvocation runs Claude Code headless. Flags verified against the
-// installed `claude --help` (2.1.212). Isolation without `--bare`: `--bare`
-// disables keychain reads, so it forces ANTHROPIC_API_KEY and cannot use a
-// local subscription login; instead `--setting-sources project,local` skips
-// the user's global config/memory/plugins (the throwaway workspace has no
-// project/local settings), and `--strict-mcp-config` limits MCP to our
-// generated relay config. `--tools ""` disables every built-in tool and
-// `--allowedTools` pre-approves exactly the scenario's MCP tools
-// (mcp__<server>__<tool>) so headless mode never stalls on a permission
-// prompt. Auth resolves the same way for both lanes: the local keychain OAuth
-// login when present, or ANTHROPIC_API_KEY in CI.
+// installed `claude --help` (2.1.212).
+//
+// The auth mode picks the isolation flag, and the two are mutually exclusive:
+//   - CI (ANTHROPIC_API_KEY set) uses `--bare` — it forces clean API-key auth
+//     and skips hooks, plugins, auto-memory, CLAUDE.md discovery, AND keychain
+//     reads, while still honoring `--mcp-config`. This is the documented
+//     headless path; without it the fuller startup left MCP unregistered under
+//     API-key auth and the model role-played tool calls as text (calls=0).
+//   - Local dev (no key) uses `--setting-sources project,local` — `--bare`
+//     would force API-key auth and fail with no key, so instead we keep the
+//     subscription keychain login while still isolating from the user's global
+//     config (the throwaway workspace has no project/local settings).
+//
+// `--strict-mcp-config` limits MCP to our generated relay config, `--tools ""`
+// disables every built-in tool, and `--allowedTools` pre-approves exactly the
+// scenario's MCP tools (mcp__<server>__<tool>) so headless mode never stalls
+// on a permission prompt.
 func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
 	configPath, err := writeClaudeMCPConfig(workspace, endpoint)
 	if err != nil {
@@ -53,23 +60,21 @@ func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) 
 	for index, tool := range item.AllowedTools {
 		allowed[index] = "mcp__emisar_eval__" + tool
 	}
-	return invocation{
-		binary: cfg.Binary,
-		args: []string{
-			"-p", item.Prompt,
-			"--output-format", "json",
-			"--model", cfg.Model,
-			"--setting-sources", "project,local",
-			"--strict-mcp-config",
-			"--mcp-config", configPath,
-			"--tools", "",
-			"--allowedTools", strings.Join(allowed, ","),
-			"--no-session-persistence",
-			"--max-budget-usd", cfg.BudgetUSD,
-		},
-		env: childEnv("ANTHROPIC_API_KEY"),
-		dir: workspace,
-	}, nil
+	isolation := []string{"--setting-sources", "project,local"}
+	if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		isolation = []string{"--bare"}
+	}
+	args := []string{"-p", item.Prompt, "--output-format", "json", "--model", cfg.Model}
+	args = append(args, isolation...)
+	args = append(args,
+		"--strict-mcp-config",
+		"--mcp-config", configPath,
+		"--tools", "",
+		"--allowedTools", strings.Join(allowed, ","),
+		"--no-session-persistence",
+		"--max-budget-usd", cfg.BudgetUSD,
+	)
+	return invocation{binary: cfg.Binary, args: args, env: childEnv("ANTHROPIC_API_KEY"), dir: workspace}, nil
 }
 
 func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {

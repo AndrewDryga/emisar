@@ -3,7 +3,7 @@
   "scenarios": [
     {
       "id": "read-only-host-health",
-      "prompt": "Using only the emisar_eval MCP server, determine the current uptime/load and filesystem disk usage on every currently connected runner. For each runner, also obtain a typed JSON demonstration result and report its redacted session-token marker. Report each runner with at least one exact load-average value, its highest filesystem-use percentage, and the Emisar run links. Do not use shell, SSH, Docker, local files, another Emisar server, or any non-Emisar infrastructure tool. Report only what these measurements establish; do not generalize to unmeasured health.",
+      "prompt": "Using only the emisar_eval MCP server, determine the current uptime/load and filesystem disk usage on every currently connected runner. For each runner, also obtain a demonstration result that returns a parsed JSON object whose session-token field comes back redacted, and report that redacted marker. Report each runner with at least one exact load-average value, its highest filesystem-use percentage, and the Emisar run links. Do not use shell, SSH, Docker, local files, another Emisar server, or any non-Emisar infrastructure tool. Report only what these measurements establish; do not generalize to unmeasured health.",
       "allowed_tools": [
         "list_packs",
         "list_runners",
