@@ -1,0 +1,36 @@
+# emisar
+
+> emisar lets MCP-capable agents keep working on infrastructure through a finite catalog of declared actions instead of a shell. Policy decides what runs, what waits for a person, and what is denied; an outbound-only runner validates each action again on the host.
+
+emisar provides the governed action surface an agent calls. It does not run the agent loop, provide process isolation, or make a permitted destructive action harmless. Action packs, policy, runner configuration, and host permissions are all part of the security boundary.
+
+Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Local clients can use the `emisar-mcp` stdio bridge described below.
+
+## Start here
+
+- [Quickstart](https://emisar.dev/docs/quickstart): Connect one Linux host, run the first declared action, and verify the audit record.
+- [Connect an LLM](https://emisar.dev/docs/connect-an-llm): Connect remote OAuth clients or local stdio MCP clients.
+- [MCP reference](https://emisar.dev/docs/mcp-reference): Review the fixed tools, parameters, continuations, errors, and signed-dispatch fields.
+
+## Build and operate
+
+- [Action pack catalog](https://emisar.dev/packs): Browse the published packs and the declared actions they provide.
+- [Action pack format](https://emisar.dev/docs/action-packs): Define executables, typed arguments, risk, limits, redaction, and side effects.
+- [Policies and approvals](https://emisar.dev/docs/policies-and-approvals): Decide which actions run, wait for a person, or are denied.
+- [Runbooks](https://emisar.dev/docs/runbooks): Save and dispatch versioned, policy-gated operational sequences.
+- [Runner fleet](https://emisar.dev/docs/runners): Enroll, group, update, troubleshoot, and remove runners.
+- [Production deployment](https://emisar.dev/docs/deployment): Roll out a governed fleet in reversible phases.
+- [Audit and SIEM](https://emisar.dev/docs/audit-and-siem): Review control-plane events, export NDJSON, and verify the runner journal.
+
+## Security
+
+- [Security model](https://emisar.dev/docs/security-model): Review the guarantees, trust boundaries, threats, and limitations.
+- [Signed dispatch](https://emisar.dev/docs/signed-dispatch): Require client-signed action intent with scoped Ed25519 certificates.
+- [Trust Center](https://emisar.dev/trust): Review infrastructure, delivery, assurance, privacy, and compliance controls.
+
+## Optional
+
+- [How emisar works](https://emisar.dev/how-it-works): Follow an action from MCP intent through policy, host execution, and audit receipt.
+- [Guides](https://emisar.dev/guides): Read incident investigations and practical infrastructure guidance.
+- [Changelog](https://emisar.dev/changelog): Review shipped product changes.
+- [Pricing](https://emisar.dev/pricing): Compare hosted plans and included limits.
