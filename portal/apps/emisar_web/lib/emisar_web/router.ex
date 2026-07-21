@@ -477,13 +477,19 @@ defmodule EmisarWeb.Router do
     # Discovery (RFC 9728 + RFC 8414) — public, unauthenticated.
     get "/.well-known/oauth-protected-resource", OAuthMetadataController, :protected_resource
     get "/.well-known/oauth-authorization-server", OAuthMetadataController, :authorization_server
-    get "/.well-known/openai-apps-challenge", DomainVerificationController, :openai_apps_challenge
 
     # Dynamic Client Registration + token endpoint — public (clients are
     # PKCE public clients), and deliberately CSRF-free since the MCP
     # client calls them cross-origin, not a browser form.
     post "/oauth/register", OAuthController, :register
     post "/oauth/token", OAuthController, :token
+  end
+
+  # OpenAI requests this text proof with Accept: text/plain, so it deliberately
+  # stays outside the JSON-only API pipeline. The fixed public token is the
+  # entire response; the controller does not inspect request data.
+  scope "/", EmisarWeb do
+    get "/.well-known/openai-apps-challenge", DomainVerificationController, :openai_apps_challenge
   end
 
   # Consent screen — the operator must be signed in; the approve/deny
