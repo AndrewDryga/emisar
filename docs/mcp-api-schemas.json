@@ -674,7 +674,7 @@
   "tools": {
     "list_packs": {
       "title": "List packs",
-      "description": "List packs observed on in-scope runners, with their bounded action catalogs. Returns the executable capabilities you can run right now.",
+      "description": "List operator-trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -715,7 +715,7 @@
     },
     "list_runners": {
       "title": "List runners",
-      "description": "Inspect in-scope runners, connectivity, and pack or action compatibility issues. Use the exact returned runner_ref values for dispatch.",
+      "description": "Inspect in-scope runners, connectivity, and compatibility issues for operator-trusted packs and actions. Use the exact returned runner_ref values for dispatch.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1051,7 +1051,7 @@
     },
     "list_runbooks": {
       "title": "List runbooks",
-      "description": "List visible immutable published runbooks with bounded summaries. Use get_runbook to inspect the exact frozen steps before execution.",
+      "description": "List visible immutable published runbooks whose steps resolve to currently operator-trusted packs. Use get_runbook to inspect the exact frozen steps before execution.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

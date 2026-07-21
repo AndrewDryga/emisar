@@ -542,39 +542,56 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert result["summary"]["matched"] == 0
   end
 
-  test "a runner that is not connected wears only its connection story, never trust alarms", %{
+  test "MCP discovery and dispatch hide packs without current trust", %{
     conn: conn,
-    account: account
+    account: account,
+    subject: subject
   } do
-    # Both runners advertise the SAME untrusted pack; neither advertisement is
-    # trusted. The connected runner honestly wears the trust issue; the
-    # disconnected runner's stored advertisement is a stale snapshot, so its
-    # row tells only the connection story (a crash-looping production runner
-    # once wore descriptor_mismatch + pack_untrusted for 100 minutes when the
-    # real problem was runner health).
-    connected = Fixtures.Runners.create_runner(account_id: account.id, name: "up")
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "suspect-host")
+    pack_ref = "suspect@1.0.0/#{@hash}"
+    runner_ref = "suspect-host~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
 
-    offline =
-      Fixtures.Runners.create_runner(account_id: account.id, name: "down", connected?: false)
-
-    observe!(connected, %{"suspect" => %{"version" => "1.0.0", "hash" => @hash}}, [
+    observe!(runner, %{"suspect" => %{"version" => "1.0.0", "hash" => @hash}}, [
       action("suspect.read", "suspect")
     ])
 
-    observe!(offline, %{"suspect" => %{"version" => "1.0.0", "hash" => @hash}}, [
-      action("suspect.read", "suspect")
-    ])
+    assert call(conn, "list_packs", %{"availability" => "all"})["packs"] == []
+    assert call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"] == []
 
-    result = call(conn, "list_runners", %{"issues_only" => true})
-    issues_by_name = Map.new(result["runners"], &{&1["name"], &1["issues"]})
+    assert call(conn, "get_action", %{
+             "action_id" => "suspect.read",
+             "pack_ref" => pack_ref
+           })["error"]["code"] == "action_unavailable"
 
-    connected_codes = issues_by_name |> Map.fetch!("up") |> Enum.map(& &1["code"])
-    assert "pack_untrusted" in connected_codes
+    assert [%{"name" => "suspect-host", "packs" => [], "issues" => []}] =
+             call(conn, "list_runners", %{})["runners"]
 
-    # The never-connected fixture reads "pending" — the same not-connected
-    # branch; a stale advertisement never raises trust alarms either way.
-    offline_codes = issues_by_name |> Map.fetch!("down") |> Enum.map(& &1["code"])
-    assert offline_codes == ["runner_pending"]
+    assert call(conn, "list_runners", %{"pack_ref" => pack_ref})["runners"] == []
+
+    {:ok, [pending]} = Catalog.list_all_pack_versions_for_account(subject)
+    assert {:ok, _trusted} = Catalog.trust_pack_version(pending.id, subject)
+
+    assert [%{"pack_ref" => ^pack_ref}] =
+             call(conn, "list_packs", %{"availability" => "all"})["packs"]
+
+    assert [%{"action_id" => "suspect.read", "pack_ref" => ^pack_ref}] =
+             call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"]
+
+    assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pending.id, subject)
+
+    assert call(conn, "list_packs", %{"availability" => "all"})["packs"] == []
+    assert call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"] == []
+    assert call(conn, "list_runners", %{"pack_ref" => pack_ref})["runners"] == []
+
+    denied =
+      raw_action(
+        conn,
+        run_action_body(pack_ref, runner_ref, "{}", "Inspect suspect pack", "0", "suspect.read")
+      )
+
+    assert denied["error"]["code"] == "target_contract_changed"
+    assert denied["dispatch_started"] == false
+    assert {:ok, [], _meta} = Runs.list_runs(subject)
   end
 
   test "a runner-advertised degraded pack surfaces as a named issue", %{

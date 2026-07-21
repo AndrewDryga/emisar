@@ -31,15 +31,17 @@ time.
 ## Goals
 
 - Keep `tools/list` fixed and small.
-- Let a model browse all actions in an observed pack with one bounded call.
+- Let a model browse all actions in an operator-trusted observed pack with one
+  bounded call.
 - Make natural-language retrieval deterministic, explainable, and measurable.
 - Publish exact input schemas once in `tools/list` without repeating action
   contracts in every search result.
 - Use readable, generation-bound runner references for every dispatch.
 - Refuse execution when a selected runner no longer has the inspected pack.
 - Bind signed dispatch to action, pack, arguments, targets, reason, and operation.
-- Show only statically executable capabilities by default, with explicit pack
-  and fleet diagnostics available through the same response shapes.
+- Show only statically executable capabilities by default, with explicit
+  trusted-deployment and fleet diagnostics available through the same response
+  shapes.
 - Keep scope, pack trust, policy, approval, audit, and runner validation
   authoritative at dispatch time.
 
@@ -62,7 +64,7 @@ time.
 
 | Tool | Purpose |
 | --- | --- |
-| `list_packs` | Browse observed pack capabilities and pack-level problems. |
+| `list_packs` | Browse operator-trusted observed pack capabilities and deployment problems. |
 | `list_runners` | Inspect the scoped fleet, connectivity, and pack deployments. |
 | `find_actions` | Retrieve compact action candidates by task or exact filter. |
 | `get_action` | Fetch one exact argument contract and compatible targets. |
@@ -416,11 +418,12 @@ Unknown properties are rejected.
 The response shape never changes with `availability`; only which pack refs and
 actions qualify changes. `issues` and each action's `availability` are always
 present. The default returns only pack refs with at least one executable action
-and includes only their executable actions. `all` returns every visible
-observed ref and every trusted action, including
-unavailable actions for diagnosis. An
-untrusted/rejected pack has an empty `actions` list because its descriptions are
-not trusted.
+and includes only their executable actions. `all` returns every currently
+operator-trusted exact observed ref and every action from its trusted manifest,
+including unavailable actions for deployment diagnosis. Pending, rejected,
+missing, hash-mismatched, retirement-blocked, and incomplete exact refs do not
+enter any MCP catalog projection. They are reviewed by operators on the Packs
+page and in the audit log, not exposed as model-visible packs or issues.
 
 An exact `pack_id` can match several observed refs. Those refs paginate under
 the normal `limit`; the API does not make an unbounded one-response exception.
@@ -433,8 +436,8 @@ The response omits runner names and counts. Counts without an expected
 deployment do not diagnose health, and repeating targets under every action
 wastes context. Use `list_runners` for deployment evidence.
 
-Initial issue codes are `descriptor_mismatch`, `no_connected_runner`,
-`pack_rejected`, `pack_retired`, `pack_untrusted`, `partially_deployed`, and
+Initial deployment issue codes are `descriptor_mismatch`,
+`no_connected_runner`, `partially_deployed`, `primary_executable_missing`, and
 `version_skew`.
 
 ## `list_runners`
@@ -465,7 +468,7 @@ when the caller may see them.
 | `pack_id` | Exact observed pack ID; mutually exclusive with `pack_ref`. |
 | `pack_ref` | Exact pack ref; mutually exclusive with `pack_id`. |
 | `action_id` | Exact action ID; requires `pack_ref` and returns compatible runners. |
-| `issues_only` | Return only runners with connectivity, trust, or deployment issues. |
+| `issues_only` | Return only runners with connectivity or trusted-deployment issues. |
 | `limit` | Runner count, 1 through 50; default 15. |
 | `cursor` | Continuation from the same query. |
 
@@ -1534,8 +1537,10 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
 | `target_contract_changed` | The selected runner's exact pack/action contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |
 
-Pack trust, retirement, descriptor mismatch, connectivity, and skew are stable
-catalog issue codes inside read results. At dispatch they collapse to
+Descriptor mismatch, missing executables, connectivity, partial deployment, and
+version skew are stable catalog issue codes inside read results for trusted
+refs. Pack trust and retirement state never appears in model-facing discovery.
+At dispatch all stale or hidden target conditions collapse to
 `target_contract_changed` so a stale call does not learn which hidden fact
 changed. `denied`, `failed`, `error`, `validation_failed`, `unknown_action`,
 `cancelled`, `timed_out`, and `refused` are terminal run statuses inside an
@@ -1630,7 +1635,8 @@ runner, never production actions.
 ## Security invariants
 
 - Discovery never widens account or runner scope and never authorizes execution.
-- Only operator-trusted complete pack manifests become executable model content.
+- Only exact operator-trusted complete pack manifests become model-visible
+  content; trust and retirement failures remain operator-only facts.
 - `(pack_ref, action_id)` never bypasses current scope, trust, retirement,
   policy, approval, audit, schema validation, or runner verification.
 - Every target is explicit and generation-bound. Enforcing targets verify the

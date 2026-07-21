@@ -421,7 +421,7 @@ runner connectivity, and action execution are distinct checks:
 | Pack credentials | Approved auth route; required env names or host files configured, protected, and loaded without exposing values |
 | MCP client | Client identity, authenticated registration, and durable credential location without its value |
 | Fleet state | MCP `list_runners`: intended runner connected, no unexplained issues |
-| Pack trust | MCP `list_packs availability=all`: selected refs executable, no unexplained issues |
+| Pack visibility | MCP `list_packs availability=all`: selected trusted refs present, executable, no unexplained issues; absent refs checked on the portal's **Packs** page |
 | Functional action | Low-risk verify run reaches terminal success through the authenticated MCP client |
 | Audit | `emisar audit verify` passes and MCP `recent_runs` attributes the same run to this client |
 | Signed dispatch | When configured: this client's signed call succeeds and unsigned dispatch is rejected |

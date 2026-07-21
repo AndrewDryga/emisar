@@ -116,7 +116,9 @@ supply.
    generations, labels, pack deployments, and reported issues in the requested
    scope.
 2. Use `list_packs` with `availability: "all"` when needed to distinguish an
-   absent action from an untrusted, retired, mismatched, or undeployed pack.
+   absent action from a trusted but mismatched or undeployed pack. MCP omits
+   untrusted and retirement-blocked refs; an operator checks those states on
+   the portal's **Packs** page and in audit history.
 3. Use `recent_runs` with the narrowest useful filters. Start with the current
    credential's runs; use account history only when available and relevant.
 4. Use `list_runbooks` with the incident task language, then `get_runbook` for

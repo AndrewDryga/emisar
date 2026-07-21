@@ -119,8 +119,9 @@ Test through the configured client itself, never a synthetic harness:
 2. Call `list_runners` with issues included. Require the intended runner to be
    `connected` with no unexplained issues.
 3. Call `list_packs` with `availability: "all"` and require the intended packs
-   to be executable without trust, retirement, descriptor, or deployment
-   issues.
+   to be present and executable without descriptor or deployment issues. An
+   absent expected ref is not diagnosable through MCP; an operator reviews its
+   trust and retirement state on the portal's **Packs** page.
 4. Call `find_actions` for a low-risk host check, then `get_action` for the
    exact action, pack ref, schema, and runner ref. Prefer a pack's
    `setup.verify` action.
@@ -139,7 +140,7 @@ Test through the configured client itself, never a synthetic harness:
 | Registration | Durable credentials location, key present without its value |
 | Tool catalog | `tools/list` matches the documented fixed catalog |
 | Fleet state | `list_runners`: intended runner connected, issue list empty or explained |
-| Pack trust | `list_packs availability=all`: intended refs executable, no issues |
+| Pack visibility | `list_packs availability=all`: intended trusted refs present, executable, no issues |
 | Functional action | Low-risk verify run reaches terminal success through this client |
 | Audit | `recent_runs` contains the same run, attributed to this client |
 | Signed dispatch | When configured: this client's signed call succeeds; an unsigned dispatch is rejected |

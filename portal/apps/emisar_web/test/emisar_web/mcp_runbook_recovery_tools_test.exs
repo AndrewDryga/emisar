@@ -370,6 +370,55 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Repo.exists?(Operation)
   end
 
+  test "runbook discovery and execution hide steps whose pack trust was revoked", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "revoked-pack-host")
+    _runbook = publish_runbook!(subject, "revoked-pack-book", %{"runner_id" => [runner.id]})
+
+    assert [%{"runbook_ref" => "revoked-pack-book@1"}] =
+             call(conn, "list_runbooks", %{})["runbooks"]
+
+    {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+    assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
+
+    assert call(conn, "list_runbooks", %{})["runbooks"] == []
+
+    fetched = call(conn, "get_runbook", %{"runbook_ref" => "revoked-pack-book@1"})
+    assert fetched["error"]["code"] == "runbook_not_found"
+
+    draft =
+      call(conn, "create_runbook_draft", %{
+        "title" => "Revoked pack draft",
+        "steps" => [
+          %{
+            "step_id" => "check",
+            "action_id" => "operations.health",
+            "pack_ref" => @pack_ref,
+            "args" => %{},
+            "runner_selector" => %{"runner_refs" => [runner_ref(runner)]}
+          }
+        ]
+      })
+
+    assert draft["error"]["code"] == "invalid_runbook"
+
+    executed =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "revoked-pack-book@1", "reason" => "Inspect host"},
+        "op_324NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert executed["error"]["code"] == "runbook_not_found"
+    assert executed["dispatch_started"] == false
+    refute Repo.exists?(Operation)
+    assert {:ok, [], _meta} = Runs.list_runs(subject)
+  end
+
   test "runbook reads and execution fail closed for hidden or signed-only targets", %{
     conn: conn,
     account: account,

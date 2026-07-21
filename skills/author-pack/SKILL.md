@@ -283,7 +283,9 @@ authorized.
 Then prove the whole chain through the customer's real MCP client:
 
 1. `list_packs` with `availability: "all"` — the pack's exact version and
-   hash show executable, with no trust, retirement, or descriptor issues.
+   hash appear as executable, with no descriptor or deployment issues. If the
+   ref is absent, return to the portal's **Packs** page; MCP does not expose
+   pending, rejected, revoked, or retirement-blocked refs.
 2. `find_actions` for the pack's job words — confirm the descriptions are
    discoverable the way an operator would ask.
 3. `get_action` for one action — the returned schema matches the authored

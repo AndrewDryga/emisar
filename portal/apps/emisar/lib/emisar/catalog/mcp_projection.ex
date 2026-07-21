@@ -41,24 +41,16 @@ defmodule Emisar.Catalog.MCPProjection do
       |> Enum.flat_map(&runner_deployments/1)
       |> Enum.group_by(& &1.pack_ref)
 
-    skewed_pack_ids =
-      deployments
-      |> Map.keys()
-      |> Enum.group_by(&pack_id_from_ref/1)
-      |> Enum.filter(fn {_pack_id, refs} -> length(refs) > 1 end)
-      |> Enum.map(fn {pack_id, _refs} -> pack_id end)
-      |> MapSet.new()
-
     packs =
       deployments
-      |> Enum.map(fn {_pack_ref, pack_deployments} ->
+      |> Enum.flat_map(fn {_pack_ref, pack_deployments} ->
         build_pack(
           pack_deployments,
           pack_versions_by_id,
-          actions_by_deployment,
-          skewed_pack_ids
+          actions_by_deployment
         )
       end)
+      |> put_version_skew_issues()
       |> Enum.sort_by(& &1.pack_ref)
 
     pack_issues_by_runner = pack_issues_by_runner(packs)
@@ -72,10 +64,8 @@ defmodule Emisar.Catalog.MCPProjection do
   end
 
   # A runner that is not connected wears ONLY its connection story. Its stored
-  # advertisement is a stale snapshot (a crash-looping runner once wore
-  # descriptor_mismatch + pack_untrusted for 100 minutes — tamper-flavored
-  # alarms whose real cause was runner health), so trust-vs-advertisement
-  # judgments wait until it reconnects and re-advertises.
+  # advertisement is a stale snapshot, so descriptor-vs-trust judgments wait
+  # until it reconnects and re-advertises.
   defp runner_issues(%{status: "connected"} = runner, pack_issues_by_runner),
     do: runner.issues ++ Map.get(pack_issues_by_runner, runner.id, [])
 
@@ -183,72 +173,69 @@ defmodule Emisar.Catalog.MCPProjection do
   defp build_pack(
          [%{pack_id: pack_id, version: version, hash: hash} | _] = deployments,
          pack_versions_by_id,
-         actions_by_deployment,
-         skewed_pack_ids
+         actions_by_deployment
        ) do
     pack_version = Map.get(pack_versions_by_id, {pack_id, version})
 
-    {trusted_actions, executable_trust?, trust_issue} =
-      trusted_actions(pack_version, hash)
+    case trusted_actions(pack_version, hash) do
+      {:ok, trusted_actions} ->
+        compatibility =
+          Map.new(deployments, fn deployment ->
+            rows =
+              Map.get(
+                actions_by_deployment,
+                {deployment.runner_id, pack_id, version, hash},
+                []
+              )
 
-    compatibility =
-      Map.new(deployments, fn deployment ->
-        rows =
-          Map.get(
-            actions_by_deployment,
-            {deployment.runner_id, pack_id, version, hash},
-            []
-          )
+            {deployment.runner_id, deployment_compatibility(deployment, rows, trusted_actions)}
+          end)
 
-        {deployment.runner_id,
-         deployment_compatibility(
-           deployment,
-           rows,
-           trusted_actions,
-           executable_trust?,
-           trust_issue
-         )}
-      end)
+        actions =
+          trusted_actions
+          |> Enum.map(fn {action_id, descriptor} ->
+            compatible_runner_ids =
+              compatibility
+              |> Enum.filter(fn {_runner_id, result} ->
+                action_id in result.compatible_action_ids
+              end)
+              |> Enum.map(fn {runner_id, _result} -> runner_id end)
+              |> Enum.sort()
 
-    actions =
-      trusted_actions
-      |> Enum.map(fn {action_id, descriptor} ->
-        compatible_runner_ids =
-          compatibility
-          |> Enum.filter(fn {_runner_id, result} -> action_id in result.compatible_action_ids end)
-          |> Enum.map(fn {runner_id, _result} -> runner_id end)
-          |> Enum.sort()
+            descriptor
+            |> Map.put("action_id", action_id)
+            |> Map.put(:compatible_runner_ids, compatible_runner_ids)
+          end)
+          |> Enum.sort_by(& &1["action_id"])
 
-        descriptor
-        |> Map.put("action_id", action_id)
-        |> Map.put(:compatible_runner_ids, compatible_runner_ids)
-      end)
-      |> Enum.sort_by(& &1["action_id"])
+        executable? = Enum.any?(actions, &(&1.compatible_runner_ids != []))
 
-    executable? = Enum.any?(actions, &(&1.compatible_runner_ids != []))
+        issues =
+          [
+            descriptor_mismatch_issue(compatibility),
+            primary_executable_missing_issue(compatibility),
+            no_connected_runner_issue(executable?),
+            partially_deployed_issue(executable?, compatibility)
+          ]
+          |> Enum.reject(&is_nil/1)
+          |> unique_issues()
 
-    issues =
-      [
-        trust_issue,
-        descriptor_mismatch_issue(compatibility),
-        primary_executable_missing_issue(compatibility),
-        no_connected_runner_issue(executable_trust?, executable?),
-        partially_deployed_issue(executable?, compatibility),
-        version_skew_issue(pack_id, skewed_pack_ids)
-      ]
-      |> Enum.reject(&is_nil/1)
-      |> unique_issues()
+        [
+          %{
+            pack_ref: hd(deployments).pack_ref,
+            pack_id: pack_id,
+            version: version,
+            hash: hash,
+            availability: if(executable?, do: "executable", else: "unavailable"),
+            issues: issues,
+            actions: actions,
+            compatibility: compatibility
+          }
+        ]
 
-    %{
-      pack_ref: hd(deployments).pack_ref,
-      pack_id: pack_id,
-      version: version,
-      hash: hash,
-      availability: if(executable?, do: "executable", else: "unavailable"),
-      issues: issues,
-      actions: actions,
-      compatibility: compatibility
-    }
+      :hidden ->
+        []
+    end
   end
 
   defp trusted_actions(
@@ -266,37 +253,20 @@ defmodule Emisar.Catalog.MCPProjection do
       {:ok, actions} ->
         retired? = PackBaseline.retired?(pack_id, version) and is_nil(retirement_overridden_at)
 
-        if retired? do
-          {actions, false,
-           issue("pack_retired", "This exact pack version is retired and cannot execute.")}
-        else
-          {actions, true, nil}
-        end
+        if retired?, do: :hidden, else: {:ok, actions}
 
       {:error, :incomplete_manifest} ->
-        {%{}, false,
-         issue("pack_untrusted", "This pack has no complete trusted action manifest.")}
+        :hidden
     end
   end
 
-  defp trusted_actions(%PackVersion{trust_state: :rejected}, _hash) do
-    {%{}, false, issue("pack_rejected", "An operator rejected this exact pack version.")}
-  end
-
-  defp trusted_actions(%PackVersion{}, _hash) do
-    {%{}, false, issue("pack_untrusted", "This exact pack version is awaiting trust review.")}
-  end
-
-  defp trusted_actions(nil, _hash) do
-    {%{}, false, issue("pack_untrusted", "This exact pack version has no trust decision.")}
-  end
+  defp trusted_actions(%PackVersion{}, _hash), do: :hidden
+  defp trusted_actions(nil, _hash), do: :hidden
 
   defp deployment_compatibility(
          deployment,
          rows,
-         trusted_actions,
-         executable_trust?,
-         trust_issue
+         trusted_actions
        ) do
     expected_action_ids = trusted_actions |> Map.keys() |> MapSet.new()
 
@@ -325,7 +295,7 @@ defmodule Emisar.Catalog.MCPProjection do
         advertised_action_ids == expected_action_ids
 
     compatible_action_ids =
-      if executable_trust? and descriptor_match? and deployment.runner_status == "connected" do
+      if descriptor_match? and deployment.runner_status == "connected" do
         matching_action_ids
         |> MapSet.difference(unavailable_action_ids)
         |> MapSet.to_list()
@@ -336,7 +306,6 @@ defmodule Emisar.Catalog.MCPProjection do
 
     issues =
       [
-        trust_issue,
         # Only a CONNECTED runner's advertisement can genuinely mismatch trust
         # — a disconnected/pending runner's stored advertisement is stale, and
         # raising a tamper-flavored alarm on it misled a real incident (the
@@ -453,11 +422,11 @@ defmodule Emisar.Catalog.MCPProjection do
     end
   end
 
-  defp no_connected_runner_issue(true, false) do
+  defp no_connected_runner_issue(false) do
     issue("no_connected_runner", "No connected compatible runner can execute this pack.")
   end
 
-  defp no_connected_runner_issue(_trusted?, _executable?), do: nil
+  defp no_connected_runner_issue(true), do: nil
 
   defp partially_deployed_issue(true, compatibility) do
     if Enum.any?(compatibility, fn {_runner_id, result} ->
@@ -476,6 +445,20 @@ defmodule Emisar.Catalog.MCPProjection do
     if MapSet.member?(skewed_pack_ids, pack_id) do
       issue("version_skew", "In-scope runners advertise more than one exact ref for this pack.")
     end
+  end
+
+  defp put_version_skew_issues(packs) do
+    skewed_pack_ids =
+      packs
+      |> Enum.group_by(& &1.pack_id)
+      |> Enum.filter(fn {_pack_id, versions} -> length(versions) > 1 end)
+      |> Enum.map(fn {pack_id, _versions} -> pack_id end)
+      |> MapSet.new()
+
+    Enum.map(packs, fn pack ->
+      issue = version_skew_issue(pack.pack_id, skewed_pack_ids)
+      %{pack | issues: unique_issues(Enum.reject([issue | pack.issues], &is_nil/1))}
+    end)
   end
 
   defp connection_issue(%Runners.Runner{} = runner) do
@@ -543,11 +526,6 @@ defmodule Emisar.Catalog.MCPProjection do
 
   defp last_seen_at(%Runners.Runner{} = runner) do
     runner.last_heartbeat_at || runner.last_disconnected_at || runner.last_connected_at
-  end
-
-  defp pack_id_from_ref(pack_ref) do
-    {:ok, {pack_id, _version, _hash}} = parse_pack_ref(pack_ref)
-    pack_id
   end
 
   defp issue(code, message), do: %{code: code, message: message}

@@ -66,7 +66,7 @@
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {tool, purpose} <- [
-                {"list_packs", "List in-scope packs with bounded action summaries and deployment issues."},
+                {"list_packs", "List operator-trusted in-scope packs with bounded action summaries and deployment issues."},
                 {"list_runners", "Inspect runner connectivity, compatibility, and exact runner refs."},
                 {"find_actions", "Find a bounded set of actions by task or exact identifiers."},
                 {"get_action", "Read one immutable action contract and its compatible runners."},
@@ -103,8 +103,10 @@
           is the normal path and omits capabilities that
           cannot run anywhere in scope. <code>availability: "all"</code>
           is diagnostic: it preserves
-          unavailable packs and actions together with issue codes such as disconnected,
-          untrusted, retired, or descriptor mismatch.
+          trusted but unavailable packs and actions together with deployment issues such as no
+          connected runner, a missing executable, or descriptor mismatch. Pending, rejected,
+          revoked, and retirement-blocked pack refs are operator-only facts; MCP discovery omits
+          them. When an expected ref is absent, review it on the portal's Packs page.
         </p>
         <p>
           A <code>pack_ref</code>
@@ -215,8 +217,7 @@
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {code, meaning, next} <- [
                 {"target_contract_changed", "The selected action, pack, or runner generation is stale.", "Call get_action again and make a fresh selection."},
-                {"pack_untrusted", "The exact pack hash has not been trusted.", "A human trusts it on the Packs page."},
-                {"pack_retired", "A critical update retired this exact pack.", "Update the pack or explicitly re-trust it."},
+                {"action_unavailable", "No currently visible exact action contract is executable.", "Run find_actions again and inspect a fresh selection."},
                 {"pending_approval", "Policy parked the run for a human decision.", "Call wait_for_run until it changes."},
                 {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error; do not retry."},
                 {"signed_runbook_unsupported", "A runbook includes signature-enforcing targets.", "Use individually signed run_action calls."}
