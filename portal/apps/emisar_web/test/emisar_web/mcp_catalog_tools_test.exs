@@ -57,9 +57,44 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert byte_size(encoded) <= ResponseBudget.max_frame_bytes()
 
     by_name = Map.new(result, &{&1["name"], &1})
-    assert get_in(by_name, ["run_action", "annotations", "destructiveHint"]) == true
-    assert get_in(by_name, ["execute_runbook", "annotations", "destructiveHint"]) == true
-    assert get_in(by_name, ["create_runbook_draft", "annotations", "openWorldHint"]) == false
+
+    read_annotations = %{
+      "readOnlyHint" => true,
+      "destructiveHint" => false,
+      "idempotentHint" => true,
+      "openWorldHint" => false
+    }
+
+    for name <- ~w(
+          list_packs
+          list_runners
+          find_actions
+          get_action
+          get_operation
+          wait_for_run
+          recent_runs
+          list_runbooks
+          get_runbook
+        ) do
+      assert by_name[name]["annotations"] == read_annotations
+    end
+
+    destructive_annotations = %{
+      "readOnlyHint" => false,
+      "destructiveHint" => true,
+      "idempotentHint" => false,
+      "openWorldHint" => true
+    }
+
+    assert by_name["run_action"]["annotations"] == destructive_annotations
+    assert by_name["execute_runbook"]["annotations"] == destructive_annotations
+
+    assert by_name["create_runbook_draft"]["annotations"] == %{
+             "readOnlyHint" => false,
+             "destructiveHint" => false,
+             "idempotentHint" => false,
+             "openWorldHint" => false
+           }
   end
 
   test "published scalar types are enforced without string coercion", %{

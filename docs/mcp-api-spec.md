@@ -301,15 +301,19 @@ behavior each static MCP tool can reach; Emisar owns the action-specific risk,
 authorization, and approval decision:
 
 - Catalog, history, and wait tools advertise `readOnlyHint: true` and
-  `idempotentHint: true`.
+  `idempotentHint: true`. They also advertise `openWorldHint: false`: these
+  tools read only the authenticated account's closed Emisar catalog, runner,
+  runbook, operation, and run state; they neither contact arbitrary external
+  entities nor change publicly visible internet state.
 - `create_runbook_draft` advertises `readOnlyHint: false`,
   `destructiveHint: false`, `idempotentHint: false`, and
   `openWorldHint: false`: it saves only a portal-local proposal.
 - `run_action` and `execute_runbook` advertise `readOnlyHint: false`,
-  `destructiveHint: true`, and `idempotentHint: false`. Each static tool spans
-  low-risk through critical operations, so the conservative hint reports the
-  irreversible effects some calls can cause. It does not replace Emisar's exact
-  policy and approval gate.
+  `destructiveHint: true`, `idempotentHint: false`, and `openWorldHint: true`.
+  Each static tool spans low-risk through critical operations, including packs
+  that call public cloud APIs or alter internet-facing production services, so
+  the conservative hints report the external and irreversible effects some
+  calls can cause. They do not replace Emisar's exact policy and approval gate.
 
 These are model/UI hints, not authorization or confirmation gates. A client may
 apply its own confirmation UI; that does not replace Emisar authorization or

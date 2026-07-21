@@ -477,6 +477,7 @@ defmodule EmisarWeb.Router do
     # Discovery (RFC 9728 + RFC 8414) — public, unauthenticated.
     get "/.well-known/oauth-protected-resource", OAuthMetadataController, :protected_resource
     get "/.well-known/oauth-authorization-server", OAuthMetadataController, :authorization_server
+    get "/.well-known/openai-apps-challenge", DomainVerificationController, :openai_apps_challenge
 
     # Dynamic Client Registration + token endpoint — public (clients are
     # PKCE public clients), and deliberately CSRF-free since the MCP
