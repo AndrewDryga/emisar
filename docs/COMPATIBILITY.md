@@ -259,8 +259,8 @@ entry points and both select binaries from GitHub Releases.
 **How they are versioned today.** The script interfaces are flag- and
 environment-based, not protocol-negotiated. `install.sh` accepts runner tags
 in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
-`--uninstall`, `--purge`, `--no-start`, `--no-service`, `--bin-dir`,
-`--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its environment
+`--uninstall`, `--purge`, `--reset-identity`, `--no-start`, `--no-service`,
+`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its environment
 includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
 `EMISAR_URL`, and `EMISAR_ENROLLMENT_KEY`.
 An unattended runner install requires `--yes` plus an explicit

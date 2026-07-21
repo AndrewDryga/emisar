@@ -101,6 +101,181 @@ case "$module" in
       require_explicit_unattended_packs
     )
 
+    auth_state_lib="$tmp/runner-auth-state.sh"
+    extract_shell_function install.sh validate_enrollment_key_input >"$auth_state_lib"
+    extract_shell_function install.sh runner_auth_state_exists >>"$auth_state_lib"
+    extract_shell_function install.sh prepare_enrollment_key_update >>"$auth_state_lib"
+    extract_shell_function install.sh write_enrollment_key >>"$auth_state_lib"
+    extract_shell_function install.sh remove_runner_auth_state >>"$auth_state_lib"
+    extract_shell_function install.sh backup_enrollment_state >>"$auth_state_lib"
+    extract_shell_function install.sh restore_enrollment_state >>"$auth_state_lib"
+
+    # A changed enrollment key updates only that line. Interactive consent can
+    # reset token + identity while preserving pack credentials and local audit
+    # evidence.
+    mkdir -p "$tmp/auth-reset/etc" "$tmp/auth-reset/data"
+    cat >"$tmp/auth-reset/etc/runner.env" <<'RUNNER_ENV'
+EMISAR_ENROLLMENT_KEY=emkey-enroll-AAAAAAAAAAAAAAAAAAAA
+NOMAD_TOKEN=keep-this-pack-secret
+RUNNER_ENV
+    : >"$tmp/auth-reset/data/token"
+    : >"$tmp/auth-reset/data/token.json"
+    : >"$tmp/auth-reset/data/runner_id"
+    : >"$tmp/auth-reset/data/dispatches.jsonl"
+    (
+      # shellcheck disable=SC1090
+      source "$auth_state_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      confirm() { return 0; }
+      # Read by the sourced installer functions.
+      # shellcheck disable=SC2030,SC2034
+      ETC_DIR="$tmp/auth-reset/etc"
+      DATA_DIR="$tmp/auth-reset/data"
+      SERVICE_GROUP=root
+      EMISAR_ENROLLMENT_KEY=emkey-enroll-BBBBBBBBBBBBBBBBBBBB
+      ASSUME_YES=0
+      RESET_IDENTITY=0
+      RESET_RUNNER_AUTH_STATE=0
+      ENROLLMENT_KEY_UPDATE=0
+      prepare_enrollment_key_update
+      test "$ENROLLMENT_KEY_UPDATE" = 1
+      test "$RESET_RUNNER_AUTH_STATE" = 1
+      write_enrollment_key
+      remove_runner_auth_state
+    )
+    grep -Fqx 'EMISAR_ENROLLMENT_KEY=emkey-enroll-BBBBBBBBBBBBBBBBBBBB' \
+      "$tmp/auth-reset/etc/runner.env"
+    grep -Fqx 'NOMAD_TOKEN=keep-this-pack-secret' "$tmp/auth-reset/etc/runner.env"
+    test ! -e "$tmp/auth-reset/data/token"
+    test ! -e "$tmp/auth-reset/data/token.json"
+    test ! -e "$tmp/auth-reset/data/runner_id"
+    test -e "$tmp/auth-reset/data/dispatches.jsonl"
+
+    # --yes updates a changed enrollment key but preserves identity unless the
+    # caller explicitly opts into the destructive reset.
+    mkdir -p "$tmp/auth-unattended/etc" "$tmp/auth-unattended/data"
+    printf 'EMISAR_ENROLLMENT_KEY=emkey-enroll-CCCCCCCCCCCCCCCCCCCC\n' \
+      >"$tmp/auth-unattended/etc/runner.env"
+    : >"$tmp/auth-unattended/data/token"
+    : >"$tmp/auth-unattended/data/runner_id"
+    (
+      # shellcheck disable=SC1090
+      source "$auth_state_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      confirm() { echo "unexpected identity-reset prompt" >&2; exit 1; }
+      # Read by the sourced installer functions.
+      # shellcheck disable=SC2030,SC2034
+      ETC_DIR="$tmp/auth-unattended/etc"
+      DATA_DIR="$tmp/auth-unattended/data"
+      SERVICE_GROUP=root
+      EMISAR_ENROLLMENT_KEY=emkey-enroll-DDDDDDDDDDDDDDDDDDDD
+      ASSUME_YES=1
+      RESET_IDENTITY=0
+      RESET_RUNNER_AUTH_STATE=0
+      ENROLLMENT_KEY_UPDATE=0
+      prepare_enrollment_key_update
+      test "$ENROLLMENT_KEY_UPDATE" = 1
+      test "$RESET_RUNNER_AUTH_STATE" = 0
+      write_enrollment_key
+    )
+    test -e "$tmp/auth-unattended/data/token"
+    test -e "$tmp/auth-unattended/data/runner_id"
+
+    # The destructive unattended path requires --reset-identity.
+    (
+      # shellcheck disable=SC1090
+      source "$auth_state_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      confirm() { echo "unexpected identity-reset prompt" >&2; exit 1; }
+      # Read by the sourced installer functions.
+      # shellcheck disable=SC2030,SC2034
+      ETC_DIR="$tmp/auth-unattended/etc" DATA_DIR="$tmp/auth-unattended/data" \
+        SERVICE_GROUP=root \
+        EMISAR_ENROLLMENT_KEY=emkey-enroll-EEEEEEEEEEEEEEEEEEEE \
+        ASSUME_YES=1 RESET_IDENTITY=1 RESET_RUNNER_AUTH_STATE=0 \
+        ENROLLMENT_KEY_UPDATE=0
+      prepare_enrollment_key_update
+      test "$RESET_RUNNER_AUTH_STATE" = 1
+      write_enrollment_key
+      remove_runner_auth_state
+    )
+    test ! -e "$tmp/auth-unattended/data/token"
+    test ! -e "$tmp/auth-unattended/data/runner_id"
+
+    # Removal failures are fatal rather than reporting a clean uninstall while
+    # credentials remain behind.
+    mkdir -p "$tmp/auth-failure/data/token"
+    if (
+      # shellcheck disable=SC1090
+      source "$auth_state_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # Read by the sourced installer function.
+      # shellcheck disable=SC2030,SC2034
+      DATA_DIR="$tmp/auth-failure/data"
+      remove_runner_auth_state
+    ) >"$tmp/auth-removal-failure.log" 2>&1; then
+      echo "runner auth-state removal failure unexpectedly succeeded" >&2
+      exit 1
+    fi
+    grep -Fq "could not remove runner authentication state" \
+      "$tmp/auth-removal-failure.log"
+
+    # A failed startup after a key change restores the old secret and both
+    # authentication files before the previous service is restarted.
+    mkdir -p "$tmp/auth-rollback/etc" "$tmp/auth-rollback/data" \
+      "$tmp/auth-rollback/backup"
+    rollback_backup="$tmp/auth-rollback/backup"
+    printf 'EMISAR_ENROLLMENT_KEY=emkey-enroll-FFFFFFFFFFFFFFFFFFFF\n' \
+      >"$tmp/auth-rollback/etc/runner.env"
+    printf 'old-token\n' >"$tmp/auth-rollback/data/token"
+    printf 'old-identity\n' >"$tmp/auth-rollback/data/runner_id"
+    (
+      # shellcheck disable=SC1090
+      source "$auth_state_lib"
+      # Called by the sourced installer functions.
+      # shellcheck disable=SC2317,SC2329
+      die() { echo "$*" >&2; exit 1; }
+      # shellcheck disable=SC2317,SC2329
+      log() { :; }
+      # shellcheck disable=SC2317,SC2329
+      warn() { :; }
+      # Read by the sourced installer functions.
+      # shellcheck disable=SC2030,SC2034
+      ETC_DIR="$tmp/auth-rollback/etc" DATA_DIR="$tmp/auth-rollback/data" \
+        SERVICE_GROUP=root \
+        EMISAR_ENROLLMENT_KEY=emkey-enroll-GGGGGGGGGGGGGGGGGGGG \
+        ENROLLMENT_KEY_UPDATE=1 ENROLLMENT_STATE_BACKED_UP=0
+      tmp="$rollback_backup" backup_enrollment_state
+      write_enrollment_key
+      remove_runner_auth_state
+      printf 'new-token\n' >"$DATA_DIR/token"
+      printf 'new-identity\n' >"$DATA_DIR/runner_id"
+      ENROLLMENT_STATE_BACKED_UP=1 tmp="$rollback_backup" restore_enrollment_state
+    )
+    grep -Fqx 'EMISAR_ENROLLMENT_KEY=emkey-enroll-FFFFFFFFFFFFFFFFFFFF' \
+      "$tmp/auth-rollback/etc/runner.env"
+    grep -Fqx 'old-token' "$tmp/auth-rollback/data/token"
+    grep -Fqx 'old-identity' "$tmp/auth-rollback/data/runner_id"
+
     EMISAR_PACKS="" bash install.sh --yes --no-service \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/etc" \
@@ -240,11 +415,14 @@ FAKE_RUNNER
         log() { :; }
         log ""
         export SERVICE_USER=nobody
+        # shellcheck disable=SC2031
         export SERVICE_GROUP
         SERVICE_GROUP=$(id -gn nobody)
         export OS=linux
         export INIT=systemd
+        # shellcheck disable=SC2031
         export ETC_DIR="$tmp/service-etc"
+        # shellcheck disable=SC2031
         export DATA_DIR="$tmp/service-data"
         export LOG_DIR="$tmp/service-log"
         ensure_dirs

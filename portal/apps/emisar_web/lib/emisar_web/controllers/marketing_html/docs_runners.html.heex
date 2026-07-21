@@ -207,14 +207,37 @@ execution:
       </ul>
 
       <.docs_h2 id="removing">Removing a runner</.docs_h2>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the host — remove binary + service (keep config/data/logs)</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove binary + service + cached token + generated identity</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Then delete the runner in the dashboard. Its run history and audit events stay — history
-        survives the host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
-        deletes the local journal too, so export it first if you keep host-side forensics.
+        Default uninstall deletes the cached runner token and generated identity. Then delete the
+        runner in the dashboard. Its run history and audit events stay — history survives the
+        host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+        deletes the local
+        journal, configuration, and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
+        secrets too, so export the journal first if you keep host-side forensics.
+      </p>
+
+      <.docs_h3 id="resetting-identity">Resetting identity manually</.docs_h3>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Put a new enrollment key in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>,
+        then stop the runner before removing its token and generated identity:
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl stop emisar
+<span class="text-zinc-500">$</span> sudo rm -f /var/lib/emisar/token /var/lib/emisar/token.json /var/lib/emisar/runner_id
+<span class="text-zinc-500">$</span> sudo systemctl start emisar</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        A reinstall with a different
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
+        offers the same reset. In unattended installs, add
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--reset-identity</code>
+        explicitly.
+        For custom paths, remove
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.token_path</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">paths.data_dir/runner_id</code>.
       </p>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">

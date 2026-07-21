@@ -1001,6 +1001,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar audit verify --all"
       assert html =~ "--uninstall"
       assert html =~ "--purge"
+      assert html =~ "--reset-identity"
+      assert html =~ "/var/lib/emisar/runner_id"
       assert html =~ "https://emisar.dev/install.sh"
     end
 

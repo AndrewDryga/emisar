@@ -242,9 +242,32 @@ To remove the service while retaining configuration and local evidence:
 sudo bash install.sh --uninstall
 ```
 
-Add `--purge` only when `/etc/emisar`, `/var/lib/emisar`, and
-`/var/log/emisar` should also be deleted. Preserve or export the local journal
-first.
+The default uninstall deletes the cached runner token and generated
+`runner_id`. It keeps `/etc/emisar`, the dispatch journal and signing nonces in
+`/var/lib/emisar`, and `/var/log/emisar`. Add `--purge` only when those retained
+files should also be deleted. The enrollment key and pack secrets in
+`runner.env` are therefore retained without `--purge`. Preserve or export the
+local journal first.
+
+When an upgrade supplies a different `EMISAR_ENROLLMENT_KEY`, the installer
+updates that line in `runner.env` and asks whether the host should get a new
+runner identity. Answer no to re-register the existing identity with the new
+key. Answer yes to delete the cached token and `runner_id` before restart.
+Unattended installs preserve identity unless `--reset-identity` is explicit.
+
+To perform the identity reset manually on a default systemd install, put the
+new enrollment key in `/etc/emisar/runner.env`, then run:
+
+```sh
+sudo systemctl stop emisar
+sudo rm -f /var/lib/emisar/token /var/lib/emisar/token.json \
+  /var/lib/emisar/runner_id
+sudo systemctl start emisar
+```
+
+For custom installs, remove the configured `cloud.token_path` and
+`<paths.data_dir>/runner_id` instead. Delete the old runner in the dashboard
+first when replacing it in the same account; runner names must be unique.
 
 ## Signed dispatch (optional)
 
