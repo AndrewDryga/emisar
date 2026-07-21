@@ -138,7 +138,7 @@ livebook_home_probe=$(docker run --rm --read-only --user 1000:1000 \
   ')
 [ "$livebook_home_probe" = 'livebook-home-exec-ok' ]
 
-for script in "$tmp"/*.sh "$livebook_scripts"/*; do
+for script in "$tmp"/*.sh "$livebook_scripts"/* "${infra_dir}/scripts/portal"; do
   bash -n "$script"
   shellcheck "$script"
 done

@@ -91,6 +91,31 @@ The load balancer uses DB-independent `/healthz` for auto-healing and DB-aware
 `/readyz` for traffic eligibility. Backend HTTP accepts only Google proxy and
 health-check source ranges. Public traffic terminates TLS at the load balancer.
 
+## Portal VM operations
+
+Use `scripts/portal` for IAP and OS Login access to the portal fleet. It limits
+the picker to instances carrying the `cluster_name=emisar` label, supports fzf
+multi-selection for read-only inspection and commands, and caches the selection
+per shell session for repeated checks.
+
+```sh
+scripts/portal status
+scripts/portal logs
+scripts/portal --host emisar-example-a logs -f
+scripts/portal version
+scripts/portal remsh
+scripts/portal cmd 'uptime && free -h'
+scripts/portal --reuse-last-selection logs
+scripts/portal --list-hosts
+scripts/portal --host emisar-example-a --host emisar-example-b version
+```
+
+The helper uses the active gcloud project by default. Pass `--project`, or set
+`EMISAR_GCP_PROJECT`, when the active configuration points elsewhere. `gcloud`
+and, for interactive selection, `fzf` are required; the operator must have IAP
+tunnel and OS Login access. `--list-hosts` prints one eligible VM name per line
+for automation, and repeated `--host` options select exact VMs without fzf.
+
 ## Livebook admin workbench
 
 The optional Livebook instance is a production admin/debug host. Enable it with
