@@ -64,7 +64,6 @@ locals {
     start_script              = local.start_script
     admin_runner_config       = local.admin_runner_config
     admin_runner_start_script = local.admin_runner_start_script
-    admin_runner_install      = file("${path.module}/../install.sh")
     admin_runner_pack_files   = local.admin_runner_pack_files
   })
 

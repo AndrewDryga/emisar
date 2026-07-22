@@ -50,7 +50,6 @@ locals {
     start_script              = local.start
     admin_runner_config       = local.admin_runner_config
     admin_runner_start_script = local.admin_runner_start
-    admin_runner_install      = file("${path.module}/../../../install.sh")
     admin_runner_pack_files   = local.admin_runner_pack_files
     container_image           = local.common.container_image
     cloud_sql_proxy_image     = local.common.cloud_sql_proxy_image

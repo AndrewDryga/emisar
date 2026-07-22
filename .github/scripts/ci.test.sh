@@ -100,14 +100,15 @@ assert_output portal=false "$out"
 assert_output portal_release=false "$out"
 assert_output packs_release=false "$out"
 
-# The checked-in installer is embedded into cloud-init as well as the portal.
+# The checked-in installer is embedded into the portal image. The private admin
+# runner retrieves that tested copy locally after the portal starts.
 git -C "$tmp" reset --hard -q "$base"
 printf '\n# selector fixture\n' >>"$tmp/install.sh"
 git -C "$tmp" add install.sh
 git -C "$tmp" commit -qm installer-input
 out="$tmp/installer-input.out"
 (cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
-assert_output infra=true "$out"
+assert_output infra=false "$out"
 assert_output portal=true "$out"
 assert_output portal_release=true "$out"
 

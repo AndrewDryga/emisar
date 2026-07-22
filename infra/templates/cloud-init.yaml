@@ -24,11 +24,6 @@ write_files:
     content: |
       ${indent(6, admin_runner_start_script)}
 
-  - path: /var/lib/emisar-admin-runner/install.sh
-    permissions: "0444"
-    content: |
-      ${indent(6, admin_runner_install)}
-
 %{ for path, content in admin_runner_pack_files ~}
   - path: /var/lib/emisar-admin-runner/packs/${path}
     encoding: b64

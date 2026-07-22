@@ -3,6 +3,17 @@ set -euo pipefail
 
 install -d -m 0700 /run/emisar-admin-runner
 
+for attempt in $(seq 1 60); do
+  if docker exec emisar /app/bin/emisar pid >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" = 60 ]; then
+    echo "local emisar release did not become available" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 token_response=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   --retry-connrefused --connect-timeout 5 --max-time 30 \
   -H "Metadata-Flavor: Google" \
@@ -42,31 +53,28 @@ runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
 installed_version=$($runner --version 2>/dev/null || true)
 if [ "$installed_version" != "$expected_version" ]; then
+  installer=$(mktemp /run/emisar-admin-runner/install.XXXXXX)
+  trap 'rm -f "$installer"' EXIT
+  curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+    --retry-connrefused --connect-timeout 5 --max-time 30 \
+    -H 'x-forwarded-proto: https' \
+    http://127.0.0.1:4000/install.sh -o "$installer"
   EMISAR_PACKS='' \
   BIN_DIR=/run/emisar-admin-runner/bin \
   ETC_DIR=/var/lib/emisar-admin-runner \
   DATA_DIR=/var/lib/emisar-admin-runner/data \
   LOG_DIR=/var/lib/emisar-admin-runner/log \
-    /bin/bash /var/lib/emisar-admin-runner/install.sh \
+    /bin/bash "$installer" \
       --version "${runner_version}" \
       --no-service \
       --yes \
       --packs ''
+  rm -f "$installer"
+  trap - EXIT
 fi
 
 [ "$($runner --version)" = "$expected_version" ]
 test -f /var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml
 test -x /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
-
-for attempt in $(seq 1 60); do
-  if docker exec emisar /app/bin/emisar pid >/dev/null 2>&1; then
-    break
-  fi
-  if [ "$attempt" = 60 ]; then
-    echo "local emisar release did not become available" >&2
-    exit 1
-  fi
-  sleep 2
-done
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml
