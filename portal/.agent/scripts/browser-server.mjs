@@ -1,18 +1,30 @@
 import puppeteer from "puppeteer-core";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
+import {
+  resolveChrome,
+  containerChromeArgs,
+  developmentCertificateArgs,
+} from "./resolve-chrome.mjs";
 
 const state = process.env.BROWSER_STATE;
 if (!state) throw new Error("BROWSER_STATE is required");
 mkdirSync(dirname(state), { recursive: true });
+const tlsSpki = process.env.EMISAR_DEV_TLS_SPKI;
 
 const browser = await puppeteer.launch({
   executablePath: resolveChrome(),
   headless: "new",
   userDataDir: process.env.BROWSER_PROFILE ?? process.env.PROFILE_DIR,
-  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
+  args: [
+    ...containerChromeArgs,
+    ...developmentCertificateArgs(tlsSpki),
+    "--force-prefers-reduced-motion",
+  ],
 });
+if (process.env.BROWSER_TLS_MARKER) {
+  writeFileSync(process.env.BROWSER_TLS_MARKER, tlsSpki, { mode: 0o600 });
+}
 
 const tmp = `${state}.${process.pid}`;
 writeFileSync(
@@ -21,6 +33,7 @@ writeFileSync(
     pid: process.pid,
     browserPid: browser.process()?.pid,
     wsEndpoint: browser.wsEndpoint(),
+    tlsSpki,
   }),
   { mode: 0o600 },
 );

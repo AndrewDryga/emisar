@@ -141,6 +141,7 @@ Keycloak in the workspace-isolated Coop dependency stack:
 
 ```sh
 dev/run setup       # first run: tools, sidecars, deps, browser, migrations
+dev/run certs trust # macOS: trust this workspace's Keycloak CA for localhost
 dev/run seed        # explicit, idempotent demo data
 dev/run serve       # live reload at the URL printed by Coop
 ```

@@ -44,7 +44,9 @@ dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/p
 
 Coop mirrors the public workspace URL back into the box, so LiveView and OIDC
 use the same URL as the host browser. `dev/run shot` keeps a browser process
-alive between captures; `dev/run browser stop` releases it.
+alive between captures; `dev/run browser stop` releases it. Browser automation
+allows the active Keycloak leaf certificate by its exact SPKI hash. It does not
+disable certificate validation globally.
 
 ## Run
 

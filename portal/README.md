@@ -26,6 +26,7 @@ Run from the repository root:
 
 ```sh
 dev/run setup
+dev/run certs trust # macOS, once per workspace
 dev/run seed       # only when demo data is wanted
 dev/run serve
 ```
@@ -37,6 +38,10 @@ seeded owner is `demo@emisar.dev`; request a magic sign-in link and read it at
 
 `dev/run setup`, `serve`, and `reset` migrate but do not seed. Use `dev/run seed`
 or `dev/run reset --seed` when the fixtures need to be refreshed.
+
+For the shortest feedback loop, use `dev/run check changed` and
+`dev/run test portal --stale`; `dev/run test portal --failed` re-runs only the
+previous failures. The full pre-commit surface remains `dev/run gate portal`.
 
 The repository-root `docker-compose.yml` starts the complete local stack,
 including sample runners. Production delivery is documented in

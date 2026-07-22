@@ -17,7 +17,10 @@ out=generated
 mkdir -p "$out"
 chmod 700 "$out"
 
-DAYS=3650
+FORMAT=2
+CA_DAYS=3650
+TLS_DAYS=397
+RENEW_BEFORE=$((30 * 86400))
 # Both the dynamic Coop sidecar and packaged smoke stack use localhost with a
 # workspace-specific or fixed port. Loopback is the only identity verified by
 # this certificate.
@@ -41,11 +44,13 @@ basicConstraints     = critical,CA:TRUE
 keyUsage             = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
 EOF
+ca_changed=0
 if [[ ! -s "$out/ca.key" || ! -s "$out/ca.crt" ]]; then
   openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "$tmp/ca.key" -out "$tmp/ca.crt" -days "$DAYS" -config "$tmp/ca.cnf"
+    -keyout "$tmp/ca.key" -out "$tmp/ca.crt" -days "$CA_DAYS" -config "$tmp/ca.cnf"
   install -m 600 "$tmp/ca.key" "$out/ca.key"
   install -m 644 "$tmp/ca.crt" "$out/ca.crt"
+  ca_changed=1
 fi
 
 # --- server cert (signed by the CA) -----------------------------------------
@@ -55,14 +60,21 @@ basicConstraints = critical,CA:FALSE
 keyUsage         = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 EOF
+if [[ $ca_changed -eq 1 || "$(cat "$out/format" 2>/dev/null || true)" != "$FORMAT" ]] ||
+  ! openssl x509 -in "$out/tls.crt" -checkend "$RENEW_BEFORE" -noout >/dev/null 2>&1 ||
+  ! openssl verify -CAfile "$out/ca.crt" "$out/tls.crt" >/dev/null 2>&1; then
+  rm -f "$out/tls.key" "$out/tls.crt"
+fi
 if [[ ! -s "$out/tls.key" || ! -s "$out/tls.crt" ]]; then
   openssl req -newkey rsa:2048 -nodes -keyout "$tmp/tls.key" \
     -out "$tmp/tls.csr" -subj "/CN=keycloak"
   openssl x509 -req -in "$tmp/tls.csr" -CA "$out/ca.crt" -CAkey "$out/ca.key" \
-    -CAcreateserial -out "$tmp/tls.crt" -days "$DAYS" -extfile "$tmp/srv.cnf"
+    -CAcreateserial -out "$tmp/tls.crt" -days "$TLS_DAYS" -extfile "$tmp/srv.cnf"
   install -m 600 "$tmp/tls.key" "$out/tls.key"
   install -m 644 "$tmp/tls.crt" "$out/tls.crt"
 fi
+printf '%s\n' "$FORMAT" >"$out/format"
+chmod 600 "$out/format"
 
 openssl verify -CAfile "$out/ca.crt" "$out/tls.crt"
 echo "✓ Keycloak dev certificates ready in $out/ (SAN: $SAN)"

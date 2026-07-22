@@ -7,6 +7,7 @@ SCREENSHOTS="$PORTAL/.agent/scripts"
 CERTS="$ROOT/dev/keycloak/certs/generated"
 OIDC_SECRET="emisar-oidc-dev-secret-DO-NOT-USE-IN-PROD"
 SCIM_TOKEN="dev-scim-token"
+CERTS_CHANGED=0
 
 die() { echo "dev/run: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing $1"; }
@@ -23,12 +24,14 @@ usage: dev/run <command> [args]
   reset [--seed] [--yes]   destroy and recreate the dev database
   urls                     print this workspace's Portal, Postgres, and Keycloak URLs
   doctor                   verify tools, TLS, dependencies, and the OIDC issuer
-  certs [--rotate]         create or intentionally rotate ignored Keycloak certificates
+  certs [--rotate|trust|untrust|status]
+                           manage ignored Keycloak certificates and host trust
   browser <start|stop|status|install>
   shot <path> ...          capture through the persistent browser (shot.mjs args)
   capture <docs|console>   run a full screenshot workflow against this workspace
-  check portal             compile, format-check, and run Credo
-  test portal <paths...>   run focused Portal tests
+  check changed            compile, then check only changed Portal source files
+  check portal             compile, format-check, and run Credo for all Portal files
+  test portal <args...>    run focused, --stale, --failed, or listening Portal tests
   gate portal              run the canonical Portal gate
   pack check <name>        validate one pack without changing artifacts
   pack sync <name> --fix   rebuild the authoritative catalog and focused tests
@@ -88,17 +91,131 @@ make_ca_bundle() {
   mv "$tmp" "$EMISAR_DEV_CA_BUNDLE"
 }
 
-certs() {
+certs_generate() {
   in_box && die "generate or rotate development certificates on the host"
+  local before="" after
+  if [[ -s "$CERTS/tls.crt" ]]; then
+    before=$(openssl x509 -in "$CERTS/tls.crt" -noout -fingerprint -sha256 2>/dev/null || true)
+  fi
   "$ROOT/dev/keycloak/certs/gen.sh" "$@"
+  after=$(openssl x509 -in "$CERTS/tls.crt" -noout -fingerprint -sha256)
+  [[ -n "$before" && "$before" == "$after" ]] && CERTS_CHANGED=0 || CERTS_CHANGED=1
+}
+
+refresh_coop_services_for_certificate() {
+  [[ $CERTS_CHANGED -eq 1 ]] || return 0
+  need coop
+  echo "recreating dependency services after Keycloak certificate change"
+  (cd "$ROOT" && coop down && coop up)
+}
+
+cert_fingerprint() {
+  [[ -s "$CERTS/ca.crt" ]] || die "Keycloak CA is missing; run dev/run certs"
+  need openssl
+  openssl x509 -in "$CERTS/ca.crt" -noout -fingerprint -sha256 |
+    sed 's/^.*=//; s/://g' |
+    tr '[:lower:]' '[:upper:]'
+}
+
+login_keychain() {
+  need security
+  security default-keychain -d user | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//'
+}
+
+require_macos_host() {
+  in_box && die "manage host browser trust from the host"
+  [[ "$(uname -s)" == Darwin ]] || die "host browser trust is currently supported on macOS only"
+}
+
+cert_installed() {
+  local fingerprint keychain
+  fingerprint=$(cert_fingerprint)
+  keychain=$(login_keychain)
+  security find-certificate -a -Z -c "emisar dev CA" "$keychain" 2>/dev/null |
+    grep -Fq "SHA-256 hash: $fingerprint"
+}
+
+cert_trusted() {
+  cert_installed &&
+    security verify-cert -q -c "$CERTS/tls.crt" -p ssl -s localhost -L >/dev/null 2>&1
+}
+
+cert_trust() {
+  require_macos_host
+  certs_generate
+  refresh_coop_services_for_certificate
+  if cert_trusted; then
+    echo "✓ Keycloak dev CA already trusted for https://localhost"
+    return
+  fi
+
+  local keychain
+  keychain=$(login_keychain)
+  security add-trusted-cert -r trustRoot -p ssl -s localhost -k "$keychain" "$CERTS/ca.crt"
+  cert_trusted || die "macOS did not trust the Keycloak dev CA"
+  echo "✓ trusted Keycloak dev CA for https://localhost in $keychain"
+}
+
+cert_untrust() {
+  require_macos_host
+  [[ -s "$CERTS/ca.crt" ]] || { echo "Keycloak dev CA is not generated"; return; }
+  if ! cert_installed; then
+    echo "Keycloak dev CA is not installed in the user keychain"
+    return
+  fi
+
+  local fingerprint keychain
+  fingerprint=$(cert_fingerprint)
+  keychain=$(login_keychain)
+  security delete-certificate -t -Z "$fingerprint" "$keychain" >/dev/null
+  if cert_installed; then
+    die "could not remove Keycloak dev CA $fingerprint from $keychain"
+  fi
+  echo "✓ removed Keycloak dev CA $fingerprint from $keychain"
+}
+
+cert_trust_status() {
+  require_macos_host
+  if cert_trusted; then
+    echo "trusted for https://localhost ($(cert_fingerprint))"
+    return
+  fi
+  echo "not trusted; run: dev/run certs trust"
+  return 1
+}
+
+certs_rotate() {
+  in_box && die "generate or rotate development certificates on the host"
+  local restore_trust=0
+  if [[ "$(uname -s)" == Darwin && -s "$CERTS/ca.crt" ]] && cert_installed; then
+    restore_trust=1
+    cert_untrust
+  fi
+  certs_generate --rotate
+  refresh_coop_services_for_certificate
+  [[ $restore_trust -eq 0 ]] || cert_trust
+}
+
+certs_command() {
+  case "${1:-}" in
+    "") certs_generate; refresh_coop_services_for_certificate ;;
+    --rotate) [[ $# -eq 1 ]] || die "usage: dev/run certs [--rotate|trust|untrust|status]"; certs_rotate ;;
+    trust) [[ $# -eq 1 ]] || die "usage: dev/run certs trust"; cert_trust ;;
+    untrust) [[ $# -eq 1 ]] || die "usage: dev/run certs untrust"; cert_untrust ;;
+    status) [[ $# -eq 1 ]] || die "usage: dev/run certs status"; cert_trust_status ;;
+    *) die "usage: dev/run certs [--rotate|trust|untrust|status]" ;;
+  esac
 }
 
 up() {
   if in_box; then
     load_urls
   else
-    certs
+    certs_generate
     need coop
+    if [[ $CERTS_CHANGED -eq 1 ]]; then
+      (cd "$ROOT" && coop down)
+    fi
     (cd "$ROOT" && coop up)
     load_urls
   fi
@@ -274,22 +391,38 @@ doctor() {
     jq -e --arg issuer "$EMISAR_DEV_KEYCLOAK_ISSUER" '.issuer == $issuer' >/dev/null
   git -C "$ROOT" check-ignore -q dev/keycloak/certs/generated/tls.key ||
     die "generated Keycloak private keys are not ignored"
-  echo "✓ tools, services, TLS trust, exact OIDC issuer, and key isolation are healthy"
+  if ! in_box && [[ "$(uname -s)" == Darwin ]]; then
+    cert_trust_status || die "Keycloak TLS is valid, but the host browser does not trust its CA"
+  fi
+  echo "✓ tools, services, TLS, exact OIDC issuer, and key isolation are healthy"
   urls
 }
 
 browser_paths() {
   load_urls
   local key=${PORTAL_URL##*:}
+  [[ -s "$CERTS/tls.crt" ]] || die "Keycloak certificate is missing; run dev/run certs on the host"
+  need openssl
   BROWSER_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/emisar/browser-${key}.json"
   BROWSER_PROFILE="${XDG_CACHE_HOME:-$HOME/.cache}/emisar/browser-${key}-profile"
+  BROWSER_TLS_MARKER="$BROWSER_PROFILE/.emisar-tls-spki"
+  EMISAR_DEV_TLS_SPKI=$(
+    openssl x509 -in "$CERTS/tls.crt" -pubkey -noout |
+      openssl pkey -pubin -outform DER 2>/dev/null |
+      openssl dgst -sha256 -binary |
+      openssl base64 -A
+  )
+  [[ "$EMISAR_DEV_TLS_SPKI" =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "could not derive Keycloak certificate SPKI"
   export BASE_URL="$PORTAL_URL" BROWSER_STATE BROWSER_PROFILE PROFILE_DIR="$BROWSER_PROFILE"
+  export BROWSER_TLS_MARKER EMISAR_DEV_TLS_SPKI
   mkdir -p "$(dirname "$BROWSER_STATE")" "$BROWSER_PROFILE"
 }
 
 recover_browser() {
   local active="$BROWSER_PROFILE/DevToolsActivePort" lock="$BROWSER_PROFILE/SingletonLock"
   [[ -s "$active" ]] || return 1
+  [[ -s "$BROWSER_TLS_MARKER" ]] || return 1
+  [[ "$(cat "$BROWSER_TLS_MARKER")" == "$EMISAR_DEV_TLS_SPKI" ]] || return 1
   local port endpoint lock_target browser_pid tmp
   port=$(sed -n '1p' "$active")
   endpoint=$(curl -fsS "http://127.0.0.1:${port}/json/version" | jq -er '.webSocketDebuggerUrl') || return 1
@@ -297,8 +430,8 @@ recover_browser() {
   browser_pid=${lock_target##*-}
   [[ "$browser_pid" =~ ^[0-9]+$ ]] && kill -0 "$browser_pid" 2>/dev/null || return 1
   tmp="${BROWSER_STATE}.$$"
-  jq -n --argjson pid "$browser_pid" --arg endpoint "$endpoint" \
-    '{pid: $pid, browserPid: $pid, wsEndpoint: $endpoint}' >"$tmp"
+  jq -n --argjson pid "$browser_pid" --arg endpoint "$endpoint" --arg tls_spki "$EMISAR_DEV_TLS_SPKI" \
+    '{pid: $pid, browserPid: $pid, wsEndpoint: $endpoint, tlsSpki: $tls_spki}' >"$tmp"
   chmod 600 "$tmp"
   mv "$tmp" "$BROWSER_STATE"
   return 0
@@ -308,10 +441,19 @@ browser_start() {
   browser_paths
   [[ -d "$SCREENSHOTS/node_modules" ]] || install_browser
   if [[ -s "$BROWSER_STATE" ]]; then
-    local pid
+    local pid state_spki
     pid=$(jq -r '.pid // empty' "$BROWSER_STATE" 2>/dev/null || true)
-    [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null || { echo "✓ browser already running (pid $pid)"; return; }
-    rm -f "$BROWSER_STATE"
+    state_spki=$(jq -r '.tlsSpki // empty' "$BROWSER_STATE" 2>/dev/null || true)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      if [[ "$state_spki" == "$EMISAR_DEV_TLS_SPKI" ]]; then
+        echo "✓ browser already running (pid $pid)"
+        return
+      fi
+      echo "restarting browser after Keycloak certificate rotation"
+      browser_stop
+    else
+      rm -f "$BROWSER_STATE"
+    fi
   fi
   if recover_browser; then
     echo "✓ recovered workspace browser (pid $(jq -r .pid "$BROWSER_STATE"))"
@@ -370,22 +512,98 @@ capture() {
   (cd "$ROOT" && node "$SCREENSHOTS/$script")
 }
 
+changed_portal_check() {
+  local path relative has_changes=0
+  local -a format_files=() credo_files=()
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    has_changes=1
+    [[ -f "$ROOT/$path" ]] || continue
+    relative=${path#portal/}
+    case "$relative" in
+      *.ex|*.exs|*.heex) format_files+=("$relative") ;;
+    esac
+    case "$relative" in
+      *.ex|*.exs) credo_files+=("$relative") ;;
+    esac
+  done < <(
+    {
+      git -C "$ROOT" diff --name-only --diff-filter=ACMR HEAD -- portal
+      git -C "$ROOT" ls-files --others --exclude-standard -- portal
+    } | sort -u
+  )
+
+  if [[ $has_changes -eq 0 ]]; then
+    echo "✓ no changed Portal files"
+    return
+  fi
+
+  (cd "$PORTAL" && mix compile --warnings-as-errors)
+  if [[ ${#format_files[@]} -gt 0 ]]; then
+    printf 'Checking format: %s\n' "${format_files[*]}"
+    (cd "$PORTAL" && mix format --check-formatted "${format_files[@]}")
+  fi
+  if [[ ${#credo_files[@]} -gt 0 ]]; then
+    printf 'Checking Credo: %s\n' "${credo_files[*]}"
+    (cd "$PORTAL" && mix credo "${credo_files[@]}")
+  fi
+}
+
+portal_tests() {
+  local app="" arg
+  for arg in "$@"; do
+    case "$arg" in
+      apps/emisar/*)
+        [[ -z "$app" || "$app" == emisar ]] || die "focused test paths must belong to one Portal app"
+        app=emisar
+        ;;
+      apps/emisar_web/*)
+        [[ -z "$app" || "$app" == emisar_web ]] || die "focused test paths must belong to one Portal app"
+        app=emisar_web
+        ;;
+    esac
+  done
+  if [[ -z "$app" ]]; then
+    (cd "$PORTAL" && env MIX_ENV=test mix test "$@")
+    return
+  fi
+
+  local -a app_args=()
+  for arg in "$@"; do
+    case "$arg" in
+      "apps/$app/"*) app_args+=("${arg#apps/*/}") ;;
+      apps/emisar/*|apps/emisar_web/*)
+        die "focused test paths must belong to one Portal app"
+        ;;
+      *) app_args+=("$arg") ;;
+    esac
+  done
+  (cd "$PORTAL/apps/$app" && env MIX_ENV=test mix test "${app_args[@]}")
+}
+
 portal_feedback() {
-  local level=${1:?} project=${2:-}
+  local level=${1:?} target=${2:-}
   shift 2 || true
-  [[ "$project" == portal ]] || die "only the portal feedback target is currently defined"
-  up
-  case "$level" in
-    check)
+  case "$level:$target" in
+    check:changed)
+      [[ $# -eq 0 ]] || die "usage: dev/run check changed"
+      changed_portal_check
+      ;;
+    check:portal)
+      [[ $# -eq 0 ]] || die "usage: dev/run check portal"
       (cd "$PORTAL" && mix compile --warnings-as-errors && mix format --check-formatted && mix credo)
       ;;
-    test)
-      [[ $# -gt 0 ]] || die "usage: dev/run test portal <paths...>"
-      (cd "$PORTAL" && export MIX_ENV=test && mix test "$@")
+    test:portal)
+      [[ $# -gt 0 ]] || die "usage: dev/run test portal <paths...|--stale|--failed>"
+      up
+      portal_tests "$@"
       ;;
-    gate)
+    gate:portal)
+      [[ $# -eq 0 ]] || die "usage: dev/run gate portal"
+      up
       (cd "$PORTAL" && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh)
       ;;
+    *) die "usage: dev/run $level <changed|portal>" ;;
   esac
 }
 
@@ -429,7 +647,10 @@ pack_command() {
 }
 
 smoke() {
-  certs
+  certs_generate
+  if [[ $CERTS_CHANGED -eq 1 ]]; then
+    (cd "$ROOT" && docker compose down)
+  fi
   (cd "$ROOT" && docker compose up -d --build)
   echo "✓ packaged stack started at http://localhost:4010"
 }
@@ -446,7 +667,7 @@ case "$cmd" in
   reset) reset_database "$@" ;;
   urls) [[ $# -eq 0 ]] || die "usage: dev/run urls"; urls ;;
   doctor) [[ $# -eq 0 ]] || die "usage: dev/run doctor"; doctor ;;
-  certs) certs "$@" ;;
+  certs) certs_command "$@" ;;
   browser)
     sub=${1:-}; shift || true
     case "$sub" in

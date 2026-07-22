@@ -1,6 +1,10 @@
 import puppeteer from "puppeteer-core";
 import { existsSync, readFileSync } from "node:fs";
-import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
+import {
+  resolveChrome,
+  containerChromeArgs,
+  developmentCertificateArgs,
+} from "./resolve-chrome.mjs";
 
 export async function acquireBrowser({ profile } = {}) {
   const state = process.env.BROWSER_STATE;
@@ -18,7 +22,11 @@ export async function acquireBrowser({ profile } = {}) {
     executablePath: resolveChrome(),
     headless: "new",
     userDataDir: profile,
-    args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
+    args: [
+      ...containerChromeArgs,
+      ...developmentCertificateArgs(),
+      "--force-prefers-reduced-motion",
+    ],
   });
   return { browser, shared: false };
 }

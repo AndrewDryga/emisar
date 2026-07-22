@@ -20,8 +20,12 @@ dev/run serve
 Common feedback commands:
 
 ```sh
-dev/run check portal
+dev/run check changed
+dev/run test portal --stale
+dev/run test portal --failed
+dev/run test portal --stale --listen-on-stdin
 dev/run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
+dev/run check portal
 dev/run gate portal
 dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
 dev/run capture console
@@ -29,11 +33,31 @@ dev/run capture docs
 dev/run pack check redis
 ```
 
+`check changed` incrementally compiles the umbrella, then format-checks and runs
+Credo only on staged, unstaged, and untracked Portal source files. It does not
+start the dependency stack. `mix test --stale` uses Mix's module dependency
+graph rather than guessing test paths from filenames; add `--listen-on-stdin`
+and press Enter after a save to repeat that set in the same shell. `--failed`
+re-runs only the previous failures. `check portal` and `gate portal` remain the
+full pre-commit surfaces.
+
 `dev/run urls` discovers the assigned URLs without reproducing Coop's hash.
-`dev/run doctor` verifies the services, local TLS trust, exact OIDC issuer, and
-that generated private keys remain ignored. The Keycloak CA and leaf files are
-created under `keycloak/certs/generated/`; `dev/run certs --rotate` is the only
-intentional CA rotation path.
+The Keycloak CA and leaf files are created under `keycloak/certs/generated/`.
+On macOS, opt into browser trust once per workspace and remove it explicitly:
+
+```sh
+dev/run certs trust
+dev/run certs status
+dev/run certs untrust
+```
+
+Trust is limited to SSL for `localhost` in the user keychain and removal targets
+the exact CA fingerprint, so parallel workspaces do not remove each other's
+certificates. `dev/run certs --rotate` removes the old fingerprint and restores
+trust only when it was already enabled. The automated browser uses an exception
+for the exact leaf certificate SPKI, never a blanket TLS bypass. `dev/run doctor`
+verifies services, browser trust on macOS, the exact OIDC issuer, and that
+generated private keys remain ignored.
 
 Setup, serve, and reset never seed implicitly. `dev/run seed` is idempotent;
 `dev/run reset --seed` is the explicit destructive shortcut.

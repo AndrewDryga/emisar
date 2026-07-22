@@ -14,6 +14,14 @@ export const containerChromeArgs = [
   "--disable-gpu",
 ];
 
+export function developmentCertificateArgs(spki = process.env.EMISAR_DEV_TLS_SPKI) {
+  if (!spki) return [];
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(spki)) {
+    throw new Error("EMISAR_DEV_TLS_SPKI must be a base64 SHA-256 SPKI hash");
+  }
+  return [`--ignore-certificate-errors-spki-list=${spki}`];
+}
+
 // Resolve a Chrome/Chromium executable for puppeteer-core across the macOS host and a
 // coop box. Order: explicit $CHROME → macOS Google Chrome (the host default) → a
 // pinned Puppeteer headless shell, a distro-native shell (ARM Coop boxes), then
