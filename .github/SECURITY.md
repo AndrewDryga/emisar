@@ -43,6 +43,14 @@ runtime, or kernel isolation layer. Reports that boil down to
 as intended; we won't accept those as vulnerabilities. Reports that
 the runner executed something it should have refused are.
 
+## Credential incidents
+
+Operators responding to a suspected credential exposure should follow the
+[key-compromise response runbook](../docs/key-compromise.md). It separates
+runner enrollment, publisher, provider, portal, DNSSEC, and dispatch-signing
+rotation so one containment action does not silently leave another credential
+usable.
+
 ## Out of scope
 
 The following are intentionally not vulnerabilities:

@@ -46,7 +46,7 @@ while IFS= read -r -d '' file; do
       portal=true; portal_release=true
       ;;
     .trivyignore.yaml) portal=true ;;
-    .agent/scripts/check-portal-test-output.sh) portal=true ;;
+    dev/check-portal-test-output.sh) portal=true ;;
   esac
   if [ "$pack_source" = true ]; then
     portal=true; portal_release=true
@@ -55,7 +55,7 @@ while IFS= read -r -d '' file; do
   case "$file" in runner/*|install.sh|README.md|go.work|go.work.sum) runner=true ;; esac
   case "$file" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
   case "$file" in server.json) mcp_listing=true ;; esac
-  case "$file" in tools/*|go.work|go.work.sum) tools=true ;; esac
+  case "$file" in tools/*|dev/*|go.work|go.work.sum) tools=true ;; esac
   case "$file" in *.md) tools=true ;; esac
   case "$file" in
     runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum)
@@ -72,7 +72,7 @@ while IFS= read -r -d '' file; do
 
   case "$file" in infra/*) infra=true ;; .tool-versions) infra=true ;; esac
   case "$file" in
-    portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*)
+    portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|tools/browser/package-lock.json|tools/browser/package.json|.dep-age-allow|tools/cmd/depgate/*)
       deps=true
       ;;
   esac

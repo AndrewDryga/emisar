@@ -53,7 +53,7 @@ including sample runners. Production delivery is documented in
 mix compile --warnings-as-errors
 mix format --check-formatted
 mix credo
-../.agent/scripts/check-portal-test-output.sh
+../dev/check-portal-test-output.sh
 ```
 
 The final command runs both umbrella test suites and rejects warning/error log

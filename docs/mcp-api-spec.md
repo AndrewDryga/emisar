@@ -1712,7 +1712,7 @@ runner, never production actions.
 
 Project gates:
 
-- Portal: `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh`
+- Portal: `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../dev/check-portal-test-output.sh`
 - MCP and runner: `gofmt -l -s .`, `go vet ./...`, tidy with no diff, and
   `go test -race -count=1 ./...` in each module.
 - Root: attestation implementation/vector parity, compile and fixture-check all

@@ -2,7 +2,7 @@
 name: development-keycloak-certificates
 description: workspace Keycloak certificate generation, macOS browser trust, and automated Chromium trust boundaries
 subsystem: agent-stack
-sources: [dev/run, dev/keycloak/certs/gen.sh, portal/.agent/scripts/resolve-chrome.mjs, portal/.agent/scripts/browser-server.mjs]
+sources: [dev/run, dev/keycloak/certs/gen.sh, tools/browser/resolve-chrome.mjs, tools/browser/browser-server.mjs]
 updated: 2026-07-22
 ---
 

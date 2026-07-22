@@ -2,7 +2,7 @@
 name: coop-box-builds-are-isolated
 description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
-sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, dev/run, portal/config/dev.exs, portal/config/test.exs, .agent/scripts/check-portal-test-output.sh]
+sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, dev/run, portal/config/dev.exs, portal/config/test.exs, dev/check-portal-test-output.sh]
 updated: 2026-07-22
 ---
 

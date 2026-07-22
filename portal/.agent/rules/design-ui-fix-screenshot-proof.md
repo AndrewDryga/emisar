@@ -61,5 +61,5 @@ the full page would have shown.
   desktop+mobile review); no before exists there.
 
 **Enforced.** Process rule (review): a UI-fix report with no before/after pair
-in the conversation is incomplete. Mechanics: `portal/.agent/scripts/shot.mjs`
+in the conversation is incomplete. Mechanics: `dev/run shot`
 (see the README in that directory).

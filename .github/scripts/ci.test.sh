@@ -125,4 +125,15 @@ assert_output infra=true "$out"
 assert_output deps=false "$out"
 assert_no_output infra_release=true "$out"
 
+# Shared development tooling is validated by the tools job even when no Go
+# source changed.
+git -C "$tmp" reset --hard -q "$base"
+mkdir -p "$tmp/dev"
+printf '#!/usr/bin/env bash\n' >"$tmp/dev/run"
+git -C "$tmp" add .
+git -C "$tmp" commit -qm dev-tooling
+out="$tmp/dev-tooling.out"
+(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
+assert_output 'go_modules=["tools"]' "$out"
+
 echo "ok: CI selector and frozen-migration cases pass"

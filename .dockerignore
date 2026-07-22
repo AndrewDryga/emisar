@@ -5,11 +5,6 @@
 .github
 .agent
 **/.agent
-!portal/.agent/
-!portal/.agent/scripts/
-!portal/.agent/scripts/package.json
-!portal/.agent/scripts/package-lock.json
-!portal/.agent/scripts/install-browser.mjs
 .expert
 **/.expert
 .claude

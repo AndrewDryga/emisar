@@ -206,7 +206,7 @@ jobs:
         # Runs both portal test suites and fails if the output contains
         # compiler warnings, Logger warning/error lines, or async DB teardown
         # noise. Dirty test output is a regression: fix the source, don't hide it.
-        run: ../.agent/scripts/check-portal-test-output.sh
+        run: ../dev/check-portal-test-output.sh
 
   mcp-listing:
     name: Portal - MCP Registry Listing
@@ -542,6 +542,12 @@ jobs:
         if: matrix.module == 'tools'
         working-directory: tools
         run: go run ./cmd/doccheck
+
+      - name: Check development tooling
+        if: matrix.module == 'tools'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          dev/run check tooling
 
       - name: Summarize coverage
         if: always()

@@ -82,7 +82,7 @@ updates:
   - package-ecosystem: "npm"
     # The docs-screenshot tooling — the repo's only npm surface (dev-only,
     # never shipped). Same cooldown policy as every other ecosystem.
-    directory: "/portal/.agent/scripts"
+    directory: "/tools/browser"
     schedule:
       interval: "weekly"
       day: "friday"

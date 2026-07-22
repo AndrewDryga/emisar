@@ -149,11 +149,12 @@ services:
       # before any non-local deployment.
       SECRET_KEY_BASE: "zy7QplH6bzgWzgVDXSC8KxCprn+OQB7vWMRcQ+0iyJ2WlcQqg1AswEXqzcjHj8nu"
       # localhost so generated absolute URLs (the OIDC redirect_uri most of all)
-      # resolve to this portal from the host browser via the published 4010.
-      # URL_PORT=4010 advertises that PUBLISHED port while we LISTEN on PORT=4000.
+      # resolve to this portal from the host browser via the published port.
+      # PORTAL_PORT defaults to 4010 while isolated test projects may request a
+      # random host port; the signed-dispatch driver stays on the Compose network.
       PHX_HOST: "localhost"
       PORT: "4000"
-      URL_PORT: "4010"
+      URL_PORT: "${PORTAL_PORT:-4010}"
       # Speak plain HTTP for local. force_ssl in runtime.exs is gated
       # on this knob — see config/runtime.exs.
       FORCE_SSL: "false"
@@ -171,14 +172,12 @@ services:
       # (the /dev routes are compiled in via the build arg above). Lets you
       # complete the passwordless magic-link sign-in with no mail provider.
       EMISAR_DEV_ROUTES: "1"
-    # Host port 4010 → container 4000 (keeps `portal:4000`, the healthcheck, and
-    # PORT unchanged for the in-network runners/mcp while freeing host :4000 for
-    # a local `mix phx.server`; URL_PORT=4010 makes generated URLs advertise the
-    # published 4010). 8443 is Keycloak's HTTPS port, published here because
-    # Keycloak shares this netns (network_mode: service:portal).
+    # Defaults preserve the packaged smoke-stack URLs. Test projects can pass
+    # PORTAL_PORT=0 and KEYCLOAK_PORT=0 for Docker-assigned loopback ports while
+    # keeping the in-network portal:4000 contract unchanged.
     ports:
-      - "4010:4000"
-      - "8443:8443"
+      - "127.0.0.1:${PORTAL_PORT:-4010}:4000"
+      - "127.0.0.1:${KEYCLOAK_PORT:-8443}:8443"
     # Keep the probe at the HTTP boundary without pulling curl's large protocol
     # and TLS dependency tree into the production image. OpenBSD nc sends one
     # fixed local request; grep is part of the debian-slim base.
@@ -359,7 +358,7 @@ services:
   #   /signing/cert.json      EMISAR_SIGNING_CERT for the bridge
   # `docker compose down -v` rotates the keys. Reuses the runner image (emisar
   # binary + a shell); runs as root to write the fresh named volume. Profile-gated
-  # so the default `docker compose up` is unchanged. See dev/signing/e2e/.
+  # so the default `docker compose up` is unchanged. See `dev/run e2e signing`.
   # ----------------------------------------------------------------
   signing-init:
     image: emisar/runner:dev
@@ -381,7 +380,7 @@ services:
   # public key), so it runs a dispatch ONLY if it carries a valid, in-scope,
   # CA-vouched Ed25519 attestation — the portal Run button / runbooks can't
   # reach it, only a signed MCP call. Profile-gated so the default stack is
-  # unchanged; brought up by dev/signing/e2e/run.sh.
+  # unchanged; brought up by `dev/run e2e signing`.
   # ----------------------------------------------------------------
   runner-signed:
     <<: *runner
@@ -404,7 +403,7 @@ services:
   # itself, not the published ports. So the driver runs on the host, where those
   # ports resolve, which is the exact path a host browser takes. Once up:
   #
-  #   ./dev/keycloak/e2e/run.sh
+  #   dev/run e2e sso
   #
   # drives BOTH halves — SCIM provisions alice (the real IdP user) + a
   # deprovision lifecycle, then the full OIDC login as alice converges on that

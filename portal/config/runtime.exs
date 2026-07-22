@@ -375,7 +375,7 @@ if config_env() == :prod do
 end
 
 # Always use the stub Paddle client in dev / test unless a real key was set
-# (the sandbox e2e harness exports one — see .agent/scripts/paddle-sandbox-e2e.sh).
+# (the sandbox e2e harness exports one via `dev/run e2e billing`).
 # Blank values count as absent, matching the prod branch.
 if config_env() in [:dev, :test] do
   dev_paddle_api_key =

@@ -37,7 +37,7 @@ var manifests = []manifest{
 	{"go", "runner/go.mod"},
 	{"go", "mcp/go.mod"},
 	{"go", "tools/go.mod"},
-	{"npm", "portal/.agent/scripts/package-lock.json"},
+	{"npm", "tools/browser/package-lock.json"},
 }
 
 const allowlistPath = ".dep-age-allow"

@@ -28,9 +28,9 @@ RUN apt-get update \
 # Puppeteer's Linux download is x86_64 even when the build host is ARM64.
 USER node
 ENV PUPPETEER_CACHE_DIR=/home/node/.local/share/puppeteer
-COPY --chown=node:node portal/.agent/scripts/package.json \
-     portal/.agent/scripts/package-lock.json \
-     portal/.agent/scripts/install-browser.mjs \
+COPY --chown=node:node tools/browser/package.json \
+     tools/browser/package-lock.json \
+     tools/browser/install-browser.mjs \
      /home/node/emisar-screenshot-tooling/
 RUN cd /home/node/emisar-screenshot-tooling \
  && npm ci --ignore-scripts \

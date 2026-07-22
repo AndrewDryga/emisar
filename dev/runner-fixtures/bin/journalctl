@@ -14,15 +14,12 @@
 set -u
 
 unit=""
-since=""
-priority=""
 grep_re=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -u)         unit="$2"; shift 2 ;;
-        --since)    since="$2"; shift 2 ;;
-        -p)         priority="$2"; shift 2 ;;
+        --since|-p) shift 2 ;;
         --grep)     grep_re="$2"; shift 2 ;;
         --no-pager) shift ;;
         *)          shift ;;

@@ -30,7 +30,7 @@ mkdir -p /run/frr && chown frr:frr /run/frr
 # MIBS= silences the harmless "Cannot adopt OID" MIB-parse warnings (the SUT is
 # numeric-by-design and ships no working MIB tree). -Lo logs to stdout, -C uses
 # only our config file.
-MIBS= /usr/sbin/snmpd -Lo -C -c /etc/snmp/snmpd.conf
+MIBS='' /usr/sbin/snmpd -Lo -C -c /etc/snmp/snmpd.conf
 # Wait for the AgentX socket so FRR's subagents have something to connect to.
 i=0
 while [ ! -S /var/agentx/master ] && [ "$i" -lt 50 ]; do

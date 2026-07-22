@@ -16,11 +16,9 @@ This harness is a **separate Go module, deliberately not in `../../go.work`**, s
 it never ships and never joins the `runner/`/`mcp/` gates. Because it's outside
 the workspace, every `go` command here needs `GOWORK=off`.
 
-> **No `docker` in your box?** The measured run below needs the `docker-compose`
-> stack (repo root). If your environment can't run Docker, you can still build,
-> gate, and unit-test this harness (it self-tests against an in-process stub);
-> the live capacity numbers must be gathered on a Docker-capable host. The
-> **code-derived design limits** in the table below need no run at all.
+> A live run needs the normal Coop dependency services or the packaged smoke
+> stack. The harness itself builds and tests without either because its unit
+> tests use an in-process stub. The code-derived limits below need no live run.
 
 ## Build & gate
 
@@ -37,7 +35,7 @@ GOWORK=off go build -o /tmp/loadtest .
 Bring the stack up (from the repo root), then drive the seeded dev MCP key:
 
 ```sh
-docker compose up -d            # portal + db + 3 runners
+dev/run smoke                   # packaged portal + db + 3 runners on :4010
 cd dev/loadtest && GOWORK=off go build -o /tmp/loadtest .
 
 # 32 concurrent clients listing the tool catalog for 30s (2s warmup dropped):
@@ -161,46 +159,31 @@ to "what are the limits" before a single request is sent.
    unthrottled; a stress pass should confirm a hostile enrollment key can't flood
    it (the account-row lock serializes but doesn't rate-limit).
 
-## Native boot (no Docker) — how the run below was produced
+## Workspace-native boot
 
-No Docker? You don't need the compose stack; boot the portal natively and drive
-port **4000**. This is exactly how the measured run below was gathered.
+For an iterative run against current Portal code, use the same workspace-native
+loop as normal development:
 
 ```sh
-# 1. Postgres (asdf, no docker) — see portal memory `portal-test-db-bootstrap`
-export ASDF_POSTGRES_VERSION=16.14
-PGBIN=$(asdf where postgres)/bin
-[ -d ~/.pgdata-emisar ] || "$PGBIN/initdb" -U postgres --auth=trust -D ~/.pgdata-emisar
-"$PGBIN/pg_ctl" -D ~/.pgdata-emisar -l /tmp/pglog.log \
-  -o "-p 5432 -k /tmp -c listen_addresses=localhost" start
+dev/run setup
+dev/run seed
+dev/run serve                  # keep this terminal open
+dev/run urls                   # copy the workspace Portal URL
 
-# 2. Dev DB (from portal/)
-cd portal && export PGHOST=localhost PGPORT=5432 MIX_ENV=dev
-mix ecto.create && mix ecto.migrate
-
-# 3. Boot the endpoint WITHOUT the asset watchers (the box has no Linux
-#    esbuild/tailwind binary) via a throwaway boot script — put_env disables
-#    watchers + code_reloader, sets server:true, then starts :emisar_web:
-#      ep = Application.get_env(:emisar_web, EmisarWeb.Endpoint)
-#      Application.put_env(:emisar_web, EmisarWeb.Endpoint,
-#        Keyword.merge(ep, watchers: [], server: true, code_reloader: false))
-#      {:ok, _} = Application.ensure_all_started(:emisar_web); Process.sleep(:infinity)
-#    Run it with:  mix run --no-start --no-halt /tmp/boot_portal.exs &
+cd dev/loadtest
+GOWORK=off go build -o /tmp/loadtest .
+/tmp/loadtest -url http://localhost:<workspace-port> \
+  -clients 32 -duration 30s -scenario tools_list
 ```
 
-The full `seeds.exs` currently raises `missing shipped-pack baseline for caddy
-0.1.6` (its `pack_versions` are ahead of `priv/packs/catalog.json`) — **you don't
-need it.** Mint the MCP keys you drive directly against the already-seeded demo
-account with a tiny `mix run --no-start` script (start only `:emisar` so the
-`:prometheus_metrics` port doesn't collide with the running endpoint), building
-each key row exactly as `seeds.exs` does — `ApiKeys.ApiKey.Changeset.create(...,
-String.slice(raw,0,12), Emisar.Crypto.hash(raw), attrs)`. Each key needs a
-**distinct 12-char prefix** (`peek_api_key_by_secret` looks up by prefix), so vary
-the first 12 chars per key.
+Use separate MCP keys when measuring beyond the per-key limiter. The idempotent
+seed provides the demo account and baseline key; additional keys should be
+created through the current product/API path rather than an ad hoc database
+script.
 
 ## Results log
 
-Measured run — 2026-07-11, native boot (above), portal `dev` env, pool=10, MCP
+Measured run — 2026-07-11, portal `dev` env, pool=10, MCP
 rate limit ON, on a shared 12-vCPU / 16 GB coop container. **Read the caveat under
 the table before quoting any absolute number.**
 

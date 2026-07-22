@@ -1,9 +1,12 @@
 import puppeteer from "puppeteer-core";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { containerChromeArgs, resolveChrome } from "./resolve-chrome.mjs";
 const BASE = process.env.E2E_BASE || "http://localhost:4000", SLUG = "demo";
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const OUT = resolve(import.meta.dirname, "../../../test-results/paddle-e2e");
+const OUT = resolve(import.meta.dirname, "../../test-results/paddle-e2e");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+await mkdir(OUT, { recursive: true });
 
 async function login(page) {
   // Magic links are one-use AND browser-nonce-bound, so we must open the
@@ -147,9 +150,9 @@ async function clickIn(page, candidates, label) {
 }
 
 const b = await puppeteer.launch({
-  executablePath: CHROME,
+  executablePath: resolveChrome(),
   headless: "new",
-  args: ["--no-sandbox", "--force-prefers-reduced-motion"],
+  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
 });
 try {
   const page = await b.newPage();
