@@ -71,14 +71,20 @@
         <code class="font-mono">cloud.token_path</code>
         (<code class="font-mono">/var/lib/emisar/token.json</code>
         by default) — keep <code class="font-mono">/var/lib/emisar</code>
-        in a volume and the runner keeps the same identity across restarts. The runner id is
-        otherwise derived from <code class="font-mono">/etc/machine-id</code>, which containers
-        often lack or regenerate, so set <code class="font-mono">runner.id</code>
-        yourself and the name stays stable no matter where the container lands:
+        in a volume and the runner keeps the same identity across restarts. The runner id is a random
+        UUID persisted at <code class="font-mono">/var/lib/emisar/runner_id</code>
+        (so that volume already preserves it); pin <code class="font-mono">runner.id</code>
+        yourself when the volume itself isn't stable across placements, and the name stays fixed no
+        matter where the container lands:
       </p>
-      <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">runner</span>:
+      <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-brand-300">1</span>
+<span class="text-sky-300">runner</span>:
   <span class="text-sky-300">id</span>: <span class="text-brand-300">"payments-sidecar"</span>
   <span class="text-sky-300">group</span>: <span class="text-brand-300">"sidecars"</span>
+<span class="text-sky-300">paths</span>:
+  <span class="text-sky-300">data_dir</span>: <span class="text-brand-300">"/var/lib/emisar"</span>
+<span class="text-sky-300">events</span>:
+  <span class="text-sky-300">jsonl_path</span>: <span class="text-brand-300">"/var/log/emisar/events.jsonl"</span>
 <span class="text-sky-300">cloud</span>:
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
   <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
@@ -95,12 +101,15 @@
       <.docs_h2 id="sidecar">A sidecar next to one app</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         When the thing you want the agent to operate <em>is</em> the app — read its logs,
-        inspect its processes, poke its admin CLI — run the runner as a second container sharing
-        the app's world. The runner sees exactly that app and nothing else; policy, approvals,
-        and audit work unchanged.
+        inspect its processes, poke its admin CLI — run the runner as a second container that joins
+        the app container's PID, network, and (read-only) volumes. The runner then sees exactly that
+        app and nothing else; policy, approvals, and audit work unchanged.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> docker run -d --restart unless-stopped \
     --name emisar-runner \
+    --pid container:payments \
+    --network container:payments \
+    --volumes-from payments:ro \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
     -v emisar-runner-data:/var/lib/emisar \

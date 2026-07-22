@@ -53,8 +53,12 @@
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
-              Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>. The runner
-              dials out; nothing listens on the host, so there's no inbound port to open.
+              Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
+              for the runner (it
+              dials out; nothing listens on the host, so there's no inbound port to open), plus
+              <code class="text-zinc-300">api.github.com</code>
+              and <code class="text-zinc-300">github.com</code>
+              for the installer — it downloads the runner release and checksums from GitHub.
             </span>
           </li>
         </ul>
@@ -132,7 +136,7 @@
         advertising its action catalog. On the host you can watch the same thing:
       </p>
       <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
-<span class="text-zinc-500">level=INFO msg="runner online" group=default packs=3 actions=89</span></.docs_code>
+<span class="text-zinc-500">level=INFO msg=cloud.connected actions=89 packs=4 inflight_runs=0</span></.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash

@@ -66,7 +66,8 @@
             Free-form <code class="font-mono">key=value</code>
             pairs — <code class="font-mono">region=us-east-1</code>, <code class="font-mono">environment=prod</code>,
             <code class="font-mono">service=checkout</code>
-            — for filtering the fleet and targeting policy without redrawing your groups.
+            — for filtering and searching the fleet without redrawing your groups. (Policy targets a
+            runner, a group, or the account — not labels.)
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -123,7 +124,7 @@
           Confirm the tier floor for the whole fleet — <code class="font-mono">low</code>/<code class="font-mono">medium</code>
           allow, <code class="font-mono">high</code>
           require approval, <code class="font-mono">critical</code>
-          deny. Packs are designed to have low-risk actions read-only and harmfull. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
+          deny. Packs are authored so low-risk actions are read-only and destructive ones carry higher tiers. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
         </li>
         <li>
           <strong class="text-zinc-200">Add approvals where they matter.</strong>
@@ -165,8 +166,8 @@
         </li>
         <li>
           <strong class="text-zinc-200">Ship the audit to your SIEM.</strong>
-          Mint an <code class="font-mono">audit:read</code>
-          key, point your collector at the NDJSON feed, and alert on the handful of events that
+          Mint an <code class="font-mono">audit-export</code>
+          token, point your collector at the NDJSON feed, and alert on the handful of events that
           actually mean something (below).
         </li>
       </ol>
@@ -265,7 +266,7 @@
           a DBA's agent calls <code class="font-mono">postgres.promote_replica</code>
           with a reason; the call carries the DBA's Ed25519 signature. The control plane relays it —
           it can't forge or alter it, and holds no key to try. Policy holds the run for approval;
-          two other operators approve. The signed, twice-approved run dispatches; the runner verifies
+          two other operators approve. The signed, twice-approved run dispatches while its attestation is still fresh; the runner verifies
           the signature against its CA, checks the nonce hasn't been seen and the timestamp is fresh,
           then runs it. The audit shows the requester, both approvers, the signing certificate, and the
           redacted command. If the cloud were compromised it could refuse to relay the call — but it
@@ -314,7 +315,7 @@
           </li>
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span>MFA is required; SSO / SCIM is wired if you're on Team or Enterprise.</span>
+            <span>MFA is required; SSO is wired on Team or Enterprise, SCIM on Enterprise.</span>
           </li>
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
@@ -339,8 +340,9 @@
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
-              Audit is streaming to your SIEM through an <code class="font-mono">audit:read</code>
-              key, with alerts on policy changes and admission blocks.
+              Audit is streaming to your SIEM through an
+              <code class="font-mono">audit-export</code>
+              token, with alerts on policy changes and admission blocks.
             </span>
           </li>
         </ul>

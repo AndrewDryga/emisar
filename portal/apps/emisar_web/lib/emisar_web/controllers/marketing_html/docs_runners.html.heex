@@ -88,9 +88,9 @@
           <span>
             <strong class="text-zinc-200">Revocation is cloud-side.</strong>
             Revoking a key blocks new registrations; hosts already enrolled keep running on
-            their own tokens. For an enrolled host, revoke the runner's token (or disable the
-            runner) — its next frame gets a 401 and the service exits rather than retrying
-            forever.
+            their own tokens. Disable a runner to block it reversibly — the host service stays up and
+            keeps retrying until you re-enable it. Delete a runner to revoke its token permanently: its
+            next connect gets a 401 and the service exits rather than retrying forever.
           </span>
         </li>
       </ul>
