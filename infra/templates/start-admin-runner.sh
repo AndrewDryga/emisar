@@ -51,6 +51,7 @@ trap - EXIT
 
 runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
+required_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'
 installed_version=$($runner --version 2>/dev/null || true)
 if [ "$installed_version" != "$expected_version" ]; then
   installer=$(mktemp /run/emisar-admin-runner/install.XXXXXX)
@@ -59,7 +60,6 @@ if [ "$installed_version" != "$expected_version" ]; then
     --retry-connrefused --connect-timeout 5 --max-time 30 \
     -H 'x-forwarded-proto: https' \
     http://127.0.0.1:4000/install.sh -o "$installer"
-  EMISAR_PACKS='' \
   BIN_DIR=/run/emisar-admin-runner/bin \
   ETC_DIR=/var/lib/emisar-admin-runner \
   DATA_DIR=/var/lib/emisar-admin-runner/data \
@@ -68,7 +68,7 @@ if [ "$installed_version" != "$expected_version" ]; then
       --version "${runner_version}" \
       --no-service \
       --yes \
-      --packs ''
+      --packs "$required_packs"
   rm -f "$installer"
   trap - EXIT
 fi
@@ -76,5 +76,13 @@ fi
 [ "$($runner --version)" = "$expected_version" ]
 test -f /var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml
 test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
+for pack in $required_packs; do
+  if [ ! -f "/var/lib/emisar-admin-runner/packs/$pack/pack.yaml" ]; then
+    "$runner" pack install "$pack" \
+      --dest /var/lib/emisar-admin-runner/packs \
+      --force
+  fi
+done
+"$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs >/dev/null
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml
