@@ -419,6 +419,37 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "Retired by a newer release"
     end
 
+    test "multiple outdated versions of one pack show a SINGLE update-available note",
+         %{conn: conn, account: account} do
+      # The nudge is a pack-level fact — `newer_version` returns the same current
+      # shipped version for every outdated row — so it is said ONCE per pack, not
+      # repeated on each stale version (the regression: it duplicated per version).
+      all_pack_ids =
+        Emisar.Catalog.PackBaseline.all() |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+      pack_id = List.first(all_pack_ids -- Map.keys(Emisar.Catalog.PackBaseline.retired_below()))
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.1"
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "v#{current} has shipped"
+      occurrences = Regex.scan(~r/Update available/, html) |> length()
+      assert occurrences == 1
+    end
+
     test "a trusted CURRENT version shows no update-available note",
          %{conn: conn, account: account} do
       {{pack_id, _v}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)

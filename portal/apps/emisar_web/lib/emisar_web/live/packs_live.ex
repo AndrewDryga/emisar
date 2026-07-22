@@ -927,39 +927,52 @@ defmodule EmisarWeb.PacksLive do
     """
   end
 
-  # A trusted version below the current shipped one that is NOT retired — a
-  # convenience nudge, never a warning: a security fix RETIRES a version (packs
-  # retire only on security/critical fixes), so an outdated-but-trusted version
-  # is safe by construction and still dispatches. The weakest tier on the row —
-  # a muted line + a quiet arrow, no spine, no tone, no count — quieter than the
-  # rose retired block and the amber pending spine. Retirement takes precedence:
-  # `pack_version_outdated` returns `:current` for a retired version, so this
-  # never stacks on top of the rose block. Renders nothing for a current version.
+  attr :pack_id, :string, required: true
+  attr :versions, :list, required: true
+
+  # ONE pack-level "update available" nudge, shown once when ANY trusted,
+  # non-retired version of the pack is below the shipped current. The successor
+  # (the pack's current shipped version) and its install command are pack-level
+  # — `newer_version` returns that same current version for every outdated row —
+  # so the heads-up is said ONCE per pack, never repeated on each stale version
+  # (a note on every version was the correction). A convenience, never a warning:
+  # a security fix RETIRES a version (packs retire only on security/critical
+  # fixes), so an outdated-but-not-retired version is safe by construction and
+  # still dispatches — the weakest, quietest tier, a neutral spine below the
+  # version rows. Retirement takes precedence (`pack_version_outdated` returns
+  # `:current` for a retired version), so this never stacks on a row's rose
+  # retired block. Renders nothing when every shown version is current or retired.
   defp update_available_note(assigns) do
     successor =
-      case Catalog.pack_version_outdated(assigns.version) do
-        {:outdated, successor} -> successor
-        :current -> nil
-      end
+      Enum.find_value(assigns.versions, fn
+        %{trust_state: :trusted} = version ->
+          case Catalog.pack_version_outdated(version) do
+            {:outdated, successor} -> successor
+            :current -> nil
+          end
+
+        _version ->
+          nil
+      end)
 
     assigns = assign(assigns, :successor, successor)
 
     ~H"""
-    <%!-- The same icon-capped spine as the retired block, but NEUTRAL: a newer
-         version shipped, yet this one is still safe and dispatches — a heads-up,
-         not a warning, so it never wears rose. --%>
+    <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
+         pack-level: a newer version shipped, yet what's installed still runs and
+         dispatches — a heads-up, not a warning, so it never wears rose. --%>
     <.event_block
       :if={@successor}
       icon="hero-arrow-up-circle"
       tone={:neutral}
       title="Update available"
-      class="mt-3 pl-8"
+      class="mt-4"
     >
       <:body>
-        v{@successor} has shipped. This one is still safe — it runs and dispatches fine.
+        v{@successor} has shipped. Your installed versions still run and dispatch fine — update your runners when you can.
       </:body>
       <.install_command
-        id={"update-cmd-#{@version.id}"}
+        id={"update-cmd-#{@pack_id}"}
         pack_id={@pack_id}
         successor={@successor}
         hash={Catalog.shipped_hash(@pack_id, @successor)}
@@ -1377,15 +1390,6 @@ defmodule EmisarWeb.PacksLive do
                     can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
                   />
 
-                  <%!-- A gentle "update available" for a trusted, non-retired
-                       version below the shipped current (retirement, above,
-                       takes precedence and this stays silent under it). --%>
-                  <.update_available_note
-                    :if={v.trust_state == :trusted}
-                    version={v}
-                    pack_id={pack.id}
-                  />
-
                   <%!-- A rejected version stays listed quietly — no alert, no
                        pending count; the row menu carries Trust, the
                        fix-admin-mistake path. --%>
@@ -1630,6 +1634,13 @@ defmodule EmisarWeb.PacksLive do
                   </.event_block>
                 </li>
               </ul>
+
+              <%!-- A gentle, pack-level "update available" heads-up — said ONCE
+                   for the whole pack (the successor is the same current shipped
+                   version for every outdated row), not repeated per version.
+                   Retirement takes precedence per row, so this stays silent
+                   under a rose retired block. --%>
+              <.update_available_note pack_id={pack.id} versions={pack.versions} />
             </li>
           </ul>
 
