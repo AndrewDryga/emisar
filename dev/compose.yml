@@ -1,0 +1,55 @@
+# Stateful dependencies for both host-native development and Coop boxes.
+# Phoenix is intentionally not a service: it runs directly in the active
+# workspace for the fastest code-reload loop. Coop publishes every exposed
+# port on a stable, workspace-specific loopback port and mirrors the same URL
+# inside the box.
+services:
+  db:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: emisar_dev
+    expose: ["5432"]
+    labels:
+      coop.service.scheme: postgresql
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d emisar_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command:
+      - start-dev
+      - --import-realm
+      - --https-certificate-file=/certs/tls.crt
+      - --https-certificate-key-file=/certs/tls.key
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      # Safe only because Coop publishes this dev-only service on loopback.
+      # The incoming localhost:<workspace-port> Host header becomes the issuer.
+      KC_HOSTNAME_STRICT: "false"
+    expose: ["8443"]
+    labels:
+      coop.service.scheme: https
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./keycloak/certs/generated/tls.crt:/certs/tls.crt:ro
+      - ./keycloak/certs/generated/tls.key:/certs/tls.key:ro
+      - keycloak_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/8443"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+
+volumes:
+  pgdata:
+  keycloak_data:

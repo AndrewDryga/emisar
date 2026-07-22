@@ -85,7 +85,7 @@ defmodule Emisar.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "ecto.seed"],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       "ecto.seed": ["run #{__DIR__}/priv/repo/seeds.exs"],
       # Architecture budget: the domain currently has exactly ONE compile cycle

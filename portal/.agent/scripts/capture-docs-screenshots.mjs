@@ -3,16 +3,15 @@
 // chrome), then given an invisible ~20px border in its OWN background colour so
 // text never touches the edge. Logs in as demo (enterprise — has SSO + SCIM +
 // runbooks + a fleet), captures the relevant element/section, and writes the
-// final webp assets under priv/static/images. Needs ImageMagick (`magick`).
-// Run it (:4010 up) whenever a screened surface changes: `npm run capture`.
-import puppeteer from "puppeteer-core";
+// final webp assets under priv/static/images. Needs ImageMagick 6 or 7.
+// Run `dev/run capture docs` while `dev/run serve` owns the active workspace.
 import { mkdirSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
-const BASE = process.env.BASE_URL ?? "http://localhost:4010";
+import { acquireBrowser, releaseBrowser } from "./browser-client.mjs";
+import { waitForPageReady } from "./page-ready.mjs";
+const BASE = process.env.BASE_URL ?? "http://localhost:4000";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const CHROME = resolveChrome();
 const OUT = "/tmp/docshots";
 const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-docshots-profile";
 const STATIC = resolve(import.meta.dirname, "../../apps/emisar_web/priv/static/images");
@@ -58,7 +57,7 @@ async function crop(page, target, name) {
     return true;
   }, target);
   if (!ok) throw new Error("anchor not found: " + name);
-  await settle(150);
+  await waitForPageReady(page, { target: '[data-shot="1"]' });
   const handle = await page.$('[data-shot="1"]');
   const box = await handle.boundingBox();
   await handle.screenshot({ path: `${OUT}/${name}.png` });
@@ -78,20 +77,17 @@ async function crop(page, target, name) {
   console.log(`  ✓ ${name}  ${Math.round(box.width)}x${Math.round(box.height)}  bg=${bgColors[name]}`);
 }
 
-const b = await puppeteer.launch({
-  executablePath: CHROME,
-  headless: "new",
-  userDataDir: PROFILE,
-  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
-});
+const { browser: b, shared } = await acquireBrowser({ profile: PROFILE });
 const p = await b.newPage();
 await p.setViewport({ width: 1680, height: 2800, deviceScaleFactor: 2 });
 
 // --- login ---
 await p.goto(`${BASE}/app/demo`, { waitUntil: "domcontentloaded" });
+await waitForPageReady(p);
 if (!new URL(p.url()).pathname.startsWith("/app/")) {
   const seen = new Set((await mailbox()).map(mailId));
   await p.goto(`${BASE}/sign_in`, { waitUntil: "domcontentloaded" });
+  await waitForPageReady(p);
   await p.waitForSelector('input[type="email"]');
   await p.type('input[type="email"]', EMAIL);
   await Promise.all([
@@ -116,9 +112,13 @@ if (!new URL(p.url()).pathname.startsWith("/app/")) {
   if (!link) throw new Error("no magic link found in mailbox");
   await p.goto(link, { waitUntil: "domcontentloaded" });
   await p.waitForFunction(() => location.pathname.startsWith("/app/"));
+  await waitForPageReady(p);
 }
 
-const go = async (path) => { await p.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" }); await settle(1100); };
+const go = async (path) => {
+  await p.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" });
+  await waitForPageReady(p);
+};
 // CDP's Page.navigate rejects bracketed query params ([]); set location in-page
 // (Chrome parses it fine) for URLs that carry filter params.
 const goRaw = async (path) => {
@@ -126,7 +126,7 @@ const goRaw = async (path) => {
     p.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}),
     p.evaluate((u) => { window.location.href = u; }, `${BASE}${path}`),
   ]);
-  await settle(1200);
+  await waitForPageReady(p);
 };
 
 await go("/app/demo/policies");
@@ -158,7 +158,7 @@ await p.evaluate(() => {
   const a = [...document.querySelectorAll('a[href*="/settings/sso/"]')].find((x) => /\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute("href")));
   if (a) a.click();
 });
-await settle(1400);
+await waitForPageReady(p);
 await crop(p, { heading: "Directory sync (SCIM)", climb: "section" }, "sso-directory-sync");
 
 // LLM agents — the "Connect an agent" client picker (the /docs/connect-an-llm
@@ -171,10 +171,11 @@ await p.evaluate(() => {
   );
   if (tab) tab.click();
 });
-await settle(900);
+await waitForPageReady(p);
 await crop(p, { classContains: ["grid-cols-[minmax(0,1fr)_22rem]", "gap-x-16"] }, "connect-llm-agents");
 
-await b.close();
+await p.close();
+await releaseBrowser(b, shared);
 
 // --- pad + convert to webp (part of the pipeline, so re-running regenerates the
 // shipped assets) ---
@@ -194,13 +195,38 @@ const SHOTS = [
   { name: "sso-directory-sync", out: "docs/sso/sso-directory-sync.webp" },
   { name: "connect-llm-agents", out: "screenshots/connect-llm-agents.webp", topCss: 820 },
 ];
+
+const hasMagickWrapper = (() => {
+  try {
+    execFileSync("magick", ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+const imageMagick = (tool, args) => {
+  if (hasMagickWrapper) {
+    return execFileSync("magick", tool === "convert" ? args : [tool, ...args]);
+  }
+  return execFileSync(tool, args);
+};
+
 for (const s of SHOTS) {
   const png = `${OUT}/${s.name}.png`;
   const dest = `${STATIC}/${s.out}`;
   const bg = bgColors[s.name] || "#09090b";
-  const w = execSync(`magick identify -format "%w" "${png}"`).toString().trim();
-  const crop = s.topCss ? `-crop ${w}x${s.topCss * 2}+0+0 +repage` : "";
-  execSync(`magick "${png}" ${crop} -resize "${WIDTH}x>" -bordercolor "${bg}" -border ${PAD} -quality ${Q} "${dest}"`);
+  const w = imageMagick("identify", ["-format", "%w", png]).toString().trim();
+  const crop = s.topCss ? ["-crop", `${w}x${s.topCss * 2}+0+0`, "+repage"] : [];
+  imageMagick("convert", [
+    png,
+    ...crop,
+    "-resize", `${WIDTH}x>`,
+    "-bordercolor", bg,
+    "-border", String(PAD),
+    "-quality", String(Q),
+    dest,
+  ]);
   console.log(`  → ${s.out}  (bg ${bg}, +${PAD}px)`);
 }
 console.log("done");

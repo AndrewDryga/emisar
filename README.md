@@ -136,16 +136,24 @@ rules, and verification gate.
 
 ## Develop locally
 
-The root Compose stack starts PostgreSQL, the portal, seeded demo data, and
-three sample runners:
+The fast loop runs Phoenix directly on the host and keeps only PostgreSQL and
+Keycloak in the workspace-isolated Coop dependency stack:
 
 ```sh
-docker compose up --build
+dev/run setup       # first run: tools, sidecars, deps, browser, migrations
+dev/run seed        # explicit, idempotent demo data
+dev/run serve       # live reload at the URL printed by Coop
 ```
 
-Open <http://localhost:4010>. See [`portal/README.md`](portal/README.md) for
-native Phoenix development and [`dev/README.md`](dev/README.md) for the seeded
-runner fixtures, pack harness, and signed-dispatch test stack.
+`dev/run urls` prints this workspace's distinct Portal, metrics, Postgres, and
+Keycloak URLs. Coop forks inherit the same setup but receive different ports and
+volumes. Seeds are never applied by setup, serve, or reset unless explicitly
+requested.
+
+The root `docker-compose.yml` remains the slower packaged topology with the
+release Portal image, seeded demo data, three runners, MCP, and signing. Start it
+with `dev/run smoke`; it serves <http://localhost:4010>. See
+[`portal/README.md`](portal/README.md) and [`dev/README.md`](dev/README.md).
 
 ## License
 

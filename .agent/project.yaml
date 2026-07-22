@@ -9,7 +9,34 @@ subprojects:
   - portal
   - runner
 
+# One project box definition and one dependency stack serve both interactive
+# agents and host-native development. Phoenix itself stays outside Compose so
+# code reloads directly from the active workspace.
+box:
+  dockerfile: .agent/Dockerfile
+  compose: dev/compose.yml
+
 # Ports a dev server in the box listens on — coop publishes each to a stable host
 # port so you can open it in your browser (the portal already binds 0.0.0.0 in dev):
 serve:
-  ports: [4000]
+  ports: [4000, 9091]
+
+# Compile only the project-specific instructions and KB cards relevant to the
+# files in play. Root AGENTS.md remains canonical and is always included by
+# coop context.
+context:
+  routes:
+    - paths: [".agent/**", "dev/**", "docker-compose.yml"]
+      include: [.agent/kb/coop-box-builds-are-isolated.md]
+    - paths: ["portal/**", "**/*.ex", "**/*.exs", "**/*.heex"]
+      include: [portal/AGENTS.md]
+    - paths: ["portal/**/oauth/**", "portal/**/*oauth*", "portal/**/sso/**", "portal/**/*sso*"]
+      include: [.agent/kb/oauth-consent-form-action.md, .agent/kb/oauth-sign-in-return-to.md]
+    - paths: ["runner/**"]
+      include: [runner/AGENTS.md]
+    - paths: ["mcp/**"]
+      include: [mcp/AGENTS.md]
+    - paths: ["packs/**"]
+      include: [packs/AGENTS.md]
+    - paths: ["infra/**"]
+      include: [infra/AGENTS.md]

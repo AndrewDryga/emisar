@@ -1,10 +1,42 @@
 # Dev-only fixtures & harnesses
 
-Local-only development scaffolding for the docker-compose stacks — per-runner
-configs + fixtures for the root demo stack, and the standalone pack-test
-harness. None of this ships with production releases — the runner tarball
+Local-only development commands, dependencies, fixtures, and harnesses. None
+of this ships with production releases — the runner tarball
 produced by the release workflow contains exactly the runner binary and its
 config skeleton.
+
+## Fast development loop
+
+`dev/run` is the shared human/agent command surface. `compose.yml` contains the
+Postgres and Keycloak dependencies used by both host-native Phoenix and Coop;
+Phoenix itself runs directly in the active workspace.
+
+```sh
+dev/run setup
+dev/run seed
+dev/run serve
+```
+
+Common feedback commands:
+
+```sh
+dev/run check portal
+dev/run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
+dev/run gate portal
+dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
+dev/run capture console
+dev/run capture docs
+dev/run pack check redis
+```
+
+`dev/run urls` discovers the assigned URLs without reproducing Coop's hash.
+`dev/run doctor` verifies the services, local TLS trust, exact OIDC issuer, and
+that generated private keys remain ignored. The Keycloak CA and leaf files are
+created under `keycloak/certs/generated/`; `dev/run certs --rotate` is the only
+intentional CA rotation path.
+
+Setup, serve, and reset never seed implicitly. `dev/run seed` is idempotent;
+`dev/run reset --seed` is the explicit destructive shortcut.
 
 ## `runners/`
 

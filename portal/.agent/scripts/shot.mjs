@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Before/after proof shots for a single UI fix (design-ui-fix-screenshot-proof
-// rule): one page on the seeded :4010 compose stack → a full-page PNG plus a
+// rule): one page on the active dev server → a full-page PNG plus a
 // crop of the element under fix.
 //
 //   # task-scoped work — pass the task's own screenshots/ folder:
@@ -19,14 +19,13 @@
 // <out>/<label>-crop.png. Console paths (/app/…) log in as the seeded demo
 // user via the dev-mailbox magic link, on a persistent Chrome profile so
 // repeat runs skip login. Env overrides: BASE_URL, EMAIL, CHROME, PROFILE_DIR.
-import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
+import { acquireBrowser, releaseBrowser } from "./browser-client.mjs";
+import { waitForPageReady } from "./page-ready.mjs";
 
-const BASE = process.env.BASE_URL ?? "http://localhost:4010";
+const BASE = process.env.BASE_URL ?? "http://localhost:4000";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const CHROME = resolveChrome();
 const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-uifix-profile";
 
 const argv = process.argv.slice(2);
@@ -38,7 +37,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!path || !flags.label) {
   console.error(
-    'usage: node shot.mjs <path> --label <before|after> [--select CSS] [--heading "TEXT"] [--class-contains a,b] [--climb SEL] [--click SEL] [--width 1440] [--settle 1200] [--out DIR]',
+    'usage: node shot.mjs <path> --label <before|after> [--shot NAME] [--select CSS] [--heading "TEXT"] [--class-contains a,b] [--climb SEL] [--click SEL] [--width 1440] [--settle MS] [--out DIR]',
   );
   process.exit(1);
 }
@@ -47,11 +46,12 @@ const OUT = flags.out
   : resolve(import.meta.dirname, "../../../.agent/screenshots/scratch");
 mkdirSync(OUT, { recursive: true });
 const WIDTH = Number(flags.width) || 1440;
-const SETTLE = Number(flags.settle) || 1200;
+const SETTLE = Number(flags.settle) || 0;
+const shotSelector = flags.shot ? `[data-shot=${JSON.stringify(flags.shot)}]` : null;
 const anchor =
-  flags.select || flags.heading || flags["class-contains"]
+  flags.shot || flags.select || flags.heading || flags["class-contains"]
     ? {
-        selector: flags.select ?? null,
+        selector: shotSelector ?? flags.select ?? null,
         heading: flags.heading ?? null,
         classContains: flags["class-contains"]?.split(",") ?? null,
         climb: flags.climb ?? null,
@@ -64,15 +64,11 @@ const mailbox = async () =>
   (await (await fetch(`${BASE}/dev/mailbox/json`)).json()).data ?? [];
 const target = path.startsWith("http") ? path : `${BASE}${path}`;
 
-const browser = await puppeteer.launch({
-  executablePath: CHROME,
-  headless: "new",
-  userDataDir: PROFILE,
-  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
-});
+const { browser, shared } = await acquireBrowser({ profile: PROFILE });
+let page;
 
 try {
-  const page = await browser.newPage();
+  page = await browser.newPage();
   await page.setViewport({ width: WIDTH, height: 900, deviceScaleFactor: 1 });
 
   // CDP's Page.navigate rejects bracketed query params ([]); set location
@@ -90,7 +86,8 @@ try {
     } else {
       await page.goto(url, { waitUntil: "domcontentloaded" });
     }
-    await settle();
+    await waitForPageReady(page);
+    if (SETTLE) await settle();
   };
 
   await go(target);
@@ -132,7 +129,8 @@ try {
   if (flags.click) {
     await page.waitForSelector(flags.click);
     await page.click(flags.click);
-    await settle();
+    await waitForPageReady(page);
+    if (SETTLE) await settle();
   }
 
   const full = join(OUT, `${flags.label}-full.png`);
@@ -164,7 +162,7 @@ try {
       if (!el) return false;
       if (t.climb) el = el.closest(t.climb) || el;
       if (!visible(el)) return false;
-      el.setAttribute("data-shot", "1");
+      el.setAttribute("data-shot-target", "1");
       return true;
     }, anchor);
     if (!ok) throw new Error(`anchor not found (or not visible) on ${page.url()}`);
@@ -173,13 +171,14 @@ try {
     // detail. The full page stays 1x: a tall page at 2x trips Chrome's ~16k
     // capture-height cap.
     await page.setViewport({ width: WIDTH, height: 900, deviceScaleFactor: 2 });
-    await settle(600);
-    const handle = await page.$('[data-shot="1"]');
+    await waitForPageReady(page, { target: '[data-shot-target="1"]' });
+    const handle = await page.$('[data-shot-target="1"]');
     const box = await handle.boundingBox();
     const crop = join(OUT, `${flags.label}-crop.png`);
     await handle.screenshot({ path: crop });
     console.log(`✓ ${crop}  ${Math.round(box.width)}x${Math.round(box.height)}`);
   }
 } finally {
-  await browser.close();
+  await page?.close();
+  await releaseBrowser(browser, shared);
 }

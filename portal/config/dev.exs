@@ -1,16 +1,42 @@
 import Config
 
-# Configure your database. PGHOST covers the coop box, where the sibling
-# postgres is reachable by its compose service name (db) instead of localhost;
-# host dev and CI leave it unset.
-config :emisar, Emisar.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: System.get_env("PGHOST", "localhost"),
-  database: "emisar_dev",
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+# dev/run supplies the same workspace-specific loopback URL on the host and in
+# a Coop box. Keep the conventional localhost fallback for direct Mix usage.
+repo_config =
+  case System.get_env("DATABASE_URL") do
+    nil ->
+      [
+        username: "postgres",
+        password: "postgres",
+        hostname: "localhost",
+        database: "emisar_dev"
+      ]
+
+    url ->
+      [url: url]
+  end
+
+config :emisar,
+       Emisar.Repo,
+       repo_config ++
+         [
+           stacktrace: true,
+           show_sensitive_data_on_connection_error: true,
+           pool_size: 10
+         ]
+
+dev_url = URI.parse(System.get_env("EMISAR_DEV_URL", "http://localhost:4000"))
+listen_port = String.to_integer(System.get_env("EMISAR_LISTEN_PORT", "4000"))
+
+listen_ip =
+  case System.get_env("EMISAR_LISTEN_IP", "127.0.0.1") do
+    "0.0.0.0" -> {0, 0, 0, 0}
+    "127.0.0.1" -> {127, 0, 0, 1}
+  end
+
+if ca_bundle = System.get_env("EMISAR_DEV_CA_BUNDLE") do
+  config :public_key, cacerts_path: String.to_charlist(ca_bundle)
+end
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -19,11 +45,8 @@ config :emisar, Emisar.Repo,
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
 config :emisar_web, EmisarWeb.Endpoint,
-  # Bind to all interfaces in dev so docker containers (e.g. the runner
-  # under `runner/docker/run.sh`) can reach the control plane via
-  # host.docker.internal:4000. Restrict to loopback if running on a
-  # shared dev box.
-  http: [ip: {0, 0, 0, 0}, port: 4000],
+  http: [ip: listen_ip, port: listen_port],
+  url: [scheme: dev_url.scheme, host: dev_url.host, port: dev_url.port],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

@@ -2,12 +2,14 @@
   "name": "emisar-screenshot-tooling",
   "version": "1.0.0",
   "private": true,
-  "description": "Screenshot tooling against the seeded compose stack: /docs assets, console audit, UI-fix before/after proof.",
+  "description": "Screenshot tooling against the active Emisar development workspace.",
   "scripts": {
+    "browser:install": "node install-browser.mjs",
     "capture": "node capture-docs-screenshots.mjs",
     "shot": "node shot.mjs"
   },
   "dependencies": {
-    "puppeteer-core": "^25.3.0"
+    "@puppeteer/browsers": "3.0.6",
+    "puppeteer-core": "25.3.0"
   }
 }

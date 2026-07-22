@@ -4,7 +4,7 @@
 or marketing — the fix is a four-step loop, and the FIRST step happens before
 any code is edited:
 
-1. **Before-shot** — capture the reported state from the running `:4010` stack,
+1. **Before-shot** — capture the reported state from `dev/run serve`,
    writing into the folder that owns the work (`--out`):
 
    - **Working a queued task?** Its own `screenshots/` folder:
@@ -14,20 +14,21 @@ any code is edited:
      `.agent/screenshots/2026-07-16-agents-owner-grouping`).
 
    ```sh
-   node portal/.agent/scripts/shot.mjs <path> --label before --select '<css>' \
+   dev/run shot <path> --label before --select '<css>' \
      --out .agent/screenshots/<YYYY-MM-DD>-<what-is-fixed>
    ```
 
    Writes `<out>/before-full.png` (full page) and `before-crop.png` (the element
    under fix). Both locations are git-ignored, so the shots never add commit
    noise; a forgotten `--out` falls back to `.agent/screenshots/scratch`. Anchor
-   by `--select CSS`, `--heading "exact text"` (+ `--climb section` to take the
-   enclosing container), or `--class-contains a,b` for Tailwind arbitrary classes.
+   by stable `data-shot` name with `--shot <name>` when available, then by
+   `--select CSS`, `--heading "exact text"` (+ `--climb section`), or
+   `--class-contains a,b` for Tailwind arbitrary classes.
 2. **Fix** — the normal workflow (AGENTS.md, `design-system.md`, the gate).
-3. **Rebuild** — from the repo root: `docker compose build portal &&
-   docker compose up -d portal`, wait for healthy. The screenshots see only the
-   :4010 stack; an unrebuilt stack re-shoots the OLD code and the "after"
-   proves nothing.
+3. **Reload** — keep `dev/run serve` running and wait for Phoenix's code reload.
+   `shot.mjs` waits for the LiveView connection, fonts, visible images, and
+   stable target geometry; do not restore a fixed sleep or rebuild a release
+   image for ordinary UI work.
 4. **After-shot** — same command, same anchor, `--label after`. Then LOOK at
    both crops (Read the PNGs) — confirm the defect is actually gone and the
    full page shows nothing around it regressed — and hand the user the
@@ -44,17 +45,15 @@ reviews pixels, not prose.
 whole + after-full clean → both paths handed over in the final message.
 
 ❌ "fixed the padding, should look right now" with no screenshots; an
-after-shot taken against a stale (unrebuilt) stack; a before-shot skipped
+after-shot taken against a stale server; a before-shot skipped
 because the fix "was obvious"; reviewing only the crop and missing a regression
 the full page would have shown.
 
 **Scope + edges.**
 
 - Responsive-sensitive fix → repeat both shots with `--width 390`.
-- State that needs interaction (an open menu, hover tooltip, mid-flow wizard
-  step) isn't reachable via `shot.mjs` flags — extend the script per
-  `capture-docs-screenshots.mjs`'s click-through pattern or drive Chrome by
-  hand; the before/after discipline still applies.
+- State that needs one click can use `--click <selector>`; more involved states
+  extend the script per `capture-docs-screenshots.mjs` or drive Chrome by hand.
 - Console paths log in as the seeded `demo` account; use `EMAIL=` to shoot the
   staged `acme`/`globex` data volumes.
 - This rule is for *user-reported fixes on rendered surfaces*. Building a new

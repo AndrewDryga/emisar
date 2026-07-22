@@ -18,23 +18,25 @@ apps/emisar_web/  HTTP, LiveView, runner websocket, MCP/OAuth, and marketing pag
 config/           compile-time and runtime configuration
 rel/              release commands and overlays
 Dockerfile        production release image, built from the repository root
-docker-compose.yml local PostgreSQL for native development
 ```
 
 ## Local development
 
-Run from `portal/`:
+Run from the repository root:
 
 ```sh
-docker compose up -d db
-mix deps.get
-mix ecto.setup
-mix phx.server
+dev/run setup
+dev/run seed       # only when demo data is wanted
+dev/run serve
 ```
 
-Open <http://localhost:4000>. The seeded owner is `demo@emisar.dev`; request a
-magic sign-in link and read it at <http://localhost:4000/dev/mailbox>. Seeds
-also print a reusable runner enrollment key for connecting a local runner.
+Phoenix runs directly in the current workspace for fast code reload. The
+printed URL is stable for that workspace and distinct across Coop forks. The
+seeded owner is `demo@emisar.dev`; request a magic sign-in link and read it at
+`<portal-url>/dev/mailbox`. Seeds also print a reusable runner enrollment key.
+
+`dev/run setup`, `serve`, and `reset` migrate but do not seed. Use `dev/run seed`
+or `dev/run reset --seed` when the fixtures need to be refreshed.
 
 The repository-root `docker-compose.yml` starts the complete local stack,
 including sample runners. Production delivery is documented in

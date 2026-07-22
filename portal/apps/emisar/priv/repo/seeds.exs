@@ -1,5 +1,5 @@
 # Seeds for local dev. Run with `mix run apps/emisar/priv/repo/seeds.exs`
-# or via `mix ecto.setup`. Idempotent — safe to re-run.
+# or explicitly via `mix ecto.seed`. Idempotent — safe to re-run.
 #
 # Goal: produce a believable live-account state so the dashboard,
 # runs list, approvals, runners, audit, and grants pages all show
@@ -1591,14 +1591,17 @@ case Runners.list_enrollment_keys(owner_subject) do
     :ok
 end
 
-# -- Keycloak OIDC + SCIM provider (docker-compose e2e SSO) ----------
+# -- Keycloak OIDC + SCIM provider (dev/run e2e SSO) -----------------
 # Seeds an enabled :keycloak IdentityProvider on the demo (enterprise) account
-# pointing at the local Keycloak, plus a fixed dev SCIM bearer — so `docker
-# compose up` exercises OIDC login AND inbound SCIM provisioning end to end.
+# pointing at the local Keycloak, plus a fixed dev SCIM bearer — so the shared
+# dev stack exercises OIDC login AND inbound SCIM provisioning end to end.
 # Gated on the same fixed-dev-value env vars as the auth/MCP keys; a no-op when
 # unset, so a prod-style seed never creates an IdP. Idempotent (skips if the
-# account already has a provider).
+# account already has a provider and reconciles SCIM on the known dev provider).
 keycloak_secret = System.get_env("EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET")
+
+provider_id =
+  System.get_env("EMISAR_DEV_KEYCLOAK_PROVIDER_ID") || "11111111-1111-7111-8111-111111111111"
 
 keycloak_present? =
   Emisar.SSO.IdentityProvider.Query.not_deleted()
@@ -1607,9 +1610,6 @@ keycloak_present? =
 
 if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "" do
   issuer = System.get_env("EMISAR_DEV_KEYCLOAK_ISSUER") || "https://keycloak:8443/realms/emisar"
-  # Fixed id so the e2e driver can begin the flow at /sign_in/sso/<id> with no DB lookup.
-  provider_id =
-    System.get_env("EMISAR_DEV_KEYCLOAK_PROVIDER_ID") || "11111111-1111-7111-8111-111111111111"
 
   # Build the row directly (Changeset.change, not create): the dev Keycloak runs
   # as the portal's localhost sidecar, so its issuer is a loopback URL — which
@@ -1617,7 +1617,7 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
   # OPERATOR-supplied issuers. The seed is trusted infra pointing at a known dev
   # provider, not attacker input, so it bypasses that guard; the console config
   # path stays fully guarded.
-  {:ok, provider} =
+  {:ok, _provider} =
     %Emisar.SSO.IdentityProvider{}
     |> Ecto.Changeset.change(%{
       id: provider_id,
@@ -1636,9 +1636,17 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
     |> Repo.insert()
 
   IO.puts(IO.ANSI.green() <> "✓ Seeded Keycloak OIDC provider (#{issuer})" <> IO.ANSI.reset())
+end
 
-  case System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") do
-    raw when is_binary(raw) and byte_size(raw) > 12 ->
+case System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") do
+  raw when is_binary(raw) and byte_size(raw) > 12 ->
+    provider =
+      Emisar.SSO.IdentityProvider.Query.not_deleted()
+      |> Emisar.SSO.IdentityProvider.Query.by_account_id(account.id)
+      |> Emisar.SSO.IdentityProvider.Query.by_id(provider_id)
+      |> Repo.peek()
+
+    if provider do
       {:ok, _} =
         provider
         |> Emisar.SSO.IdentityProvider.Changeset.scim_token(
@@ -1647,15 +1655,10 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
           true
         )
         |> Repo.update()
+    end
 
-      IO.puts(
-        IO.ANSI.green() <>
-          "✓ Enabled SCIM on the Keycloak provider (fixed dev token)" <> IO.ANSI.reset()
-      )
-
-    _ ->
-      :ok
-  end
+  _ ->
+    :ok
 end
 
 # -- SCIM directory groups + memberships (docker-compose e2e SSO) -----

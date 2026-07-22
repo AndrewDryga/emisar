@@ -45,8 +45,8 @@ erl_crash.dump
 
 # .agent/ is local working state — only the KNOWLEDGE and CONFIG are committed:
 # rules/ (the shared taste KB), kb/ (the descriptive knowledge base), presets/
-# (orchestration recipes), scripts/ (maintained dev tooling), project.yaml
-# (monorepo members + serve ports), and loop.yaml (the unattended-loop config).
+# (orchestration recipes), scripts/ (agent-only enforcement), project.yaml
+# (monorepo/box policy), loop.yaml, and the project Dockerfile.
 # Tasks, the backlog drawer, pending decisions, log, archive all stay on the
 # machine (no commit noise, no cross-agent merge conflicts). See AGENTS.md.
 **/.agent/*
@@ -56,12 +56,16 @@ erl_crash.dump
 !**/.agent/presets
 !.agent/project.yaml
 !.agent/loop.yaml
-!.agent/compose.yml
+!.agent/Dockerfile
 .expert/*.log
 .claude/.sweep-active
 
 # Self-signed dev/e2e TLS certs (mix phx.gen.cert)
 **/priv/cert/
+
+# Generated DEV-ONLY Keycloak CA and leaf material. Private keys must never be
+# committed; dev/keycloak/certs/gen.sh creates this directory during setup.
+/dev/keycloak/certs/generated/
 
 # Terraform (infra/) — state and real var files never get committed; the provider
 # lock (.terraform.lock.hcl) and *.tfvars.example DO. State can hold sensitive

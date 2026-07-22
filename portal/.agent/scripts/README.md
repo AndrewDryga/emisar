@@ -1,6 +1,6 @@
 # Screenshot tooling
 
-Three scripts against the seeded `:4010` compose stack:
+Three scripts against the active `dev/run serve` workspace:
 
 - `capture-docs-screenshots.mjs` — regenerates the cropped console screenshots
   embedded in the `/docs` pages (see below).
@@ -11,61 +11,51 @@ Three scripts against the seeded `:4010` compose stack:
   (`../rules/design-ui-fix-screenshot-proof.md`):
 
   ```sh
-  node shot.mjs /app/demo/runners --label before --select '#runners'
-  # fix → rebuild the stack → same command with --label after
+  dev/run shot /app/demo/runners --label before --select '#runners'
+  # fix → Phoenix reloads → same command with --label after
   ```
 
-  Anchors: `--select CSS`, `--heading "exact text"` (+ `--climb section`), or
-  `--class-contains a,b`; `--width 390` for mobile. Output lands in
-  `test-results/ui-fix/` (repo root, gitignored).
+  Anchors: `--shot NAME` for a stable `data-shot` marker, `--select CSS`,
+  `--heading "exact text"` (+ `--climb section`), or `--class-contains a,b`;
+  `--width 390` for mobile. Pass the owning task's `--out` directory.
 
 ## Docs screenshots
 
 `capture-docs-screenshots.mjs` regenerates the cropped console screenshots
 embedded in the `/docs` pages under
-`portal/apps/emisar_web/priv/static/images/`. It logs into the seeded compose
-stack, captures each relevant product surface, pads the crop, and rewrites the
+`portal/apps/emisar_web/priv/static/images/`. It logs into the active seeded
+workspace, captures each relevant product surface, pads the crop, and rewrites the
 shipped WebP.
 
-## Prereqs (macOS)
+## Prerequisites
 
-- **Compose stack** running from the repository root: `docker compose up -d`
-  (serves the seeded portal on `:4010`).
-- **Google Chrome** installed, and **ImageMagick** on `PATH`
-  (`brew install imagemagick`).
+- `dev/run setup`, an explicit `dev/run seed`, and `dev/run serve`.
+- Google Chrome or the pinned headless shell installed by setup. The Coop image
+  includes ImageMagick and browser libraries.
 
-## With a coop box (serve in the box, capture on the host)
+## Host and Coop
 
-Run portal **inside the box** so its live code is what you shoot, publish the port,
-and capture from the **host** (macOS Chrome + ImageMagick, the prereqs above):
+The same command works on the host and inside an interactive Coop box:
 
 ```sh
-# 1. in the box (coop shell), serve portal — PGHOST=db is baked, dev binds 0.0.0.0:4000:
-cd portal && mix ecto.setup && mix phx.server        # ecto.setup seeds demo@emisar.dev
-#    coop prints:  serving box :4000 at http://localhost:<PORT>   (a stable, distinct host
-#    port — never collides with your host's own :4000 dev or :4010 compose stack)
-
-# 2. on the host, shoot against that published port:
-cd portal/.agent/scripts
-BASE_URL=http://localhost:<PORT> node shot.mjs /pricing --label after --heading "Pricing"
+dev/run serve
+dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
 ```
 
-`test-results/` is repo-mounted, so the PNGs land in your working tree either way.
-`resolve-chrome.mjs` finds the browser automatically (host Chrome, or `$CHROME`).
-
-> **Capturing from *inside* the box isn't wired up yet.** The scripts are
-> box-portable (browser resolver + container-safe Chrome flags), but Playwright's
-> Chromium currently SIGTRAPs in a coop box's mount composition (it launches fine in
-> a bare container with the same hardening) — tracked in coop's queue as
-> `box-chromium-sigtraps`. Until that lands, capture host-side as above.
+Coop mirrors the public workspace URL back into the box, so LiveView and OIDC
+use the same URL as the host browser. `dev/run shot` keeps a browser process
+alive between captures; `dev/run browser stop` releases it.
 
 ## Run
 
 ```sh
-cd portal/.agent/scripts
-npm ci                   # locked, reproducible install (.npmrc keeps scripts off)
-npm run capture          # or: node capture-docs-screenshots.mjs
+dev/run capture docs
 ```
+
+Use `dev/run capture console` for the full signed-out and authenticated console
+audit. Both commands discover the active workspace URL and reuse its browser.
+On a macOS host, docs capture additionally requires ImageMagick; the Coop image
+already includes it.
 
 Review the changed WebPs under `apps/emisar_web/priv/static/images/`.
 
@@ -76,4 +66,5 @@ Review the changed WebPs under `apps/emisar_web/priv/static/images/`.
    `<img src="/images/screenshots/<webp-name>.webp" alt="…" loading="lazy" class="w-full" />`.
 3. Re-run.
 
-Env overrides: `BASE_URL`, `EMAIL`, `CHROME`.
+All npm installs use `--ignore-scripts`; dependencies are exact-pinned. Env
+overrides: `BASE_URL`, `EMAIL`, `CHROME`, `BROWSER_STATE`, `PROFILE_DIR`.

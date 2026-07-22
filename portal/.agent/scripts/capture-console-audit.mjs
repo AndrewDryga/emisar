@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Console screenshot audit — walks EVERY authenticated console page (plus the
-// signed-out auth pages) on the :4010 compose stack and writes full-page
+// signed-out auth pages) on the active workspace and writes full-page
 // desktop + mobile PNGs for the doctrine grading pass (design-console-ux.md).
 //
 // Login is passwordless: submits the seeded demo email on /sign_in, then pulls
@@ -8,19 +8,19 @@
 // EMISAR_DEV_ROUTES on the stack) and opens it in the SAME browser (the link
 // is nonce-cookie-bound to the requesting browser).
 //
-//   cd portal/.agent/scripts && npm install && node capture-console-audit.mjs
+//   dev/run capture console
 //
 // Env overrides: BASE_URL, EMAIL, ACCOUNT_SLUG, CHROME, OUT_DIR.
 
-import puppeteer from "puppeteer-core";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveChrome, containerChromeArgs } from "./resolve-chrome.mjs";
+import { acquireBrowser, releaseBrowser } from "./browser-client.mjs";
+import { waitForPageReady } from "./page-ready.mjs";
 
-const BASE = process.env.BASE_URL ?? "http://localhost:4010";
+const BASE = process.env.BASE_URL ?? "http://localhost:4000";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
 const SLUG = process.env.ACCOUNT_SLUG ?? "demo";
-const CHROME = resolveChrome();
+const PROFILE = process.env.PROFILE_DIR ?? "/tmp/emisar-console-audit-profile";
 const OUT = process.env.OUT_DIR
   ? resolve(process.env.OUT_DIR)
   : resolve(import.meta.dirname, "../../../test-results/console-audit");
@@ -69,7 +69,7 @@ const CONSOLE_PAGES = {
 
 const manifest = [];
 
-async function settle(ms = 1800) {
+async function settle(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
@@ -80,7 +80,7 @@ async function shoot(page, name, note = "") {
     [MOBILE, "mobile"],
   ]) {
     await page.setViewport(vp);
-    await settle(900);
+    await waitForPageReady(page);
     const file = `${name}-${label}.png`;
     await page.screenshot({ path: join(OUT, file), fullPage: true });
     files.push(file);
@@ -92,8 +92,8 @@ async function shoot(page, name, note = "") {
 
 async function gotoAndShoot(page, name, url, note = "") {
   try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-    await settle();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await waitForPageReady(page);
     await shoot(page, name, note);
     return true;
   } catch (err) {
@@ -153,14 +153,11 @@ async function pollMagicLink(seenIds) {
   throw new Error("no magic-link email showed up in /dev/mailbox");
 }
 
-const browser = await puppeteer.launch({
-  executablePath: CHROME,
-  headless: "new",
-  args: [...containerChromeArgs, "--force-prefers-reduced-motion"],
-});
+const { browser, shared } = await acquireBrowser({ profile: PROFILE });
+let page;
 
 try {
-  const page = await browser.newPage();
+  page = await browser.newPage();
   await page.setViewport(DESKTOP);
 
   console.log("auth pages (signed out):");
@@ -170,14 +167,15 @@ try {
 
   console.log("login via magic link:");
   const seenIds = new Set((await mailboxMessages()).map(mailId));
-  await page.goto(`${BASE}/sign_in`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE}/sign_in`, { waitUntil: "domcontentloaded" });
+  await waitForPageReady(page);
   await page.type('input[type="email"]', EMAIL);
   await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {}),
+    page.waitForNavigation({ waitUntil: "domcontentloaded" }).catch(() => {}),
     page.keyboard.press("Enter"),
   ]);
   const magicLink = await pollMagicLink(seenIds);
-  await page.goto(magicLink, { waitUntil: "networkidle2" });
+  await page.goto(magicLink, { waitUntil: "domcontentloaded" });
   await page
     .waitForFunction(() => location.pathname.startsWith("/app/"), { timeout: 20000 })
     .catch(() => {});
@@ -209,8 +207,8 @@ try {
   ];
 
   for (const d of details) {
-    await page.goto(`${BASE}/app/${SLUG}${d.list}`, { waitUntil: "networkidle2" });
-    await settle();
+    await page.goto(`${BASE}/app/${SLUG}${d.list}`, { waitUntil: "domcontentloaded" });
+    await waitForPageReady(page);
     const href = await findHref(page, d.pattern, d.not);
     if (href) {
       await gotoAndShoot(page, d.name, `${BASE}${href}`);
@@ -221,12 +219,12 @@ try {
   }
 
   // run-new hangs off a runner detail's per-action Run link.
-  await page.goto(`${BASE}/app/${SLUG}/runners`, { waitUntil: "networkidle2" });
-  await settle();
+  await page.goto(`${BASE}/app/${SLUG}/runners`, { waitUntil: "domcontentloaded" });
+  await waitForPageReady(page);
   const runnerHref = await findHref(page, `/app/${SLUG}/runners/`, "/install");
   if (runnerHref) {
-    await page.goto(`${BASE}${runnerHref}`, { waitUntil: "networkidle2" });
-    await settle();
+    await page.goto(`${BASE}${runnerHref}`, { waitUntil: "domcontentloaded" });
+    await waitForPageReady(page);
     const runNewHref = await findHref(page, "/runs/new/");
     if (runNewHref) {
       await gotoAndShoot(page, "run-new", `${BASE}${runNewHref}`);
@@ -236,14 +234,14 @@ try {
   }
 
   // audit-detail navigates via LiveTable row_click (no anchor) — click row 1.
-  await page.goto(`${BASE}/app/${SLUG}/audit`, { waitUntil: "networkidle2" });
-  await settle();
+  await page.goto(`${BASE}/app/${SLUG}/audit`, { waitUntil: "domcontentloaded" });
+  await waitForPageReady(page);
   try {
     await page.click("tbody tr");
     await page.waitForFunction(() => /\/audit\/[0-9a-f-]{20,}/.test(location.pathname), {
       timeout: 10000,
     });
-    await settle();
+    await waitForPageReady(page);
     await shoot(page, "audit-detail");
   } catch {
     console.log("  – audit-detail skipped (no clickable row)");
@@ -253,5 +251,6 @@ try {
   writeFileSync(join(OUT, "manifest.json"), JSON.stringify(manifest, null, 2));
   console.log(`\nWrote ${manifest.filter((m) => m.files.length).length} pages to ${OUT}`);
 } finally {
-  await browser.close();
+  await page?.close();
+  await releaseBrowser(browser, shared);
 }

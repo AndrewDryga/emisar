@@ -8,8 +8,8 @@ import Config
 config :emisar, Emisar.Repo,
   username: "postgres",
   password: "postgres",
-  # PGHOST covers the coop box (sibling postgres at service name "db"); host dev and CI leave it unset.
   hostname: System.get_env("PGHOST", "localhost"),
+  port: String.to_integer(System.get_env("PGPORT", "5432")),
   database: "emisar_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2

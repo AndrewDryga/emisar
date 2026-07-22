@@ -1,6 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { Browser, computeExecutablePath } from "@puppeteer/browsers";
+import { PUPPETEER_REVISIONS } from "puppeteer-core";
 
 // Chrome flags that make a headless launch survive inside a container: the box's
 // /dev/shm is tiny (Chromium's default shared-memory path → crashpad crash), there's
@@ -14,14 +16,20 @@ export const containerChromeArgs = [
 
 // Resolve a Chrome/Chromium executable for puppeteer-core across the macOS host and a
 // coop box. Order: explicit $CHROME → macOS Google Chrome (the host default) → a
-// Playwright-installed Chromium (the coop box bakes one at $PLAYWRIGHT_BROWSERS_PATH;
-// see Dockerfile.agent). Throws with a fix hint when nothing is found, so a missing
-// browser fails loudly instead of puppeteer's opaque spawn error.
+// pinned Puppeteer headless shell, a distro-native shell (ARM Coop boxes), then
+// a Playwright-installed Chromium. Throws with a fix hint when nothing is found.
 export function resolveChrome() {
   if (process.env.CHROME) return process.env.CHROME;
 
   const candidates = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    computeExecutablePath({
+      cacheDir: process.env.PUPPETEER_CACHE_DIR || join(homedir(), ".cache", "puppeteer"),
+      browser: Browser.CHROMEHEADLESSSHELL,
+      buildId: PUPPETEER_REVISIONS["chrome-headless-shell"],
+    }),
+    "/usr/bin/chromium-headless-shell",
+    "/usr/bin/chromium",
   ];
   const pwRoot =
     process.env.PLAYWRIGHT_BROWSERS_PATH ||
@@ -41,6 +49,6 @@ export function resolveChrome() {
   const found = candidates.find((p) => existsSync(p));
   if (found) return found;
   throw new Error(
-    "no Chrome/Chromium found — set CHROME=/path/to/chrome, or install one: npx playwright install chromium",
+    "no Chrome/Chromium found — set CHROME=/path/to/chrome, or run: dev/run browser install",
   );
 }

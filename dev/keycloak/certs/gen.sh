@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 #
-# Regenerate the DEV-ONLY self-signed CA + Keycloak server cert for the
-# docker-compose SSO stack (../../../docker-compose.yml). DEV ONLY — these are
-# committed deliberately so the stack works out of the box; NEVER use them in
-# production. Re-run after changing the SAN list, then restart keycloak + portal:
-#
-#   ./gen.sh && (cd ../../.. && docker compose up -d --force-recreate keycloak portal)
+# Create the ignored DEV-ONLY CA + Keycloak server certificate used by both
+# dev/compose.yml and the packaged root smoke stack. The default is idempotent;
+# pass --rotate to intentionally replace the CA and every leaf it signed.
 #
 set -euo pipefail
 cd "$(dirname "$0")"
 
+case "${1:-}" in
+  "") ;;
+  --rotate) rm -rf generated ;;
+  *) echo "usage: $0 [--rotate]" >&2; exit 2 ;;
+esac
+
+out=generated
+mkdir -p "$out"
+chmod 700 "$out"
+
 DAYS=3650
-# The OIDC issuer is plain localhost:8443 — the host browser uses the published
-# port and the portal reaches Keycloak at that same localhost via the shared
-# netns (docker-compose.yml: keycloak `network_mode: service:portal`). Loopback
-# is the only name TLS-verified against this cert.
+# Both the dynamic Coop sidecar and packaged smoke stack use localhost with a
+# workspace-specific or fixed port. Loopback is the only identity verified by
+# this certificate.
 SAN="DNS:localhost,IP:127.0.0.1"
 
 tmp="$(mktemp -d)"
@@ -35,8 +41,12 @@ basicConstraints     = critical,CA:TRUE
 keyUsage             = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
 EOF
-openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/ca.key" -out ca.crt \
-  -days "$DAYS" -config "$tmp/ca.cnf"
+if [[ ! -s "$out/ca.key" || ! -s "$out/ca.crt" ]]; then
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$tmp/ca.key" -out "$tmp/ca.crt" -days "$DAYS" -config "$tmp/ca.cnf"
+  install -m 600 "$tmp/ca.key" "$out/ca.key"
+  install -m 644 "$tmp/ca.crt" "$out/ca.crt"
+fi
 
 # --- server cert (signed by the CA) -----------------------------------------
 cat >"$tmp/srv.cnf" <<EOF
@@ -45,11 +55,14 @@ basicConstraints = critical,CA:FALSE
 keyUsage         = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 EOF
-openssl req -newkey rsa:2048 -nodes -keyout tls.key -out "$tmp/tls.csr" -subj "/CN=keycloak"
-openssl x509 -req -in "$tmp/tls.csr" -CA ca.crt -CAkey "$tmp/ca.key" \
-  -CAserial "$tmp/ca.srl" -CAcreateserial -out tls.crt -days "$DAYS" \
-  -extfile "$tmp/srv.cnf"
+if [[ ! -s "$out/tls.key" || ! -s "$out/tls.crt" ]]; then
+  openssl req -newkey rsa:2048 -nodes -keyout "$tmp/tls.key" \
+    -out "$tmp/tls.csr" -subj "/CN=keycloak"
+  openssl x509 -req -in "$tmp/tls.csr" -CA "$out/ca.crt" -CAkey "$out/ca.key" \
+    -CAcreateserial -out "$tmp/tls.crt" -days "$DAYS" -extfile "$tmp/srv.cnf"
+  install -m 600 "$tmp/tls.key" "$out/tls.key"
+  install -m 644 "$tmp/tls.crt" "$out/tls.crt"
+fi
 
-chmod 600 tls.key
-openssl verify -CAfile ca.crt tls.crt
-echo "✓ regenerated ca.crt + tls.crt/tls.key (SAN: $SAN)"
+openssl verify -CAfile "$out/ca.crt" "$out/tls.crt"
+echo "✓ Keycloak dev certificates ready in $out/ (SAN: $SAN)"
