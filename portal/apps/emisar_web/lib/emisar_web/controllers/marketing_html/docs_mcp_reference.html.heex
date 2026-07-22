@@ -96,7 +96,10 @@
           returns the exact
           argument schema and current compatible runner refs. Use <code>list_runners</code>
           for fleet
-          diagnosis or target selection. Pack and runner pages default to 15 items.
+          diagnosis or target selection. Pack and runner pages default to 15 items; continue a list
+          by passing the previous response's <code>next_cursor</code>
+          (find_actions returns a ready-to-send <code>next</code>
+          call), and a cursor is bound to the identical query — a mismatched one is rejected.
         </p>
         <p>
           <code>availability: "executable"</code>
