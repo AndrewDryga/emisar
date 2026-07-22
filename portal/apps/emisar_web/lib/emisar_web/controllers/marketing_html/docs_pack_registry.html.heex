@@ -161,15 +161,15 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             <h2 class="text-xl font-semibold text-zinc-50">Install from it, fleet-wide</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Per install with <code>--registry</code>, or set the default for a host once with <code>EMISAR_PACKS_REGISTRY</code>. Pin the hash you reviewed — a tampered or
-            mismatched copy is rejected before it reaches the runner:
+            Install by the pack's immutable tarball URL from the tree you built, and pin the hash you
+            reviewed — <code>emisar pack validate</code>
+            printed it in step 1, and every version carries it in <code>catalog.json</code>. A tampered
+            or mismatched copy is rejected before it reaches the runner. Roll the same URL out across
+            the fleet with your config management; to update, install the new version's URL.
           </p>
-          <.docs_code phx-no-format label="shell">sudo emisar pack install billing-tools \
-  --registry https://packs.acme.internal --hash sha256:&lt;reviewed&gt;
-
-# or fleet-wide via the environment:
-export EMISAR_PACKS_REGISTRY=https://packs.acme.internal
-emisar pack update --dry-run</.docs_code>
+          <.docs_code phx-no-format label="shell">sudo emisar pack install \
+  https://packs.acme.internal/v1/packs/billing-tools/0.4.0/&lt;sha256&gt;/pack.tar.gz \
+  --hash sha256:&lt;reviewed&gt;</.docs_code>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             Then trust the pack once on the dashboard's
             <strong class="text-zinc-200">Packs</strong>

@@ -966,9 +966,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar pack install"
       assert html =~ "--hash"
 
-      # Keeping a pack private still scales to a fleet — packctl + a --registry install.
+      # Keeping a pack private still scales to a fleet — packctl builds the tree.
       assert html =~ "packctl"
-      assert html =~ "--registry"
 
       # install SIGHUP-reloads a running daemon, so the guide drops the redundant manual reload.
       refute html =~ "systemctl reload"
@@ -983,8 +982,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "packctl catalog publish"
       assert html =~ "--base-url"
       assert html =~ "--previous"
-      assert html =~ "--registry"
-      assert html =~ "EMISAR_PACKS_REGISTRY"
+      assert html =~ "/v1/packs/"
+      assert html =~ "--hash sha256:"
       assert html =~ "aws s3 sync"
       # Trust never rests on the registry — the page must say so.
       assert html =~ "trust never"
