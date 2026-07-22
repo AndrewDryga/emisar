@@ -1,25 +1,11 @@
 defmodule Emisar.Analytics.EventsTest do
-  # async: false — flips the global `:mixpanel_enabled` app env.
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.Analytics.Events
   alias Emisar.Billing.Subscription
 
-  @analytics_env_keys [:mixpanel_enabled, :mixpanel_groups_enabled, :analytics_test_pid]
-  @unset :unset
-
   setup do
-    original = Map.new(@analytics_env_keys, &{&1, Application.get_env(:emisar, &1, @unset)})
-
-    Application.put_env(:emisar, :mixpanel_enabled, true)
-    Application.put_env(:emisar, :analytics_test_pid, self())
-
-    on_exit(fn ->
-      Enum.each(original, fn
-        {key, @unset} -> Application.delete_env(:emisar, key)
-        {key, value} -> Application.put_env(:emisar, key, value)
-      end)
-    end)
-
+    Emisar.Config.put_override(:emisar, :mixpanel_enabled, true)
+    Emisar.Config.put_override(:emisar, :analytics_test_pid, self())
     :ok
   end
 
@@ -41,7 +27,7 @@ defmodule Emisar.Analytics.EventsTest do
   end
 
   test "subscription_changed/1 updates the account group when group analytics is enabled" do
-    Application.put_env(:emisar, :mixpanel_groups_enabled, true)
+    Emisar.Config.put_override(:emisar, :mixpanel_groups_enabled, true)
 
     Events.subscription_changed(%Subscription{
       account_id: "acc-1",

@@ -18,7 +18,7 @@ defmodule Emisar.Analytics.MixpanelClient.Stub do
   def set_groups(updates), do: report({:mixpanel_groups, updates})
 
   defp report(message) do
-    case Application.get_env(:emisar, :analytics_test_pid) do
+    case Emisar.Config.get_env(:emisar, :analytics_test_pid) do
       pid when is_pid(pid) -> send(pid, message)
       _ -> :ok
     end

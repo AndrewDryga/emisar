@@ -1,17 +1,8 @@
 defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
-  # async: false — the delivery-failure test swaps the global mailer adapter.
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Accounts.Jobs.MonthlyReports
   alias Emisar.{CalendarMonth, Mail, Repo}
   alias Emisar.Fixtures
-
-  defmodule FailingAdapter do
-    @behaviour Swoosh.Adapter
-    @impl true
-    def deliver(_email, _config), do: {:error, {:failed, :boom}}
-    @impl true
-    def validate_config(_config), do: :ok
-  end
 
   # A confirmed owner + one successful run inside the prior-month window — the
   # minimum an account needs to earn a report.
@@ -139,9 +130,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     test "a delivery failure leaves last_report_sent_at unchanged for the next sweep" do
       %{account: account} = active_account()
 
-      original = Application.get_env(:emisar, Emisar.Mailer)
-      Application.put_env(:emisar, Emisar.Mailer, adapter: FailingAdapter)
-      on_exit(fn -> Application.put_env(:emisar, Emisar.Mailer, original) end)
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
       assert :ok = MonthlyReports.execute([])
 

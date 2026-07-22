@@ -91,6 +91,7 @@
           {Emisar.Checks.InlineBroadcast, []},
           {Emisar.Checks.MultilineAliasGroup, []},
           {Emisar.Checks.MultilineDoColon, []},
+          {Emisar.Checks.NoApplicationPutEnv, []},
           {Emisar.Checks.NoBlankBetweenDirectives, []},
           {Emisar.Checks.NoDateTimeTruncate, []},
           {Emisar.Checks.NoIfOnArgField, []},

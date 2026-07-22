@@ -191,12 +191,9 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
   end
 
   # with no shared secret configured the endpoint is
-  # disabled: every request is 503, nothing is suppressed. Tests within a module
-  # run sequentially, so deleting+restoring the env here can't race the others.
+  # disabled: every request is 503, nothing is suppressed.
   test "the webhook is disabled (503) when no secret is configured", %{conn: conn} do
-    prev = Application.get_env(:emisar, :postmark_webhook_secret)
-    Application.delete_env(:emisar, :postmark_webhook_secret)
-    on_exit(fn -> Application.put_env(:emisar, :postmark_webhook_secret, prev) end)
+    Emisar.Config.put_override(:emisar, :postmark_webhook_secret, nil)
 
     conn =
       conn

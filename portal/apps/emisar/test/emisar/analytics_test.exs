@@ -1,25 +1,10 @@
 defmodule Emisar.AnalyticsTest do
-  # async: false — flips the global `:mixpanel_enabled` app env, so it must
-  # not run concurrently with other tests that touch analytics seams.
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.Analytics
 
-  @analytics_env_keys [:mixpanel_enabled, :analytics_test_pid, :mixpanel_groups_enabled]
-  @unset :unset
-
   setup do
-    original = Map.new(@analytics_env_keys, &{&1, Application.get_env(:emisar, &1, @unset)})
-
-    Application.put_env(:emisar, :mixpanel_enabled, true)
-    Application.put_env(:emisar, :analytics_test_pid, self())
-
-    on_exit(fn ->
-      Enum.each(original, fn
-        {key, @unset} -> Application.delete_env(:emisar, key)
-        {key, value} -> Application.put_env(:emisar, key, value)
-      end)
-    end)
-
+    Emisar.Config.put_override(:emisar, :mixpanel_enabled, true)
+    Emisar.Config.put_override(:emisar, :analytics_test_pid, self())
     :ok
   end
 
@@ -73,7 +58,7 @@ defmodule Emisar.AnalyticsTest do
     end
 
     test "is a no-op when analytics is disabled" do
-      Application.put_env(:emisar, :mixpanel_enabled, false)
+      Emisar.Config.put_override(:emisar, :mixpanel_enabled, false)
       Analytics.track("x", "id", %{})
       refute_receive {:mixpanel_track, _}
     end
@@ -119,7 +104,7 @@ defmodule Emisar.AnalyticsTest do
     end
 
     test "emits when Group Analytics is enabled" do
-      Application.put_env(:emisar, :mixpanel_groups_enabled, true)
+      Emisar.Config.put_override(:emisar, :mixpanel_groups_enabled, true)
       Analytics.set_group("account_id", "acc-1", %{"name" => "Acme"})
 
       assert_receive {:mixpanel_groups, [group]}, 500
@@ -129,7 +114,7 @@ defmodule Emisar.AnalyticsTest do
     end
 
     test "omits blank group properties" do
-      Application.put_env(:emisar, :mixpanel_groups_enabled, true)
+      Emisar.Config.put_override(:emisar, :mixpanel_groups_enabled, true)
       Analytics.set_group("account_id", "acc-1", %{"name" => "Acme", "empty" => nil})
 
       assert_receive {:mixpanel_groups, [group]}, 500

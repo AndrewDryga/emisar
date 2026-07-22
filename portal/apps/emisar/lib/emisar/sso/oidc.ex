@@ -56,5 +56,5 @@ defmodule Emisar.SSO.OIDC do
   @doc "Probe an issuer's OIDC discovery document — used by `SSO.test_provider/2`, no row written."
   def discover(provider), do: impl().discover(provider)
 
-  defp impl, do: Application.get_env(:emisar, :sso_oidc_impl, Emisar.SSO.OIDC.Oidcc)
+  defp impl, do: Emisar.Config.get_env(:emisar, :sso_oidc_impl, Emisar.SSO.OIDC.Oidcc)
 end

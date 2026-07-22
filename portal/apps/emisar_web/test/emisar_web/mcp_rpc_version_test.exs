@@ -88,9 +88,13 @@ defmodule EmisarWeb.MCPRpcVersionTest do
   end
 
   defp enforce_mcp_versions(enforce?) do
-    previous = Application.get_env(:emisar, Emisar.Compat)
-    Application.put_env(:emisar, Emisar.Compat, Keyword.put(previous, :mcp_enforce, enforce?))
-    on_exit(fn -> Application.put_env(:emisar, Emisar.Compat, previous) end)
+    previous = Emisar.Config.get_env(:emisar, Emisar.Compat)
+
+    Emisar.Config.put_override(
+      :emisar,
+      Emisar.Compat,
+      Keyword.put(previous, :mcp_enforce, enforce?)
+    )
   end
 
   defp rpc(conn, method, params \\ %{}, id \\ 1) do

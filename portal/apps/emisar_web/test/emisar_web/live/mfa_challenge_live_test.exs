@@ -86,9 +86,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
   describe "brute-force cap" do
     test "repeated wrong codes are throttled — not an endless guessing oracle", %{conn: conn} do
-      previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
-      Application.put_env(:emisar_web, :rate_limit_enabled, true)
-      on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+      Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
 
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
 

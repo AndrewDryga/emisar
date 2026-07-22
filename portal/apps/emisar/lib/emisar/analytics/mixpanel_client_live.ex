@@ -61,7 +61,7 @@ defmodule Emisar.Analytics.MixpanelClient.Live do
 
   defp headers, do: [{"content-type", "application/json"}, {"accept", "application/json"}]
 
-  defp token, do: Application.fetch_env!(:emisar, :mixpanel_token)
+  defp token, do: Emisar.Config.fetch_env!(:emisar, :mixpanel_token)
 
   defp host, do: Application.get_env(:emisar, :mixpanel_api_host, "https://api.mixpanel.com")
 end

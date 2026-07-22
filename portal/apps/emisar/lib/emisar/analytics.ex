@@ -130,9 +130,9 @@ defmodule Emisar.Analytics do
   end
 
   @doc "Whether analytics is live (prod with a `MIXPANEL_TOKEN`). Off ⇒ everything no-ops."
-  def enabled?, do: Application.get_env(:emisar, :mixpanel_enabled, false)
+  def enabled?, do: Emisar.Config.get_env(:emisar, :mixpanel_enabled, false)
 
-  defp groups_enabled?, do: Application.get_env(:emisar, :mixpanel_groups_enabled, false)
+  defp groups_enabled?, do: Emisar.Config.get_env(:emisar, :mixpanel_groups_enabled, false)
 
   # Omit absent properties entirely — Mixpanel guidance: never send null
   # or "". Keeps numbers/booleans (incl. `false`/`0`), drops nil + "".

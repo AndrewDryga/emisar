@@ -3,12 +3,8 @@ defmodule Emisar.CompatTest do
   use ExUnit.Case, async: false
   alias Emisar.Compat
 
-  # Each test restores the prior policy so a flipped threshold can't bleed
-  # into the rest of the (config-reading) suite.
   defp put_policy(opts) do
-    previous = Application.get_env(:emisar, Emisar.Compat)
-    Application.put_env(:emisar, Emisar.Compat, opts)
-    on_exit(fn -> Application.put_env(:emisar, Emisar.Compat, previous) end)
+    Emisar.Config.put_override(:emisar, Emisar.Compat, opts)
   end
 
   describe "runner_status/1" do

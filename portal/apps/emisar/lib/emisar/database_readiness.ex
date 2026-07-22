@@ -9,7 +9,7 @@ defmodule Emisar.DatabaseReadiness do
 
   def ready? do
     check =
-      Application.get_env(:emisar, :database_health_check, fn ->
+      Emisar.Config.get_env(:emisar, :database_health_check, fn ->
         Ecto.Adapters.SQL.query(Emisar.Repo, "SELECT 1", [], timeout: 2_000)
       end)
 

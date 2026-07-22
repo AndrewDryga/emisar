@@ -54,8 +54,7 @@ defmodule EmisarWeb.SSOControllerTest do
   end
 
   setup do
-    Application.put_env(:emisar, :sso_oidc_impl, StubOIDC)
-    on_exit(fn -> Application.delete_env(:emisar, :sso_oidc_impl) end)
+    Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
     :ok
   end
 
@@ -178,7 +177,7 @@ defmodule EmisarWeb.SSOControllerTest do
       # raw reason — redirects to /sign_in, and leaves no half-built login stash
       # behind. Same copy as an unknown provider: a misconfig isn't a different
       # signal an attacker can read.
-      Application.put_env(:emisar, :sso_oidc_impl, FailingBeginOIDC)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingBeginOIDC)
       provider = provider_fixture(enterprise_account())
 
       conn = get(conn, ~p"/sign_in/sso/#{provider.id}")
@@ -397,7 +396,7 @@ defmodule EmisarWeb.SSOControllerTest do
       # has tailored copy; anything else (here an IdP/transport failure surfaced by
       # `complete_auth`) falls to one generic "try again, or contact your admin"
       # message rather than leaking the raw reason or 500-ing. No session is created.
-      Application.put_env(:emisar, :sso_oidc_impl, FailingOIDC)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingOIDC)
       account = enterprise_account()
       provider = provider_fixture(account)
 

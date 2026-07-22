@@ -1,21 +1,11 @@
 defmodule EmisarWeb.EndpointTest do
-  use EmisarWeb.ConnCase, async: false
+  use EmisarWeb.ConnCase, async: true
 
   test "the session cookie follows the runtime secure-cookie setting" do
-    previous = Application.get_env(:emisar_web, :force_secure_cookies)
-
-    on_exit(fn ->
-      if is_nil(previous) do
-        Application.delete_env(:emisar_web, :force_secure_cookies)
-      else
-        Application.put_env(:emisar_web, :force_secure_cookies, previous)
-      end
-    end)
-
-    Application.put_env(:emisar_web, :force_secure_cookies, true)
+    Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
     secure_conn = request_with_session()
 
-    Application.put_env(:emisar_web, :force_secure_cookies, false)
+    Emisar.Config.put_override(:emisar_web, :force_secure_cookies, false)
     insecure_conn = request_with_session()
 
     assert_session_cookie(secure_conn, true)

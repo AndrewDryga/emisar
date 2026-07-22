@@ -69,6 +69,15 @@ defmodule EmisarWeb.Endpoint do
 
   plug Plug.RequestId
 
+  # Acceptance/browser tests carry the Ecto-sandbox owner in the `user-agent`:
+  # the first plug shares the test's DB connection, the second plants that owner
+  # as `:last_caller_pid` so `Emisar.Config` overrides reach the request process.
+  # Compile-gated to the test env — never present in dev or prod.
+  if Application.compile_env(:emisar_web, :sql_sandbox, false) do
+    plug Phoenix.Ecto.SQL.Sandbox
+    plug EmisarWeb.Sandbox
+  end
+
   # The GCP load balancer probes /readyz and the auto-healer probes /healthz on
   # every instance every few seconds; logging each request's start/stop at :info
   # buried the app log in health-check noise. The :log hook skips just those two
@@ -108,7 +117,7 @@ defmodule EmisarWeb.Endpoint do
   end
 
   defp session_options do
-    secure? = Application.get_env(:emisar_web, :force_secure_cookies, false)
+    secure? = Emisar.Config.get_env(:emisar_web, :force_secure_cookies, false)
     Keyword.put(@session_options, :secure, secure?)
   end
 end

@@ -14,7 +14,7 @@ defmodule Emisar.PublicUrl do
 
   @doc "The public base URL, e.g. `https://emisar.dev` — no trailing slash."
   def base do
-    url = Application.get_env(:emisar_web, EmisarWeb.Endpoint, []) |> Keyword.get(:url, [])
+    url = Emisar.Config.get_env(:emisar_web, EmisarWeb.Endpoint, []) |> Keyword.get(:url, [])
 
     %URI{
       scheme: Keyword.get(url, :scheme, "http"),

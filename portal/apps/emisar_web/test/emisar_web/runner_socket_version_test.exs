@@ -63,9 +63,13 @@ defmodule EmisarWeb.RunnerSocketVersionTest do
   end
 
   defp enforce_runner_versions(enforce?) do
-    previous = Application.get_env(:emisar, Emisar.Compat)
-    Application.put_env(:emisar, Emisar.Compat, Keyword.put(previous, :runner_enforce, enforce?))
-    on_exit(fn -> Application.put_env(:emisar, Emisar.Compat, previous) end)
+    previous = Emisar.Config.get_env(:emisar, Emisar.Compat)
+
+    Emisar.Config.put_override(
+      :emisar,
+      Emisar.Compat,
+      Keyword.put(previous, :runner_enforce, enforce?)
+    )
   end
 
   defp runner_state_frame(version) do

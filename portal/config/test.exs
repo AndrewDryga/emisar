@@ -21,6 +21,11 @@ config :emisar_web, EmisarWeb.Endpoint,
   secret_key_base: "S1d0sqYUPUO4VjfuqukIgBitA+mmPo4Zn2s8xR+oKZsTF9fxI7oahrFmmEqecrKU",
   server: false
 
+# Enables the endpoint sandbox plugs (`Phoenix.Ecto.SQL.Sandbox` + `EmisarWeb.Sandbox`)
+# so a browser session can share the test's DB connection and `Emisar.Config`
+# overrides via the `user-agent` metadata. Compile-gated in the endpoint.
+config :emisar_web, sql_sandbox: true
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 
@@ -65,7 +70,7 @@ config :emisar,
   analytics_async?: false
 
 # In test we don't send emails
-config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Test
+config :emisar, Emisar.Mailer, adapter: Emisar.MailerTestAdapter
 
 # A fixed secret so the Postmark webhook controller test can authenticate.
 config :emisar, postmark_webhook_secret: "pm_webhook_test"

@@ -18,7 +18,7 @@ defmodule EmisarWeb.CheckoutController do
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
 
   def show(conn, _params) do
-    case Application.get_env(:emisar, :paddle_client_token) do
+    case Emisar.Config.get_env(:emisar, :paddle_client_token) do
       nil ->
         # No client token (stub billing / self-host) — nothing to initialize.
         redirect(conn, to: "/pricing")

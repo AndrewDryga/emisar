@@ -3,17 +3,9 @@ defmodule Emisar.Analytics.MixpanelClient.LiveTest do
   alias Emisar.Analytics.MixpanelClient.Live
 
   @config_key :mixpanel_token
-  @unset :unset
 
   setup do
-    original = Application.get_env(:emisar, @config_key, @unset)
-    Application.put_env(:emisar, @config_key, "test-token")
-
-    on_exit(fn ->
-      if original == @unset,
-        do: Application.delete_env(:emisar, @config_key),
-        else: Application.put_env(:emisar, @config_key, original)
-    end)
+    Emisar.Config.put_override(:emisar, @config_key, "test-token")
   end
 
   test "returns an error instead of raising when a payload cannot be encoded" do

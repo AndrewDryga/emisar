@@ -841,7 +841,7 @@ defmodule Emisar.BillingTest do
 
   describe "paddle client stub" do
     setup do
-      Application.put_env(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Stub)
+      Emisar.Config.put_override(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Stub)
       :ok
     end
 
@@ -2177,20 +2177,17 @@ end
 defmodule Emisar.BillingVendorErrorTest do
   @moduledoc """
   The Paddle error paths the in-process Stub can't reach — a 5xx on checkout /
-  customer creation / portal open. These swap `:paddle_client` to a failing
-  client via `Application.put_env` (process-global), so this module is
-  `async: false`: a concurrent async test calling the Paddle client (e.g.
-  `Billing.Jobs.SyncSubscriptions`) must not observe the failing client mid-run.
+  customer creation / portal open. Each test binds a failing `:paddle_client`
+  with `Emisar.Config.put_override/3`, scoped to its own process, so the module
+  stays `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.BillingTest.ErrorPaddleClient
   alias Emisar.Fixtures
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-    Application.put_env(:emisar, :paddle_client, ErrorPaddleClient)
-    on_exit(fn -> restore(:paddle_client, prev_client) end)
+    Emisar.Config.put_override(:emisar, :paddle_client, ErrorPaddleClient)
     :ok
   end
 
@@ -2238,9 +2235,7 @@ defmodule Emisar.BillingVendorErrorTest do
       # With a Paddle API key set, open_billing_portal hits the live client
       # instead of the stub-URL fallback; the failing client returns a
       # non-{:ok, %{"url" => _}} shape that the function passes through verbatim.
-      prev_key = Application.get_env(:emisar, :paddle_api_key)
-      Application.put_env(:emisar, :paddle_api_key, "pdl_test_key")
-      on_exit(fn -> restore(:paddle_api_key, prev_key) end)
+      Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_test_key")
       :ok
     end
 
@@ -2251,9 +2246,6 @@ defmodule Emisar.BillingVendorErrorTest do
       assert {:error, :paddle_unavailable} = Billing.open_billing_portal(account, subject)
     end
   end
-
-  defp restore(key, nil), do: Application.delete_env(:emisar, key)
-  defp restore(key, value), do: Application.put_env(:emisar, key, value)
 end
 
 # A Paddle client that captures the attrs each call receives by sending them to
@@ -2266,7 +2258,7 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
 
   # The capturing pid rides in app env (set per-test) so the client stays
   # stateless — the same pattern BillingSyncTest's fail-id client uses.
-  defp report(message), do: send(Application.fetch_env!(:emisar, :billing_capture_pid), message)
+  defp report(message), do: send(Emisar.Config.fetch_env!(:emisar, :billing_capture_pid), message)
 
   @impl true
   def create_customer(attrs) do
@@ -2338,10 +2330,10 @@ defmodule Emisar.BillingCheckoutArgsTest do
   @moduledoc """
   The exact args `start_checkout/4` + `ensure_paddle_customer/2` hand to the
   Paddle client — per-seat quantity, the success/cancel return URLs, and the
-  verbatim email/name. Swaps the process-global `:paddle_client` (and registers
-  a capture pid the client reports to), so `async: false`.
+  verbatim email/name. Binds `:paddle_client` (and the capture pid the client
+  reports to) per-process with `Emisar.Config.put_override/3`, so `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   import ExUnit.CaptureLog
   alias Emisar.Accounts
   alias Emisar.Billing
@@ -2349,21 +2341,10 @@ defmodule Emisar.BillingCheckoutArgsTest do
   alias Emisar.Fixtures
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-
-    Application.put_env(:emisar, :paddle_client, CapturingPaddleClient)
-    Application.put_env(:emisar, :billing_capture_pid, self())
-
-    on_exit(fn ->
-      restore(:paddle_client, prev_client)
-      Application.delete_env(:emisar, :billing_capture_pid)
-    end)
-
+    Emisar.Config.put_override(:emisar, :paddle_client, CapturingPaddleClient)
+    Emisar.Config.put_override(:emisar, :billing_capture_pid, self())
     :ok
   end
-
-  defp restore(key, nil), do: Application.delete_env(:emisar, key)
-  defp restore(key, value), do: Application.put_env(:emisar, key, value)
 
   test "the checkout quantity equals the account's live billable runner count" do
     # Team is per-runner pricing, so start_checkout passes
@@ -2469,9 +2450,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # API key, the customer id, or the price id — those would land in the drain
     # (Sentry/console) verbatim. Capture the log around both and assert the
     # sensitive values never appear.
-    prev_key = Application.get_env(:emisar, :paddle_api_key)
-    Application.put_env(:emisar, :paddle_api_key, "pdl_live_secret_key")
-    on_exit(fn -> restore(:paddle_api_key, prev_key) end)
+    Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_live_secret_key")
 
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_logsafe_01"}

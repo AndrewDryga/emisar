@@ -65,10 +65,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
-      # Lower the cap for the test; tests in one module run serially, so the
-      # temporary env can't race the neighbours.
-      Application.put_env(:emisar_web, :audit_download_max_rows, 2)
-      on_exit(fn -> Application.delete_env(:emisar_web, :audit_download_max_rows) end)
+      Emisar.Config.put_override(:emisar_web, :audit_download_max_rows, 2)
 
       for n <- 1..3 do
         {:ok, _} =

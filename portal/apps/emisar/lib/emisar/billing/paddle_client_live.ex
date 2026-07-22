@@ -213,5 +213,5 @@ defmodule Emisar.Billing.PaddleClient.Live do
     ]
   end
 
-  defp api_key, do: Application.fetch_env!(:emisar, :paddle_api_key)
+  defp api_key, do: Emisar.Config.fetch_env!(:emisar, :paddle_api_key)
 end

@@ -6,23 +6,9 @@ defmodule EmisarWeb.CheckoutControllerTest do
   """
   use EmisarWeb.ConnCase, async: true
 
-  setup do
-    prev = Application.get_env(:emisar, :paddle_client_token)
-
-    on_exit(fn ->
-      if prev do
-        Application.put_env(:emisar, :paddle_client_token, prev)
-      else
-        Application.delete_env(:emisar, :paddle_client_token)
-      end
-    end)
-
-    :ok
-  end
-
   describe "GET /checkout" do
     test "renders Paddle.js with the client token and a page-scoped CSP", %{conn: conn} do
-      Application.put_env(:emisar, :paddle_client_token, "live_tok_123")
+      Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
 
       conn = get(conn, ~p"/checkout")
       html = html_response(conn, 200)
@@ -48,7 +34,7 @@ defmodule EmisarWeb.CheckoutControllerTest do
     end
 
     test "a test_ client token initializes the sandbox environment", %{conn: conn} do
-      Application.put_env(:emisar, :paddle_client_token, "test_tok_123")
+      Emisar.Config.put_override(:emisar, :paddle_client_token, "test_tok_123")
 
       html = conn |> get(~p"/checkout") |> html_response(200)
 
@@ -56,7 +42,7 @@ defmodule EmisarWeb.CheckoutControllerTest do
     end
 
     test "redirects to /pricing when no client token is configured", %{conn: conn} do
-      Application.delete_env(:emisar, :paddle_client_token)
+      Emisar.Config.put_override(:emisar, :paddle_client_token, nil)
 
       conn = get(conn, ~p"/checkout")
 

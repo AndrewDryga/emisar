@@ -95,5 +95,5 @@ defmodule Emisar.Compat do
     end
   end
 
-  defp raw(key), do: :emisar |> Application.get_env(__MODULE__, []) |> Keyword.get(key)
+  defp raw(key), do: :emisar |> Emisar.Config.get_env(__MODULE__, []) |> Keyword.get(key)
 end

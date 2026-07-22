@@ -26,7 +26,7 @@ defmodule EmisarWeb.AuditDownloadController do
   # than an error); the page guard is just the belt to that check's suspenders.
   @page_limit 100
 
-  defp max_rows, do: Application.get_env(:emisar_web, :audit_download_max_rows, 100_000)
+  defp max_rows, do: Emisar.Config.get_env(:emisar_web, :audit_download_max_rows, 100_000)
   defp max_pages, do: div(max_rows() + @page_limit - 1, @page_limit)
 
   def download(conn, params) do

@@ -8,8 +8,8 @@ defmodule Emisar.Billing do
   `Billing.Entitlements`) so pricing/limit changes need no deploy; the compiled
   `@plans` map is the free tier, per-field fallback, and display copy. The
   Paddle HTTP layer is swappable via
-  `Application.fetch_env!(:emisar, :paddle_client)` — production binds the live
-  client, tests use the in-process stub.
+  `Emisar.Config.fetch_env!(:emisar, :paddle_client)` — production binds the live
+  client, tests bind the in-process stub per test with `Emisar.Config.put_override/3`.
   """
   use Supervisor
   import Emisar.Maps, only: [put_present: 3]
@@ -511,7 +511,7 @@ defmodule Emisar.Billing do
     # nests under the account slug); /app redirects to the session's account.
     return_url = PublicUrl.url("/app")
 
-    if Application.get_env(:emisar, :paddle_api_key) do
+    if Emisar.Config.get_env(:emisar, :paddle_api_key) do
       case Emisar.Billing.PaddleClient.create_billing_portal_session(%{
              customer: customer_id,
              return_url: return_url

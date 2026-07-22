@@ -420,9 +420,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "a rate-limited send surfaces the same throttle error for an UNKNOWN address (no account leak)",
          %{conn: conn} do
-      previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
-      Application.put_env(:emisar_web, :rate_limit_enabled, true)
-      on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+      Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
 
       # The throttle is checked BEFORE the user lookup, so the 6th request for an
       # address that ISN'T an account is throttled and surfaces the SAME message a

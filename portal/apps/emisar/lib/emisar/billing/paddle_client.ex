@@ -22,7 +22,7 @@ defmodule Emisar.Billing.PaddleClient do
   @callback construct_webhook_event(String.t(), String.t(), String.t()) ::
               {:ok, map()} | {:error, term()}
 
-  defp client, do: Application.fetch_env!(:emisar, :paddle_client)
+  defp client, do: Emisar.Config.fetch_env!(:emisar, :paddle_client)
 
   def create_customer(attrs), do: client().create_customer(attrs)
   def update_customer(attrs), do: client().update_customer(attrs)

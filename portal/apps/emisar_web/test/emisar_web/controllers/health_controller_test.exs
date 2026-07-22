@@ -1,20 +1,11 @@
 defmodule EmisarWeb.HealthControllerTest do
-  use EmisarWeb.ConnCase, async: false
+  use EmisarWeb.ConnCase, async: true
 
   setup do
     check = start_supervised!({Agent, fn -> {:error, :database_unavailable} end})
-    previous = Application.get_env(:emisar, :database_health_check)
 
-    Application.put_env(:emisar, :database_health_check, fn ->
+    Emisar.Config.put_override(:emisar, :database_health_check, fn ->
       Agent.get(check, & &1)
-    end)
-
-    on_exit(fn ->
-      if previous do
-        Application.put_env(:emisar, :database_health_check, previous)
-      else
-        Application.delete_env(:emisar, :database_health_check)
-      end
     end)
 
     %{check: check}

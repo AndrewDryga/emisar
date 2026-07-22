@@ -1,18 +1,10 @@
 defmodule Emisar.PublicUrlTest do
-  # async: false — these tests mutate the shared :emisar_web endpoint
-  # config to assert how the base URL is derived across environments.
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.PublicUrl
 
-  setup do
-    original = Application.get_env(:emisar_web, EmisarWeb.Endpoint, [])
-    on_exit(fn -> Application.put_env(:emisar_web, EmisarWeb.Endpoint, original) end)
-    :ok
-  end
-
   defp put_url(url_cfg) do
-    cfg = Application.get_env(:emisar_web, EmisarWeb.Endpoint, [])
-    Application.put_env(:emisar_web, EmisarWeb.Endpoint, Keyword.put(cfg, :url, url_cfg))
+    cfg = Emisar.Config.get_env(:emisar_web, EmisarWeb.Endpoint, [])
+    Emisar.Config.put_override(:emisar_web, EmisarWeb.Endpoint, Keyword.put(cfg, :url, url_cfg))
   end
 
   describe "base/0" do
@@ -32,7 +24,7 @@ defmodule Emisar.PublicUrlTest do
     end
 
     test "falls back to http://localhost when no url config exists" do
-      Application.put_env(:emisar_web, EmisarWeb.Endpoint, [])
+      Emisar.Config.put_override(:emisar_web, EmisarWeb.Endpoint, [])
       assert PublicUrl.base() == "http://localhost"
     end
   end

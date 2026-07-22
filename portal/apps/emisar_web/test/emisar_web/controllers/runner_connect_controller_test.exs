@@ -5,9 +5,7 @@ defmodule EmisarWeb.RunnerConnectControllerTest do
   use EmisarWeb.ConnCase, async: false
 
   defp enable_rate_limiting do
-    previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
-    Application.put_env(:emisar_web, :rate_limit_enabled, true)
-    on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+    Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
   end
 
   test "POST /runner/register returns 429 after the per-IP cap" do

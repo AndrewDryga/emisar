@@ -31,17 +31,9 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   # EMISAR_DISABLE_BILLING deployment → 503). test.exs leaves it unset,
   # so set it for the suite and restore the prior value on exit.
   setup do
-    prev_secret = Application.get_env(:emisar, :paddle_webhook_secret)
-
-    Application.put_env(:emisar, :paddle_webhook_secret, @secret)
-
-    on_exit(fn -> restore(:paddle_webhook_secret, prev_secret) end)
-
+    Emisar.Config.put_override(:emisar, :paddle_webhook_secret, @secret)
     :ok
   end
-
-  defp restore(key, nil), do: Application.delete_env(:emisar, key)
-  defp restore(key, value), do: Application.put_env(:emisar, key, value)
 
   # An account with a Paddle customer attached — the webhook resolves the
   # account by `data.customer_id`, so without this the event is a no-op.
@@ -219,7 +211,7 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
 
   describe "billing-disabled deployment" do
     test "no webhook secret configured → 503, never reaches the client", %{conn: conn} do
-      Application.delete_env(:emisar, :paddle_webhook_secret)
+      Emisar.Config.put_override(:emisar, :paddle_webhook_secret, nil)
 
       account = account_with_customer("ctm_disabled")
       event = subscription_event(customer_id: "ctm_disabled")

@@ -21,5 +21,5 @@ defmodule EmisarWeb.Throttle do
     end
   end
 
-  defp enabled?, do: Application.get_env(:emisar_web, :rate_limit_enabled, true)
+  defp enabled?, do: Emisar.Config.get_env(:emisar_web, :rate_limit_enabled, true)
 end

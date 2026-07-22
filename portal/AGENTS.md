@@ -98,6 +98,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - When one update path spans fields with different permission levels, build the (side-effect-free) changeset first, inspect `changeset.changes`, and require the permission matching the fields that actually changed — don't split into near-duplicate functions, and don't gate the whole path at the most-privileged level (that needlessly blocks low-privilege edits). The same shape applies when the required permission depends on a **value being granted** rather than a changeset field: inviting/assigning the `:owner` role needs `manage_owners` on top of `invite_member`, so pick the permission *list* from the role and run **one** `ensure_has_permissions/2` — not a permission check plus a separate role guard.
 - Audit rows are built by **per-event helpers** in `Emisar.Audit.Events` (e.g. `account_created/2`, `membership_role_changed/3`) that take the domain structs + the acting `%Subject{}` and derive the actor (`Subject.actor_kind/1`, `Subject.actor_id/1`). Context mutations call those inside their `Multi.insert(:audit, …)`; they never hand-assemble `actor_kind`/`subject_kind`/`payload`. Add a builder per newly-audited event. **Audit is a domain concern: controllers/LiveViews never call `Audit.log*` — the domain function that performs the mutation writes its own audit row** (e.g. `Accounts.record_sign_in/2` owns `user.signed_in`; the session controller just calls it).
 - **Request metadata (IP address, user agent, request ID, and MCP client metadata) is an `%Emisar.RequestContext{}` struct, threaded explicitly — never the process dictionary.** It rides on `%Auth.Subject{}.context` for authenticated callers (every `Audit.Events` builder pulls it via `actor/1`, so the 20-plus builders inherit it free) and is passed as an explicit, defaulted `context \\ %RequestContext{}` last positional argument on the pre-auth paths that have no subject yet (sign-in/out, failed sign-in, magic link, password reset, email confirm, MFA verify). The web boundary builds it once — `EmisarWeb.RequestContext.from_conn/1` in a controller, `from_socket/1` in a LiveView (captured at **mount** into an assign, because `get_connect_info/2` is mount-only, then read in `handle_event`). An event with no context (system / engine origin) carries no request metadata by construction. **Never reintroduce a `Process.put` / `$callers` ambient channel for it** — that coupling is exactly what let a runner socket's connect UA bleed onto engine audit rows in the same process. Credo-enforced (`Emisar.Checks.NoProcessDictionary` flags `Process.put` in `lib/`).
+- **Runtime config a test (or dev) must override goes through the `Emisar.Config` seam, never `Application.put_env`.** Read with `Emisar.Config.get_env/3` / `fetch_env!/2` — a straight `Application` passthrough in dev/prod (zero override surface, so dev↔prod read config identically). A test overrides with `Emisar.Config.put_override/3`, which stores the value in its OWN process and is resolved across `$callers` / `$ancestors` / a sandbox `user-agent` `:last_caller_pid` (`EmisarWeb.Sandbox`); the override dies with the test process — no `on_exit` restore, no global mutation — so the tests that override config stay `async: true` where `Application.put_env` raced. A third-party library that reads its own app env (a Swoosh mailer adapter) gets a process-driven test double (`Emisar.MailerTestAdapter`), not a global swap. Mirrors Firezone's `Domain.Config`. Credo-enforced (`NoApplicationPutEnv` in `lib`/`test`).
 - Errors are values (`{:error, reason}`), not exceptions, on any path a caller can hit. `!`-raising variants only behind a proven invariant.
 - Don't wrap a single delegating call in its own named function — inline it. A `defp foo(a, b), do: Bar.foo(a, b)` earns a name only when it adds meaning the call site lacks; otherwise the indirection just costs a jump. Keep the *why* comment at the call site.
 - A pure helper used in more than one place is its own small module with unit tests (e.g. `Emisar.Slug`), not a `defp` copy-pasted between call sites. Take options for the per-caller differences instead of forking the logic.
@@ -516,7 +517,10 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    `Emisar.Crypto` boundary, `DateTime.truncate` no-ops, no
    `Process.sleep` in tests, the audit request-metadata
    `%RequestContext{}` rule (no `Process.put` ambient state in `lib/`),
-   the multi-line `, do:` block-form rule (`MultilineDoColon`), the
+   the no-`Application.put_env`/`delete_env` rule in `lib`/`test`
+   (`NoApplicationPutEnv` — override runtime config through the
+   test-scoped `Emisar.Config` seam), the multi-line `, do:` block-form
+   rule (`MultilineDoColon`), the
    module-header directive order, and its no-blank-between-directives
    contiguity (`NoBlankBetweenDirectives`). Plus the **layer boundaries**:
    the web layer never calls `Repo`, builds a context `<Schema>.Changeset`,
@@ -530,8 +534,12 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    A documented exception gets `# credo:disable-for-next-line
    Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
    why-comment — never a bare disable. Current sanctioned disables: the
-   runner socket's directed `deliver_to_runner` publish, and the MCP
-   long-poll/recheck-timer tests' writer-side delay injections.
+   runner socket's directed `deliver_to_runner` publish, the MCP
+   long-poll/recheck-timer tests' writer-side delay injections, and the
+   `NoProcessDictionary` disables on `Emisar.Config` + `EmisarWeb.Sandbox`
+   (the test-only per-process config-override seam — `Process.put` there
+   is a config override that dies with the test process, never ambient
+   request/audit state).
 
 2. **`/elixir-iron-review`** carries the judgment laws a static check can't
    decide (their safety depends on where a value came from): IL-3/4/5

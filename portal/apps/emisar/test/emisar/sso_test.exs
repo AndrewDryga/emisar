@@ -51,8 +51,7 @@ defmodule Emisar.SSOTest do
   end
 
   setup do
-    Application.put_env(:emisar, :sso_oidc_impl, StubOIDC)
-    on_exit(fn -> Application.delete_env(:emisar, :sso_oidc_impl) end)
+    Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
     :ok
   end
 

@@ -7,13 +7,8 @@ defmodule EmisarWeb.AnalyticsTest do
                         "Chrome/126.0.0.0 Safari/537.36"
 
   setup %{conn: conn} do
-    Application.put_env(:emisar, :mixpanel_enabled, true)
-    Application.put_env(:emisar, :analytics_test_pid, self())
-
-    on_exit(fn ->
-      Application.put_env(:emisar, :mixpanel_enabled, false)
-      Application.delete_env(:emisar, :analytics_test_pid)
-    end)
+    Emisar.Config.put_override(:emisar, :mixpanel_enabled, true)
+    Emisar.Config.put_override(:emisar, :analytics_test_pid, self())
 
     {:ok, conn: put_req_header(conn, "user-agent", @browser_user_agent)}
   end

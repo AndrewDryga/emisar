@@ -11,9 +11,7 @@ defmodule EmisarWeb.ThrottleTest do
   defp unique_bucket, do: "test-throttle-#{System.unique_integer([:positive])}"
 
   defp enable_rate_limiting do
-    previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
-    Application.put_env(:emisar_web, :rate_limit_enabled, true)
-    on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+    Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
   end
 
   test "allows up to the limit, then rate-limits" do

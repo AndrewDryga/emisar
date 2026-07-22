@@ -17,7 +17,7 @@ defmodule EmisarWeb.PostmarkWebhookController do
   require Logger
 
   def create(conn, params) do
-    case Application.get_env(:emisar, :postmark_webhook_secret) do
+    case Emisar.Config.get_env(:emisar, :postmark_webhook_secret) do
       nil ->
         conn |> put_status(:service_unavailable) |> json(%{error: "webhook_disabled"})
 

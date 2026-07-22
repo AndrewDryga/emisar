@@ -7,7 +7,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient do
 
   @impl true
   def retrieve_subscription(id) do
-    if id == Application.get_env(:emisar, :billing_sync_test_fail_id) do
+    if id == Emisar.Config.get_env(:emisar, :billing_sync_test_fail_id) do
       {:error, :paddle_unavailable}
     else
       {:ok,
@@ -149,12 +149,12 @@ end
 
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
   @moduledoc """
-  The sweep's one-bad-row-doesn't-abort-the-batch behaviour. Swaps
-  `:paddle_client` (process-global) to a client that fails one specific
-  subscription id, so this module is `async: false` — a concurrent async test
-  calling the Paddle client must not observe the failing client mid-run.
+  The sweep's one-bad-row-doesn't-abort-the-batch behaviour. Binds a
+  `:paddle_client` that fails one specific subscription id via
+  `Emisar.Config.put_override/3` — scoped to this test's process, so the suite
+  stays `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
   alias Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient
@@ -163,17 +163,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
   alias Emisar.Repo
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-    Application.put_env(:emisar, :paddle_client, PartialFailPaddleClient)
-
-    on_exit(fn ->
-      case prev_client do
-        nil -> Application.delete_env(:emisar, :paddle_client)
-        value -> Application.put_env(:emisar, :paddle_client, value)
-      end
-
-      Application.delete_env(:emisar, :billing_sync_test_fail_id)
-    end)
+    Emisar.Config.put_override(:emisar, :paddle_client, PartialFailPaddleClient)
 
     :ok
   end
@@ -195,7 +185,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
         current_period_end: nil
       })
 
-    Application.put_env(:emisar, :billing_sync_test_fail_id, "sub_fail_row")
+    Emisar.Config.put_override(:emisar, :billing_sync_test_fail_id, "sub_fail_row")
 
     ok_account = Fixtures.Accounts.create_account()
 
@@ -257,10 +247,10 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest do
   The sweep persists whatever status Paddle reports. `Subscription.status` is
   deliberately an open `:string` (vendor-owned value space), so a status this
   code has never seen must round-trip into the mirror row rather than failing
-  the changeset and 500-ing the sweep. `async: false` — swaps the process-global
-  `:paddle_client`.
+  the changeset and 500-ing the sweep. Binds `:paddle_client` per-process with
+  `Emisar.Config.put_override/3`, so `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
   alias Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPaddleClient
@@ -269,15 +259,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest do
   alias Emisar.Repo
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-    Application.put_env(:emisar, :paddle_client, UnknownStatusPaddleClient)
-
-    on_exit(fn ->
-      case prev_client do
-        nil -> Application.delete_env(:emisar, :paddle_client)
-        value -> Application.put_env(:emisar, :paddle_client, value)
-      end
-    end)
+    Emisar.Config.put_override(:emisar, :paddle_client, UnknownStatusPaddleClient)
 
     :ok
   end
@@ -332,10 +314,10 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest do
   @moduledoc """
   When Paddle reports a subscription with no next-billed date (a non-renewing /
   canceled sub), the sweep must NOT NULL the stored current_period_end — a paying
-  account mid-cancel keeps its "access until" date. `async: false` — swaps the
-  process-global `:paddle_client`.
+  account mid-cancel keeps its "access until" date. Binds `:paddle_client`
+  per-process with `Emisar.Config.put_override/3`, so `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
   alias Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
@@ -343,15 +325,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest do
   alias Emisar.Repo
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-    Application.put_env(:emisar, :paddle_client, NoPeriodPaddleClient)
-
-    on_exit(fn ->
-      case prev_client do
-        nil -> Application.delete_env(:emisar, :paddle_client)
-        value -> Application.put_env(:emisar, :paddle_client, value)
-      end
-    end)
+    Emisar.Config.put_override(:emisar, :paddle_client, NoPeriodPaddleClient)
 
     :ok
   end
@@ -411,25 +385,17 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest do
   The sweep's error log must not echo Paddle payload fragments: a non-2xx
   retrieve returns `{:http, status, body}` with the raw vendor body, and that
   body can carry customer ids / amounts. The log line routes through
-  `Billing.redacted_paddle_error/1`, which drops the body. `async: false` —
-  swaps the process-global `:paddle_client`.
+  `Billing.redacted_paddle_error/1`, which drops the body. Binds `:paddle_client`
+  per-process with `Emisar.Config.put_override/3`, so `async: true`.
   """
-  use Emisar.DataCase, async: false
+  use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
   alias Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClient
   alias Emisar.Fixtures
 
   setup do
-    prev_client = Application.get_env(:emisar, :paddle_client)
-    Application.put_env(:emisar, :paddle_client, HttpErrorPaddleClient)
-
-    on_exit(fn ->
-      case prev_client do
-        nil -> Application.delete_env(:emisar, :paddle_client)
-        value -> Application.put_env(:emisar, :paddle_client, value)
-      end
-    end)
+    Emisar.Config.put_override(:emisar, :paddle_client, HttpErrorPaddleClient)
 
     :ok
   end

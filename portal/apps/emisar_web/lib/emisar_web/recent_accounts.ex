@@ -22,7 +22,7 @@ defmodule EmisarWeb.RecentAccounts do
       max_age: @max_age,
       same_site: "Lax",
       http_only: true,
-      secure: Application.get_env(:emisar_web, :force_secure_cookies, false)
+      secure: Emisar.Config.get_env(:emisar_web, :force_secure_cookies, false)
     ]
   end
 
