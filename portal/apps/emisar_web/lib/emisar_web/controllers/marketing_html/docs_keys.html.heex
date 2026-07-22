@@ -1,0 +1,340 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="keys"
+      toc={[
+        {"what-is-a-key", "What an MCP key is"},
+        {"no-scope", "A key has no scope of its own"},
+        {"minting", "Minting a key"},
+        {"rotating", "Rotating a key"},
+        {"revoking", "Revoking a key"},
+        {"audit-export", "Audit-export tokens are a different kind"},
+        {"bridge", "The emisar-mcp bridge"},
+        {"bridge-version", "Keeping the bridge supported"}
+      ]}
+    >
+      <.docs_header current="keys">
+        <:dek>
+          Every agent you connect authenticates with one API key. This page is that key's whole
+          life: what it is, why it carries no permissions of its own, how to mint, rotate, and
+          revoke it, and how the emisar-mcp bridge that carries it stays current. For picking a
+          client and pasting its config, see <.link
+            navigate={~p"/docs/connect-an-llm"}
+            class="text-brand-400 hover:text-brand-300"
+          >Connect an LLM</.link>.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="what-is-a-key">What an MCP key is</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        An MCP key is the credential an LLM agent presents to reach emisar's tool API. It rides as
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization: Bearer emk-…</code>
+        on every call to the MCP endpoint. Keys start with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+        followed by a short public identifier; the secret itself is hashed the moment it's created
+        and is never stored or shown again.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Shown once.</strong>
+            The full secret appears exactly once, at creation (and again at rotation). Copy it into
+            the client's config then — emisar keeps only the hash, so a lost key is replaced, never
+            recovered.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Identity, not authority.</strong>
+            A key is an identity, an optional expiry, and audit attribution — nothing more. It
+            records which agent did what; on its own it grants nothing (that's the next section).
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">One key per connection.</strong>
+            Each connected client gets its own key, so you can see and revoke agents one at a time.
+            Cloud clients that connect over OAuth follow the same idea — a backing key minted for
+            them after you consent.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="no-scope">A key has no scope of its own</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        An MCP key carries no scope of its own — there is no per-key runner list or permission dial
+        to set, and none to forget. What a connected agent can do is decided by two things that live
+        on the member who minted the key, not on the key:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Which runners it can reach.</strong>
+            Exactly the runners the member who minted it can reach. A member is scoped to runner
+            groups on the Team page; the key inherits that scope, and emisar resolves it from that
+            member on <em>every call</em>, not once at mint time. Narrow a member's runner scope and
+            every key they've minted narrows with it in the same moment.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">What it may run there.</strong>
+            Your account's policies and the approvals they require — the same gate a human dispatch
+            passes. A key authenticates as a fixed
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api_client</code>
+            role: it can discover the catalog, dispatch actions, and read run state, but it can't
+            approve its own gated requests or edit the policy that gates them. The member's own role
+            — owner, admin, operator — does not transfer; an owner's key and an operator's key have
+            the same capability.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        So scoping the person scopes their agents. To limit what an agent can touch, narrow the
+        member who owns its key on the
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="text-brand-400 hover:text-brand-300"
+        >Team page</.link>
+        — you don't tune keys one by one. Remove that member's access entirely and
+        every key they issued stops resolving to any runner, so an unbound key is never usable.
+      </p>
+
+      <.docs_h2 id="minting">Minting a key</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Keys are minted from the <strong>LLM agents</strong>
+        page in the console — the same place you
+        connect and revoke agents. Pick the client you're connecting and emisar mints a key for it
+        on the spot; the secret drops into a pre-filled config snippet you copy into that client.
+        Cloud clients like Claude.ai and ChatGPT get no pasted key at all — they connect over OAuth
+        and mint their backing key only after you approve the connection.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Minted on demand, per client.</strong>
+            A manual key is minted only when you open that client's snippet (or approve its
+            installer), not eagerly — so the agents list stays the real set of connections, not a
+            drawer of unused secrets.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Operator and above.</strong>
+            Connecting an agent — minting a key — needs an operator, admin, or owner role. A viewer
+            can see the agents list but can't mint. Rotating and revoking are admin or owner.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Setup lives next door.</strong>
+            This page is the key's lifecycle; the per-client install and config — file paths, the
+            bridge command, the OAuth steps — are in <.link
+              navigate={~p"/docs/connect-an-llm"}
+              class="text-brand-400 hover:text-brand-300"
+            >Connect an LLM</.link>.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="rotating">Rotating a key</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Rotating swaps a key's secret without downtime. From an agent's row,
+        <strong>Rotate</strong>
+        mints a successor that inherits the old key's name, scope, and kind but carries a new secret
+        and a fresh expiry. Both keys work through the overlap: the old one keeps authenticating
+        until the successor's first successful call, which retires the old key automatically. Update
+        the client's config with the new secret any time in that window — nothing breaks while you
+        do.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Copy the new secret now.</strong>
+            Like the original, it's shown once. If you lose it before the client swaps, rotate
+            again.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The old key is still yours to kill.</strong>
+            If you'd rather not wait out the overlap, revoke the old key by hand — rotation doesn't
+            take that away.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Expiring keys rotate themselves.</strong>
+            A key inside its last 7 days auto-rotates through the bridge: the bridge prepares a
+            successor, proposes it, and promotes it only after emisar confirms the exact new key — so
+            a long-running local agent crosses its own expiry untouched. This needs the bridge's
+            credential directory to be writable and persistent; OAuth and hand-supplied bearer
+            tokens don't use it.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="revoking">Revoking a key</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <strong>Revoke</strong>
+        is the kill switch, and it's terminal. The moment you confirm, the
+        key is dead and the connected client gets a
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+        on its very next call. There's no un-revoke: to bring the agent back you connect it again,
+        which mints a fresh key. Reach for it when a key leaks, an agent misbehaves, or a connection
+        is finished. Revoking is admin or owner, and it asks you to type the agent's name first,
+        because it can't be undone.
+      </p>
+      <.docs_callout kind={:note} title="A key that suddenly returns 401.">
+        Start on the Agents page. If it <em>expired</em>, the bridge may have already rotated it —
+        look for a live successor. If it was <em>revoked</em>, that's terminal: reconnect the client
+        to mint a new key. If the whole <em>bridge</em>
+        is below the supported version, it fails at
+        connect rather than per call — update it (below).
+      </.docs_callout>
+
+      <.docs_h2 id="audit-export">Audit-export tokens are a different kind</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Not every token emisar issues is an MCP key. An <strong>audit-export</strong>
+        token is a
+        separate kind, minted from the <strong>Audit</strong>
+        page, that does one thing: read your
+        account's events from the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/audit</code>
+        stream. It can't list runners, discover the catalog, or run an action — present it to the MCP
+        endpoint and emisar rejects it as the wrong key kind. An MCP key is the mirror image: it
+        drives tools but can't read the audit stream. Keeping them distinct means a log-shipping
+        credential sitting in your SIEM config can never be turned into one that dispatches actions.
+        The export setup is in <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="text-brand-400 hover:text-brand-300"
+        >The audit trail & SIEM export</.link>.
+      </p>
+
+      <.docs_h2 id="bridge">The emisar-mcp bridge</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Local LLM clients — Claude Desktop, Cursor, Claude Code, the Gemini and Codex CLIs — speak
+        MCP over stdio, not HTTP.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+        is the small bridge that connects them: it forwards each JSON-RPC frame from the client's
+        stdin to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST /api/mcp/rpc</code>
+        on the control plane and writes the response back to stdout, carrying your key in the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
+        header.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The bridge is deliberately thin.</strong>
+            It owns transport correctness only — line framing, request-id correlation, response
+            validation. Every tool, its input schema, and its result come from the control plane; the
+            bridge doesn't interpret them. The one exception is signed dispatch, where your Ed25519
+            signing key stays on your machine and never reaches emisar. New capabilities land in the
+            control plane, so the bridge rarely has to change.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Cloud clients skip it.</strong>
+            Claude.ai and ChatGPT connect to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+            directly over OAuth — no binary to install, nothing to keep updated. That's why a cloud
+            agent shows no bridge version.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">It won't leak your key.</strong>
+            The bridge refuses to send your Bearer key over cleartext
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http://</code>
+            to a non-loopback host, which would put the key on the wire in plaintext. Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>; a loopback dev
+            endpoint is the only exception.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="bridge-version">Keeping the bridge supported</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        emisar supports the emisar-mcp bridge from a declared minimum version
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">0.3.0</code>
+        today) upward. The bridge reports its version on every request, so both the console and the
+        control plane know whether a given agent's bridge is current, merely outdated, or below the
+        floor.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Below the minimum reads "unsupported."</strong>
+            On the Agents page, a key whose bridge is below the floor shows a rose
+            <strong class="text-zinc-200">unsupported</strong>
+            status in place of its usual activity, so a version-blocked client reads as blocked, not merely quiet. When
+            the control plane enforces the floor, it also refuses that bridge at connect with an
+            error naming the minimum and pointing here, so your LLM surfaces "update the bridge"
+            rather than a cryptic failure. A version emisar can't parse — or a cloud client with no
+            bridge at all — is never blocked.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Outdated but usable keeps working.</strong>
+            A bridge above the minimum but behind the recommended version runs normally; the console
+            shows an amber version chip as a nudge, nothing more.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Updating is re-running the installer.</strong>
+            It replaces the binary in place — your client configs and key are untouched.
+          </span>
+        </li>
+      </ul>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># check the installed bridge version</span>
+<span class="text-zinc-500">$</span> emisar-mcp --version
+
+<span class="text-zinc-500"># update to the latest — replaces /usr/local/bin/emisar-mcp in place</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash</.docs_code>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Connect a client, step by step <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Scope members to runners <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Audit-export tokens <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

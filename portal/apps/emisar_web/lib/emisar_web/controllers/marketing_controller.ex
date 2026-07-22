@@ -96,7 +96,19 @@ defmodule EmisarWeb.MarketingController do
      "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."},
     {"/docs/containers", :docs_containers, :docs_containers,
      "Containers & Kubernetes — sidecars, DaemonSets, Nomad",
-     "Run the emisar runner in containers: a sidecar scoped to one app, a Kubernetes DaemonSet per node, or a Nomad system job — the --no-service install, identity across restarts, and what a containerized runner can actually see."}
+     "Run the emisar runner in containers: a sidecar scoped to one app, a Kubernetes DaemonSet per node, or a Nomad system job — the --no-service install, identity across restarts, and what a containerized runner can actually see."},
+    {"/docs/runs", :docs_runs, :docs_runs,
+     "Runs & run history — output, statuses, and cancellation",
+     "Watch every action dispatched to your fleet — the Runs list and filters, what each lifecycle status means, streamed output, cancellation, and how runs group under one operation."},
+    {"/docs/keys", :docs_keys, :docs_keys, "API keys & the MCP bridge",
+     "How emisar's MCP API keys work: the emk- prefix, why a key inherits its operator's runner scope instead of carrying its own, minting, rotation, revocation, and the emisar-mcp bridge."},
+    {"/docs/runner-cli", :docs_runner_cli, :docs_runner_cli, "Runner CLI reference",
+     "Reference for the on-host emisar runner CLI — connect, action, pack, doctor, events, audit, and signing verbs, their key flags, and which read or change the host."},
+    {"/docs/billing", :docs_billing, :docs_billing, "Plans & billing",
+     "The emisar plans and their limits — runner and member caps, audit retention, feature tiers, and how upgrades, invoices, and payment failures work."},
+    {"/docs/troubleshooting", :docs_troubleshooting, :docs_troubleshooting,
+     "Troubleshooting & limits",
+     "Triage guide for emisar: a runner that won't connect, denied vs refused vs failed runs, stuck runs, and the output, MCP, audit, and retention limits."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ
@@ -379,9 +391,9 @@ defmodule EmisarWeb.MarketingController do
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
     {"how-emisar-works", :guide_how_emisar_works, "How emisar works",
-     "emisar separates the decision to run an infrastructure action from the machine that runs it. The control plane handles identity, scope, policy, and approvals. A runner on the target host verifies the exact action again, executes it, redacts the output, and records what happened.",
-     "July 2026", "11 min read",
-     "How emisar works, from its versioned action packs and outbound-only host runner to MCP discovery, control-plane policy, approvals, runner-side validation, redacted execution output, signed dispatch, and cloud and host audit records."},
+     "Giving an agent SSH is easy. emisar gives it named actions instead: the control plane decides what may run, and the runner checks and executes the exact command on the host.",
+     "July 2026", "8 min read",
+     "See how emisar turns an AI agent request into one checked action on a production host, from pack discovery and policy to runner validation and the final audit record."},
     {"give-ai-agents-safe-production-access", :guide_safe_access,
      "How to give an AI agent safe access to production",
      "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",

@@ -1,0 +1,565 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="runner-cli"
+      toc={[
+        {"running", "Running the CLI"},
+        {"connect", "The connect daemon"},
+        {"actions", "Actions"},
+        {"packs", "Packs"},
+        {"diagnose", "Diagnose and audit"},
+        {"signing", "Signed-dispatch keys"},
+        {"lifecycle", "Install, update, and removal"}
+      ]}
+    >
+      <.docs_header current="runner-cli">
+        <:dek>
+          The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+          binary on each host is two things: the daemon that executes gated actions, and the
+          operator's local toolbox for inspecting packs, reading the journal, verifying the audit
+          chain, and setting up signed dispatch. This page is the reference for its operator verbs —
+          grouped the way the binary groups them — with the key flags and whether each command only
+          reads or changes the host. The daemon and the actions it runs execute as the unprivileged
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+          user; run the read and admin verbs with
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>
+          so they can reach the root-owned config and packs.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="running">Running the CLI</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        On an installed host the binary lives at
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>
+        and every subcommand auto-discovers its configuration, so you rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config and the
+        cached token are root-owned, and the packs directory is root-owned too, so run commands with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>. Running
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        with no arguments prints a Paths footer showing exactly where this host keeps its config,
+        packs, token, and journal.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config &lt;path&gt;</code>
+            — the config.yaml to load. Defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">$EMISAR_CONFIG</code>, then the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+            install location, then a per-user <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.config/emisar/config.yaml</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs-dir &lt;dir&gt;</code>
+            — extra pack search directories, overriding the config's
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">paths.packs</code>
+            (repeatable). Lets a read command work without a full config.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--json</code>
+            — machine-readable JSON where a command supports it: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action list</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">describe</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack list</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">info</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">state</code>, and the signing verbs.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-6 text-sm leading-6 text-zinc-400">
+        Where an installed host keeps things — the installer's defaults; config keys or the install
+        flags below move them:
+      </p>
+      <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[520px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">What</th>
+              <th class="px-4 py-3 font-medium">Default path</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {what, path} <- [
+              {"Config", "/etc/emisar/config.yaml"},
+              {"Packs", "/etc/emisar/packs"},
+              {"Data dir (identity, dispatch log, signing nonces)", "/var/lib/emisar"},
+              {"Cached runner token", "/var/lib/emisar/token"},
+              {"Events journal", "/var/log/emisar/events.jsonl"}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top text-zinc-300">{what}</td>
+                <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{path}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="connect">The connect daemon</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect</code>
+        is the long-running daemon: it dials out over a TLS websocket, advertises this host's
+        actions, executes incoming dispatches, streams redacted output back, and journals every
+        attempt locally. There is no inbound listener on the host. On the first connect it trades the
+        enrollment key (from the env var named by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.enrollment_key_env</code>, by
+        default <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>)
+        for a cached per-runner token, so the key can be unset afterward.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        You normally don't run
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">connect</code>
+        by hand — the installer registers it as a supervised service
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
+        under systemd, a LaunchDaemon on macOS) running as the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        user. Manage it through the init system.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
+        sends SIGHUP, which re-reads packs and rebuilds the signing verifier and re-advertises the
+        catalog on the live connection — in-flight runs keep executing across it.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the daemon up?</span>
+<span class="text-zinc-500">$</span> sudo journalctl -u emisar -f      <span class="text-zinc-500"># stream its logs</span>
+<span class="text-zinc-500">$</span> sudo systemctl reload emisar      <span class="text-zinc-500"># re-read packs + signing config (SIGHUP)</span>
+<span class="text-zinc-500">$</span> sudo systemctl restart emisar     <span class="text-zinc-500"># full restart</span></.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        On a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+        host (a container, CI box, or cloud shell) there is no unit; run the daemon yourself with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect --config /etc/emisar/config.yaml</code>. The full fleet lifecycle — groups, enrollment keys, pack credentials — is in the
+        <.link
+          navigate={~p"/docs/runners"}
+          class="text-brand-400 hover:text-brand-300"
+        >runner fleet</.link>
+        guide.
+      </p>
+
+      <.docs_h2 id="actions">Actions</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Inspect the catalog this host advertises, and run one action locally while you're debugging a
+        pack. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar actions</code>
+        is an accepted alias for the group.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[640px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Command</th>
+              <th class="px-4 py-3 font-medium">What it does</th>
+              <th class="px-4 py-3 font-medium">Mode</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {cmd, what, mode} <- [
+              {"emisar action list", "Every action this host advertises — id, pack, kind, risk, title.", "Reads only"},
+              {"emisar action describe <id>", "The full JSON definition of one action, including its argument schema.", "Reads only"},
+              {"emisar action run <id>", "Execute one action on this host now, for debugging a pack.", "Runs on the host"}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
+                  {cmd}
+                </td>
+                <td class="px-4 py-3 align-top">{what}</td>
+                <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{mode}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Flags on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action run</code>:
+      </p>
+      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--arg key=value</code>
+            — one argument, repeatable. Numbers, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">true</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">false</code>, and JSON arrays/objects are decoded;
+            everything else stays a string.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--reason "…"</code>
+            — free-text reason recorded on the local event.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--timeout 30s</code>
+            — override the action's timeout, clamped to its own min/max.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--stream</code>
+            — stream stdout/stderr live instead of returning buffered JSON.
+          </span>
+        </li>
+      </ul>
+      <.docs_callout kind={:warn} title="action run bypasses the gate.">
+        It executes on the host immediately, without cloud policy, approvals, or signature checks —
+        it's for debugging a pack you're authoring, not the dispatch path. The governed path is a run
+        dispatched from the control plane or an <.link
+          navigate={~p"/docs/mcp-reference"}
+          class="text-brand-400 hover:text-brand-300"
+        >MCP client</.link>, where admission, policy, and audit all apply.
+      </.docs_callout>
+
+      <.docs_h2 id="packs">Packs</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack</code>
+        (alias <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">packs</code>) manages this host's
+        action catalog — the versioned bundles of action schemas it may execute.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[660px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Command</th>
+              <th class="px-4 py-3 font-medium">What it does</th>
+              <th class="px-4 py-3 font-medium">Mode</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {cmd, what, mode} <- [
+              {"emisar pack suggest", "Recommend packs for what's running on this host (binaries, processes, ports).", "Reads only"},
+              {"emisar pack list", "Installed packs with version, action count, and content hash.", "Reads only"},
+              {"emisar pack info <id>", "A pack's setup: required binaries, the env vars its actions read, a verify command.", "Reads only"},
+              {"emisar pack validate <path>", "Validate a pack directory on disk without loading it into the runner.", "Reads only"},
+              {"emisar pack install <name|path|url>", "Fetch, validate, hash-verify, and install one pack into the packs dir.", "Changes the host"},
+              {"emisar pack update [id...]", "Update installed packs to the registry's current versions.", "Changes the host"},
+              {"emisar pack uninstall <id>", "Remove an installed pack (aliases: rm, remove, delete).", "Changes the host"}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
+                  {cmd}
+                </td>
+                <td class="px-4 py-3 align-top">{what}</td>
+                <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{mode}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Flags on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack install</code>:
+      </p>
+      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash sha256:…</code>
+            — pin the exact content hash the portal advertises; the install aborts on any mismatch,
+            so a tampered or mismatched copy never reaches the runner.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--force</code>
+            — overwrite a pack already installed under the same id.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--registry &lt;url&gt;</code>
+            — install from your own registry (or set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS_REGISTRY</code>);
+            defaults to the public registry at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dest &lt;dir&gt;</code>
+            — the packs directory to install into; defaults to the config's first
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">paths.packs</code>
+            entry.
+          </span>
+        </li>
+      </ul>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># install one pack, pinned to the hash the portal advertises</span>
+<span class="text-zinc-500">$</span> sudo emisar pack install redis --hash sha256:9f2c…
+<span class="text-zinc-500"># update every installed pack (or name a few); preview with --dry-run</span>
+<span class="text-zinc-500">$</span> sudo emisar pack update
+<span class="text-zinc-500">$</span> sudo emisar pack update redis postgres --dry-run
+<span class="text-zinc-500"># validate a pack you are authoring, before you trust it</span>
+<span class="text-zinc-500">$</span> emisar pack validate ./my-pack</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update</code>, and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>
+        signal a running daemon to reload — the same SIGHUP as
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reload emisar</code>
+        — so
+        changed actions re-advertise without a restart or a dropped run; when no live daemon is
+        reachable the CLI prints the manual reload command instead. Installing bytes doesn't trust
+        them: a changed hash lands as <strong class="text-zinc-200">pending</strong>
+        on the Packs page until someone trusts it. Names accept
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name=version</code>
+        to pin a specific published version. See
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="text-brand-400 hover:text-brand-300"
+        >the pack reference</.link>
+        for what goes in a pack.
+      </p>
+
+      <.docs_h2 id="diagnose">Diagnose and audit</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        When a runner won't connect or an action fails, these read-only verbs answer why without
+        opening a cloud session.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[660px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Command</th>
+              <th class="px-4 py-3 font-medium">What it does</th>
+              <th class="px-4 py-3 font-medium">Mode</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {cmd, what, mode} <- [
+              {"emisar doctor", "Offline preflight: config, credential, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails.", "Reads only"},
+              {"emisar state", "Print the runner_state JSON this host would advertise to the control plane.", "Reads only"},
+              {"emisar events tail", "Print recent journal events; -f follows new ones (--lines sets the count, default 50).", "Reads only"},
+              {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --caller, or --event.", "Reads only"},
+              {"emisar audit verify [path]", "Re-derive a journal file's SHA-256 hash chain and report breaks; --all walks rotated siblings.", "Reads only"}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
+                  {cmd}
+                </td>
+                <td class="px-4 py-3 align-top">{what}</td>
+                <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{mode}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar doctor              <span class="text-zinc-500"># offline preflight — run this first</span>
+<span class="text-zinc-500">$</span> sudo emisar events tail -f      <span class="text-zinc-500"># the local journal, live</span>
+<span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
+        never opens a cloud session and one failing check never aborts the rest, so a single run
+        surfaces every problem at once.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
+        exits 0 when the chain is intact and 1 on the first break, naming the line and event id;
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
+        walks the active file plus every rotated
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.N</code>
+        sibling, each chain verified independently. There's also <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar state check-dispatch-log</code>,
+        which the installer runs before an upgrade to confirm the durable dispatch log still loads.
+      </p>
+      <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
+        proves the on-host journal hasn't been edited in place, but root on the host can truncate the
+        tail and re-chain it. The record that can't be forged from the host is the off-host cloud
+        audit — stream both and cross-reference them. See <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="text-brand-400 hover:text-brand-300"
+        >Audit &amp; SIEM</.link>.
+      </.docs_callout>
+
+      <.docs_h2 id="signing">Signed-dispatch keys</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing</code>
+        sets up client-attested dispatch: an enforcing runner then requires a CA-signed certificate
+        on every action, so a compromised control plane can relay a dispatch but never mint one.
+        Everything here is offline — keys are printed to your terminal and sent nowhere.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[660px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Command</th>
+              <th class="px-4 py-3 font-medium">What it does</th>
+              <th class="px-4 py-3 font-medium">Mode</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {cmd, what, mode} <- [
+              {"emisar signing init", "One-shot on-ramp: mint a CA, a leaf key, and a cert; print the runner config, the offline CA private key, and the two MCP env vars.", "Prints key material"},
+              {"emisar signing new-ca", "Mint just the offline CA keypair — the root of trust (rarely).", "Prints key material"},
+              {"emisar signing new-cert", "Sign a short-lived operator cert against the offline CA (routinely, as certs expire).", "Prints key material"}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
+                  {cmd}
+                </td>
+                <td class="px-4 py-3 align-top">{what}</td>
+                <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{mode}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ttl 24h</code>
+            — the cert's validity window; accepts Go durations plus long-form <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">30d</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1y</code>
+            (default 24h). Short is better — a long TTL trades away revocation granularity.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--scope group=prod,env=edge</code>
+            — bind the cert to matching runners; empty means any runner that trusts the CA.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-id</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-key</code>
+            (both required on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
+            — the CA id, which must match the runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, and the offline
+            CA private hex seed from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>. The key is read locally and never transmitted.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--key-id</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--pubkey</code>
+            — label the leaf key, or supply your own leaf public key instead of minting one.
+          </span>
+        </li>
+      </ul>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one-shot: prints the runner config block, the offline CA key, and the MCP env vars</span>
+<span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h
+<span class="text-zinc-500"># later, renew a cert against the offline CA (no runner reload needed)</span>
+<span class="text-zinc-500">$</span> emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The generated
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+        are the env vars your MCP client carries; the CA private key stays offline, never on a runner
+        or the control plane. The full model — enforcement, scoping, rotation, and revocation — is in <.link
+          navigate={~p"/docs/signed-dispatch"}
+          class="text-brand-400 hover:text-brand-300"
+        >Signed dispatch</.link>.
+      </p>
+
+      <.docs_h2 id="lifecycle">Install, update, and removal</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The binary is installed and upgraded by the same script; it isn't self-updating. Re-running
+        the installer upgrades in place and preserves config and packs. It requires systemd on Linux
+        (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+        for hosts without a real init).
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># install or upgrade in place (config + packs preserved)</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
+<span class="text-zinc-500"># pin a version, or provision unattended with a fixed pack set</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--version TAG</code>
+            — install a specific runner release
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner-vX.Y.Z</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">vX.Y.Z</code>, or bare <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X.Y.Z</code>); default is the latest.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
+            — skip prompts; requires an explicit
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
+            (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS</code>) so an
+            unattended run never guesses.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs LIST</code>
+            — install exactly these packs, comma- or space-separated, with no host detection (for
+            cloud-init, Packer, Ansible).
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
+            — install and enable the service but leave it stopped;
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+            — binary only, with no service user, unit, or activation.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--reset-identity</code>
+            — with a new
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
+            on an existing host, drop the cached token and generated identity so the host re-enrolls
+            as a new runner.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--uninstall</code>
+            — stop the service and remove the binary, unit, cached token, and generated identity,
+            keeping config, data, and logs;
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+            with it also deletes config, data, logs, and the service user.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--bin-dir</code>
+            · <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--etc-dir</code>
+            · <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--data-dir</code>
+            · <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--log-dir</code>
+            · <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--user</code>
+            — override the install locations and the service account.
+          </span>
+        </li>
+      </ul>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove the binary, service, cached token, and identity — keep config + journal</span>
+<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
+<span class="text-zinc-500"># …or delete everything, including config, data, and logs</span>
+<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        After uninstalling, delete the runner in the dashboard — its run history and audit events
+        survive the host. Removing a runner cleanly, including manual identity resets, is covered in <.link
+          navigate={~p"/docs/runners"}
+          class="text-brand-400 hover:text-brand-300"
+        >the runner fleet guide</.link>.
+      </p>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/runners"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Runner fleet lifecycle <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/signed-dispatch"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Signed dispatch, end to end <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/mcp-reference"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          The cloud dispatch surface <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

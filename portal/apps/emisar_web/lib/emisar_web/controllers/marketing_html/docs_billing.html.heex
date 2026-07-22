@@ -1,0 +1,297 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="billing"
+      toc={[
+        {"plans", "Plans and limits"},
+        {"entitlements", "What each plan unlocks"},
+        {"usage-and-limits", "When you reach a limit"},
+        {"changing-plan", "Upgrading and downgrading"},
+        {"invoices", "Invoices and payment method"},
+        {"payment-failure", "If a payment fails"},
+        {"retention", "Plan changes and audit retention"}
+      ]}
+    >
+      <.docs_header current="billing">
+        <:dek>
+          Your plan sets this account's hard limits — how many runners connect, how many people you
+          can invite, how long the audit log is kept, and which features are on. This page lists the
+          plans and their limits, shows which tier unlocks what, and covers upgrades, invoices,
+          downgrades, and a failed payment. Billing runs on Paddle; you manage it from the
+          <strong class="text-zinc-200">Billing</strong>
+          page under Settings.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="plans">Plans and limits</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        emisar has three plans. A new account is on Free until someone upgrades it, and the plan
+        comes from your subscription — there's no separate plan switch on the account to drift out
+        of sync. Each plan sets three hard limits: how many runners can connect, how many members
+        you can invite, and how many days of audit history are kept.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[520px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Plan</th>
+              <th class="px-4 py-3 font-medium">Runners</th>
+              <th class="px-4 py-3 font-medium">Team members</th>
+              <th class="px-4 py-3 font-medium">Audit retention</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Free</td>
+              <td class="px-4 py-3 align-top text-zinc-300">3</td>
+              <td class="px-4 py-3 align-top text-zinc-300">1</td>
+              <td class="px-4 py-3 align-top text-zinc-300">7 days</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Team</td>
+              <td class="px-4 py-3 align-top text-zinc-300">100</td>
+              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
+              <td class="px-4 py-3 align-top text-zinc-300">90 days</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Enterprise</td>
+              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
+              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
+              <td class="px-4 py-3 align-top text-zinc-300">365 days</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Free is free and stays free — no card, no time limit. Team is billed per connected runner,
+        monthly or annually, with annual running about two months cheaper than paying by the month;
+        the checkout starts from the number of runners you're running now. Enterprise is a custom,
+        sales-led plan with tailored limits. For the current per-runner price, <.link
+          href={~p"/pricing" <> "#compare"}
+          class="text-brand-400 hover:text-brand-300"
+        >compare the plans</.link>.
+      </p>
+
+      <.docs_h2 id="entitlements">What each plan unlocks</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Beyond the limits, a few features are gated by tier. Free keeps the full product — the
+        console, the audit trail, policies, approvals, runbooks; the paid tiers add the pieces most
+        teams need once more than one person is in the account.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[520px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Feature</th>
+              <th class="px-4 py-3 font-medium">Available on</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <tr>
+              <td class="px-4 py-3 align-top text-zinc-300">Single sign-on (OIDC)</td>
+              <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top text-zinc-300">Audit export (CSV + SIEM)</td>
+              <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top text-zinc-300">SCIM directory sync</td>
+              <td class="px-4 py-3 align-top whitespace-nowrap">Enterprise</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Single sign-on.</strong>
+            OIDC sign-in through your identity provider, available on Team and up. See <.link
+              navigate={~p"/docs/sso"}
+              class="text-brand-400 hover:text-brand-300"
+            >single sign-on &amp; SCIM</.link>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Audit export.</strong>
+            Every plan keeps the full audit trail in the console; taking the data <em>out</em>
+            — the CSV download and the streaming NDJSON API a SIEM reads — is the paid surface, on
+            Team and up. See <.link
+              navigate={~p"/docs/audit-and-siem"}
+              class="text-brand-400 hover:text-brand-300"
+            >audit &amp; SIEM</.link>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">SCIM directory sync.</strong>
+            Provision and deprovision members straight from your directory, on Enterprise. Enterprise
+            also includes a security and procurement review, deployment planning, and rollout support,
+            set up with our team.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="usage-and-limits">When you reach a limit</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The runner and member caps are enforced when you add the next one, not retroactively — so a
+        plan never silently disables something you already have.
+      </p>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Runners.</strong>
+            Enrolling a runner past your plan's cap is refused — the new host's registration fails
+            with an over-limit error instead of half-joining. Runners already connected keep running
+            and keep executing actions.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Team members.</strong>
+            Inviting a member past the cap is refused the same way (Free allows one, so the second
+            person needs Team); people already in the account keep their access.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Watch it before you hit it.</strong>
+            The Billing page shows live usage against each cap — a runner meter and a member meter
+            that turn amber as you approach the limit — so you see the wall coming rather than
+            discovering it when the next install fails.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Audit retention</strong>
+            is a cap too, but a duration rather than a count — events older than your plan's window
+            are pruned. It behaves differently on a plan change; see <.link
+              href="#retention"
+              class="text-brand-400 hover:text-brand-300"
+            >below</.link>.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="changing-plan">Upgrading and downgrading</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Anyone in the account can open the Billing page and read the plan, usage, and invoices.
+        Changing the plan, updating the card, or cancelling needs the account owner or a member with
+        the billing-manager role — a finance seat that manages the subscription and nothing else.
+        Admins and operators see billing but can't change it. More on <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="text-brand-400 hover:text-brand-300"
+        >roles</.link>.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        To upgrade, open <strong class="text-zinc-200">Settings → Billing</strong>, pick
+        <strong class="text-zinc-200">Monthly</strong>
+        or <strong class="text-zinc-200">Annual</strong>, and choose a plan. Checkout opens in a
+        Paddle overlay on the page; once payment clears you land back on Billing and the new plan —
+        and its higher limits — take effect within a moment, as soon as Paddle confirms the charge.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Downgrading or cancelling isn't a checkout — that would open a second subscription. Use
+        <strong class="text-zinc-200">Manage billing</strong>
+        to open the Paddle customer portal, where you can switch to a lower plan or cancel. Cancel,
+        and the Billing page shows a "Cancels on …" note: you keep the plan through the end of the
+        period you've already paid for.
+      </p>
+      <.docs_callout kind={:note} title="Who can change billing.">
+        Owners can do everything, including granting the billing-manager role — only owners can,
+        since only they hold billing management. The billing-manager role carries the subscription,
+        payment method, and invoices, but no access to team, runners, policies, or actions, so it's
+        safe to hand to whoever owns the invoice.
+      </.docs_callout>
+
+      <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Your recent invoices show right on the Billing page — date, amount, number, and status, each
+        with a PDF download — so checking the last charge doesn't mean leaving the console.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        For everything else — your full invoice history, the payment method on file, your billing
+        address and tax details — open <strong class="text-zinc-200">Manage billing</strong>. That's
+        the Paddle customer portal; Paddle is emisar's merchant of record, and it owns the complete
+        ledger and your card. Updating the card there is also how you clear a failed payment.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Manage billing appears once your account has a Paddle customer — that is, once you've been on
+        a paid plan. On Free there's nothing to manage yet, so the button waits until your first
+        upgrade.
+      </p>
+
+      <.docs_h2 id="payment-failure">If a payment fails</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        A failed renewal doesn't lock you out. Paddle retries the charge on its dunning schedule and
+        emails the billing contact, and through that window your plan and its limits keep working —
+        emisar treats billing status as advisory and won't cut a running fleet off mid-cycle over a
+        declined card.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        To fix it, open <strong class="text-zinc-200">Manage billing</strong>
+        and update the payment method; the next retry settles the balance. If you actually mean to
+        stop paying, cancel in the portal rather than letting a card lapse — cancelling ends the plan
+        cleanly at the period you've paid through, instead of leaving it stuck in retry. Every plan
+        change is written to the <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="text-brand-400 hover:text-brand-300"
+        >audit log</.link>.
+      </p>
+
+      <.docs_h2 id="retention">Plan changes and audit retention</.docs_h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Runner and member caps apply going forward, as above — a downgrade never disconnects a runner
+        or removes a member, it just stops you adding new ones past the lower cap. Audit retention
+        works differently, and it's worth understanding before you switch.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Each audit event's retention horizon is fixed when the event is written, from the plan you're
+        on at that moment — 7 days on Free, 90 on Team, 365 on Enterprise. A plan change only affects
+        events written after it. So upgrading keeps more of your new history, and downgrading shortens
+        the window for new events but never retroactively deletes the history you already have.
+        Retention prunes run daily, and both the plan change and every prune are recorded in the
+        audit log itself.
+      </p>
+      <.docs_callout kind={:tip} title="Ship to your SIEM ahead of the window.">
+        If you keep audit history longer than your plan's retention, stream it to your SIEM before
+        the horizon passes — then how long it's kept becomes your SIEM's policy, not ours. The
+        <.link navigate={~p"/docs/audit-and-siem"}>export API</.link>
+        is built for exactly this.
+      </.docs_callout>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/pricing"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Compare plans and pricing <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Roles and access <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Audit retention and export <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

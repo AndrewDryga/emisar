@@ -1096,6 +1096,30 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar audit verify --all"
     end
 
+    test "the five new operator pages render their key facts", %{conn: conn} do
+      runs = conn |> get(~p"/docs/runs") |> html_response(200)
+      assert runs =~ "Run statuses"
+      assert runs =~ "most recent 500"
+      assert runs =~ "SIGTERM"
+
+      keys = conn |> get(~p"/docs/keys") |> html_response(200)
+      assert keys =~ "emk-"
+      assert keys =~ "no scope of its own"
+      assert keys =~ "audit-export"
+
+      cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
+      assert cli =~ "emisar audit verify --all"
+      assert cli =~ "/etc/emisar/config.yaml"
+
+      billing = conn |> get(~p"/docs/billing") |> html_response(200)
+      assert billing =~ "7 days on Free, 90 on Team, 365 on Enterprise"
+      assert billing =~ "Paddle"
+
+      trouble = conn |> get(~p"/docs/troubleshooting") |> html_response(200)
+      assert trouble =~ "two-minute grace"
+      assert trouble =~ "support@emisar.dev"
+    end
+
     test "the CSI data-loss use case renders its incident narrative and CTAs", %{conn: conn} do
       html = conn |> get(~p"/use-cases/csi-data-loss") |> html_response(200)
 

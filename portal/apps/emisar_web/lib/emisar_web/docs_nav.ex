@@ -42,6 +42,14 @@ defmodule EmisarWeb.DocsNav do
          desc: "Saved, versioned action sequences your LLM can read and run, gated per step."
        },
        %{
+         slug: "runs",
+         title: "Runs & history",
+         path: "/docs/runs",
+         icon: "hero-play-circle",
+         desc:
+           "The run list and filters, every lifecycle status, live output and byte caps, cancellation, and how one dispatch's runs group."
+       },
+       %{
          slug: "teams-and-access",
          title: "Teams & access",
          path: "/docs/teams-and-access",
@@ -61,6 +69,14 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/runners",
          icon: "hero-server-stack",
          desc: "Groups and labels, enrollment keys, pack credentials, updates, and removal."
+       },
+       %{
+         slug: "keys",
+         title: "API keys & the bridge",
+         path: "/docs/keys",
+         icon: "hero-key",
+         desc:
+           "How an MCP key inherits its operator's runner scope, minting, rotating, and revoking keys, and keeping the emisar-mcp bridge supported."
        },
        %{
          slug: "signed-dispatch",
@@ -128,11 +144,35 @@ defmodule EmisarWeb.DocsNav do
          desc: "Methods, parameters, idempotency, and errors — the MCP server contract."
        },
        %{
+         slug: "runner-cli",
+         title: "Runner CLI",
+         path: "/docs/runner-cli",
+         icon: "hero-command-line",
+         desc:
+           "The on-host emisar binary's operator verbs — connect, packs, events, audit, and signing — with their key flags."
+       },
+       %{
          slug: "security-model",
          title: "Security model",
          path: "/docs/security-model",
          icon: "hero-shield-check",
          desc: "Trust boundary, searchable audit, hash-chained journal, redaction on egress."
+       },
+       %{
+         slug: "billing",
+         title: "Plans & billing",
+         path: "/docs/billing",
+         icon: "hero-credit-card",
+         desc:
+           "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
+       },
+       %{
+         slug: "troubleshooting",
+         title: "Troubleshooting & limits",
+         path: "/docs/troubleshooting",
+         icon: "hero-wrench-screwdriver",
+         desc:
+           "When a runner won't connect, what a denied versus failed run means, the operational limits, and where your data lives."
        }
      ]}
   ]
