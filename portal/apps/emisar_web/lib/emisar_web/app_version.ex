@@ -3,11 +3,11 @@ defmodule EmisarWeb.AppVersion do
   The running release's product version and source revision.
 
   Product surfaces share the version from `portal/VERSION`. Deployment probes
-  also report the Git revision compiled into the image so two builds of the
+  also report the Git revision embedded in the image so two builds of the
   same product version remain operationally distinguishable.
   """
 
-  @revision System.get_env("EMISAR_SOURCE_REVISION", "dev")
+  @revision_path "/app/REVISION"
 
   @doc """
   The `:vsn` of the running `emisar_web` application (`portal/VERSION` via
@@ -21,6 +21,11 @@ defmodule EmisarWeb.AppVersion do
     end
   end
 
-  @doc "The Git revision compiled into the running release image."
-  def revision, do: @revision
+  @doc "The Git revision embedded in the running release image."
+  def revision do
+    case File.read(@revision_path) do
+      {:ok, revision} -> String.trim(revision)
+      {:error, _reason} -> "dev"
+    end
+  end
 end
