@@ -75,6 +75,6 @@ fi
 
 [ "$($runner --version)" = "$expected_version" ]
 test -f /var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml
-test -x /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
+test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml
