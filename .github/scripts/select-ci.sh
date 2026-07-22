@@ -55,7 +55,11 @@ while IFS= read -r -d '' file; do
   case "$file" in runner/*|install.sh|README.md|go.work|go.work.sum) runner=true ;; esac
   case "$file" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
   case "$file" in server.json) mcp_listing=true ;; esac
-  case "$file" in tools/*|dev/*|go.work|go.work.sum) tools=true ;; esac
+  case "$file" in
+    tools/*|dev/*|.agent/*|*/.agent/*|.claude/*|.codex/*|.gemini/*|skills/*|go.work|go.work.sum)
+      tools=true
+      ;;
+  esac
   case "$file" in *.md) tools=true ;; esac
   case "$file" in
     runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum)

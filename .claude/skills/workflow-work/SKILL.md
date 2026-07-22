@@ -31,8 +31,8 @@ If there's no plan yet and the change is non-trivial, run `/workflow-spec` first
      redis/cassandra portal hash golden when those packs change.
    - **infra/** — `terraform fmt -check -recursive`, `terraform init -backend=false
      && terraform validate`, `tflint --init && tflint`.
-   - **agent tooling/docs** — run the changed script plus
-     `bash .agent/scripts/audit-llm-setup.sh`.
+   - **agent tooling/docs** — run the changed command plus
+     `dev/run check agent-setup`.
 4. **Red gate → stop.** Don't pile the next step on a broken one. Fix it, or report
    the blocker with the error and your read on it. Never edit a test to make a real
    failure pass.
@@ -59,7 +59,7 @@ For portal, that is:
 cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test
 ```
 
-For agent/tooling changes, include `bash .agent/scripts/audit-llm-setup.sh`.
+For agent/tooling changes, include `dev/run check agent-setup`.
 Then **show the output** and give a plain status: what's done, what's verified,
 what's left. If something is unverified, say so — don't say "should work". Offer
 `/review-ship` or `/review-board` before the PR when risk warrants it.

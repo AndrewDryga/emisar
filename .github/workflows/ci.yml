@@ -455,7 +455,7 @@ jobs:
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
-          # Glob: tools/ is deliberately dependency-free (no go.sum).
+          # Cache the selected module's own manifest and checksums.
           cache-dependency-path: ${{ matrix.module }}/go.*
 
       - name: Check client module boundaries

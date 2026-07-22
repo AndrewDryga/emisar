@@ -33,6 +33,7 @@ usage: dev/run <command> [args]
                            run a cross-component development scenario
   check changed            compile, then check only changed Portal source files
   check portal             compile, format-check, and run Credo for all Portal files
+  check agent-setup        validate shared agent manuals, skills, tasks, and hooks
   check tooling            lint and test the shared development tooling
   test portal <args...>    run focused, --stale, --failed, or listening Portal tests
   gate portal              run the canonical Portal gate
@@ -648,6 +649,7 @@ portal_tests() {
 tooling_check() {
   need shellcheck
   need npm
+  need go
   local file
   local -a shell_files=()
   while IFS= read -r -d '' file; do
@@ -656,7 +658,7 @@ tooling_check() {
     shell_files+=("$ROOT/$file")
   done < <(
     git -C "$ROOT" ls-files --cached --others --exclude-standard -z -- \
-      dev tools/browser .github/scripts .agent/scripts
+      dev tools/browser .github/scripts
   )
   [[ ${#shell_files[@]} -gt 0 ]] || die "no repository tooling shell programs found"
 
@@ -665,8 +667,14 @@ tooling_check() {
     bash -n "$file"
   done
   "$ROOT/dev/run_test.sh"
+  agent_setup_check
   (cd "$BROWSER_TOOLS" && npm ci --ignore-scripts && npm test)
   echo "✓ development tooling checks passed"
+}
+
+agent_setup_check() {
+  need go
+  (cd "$ROOT" && go run ./tools/cmd/agentcheck "$@")
 }
 
 portal_feedback() {
@@ -685,6 +693,10 @@ portal_feedback() {
       [[ $# -eq 0 ]] || die "usage: dev/run check tooling"
       tooling_check
       ;;
+    check:agent-setup)
+      [[ $# -eq 0 ]] || die "usage: dev/run check agent-setup"
+      agent_setup_check --require-coop
+      ;;
     test:portal)
       [[ $# -gt 0 ]] || die "usage: dev/run test portal <paths...|--stale|--failed>"
       up
@@ -695,7 +707,7 @@ portal_feedback() {
       up
       (cd "$PORTAL" && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../dev/check-portal-test-output.sh)
       ;;
-    *) die "usage: dev/run $level <changed|portal|tooling>" ;;
+    *) die "usage: dev/run $level <changed|portal|agent-setup|tooling>" ;;
   esac
 }
 

@@ -136,4 +136,15 @@ out="$tmp/dev-tooling.out"
 (cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
 assert_output 'go_modules=["tools"]' "$out"
 
+# Non-Markdown agent configuration changes also select the semantic agent
+# setup audit through the Tools job.
+git -C "$tmp" reset --hard -q "$base"
+mkdir -p "$tmp/.agent"
+printf 'work: []\n' >"$tmp/.agent/loop.yaml"
+git -C "$tmp" add .
+git -C "$tmp" commit -qm agent-config
+out="$tmp/agent-config.out"
+(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
+assert_output 'go_modules=["tools"]' "$out"
+
 echo "ok: CI selector and frozen-migration cases pass"

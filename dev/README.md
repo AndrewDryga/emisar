@@ -15,8 +15,8 @@ The repository keeps tooling in four ownership buckets:
 
 - `dev/run` exposes contributor commands and thin environment orchestration.
 - `tools/` holds reusable Go checks/drivers and the browser-only JavaScript.
-- `.github/scripts/` holds CI-only wrappers; `.agent/scripts/` holds agent-only
-  bookkeeping and enforcement.
+- `.github/scripts/` holds CI-only wrappers; the root `.agent/` holds agent
+  configuration and state, not another command surface.
 - Shell programs under `packs/` and `infra/` execute with their owned runtime
   artifacts; they are product/operations code, not alternative dev commands.
 
@@ -35,6 +35,7 @@ dev/run test portal --failed
 dev/run test portal --stale --listen-on-stdin
 dev/run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
 dev/run check portal
+dev/run check agent-setup
 dev/run gate portal
 dev/run check tooling
 dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing

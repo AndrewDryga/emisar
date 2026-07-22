@@ -45,7 +45,7 @@ onboarding and exposes internal process as a false product dependency.
 
 ## Enforcement
 
-`bash .agent/scripts/audit-llm-setup.sh` validates the public skill tree,
+`dev/run check agent-setup` validates the public skill tree,
 portable frontmatter, separation from contributor skill directories, and every
 backticked MCP tool-shaped name against `docs/mcp-api-schemas.json`. Review
 public skill instructions against the live schemas and initialize instructions
