@@ -450,6 +450,36 @@ defmodule EmisarWeb.PacksLiveTest do
       assert occurrences == 1
     end
 
+    test "no update note when the current version is installed beside an older one",
+         %{conn: conn, account: account} do
+      # The mixed case (the seeded postgres 0.2.11 + 0.2.9): you already run the
+      # current shipped version on one runner and an older one on another. You HAVE
+      # the latest, so nudging "update to <current>" — a version you already run —
+      # would be wrong; stay silent.
+      all_pack_ids =
+        Emisar.Catalog.PackBaseline.all() |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+      pack_id = List.first(all_pack_ids -- Map.keys(Emisar.Catalog.PackBaseline.retired_below()))
+      current = Emisar.Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: current
+      )
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      refute html =~ "Update available"
+    end
+
     test "a trusted CURRENT version shows no update-available note",
          %{conn: conn, account: account} do
       {{pack_id, _v}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)

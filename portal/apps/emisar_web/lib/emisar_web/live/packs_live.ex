@@ -930,32 +930,22 @@ defmodule EmisarWeb.PacksLive do
   attr :pack_id, :string, required: true
   attr :versions, :list, required: true
 
-  # ONE pack-level "update available" nudge, shown once when ANY trusted,
-  # non-retired version of the pack is below the shipped current. The successor
-  # (the pack's current shipped version) and its install command are pack-level
-  # — `newer_version` returns that same current version for every outdated row —
-  # so the heads-up is said ONCE per pack, never repeated on each stale version
-  # (a note on every version was the correction). A convenience, never a warning:
-  # a security fix RETIRES a version (packs retire only on security/critical
-  # fixes), so an outdated-but-not-retired version is safe by construction and
-  # still dispatches — the weakest, quietest tier, a neutral spine below the
-  # version rows. Retirement takes precedence (`pack_version_outdated` returns
-  # `:current` for a retired version), so this never stacks on a row's rose
-  # retired block. Renders nothing when every shown version is current or retired.
+  # ONE pack-level "update available" nudge, shown once when the pack has a
+  # trusted, non-retired version below the shipped current AND is NOT already
+  # running that current version somewhere. The successor (the pack's current
+  # shipped version) and its install command are pack-level — `newer_version`
+  # returns that same current version for every outdated row — so the heads-up is
+  # said ONCE per pack, never repeated on each stale version (a note on every
+  # version was the correction). A convenience, never a warning: a security fix
+  # RETIRES a version (packs retire only on security/critical fixes), so an
+  # outdated-but-not-retired version is safe by construction and still dispatches
+  # — the weakest, quietest tier, a neutral spine below the version rows.
+  # Retirement takes precedence (`pack_version_outdated` returns `:current` for a
+  # retired version), so this never stacks on a row's rose retired block. Renders
+  # nothing when every shown version is retired, or when the current version is
+  # already installed beside the older ones.
   defp update_available_note(assigns) do
-    successor =
-      Enum.find_value(assigns.versions, fn
-        %{trust_state: :trusted} = version ->
-          case Catalog.pack_version_outdated(version) do
-            {:outdated, successor} -> successor
-            :current -> nil
-          end
-
-        _version ->
-          nil
-      end)
-
-    assigns = assign(assigns, :successor, successor)
+    assigns = assign(assigns, :successor, pack_update_successor(assigns.versions))
 
     ~H"""
     <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
@@ -979,6 +969,35 @@ defmodule EmisarWeb.PacksLive do
       />
     </.event_block>
     """
+  end
+
+  # The version to nudge toward, or nil. The pack's current shipped version when
+  # some trusted version is below it — UNLESS a trusted, non-retired version is
+  # already at (or ahead of) that current version, i.e. you're running the latest
+  # on a runner. A fresh install sitting beside an older one (the seeded postgres
+  # 0.2.11 + 0.2.9 was the case that exposed this) is up to date at the pack
+  # level, so nudging you to "update" to a version you already run would be wrong;
+  # stay silent. Retired versions carry their own rose block and never count as
+  # up to date here.
+  defp pack_update_successor(versions) do
+    states =
+      for %{trust_state: :trusted} = version <- versions,
+          do: {version, Catalog.pack_version_outdated(version)}
+
+    successor =
+      Enum.find_value(states, fn {_version, state} ->
+        case state do
+          {:outdated, successor} -> successor
+          :current -> nil
+        end
+      end)
+
+    already_current? =
+      Enum.any?(states, fn {version, state} ->
+        state == :current and not pack_version_retired?(version)
+      end)
+
+    if successor && not already_current?, do: successor
   end
 
   # The "fix it" command as a compact, copyable row — never a code panel (the

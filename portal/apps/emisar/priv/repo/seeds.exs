@@ -79,9 +79,9 @@ clear_seeded_mfa = fn
     updated
 end
 
-pack_descriptor = fn pack_id ->
+pack_descriptor = fn pack_id, version ->
   version =
-    PackBaseline.current_version(pack_id) ||
+    version || PackBaseline.current_version(pack_id) ||
       raise "missing shipped pack baseline for #{pack_id}"
 
   hash = PackBaseline.lookup(pack_id, version)
@@ -637,13 +637,24 @@ postgres_actions = [
   })
 ]
 
+# The demo fleet runs one version behind on postgres (0.2.9, below the shipped
+# current), so the packs page shows the quiet pack-level "update available"
+# nudge. Only the data-postgres runner advertises postgres, and 0.2.9 is
+# baseline-trusted with no retirement watermark, so it dispatches fine — the hint
+# is a convenience, not a block. Every other pack advertises at its current
+# shipped version. Keep the fleet strictly behind (no runner on the current
+# version) or the nudge correctly suppresses — you already have the latest.
+pack_version_overrides = %{"postgres" => "0.2.9"}
+
 advertise = fn runner, actions ->
   packs =
     actions
     |> Enum.map(& &1["pack_id"])
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
-    |> Map.new(fn pack_id -> {pack_id, pack_descriptor.(pack_id)} end)
+    |> Map.new(fn pack_id ->
+      {pack_id, pack_descriptor.(pack_id, pack_version_overrides[pack_id])}
+    end)
 
   payload = %{
     "hostname" => runner.hostname,
@@ -670,28 +681,9 @@ PackVersion.Query.all()
 |> PackVersion.Query.by_pack_id("showcase")
 |> Repo.delete_all()
 
-IO.puts(IO.ANSI.cyan() <> "✓ Advertised actions on every runner" <> IO.ANSI.reset())
-
-# A lagging runner still on an OLDER, still-safe pack version, so the packs page
-# shows the quiet "update available" nudge. postgres 0.2.9 sits below the shipped
-# 0.2.10 and carries no retirement watermark, so it stays trusted (its bytes match
-# the baseline) and dispatches fine — the hint is a convenience, not a block.
-# Idempotent: on_conflict keeps a prior seed's row.
-{:ok, _} =
-  PackVersion.Changeset.insert(%{
-    account_id: account.id,
-    pack_id: "postgres",
-    version: "0.2.9",
-    hash: PackBaseline.lookup("postgres", "0.2.9"),
-    trust_state: :trusted,
-    first_seen_at: DateTime.utc_now(),
-    last_seen_at: DateTime.utc_now()
-  })
-  |> Repo.insert(on_conflict: :nothing, conflict_target: [:account_id, :pack_id, :version])
-
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Seeded an outdated-but-safe pack version (postgres 0.2.9 → update-available hint)" <>
+    "✓ Advertised actions on every runner (postgres one version behind → update-available hint)" <>
     IO.ANSI.reset()
 )
 
@@ -1512,7 +1504,8 @@ if existing_runs == [] do
         {"caddy", "caddy.access_log_tail", edge.id, :any_args, :thirty_days},
         {"postgres", "postgres.replication_lag", database.id, :any_args, :thirty_days}
       ] do
-    %{"version" => version, "hash" => hash} = pack_descriptor.(pack_id)
+    %{"version" => version, "hash" => hash} =
+      pack_descriptor.(pack_id, pack_version_overrides[pack_id])
 
     fake_run = %Runs.ActionRun{
       account_id: account.id,
