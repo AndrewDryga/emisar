@@ -3,8 +3,7 @@
 The Elixir/Phoenix control plane for [emisar](../README.md). It owns accounts,
 runner identity and state, pack trust, policy and approvals, runs and runbooks,
 audit, billing, the LiveView operator console, the public website, and the
-remote MCP/OAuth surface. It decides whether an action may be dispatched; the
-on-host runner remains the execution authority.
+remote MCP/OAuth surface. It decides whether an action may be dispatched; the on-host runner remains the execution authority.
 
 This README gets a contributor to a working local portal. Product behavior and
 trust boundaries live in [`../docs/architecture.md`](../docs/architecture.md)
