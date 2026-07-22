@@ -26,6 +26,9 @@ defmodule Emisar.Application do
       {Registry, keys: :unique, name: Emisar.SSO.OIDC.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: Emisar.SSO.OIDC.ProviderSupervisor},
 
+      # Do not start database-backed contexts until a new node has stable SQL access.
+      Emisar.DatabaseReadiness,
+
       # Contexts
       Emisar.Accounts,
       Emisar.ApiKeys,
