@@ -153,9 +153,13 @@ execution:
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></.docs_code>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         (The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
-        so these work as-is on an installed host.) For defense-in-depth controls on the
-        host — the local admission allowlist, systemd hardening drop-ins, granting specific
-        actions elevated privileges via polkit/sudoers — see the <.link
+        so these work as-is on an installed host.) The runner itself runs as the unprivileged
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        user, so a pack action that needs root — restarting a system service, editing system config —
+        runs only if you grant that user the right: a scoped sudoers rule (e.g. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx</code>,
+        with the action calling <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>) or an
+        equivalent polkit rule. For that plus the other host defense-in-depth controls — the local
+        admission allowlist, systemd hardening drop-ins — see the <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
         >security model</.link>.

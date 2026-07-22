@@ -176,8 +176,8 @@
         Now your model gets twelve stable tools and discovers only the packs, actions, and runners
         in scope. Ask it <em>"what's the load on web-01?"</em>
         and it finds <code class="font-mono">linux.uptime</code>, reads its exact schema, then calls <code class="font-mono">run_action</code>; ask it to restart a service and
-        that high-risk action stops for your approval. Reads run on policy, mutations are gated,
-        every call is audited — and the model never gets a shell. Full walkthrough: <.link
+        that high-risk action stops for your approval. Reads run under policy, risky calls stop for a
+        human, and the model never gets a shell — every call is audited. Full walkthrough: <.link
           navigate={~p"/docs/connect-an-llm"}
           class="text-brand-400 hover:text-brand-300"
         >/docs/connect-an-llm</.link>.
