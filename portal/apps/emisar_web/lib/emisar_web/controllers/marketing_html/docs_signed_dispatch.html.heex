@@ -124,17 +124,24 @@ EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
 EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        <strong class="text-zinc-200">4. Apply it.</strong>
-        Reload the runner — it rebuilds the verifier from config and re-advertises, so enforcement
-        (and every later rotation) takes effect live, no restart and no dropped runs.
+        <strong class="text-zinc-200">4. Turn it on — with a restart.</strong>
+        The first time you enable enforcement, <strong class="text-zinc-200">restart</strong>
+        the runner: it opens the durable replay journal at startup and then advertises that it
+        verifies signatures. A reload can't make that first switch — a runner that booted un-enforcing
+        holds an in-memory replay store, so
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
+        leaves enforcement off and unsigned calls keep flowing. (Later CA rotations and trusted-key
+        swaps on an <em>already-enforcing</em>
+        runner do apply live with a reload, no dropped runs.)
       </p>
-      <.docs_code phx-no-format label="shell" copy_text="sudo systemctl reload emisar"><span class="text-zinc-500">$</span> sudo systemctl reload emisar</.docs_code>
+      <.docs_code phx-no-format label="shell" copy_text="sudo systemctl restart emisar"><span class="text-zinc-500">$</span> sudo systemctl restart emisar</.docs_code>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Then check it landed: the Runner page shows <strong class="text-zinc-200">Signed dispatch
-        only</strong>
-        and the Run button is disabled, an MCP
+        Then confirm it landed before you rely on it: the Runner page — and the runners list — shows the
+        <strong class="text-zinc-200">Signed dispatch only</strong>
+        badge and the Run button is disabled, an MCP
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>
-        runs, and an operator or runbook dispatch is refused with a clear message.
+        runs, and an operator or runbook dispatch is refused with a clear message. No badge means the
+        runner is still accepting unsigned calls — recheck the config and the restart.
       </p>
 
       <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>

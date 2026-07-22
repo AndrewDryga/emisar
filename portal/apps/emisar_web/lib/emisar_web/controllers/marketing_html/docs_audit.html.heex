@@ -73,15 +73,18 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The next cursor arrives both as an RFC 5988
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
+            is your resume point — the last row on the page — set whenever a page returns events, so
+            your next poll starts strictly after what you already have and a short page is never
+            re-read. The RFC 5988
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
               Link: &lt;…&gt;; rel="next"
             </code>
-            header and a plain
+            header is the separate "there's more right now" signal and rides only a full page —
+            Splunk-style collectors follow it to keep paging, Datadog-style ones just track the
+            X-header. No Link means you're caught up: poll again later from the last
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
-            header — Splunk-style collectors follow the Link, Datadog-style ones read the
-            X-header. No headers on the last page means you're caught up; poll again later with
-            the same cursor.
+            you saw (an empty page sets neither header, so you hold your place).
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -111,11 +114,16 @@
         — argv hashes, exit codes, redaction counts, output digests — each line chained to the
         previous by SHA-256.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar audit verify --all</code>
-        proves the chain (including rotated files). The cloud is the searchable system of
-        record; the journal is the host-side forensics copy that doesn't depend on us — cutting
-        or editing a line breaks the chain detectably, though a root attacker can of course
-        delete the whole file. Ship it with your normal log pipeline if you want both records
-        off-host.
+        walks the chain (including rotated files) and flags a break. Treat it as tamper-<em>evident</em>, not
+        tamper-proof: root on the host can truncate the tail or rewrite lines and re-chain them so
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">verify</code>
+        still passes. The record that can't be forged from the host is the
+        <strong>cloud audit</strong>
+        — it's off-host and append-only. So ship the host journal through your log pipeline
+        <em>and</em>
+        stream the cloud audit to your SIEM, then cross-reference them: an action in one record but not
+        the other is the tamper signal, and hiding an action means forging both consistently — with one
+        of them out of reach on the host.
       </p>
 
       <.docs_callout kind={:note} title="Worth alerting on.">

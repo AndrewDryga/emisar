@@ -227,7 +227,16 @@ defmodule Emisar.Audit do
               # Self-reported MCP client metadata snapshotted at dispatch, so a
               # terminal event logged long after (from the runner socket) still
               # carries it. Empty → dropped by compact, so non-MCP rows stay lean.
-              mcp_client_metadata: mcp_client_metadata(run)
+              mcp_client_metadata: mcp_client_metadata(run),
+              # Positive per-run signing evidence for a client-attested (signed
+              # dispatch) run: that it was signed, the CA + leaf key that vouched
+              # for it, and the bridge operation id — so a successful run's
+              # signature is provable in the audit and cross-referenceable to a
+              # SIEM. compact drops all of these on an unsigned run.
+              signed: if(signed?(run), do: true),
+              signing_ca_id: signing_cert(run, "ca_id"),
+              signing_key_id: signing_cert(run, "key_id"),
+              operation_id: run.operation_id
             })
         ]
     )
@@ -275,6 +284,15 @@ defmodule Emisar.Audit do
        do: metadata
 
   defp mcp_client_metadata(%Runs.ActionRun{}), do: nil
+
+  # Positive signing evidence for a client-attested run's terminal audit event
+  # (see `run_event_changeset/1`). `attestation` carries the relayed v4 envelope;
+  # its `cert` names the CA and leaf key that authorized the dispatch.
+  defp signed?(%Runs.ActionRun{attestation: %{"cert" => %{}}}), do: true
+  defp signed?(%Runs.ActionRun{}), do: false
+
+  defp signing_cert(%Runs.ActionRun{attestation: %{"cert" => %{} = cert}}, key), do: cert[key]
+  defp signing_cert(%Runs.ActionRun{}, _key), do: nil
 
   defp actor_kind(%Runs.ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
   defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"

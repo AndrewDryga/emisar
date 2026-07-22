@@ -131,9 +131,10 @@
                 <span>
                   <strong class="text-zinc-200">Client ID</strong>
                   and <strong class="text-zinc-200">Client secret</strong>
-                  from the app you just created. The secret is write-only — stored hashed-secret
-                  style and never rendered back; when you edit the connection later, leave it blank
-                  to keep the current one.
+                  from the app you just created. The secret is write-only — stored server-side,
+                  redacted in the UI, and never rendered back (a sign-in secret has to be replayed to
+                  your IdP, so it can't be hashed); at-rest protection is infrastructure-level. When you
+                  edit the connection later, leave it blank to keep the current one.
                 </span>
               </li>
               <li class="flex items-start gap-2.5">

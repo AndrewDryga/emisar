@@ -104,8 +104,13 @@ examples:
           — <code>exec</code>
           (run a binary with an explicit argv) or <code>script</code>
           (run a script packaged in the pack, its bytes SHA-256-verified at
-          load). There is no shell kind: actions are argv arrays, never shell strings, so there
-          is nothing to inject.
+          load). There is no shell kind: actions run as argv arrays through <code>execve</code>, so
+          emisar never splices your inputs into a line a shell re-parses — there's nothing to inject.
+          (A pack author <em>can</em>
+          write an action whose binary is <code>/bin/sh -c</code>
+          — the staging break-glass <code>shell</code>
+          pack does exactly that — but those carry <code>critical</code>
+          risk and are the reviewed exception, not the model.)
         </li>
         <li>
           <strong>risk</strong> — <code>low | medium | high | critical</code>.

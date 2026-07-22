@@ -6,8 +6,10 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * NDJSON response — one event per line, `application/x-ndjson`
     * Forward-ordered by `(occurred_at, id)` so a paging consumer
       never skips or re-reads rows
-    * Both `X-Next-Cursor` and `Link: rel="next"` headers on full pages
-    * No cursor headers on the tail page (signals "you're caught up")
+    * Full page: both `X-Next-Cursor` (resume point) and `Link: rel="next"`
+    * Tail (below-limit) page: `X-Next-Cursor` only — no `Link`, but still a
+      resume point, so the short page's rows are never re-read
+    * Empty page: no headers at all (signals "you're caught up")
     * `?cursor=<prior next>` resumes strictly after the last delivered row
     * `?event_type=` restricts; CSV form works too
     * `kind: :audit_export` gate — an `:mcp` key gets 403 wrong_key_kind
@@ -224,14 +226,23 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert MapSet.disjoint?(MapSet.new(first_ids), MapSet.new(second_ids))
       assert length(second_ids) == 2
 
-      # Stepping again gets the final page; no more next cursor.
+      # The third page is the tail — one row, below the limit. Under keyset semantics it
+      # STILL returns a resume cursor (so a re-poll can't re-read that row), but no
+      # Link: rel="next", because there is nothing more right now.
       [cursor2] = get_resp_header(second, "x-next-cursor")
       third = conn |> bearer(raw) |> get("/api/audit?limit=2&#{filter}&cursor=#{cursor2}")
       third_ids = third |> ndjson() |> parse_ndjson() |> Enum.map(& &1["id"])
 
       assert length(third_ids) == 1
-      assert get_resp_header(third, "x-next-cursor") == []
+      assert [cursor3] = get_resp_header(third, "x-next-cursor")
       assert get_resp_header(third, "link") == []
+
+      # Re-polling from the tail cursor returns nothing: the short page's row is not
+      # double-counted, and now there are no headers at all (truly caught up).
+      fourth = conn |> bearer(raw) |> get("/api/audit?limit=2&#{filter}&cursor=#{cursor3}")
+      assert fourth |> ndjson() |> parse_ndjson() == []
+      assert get_resp_header(fourth, "x-next-cursor") == []
+      assert get_resp_header(fourth, "link") == []
 
       # Round-trip: every id surfaces exactly once across the 3 pages.
       assert Enum.sort(first_ids ++ second_ids ++ third_ids) ==

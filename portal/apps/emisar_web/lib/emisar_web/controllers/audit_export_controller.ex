@@ -25,10 +25,10 @@ defmodule EmisarWeb.AuditExportController do
       hard cap #{Emisar.Audit.max_export_limit()}.
 
   The response is NDJSON (one event per line, `application/x-ndjson`).
-  Cursor for the next page is returned both in a `Link: <…>; rel="next"`
-  header (RFC 5988) AND a plain `X-Next-Cursor` header — Splunk wants
-  the Link, Datadog wants the X-header. When the page is the last one,
-  neither header is set.
+  `X-Next-Cursor` is the resume point (the last row returned), set on any page
+  that returned events — so a re-poll after a short page can't re-read it. The
+  RFC 5988 `Link: <…>; rel="next"` header is the separate "more right now" signal
+  and rides only a full page. An empty page sets neither; the caller keeps its cursor.
 
   Resource posture:
 
@@ -175,22 +175,25 @@ defmodule EmisarWeb.AuditExportController do
 
   # -- Response shaping -------------------------------------------------
 
-  # When we returned a full page, surface the cursor for the next one.
-  # Below-limit pages mean "you're caught up" — no next cursor, so the
-  # SIEM can sleep until its next poll.
-  defp maybe_put_next_cursor(conn, events, limit) when length(events) == limit do
+  # `x-next-cursor` is the caller's resume point for its NEXT poll — the last row we
+  # just delivered — present whenever we delivered any, full page or not. A SIEM stores
+  # it and resumes strictly after it, so a below-limit page can't be re-read (nor our own
+  # `audit.exported` rows re-counted) on the next poll. `Link: rel="next"` is the separate
+  # "there is more right now" signal, so it rides only a full page. An empty page advances
+  # nothing — the caller keeps its current cursor.
+  defp maybe_put_next_cursor(conn, [], _limit), do: conn
+
+  defp maybe_put_next_cursor(conn, events, limit) do
     last = List.last(events)
     cursor = encode_cursor(last.occurred_at, last.id)
+    conn = put_resp_header(conn, "x-next-cursor", cursor)
 
-    conn
-    |> put_resp_header("x-next-cursor", cursor)
-    |> put_resp_header(
-      "link",
-      ~s(<#{next_page_url(conn, cursor)}>; rel="next")
-    )
+    if length(events) == limit do
+      put_resp_header(conn, "link", ~s(<#{next_page_url(conn, cursor)}>; rel="next"))
+    else
+      conn
+    end
   end
-
-  defp maybe_put_next_cursor(conn, _events, _limit), do: conn
 
   defp next_page_url(conn, cursor) do
     base = PublicUrl.url("/api/audit")

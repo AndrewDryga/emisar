@@ -149,8 +149,8 @@
           <strong class="text-zinc-200">
             Turn on signed dispatch where it must be provable.
           </strong>
-          On the hosts where "a real human asked for this" has to be cryptographically true — not
-          just policy-checked — enforce <.link
+          On the hosts where a dispatch must prove it came from an authorized client key — not just
+          that policy allowed it — enforce <.link
             navigate={~p"/docs/signed-dispatch"}
             class="text-brand-400 hover:text-brand-300"
           >signed dispatch</.link>. Those
@@ -229,7 +229,7 @@
         <p class="mt-2 text-sm leading-6 text-zinc-400">
           <strong class="text-zinc-300">Goal:</strong>
           a Postgres failover on <code class="font-mono">db-prod</code>
-          should be possible — but only when two people agree and a real human signed the request.
+          should be possible — but only when two people approve and the call carries a valid client signature.
         </p>
         <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
           <li class="flex items-start gap-2.5">
@@ -267,7 +267,7 @@
           it can't forge or alter it, and holds no key to try. Policy holds the run for approval;
           two other operators approve. The signed, twice-approved run dispatches; the runner verifies
           the signature against its CA, checks the nonce hasn't been seen and the timestamp is fresh,
-          then runs it. The audit shows the requester, both approvers, the signature, and the
+          then runs it. The audit shows the requester, both approvers, the signing certificate, and the
           redacted command. If the cloud were compromised it could refuse to relay the call — but it
           could never have originated that failover.
         </p>

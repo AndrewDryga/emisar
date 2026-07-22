@@ -289,6 +289,37 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(payload, :executed_command)
       # No self-reported metadata on this run → compacted out.
       refute Map.has_key?(payload, :mcp_client_metadata)
+      # An unsigned operator run carries no signing evidence.
+      refute Map.has_key?(payload, :signed)
+      refute Map.has_key?(payload, :signing_ca_id)
+      refute Map.has_key?(payload, :signing_key_id)
+      refute Map.has_key?(payload, :operation_id)
+    end
+
+    test "carries positive signing evidence for a client-attested run" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          operation_id: "op_724NN9NMDZ1T76NARWCKM5A0D6",
+          attestation: %{"cert" => %{"ca_id" => "acme-2026", "key_id" => "op-dba-01"}}
+        })
+
+      payload =
+        run
+        |> Audit.run_event_changeset()
+        |> Ecto.Changeset.get_field(:payload)
+
+      assert payload[:signed] == true
+      assert payload[:signing_ca_id] == "acme-2026"
+      assert payload[:signing_key_id] == "op-dba-01"
+      assert payload[:operation_id] == "op_724NN9NMDZ1T76NARWCKM5A0D6"
     end
 
     test "carries self-reported MCP client metadata in the payload when the run has some" do
