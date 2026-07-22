@@ -54,6 +54,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
     # must draw links from high-authority product pages — not sit one click deep
     # behind /guides alone. Assert each is linked from a page other than /guides.
     guides = ~w(
+      /guides/how-emisar-works
       /guides/give-ai-agents-safe-production-access
       /guides/prompt-injection-for-ops-teams
     )

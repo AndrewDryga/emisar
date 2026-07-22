@@ -58,6 +58,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /dpa
     /docs/mcp-reference
     /guides
+    /guides/how-emisar-works
     /guides/give-ai-agents-safe-production-access
     /guides/prompt-injection-for-ops-teams
   )

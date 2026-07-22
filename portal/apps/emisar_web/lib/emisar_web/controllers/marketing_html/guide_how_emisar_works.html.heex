@@ -1,0 +1,359 @@
+<.guide_page
+  title="How emisar works"
+  dek="emisar separates the decision to run an infrastructure action from the machine that runs it. The control plane handles identity, scope, policy, and approvals. A runner on the target host verifies the exact action again, executes it, redacts the output, and records what happened."
+  date="July 2026"
+  read_time="12 min read"
+>
+  <p>
+    There are two easy ways to let an AI agent help with production, and neither is very good.
+    Keep the agent outside and a person has to copy every log, command, and result between chat and
+    a terminal. Give it SSH and the copying disappears, along with the boundary between "show me
+    the logs" and "delete the data directory."
+  </p>
+  <p>
+    emisar takes a different route. The agent gets a finite catalog of infrastructure actions, not
+    a shell. A central control plane decides whether a request is in scope and permitted. A runner
+    on the target host checks the request against its own copy of the action before anything runs.
+    The model can ask for work; it cannot invent the program the host will execute.
+  </p>
+  <p>
+    That split is the whole system in miniature: centralized identity and policy, distributed
+    enforcement and execution. Let's build it back up from the bottom.
+  </p>
+
+  <h2>Start with the thing that runs: an action</h2>
+  <p>
+    An action is a command contract written before the request arrives. Take <code>linux.systemctl_restart</code>. Its definition names the program, lays out the argument
+    vector, declares a <code>unit</code> argument and its validation rules, sets a timeout and
+    output limits, assigns a risk level, and defines any extra redaction patterns. The caller
+    supplies the unit name. It does not supply <code>systemctl</code>, the verb <code>restart</code>, or a command line for a shell to interpret.
+  </p>
+  <p>
+    These are the execution-relevant fields from the action that ships in the
+    <code>linux-core</code>
+    pack:
+  </p>
+
+  <.docs_code phx-no-format label="linux-core/actions/systemctl_restart.yaml"><span class="text-sky-300">id</span>: <span class="text-brand-300">linux.systemctl_restart</span>
+<span class="text-sky-300">kind</span>: <span class="text-brand-300">exec</span>
+<span class="text-sky-300">risk</span>: <span class="text-amber-300">high</span>
+
+<span class="text-sky-300">args</span>:
+  - <span class="text-sky-300">name</span>: <span class="text-brand-300">unit</span>
+    <span class="text-sky-300">type</span>: <span class="text-brand-300">string</span>
+    <span class="text-sky-300">required</span>: <span class="text-violet-300">true</span>
+    <span class="text-sky-300">validation</span>:
+      <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">pattern</span>: "^[A-Za-z0-9@._:][A-Za-z0-9@._:-]&#123;0,127&#125;$"</span>
+      <span class="text-sky-300">max_length</span>: <span class="text-amber-300">128</span>
+
+<span class="text-sky-300">execution</span>:
+  <span class="text-sky-300">command</span>:
+    <span class="text-sky-300">binary</span>: <span class="text-brand-300">systemctl</span>
+    <span class="text-sky-300">argv</span>: [<span class="text-brand-300">"restart"</span>, <span class="text-brand-300">"&#123;&#123; args.unit &#125;&#125;"</span>]
+  <span class="text-sky-300">timeout</span>: <span class="text-amber-300">60s</span>
+
+<span class="text-sky-300">output</span>:
+  <span class="text-sky-300">max_stdout_bytes</span>: <span class="text-amber-300">4096</span>
+  <span class="text-sky-300">max_stderr_bytes</span>: <span class="text-amber-300">8192</span></.docs_code>
+
+  <p>
+    Actions travel in versioned <strong>packs</strong>. A pack contains its manifest, action
+    definitions, argument schemas, and any scripts those actions own. The complete pack tree is
+    hashed. That hash, not just a friendly version such as <code>1.4.0</code>, identifies the exact
+    bytes an operator reviewed and trusted. Change an argument rule, a script, or one character of
+    the command and the hash changes with it.
+  </p>
+  <p>
+    Most actions execute a binary directly with an argument array. Some jobs genuinely need shell
+    features such as a pipe, so a pack can carry a fixed, reviewed <code>/bin/sh -c</code>
+    program.
+    Even there, the program comes from the pack and every substituted value must pass a bounded
+    schema. There is also an explicit arbitrary-shell pack for staging and break-glass work. It is
+    critical-risk and denied by default. Calling it a sandbox would be comforting and false.
+  </p>
+
+  <h2>The runner is the execution plane</h2>
+  <p>
+    The runner is a small Go program installed on each host emisar can reach. It opens an outbound
+    TLS WebSocket to the control plane. It does not listen on an inbound port, so adding a runner
+    does not add a new network service for the internet to find.
+  </p>
+  <p>
+    At startup, the runner loads the packs on disk, validates their manifests and referenced
+    scripts, computes their content hashes, and applies the host's local admission rules. Those
+    rules can hide or refuse actions by ID or cap the maximum risk that this host will accept. The
+    runner then advertises the catalog it can actually enforce. The control plane receives action
+    descriptors and hashes, not a new path for uploading programs to the host.
+  </p>
+  <p>
+    When a dispatch arrives, the runner does not assume the cloud already got everything right. It
+    looks up the action locally, re-hashes the pack, compares it with the trusted hash in the
+    request, applies local admission again, rejects unknown arguments, validates every value, and
+    clamps timeouts and output limits to the action's declared envelope. Only then does it render
+    the pack-authored argument vector and call <code>os/exec</code>.
+  </p>
+  <p>
+    The child process receives a minimal environment and the OS permissions of the runner service
+    user, unless the action deliberately drops to another configured user. Output is bounded and
+    passed through the runner's redaction pipeline before a progress chunk leaves the machine.
+    Timeouts and cancellation terminate the process group, not merely the first process in a
+    pipeline.
+  </p>
+  <p>
+    This is deliberate double validation. The cloud catches a bad request early. The host checks
+    the exact contract again at the last useful moment, against the bytes and policy it actually
+    has.
+  </p>
+
+  <h2>The control plane decides what may run</h2>
+  <p>
+    The hosted control plane owns the questions that need a shared view of the organization: who
+    is calling, which account they belong to, which runners they can reach, which pack hashes an
+    administrator trusts, and what policy applies to the requested action on each target.
+  </p>
+  <p>
+    Policy has three outcomes. An allowed request can continue immediately. A denied request stops
+    without creating work for the runner. A request that requires approval creates a pending
+    decision bound to that action, pack, arguments, target, and reason. Approval is a branch for
+    the actions that need a person, not a toll booth in front of every useful read.
+  </p>
+  <p>
+    The control plane never executes the host command itself. Its job is to authenticate, scope,
+    check pack trust, evaluate policy, hold approvals, dispatch eligible work, and keep the
+    searchable fleet record. Denials belong in that record too. They are often the clearest signal
+    that an agent was confused, overreaching, or following hostile text it found while
+    investigating.
+  </p>
+
+  <h2>The MCP interface stays small while the catalog grows</h2>
+  <p>
+    Publishing one MCP tool for every infrastructure action sounds natural until a fleet exposes
+    hundreds of them. Every client then has to load hundreds of names, descriptions, target lists,
+    and schemas before the model can choose anything. Add a pack and the tool surface changes
+    again.
+  </p>
+  <p>
+    emisar exposes twelve fixed MCP tools instead. Discovery moves through <code>list_packs</code>, <code>find_actions</code>, and <code>get_action</code>. Execution goes
+    through <code>run_action</code>. Separate tools cover waiting, recent runs, operation recovery,
+    and runbooks. Installing another pack adds actions to the searchable catalog; it does not add
+    another MCP server or another page of tool definitions to every client.
+  </p>
+  <p>
+    The catalog is not a public wish list. Results are derived from the caller's current runner
+    scope, exact operator-trusted pack manifests, and what connected runners actually advertise.
+    An action that is outside scope, untrusted, retired, missing from the host, or inconsistent
+    with the trusted descriptor is not presented as executable.
+  </p>
+  <p>
+    Local clients use the small <code>emisar-mcp</code>
+    bridge to translate stdio MCP into the same
+    authenticated HTTP API used by remote clients. The bridge holds the credential and handles
+    transport details. It does not grow its own policy engine or reinterpret what the control plane
+    decided.
+  </p>
+
+  <h2>Packs can turn internal workflows into agent tools</h2>
+  <p>
+    Packs are not limited to familiar infrastructure commands. A support workflow, internal API,
+    or release operation can become an action when it can be named, given typed inputs, and routed
+    through a narrow implementation. The agent still gets a catalog of specific capabilities, not
+    the underlying admin console.
+  </p>
+  <p>
+    We use that pattern ourselves. A private <code>emisar-admin</code>
+    pack lets our LLM agents handle real customer-service work: find and inspect accounts, diagnose
+    access, resend invitations, reset MFA, revoke sessions, sync billing, manage complimentary
+    plans, and operate account and member lifecycles. The same pack exposes bounded product
+    analytics and runtime health checks. An agent can help a customer without receiving a database
+    console or a general portal RPC.
+  </p>
+  <p>
+    The pack runs only on dedicated administration runners beside the portal and is never published
+    in the public catalog. Every action still declares its arguments, risk, side effects, timeout,
+    and output bounds, then crosses one fixed release-RPC boundary to a named operation. A read-only
+    action such as <code>emisar.admin.access.diagnose</code>
+    can run under a different policy from an MFA reset, an account suspension, or a permanent
+    erasure. Creative use does not mean weakening the boundary; it means applying the same boundary
+    to more useful work.
+  </p>
+
+  <h2>One request, end to end</h2>
+  <p>
+    Suppose an agent has traced a checkout failure to a wedged service on <code>api-iad-02</code>. The request path looks like this:
+  </p>
+
+  <ol>
+    <li>
+      The agent searches the catalog, then fetches the exact action contract. It receives the
+      immutable pack reference, argument schema, risk, side effects, and compatible runner
+      references.
+    </li>
+    <li>
+      It calls <code>run_action</code> with the action ID, pack reference, explicit runner
+      references, structured arguments, and a human-readable reason. It can also state the evidence
+      it observed and the result it expects.
+    </li>
+    <li>
+      The control plane resolves every runner reference inside the caller's scope, confirms that
+      each connected runner advertises the exact trusted action, validates the portable part of the
+      schema, and evaluates policy for every target.
+    </li>
+    <li>
+      Allowed runs get dispatch work. Denied runs are recorded but never delivered. Runs that need
+      approval wait without a dispatch job until an authorized person approves the exact request
+      and the control plane rechecks the gates.
+    </li>
+    <li>
+      The eligible dispatch travels down the WebSocket the runner opened. The runner repeats its
+      local hash, admission, argument, target, and limit checks before it crosses the process
+      boundary.
+    </li>
+    <li>
+      The runner executes the action, streams bounded redacted progress, records its local decision
+      and outcome, and returns the terminal result. The control plane updates the run and the cloud
+      audit trail.
+    </li>
+  </ol>
+
+  <p>
+    For the running example, the mutation request is structured data. The pack hash and runner
+    reference are exact identifiers returned by discovery; they are shortened below only to keep
+    the example readable. The agent does not get to substitute a friendlier name at execution time.
+  </p>
+
+  <.docs_code phx-no-format label="run_action input">&#123;
+  <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"linux.systemctl_restart"</span>,
+  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.3.19/sha256:8d0ba17c…701c70ba"</span>,
+  <span class="text-sky-300">"runner_refs"</span>: [
+    <span class="whitespace-pre-wrap break-all text-brand-300">"api-iad-02~18a65e2f…6d2fc9"</span>
+  ],
+  <span class="text-sky-300">"args"</span>: &#123;<span class="text-sky-300">"unit"</span>: <span class="text-brand-300">"checkout.service"</span>&#125;,
+  <span class="whitespace-pre-wrap break-words text-brand-300"><span class="text-sky-300">"reason"</span>: "Restart checkout: health checks show the unit is wedged."</span>,
+  <span class="whitespace-pre-wrap break-words text-brand-300"><span class="text-sky-300">"evidence"</span>: "Status reported ActiveState=failed."</span>,
+  <span class="whitespace-pre-wrap break-words text-brand-300"><span class="text-sky-300">"expected"</span>: "Unit returns to active; checkout health check passes."</span>
+&#125;</.docs_code>
+
+  <p>
+    What comes back is a bounded run summary, not a terminal session. If the action finishes inside
+    the wait window, the agent receives the outcome directly. Empty output streams are omitted; any
+    output that is present has already passed through the runner's redaction and size limits. These
+    are the fields that matter most in a successful result:
+  </p>
+
+  <.docs_code phx-no-format label="selected fields from the completed result">&#123;
+  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"operation_id"</span>: "op_01K09E3N8Y4J6T2D5Q7R1V9WCF"</span>,
+  <span class="text-sky-300">"runs"</span>: [&#123;
+    <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"run_id"</span>: "019f61cf-59b4-71d9-a78c-4ece74d1e163"</span>,
+    <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"runner_ref"</span>: "api-iad-02~18a65e2f…6d2fc9"</span>,
+    <span class="text-sky-300">"status"</span>: <span class="text-brand-300">"success"</span>,
+    <span class="text-sky-300">"exit_code"</span>: <span class="text-amber-300">0</span>,
+    <span class="text-sky-300">"duration_ms"</span>: <span class="text-amber-300">380</span>
+  &#125;]
+&#125;</.docs_code>
+
+  <p>
+    The same durable <code>operation_id</code>
+    ties retries to the original request. If an HTTP response is lost, the bridge can recover the
+    operation instead of casually starting it again. At the other end, the runner's replay store
+    refuses to turn a repeated dispatch into a second process or accept different facts under the
+    same identity. A nonterminal response says what stopped progress — for example
+    <code>pending_approval</code>
+    — and returns the exact continuation the agent should call next.
+  </p>
+
+  <h2>The host keeps the last word, with one important qualification</h2>
+  <p>
+    Local admission can always make a runner stricter than the cloud: a production image can omit
+    write actions, deny a namespace, or cap the host at low-risk work. The runner also refuses an
+    unknown action, a changed pack, an invalid argument, an excessive timeout, or a stale target
+    reference even if the control plane sends it.
+  </p>
+  <p>
+    This host configuration vetoes the restart example even if cloud policy allows it:
+  </p>
+
+  <.docs_code phx-no-format label="/etc/emisar/config.yaml"><span class="text-sky-300">admission</span>:
+  <span class="text-sky-300">allow</span>:
+    - <span class="text-brand-300">"linux.*"</span>
+  <span class="text-sky-300">deny</span>:
+    - <span class="text-brand-300">"linux.systemctl_restart"</span>
+  <span class="text-sky-300">max_risk</span>: <span class="text-amber-300">medium</span></.docs_code>
+
+  <p>
+    That does not mean the hosted control plane is absent from the trust model. In the normal mode,
+    it is the authority that authenticates the caller, evaluates policy, and sends eligible
+    dispatches. If your threat model includes a compromised control plane, signed dispatch adds a
+    stronger boundary: the operator's MCP bridge signs the exact action, pack, arguments, targets,
+    reason, operation, nonce, and time with a key the cloud does not hold. An enforcing runner
+    verifies that claim before execution. The cloud can still delay or withhold the request; it
+    cannot forge a new one, alter it, widen its targets, or replay it successfully.
+  </p>
+  <p>
+    The deepest trust anchor is still the host. A pack is executable configuration, and the runner
+    can do whatever its service user is allowed to do. Operators decide which pack bytes to trust
+    and which OS privileges to grant. A compromised host already controls the machine emisar is
+    trying to operate; this system does not pretend to contain it from itself.
+  </p>
+
+  <h2>Two records answer different questions</h2>
+  <p>
+    The cloud audit is the searchable system of record across the fleet. It ties the caller,
+    request, policy decision, approval, target, execution status, and returned evidence together.
+    Because denied and pending requests are included, it shows intent and enforcement, not only
+    commands that completed.
+  </p>
+  <p>
+    A runner that receives a dispatch also appends security events to a local JSONL journal. Each
+    line includes the hash of the previous line, so deleting a middle entry, changing one, or
+    reordering the retained file breaks verification. The runner records that execution started
+    immediately before launching the child and later records the terminal outcome, so a crash can
+    leave an unmatched start instead of erasing the fact that work began.
+  </p>
+
+  <p>
+    The local chain is forensic evidence, not magic paper. A privileged attacker can replace the
+    whole file. The cloud audit remains the durable fleet record; environments that need stronger
+    retention can export it to storage with their own immutability controls.
+  </p>
+
+  <h2>What emisar does not make safe</h2>
+  <p>
+    emisar is not a VM, a container, or a kernel sandbox. If policy permits a Cassandra restart,
+    Cassandra will restart. A well-bounded destructive action still has a real blast radius. The
+    system narrows who can request it, the exact shape the request may take, where it may run, and
+    whether a person must approve it. It does not make the side effect imaginary.
+  </p>
+  <p>
+    Read-only also describes mutation, not confidentiality. Logs and config output can contain a
+    secret no redaction rule recognizes. Redaction happens before output leaves the runner and is a
+    useful backstop, but it is pattern-based. Actions should avoid producing secrets in the first
+    place, and output from production should still be treated as confidential.
+  </p>
+  <p>
+    Finally, emisar is not the agent loop. Claude, Cursor, ChatGPT, or another MCP client decides
+    what to investigate and what to request next. emisar supplies the governed action surface. The
+    model can still form a bad hypothesis; the point is that a bad hypothesis has to pass through a
+    declared contract, current scope, policy, and the host's final checks before it becomes a
+    process on production.
+  </p>
+
+  <h2>Deployment can grow one action at a time</h2>
+  <p>
+    A useful first deployment is intentionally small: one non-critical host, an unprivileged runner
+    user, and a few read actions whose pack bytes you have reviewed. Let low-risk inspection run
+    without ceremony. Deny writes until there is a specific operational job worth exposing, then
+    add that action with a tight schema and choose whether policy should allow it or hold it for a
+    person.
+  </p>
+  <p>
+    From there, expansion is additive. Connect another host. Trust another exact pack. Wrap one of
+    your own procedures as an action. The MCP integration stays put while the useful vocabulary
+    grows, and every new verb arrives with its limits, policy, and record attached.
+  </p>
+  <p>
+    For the access-pattern argument behind this design, read <.link navigate={
+      ~p"/guides/give-ai-agents-safe-production-access"
+    }>how to give an AI agent safe production access</.link>.
+    For the hostile-input case, read <.link navigate={~p"/guides/prompt-injection-for-ops-teams"}>why your production logs are prompts now</.link>.
+  </p>
+</.guide_page>

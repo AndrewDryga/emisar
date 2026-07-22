@@ -378,6 +378,10 @@ defmodule EmisarWeb.MarketingController do
   # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
+    {"how-emisar-works", :guide_how_emisar_works, "How emisar works",
+     "emisar separates the decision to run an infrastructure action from the machine that runs it. The control plane handles identity, scope, policy, and approvals. A runner on the target host verifies the exact action again, executes it, redacts the output, and records what happened.",
+     "July 2026", "11 min read",
+     "How emisar works, from its versioned action packs and outbound-only host runner to MCP discovery, control-plane policy, approvals, runner-side validation, redacted execution output, signed dispatch, and cloud and host audit records."},
     {"give-ai-agents-safe-production-access", :guide_safe_access,
      "How to give an AI agent safe access to production",
      "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",

@@ -42,6 +42,7 @@ defmodule EmisarWeb.MarketingTest do
     /dpa
     /docs/mcp-reference
     /guides
+    /guides/how-emisar-works
     /guides/give-ai-agents-safe-production-access
     /guides/prompt-injection-for-ops-teams
   )
@@ -607,6 +608,27 @@ defmodule EmisarWeb.MarketingTest do
     # renders (read off the templates), so a section silently disappearing
     # surfaces — without pinning brittle full sentences a copy tweak would
     # break.
+
+    test "the how-emisar-works guide explains both enforcement planes and their limits", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200)
+
+      assert html =~ "The runner is the execution plane"
+      assert html =~ "The control plane decides what may run"
+      assert html =~ "The MCP interface stays small while the catalog grows"
+      assert html =~ "Packs can turn internal workflows into agent tools"
+      assert html =~ "The host keeps the last word, with one important qualification"
+      assert html =~ "What emisar does not make safe"
+      assert html =~ "signed dispatch"
+      assert html =~ "not a VM, a container, or a kernel sandbox"
+      assert html =~ "emisar.admin.access.diagnose"
+      assert html =~ "one fixed release-RPC boundary"
+      assert html =~ "linux-core/actions/systemctl_restart.yaml"
+      assert html =~ "run_action input"
+      assert html =~ "selected fields from the completed result"
+      assert html =~ "/etc/emisar/config.yaml"
+    end
 
     test "the home hero aligns its peer verdict chips", %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
