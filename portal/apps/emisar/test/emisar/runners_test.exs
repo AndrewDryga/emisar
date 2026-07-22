@@ -755,6 +755,116 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  # A never-touched-since runner: created offline, then durably disconnected
+  # `days_ago` days back — the exact shape the inactivity sweep targets.
+  defp offline_runner(account, days_ago) do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
+    Fixtures.Runners.mark_disconnected_at(runner, at)
+  end
+
+  defp retention_markers(account_id) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(account_id)
+    |> Audit.Event.Query.by_event_type("runner.retention_swept")
+    |> Repo.all()
+  end
+
+  describe "sweep_inactive_runners/1" do
+    setup do
+      {account, _user, subject} = account_with_owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "removes runners offline past the window and audits once", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      runner = offline_runner(account, 40)
+
+      assert {:ok, 1} = Runners.sweep_inactive_runners(subject)
+      assert is_nil(Runners.peek_runner_by_id(runner.id))
+
+      assert [marker] = retention_markers(account.id)
+      assert marker.actor_kind == "user"
+      assert marker.payload["count"] == 1
+      assert marker.payload["inactive_days"] == 30
+    end
+
+    test "keeps runners offline within the window", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      runner = offline_runner(account, 10)
+
+      assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
+      assert Repo.reload(runner)
+      assert retention_markers(account.id) == []
+    end
+
+    test "is :retention_disabled when automatic cleanup is off", %{
+      account: account,
+      subject: subject
+    } do
+      _runner = offline_runner(account, 40)
+
+      assert {:error, :retention_disabled} = Runners.sweep_inactive_runners(subject)
+    end
+
+    test "a viewer (no manage_runners) is refused", %{account: account} do
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+
+      assert {:error, :unauthorized} =
+               Runners.sweep_inactive_runners(viewer_subject_for(account))
+    end
+
+    test "only sweeps the subject's own account", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      {other_account, _u, _s} = account_with_owner_subject()
+      other = offline_runner(other_account, 40)
+
+      assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
+      assert Repo.reload(other)
+    end
+  end
+
+  describe "delete_inactive_runners/3" do
+    setup do
+      {account, _user, _subject} = account_with_owner_subject()
+      %{account: account}
+    end
+
+    test "skips a currently-connected runner even with an old prior disconnect", %{
+      account: account
+    } do
+      # Reconnected: a later last_connected_at means it is not durably
+      # disconnected, so an old last_disconnected_at must not sweep it.
+      runner = offline_runner(account, 40)
+      {:ok, _reconnected} = Runners.connect_runner(runner)
+
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert Repo.reload(runner)
+    end
+
+    test "skips a never-connected (pending) runner", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert Repo.reload(runner)
+    end
+
+    test "skips a disabled runner offline past the cutoff", %{account: account} do
+      runner = account |> offline_runner(40) |> Fixtures.Runners.disable_runner()
+
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert Repo.reload(runner)
+    end
+
+    test "returns 0 and writes no marker when nothing matches", %{account: account} do
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert retention_markers(account.id) == []
+    end
+  end
+
   describe "apply_state/2" do
     setup do
       account = Fixtures.Accounts.create_account()

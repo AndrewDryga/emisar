@@ -98,4 +98,26 @@ defmodule Emisar.Fixtures.Runners do
 
     key
   end
+
+  @doc """
+  Stamps a runner as durably disconnected at `at` (connected shortly before it),
+  so the inactivity-retention sweep sees it offline since `at`. Pair with
+  `create_runner(connected?: false)` to rig an offline-since-`at` runner.
+  """
+  def mark_disconnected_at(%Runner{} = runner, %DateTime{} = at) do
+    runner
+    |> Ecto.Changeset.change(
+      last_connected_at: DateTime.add(at, -60, :second),
+      last_disconnected_at: at,
+      last_disconnect_reason: "test"
+    )
+    |> Repo.update!()
+  end
+
+  @doc "Disables a runner (sets `disabled_at`) to rig the disabled-state setup."
+  def disable_runner(%Runner{} = runner) do
+    runner
+    |> Runner.Changeset.disable()
+    |> Repo.update!()
+  end
 end

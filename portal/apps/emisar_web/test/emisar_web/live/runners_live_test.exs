@@ -252,6 +252,105 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
   end
 
+  describe "runner inactivity housekeeping" do
+    defp offline_runner!(account, name) do
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: name, connected?: false)
+
+      at = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Runners.mark_disconnected_at(runner, at)
+    end
+
+    test "an owner turns the retention window on from the select", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert html =~ "Automatic cleanup"
+      # Off is the default — the rail select shows it as the selected option.
+      assert has_element?(lv, ~s(#runners-cleanup option[value=""][selected]))
+
+      html =
+        lv
+        |> element("#runner-retention-form")
+        |> render_change(%{"days" => "30"})
+
+      assert html =~ "Automatic cleanup on — runners inactive for 30 days are removed daily."
+      assert has_element?(lv, ~s(#runners-cleanup option[value="30"][selected]))
+    end
+
+    test "the 1-day window is offered and reads in the singular", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      html =
+        lv
+        |> element("#runner-retention-form")
+        |> render_change(%{"days" => "1"})
+
+      assert html =~ "Automatic cleanup on — runners inactive for 1 day are removed daily."
+      assert has_element?(lv, ~s(#runners-cleanup option[value="1"][selected]))
+    end
+
+    test "Clean up now soft-deletes runners offline past the window", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      Fixtures.Runners.create_runner(account_id: account.id, name: "live-host", connected?: true)
+      _offline = offline_runner!(account, "stale-host")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+      assert html =~ "stale-host"
+
+      after_html = render_click(lv, "cleanup_inactive_now", %{})
+
+      assert after_html =~ "Removed 1 inactive runner."
+      refute after_html =~ "stale-host"
+      assert after_html =~ "live-host"
+    end
+
+    test "Clean up now with cleanup off explains the prerequisite", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert render_click(lv, "cleanup_inactive_now", %{}) =~ "Turn on automatic cleanup first."
+    end
+
+    test "a viewer sees the read-only note and crafted events are denied", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      offline = offline_runner!(account, "stale-host")
+
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "Owner/admin only"
+      refute has_element?(lv, "#runner-retention-form")
+
+      assert render_click(lv, "set_runner_retention", %{"days" => "7"}) =~
+               "Only owners and admins can change this setting."
+
+      assert render_click(lv, "cleanup_inactive_now", %{}) =~
+               "Admin required to clean up runners."
+
+      # The stale runner survived both crafted attempts (not soft-deleted).
+      assert %{deleted_at: nil} = Emisar.Repo.reload!(offline)
+    end
+  end
+
   describe "GET /app/runners/install" do
     test "always renders the install wizard with a pre-minted command",
          %{conn: conn} do

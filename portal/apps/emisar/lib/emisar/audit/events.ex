@@ -767,6 +767,43 @@ defmodule Emisar.Audit.Events do
   end
 
   @doc """
+  Runner retention removed runners cleanly offline past the account's window —
+  the daily sweep (system actor) or the runners page "Clean up now" (operator
+  actor). One event per sweep that removed anything.
+  """
+  def runner_retention_swept(%Subject{account: %{id: account_id}} = subject, runners, days)
+      when is_list(runners) do
+    Audit.changeset(
+      account_id,
+      "runner.retention_swept",
+      actor(subject) ++
+        [
+          target_kind: "runner_fleet",
+          target_label: "Runners",
+          payload: runner_retention_payload(runners, days)
+        ]
+    )
+  end
+
+  def runner_retention_swept(account_id, runners, days)
+      when is_binary(account_id) and is_list(runners) do
+    Audit.changeset(account_id, "runner.retention_swept",
+      actor_kind: "system",
+      target_kind: "runner_fleet",
+      target_label: "Runners",
+      payload: runner_retention_payload(runners, days)
+    )
+  end
+
+  defp runner_retention_payload(runners, days) do
+    %{
+      count: length(runners),
+      inactive_days: days,
+      runners: runners |> Enum.take(100) |> Enum.map(& &1.name)
+    }
+  end
+
+  @doc """
   Admin explicitly re-trusted an already-trusted pack version whose version
   was retired — the deliberate override that re-enables dispatch.
   """

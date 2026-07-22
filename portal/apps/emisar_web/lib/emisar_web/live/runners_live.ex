@@ -1,5 +1,6 @@
 defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
+  alias Emisar.Accounts
   alias Emisar.Compat
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
@@ -32,6 +33,95 @@ defmodule EmisarWeb.RunnersLive do
     do: {:noreply, assign(socket, :show_troubleshooting?, true)}
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  def handle_event("set_runner_retention", %{"days" => raw}, socket) do
+    apply_runner_retention(socket, parse_retention_days(raw))
+  end
+
+  def handle_event("cleanup_inactive_now", _params, socket) do
+    case Runners.sweep_inactive_runners(socket.assigns.current_subject) do
+      {:ok, 0} ->
+        {:noreply,
+         put_flash(socket, :info, "Nothing to remove — no runner has been inactive that long.")}
+
+      {:ok, count} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, cleanup_flash(count))
+         |> reload()}
+
+      {:error, :retention_disabled} ->
+        {:noreply, put_flash(socket, :error, "Turn on automatic cleanup first.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to clean up runners.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not clean up — try again.")}
+    end
+  end
+
+  defp apply_runner_retention(socket, :error),
+    do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
+
+  defp apply_runner_retention(socket, {:ok, days_or_nil}) do
+    case Accounts.update_account(
+           socket.assigns.current_account,
+           %{settings: %{runner_inactive_retention_days: days_or_nil}},
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> put_flash(:info, retention_set_flash(days_or_nil))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+    end
+  end
+
+  defp parse_retention_days(""), do: {:ok, nil}
+
+  defp parse_retention_days(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {days, ""} when days > 0 -> {:ok, days}
+      _ -> :error
+    end
+  end
+
+  defp retention_set_flash(nil), do: "Automatic cleanup turned off — inactive runners are kept."
+
+  defp retention_set_flash(days),
+    do: "Automatic cleanup on — runners inactive for #{days_phrase(days)} are removed daily."
+
+  defp cleanup_flash(1), do: "Removed 1 inactive runner."
+  defp cleanup_flash(count), do: "Removed #{count} inactive runners."
+
+  defp retention_days_label(days), do: "after #{days_phrase(days)} inactive"
+
+  defp days_phrase(1), do: "1 day"
+  defp days_phrase(days), do: "#{days} days"
+
+  defp runner_retention_options(current) do
+    [
+      %{
+        value: "",
+        label: "Off — keep inactive runners",
+        selected: is_nil(current),
+        disabled: false
+      },
+      %{value: "1", label: "After 1 day inactive", selected: current == 1, disabled: false},
+      %{value: "7", label: "After 7 days inactive", selected: current == 7, disabled: false},
+      %{value: "14", label: "After 14 days inactive", selected: current == 14, disabled: false},
+      %{value: "30", label: "After 30 days inactive", selected: current == 30, disabled: false},
+      %{value: "60", label: "After 60 days inactive", selected: current == 60, disabled: false},
+      %{value: "90", label: "After 90 days inactive", selected: current == 90, disabled: false}
+    ]
+  end
 
   # PubSub-driven refresh — re-run the current page/filter.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
@@ -385,7 +475,7 @@ defmodule EmisarWeb.RunnersLive do
               </LiveTable.live_table>
             </div>
 
-            <div class="hidden xl:block">
+            <div class="hidden space-y-6 xl:block">
               <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
                 <p>
                   A runner is the small <span class="text-zinc-200">emisar agent</span>
@@ -404,6 +494,60 @@ defmodule EmisarWeb.RunnersLive do
                   policies, runbooks, and an LLM's fan-out can target a whole tier at once.
                 </p>
               </.docs_rail>
+
+              <div>
+                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Housekeeping
+                </h3>
+                <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
+                <div id="runners-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
+                  <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
+                  <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+                    Remove runners that have been disconnected for the selected period. A daily
+                    sweep deletes them; a host that comes back online re-enrolls as a fresh
+                    runner. Currently-connected and disabled runners are never touched.
+                  </p>
+                  <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
+                    <form id="runner-retention-form" phx-change="set_runner_retention" class="mt-3">
+                      <.select
+                        name="days"
+                        aria-label="Remove runners inactive for"
+                        options={
+                          runner_retention_options(
+                            @current_account.settings.runner_inactive_retention_days
+                          )
+                        }
+                      />
+                    </form>
+                    <.confirm_button
+                      :if={@current_account.settings.runner_inactive_retention_days}
+                      id="runners-cleanup-now"
+                      variant={:secondary}
+                      tone={:neutral}
+                      size={:lg}
+                      class="mt-3 w-full"
+                      title="Clean up inactive runners?"
+                      confirm_label="Clean up now"
+                      on_confirm={JS.push("cleanup_inactive_now")}
+                    >
+                      <:body>
+                        Soft-deletes every runner inactive for more than {days_phrase(
+                          @current_account.settings.runner_inactive_retention_days
+                        )}. A host that comes back online re-enrolls as a fresh runner; its
+                        audit history is kept.
+                      </:body>
+                      Clean up now
+                    </.confirm_button>
+                  <% else %>
+                    <p class="mt-2 text-[11px] text-zinc-400">
+                      Owner/admin only — currently {(@current_account.settings.runner_inactive_retention_days &&
+                                                       retention_days_label(
+                                                         @current_account.settings.runner_inactive_retention_days
+                                                       )) || "off"}.
+                    </p>
+                  <% end %>
+                </div>
+              </div>
             </div>
           </div>
       <% end %>

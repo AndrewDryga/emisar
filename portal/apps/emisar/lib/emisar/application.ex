@@ -39,6 +39,7 @@ defmodule Emisar.Application do
       Emisar.OAuth,
       Emisar.MCPOperations,
       Emisar.SSO,
+      Emisar.Runners,
       Emisar.Runs
     ]
 

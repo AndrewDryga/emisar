@@ -168,6 +168,12 @@ defmodule Emisar.Runners.Runner.Query do
     )
   end
 
+  # Last recorded disconnect is older than `cutoff` — the inactivity-retention
+  # sweep composes this onto `disconnected/1`, so a runner that reconnected
+  # (a later `last_connected_at`) no longer matches and is never swept.
+  def last_disconnected_before(queryable \\ all(), cutoff),
+    do: where(queryable, [runners: r], r.last_disconnected_at < ^cutoff)
+
   # -- Pagination / filters --------------------------------------------
 
   @impl Emisar.Repo.Query

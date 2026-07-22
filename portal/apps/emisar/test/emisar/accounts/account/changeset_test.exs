@@ -42,7 +42,8 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
                require_mfa: false,
                require_sso: false,
                max_grant_lifetime_seconds: nil,
-               pack_unseen_retention_days: nil
+               pack_unseen_retention_days: nil,
+               runner_inactive_retention_days: nil
              } = changeset() |> apply_changes() |> Map.fetch!(:settings)
 
       invalid = changeset(settings: %{max_grant_lifetime_seconds: -1})
@@ -58,6 +59,14 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       refute invalid.valid?
 
       assert "must be greater than 0" in errors_on(invalid).settings.pack_unseen_retention_days
+    end
+
+    test "validates the runner-inactivity window is at least one day" do
+      invalid = changeset(settings: %{runner_inactive_retention_days: 0})
+
+      refute invalid.valid?
+
+      assert "must be greater than 0" in errors_on(invalid).settings.runner_inactive_retention_days
     end
   end
 

@@ -28,6 +28,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
     {"runner.version_rejected", "Runner version rejected"},
+    {"runner.retention_swept", "Runner fleet pruned (retention)"},
     {"enrollment_key.created", "Enrollment key created"},
     {"enrollment_key.revoked", "Enrollment key revoked"},
     {"enrollment_key.bound", "Enrollment key bound to runner"},
@@ -170,6 +171,7 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.deleted", "Deleted"},
        {"runner.error", "Error"},
        {"runner.version_rejected", "Version rejected"},
+       {"runner.retention_swept", "Fleet pruned (retention)"},
        {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"}
      ]},
     {"Pack trust",

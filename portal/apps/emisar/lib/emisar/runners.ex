@@ -15,7 +15,12 @@ defmodule Emisar.Runners do
   `record_heartbeat`) are internal
   to the runner connection process and called with the runner
   socket's own subject upstream.
+
+  The context module also **supervises the Runners recurrent jobs** (the
+  inactivity-retention sweep), the way `Emisar.Catalog`/`Emisar.Runs` do —
+  domain jobs live under `jobs/` and their owning context starts them.
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo}
   alias Emisar.Auth.Subject
@@ -34,6 +39,21 @@ defmodule Emisar.Runners do
   @install_ring_cap 42
   @install_eviction_grace_seconds 60
   @connection_lease_seconds 120
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    children = [
+      job_module("InactiveRunnerRetention")
+    ]
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Runners: reads --------------------------------------------------
 
@@ -463,6 +483,98 @@ defmodule Emisar.Runners do
         after_commit: &broadcast_runner_revoked/1
       )
     end
+  end
+
+  # -- Retention -------------------------------------------------------
+
+  @doc """
+  Run the inactivity-retention sweep for the subject's account right now — the
+  runners page "Clean up now" button. Uses the account's configured window
+  (`settings.runner_inactive_retention_days`); `{:error, :retention_disabled}`
+  when automatic cleanup is off. Requires `manage_runners`. Returns
+  `{:ok, deleted_count}`.
+  """
+  def sweep_inactive_runners(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         {:ok, days} <- fetch_inactive_retention_days(subject) do
+      delete_inactive_runners(subject.account.id, days, subject)
+    end
+  end
+
+  # The subject's account struct is a socket snapshot — read the setting fresh.
+  defp fetch_inactive_retention_days(%Subject{account: %{id: account_id}}) do
+    case Accounts.fetch_account_settings(account_id) do
+      {:ok, %{runner_inactive_retention_days: days}} when is_integer(days) and days > 0 ->
+        {:ok, days}
+
+      {:ok, _settings} ->
+        {:error, :retention_disabled}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Internal — the inactivity-retention sweep for one account: the daily
+  `Runners.Jobs.InactiveRunnerRetention` tick (no subject → system audit actor)
+  and `sweep_inactive_runners/1` (operator actor). Soft-deletes every runner
+  cleanly offline for `days` days — durably disconnected with a last disconnect
+  older than the cutoff — and records ONE `runner.retention_swept` audit event
+  only when something was removed. Returns `{:ok, deleted_count}`.
+
+  Conservative by construction: a currently-connected runner (a later
+  `last_connected_at`), a never-connected runner, and a disabled runner (a
+  deliberate reversible park) are all excluded, so the sweep only removes hosts
+  that connected and have since stayed gone.
+  """
+  def delete_inactive_runners(account_id, days, subject \\ nil)
+      when is_binary(account_id) and is_integer(days) and days > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
+
+    Multi.new()
+    |> Multi.run(:runners, fn repo, _changes ->
+      queryable =
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_account_id(account_id)
+        |> Runner.Query.not_disabled()
+        |> Runner.Query.disconnected()
+        |> Runner.Query.last_disconnected_before(cutoff)
+        |> Runner.Query.lock_for_update()
+
+      {:ok, repo.all(queryable)}
+    end)
+    |> Multi.run(:deleted, fn repo, %{runners: runners} ->
+      now = DateTime.utc_now()
+
+      queryable =
+        Runner.Query.all()
+        |> Runner.Query.by_ids(Enum.map(runners, & &1.id))
+
+      {count, _} = repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
+      {:ok, count}
+    end)
+    |> Multi.run(:audit, fn repo, %{runners: runners} ->
+      record_inactivity_sweep(repo, runners, days, subject)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{deleted: deleted}} -> {:ok, deleted}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # No marker when nothing was removed — scheduled housekeeping must not
+  # manufacture audit noise on inactive accounts.
+  defp record_inactivity_sweep(_repo, [], _days, _subject), do: {:ok, :nothing_removed}
+
+  defp record_inactivity_sweep(repo, runners, days, subject) do
+    actor = subject || hd(runners).account_id
+    repo.insert(Audit.Events.runner_retention_swept(actor, runners, days))
   end
 
   # -- Runner socket-driven connection state ---------------------------
