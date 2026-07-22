@@ -43,6 +43,20 @@ RUN mix local.hex "${HEX_VERSION}" --force \
 
 ENV MIX_ENV="prod"
 
+# Install dependencies while the cache key contains only files that can change
+# dependency resolution or compilation. Every mix.exs requires VERSION to exist,
+# but its value is release metadata and does not affect deps, so use a stable
+# placeholder until application compilation.
+RUN printf '0.0.0-dev\n' > VERSION
+COPY portal/mix.exs portal/mix.lock ./
+COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs
+COPY portal/apps/emisar_web/mix.exs apps/emisar_web/mix.exs
+RUN mix deps.get --only $MIX_ENV
+RUN mix deps.compile
+
+# The real product version is embedded in the applications and OTP release.
+COPY portal/VERSION ./
+
 # Optional dev-only build flag: the docker-compose dev/e2e stack passes
 # EMISAR_DEV_HOST_EXCLUDES=1 so config/prod.exs lets its plain-HTTP internal
 # hosts (localhost / 127.0.0.1 / the `portal` service) through force_ssl. A
@@ -63,14 +77,12 @@ ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 # Place install.sh / install-mcp.sh where InstallController +
 # InstallMcpController's compile-time `Path.expand` resolves to (six
 # levels up from each controller's source dir => container root).
-# Copying early lets Docker layer-cache them.
 COPY install.sh /install.sh
 COPY install-mcp.sh /install-mcp.sh
 
 # EmisarWeb.PacksRegistry walks packs/ at compile time; its default
 # relative path bottoms out at /packs inside the container. Copy the
-# YAMLs there so the registry can scan them. Layer-cached separately so
-# pack edits don't bust deps.compile.
+# YAMLs there so the registry can scan them.
 COPY packs /packs
 
 # The fixed MCP descriptor registry is also a compile-time input. Its source
@@ -78,29 +90,24 @@ COPY packs /packs
 # portal and bridge builds.
 COPY docs/mcp-api-schemas.json /docs/mcp-api-schemas.json
 
-# Install deps first so docker layer-caches them.
-# VERSION is the product-version single source read by every mix.exs, so it must
-# be present before `mix deps.get` evaluates the project files.
-COPY portal/VERSION ./
-COPY portal/mix.exs portal/mix.lock ./
-COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs
-COPY portal/apps/emisar_web/mix.exs apps/emisar_web/mix.exs
+# Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config
 COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
-RUN mix deps.get --only $MIX_ENV
-RUN mix deps.compile
 
 # `apps` includes each app's own priv/ (migrations, assets, etc).
 # The umbrella root has no priv/ of its own, so a stray
 # `COPY priv priv` here would break the build.
 COPY portal/apps apps
-COPY portal/config/runtime.exs config/
 
 # Build assets (esbuild + tailwind)
 RUN mix assets.deploy
 
 # Compile + release
 RUN mix compile
+# Runtime configuration is evaluated by the assembled release, so changing it
+# should invalidate release assembly without rebuilding assets or application
+# bytecode.
+COPY portal/config/runtime.exs config/
 COPY portal/rel rel
 RUN mix release
 
