@@ -151,8 +151,10 @@
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Identifier claim</strong>
-                  — leave as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-                  unless your provider documents a different stable identifier. This is what an
+                  — leave as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>;
+                  Microsoft Entra can use
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+                  instead. emisar accepts only those two, not an arbitrary claim. This is what an
                   identity is bound to (see below), and what SCIM's
                   <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
                   must match for login and directory sync to converge.
@@ -342,8 +344,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Provisioning</strong>
-            creates the user and their membership at the connection's default role — so access is
-            in place before their first login.
+            creates the user and their membership at the connection's default role — so account
+            access is in place before their first login. Runner access follows the connection's
+            Default runner access setting, which starts at <em>no runners</em>: a provisioned member
+            sees the fleet only once you grant it, per member or by group mapping.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

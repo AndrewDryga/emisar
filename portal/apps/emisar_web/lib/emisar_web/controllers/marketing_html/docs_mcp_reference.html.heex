@@ -150,7 +150,10 @@
           Dispatch preflight re-resolves the complete target set, pack trust, descriptor, schema,
           policy, certificate window, and signature requirement. It creates the complete fan-out or
           nothing; it never silently drops a stale target. Policy can still produce a mix of allowed,
-          pending-approval, and denied runs inside the accepted operation.
+          pending-approval, and denied runs inside the accepted operation. A parked run is not an
+          error: it comes back in a successful response with run status <code>pending_approval</code>, an approval URL, and a
+          <code>wait_for_run</code>
+          continuation — wait on it rather than treating it as a failure.
         </p>
 
         <h2 id="operations">Operations and recovery</h2>
@@ -159,7 +162,8 @@
           <code>create_runbook_draft</code>
           receives a private <code>operation_id</code>. The stdio bridge derives it from its private
           process nonce and request sequence; for native HTTP clients, the portal derives it from
-          the exact request and credential lineage. The portal reserves it in the same transaction
+          the exact request and credential lineage — the API key together with its automatic-rotation
+          successors. The portal reserves it in the same transaction
           as the mutation.
           Repeating the same request and facts returns the original resource; changed facts
           conflict. Models do not create operation identifiers.
@@ -217,8 +221,7 @@
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {code, meaning, next} <- [
                 {"target_contract_changed", "The selected action, pack, or runner generation is stale.", "Call get_action again and make a fresh selection."},
-                {"action_unavailable", "No currently visible exact action contract is executable.", "Run find_actions again and inspect a fresh selection."},
-                {"pending_approval", "Policy parked the run for a human decision.", "Call wait_for_run until it changes."},
+                {"action_unavailable", "No currently visible exact action contract is executable.", "Follow the returned list_runners continuation to see why no runner can execute it."},
                 {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error; do not retry."},
                 {"signed_runbook_unsupported", "A runbook includes signature-enforcing targets.", "Use individually signed run_action calls."}
               ] do %>

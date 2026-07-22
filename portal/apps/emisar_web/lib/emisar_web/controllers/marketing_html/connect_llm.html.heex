@@ -277,8 +277,8 @@
           Every MCP semantic — tool descriptors, content blocks,
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
           — is implemented in the portal,
-          so the bridge stays version-locked to the spec without you
-          redownloading it.
+          so MCP spec updates land server-side — you only redownload the bridge when the portal
+          raises its minimum supported version.
         </p>
 
         <.docs_h3 id="install-bridge">Install</.docs_h3>
@@ -435,7 +435,8 @@
       "command": "/usr/local/bin/emisar-mcp",
       "env": &#123;
         "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-..."
+        "EMISAR_API_KEY": "emk-...",
+        "EMISAR_CLIENT": "gemini"
       &#125;
     &#125;
   &#125;

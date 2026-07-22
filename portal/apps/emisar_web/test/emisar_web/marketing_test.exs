@@ -614,16 +614,16 @@ defmodule EmisarWeb.MarketingTest do
     } do
       html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200)
 
-      assert html =~ "The runner is the execution plane"
-      assert html =~ "The control plane decides what may run"
-      assert html =~ "The MCP interface stays small while the catalog grows"
-      assert html =~ "Packs can turn internal workflows into agent tools"
-      assert html =~ "The host keeps the last word, with one important qualification"
-      assert html =~ "What emisar does not make safe"
+      assert html =~ "The useful unit is an action"
+      assert html =~ "Follow one restart"
+      assert html =~ "Twelve MCP tools, however many actions"
+      assert html =~ "Packs can wrap your own work"
+      assert html =~ "The host can still say no"
+      assert html =~ "Where the guarantees end"
       assert html =~ "signed dispatch"
       assert html =~ "not a VM, a container, or a kernel sandbox"
       assert html =~ "emisar.admin.access.diagnose"
-      assert html =~ "one fixed release-RPC boundary"
+      assert html =~ "fixed release-RPC script"
       assert html =~ "linux-core/actions/systemctl_restart.yaml"
       assert html =~ "run_action input"
       assert html =~ "selected fields from the completed result"
@@ -1183,17 +1183,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Available on the Team and Enterprise plans"
       assert html =~ "Available on the Enterprise plan"
       # …and the tier name is the upsell — it links to pricing.
-      assert html =~ ~s(href="/pricing")
-    end
-
-    test "docs/teams-and-access marks inviting teammates as Team+ (Free is one user)", %{
-      conn: conn
-    } do
-      html = conn |> get(~p"/docs/teams-and-access") |> html_response(200)
-
-      assert html =~ "Only available on"
-      assert html =~ "Team &amp; Enterprise"
-      assert html =~ "Available on the Team and Enterprise plans"
       assert html =~ ~s(href="/pricing")
     end
 

@@ -68,7 +68,7 @@
       <.docs_callout kind={:note} title="The shipped default.">
         New accounts start with: low and medium <code class="text-brand-300">allow</code>,
         high <code class="text-amber-300">require_approval</code>, critical <code class="text-red-400">deny</code>, no overrides. That's a sane day-one posture —
-        reads and routine diagnostics flow, mutations stop for a click, destructive actions
+        reads and routine diagnostics flow, high-risk actions stop for a click, and critical ones
         don't run at all until you explicitly open them up.
       </.docs_callout>
 
@@ -184,7 +184,9 @@
         every morning is how approval fatigue starts. When you approve a request you choose a
         duration: <strong class="text-zinc-200">once</strong>
         (this run only), or a standing
-        grant for <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>.
+        grant for <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>
+        (the
+        durations your account allows).
         A standing grant lets matching future calls skip the queue:
       </p>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">

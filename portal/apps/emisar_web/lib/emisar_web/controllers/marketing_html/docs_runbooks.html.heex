@@ -69,8 +69,9 @@
       <.docs_h2 id="running">Running one</.docs_h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Dispatch from the runbook's page with a required reason — same as any single action.
-        Execution is sequential with a small wave of parallelism: up to five runs in flight at a
-        time, the next wave dispatching as runs complete. Two properties matter operationally:
+        Execution runs in waves: up to five runs dispatch together, and the whole wave must reach a
+        terminal state before the next wave starts — a run held for approval keeps its wave open, and
+        later waves wait. Two properties matter operationally:
       </p>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -160,7 +161,10 @@
         ordered steps, targets resolved to current runner names).
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
         sends a published runbook through the governed end-to-end path; every step still passes
-        its normal policy, approval, target, and audit checks.
+        its normal policy, approval, target, and audit checks. One limit: it refuses any runbook
+        whose targets include a signature-enforcing runner — the bridge signs only direct
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
+        calls, so run those runbooks from the console.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
         validates an agent's proposed plan and saves it for human review, but never publishes it.
         An agent can still use
