@@ -1525,7 +1525,12 @@ defmodule EmisarWeb.TeamLive do
                   </div>
 
                   <div :if={@scope_editing_id == membership.id} class="mt-4 max-w-xl sm:pl-14">
-                    <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
+                    <form
+                      id={"member-scope-form-#{membership.id}"}
+                      phx-change="scope_changed"
+                      phx-submit="save_scopes"
+                      class="space-y-4"
+                    >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
                         Role controls what this member can do. Runner access controls where it applies.

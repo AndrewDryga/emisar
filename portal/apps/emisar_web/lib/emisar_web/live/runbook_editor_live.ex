@@ -567,6 +567,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <section>
               <.section_header title="Details" />
               <form
+                id="runbook-meta-form"
                 phx-change="meta_change"
                 class="space-y-4 rounded-xl border border-dashed border-zinc-800 p-5"
               >
@@ -737,7 +738,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       </div>
     </div>
 
-    <form phx-change="step_change" class="mt-3 space-y-3">
+    <form id={"runbook-step-form-#{@index}"} phx-change="step_change" class="mt-3 space-y-3">
       <input type="hidden" name="index" value={@index} />
 
       <%!-- Action is the primary question the operator is answering
@@ -908,7 +909,11 @@ defmodule EmisarWeb.RunbookEditorLive do
           <%!-- items-end (not center): the compact inputs carry a mt-1 that sits
                them at the BOTTOM of their cell, so bottom-aligning the h-7 remove
                button lines it up with the input boxes exactly. --%>
-          <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-end gap-1.5">
+          <form
+            id={"runbook-step-#{@index}-arg-form-#{j}"}
+            phx-change="arg_change"
+            class="grid grid-cols-[1fr_1fr_auto] items-end gap-1.5"
+          >
             <input type="hidden" name="index" value={@index} />
             <input type="hidden" name="arg" value={j} />
             <%!-- min-w-0 rides the grid-item wrapper (not <.input>'s inner

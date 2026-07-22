@@ -8,6 +8,6 @@
     "shot": "node shot.mjs"
   },
   "dependencies": {
-    "puppeteer-core": "^25.2.0"
+    "puppeteer-core": "^25.3.0"
   }
 }

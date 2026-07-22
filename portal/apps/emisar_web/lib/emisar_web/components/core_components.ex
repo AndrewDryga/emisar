@@ -2067,8 +2067,7 @@ defmodule EmisarWeb.CoreComponents do
       >
         {badge_label(@badge)}
       </span>
-      <span :if={@alert} class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true">
-      </span>
+      <span :if={@alert} class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true"></span>
       <span :if={@alert} class="sr-only">{@alert_label}</span>
     </.link>
     """
@@ -2277,10 +2276,8 @@ defmodule EmisarWeb.CoreComponents do
       <span class={[
         "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
         status_dot_bg(@tone)
-      ]}>
-      </span>
-      <span class={["relative inline-flex rounded-full", status_dot_size(@size), status_dot_bg(@tone)]}>
-      </span>
+      ]}></span>
+      <span class={["relative inline-flex rounded-full", status_dot_size(@size), status_dot_bg(@tone)]}></span>
     </span>
     """
   end
@@ -2297,8 +2294,7 @@ defmodule EmisarWeb.CoreComponents do
       ]}
       aria-hidden="true"
       {@rest}
-    >
-    </span>
+    ></span>
     """
   end
 
@@ -2711,8 +2707,7 @@ defmodule EmisarWeb.CoreComponents do
             <span
               :if={to_string(@value) != card.value}
               class="ml-auto h-4 w-4 shrink-0 rounded-full border border-zinc-700"
-            >
-            </span>
+            ></span>
           </span>
           <span class="mt-0.5 block text-xs leading-relaxed text-zinc-400">
             {render_slot(card)}
@@ -4060,8 +4055,8 @@ defmodule EmisarWeb.CoreComponents do
     ><%!-- A mono title's trailing context ("on edge-fra-01") speaks the SAME
          face and size as the title — just dimmed to the breadcrumb gray —
          so the line reads as one heading, not a heading plus a footnote. --%>{render_slot(
-        @meta
-      )}</span>
+      @meta
+    )}</span>
     """
   end
 
@@ -5512,8 +5507,7 @@ defmodule EmisarWeb.CoreComponents do
                 <span
                   class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-zinc-700/60 to-transparent"
                   aria-hidden="true"
-                >
-                </span>
+                ></span>
                 <ul class="flex flex-1 flex-col justify-around">
                   <li>
                     <.marketing_gate_link
@@ -5683,8 +5677,7 @@ defmodule EmisarWeb.CoreComponents do
           "rounded-full ring-[5px] ring-zinc-950 transition",
           @active && "h-2.5 w-2.5 bg-brand-400 shadow-[0_0_16px_3px] shadow-brand-400/40",
           !@active && "h-2 w-2 bg-zinc-700 group-hover:bg-brand-400/70"
-        ]}>
-        </span>
+        ]}></span>
       </span>
       <span class={[
         "text-2xl font-semibold tracking-tight transition",

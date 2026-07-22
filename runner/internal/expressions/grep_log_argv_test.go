@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestGrepLogArgv_LeadingDashPatternStaysAPattern is a regression guard for

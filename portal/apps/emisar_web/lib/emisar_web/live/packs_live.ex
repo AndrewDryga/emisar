@@ -1111,6 +1111,7 @@ defmodule EmisarWeb.PacksLive do
               not @loading? and not @load_error? and
                 (@pack_count > 0 or @name_filter != "" or @risk_filter != "")
             }
+            id="pack-filter-form"
             phx-change="filter"
             class="mt-6 flex flex-wrap items-end gap-3"
           >
@@ -1240,8 +1241,7 @@ defmodule EmisarWeb.PacksLive do
                       :if={v.trust_state != :trusted}
                       class="w-5 shrink-0"
                       aria-hidden="true"
-                    >
-                    </span>
+                    ></span>
                     <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
                     <%!-- ONE row-state marker in ONE grammar (dot + word), BESIDE
                          the identity it qualifies — the page's primary fact, so
@@ -1675,7 +1675,7 @@ defmodule EmisarWeb.PacksLive do
                 again re-inserts it as a fresh trust decision.
               </p>
               <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
-                <form phx-change="set_pack_retention" class="mt-3">
+                <form id="pack-retention-form" phx-change="set_pack_retention" class="mt-3">
                   <.select
                     name="days"
                     aria-label="Remove pack versions not seen for"

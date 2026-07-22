@@ -1023,7 +1023,11 @@ defmodule EmisarWeb.PoliciesLive do
            drops the card directly — no confirm modal. A form (not a lone select)
            carries the uid as a hidden field on the change event. --%>
           <header class="flex items-end gap-3">
-            <form phx-change="set_target" class="w-full sm:max-w-xs">
+            <form
+              id={"policy-target-form-#{@ruleset.uid}"}
+              phx-change="set_target"
+              class="w-full sm:max-w-xs"
+            >
               <input type="hidden" name="uid" value={@ruleset.uid} />
               <%!-- One tree: each group is a selectable header with its runners
                indented beneath it. A native <optgroup> label can't be picked,

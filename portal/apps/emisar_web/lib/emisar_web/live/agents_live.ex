@@ -1339,7 +1339,7 @@ defmodule EmisarWeb.AgentsLive do
     >
       <p>
         An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
-          Codex</span>
+        Codex</span>
         — connected to emisar over <span class="text-zinc-200">MCP</span>, the Model Context
         Protocol.
       </p>

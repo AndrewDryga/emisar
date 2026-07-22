@@ -15,7 +15,7 @@
         over a live Pure LUN, triggered by a dm-multipath path-group race. Here is the incident,
         and the exact emisar loop that contained it:
         <strong class="font-semibold text-zinc-200">investigate through declared actions, stop the
-          bleed behind one approval, then write the durable fix to the infra repo</strong>
+        bleed behind one approval, then write the durable fix to the infra repo</strong>
         — no raw SSH, every step on the record. The honest part is the fix: the one-line setting
         you'd reach for first was a no-op, and the thing that actually stopped it was a guard that
         refuses to trust the driver.

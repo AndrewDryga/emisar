@@ -57,7 +57,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # share base layers with the portal image.
 
 # Digest-pinned (refresh via the buildx imagetools command noted above).
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
+FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \

@@ -772,8 +772,10 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/agents"}
     >
       <:value>
-        {@agents.total}<span class="text-2xl text-zinc-500">
-          {if @agents.total == 1, do: " agent", else: " agents"}</span>
+        {@agents.total}
+        <span class="text-2xl text-zinc-500">
+          {if @agents.total == 1, do: " agent", else: " agents"}
+        </span>
       </:value>
       <:status>
         <%= cond do %>

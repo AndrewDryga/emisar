@@ -10,6 +10,6 @@ metadata:
 spec:
   containers:
   - name: probe
-    image: busybox:1.36
+    image: busybox:1.38.0
     command: ["sh","-c","echo harness-probe-log; sleep 3600"]
   restartPolicy: Never

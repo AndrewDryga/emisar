@@ -15,12 +15,12 @@
 # suffix; the hexpm image tag doesn't carry it.)
 ARG ELIXIR_VERSION=1.20.2
 ARG OTP_VERSION=29.0.3
-ARG DEBIAN_VERSION=bookworm-20260623-slim
+ARG DEBIAN_VERSION=bookworm-20260713-slim
 
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:4ced3cb72e20ff8ad8315ec05af520c43431ea2ae459a205f5217670df45f2cf"
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:23953ce7850433f8f650f4b710d8b35d8d495092371ffda0356ea9bc80953151"
 # The runtime base needs to match the builder's libc/ssl; use the same
 # debian snapshot so any compiled NIFs link against compatible libs.
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818"
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder

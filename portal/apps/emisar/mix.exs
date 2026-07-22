@@ -54,7 +54,7 @@ defmodule Emisar.MixProject do
       # introspection (recon:proc_count, bin_leak), observer_cli for
       # the live top-style dashboard (:observer_cli.start()).
       {:recon, "~> 2.5"},
-      {:observer_cli, "~> 1.8"},
+      {:observer_cli, "~> 2.0"},
 
       # Auth — TOTP for MFA
       {:nimble_totp, "~> 1.0"},

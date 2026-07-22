@@ -56,7 +56,7 @@ jobs:
       EMISAR_API_KEY: "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -80,7 +80,7 @@ jobs:
           echo "Provider lanes — claude=$claude codex=$codex"
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: tools/go.mod
           cache: true
@@ -117,7 +117,7 @@ jobs:
         if: steps.keys.outputs.claude == 'true'
         env:
           # The mcpeval driver's flags are verified against this version.
-          CLAUDE_CODE_VERSION: "2.1.212"
+          CLAUDE_CODE_VERSION: "2.1.217"
         run: |
           set -euo pipefail
           npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
@@ -143,7 +143,7 @@ jobs:
         if: steps.keys.outputs.codex == 'true'
         env:
           # The mcpeval driver's flags are verified against this version.
-          CODEX_CLI_VERSION: "0.144.5"
+          CODEX_CLI_VERSION: "0.145.0"
         run: |
           set -euo pipefail
           npm install -g "@openai/codex@${CODEX_CLI_VERSION}"

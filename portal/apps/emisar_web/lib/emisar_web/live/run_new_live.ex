@@ -309,8 +309,7 @@ defmodule EmisarWeb.RunNewLive do
                 <span class={[
                   "mt-2 h-1 w-1 flex-none rounded-full",
                   if(@action.risk == :low, do: "bg-zinc-600", else: "bg-amber-300")
-                ]}>
-                </span>
+                ]}></span>
                 <span><.inline_code text={effect} /></span>
               </li>
             </ul>

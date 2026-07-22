@@ -3,7 +3,7 @@
 # Connection string for the box, e.g.: DATABASE_URL=postgres://postgres:postgres@db:5432/app_dev
 services:
   db:
-    image: postgres:18
+    image: postgres:18.4
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

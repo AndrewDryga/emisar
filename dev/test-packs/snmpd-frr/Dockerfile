@@ -8,10 +8,10 @@
 # BGP4-MIB / OSPF-MIB subtrees. snmpd then proxies walks of those OIDs to FRR.
 #
 # The official frrouting/frr image ships NO snmp module (and is amd64-only), so
-# build from Debian 12 (same base as ../snmpd + the Debian fleet): its `frr-snmp`
+# build from Debian 13 (same base as ../snmpd + the Debian fleet): its `frr-snmp`
 # package ships bgpd_snmp.so / ospfd_snmp.so / zebra_snmp.so natively for arm64.
 # Read-only, v2c community "public" — matching the plain snmpd SUT's contract.
-FROM debian:12-slim
+FROM debian:13-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends frr frr-snmp snmpd snmp \
     && rm -rf /var/lib/apt/lists/*

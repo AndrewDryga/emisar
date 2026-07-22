@@ -56,7 +56,8 @@
         <li>
           <strong>Policy.</strong>
           Two-layer per-account model: a default
-          decision per risk tier (<code>low</code> / <code>medium</code>
+          decision per risk tier (<code>low</code>
+          / <code>medium</code>
           / <code>high</code>
           / <code>critical</code>), plus ordered per-action
           overrides that glob-match on action ID. First matching override
@@ -122,7 +123,8 @@
           glob patterns over action ids
           (e.g. <code>cassandra.*</code>, <code>*.repair</code>), plus a risk ceiling —
           <code>admission.max_risk: medium</code>
-          on a read-only box drops every <code>high</code>/<code>critical</code> action whatever the cloud policy allows. Blocked
+          on a read-only box drops every <code>high</code>/<code>critical</code>
+          action whatever the cloud policy allows. Blocked
           actions are hidden from the catalog this runner advertises to cloud
           AND refused at execution time, so even a compromised portal cannot
           push something the host operator did not sanction. Refusals land in

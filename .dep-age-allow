@@ -22,8 +22,13 @@
 hex plug 1.20.3 GHSA-j43x-5hjq-rgxf and GHSA-95qv-c9g9-rm63 security fixes block the release
 hex postgrex 0.22.3 GHSA-4mw9-4qgj-m97w security fix blocks the release
 hex phoenix 1.8.9 GHSA-6983-jfq8-485w and GHSA-63mc-hw7g-86rr security fixes block the release
+hex phoenix_live_view 1.2.7 CVE-2026-58228 security fix blocks the release
+hex lazy_html 0.1.12 owner-approved complete dependency refresh; portal gate verifies compatibility
+hex observer_cli 2.0.0 owner-approved complete dependency refresh; portal gate verifies the major upgrade
 hex db_connection 2.10.2 transitive requirement of the Postgrex security update
-hex mint 1.9.2 CVE-2026-58229 and CVE-2026-59246 security fixes block the release
+hex mint 1.9.3 CVE-2026-58229, CVE-2026-59246, and CVE-2026-59249 security fixes block the release
 hex hpax 1.0.4 GHSA-jj2p-32j7-whj2 security fix blocks the release
 hex cowboy 2.17.0 transitive requirement of the Phoenix and Plug security updates
 hex cowlib 2.18.0 transitive requirement of the security updates; no fixed Cowlib release exists yet
+go golang.org/x/text v0.40.0 owner-approved complete dependency refresh; runner gate verifies compatibility
+npm modern-tar 0.7.7 owner-approved complete dependency refresh; npm audit verifies the transitive update

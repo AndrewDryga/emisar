@@ -1,4 +1,4 @@
-FROM debian:12-slim
+FROM debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -50,10 +50,10 @@ RUN curl -fsSL https://get.docker.com | sh || true
 # Pack-specific binaries. Two gotchas make this a single honest install rather
 # than a best-effort one: `fail2ban-client` is NOT a package (the client binary
 # ships in `fail2ban`), and `zfsutils-linux` lives in `contrib`, which
-# debian:12-slim doesn't enable — so add the contrib pocket first. Fail the
+# debian:13-slim doesn't enable — so add the contrib pocket first. Fail the
 # build loudly if any of these go missing; a silent gap hides broken pack
 # coverage (nginx/apache/bind/nfs/php-fpm/rabbitmq/zfs tests need these tools).
-RUN echo "deb http://deb.debian.org/debian bookworm contrib" > /etc/apt/sources.list.d/contrib.list \
+RUN echo "deb http://deb.debian.org/debian trixie contrib" > /etc/apt/sources.list.d/contrib.list \
     && apt-get update && apt-get install -y --no-install-recommends \
     nginx-common apache2-utils \
     bind9-utils bind9-dnsutils \
@@ -76,14 +76,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends snmp \
 
 # mongosh for the mongodb pack (single static tarball — no apt repo).
 RUN set -eux; case "$(dpkg --print-architecture)" in arm64) m=arm64;; amd64) m=x64;; *) m=x64;; esac; \
-    curl -fsSL "https://downloads.mongodb.com/compass/mongosh-2.3.8-linux-$m.tgz" -o /tmp/mongosh.tgz; \
+    curl -fsSL "https://downloads.mongodb.com/compass/mongosh-2.9.2-linux-$m.tgz" -o /tmp/mongosh.tgz; \
     tar -xzf /tmp/mongosh.tgz -C /tmp; \
     mv /tmp/mongosh-*/bin/mongosh /usr/local/bin/mongosh; \
     rm -rf /tmp/mongosh*; \
     mongosh --version
 
 # cockroach CLI for the cockroach pack (the single binary from the release tarball).
-RUN set -eux; v=v24.3.5; arch="$(dpkg --print-architecture)"; \
+RUN set -eux; v=v26.2.4; arch="$(dpkg --print-architecture)"; \
     curl -fsSL "https://binaries.cockroachdb.com/cockroach-$v.linux-$arch.tgz" -o /tmp/crdb.tgz; \
     tar -xzf /tmp/crdb.tgz -C /tmp; \
     mv "/tmp/cockroach-$v.linux-$arch/cockroach" /usr/local/bin/cockroach; \
@@ -92,8 +92,8 @@ RUN set -eux; v=v24.3.5; arch="$(dpkg --print-architecture)"; \
 
 # clickhouse-client for the clickhouse pack — the single multicall `clickhouse`
 # binary from the pinned common-static tgz (no apt repo / GPG keyserver), symlinked
-# so the pack's bare `clickhouse-client` invocation resolves. 24.8 LTS matches the SUT.
-RUN set -eux; v=24.8.14.39; case "$(dpkg --print-architecture)" in arm64) a=arm64;; *) a=amd64;; esac; \
+# so the pack's bare `clickhouse-client` invocation resolves. Keep it aligned with the SUT.
+RUN set -eux; v=26.6.2.81; case "$(dpkg --print-architecture)" in arm64) a=arm64;; *) a=amd64;; esac; \
     curl -fsSL "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$v-$a.tgz" -o /tmp/ch.tgz; \
     tar -xzf /tmp/ch.tgz -C /tmp; \
     mv "/tmp/clickhouse-common-static-$v/usr/bin/clickhouse" /usr/local/bin/clickhouse; \

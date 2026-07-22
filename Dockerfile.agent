@@ -2,9 +2,9 @@
 # project pins (elixir, erlang, go, nodejs, python, ...). Edit .tool-versions and
 # `coop build`, and the box follows. Node + the agent CLIs + ACP adapters are
 # added on top for coop / coop acp.
-FROM debian:bookworm-slim
+FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
-ARG ASDF_VERSION=0.19.0
+ARG ASDF_VERSION=0.20.0
 # Agent CLIs + ACP adapters as one ARG so the list lives in one place. The default mirrors
 # coop's own agent set (agents.Packages()); a scaffold test asserts they stay in sync, so
 # adding/removing an agent in coop can't silently leave this box behind. Override per build

@@ -260,7 +260,7 @@ SOCKS_PORT="$(find_free_port "$SOCKS_START")" || die "no free local SOCKS port i
 SSH_PID=""
 PROXY_PID=""
 # ShellCheck cannot follow this function reference through trap.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cleanup() {
   trap - EXIT
 

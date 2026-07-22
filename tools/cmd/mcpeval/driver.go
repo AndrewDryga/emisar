@@ -97,7 +97,7 @@ func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
 }
 
 // codexInvocation runs Codex headless — a best-effort second provider. Flags
-// verified against the installed `codex exec --help` (codex-cli 0.144.5):
+// verified against the installed `codex exec --help` (codex-cli 0.145.0):
 // --ignore-user-config skips ~/.codex/config.toml (auth still resolves),
 // --ephemeral persists no session files, --sandbox read-only confines
 // model-generated shell commands, and the -c override registers the relay the

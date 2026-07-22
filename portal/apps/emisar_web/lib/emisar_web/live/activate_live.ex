@@ -218,7 +218,7 @@ defmodule EmisarWeb.ActivateLive do
 
             <.consent_note class="mt-5">
               <strong class="text-zinc-300">Only approve a request you just started
-                yourself.</strong>
+              yourself.</strong>
               The keys can only run what your policy already permits — risky actions
               still pause for human approval, and every call is audited.
             </.consent_note>
@@ -229,7 +229,12 @@ defmodule EmisarWeb.ActivateLive do
                      rebuilt by the auth boundary and per-account permissions apply);
                      a single-account member sees the destination named in the
                      consequence line above. --%>
-            <form :if={length(@accounts) > 1} phx-change="pick_account" class="mt-5">
+            <form
+              :if={length(@accounts) > 1}
+              id="activate-account-form"
+              phx-change="pick_account"
+              class="mt-5"
+            >
               <.input
                 type="select"
                 id="activate-account"

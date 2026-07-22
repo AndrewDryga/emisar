@@ -38,3 +38,6 @@ vulnerabilities:
   - id: CVE-2026-57432
     statement: the non-root portal process does not execute Perl; Debian does not yet publish a fixed package.
     expired_at: 2026-07-26
+  - id: CVE-2026-57433
+    statement: the non-root portal process does not execute Perl or deserialize attacker-supplied Storable data.
+    expired_at: 2026-07-26

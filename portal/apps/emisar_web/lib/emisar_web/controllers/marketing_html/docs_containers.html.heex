@@ -69,8 +69,8 @@
         <strong class="text-zinc-200">Second, persist identity.</strong>
         After the first connect, the per-runner token lands at
         <code class="font-mono">cloud.token_path</code>
-        (<code class="font-mono">/var/lib/emisar/token.json</code> by default) — keep
-        <code class="font-mono">/var/lib/emisar</code>
+        (<code class="font-mono">/var/lib/emisar/token.json</code>
+        by default) — keep <code class="font-mono">/var/lib/emisar</code>
         in a volume and the runner keeps the same identity across restarts. The runner id is
         otherwise derived from <code class="font-mono">/etc/machine-id</code>, which containers
         often lack or regenerate, so set <code class="font-mono">runner.id</code>

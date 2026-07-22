@@ -909,7 +909,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
                form, and the deny box under Approve read as a note for the
                approval just taken). Default approve state = one-shot ("just
                this call"), no grant. --%>
-          <form phx-submit="decide" phx-change="grant_form_changed" class="mt-4 space-y-4">
+          <form
+            id="approval-decision-form"
+            phx-submit="decide"
+            phx-change="grant_form_changed"
+            class="mt-4 space-y-4"
+          >
             <%!-- Bare name (uncontrolled): the LV doesn't track this note, the
                  decide handler reads whatever's posted. `aria-label` names it
                  for AT (the placeholder is not an accessible name); `min-h-0`

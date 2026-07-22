@@ -828,8 +828,10 @@ defmodule EmisarWeb.RunbookRunLive do
               </p>
               <% count = @blast_radius.counts[idx] %>
               <p :if={target} class="mt-0.5 truncate text-xs text-zinc-400">
-                → {target}<span :if={count}>
-                  · {count} {if count == 1, do: "runner", else: "runners"}</span>
+                → {target}
+                <span :if={count}>
+                  · {count} {if count == 1, do: "runner", else: "runners"}
+                </span>
               </p>
               <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
                 → no target set
@@ -858,7 +860,12 @@ defmodule EmisarWeb.RunbookRunLive do
              returns when every run finishes or the run halts. --%>
         <section :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} class="max-w-3xl">
           <.section_header title="Run" />
-          <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
+          <form
+            id="runbook-dispatch-form"
+            phx-change="validate"
+            phx-submit="dispatch"
+            class="space-y-4"
+          >
             <div>
               <%!-- Non-FormField field: `reason` posts a top-level key and its
                    error is a plain map entry (set only on dispatch, never on

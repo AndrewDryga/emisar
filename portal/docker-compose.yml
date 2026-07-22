@@ -3,7 +3,7 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18.4-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - emisar_pg:/var/lib/postgresql/data
+      - emisar_pg:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

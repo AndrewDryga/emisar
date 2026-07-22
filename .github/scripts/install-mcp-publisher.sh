@@ -2,8 +2,8 @@
 set -euo pipefail
 
 destination=${1:-./mcp-publisher}
-version=1.7.9
-sha256=ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+version=1.8.0
+sha256=1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf
 artifact=mcp-publisher_linux_amd64.tar.gz
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

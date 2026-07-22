@@ -644,7 +644,8 @@ defmodule EmisarWeb.ProfileLive do
                 {remaining} recovery {if remaining == 1, do: "code", else: "codes"} remaining.<span :if={
                   remaining <= 2
                 }>
-                  Regenerate for a fresh set before a lost authenticator locks you out.</span>
+                  Regenerate for a fresh set before a lost authenticator locks you out.
+                </span>
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
                 <.confirm_button

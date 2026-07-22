@@ -3,4 +3,4 @@
 // gate with GOWORK=off (see README) or Go refuses it as "not a workspace module".
 module emisar.dev/loadtest
 
-go 1.26
+go 1.26.5

@@ -43,14 +43,14 @@ defmodule EmisarWeb.MixProject do
       {:phoenix_ecto, "~> 4.7"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
-      {:phoenix_live_view, "~> 1.1"},
+      {:phoenix_live_view, "~> 1.2"},
       # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
       # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
       {:json_xema, "~> 0.6.5", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.7"},
       {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.4.1", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -63,7 +63,7 @@ defmodule EmisarWeb.MixProject do
       {:telemetry_poller, "~> 1.3"},
       # Optional: error reporting via Sentry. Compiled out when
       # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
-      {:sentry, "~> 13.1"},
+      {:sentry, "~> 13.3"},
       {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.4"},

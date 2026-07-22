@@ -639,7 +639,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
                 </p>
                 <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
-                  <form phx-change="set_max_grant_lifetime" class="mt-3">
+                  <form id="max-grant-lifetime-form" phx-change="set_max_grant_lifetime" class="mt-3">
                     <.select
                       name="seconds"
                       aria-label="Maximum grant lifetime"

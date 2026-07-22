@@ -55,7 +55,7 @@ services:
   # Postgres — the only stateful dependency
   # ----------------------------------------------------------------
   db:
-    image: postgres:16-alpine
+    image: postgres:18.4-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -68,7 +68,7 @@ services:
     # ports:
     #   - "54322:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d emisar_dev"]
       interval: 3s
@@ -83,7 +83,7 @@ services:
   # DEV ONLY — hardcoded secrets, self-signed cert.
   # ----------------------------------------------------------------
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.7.0
     # Network SIDECAR of the portal: shares the portal's namespace (loopback +
     # published ports) so the portal reaches Keycloak at the SAME localhost:8443
     # the host browser uses — making the OIDC issuer one consistent localhost
