@@ -68,7 +68,11 @@
         signature and zero runner-config edits. The offline CA signs short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
         (a group or labels). The
-        exact runner set is bound into every v4 signature with generation-bound refs shaped as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>.
+        exact runner set is bound into every v4 signature with generation-bound refs shaped as
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>
+        — the suffix comes from the runner's durable local id, so a reinstalled runner is a new
+        <em>generation</em>
+        even under the same name, and an old signature can't be replayed onto it.
         Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
         matched against the runner's local identity. The CA private key stays offline and never
         touches a runner or the portal.
