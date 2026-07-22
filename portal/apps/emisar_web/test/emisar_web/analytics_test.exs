@@ -119,6 +119,41 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["utm_content"] == "ad_1"
     end
 
+    test "campaign source and medium are normalized while the X click id stays out of Mixpanel",
+         %{conn: conn} do
+      conn =
+        get(
+          conn,
+          "/?utm_source=X&utm_medium=Paid_Social&utm_campaign=launch&twclid=x-click-123"
+        )
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
+      refute Map.has_key?(props, "twclid")
+
+      attribution = EmisarWeb.MarketingAttribution.current(conn)
+      assert attribution.campaign["utm_source"] == "x"
+      assert attribution.x_click_id == "x-click-123"
+    end
+
+    test "Global Privacy Control drops X click attribution but keeps first-party campaign data",
+         %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("sec-gpc", "1")
+        |> get("/?utm_source=X&utm_medium=Paid_Social&twclid=private-click")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["utm_source"] == "x"
+      assert props["utm_medium"] == "paid_social"
+      refute Map.has_key?(props, "twclid")
+
+      attribution = EmisarWeb.MarketingAttribution.current(conn)
+      assert attribution.x_click_id == nil
+      refute inspect(get_session(conn, :analytics_campaign_attribution)) =~ "private-click"
+    end
+
     test "first-touch UTM is byte-bounded and is not replaced later in the session", %{conn: conn} do
       long_campaign = String.duplicate("界", 100)
       query = URI.encode_query(%{"utm_source" => "first", "utm_campaign" => long_campaign})
@@ -217,7 +252,14 @@ defmodule EmisarWeb.AnalyticsTest do
       # Drive the real passwordless flow: request the link, pull token_id + the
       # 6-character secret from the email, then confirm from the same browser (the
       # nonce cookie rides `recycle`). `log_in_user` fires the analytics event.
-      conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+      enable_x_conversions()
+
+      conn =
+        get(
+          conn,
+          "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch&twclid=existing-user-click"
+        )
+
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
       conn =
@@ -246,11 +288,20 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["utm_medium"] == "paid_social"
       assert props["utm_campaign"] == "launch"
       refute Map.has_key?(props, "$current_url")
+      refute_receive {:x_ads_signup, _conversion}
     end
 
     test "a completed registration carries first-touch attribution", %{conn: conn} do
       user = Fixtures.Users.create_user(confirmed?: false)
-      conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+
+      enable_x_conversions()
+
+      conn =
+        get(
+          conn,
+          "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch&twclid=x-click-123"
+        )
+
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
       conn =
@@ -260,6 +311,12 @@ defmodule EmisarWeb.AnalyticsTest do
           "user" => %{"email" => user.email},
           "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
         })
+
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_started", "properties" => started}]}
+      assert started["auth_method"] == "magic_link"
+      assert started["utm_source"] == "x"
+      assert started["utm_medium"] == "paid_social"
+      assert started["utm_campaign"] == "launch"
 
       assert_received {:email, sent}
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
@@ -276,6 +333,66 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["utm_source"] == "x"
       assert props["utm_medium"] == "paid_social"
       assert props["utm_campaign"] == "launch"
+
+      assert_receive {:x_ads_signup, conversion}
+      assert conversion.x_click_id == "x-click-123"
+      refute inspect(conversion) =~ user.email
+    end
+
+    test "GPC on registration completion prevents an attributed X conversion", %{
+      conn: conn
+    } do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      enable_x_conversions()
+
+      conn = get(conn, "/?utm_source=x&utm_campaign=launch&twclid=gpc-before-complete")
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+        })
+
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      conn
+      |> recycle()
+      |> put_req_header("sec-gpc", "1")
+      |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert_receive {:mixpanel_engage, _updates}
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_completed"}]}
+      refute_receive {:x_ads_signup, _conversion}
+    end
+
+    test "a magic-link resend does not duplicate sign_up_started", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      conn =
+        conn
+        |> get("/?utm_source=x&utm_campaign=launch")
+        |> recycle()
+        |> post(~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+        })
+
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+      assert_received {:email, _sent}
+
+      conn
+      |> recycle()
+      |> post(~p"/sign_in/magic/start", %{
+        "user" => %{"email" => user.email},
+        "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+      })
+
+      refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
     end
 
     test "logout fires signed_out", %{conn: conn, user: user} do
@@ -304,5 +421,15 @@ defmodule EmisarWeb.AnalyticsTest do
       # up by account (the group key).
       assert props["account_id"] == account.id
     end
+  end
+
+  defp enable_x_conversions do
+    parent = self()
+    Emisar.Config.put_override(:emisar, :x_ads_conversions, %{})
+
+    Emisar.Config.put_override(:emisar, :x_ads_conversion_sender, fn _config, event ->
+      send(parent, {:x_ads_signup, event})
+      :ok
+    end)
   end
 end

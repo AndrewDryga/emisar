@@ -7,12 +7,13 @@ defmodule EmisarWeb.Analytics do
   client storage, unlinkable across weeks), and an authenticated user is their
   `user.id` (from the necessary auth session). The only cookie the site sets is
   the functional CSRF/session cookie — never an analytics identifier. That
-  encrypted session carries bounded first-touch UTM values until sign-in so
+  encrypted session carries bounded first-touch attribution until sign-in so
   pageviews and conversions in the same browser session keep their campaign.
 
-  The data is first-party and never sold or shared, so there is no DNT/GPC
-  opt-out gate (those headers signal opt-out of *sale/sharing*, which we don't
-  do). This module owns the
+  This Mixpanel path is first-party product analytics, not advertising
+  conversion measurement, so it has no DNT/GPC opt-out gate. Provider click
+  attribution lives behind `Emisar.Marketing.Conversions` and does honor GPC.
+  This module owns the
   request-derived bits Mixpanel can't see for a server-to-server call: the
   `$device:` identity + anon→user merge, the client IP (→ geo), the UA-parsed
   browser/OS/device, and the URL/referrer. Domain value-moment events live in
@@ -20,12 +21,10 @@ defmodule EmisarWeb.Analytics do
   """
 
   import Plug.Conn
-  alias Emisar.Analytics
-  alias Emisar.Crypto
+  alias Emisar.{Analytics, Crypto}
+  alias EmisarWeb.MarketingAttribution, as: WebAttribution
 
-  @campaign_session_key :analytics_campaign_attribution
-  @utm_params ~w(utm_source utm_medium utm_campaign utm_term utm_content)
-  @utm_value_max_bytes 255
+  @sign_up_started_session_key :analytics_sign_up_started
 
   # Console detail-page id segments to collapse so `path` doesn't explode.
   @uuid_re ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,7 +38,7 @@ defmodule EmisarWeb.Analytics do
     props =
       Map.merge(
         %{"path" => analytics_path(conn.request_path), "authenticated" => authenticated?(conn)},
-        campaign_attribution(conn)
+        WebAttribution.campaign(conn)
       )
 
     emit(conn, "page_viewed", distinct_id, props, opts)
@@ -49,7 +48,7 @@ defmodule EmisarWeb.Analytics do
   @doc "Fire a marketing `lead_captured` (footer subscribe)."
   def track_lead_captured(conn, source) do
     {distinct_id, opts} = identity(conn)
-    props = Map.merge(%{"source" => source}, campaign_attribution(conn))
+    props = Map.merge(%{"source" => source}, WebAttribution.campaign(conn))
     emit(conn, "lead_captured", distinct_id, props, opts)
     :ok
   end
@@ -92,8 +91,8 @@ defmodule EmisarWeb.Analytics do
   """
   def track_authentication(conn, user, auth_method, mfa, registered?, attribution) do
     method = to_string(auth_method)
-    attribution = normalize_utm(attribution)
-    people_opts = people_attribution_opts(attribution, registered?)
+    %{campaign: campaign} = attribution
+    people_opts = people_attribution_opts(campaign, registered?)
 
     Analytics.set_people(
       user.id,
@@ -110,31 +109,28 @@ defmodule EmisarWeb.Analytics do
     # Magic-link request paths contain one-time credentials. Override the
     # request enrichment so they are compacted out before leaving the app.
     props =
-      Map.merge(%{"auth_method" => method, "mfa" => mfa, "$current_url" => nil}, attribution)
+      Map.merge(%{"auth_method" => method, "mfa" => mfa, "$current_url" => nil}, campaign)
 
     emit(conn, event, user.id, props, device_id: device_id(conn), user_id: user.id)
     conn
   end
 
-  @doc "Persist bounded first-touch campaign values in the existing encrypted session."
-  def capture_campaign_attribution(conn) do
-    stored = session_attribution(conn)
-    current = current_utm(conn)
-
-    if map_size(stored) == 0 and map_size(current) > 0 do
-      put_session(conn, @campaign_session_key, current)
-    else
+  @doc "Track the first successful registration handoff once per browser session."
+  def track_sign_up_started(conn, true) do
+    if get_session(conn, @sign_up_started_session_key) do
       conn
+    else
+      {distinct_id, opts} = identity(conn)
+
+      props =
+        Map.merge(%{"auth_method" => "magic_link"}, WebAttribution.campaign(conn))
+
+      emit(conn, "sign_up_started", distinct_id, props, opts)
+      put_session(conn, @sign_up_started_session_key, true)
     end
   end
 
-  @doc "The first-touch campaign carried by this browser session, if any."
-  def campaign_attribution(conn) do
-    case session_attribution(conn) do
-      stored when map_size(stored) > 0 -> stored
-      _ -> current_utm(conn)
-    end
-  end
+  def track_sign_up_started(conn, false), do: conn
 
   @doc "On logout: track `signed_out` for the still-current user. Returns `conn`."
   def track_sign_out(conn) do
@@ -191,35 +187,6 @@ defmodule EmisarWeb.Analytics do
       "$referrer" => sanitize_referrer(referrer),
       "$referring_domain" => referring_domain(referrer)
     }
-  end
-
-  # This request's campaign params. Only flat, nonblank strings survive, and
-  # each value is bounded before it can enter the encrypted cookie or Mixpanel.
-  defp current_utm(conn) do
-    conn = fetch_query_params(conn)
-    normalize_utm(conn.query_params)
-  end
-
-  defp session_attribution(conn) do
-    conn
-    |> get_session(@campaign_session_key)
-    |> normalize_utm()
-  end
-
-  defp normalize_utm(params) when is_map(params) do
-    Enum.reduce(@utm_params, %{}, fn key, attribution ->
-      case Map.get(params, key) do
-        value when is_binary(value) -> put_utm(attribution, key, value)
-        _ -> attribution
-      end
-    end)
-  end
-
-  defp normalize_utm(_params), do: %{}
-
-  defp put_utm(attribution, key, value) do
-    value = value |> String.trim() |> String.byte_slice(0, @utm_value_max_bytes)
-    if value == "", do: attribution, else: Map.put(attribution, key, value)
   end
 
   defp people_attribution_opts(_attribution, false), do: []

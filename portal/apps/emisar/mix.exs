@@ -71,6 +71,8 @@ defmodule Emisar.MixProject do
       {:swoosh, "~> 1.26"},
       {:finch, "~> 0.22"},
       {:gen_smtp, "~> 1.3"},
+      # OAuth 1.0a request signing for the X Ads Conversion API.
+      {:oauther, "~> 1.3"},
 
       # Misc primitives
       {:jason, "~> 1.4"},

@@ -306,6 +306,13 @@ variable "mixpanel_token" {
   default     = ""
 }
 
+variable "x_ads_conversions_json" {
+  type        = string
+  description = "One-line JSON credentials for server-side X signup conversion reporting. Empty keeps reporting off."
+  sensitive   = true
+  default     = ""
+}
+
 # ── Database ──────────────────────────────────────────────────────────────────
 variable "db_tier" {
   type        = string

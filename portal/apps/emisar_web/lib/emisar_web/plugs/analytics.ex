@@ -12,7 +12,7 @@ defmodule EmisarWeb.Plugs.Analytics do
   @behaviour Plug
 
   import Plug.Conn
-  alias EmisarWeb.Analytics
+  alias EmisarWeb.{Analytics, MarketingAttribution}
 
   @browser_signatures ["mozilla/", "applewebkit/"]
   @automation_signatures [
@@ -45,10 +45,16 @@ defmodule EmisarWeb.Plugs.Analytics do
 
   @impl true
   def call(conn, _opts) do
-    if eligible?(conn) do
-      conn
-      |> Analytics.capture_campaign_attribution()
-      |> register_before_send(&track_if_rendered/1)
+    conn = MarketingAttribution.enforce_privacy_signal(conn)
+
+    if browser_page?(conn) do
+      conn = MarketingAttribution.capture(conn)
+
+      if Emisar.Analytics.enabled?() do
+        register_before_send(conn, &track_if_rendered/1)
+      else
+        conn
+      end
     else
       conn
     end
@@ -59,10 +65,8 @@ defmodule EmisarWeb.Plugs.Analytics do
     conn
   end
 
-  # Off ⇒ a complete no-op (no `page_viewed`), so the analytics HTTP calls only
-  # happen when the feature is live.
-  defp eligible?(conn) do
-    Emisar.Analytics.enabled?() and conn.method == "GET" and not console_path?(conn) and
+  defp browser_page?(conn) do
+    conn.method == "GET" and not console_path?(conn) and
       browser_request?(conn)
   end
 

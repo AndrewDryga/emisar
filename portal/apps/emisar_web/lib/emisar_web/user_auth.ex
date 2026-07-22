@@ -8,9 +8,9 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, Auth, SSO}
+  alias Emisar.{Accounts, Auth, Marketing, SSO}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.Analytics
+  alias EmisarWeb.{Analytics, MarketingAttribution}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no SSO
@@ -32,7 +32,7 @@ defmodule EmisarWeb.UserAuth do
     # registration — magic-link round-trip or SSO JIT — fires sign_up_completed.
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
-    attribution = Analytics.campaign_attribution(conn)
+    attribution = MarketingAttribution.current(conn)
 
     token =
       Auth.create_session_token!(
@@ -54,7 +54,7 @@ defmodule EmisarWeb.UserAuth do
   def log_in_user_for_account(conn, user, account_id, auth_method, mfa, opts \\ []) do
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
-    attribution = Analytics.campaign_attribution(conn)
+    attribution = MarketingAttribution.current(conn)
 
     case Auth.complete_account_sign_in(user, account_id, auth_method, mfa, context, opts) do
       {:ok, token} ->
@@ -70,6 +70,7 @@ defmodule EmisarWeb.UserAuth do
 
   defp finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution) do
     user_return_to = get_session(conn, :user_return_to)
+    if registered?, do: Marketing.Conversions.account_signed_up(user, attribution)
 
     conn
     |> renew_session()

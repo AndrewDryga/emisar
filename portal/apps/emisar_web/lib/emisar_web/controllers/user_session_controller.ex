@@ -12,6 +12,7 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Mailers, Users}
+  alias EmisarWeb.Analytics
   alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
   alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
@@ -64,6 +65,7 @@ defmodule EmisarWeb.UserSessionController do
         Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to)
 
         conn
+        |> Analytics.track_sign_up_started(registered?)
         |> put_magic_cookie(token_id, nonce, registration_user_id)
         # The LiveView verifies the typed code (the nonce isn't readable from JS),
         # so it reads token_id + nonce from the encrypted session; the cookie stays

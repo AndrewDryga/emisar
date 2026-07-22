@@ -43,6 +43,9 @@ import Config
 #   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)
 #   MIXPANEL_API_HOST      — Mixpanel host (default api.mixpanel.com; EU: api-eu.mixpanel.com)
 #   MIXPANEL_GROUPS        — "1"/"true" to also write Mixpanel Group profiles (paid add-on)
+#   X_ADS_CONVERSIONS_JSON — enables server-side X signup conversion reporting;
+#                            JSON with consumer_key, consumer_secret, access_token,
+#                            access_token_secret, pixel_id, and event_id
 
 if config_env() == :prod do
   # Google Cloud's structured payload recognizes severity, request context,
@@ -353,6 +356,21 @@ if config_env() == :prod do
     # Mixpanel Group Analytics is a paid add-on — opt in explicitly.
     if System.get_env("MIXPANEL_GROUPS") in ~w(1 true),
       do: config(:emisar, :mixpanel_groups_enabled, true)
+  end
+
+  # -- X Ads conversions ----------------------------------------------
+  if encoded = System.get_env("X_ADS_CONVERSIONS_JSON") do
+    credentials = Jason.decode!(encoded)
+
+    config :emisar,
+      x_ads_conversions: %{
+        consumer_key: Map.fetch!(credentials, "consumer_key"),
+        consumer_secret: Map.fetch!(credentials, "consumer_secret"),
+        access_token: Map.fetch!(credentials, "access_token"),
+        access_token_secret: Map.fetch!(credentials, "access_token_secret"),
+        pixel_id: Map.fetch!(credentials, "pixel_id"),
+        event_id: Map.fetch!(credentials, "event_id")
+      }
   end
 end
 

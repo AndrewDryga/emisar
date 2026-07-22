@@ -25,6 +25,7 @@ locals {
     "emisar-postmark-webhook-secret" = "POSTMARK_WEBHOOK_SECRET"
     "emisar-sentry-dsn"              = "SENTRY_DSN"
     "emisar-mixpanel-token"          = "MIXPANEL_TOKEN"
+    "emisar-x-ads-conversions"       = "X_ADS_CONVERSIONS_JSON"
   }
 
   app_secrets = {
@@ -46,6 +47,7 @@ locals {
     "emisar-postmark-webhook-secret" = 1
     "emisar-sentry-dsn"              = 1
     "emisar-mixpanel-token"          = 1
+    "emisar-x-ads-conversions"       = 1
   }
 
   # Externally-issued credentials, one TFC workspace variable each.
@@ -57,6 +59,7 @@ locals {
     "emisar-postmark-webhook-secret" = var.postmark_webhook_secret
     "emisar-sentry-dsn"              = var.sentry_dsn
     "emisar-mixpanel-token"          = var.mixpanel_token
+    "emisar-x-ads-conversions"       = var.x_ads_conversions_json
   }
 
   # for_each keys must not derive from sensitive values; whether a secret is SET
