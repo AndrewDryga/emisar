@@ -16,6 +16,7 @@
 ARG ELIXIR_VERSION=1.20.2
 ARG OTP_VERSION=29.0.3
 ARG DEBIAN_VERSION=bookworm-20260713-slim
+ARG SOURCE_REVISION=dev
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:23953ce7850433f8f650f4b710d8b35d8d495092371ffda0356ea9bc80953151"
 # The runtime base needs to match the builder's libc/ssl; use the same
@@ -24,6 +25,7 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:7b140f374b289a7c2befc338f42ebe
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder
+ARG SOURCE_REVISION
 
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update -y \
@@ -42,6 +44,7 @@ RUN mix local.hex "${HEX_VERSION}" --force \
   && rm -f /tmp/rebar3
 
 ENV MIX_ENV="prod"
+ENV EMISAR_SOURCE_REVISION=${SOURCE_REVISION}
 
 # Optional dev-only build flag: the docker-compose dev/e2e stack passes
 # EMISAR_DEV_HOST_EXCLUDES=1 so config/prod.exs lets its plain-HTTP internal

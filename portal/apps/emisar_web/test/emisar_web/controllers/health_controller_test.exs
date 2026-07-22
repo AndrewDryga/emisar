@@ -39,15 +39,20 @@ defmodule EmisarWeb.HealthControllerTest do
     assert %{"status" => "error"} = json_response(get(conn, ~p"/readyz"), 503)
   end
 
-  test "healthz reports the running version for the deploy reconciler", %{
+  test "healthz reports the running version and source revision", %{
     conn: conn,
     check: check
   } do
     Agent.update(check, fn _ -> {:ok, %{rows: [[1]]}} end)
 
     expected_version = EmisarWeb.AppVersion.version()
+    expected_revision = EmisarWeb.AppVersion.revision()
 
-    assert %{"status" => "ok", "version" => ^expected_version} =
+    assert %{
+             "revision" => ^expected_revision,
+             "status" => "ok",
+             "version" => ^expected_version
+           } =
              json_response(get(conn, ~p"/healthz"), 200)
   end
 end

@@ -74,20 +74,20 @@ if (cd "$tmp" && "$frozen" push "$base" >"$tmp/delete-frozen.log" 2>&1); then
   exit 1
 fi
 
-# A CD-only change validates workflows and every area, but CD transports the
-# already-tested artifact and must not republish identical portal bytes.
+# A CD-only pull request validates workflows and every area without selecting a
+# release. The main push below is responsible for creating the complete image.
 git -C "$tmp" reset --hard -q "$base"
 mkdir -p "$tmp/.github/workflows"
 printf 'name: CD\n' >"$tmp/.github/workflows/cd.yml"
 git -C "$tmp" add .
 git -C "$tmp" commit -qm cd-only
 out="$tmp/cd-only.out"
-(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
+(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" pull_request "$base")
 assert_output workflows=true "$out"
 assert_output portal_release=false "$out"
 
-# Private admin packs are rendered into COS cloud-init. They select Terraform
-# validation without rebuilding the portal or publishing the public catalog.
+# Every main push publishes a current portal image even when the immediate diff
+# is infrastructure-only. This preserves application drift across failed plans.
 git -C "$tmp" reset --hard -q "$base"
 mkdir -p "$tmp/infra/packs/emisar-admin"
 printf 'schema_version: 1\n' >"$tmp/infra/packs/emisar-admin/pack.yaml"
@@ -96,8 +96,8 @@ git -C "$tmp" commit -qm private-admin-pack
 out="$tmp/private-admin-pack.out"
 (cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
 assert_output infra=true "$out"
-assert_output portal=false "$out"
-assert_output portal_release=false "$out"
+assert_output portal=true "$out"
+assert_output portal_release=true "$out"
 assert_output packs_release=false "$out"
 
 # The checked-in installer is embedded into the portal image. The private admin

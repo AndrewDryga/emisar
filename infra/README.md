@@ -44,17 +44,19 @@ commit production scale, spend, contact addresses, or secrets.
 ## Delivery
 
 Every main-branch delivery reuses the exact CI workflow that tested the commit.
-For portal changes, CD publishes that tested image to GHCR by immutable digest.
-For portal or infrastructure changes, CD then:
+Every successful `main` commit receives a tested portal image published to GHCR
+by immutable digest. CD then:
 
 1. Verifies the commit is still current `main`.
 2. Uploads `infra/` as a provisional HCP Terraform configuration.
-3. Creates a saved plan with the tested image digest.
+3. Creates a saved plan with that commit's tested image digest.
 4. Stops and links the complete plan in the GitHub job summary.
 
 Review every resource action and the run's commit before selecting **Confirm &
-Apply** in HCP Terraform. Workspace auto-apply must remain disabled. A replaced
-or stale saved plan is discarded instead of applying against changed state.
+Apply** in HCP Terraform. The image revision must match the run's commit; CD does
+not fall back to the older applied image after a failed plan. Workspace
+auto-apply must remain disabled. A replaced or stale saved plan is discarded
+instead of applying against changed state.
 
 Normal image rollouts may create one replacement VM per zone while retaining
 every old serving VM. Each replacement's `/healthz` remains false until the

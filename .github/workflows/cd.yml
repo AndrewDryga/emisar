@@ -18,7 +18,6 @@ jobs:
 
   portal-publish:
     name: CD - Publish portal image
-    if: needs.ci.outputs.portal_release == 'true'
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -63,6 +62,12 @@ jobs:
           IMAGE: ghcr.io/andrewdryga/emisar
         run: |
           set -euo pipefail
+          revision=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.revision"}}' emisar/portal:ci)
+          test "$revision" = "$GITHUB_SHA" || {
+            echo "::error::Tested image revision ${revision} does not match current main ${GITHUB_SHA}"
+            exit 1
+          }
+
           # Include run identity so a re-run can never overwrite a tag with
           # different bytes if an upstream package repository changed.
           immutable="${IMAGE}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -297,14 +302,13 @@ jobs:
 
   deployment-plan:
     name: CD - Plan production
-    # Every successful main commit reconciles production. This deliberately
-    # permits a no-op plan for docs-only commits: if a selected portal run is
-    # superseded by an unrelated commit, that later run must still queue the
-    # replacement plan instead of silently dropping the tested image.
+    # Every successful main commit carries a freshly tested portal image. Never
+    # plan with an older applied digest: that would hide application drift after
+    # a failed plan behind an otherwise successful infrastructure reconciliation.
     if: >-
       always() &&
       needs.ci.result == 'success' &&
-      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped') &&
+      needs.portal-publish.result == 'success' &&
       ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
        (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
     needs: [ci, portal-publish, packs-publish]
@@ -377,14 +381,8 @@ jobs:
           }
 
           image="$PUBLISHED_IMAGE"
-          if [ -z "$image" ]; then
-            # An infra-only or reconciliation run uses the last APPLIED image,
-            # never a workspace default advanced by an unreviewed/rejected plan.
-            state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
-            image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
-          fi
           [[ "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]] || {
-            echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"
+            echo "::error::Every main plan requires the current commit's published immutable image (got '$image')"
             exit 1
           }
 
@@ -487,11 +485,12 @@ jobs:
             echo "### Production Terraform plan"
             echo "- commit: \`${GITHUB_SHA}\`"
             echo "- image: \`${IMAGE}\`"
+            echo "- image revision: \`${GITHUB_SHA}\`"
             echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
             echo "- HCP status: **${status}**"
             echo "- saved plan: it does not hold the workspace lock or wait behind another plan"
             echo "- HCP automatically discards it if another apply changes state first"
             echo "- GitHub waited for the complete saved plan before reporting success"
             echo "- CD stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
-            echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the commit you intend to deploy"
+            echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message and image revision match the commit you intend to deploy"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -83,17 +83,11 @@ if [ "$workflows" = true ]; then
   portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; mcp_listing=true
 fi
 
-# Reusable CI defines the tested artifact, so changing it republishes. CD only
-# transports that artifact and queues every successful main commit already; a
-# CD-only edit validates every gate but must not publish identical image bytes.
-# Pack publication remains tied to actual pack bytes.
-workflow_delivery=false
-while IFS= read -r -d '' file; do
-  case "$file" in
-    .github/workflows/ci.yml) workflow_delivery=true ;;
-  esac
-done <"$files"
-if [ "$workflow_delivery" = true ]; then
+# CD calls this workflow only for main pushes. Build and publish a portal image
+# for the complete desired state on every such push: a prior failed plan must
+# not be forgotten merely because the next commit touches only infrastructure.
+if [ "$event" = "push" ]; then
+  portal=true
   portal_release=true
 fi
 

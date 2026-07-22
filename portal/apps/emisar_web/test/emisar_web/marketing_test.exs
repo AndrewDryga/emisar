@@ -360,13 +360,25 @@ defmodule EmisarWeb.MarketingTest do
   test "healthz returns process liveness and the running version", %{conn: conn} do
     conn = get(conn, ~p"/healthz")
     version = EmisarWeb.AppVersion.version()
-    assert json_response(conn, 200) == %{"status" => "ok", "version" => version}
+    revision = EmisarWeb.AppVersion.revision()
+
+    assert json_response(conn, 200) == %{
+             "revision" => revision,
+             "status" => "ok",
+             "version" => version
+           }
   end
 
   test "readyz returns readiness when the DB is reachable", %{conn: conn} do
     conn = get(conn, ~p"/readyz")
     version = EmisarWeb.AppVersion.version()
-    assert json_response(conn, 200) == %{"status" => "ok", "version" => version}
+    revision = EmisarWeb.AppVersion.revision()
+
+    assert json_response(conn, 200) == %{
+             "revision" => revision,
+             "status" => "ok",
+             "version" => version
+           }
   end
 
   test "health probes are never cached", %{conn: conn} do
@@ -380,10 +392,17 @@ defmodule EmisarWeb.MarketingTest do
     # The route rides the bare :api pipeline (no fetch_session / fetch_current_user
     # / protect_from_forgery), so infrastructure probes need no cookies.
     version = EmisarWeb.AppVersion.version()
+    revision = EmisarWeb.AppVersion.revision()
 
     for path <- [~p"/healthz", ~p"/readyz"] do
       conn = get(conn, path)
-      assert json_response(conn, 200) == %{"status" => "ok", "version" => version}
+
+      assert json_response(conn, 200) == %{
+               "revision" => revision,
+               "status" => "ok",
+               "version" => version
+             }
+
       refute conn.assigns[:current_user]
       assert conn.req_cookies == %{}
     end

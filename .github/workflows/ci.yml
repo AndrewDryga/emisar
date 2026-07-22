@@ -277,6 +277,7 @@ jobs:
           build-args: |
             ELIXIR_VERSION=${{ steps.release-toolchain.outputs.elixir }}
             OTP_VERSION=${{ steps.release-toolchain.outputs.otp }}
+            SOURCE_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -343,6 +344,16 @@ jobs:
             exit 1
           }
           echo "readyz OK"
+
+          for endpoint in healthz readyz; do
+            curl -fsS -H 'x-forwarded-proto: https' "http://localhost:4000/${endpoint}" \
+              | jq -e --arg revision "$GITHUB_SHA" \
+                '.status == "ok" and .revision == $revision' >/dev/null || {
+                  echo "::error::${endpoint} does not report tested revision ${GITHUB_SHA}"
+                  exit 1
+                }
+          done
+          echo "release revision OK"
 
           if docker logs "$cid" 2>&1 | grep -Fq '[UNIX-ESSIO] Failed open sctp dynamic library'; then
             echo "::error::Portal image is missing the SCTP runtime library"

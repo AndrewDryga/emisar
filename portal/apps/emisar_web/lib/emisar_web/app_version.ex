@@ -1,10 +1,13 @@
 defmodule EmisarWeb.AppVersion do
   @moduledoc """
-  The running release's product version — ONE read path for every surface
-  that reports it (marketing footer, MCP `serverInfo`, `/healthz`). The MCP
-  registry reconciler compares `/healthz`'s copy against the latest release
-  tag to publish the listing only once a deploy actually serves it.
+  The running release's product version and source revision.
+
+  Product surfaces share the version from `portal/VERSION`. Deployment probes
+  also report the Git revision compiled into the image so two builds of the
+  same product version remain operationally distinguishable.
   """
+
+  @revision System.get_env("EMISAR_SOURCE_REVISION", "dev")
 
   @doc """
   The `:vsn` of the running `emisar_web` application (`portal/VERSION` via
@@ -17,4 +20,7 @@ defmodule EmisarWeb.AppVersion do
       vsn -> to_string(vsn)
     end
   end
+
+  @doc "The Git revision compiled into the running release image."
+  def revision, do: @revision
 end

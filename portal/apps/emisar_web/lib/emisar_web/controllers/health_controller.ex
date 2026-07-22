@@ -52,13 +52,14 @@ defmodule EmisarWeb.HealthController do
   end
 
   defp respond(conn, status) do
-    # `version` rides both probes — the MCP registry reconciler compares it
-    # against the latest release tag to publish the listing only once the
-    # deploy actually serves that version.
+    # Product version drives registry reconciliation; source revision proves
+    # which immutable main build is actually serving that version.
+    metadata = %{version: AppVersion.version(), revision: AppVersion.revision()}
+
     body =
       if status == :ok,
-        do: %{status: "ok", version: AppVersion.version()},
-        else: %{status: "error", version: AppVersion.version()}
+        do: Map.put(metadata, :status, "ok"),
+        else: Map.put(metadata, :status, "error")
 
     conn
     |> put_resp_header("cache-control", "no-store")

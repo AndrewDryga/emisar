@@ -6,17 +6,25 @@ repository. Pull requests run `.github/workflows/ci.yml`. After a push to
 commit, then performs delivery:
 
 1. `Required - CI` completes for the exact commit.
-2. The selected, already-smoke-tested and vulnerability-scanned portal image is
-   published by digest and attested with its CI-produced SBOM. No second image
-   is built for the private admin runner; COS installs its pinned runner release.
+2. Every successful `main` push builds, smoke-tests, vulnerability-scans, and
+   publishes a portal image for that exact commit. CD publishes it by digest and
+   attests it with its CI-produced SBOM. No second image is built for the private
+   admin runner; COS installs its pinned runner release.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP
-   Terraform configuration version and planned with the immutable image digest.
+   Terraform configuration version and planned with that commit's immutable
+   image digest. Production planning fails closed if publication does not finish.
 4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's
    **Confirm & Apply** button. GitHub never calls the apply API. Before applying,
    verify the run's commit in its `main <sha>` message is the commit intended
    for deployment. CD creates saved plans: they can plan concurrently without
    holding the workspace lock, never auto-apply, and HCP discards them if an
    earlier apply changes state before confirmation.
+
+`main` is the desired portal state. A failed or rejected plan never makes a
+later run silently substitute the older applied image: the later commit receives
+its own tested image and saved plan. Revert an application change from `main`
+before applying later infrastructure work when that application state should not
+ship.
 
 When one commit changes packs and the portal, production planning waits for the
 reviewed pack publication. Rejecting or canceling that publication halts the
@@ -100,8 +108,9 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 ## Apply and verify a production plan
 
 1. Open the saved plan linked from the successful `deployment-plan` job.
-2. Verify its run message names the intended `main <commit>` and inspect every
-   resource action, output, and immutable portal image digest.
+2. Verify its run message names the intended `main <commit>`, the image revision
+   matches that commit, and inspect every resource action, output, and immutable
+   portal image digest.
 3. Select **Confirm & Apply** in HCP Terraform. GitHub never applies the plan.
 4. Wait for the managed instance group to replace instances with zero
    unavailable capacity. A replacement must pass `/healthz` after reaching the
@@ -113,8 +122,11 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
    now pages and blocks calling the rollout complete.
 
 ```sh
-curl -fsS https://emisar.dev/healthz
-curl -fsS https://emisar.dev/readyz
+expected_revision="$(git rev-parse HEAD)"
+curl -fsS https://emisar.dev/healthz \
+  | jq -e --arg revision "$expected_revision" '.status == "ok" and .revision == $revision'
+curl -fsS https://emisar.dev/readyz \
+  | jq -e --arg revision "$expected_revision" '.status == "ok" and .revision == $revision'
 curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
 ```
 
@@ -161,6 +173,8 @@ change with an application rollback.
 - `/healthz` requires one successful database check after BEAM startup, then
   becomes database-independent liveness and drives auto-healing.
 - `/readyz` checks database readiness and controls load-balancer eligibility.
+- Both probes report the product `version` and the immutable source `revision`;
+  post-apply verification compares `revision` with the reviewed `main` commit.
 - `/metrics` on `METRICS_PORT` (default 9091) is private.
 - `/admin/live` is the admin-gated Phoenix LiveDashboard.
 - Production logs use structured Google Cloud JSON with secret-shaped metadata
