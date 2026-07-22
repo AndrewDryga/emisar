@@ -102,7 +102,7 @@ reader already understands. Test the draft by asking whether the reader could
 re-derive why the product exists from the explanation alone.
 
 In `/guides/*` pieces, hold the stricter bar in
-`.agent/rules/content-guides-teach-not-sell.md`: a vendor-neutral teaching piece
+`.agent/kb/rules/content-guides-teach-not-sell.md`: a vendor-neutral teaching piece
 gets zero product mentions in the body (or one clearly designated section), no
 product-docs links standing in as proof, and page chrome that carries the
 conversion. An explicitly titled product explainer may name the product

@@ -21,7 +21,7 @@ box:
 serve:
   ports: [4000, 9091]
 
-# Compile only the project-specific instructions and KB cards relevant to the
+# Compile only the project-specific instructions and descriptive KB cards relevant to the
 # files in play. Root AGENTS.md remains canonical and is always included by
 # coop context.
 context:

@@ -19,7 +19,7 @@ site already has home, pricing, security, use-cases (cassandra/postgres),
 ## Positioning hierarchy
 
 The canonical order and claim boundaries live in
-`.agent/rules/content-position-bounded-autonomy.md`.
+`.agent/kb/rules/content-position-bounded-autonomy.md`.
 
 1. **Outcome:** the agent can keep doing useful work inside explicit bounds.
 2. **Mechanism:** declared actions, policy, pack trust, and runner-side validation

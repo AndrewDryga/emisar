@@ -62,7 +62,7 @@ Anchors: <short excerpts or before/after edits that demonstrate the rules>
 
 For emisar, keep the positioning layers distinct when choosing anchors. The
 canonical order and claim boundaries live in
-`.agent/rules/content-position-bounded-autonomy.md`:
+`.agent/kb/rules/content-position-bounded-autonomy.md`:
 
 - outcome: an operator can leave an agent doing infrastructure work without
   supervising every step or granting open-ended shell authority

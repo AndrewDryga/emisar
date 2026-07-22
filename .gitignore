@@ -44,13 +44,12 @@ erl_crash.dump
 # belong under the ignored .agent/ state below, never as hidden files in docs/.
 
 # .agent/ is local working state — only the KNOWLEDGE and CONFIG are committed:
-# rules/ (the shared taste KB), kb/ (the descriptive knowledge base), presets/
-# (orchestration recipes), scripts/ (agent-only enforcement), project.yaml
+# kb/ (current-system cards plus normative rules/), presets/ (orchestration
+# recipes), scripts/ (agent-only enforcement), project.yaml
 # (monorepo/box policy), loop.yaml, and the project Dockerfile.
 # Tasks, the backlog drawer, pending decisions, log, archive all stay on the
 # machine (no commit noise, no cross-agent merge conflicts). See AGENTS.md.
 **/.agent/*
-!**/.agent/rules
 !**/.agent/scripts
 !**/.agent/kb
 !**/.agent/presets

@@ -73,7 +73,7 @@ signoff:
       to split — even if the code is good.
     - No new dependency without a one-line justification in the commit message.
     - A correction from the human during the batch became a rule in the right
-      `.agent/rules/` (domain-prefixed filename) — flag any applied once and not recorded.
+      `.agent/kb/rules/` (domain-prefixed filename) — flag any applied once and not recorded.
     - The tree is clean after each commit (git status); nothing untracked smuggled in.
     - A user-visible change updated the docs it invalidated (docs/, README, or the
       affected project's docs).

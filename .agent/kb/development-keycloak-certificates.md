@@ -14,16 +14,18 @@ without rotating its CA.
 
 `dev/run certs trust|untrust|status` manages only the generated CA's SHA-256
 fingerprint in the macOS user keychain, constrained to SSL for `localhost`.
-Parallel workspaces may have the same CA common name; never delete by common
-name. Automated Chromium does not depend on host trust and never disables TLS
-validation globally: `dev/run` derives the current leaf SPKI, and the browser
-launch permits only that exact hash.
+Parallel workspaces may have the same CA common name, so fingerprint selection
+distinguishes the active workspace. Automated Chromium does not depend on host
+trust: `dev/run` derives the current leaf SPKI, and the browser launch permits
+only that exact hash while normal TLS validation remains active.
 
 Keycloak reads its certificate at process start. `dev/run` fingerprints the
 leaf before and after generation and recreates the Coop dependency containers
-only when the material changed. Use the command surface for renewal or rotation;
-editing or deleting generated files manually can leave a running sidecar serving
-stale material.
+only when the material changed. The command surface coordinates renewal or
+rotation with sidecar recreation; direct generated-file changes can leave a
+running sidecar serving stale material.
+
+Related rule: [development TLS trust stays workspace-scoped](rules/shared-development-tls-trust-stays-workspace-scoped.md).
 
 ## Changelog
 - 2026-07-22 — created after verifying macOS trust, exact-fingerprint removal, SPKI-only Chromium access, and sidecar recreation

@@ -68,7 +68,7 @@ with before/after screenshot proof — and the BEFORE shot comes before any edit
 the active workspace with `dev/run shot` (`--label before`), fix,
 rebuild the stack, re-shoot (`--label after`, full page + element crop), verify
 the pixels yourself, then hand the user both paths for review. Full workflow:
-`portal/.agent/rules/design-ui-fix-screenshot-proof.md`.
+`portal/.agent/kb/rules/design-ui-fix-screenshot-proof.md`.
 
 ## Finish
 

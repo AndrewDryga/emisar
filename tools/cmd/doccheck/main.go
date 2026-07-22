@@ -133,8 +133,8 @@ func forbiddenVersionedPath(file string) bool {
 		rootConfig := index == 0 &&
 			(subpath == "project.yaml" || subpath == "loop.yaml" || subpath == "Dockerfile")
 		sharedDirectory :=
-			strings.HasPrefix(subpath, "rules/") || strings.HasPrefix(subpath, "scripts/") ||
-				strings.HasPrefix(subpath, "kb/") || strings.HasPrefix(subpath, "presets/")
+			strings.HasPrefix(subpath, "kb/") || strings.HasPrefix(subpath, "scripts/") ||
+				strings.HasPrefix(subpath, "presets/")
 		if rootConfig || sharedDirectory {
 			return false
 		}
@@ -170,10 +170,6 @@ func checkRepository(root string) ([]finding, int, error) {
 	var findings []finding
 	markdownFiles := 0
 	for _, file := range files {
-		if forbiddenVersionedPath(file) {
-			findings = append(findings, finding{file, "private or local artifact path must not be version-controlled"})
-			continue
-		}
 		fullPath := filepath.Join(root, filepath.FromSlash(file))
 		info, err := os.Stat(fullPath)
 		if os.IsNotExist(err) {
@@ -183,6 +179,10 @@ func checkRepository(root string) ([]finding, int, error) {
 			return nil, markdownFiles, fmt.Errorf("stating %s: %w", file, err)
 		}
 		if info.IsDir() {
+			continue
+		}
+		if forbiddenVersionedPath(file) {
+			findings = append(findings, finding{file, "private or local artifact path must not be version-controlled"})
 			continue
 		}
 		data, err := os.ReadFile(fullPath)

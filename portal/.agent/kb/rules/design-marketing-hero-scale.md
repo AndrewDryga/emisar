@@ -72,5 +72,5 @@ prefix). Change the scale and both go red, so the scale and its tests move in th
 change. NOT Credo — `Emisar.Checks.*` read `.ex`/`.exs`, not `.html.heex`, so a per-page
 `!text-*` in a template is invisible to them (and a class-string grep-test is the
 discouraged anti-pattern §8). When you touch a marketing hero, eyeball a rendered crop
-against `/security` (the reference). Related: `.agent/rules/design-ui-shared-components.md`
-(one component per shape), `.agent/rules/design-system.md` (the type scale itself).
+against `/security` (the reference). Related: `.agent/kb/rules/design-ui-shared-components.md`
+(one component per shape), `.agent/kb/rules/design-system.md` (the type scale itself).

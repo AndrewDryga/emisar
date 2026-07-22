@@ -1,6 +1,7 @@
 // Command agentcheck verifies the repository's shared agent configuration:
 // canonical instruction links, Coop task conventions, contributor/customer
-// skill metadata, public MCP tool references, and scoped workflow hooks.
+// skill metadata, descriptive KB cards, public MCP tool references, and
+// scoped workflow hooks.
 package main
 
 import (
@@ -16,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/repo"
 	"go.yaml.in/yaml/v3"
@@ -25,6 +27,9 @@ var (
 	staleManualText = regexp.MustCompile(`coop tasks list|xx_done`)
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
 	publicMCPTool   = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
+	cardPolicy      = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
+	inlineCode      = regexp.MustCompile("`[^`]*`")
+	markdownLink    = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
 )
 
 type checker struct {
@@ -262,8 +267,7 @@ func hasPrefix(value string, prefixes []string) bool {
 func (c *checker) checkRuleNames() {
 	prefixes := []string{"design-", "content-", "elixir-", "runner-", "mcp-", "packs-", "infra-", "shared-"}
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
-		isRule := strings.Contains(relative, "/.agent/rules/") || strings.HasPrefix(relative, ".agent/rules/")
-		if entry.IsDir() || !strings.HasSuffix(relative, ".md") || !isRule {
+		if entry.IsDir() || !strings.HasSuffix(relative, ".md") || !isKnowledgeRule(relative) {
 			return
 		}
 		if !hasPrefix(entry.Name(), prefixes) {
@@ -299,6 +303,17 @@ func metadataString(metadata map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func metadataDate(metadata map[string]any, key string) string {
+	switch value := metadata[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case time.Time:
+		return value.Format("2006-01-02")
+	default:
+		return ""
+	}
+}
+
 func metadataNonEmpty(metadata map[string]any, key string) bool {
 	value, exists := metadata[key]
 	if !exists || value == nil {
@@ -308,6 +323,154 @@ func metadataNonEmpty(metadata map[string]any, key string) bool {
 		return strings.TrimSpace(text) != ""
 	}
 	return true
+}
+
+func metadataStrings(metadata map[string]any, key string) []string {
+	value, exists := metadata[key]
+	if !exists {
+		return nil
+	}
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil
+		}
+		result = append(result, strings.TrimSpace(text))
+	}
+	return result
+}
+
+func markdownBody(data []byte) ([]string, int, error) {
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return nil, 0, fmt.Errorf("missing opening frontmatter delimiter")
+	}
+	for index := 1; index < len(lines); index++ {
+		if lines[index] == "---" {
+			return lines[index+1:], index + 2, nil
+		}
+	}
+	return nil, 0, fmt.Errorf("missing closing frontmatter delimiter")
+}
+
+func cardPolicyLines(data []byte) ([]int, error) {
+	lines, firstLine, err := markdownBody(data)
+	if err != nil {
+		return nil, err
+	}
+	var findings []int
+	inFence := false
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## Changelog") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || strings.HasPrefix(trimmed, ">") {
+			continue
+		}
+		prose := inlineCode.ReplaceAllString(line, "")
+		prose = markdownLink.ReplaceAllString(prose, "")
+		if cardPolicy.MatchString(prose) {
+			findings = append(findings, firstLine+index)
+		}
+	}
+	return findings, nil
+}
+
+func isKnowledgeRule(relative string) bool {
+	return strings.HasPrefix(relative, ".agent/kb/rules/") || strings.Contains(relative, "/.agent/kb/rules/")
+}
+
+func isKnowledgeCard(relative string, entry fs.DirEntry) bool {
+	if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(entry.Name(), ".md") {
+		return false
+	}
+	isKnowledge := strings.HasPrefix(relative, ".agent/kb/") || strings.Contains(relative, "/.agent/kb/")
+	return isKnowledge && !isKnowledgeRule(relative)
+}
+
+func isLegacyKnowledgeDirectory(relative string) bool {
+	return relative == ".agent/reference" || relative == ".agent/rules" ||
+		strings.HasSuffix(relative, "/.agent/reference") || strings.HasSuffix(relative, "/.agent/rules")
+}
+
+func (c *checker) checkKnowledgeCards() {
+	if _, err := os.Stat(c.path(".agent/kb/README.md")); err != nil {
+		c.fail(".agent/kb/README.md is required as the knowledge index")
+	}
+
+	allowedSubsystems := map[string]bool{
+		"agent-stack": true,
+		"infra":       true,
+		"mcp":         true,
+		"packs":       true,
+		"portal":      true,
+		"runner":      true,
+	}
+	c.walkRepository(func(relative string, entry fs.DirEntry) {
+		if entry.IsDir() && isLegacyKnowledgeDirectory(relative) {
+			c.fail("retired %s is back; durable knowledge lives under .agent/kb", relative)
+			return
+		}
+		if !isKnowledgeCard(relative, entry) {
+			return
+		}
+		data, err := os.ReadFile(c.path(relative))
+		if err != nil {
+			c.fail("reading %s: %v", relative, err)
+			return
+		}
+		metadata, err := parseFrontmatter(data)
+		if err != nil {
+			c.fail("%s: %v", relative, err)
+			return
+		}
+		name := metadataString(metadata, "name")
+		expectedName := strings.TrimSuffix(entry.Name(), ".md")
+		if name != expectedName {
+			c.fail("%s name is %q, expected %q", relative, name, expectedName)
+		}
+		description := metadataString(metadata, "description")
+		if description == "" {
+			c.fail("%s missing frontmatter description", relative)
+		} else if cardPolicy.MatchString(description) {
+			c.fail("%s description uses normative policy language; move the constraint to .agent/kb/rules", relative)
+		}
+		subsystem := metadataString(metadata, "subsystem")
+		if !allowedSubsystems[subsystem] {
+			c.fail("%s subsystem %q is not recognized", relative, subsystem)
+		}
+		updated := metadataDate(metadata, "updated")
+		if _, err := time.Parse("2006-01-02", updated); err != nil {
+			c.fail("%s updated %q must use YYYY-MM-DD", relative, updated)
+		}
+		sources := metadataStrings(metadata, "sources")
+		if len(sources) == 0 {
+			c.fail("%s needs at least one source path", relative)
+		}
+		for _, source := range sources {
+			if _, err := os.Stat(c.path(source)); err != nil {
+				c.fail("%s source %q does not exist", relative, source)
+			}
+		}
+		lines, err := cardPolicyLines(data)
+		if err != nil {
+			c.fail("%s: %v", relative, err)
+			return
+		}
+		for _, line := range lines {
+			c.fail("%s:%d uses normative policy language; move the constraint to .agent/kb/rules", relative, line)
+		}
+	})
 }
 
 func (c *checker) skillMetadata(path string) map[string]any {
@@ -510,6 +673,7 @@ func (c *checker) run(requireCoop bool) int {
 	}
 	c.group("task queues use expected state names", c.checkTaskDirs)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
+	c.group("knowledge cards carry descriptive metadata and keep policy in kb/rules", c.checkKnowledgeCards)
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in docs/mcp-api-schemas.json", c.checkPublicSkillMCPTools)

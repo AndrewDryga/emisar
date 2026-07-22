@@ -1,6 +1,6 @@
 ---
 name: workflow-sweep
-description: Drain a project's .agent/tasks/ queue autonomously and run-to-completion, taking EACH task to a ship-ready bar — `coop tasks claim` a 00_todo/ task, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the .agent/rules KB) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and `coop tasks done` — without quitting early. A Stop hook scoped to this skill blocks quitting while any task is actionable. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended sweep.
+description: Drain a project's .agent/tasks/ queue autonomously and run-to-completion, taking EACH task to a ship-ready bar — `coop tasks claim` a 00_todo/ task, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the project's KB rules) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and `coop tasks done` — without quitting early. A Stop hook scoped to this skill blocks quitting while any task is actionable. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended sweep.
 effort: max
 argument-hint: "[project: portal|runner|mcp|packs — default: every project with open tasks]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
@@ -22,7 +22,7 @@ from every angle it touches and iterated until clean* — and only **then** comm
 The bar is not "it compiles"; it's "I'd defend this in review from every hat **and it breaks no
 house rule.**" **The house rules are the spine of that bar** — the project's rule index (portal
 **Iron Laws IL-1…IL-20**; the runner/mcp **security posture + Go house style**; the **pack
-conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to* them, then
+conventions**) *and* the worked examples in `<project>/.agent/kb/rules/`. Build *to* them, then
 *check the diff against them*. Don't trust your first draft; review it and fix it.
 
 ## 1. Arm
@@ -32,7 +32,7 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
   sentinel file. (It releases automatically when the skill ends.)
 - Read the project's `AGENTS.md` in full — the gate **and the rule index** (portal Iron Laws +
   House opinions; runner/mcp security posture + Go house style; pack conventions) — **and every
-  `<project>/.agent/rules/*.md`** (the worked-example taste KB). These are the bar you build to,
+  `<project>/.agent/kb/rules/*.md`** (the worked-example taste KB). These are the bar you build to,
   not just check against — load them before you touch code. (You'll announce the queue after the tidy step — next.)
 - **Optional `/goal`** — you may set a run goal (`/goal drain <project>'s queue: every task
   house-rule-clean, ship-review-clean and committed; don't stop`) to harden don't-quit-early on
@@ -67,20 +67,20 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
 1. **Claim** — `coop tasks claim <id>` (moves it `00_todo/` → `10_in_progress/`; on collision
    take the next todo task). **Skip any `10_in_progress/` task** — a parallel agent's live claim.
 2. **Build** — wear the hats while building; obey the project's `AGENTS.md` laws, match the
-   `.agent/rules/` examples and the surrounding style exactly. `/workflow-spec` first if it spans more
+   `.agent/kb/rules/` examples and the surrounding style exactly. `/workflow-spec` first if it spans more
    than one file/context.
 3. **Gate green** — the project's exact gate (`<project>/AGENTS.md` → "The gate" / IL-20). No
    green, no review.
 4. **Self-review from every angle it touches** — the agentic core; review your own diff.
    **House rules first — this comes before the hats and is non-negotiable:**
    - **portal/:** `/elixir-iron-review` standalone (the dedicated IL-1…IL-20 checker — cite the law
-     each finding breaks) **+** the House-opinions index and every `portal/.agent/rules/*.md`.
+     each finding breaks) **+** the House-opinions index and every `portal/.agent/kb/rules/*.md`.
      Then `/review-ship` (PM · UX · security · frontend · SEO synthesized); use `/review-board`
      when correctness risk spans multiple surfaces, and inspect touched callers/tests directly.
    - **Go (runner/mcp):** check the diff against the AGENTS.md **Security posture** (the runner's
      security equivalent: no cloud/LLM-controlled shell · validate-everything · pinned pack trust · contained
      paths) **+ Go house style** (slog, `%w` wraps, stdlib table-driven tests, no new deps) + any
-     `.agent/rules/`; then `/security-engineer` (it runs commands on hosts) + `/review-board` when
+     `.agent/kb/rules/`; then `/security-engineer` (it runs commands on hosts) + `/review-board` when
      the change warrants a multi-hat pass + the gate's vet check.
    - **packs:** the `packs/AGENTS.md` conventions (pack-authored argv or bounded fixed-shell programs, bare binary paths, bound args,
      honest risk) + `/security-engineer` (every action is attack surface) + `emisar pack validate`.

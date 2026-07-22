@@ -14,8 +14,8 @@ confusing, hard-to-attribute failures:
    mirrors the same `localhost:<port>` URLs into the box. `dev/run` reads those URLs as
    `COOP_SERVICE_*` in a box and from `coop fork ls --json` on the host. Portal receives
    the resulting `DATABASE_URL`; tests receive `PGHOST=localhost` plus the assigned
-   `PGPORT`. Never restore service-name-only URLs such as `db:5432` — they split host
-   and box configuration again.
+   `PGPORT`. Service-name-only URLs such as `db:5432` split host and box configuration
+   because the host cannot resolve the Compose service name.
 
 2. **Build isolation:** the repo mount shares `portal/_build` with the macOS host, but
    BEAM builds are platform-specific — a darwin-compiled NIF (LazyHTML) made 716 of 2232
@@ -40,8 +40,10 @@ confusing, hard-to-attribute failures:
 
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs, browser libraries,
 and the localhost sidecar forwarders. `.agent/Dockerfile` extends it only for Emisar's
-extra OS dependencies and platform-specific cache locations; do not copy the base image
-back into this repo.
+extra OS dependencies and platform-specific cache locations. Copying the base image
+setup into this repo would duplicate Coop-owned behavior and cache layers.
+
+Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
 - 2026-07-22 — unified host and box sidecars/URLs, moved the box onto Coop's base,

@@ -12,8 +12,8 @@ sentences). Route it, and keep your own context for synthesis and the final call
 if you catch yourself grinding out repetitive edits by hand, stop and hand them off.
 
 First, recall before you re-derive: scan `.agent/kb/README.md`'s index and the
-touched project's `.agent/rules/` before you start — open a card only when it
-matches the subsystem you're editing. A minute here beats re-learning a trap the
+touched project's indexed `.agent/kb/rules/` before you start — open a descriptive
+card only when it matches the subsystem you're editing. A minute here beats re-learning a trap the
 hard way. And read the PROJECT's own `AGENTS.md` (portal/runner/mcp/packs/infra)
 before editing inside it — each has non-negotiable, per-language rules.
 

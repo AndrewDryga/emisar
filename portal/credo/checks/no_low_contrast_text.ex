@@ -7,7 +7,7 @@ defmodule Emisar.Checks.NoLowContrastText do
       `text-zinc-600` (#52525b) is 2.3-2.7:1 on the console's near-black grounds
       (zinc-950 / black / zinc-900), so it fails WCAG AA for BOTH normal and large
       text everywhere — there is no size at which it clears the bar. The design
-      system (`.agent/rules/design-system.md`, "Contrast (WCAG AA)") already
+      system (`.agent/kb/rules/design-system.md`, "Contrast (WCAG AA)") already
       prescribes the fix: `text-zinc-400` (~7.8:1) is the AA-safe muted tier for any
       essential secondary text, and it stays quieter than the zinc-300 body / zinc-100
       headings, so raising the token preserves the de-emphasis register.

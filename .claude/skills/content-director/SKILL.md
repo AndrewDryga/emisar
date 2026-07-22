@@ -67,7 +67,7 @@ are not a quality test. Substance, judgment, voice, and editing are.
    For positioning, separate the layers before drafting: the operator outcome,
    the mechanism that produces it, the path to first value, the extensibility
    story, and the supporting controls. The canonical order and claim boundaries
-   live in `.agent/rules/content-position-bounded-autonomy.md`. Do not promote a
+   live in `.agent/kb/rules/content-position-bounded-autonomy.md`. Do not promote a
    familiar control such as approvals into the product's main promise.
 
 3. **Set the voice.**

@@ -1,20 +1,32 @@
-# .agent/kb — the self-improving knowledge base
+# .agent/kb — durable knowledge
 
-Descriptive operational knowledge an agent needs but the code doesn't obviously carry:
-subsystem maps, cross-cutting traps, hard-won gotchas. Sibling of `rules/` — but `rules/`
-is NORMATIVE ("do X, not Y") while a card here is DESCRIPTIVE ("here's how X actually
-works, and the trap"). A rule may link to a card for background.
+One home for operational knowledge the code does not obviously carry:
+
+- Cards directly under `kb/` are DESCRIPTIVE current-system facts: subsystem maps,
+  cross-cutting mechanics, and hard-won gotchas.
+- Files under `kb/rules/` are NORMATIVE constraints: "do X, not Y," with the reason,
+  examples, sweep target, and enforcement.
+
+Use this decision test:
+
+- If an implementation change makes the document false, update the reference card.
+- If an implementation change contradicts the document and should be rejected, write
+  that constraint as a rule.
+- If both apply, keep the mechanism here, keep the invariant in `rules/`, and link them.
+
+Reference cards describe; they do not prescribe. Policy language such as `must`,
+`never`, and `do not` belongs in a rule except when quoted from an external interface.
 
 ## Reading protocol
 
 Read this INDEX at boot; open a card ONLY when your task touches its subsystem. Never
-bulk-load the kb into a prompt — the index is the routing table, cards are pulled on
-demand (like skills). That scoping is also the safety rail: a card only ever reaches the
+bulk-load the KB into a prompt — the index is the routing table, and cards are
+pulled on demand (like skills). That scoping is also the safety rail: a card only reaches the
 prompts of tasks in its own subsystem, so a wrong card can't poison work it doesn't touch.
 
-## You maintain this KB — directly
+## Maintain descriptive cards directly
 
-A self-improving wiki: no inbox, no human gate. When a task teaches you something
+A self-improving KB: no inbox, no human gate. When a task teaches you something
 non-obvious about a subsystem — a map, a trap, a gotcha the code doesn't carry — CREATE
 or UPDATE its card here, in the same commit as the work. Keep it TIDY as it grows: once
 a flat list gets long, group cards into per-subsystem subfolders (`portal/`, `runner/`,
@@ -42,15 +54,20 @@ updated: <YYYY-MM-DD>                # last edit
 
 <the fact; cite file:line for load-bearing claims; link related cards with [[name]]>
 
+Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable -->
+
 ## Changelog
 - <YYYY-MM-DD> — created / what changed (and what you verified it against)
 ```
 
 ## Index
 
-- [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — PGHOST=db reaches the sibling postgres; box BEAM/Go builds live under the coop-cache volume (MIX_BUILD_ROOT), never the host's _build; the portal output guard warms deps unscanned
+- [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 - [development-keycloak-certificates](development-keycloak-certificates.md) — workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
-- [oauth-sign-in-return-to](oauth-sign-in-return-to.md) — a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO sign-in must preserve it through consent
+- [oauth-sign-in-return-to](oauth-sign-in-return-to.md) — a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO preserve it through consent
 - [oauth-consent-form-action](oauth-consent-form-action.md) — ChatGPT's sandboxed OAuth document needs a consent-only HTTPS form-action source; rejected requests and every other page keep the strict self-only policy
 - [runner-enrollment-key-reset](runner-enrollment-key-reset.md) — a changed enrollment key rotates the token while preserving external identity unless the installer explicitly resets generated auth state
 - [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and health reports the embedded source revision
+
+Normative rules are indexed by the relevant root or project `AGENTS.md` and live
+under that project's `kb/rules/`.

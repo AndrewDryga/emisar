@@ -159,7 +159,7 @@ resource "google_compute_instance_group" "livebook" {
   zone = var.zones[0]
   # Splat, not [0]: the group (and the LB graph above it) outlives the parked
   # instance, so membership must degrade to empty rather than dangle a hard
-  # reference (.agent/rules/infra-optional-resource-splat-refs.md).
+  # reference (.agent/kb/rules/infra-optional-resource-splat-refs.md).
   instances = google_compute_instance.livebook[*].self_link
 
   named_port {

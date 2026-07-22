@@ -1,6 +1,6 @@
 ---
 name: oauth-sign-in-return-to
-description: A protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO sign-in must preserve it through consent
+description: how magic-link, registration, and SSO sign-in preserve a protected OAuth GET path through consent
 subsystem: portal
 sources: [portal/apps/emisar_web/lib/emisar_web/user_auth.ex, portal/apps/emisar_web/lib/emisar_web/controllers/user_session_controller.ex, portal/apps/emisar_web/lib/emisar_web/controllers/sso_controller.ex]
 updated: 2026-07-20
@@ -18,14 +18,14 @@ when the protected request did not provide one. This is what returns cloud LLM
 OAuth flows to consent regardless of which visible sign-in method the user
 chooses.
 
-The OAuth return path is never accepted from an SSO callback parameter. It
+The OAuth return path is not accepted from an SSO callback parameter. It
 originates from Phoenix's current request path inside the signed session;
 client-supplied magic-link return paths remain restricted by `ReturnTo` to a
 local `/app/<account>` shape.
 
-Keep regression coverage for existing-user magic-link sign-in, first-time
-registration, and SSO. Each path must return to the exact original
-`/oauth/authorize?...` URL and render consent.
+Regression coverage exercises existing-user magic-link sign-in, first-time
+registration, and SSO. Each case asserts the exact original
+`/oauth/authorize?...` URL and rendered consent.
 
 ## Changelog
 - 2026-07-20 — created after the OAuth publication check found SSO overwrote the protected return path with its account dashboard

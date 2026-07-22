@@ -23,7 +23,7 @@ Use these when the subject supports them. They are arguments to explain and
 defend, not slogans to paste:
 
 The canonical positioning order and claim boundaries live in
-`.agent/rules/content-position-bounded-autonomy.md`.
+`.agent/kb/rules/content-position-bounded-autonomy.md`.
 
 - **Bounded autonomy is the promise.** Let an MCP-capable agent keep working on
   infrastructure without a human shadowing every step or handing it open-ended

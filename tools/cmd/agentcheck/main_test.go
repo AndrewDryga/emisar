@@ -97,6 +97,79 @@ func TestCheckPublicSkillsRejectsContributorOnlyLists(t *testing.T) {
 	}
 }
 
+func TestCheckKnowledgeCardsAcceptsDescriptiveFacts(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, "dev/run", "#!/usr/bin/env bash\n")
+	writeTestFile(t, check.root, ".agent/kb/dev-loop.md", `---
+name: dev-loop
+description: how the development loop resolves services
+subsystem: agent-stack
+sources: [dev/run]
+updated: 2026-07-22
+---
+
+The command resolves workspace service URLs before starting Phoenix.
+`+"`never`"+` is an external protocol value, not a constraint.
+> The external client says do not retry.
+[The linked rule says this must stay scoped](rules/shared-example.md).
+
+## Changelog
+- 2026-07-22 - created after the caller said it must retain the URL
+`)
+
+	check.checkKnowledgeCards()
+
+	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckKnowledgeCardsRejectsPolicyAndInvalidMetadata(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/wrong-name.md", `---
+name: other-name
+description: current behavior
+subsystem: unknown
+sources: [missing/file]
+updated: yesterday
+---
+
+The callback must preserve this value.
+`)
+
+	check.checkKnowledgeCards()
+
+	for _, expected := range []string{
+		`name is "other-name", expected "wrong-name"`,
+		`subsystem "unknown" is not recognized`,
+		`updated "yesterday" must use YYYY-MM-DD`,
+		`source "missing/file" does not exist`,
+		`uses normative policy language`,
+	} {
+		if !hasFailure(check, expected) {
+			t.Errorf("missing failure %q in %#v", expected, check.failures)
+		}
+	}
+}
+
+func TestCheckKnowledgeCardsIgnoresRulesAndRejectsLegacyDirectories(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/rules/shared-example.md", "# Rule: values must stay scoped\n")
+	writeTestFile(t, check.root, "portal/.agent/rules/.gitkeep", "")
+
+	check.checkKnowledgeCards()
+
+	if !hasFailure(check, "retired portal/.agent/rules is back") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+	if hasFailure(check, ".agent/kb/rules/shared-example.md") {
+		t.Fatalf("rule was parsed as a descriptive card: %#v", check.failures)
+	}
+}
+
 func TestHasJSONKeyFindsNestedHook(t *testing.T) {
 	value := map[string]any{"hooks": map[string]any{"Stop": []any{map[string]any{"type": "command"}}}}
 	if !hasJSONKey(value, "Stop") {

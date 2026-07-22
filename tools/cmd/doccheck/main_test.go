@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -47,7 +50,7 @@ func TestPrivateAgentReferences(t *testing.T) {
 	t.Parallel()
 	agentReview := ".agent/" + "review"
 	agentReviews := agentReview + "s"
-	data := []byte("old " + agentReviews + "/round-1; keep .agent/rules/design-system.md")
+	data := []byte("old " + agentReviews + "/round-1; keep .agent/kb/rules/design-system.md")
 	want := []string{agentReviews}
 	if got := privateAgentReferences(data); !reflect.DeepEqual(got, want) {
 		t.Fatalf("privateAgentReferences = %#v, want %#v", got, want)
@@ -63,12 +66,15 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		".agent/Dockerfile":                                   false,
 		".agent/compose.yml":                                  true,
 		".agent/kb/README.md":                                 false,
+		".agent/kb/rules/shared-example.md":                   false,
+		".agent/reference/old-card.md":                        true,
+		".agent/rules/old-rule.md":                            true,
 		".agent/presets/frontier/roles/lead.md":               false,
 		agentReview:                                           true,
 		"docs/distribution/reviewer-tenant.md":                false,
 		"docs/sales/battlecard.md":                            false,
 		"docs/security-model.md":                              false,
-		"portal/.agent/rules/elixir-doc-contract.md":          false,
+		"portal/.agent/kb/rules/elixir-doc-contract.md":       false,
 		"tools/browser/capture-console-audit.mjs":             false,
 		"portal/.agent/kb/runner-socket.md":                   false,
 		"portal/.agent/compose.yml":                           true,
@@ -86,5 +92,38 @@ func TestForbiddenVersionedPath(t *testing.T) {
 				t.Fatalf("forbiddenVersionedPath(%q) = %t, want %t", file, got, want)
 			}
 		})
+	}
+}
+
+func TestCheckRepositoryIgnoresDeletedTrackedPaths(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	git("init", "-q")
+	path := filepath.Join(root, ".agent", "old", "note.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# Old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".agent/old/note.md")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, _, err := checkRepository(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %#v", findings)
 	}
 }

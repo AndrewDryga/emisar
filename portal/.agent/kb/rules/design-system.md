@@ -312,7 +312,7 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
 
 ## 4. Components (reuse before you build)
 
-**Iron rule (`.agent/rules/design-ui-shared-components.md`): one shared component per UI
+**Iron rule (`.agent/kb/rules/design-ui-shared-components.md`): one shared component per UI
 shape.** Never hand-roll a card / chip / banner / button / empty-state / page
 width / stat. Grep `core_components.ex` first; extend the primitive if it's
 genuinely missing (then it's shared, not one-off).
@@ -608,9 +608,9 @@ after being taught, so every one is checked EVERY time, mechanically:
   chrome). `EmisarWeb.LiveTable` for lists.
 - **Logo assets:** `priv/static/images/brand/`, favicon family at the static root.
 - **Engagement history + locked decisions:** `[[marketing-redesign-gate-direction]]`
-  (memory). **Component/shape rules:** `.agent/rules/design-ui-shared-components.md`.
+  (memory). **Component/shape rules:** `.agent/kb/rules/design-ui-shared-components.md`.
 - **The console IA/UX doctrine — page archetypes, the component-first law, the ONE tone
-  system, confirm ladder, state matrix, density budgets:** `.agent/rules/design-console-ux.md`.
+  system, confirm ladder, state matrix, density budgets:** `.agent/kb/rules/design-console-ux.md`.
   This file is the visual layer; that one is the structural layer. Read both before any
   console change.
 - **The frontend execution hat:** `/design-frontend` skill (LiveView/HEEx/Tailwind

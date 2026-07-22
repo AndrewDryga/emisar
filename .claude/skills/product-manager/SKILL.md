@@ -29,7 +29,7 @@ that boundary. Approvals, audit, and SIEM export support it; they are category
 requirements, not the centerpiece.
 
 The canonical positioning order and claim boundaries live in
-`.agent/rules/content-position-bounded-autonomy.md`.
+`.agent/kb/rules/content-position-bounded-autonomy.md`.
 
 Two adoption advantages matter. The prebuilt pack catalog and host-aware suggestions
 shorten the path to a first useful run. The fixed MCP tool surface lets a team add
