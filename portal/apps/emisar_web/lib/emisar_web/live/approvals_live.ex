@@ -236,8 +236,7 @@ defmodule EmisarWeb.ApprovalsLive do
   # values are secrets, and the grant row intentionally stores only the hash.
   defp grant_args_line(%{args_sha256: nil}), do: nil
 
-  defp grant_args_line(%{args_sha256: sha}) when is_binary(sha),
-    do: "sha256:#{String.slice(sha, 0, 16)}…"
+  defp grant_args_line(%{args_sha256: sha}) when is_binary(sha), do: "sha256:#{sha}"
 
   defp apply_grant_lifetime_cap(socket, :error) do
     {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}

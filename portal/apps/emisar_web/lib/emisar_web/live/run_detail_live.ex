@@ -471,7 +471,7 @@ defmodule EmisarWeb.RunDetailLive do
         <.code_panel
           :if={@action_args != %{}}
           label="Arguments"
-          annotation={@run.args_sha256 && "sha256:#{String.slice(@run.args_sha256, 0, 16)}…"}
+          annotation={@run.args_sha256 && "sha256:#{@run.args_sha256}"}
           max_h="max-h-64"
           code={format_json(@action_args)}
         />

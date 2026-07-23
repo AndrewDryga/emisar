@@ -698,9 +698,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
             >
               <:summary>
                 Raw arguments
-                <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-400">
-                  sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
-                </span>
+                <span
+                  :if={@request.context["args_sha256"]}
+                  class="ml-1 min-w-0 truncate font-mono text-zinc-400"
+                  title={"sha256:#{@request.context["args_sha256"]}"}
+                >sha256:{@request.context["args_sha256"]}</span>
               </:summary>
               <pre
                 tabindex="0"
