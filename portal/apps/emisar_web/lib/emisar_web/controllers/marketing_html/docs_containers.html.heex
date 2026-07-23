@@ -5,7 +5,7 @@
   the mechanics are --no-service (install.sh) and identity
   persistence (cloud.token_path + runner.id, since containers
   lack a stable /etc/machine-id). Facts verified against
-  install.sh, runner/Dockerfile, and runner/internal/config.
+  install.sh and runner/internal/config.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
@@ -116,12 +116,10 @@
     -v emisar-runner-data:/var/lib/emisar \
     your-registry/emisar-runner</.docs_code>
       <p class="mt-5 text-sm leading-7 text-zinc-400">
-        There's a working reference for this shape in the repo —
-        <.external_link href="https://github.com/andrewdryga/emisar/blob/main/runner/Dockerfile">
-          runner/Dockerfile
-        </.external_link>
-        builds the runner as a container's foreground process; the command above supplies its
-        operator-owned config and persistent token volume.
+        Emisar does not publish a universal runner image. Build yours from the release binary
+        with exactly the tools its selected packs call; the command above supplies its
+        operator-owned config and persistent token volume. The image contents are part of the
+        runner's capability boundary, so keep them as narrow as the workload allows.
       </p>
 
       <.docs_h2 id="daemonset">A DaemonSet across Kubernetes nodes</.docs_h2>
@@ -191,10 +189,9 @@
         from the container's image, so put the tools your packs call into it; and the mounts
         above are read-only on purpose — a verb that <em>mutates</em>
         the node (restarting a unit, say) needs its systemd/dbus socket writable, a grant you
-        make deliberately, not by default. You own the image (build it from the release tarball
-        or start from <code class="font-mono">runner/Dockerfile</code>) and every grant in it; the
-        Secret carries a reusable enrollment key, and the state volume keeps each node's runner
-        identity stable across pod restarts.
+        make deliberately, not by default. You own the image, built from the release tarball,
+        and every grant in it; the Secret carries a reusable enrollment key, and the state volume
+        keeps each node's runner identity stable across pod restarts.
       </p>
 
       <.docs_h2 id="nomad">A Nomad system job</.docs_h2>

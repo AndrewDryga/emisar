@@ -151,8 +151,8 @@ exposed as `dev/run e2e billing`. Its ignored credentials remain in
 ## `runners/`
 
 One config file per docker-compose runner (`edge-fra-01.yaml`,
-`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted into the dev target built
-from `runner/Dockerfile`:
+`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted into the development image
+built from `dev/runner/Dockerfile`:
 
 ```yaml
 volumes:
@@ -195,7 +195,8 @@ volumes:
 
 Real Linux hosts (where production runners install via `install.sh`)
 already have the real `/usr/bin/systemctl`, `/usr/bin/journalctl`,
-`/var/log/syslog`, etc. The runner image is unchanged from production.
+`/var/log/syslog`, etc. No development fixture is presented as a production
+runner image.
 
 ## `test-packs/`
 

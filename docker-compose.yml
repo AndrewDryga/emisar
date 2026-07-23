@@ -250,17 +250,16 @@ services:
   # Fixture volumes are demo-only: realistic /var/log entries and stub
   # systemctl / journalctl binaries so the linux-core + systemd-deep actions
   # produce believable output inside this stack (no systemd, no real
-  # nginx/postgres logs). The runner image itself stays production-pristine —
-  # only this compose file knows about them.
+  # nginx/postgres logs). Everything in this runner setup is a development
+  # fixture under dev/.
   runner-1: &runner
-    # Build context is the REPO ROOT (matching the portal) — runner/Dockerfile
+    # Build context is the REPO ROOT (matching the portal) — dev/runner/Dockerfile
     # COPYs both `packs/` (now at the repo root) and `runner/...`, so it can't build
     # from a `./runner` context. RUNNER_VERSION stamps the binary so the live
     # runner reports the same version the seed pinned (else the "dev" build default).
     build:
       context: .
-      dockerfile: runner/Dockerfile
-      target: dev
+      dockerfile: dev/runner/Dockerfile
       args:
         RUNNER_VERSION: "0.10.0"
     image: emisar/runner:dev

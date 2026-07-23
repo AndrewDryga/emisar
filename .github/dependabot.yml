@@ -62,7 +62,7 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/portal"
-      - "/runner"
+      - "/dev/runner"
       - "/mcp"
       - "/dev/cloud-init"
       - "/dev/test-packs"
