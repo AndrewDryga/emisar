@@ -71,7 +71,7 @@ Common feedback commands:
 ./run gate infra
 ./run gate tooling
 ./run gate all
-./run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
+./run shot /pricing --label after --heading Pricing --group pricing
 ./run capture console
 ./run capture docs
 ./run e2e sso
@@ -145,14 +145,19 @@ the active workspace, including inside Coop:
 
 `shot` accepts a stable `data-shot` name, a CSS selector, an exact heading, or a
 class fragment as its crop anchor. Use `--width 390` for a mobile capture and
-put before/after artifacts under the owning task's screenshot directory.
+`--group <name>` for a task-local capture set. It writes into the sole
+in-progress task's `screenshots/` directory; use `--task <id>` when several
+tasks are active. With no active task, create and claim even a basic one before
+capturing.
 
 `./run capture docs` regenerates the cropped console screenshots embedded in
 the documentation. `./run capture console` walks the signed-out and
-authenticated console at desktop and mobile widths. Both require an active
-seeded workspace and reuse the persistent browser. Automated Chromium allows
-only the active Keycloak leaf certificate's SPKI; certificate validation is not
-disabled globally.
+authenticated console at desktop and mobile widths, writing the audit under the
+active task's `screenshots/console-audit/` directory. Both require an active
+seeded workspace and reuse the persistent browser. Documentation captures are
+committed product assets, while console captures are disposable task evidence.
+Automated Chromium allows only the active Keycloak leaf certificate's SPKI;
+certificate validation is not disabled globally.
 
 The same Go implementation carries the real Paddle sandbox browser driver,
 exposed as `./run e2e billing`. Its ignored credentials remain in

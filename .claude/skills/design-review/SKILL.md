@@ -23,9 +23,10 @@ Prefer all of these:
 - The changed files or diff.
 - The target conversion goal and SEO intent.
 
-If screenshots are missing and the site can run locally, render it and capture
-them before judging. If rendering is blocked, say so and review the code with
-lower confidence.
+If screenshots are missing and the site can run locally, ensure the review has
+a claimed task (create a basic one when needed), then render it and capture into
+that task's `screenshots/` directory before judging. If rendering is blocked,
+say so and review the code with lower confidence.
 
 ## Review Passes
 

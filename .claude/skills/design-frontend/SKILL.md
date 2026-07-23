@@ -65,7 +65,9 @@ honest.
 When the user points at something broken on a rendered surface, the fix ships
 with before/after screenshot proof — and the BEFORE shot comes before any edit
 (the broken state is unrecoverable once the fix deploys). Shoot the element from
-the active workspace with `./run shot` (`--label before`), fix,
+the active workspace with `./run shot` (`--label before`), using the current
+task's `screenshots/` directory (create and claim a basic task first when none
+exists), fix,
 rebuild the stack, re-shoot (`--label after`, full page + element crop), verify
 the pixels yourself, then hand the user both paths for review. Full workflow:
 `portal/.agent/kb/rules/design-ui-fix-screenshot-proof.md`.

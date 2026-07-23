@@ -126,21 +126,28 @@ func (a *App) browserCommand(ctx context.Context, args []string) error {
 	}
 }
 
-func parseShot(args []string, root string) (devbrowser.ShotOptions, error) {
-	options := devbrowser.ShotOptions{Out: filepath.Join(root, ".agent", "screenshots", "scratch"), Width: 1440}
+type shotCommand struct {
+	options devbrowser.ShotOptions
+	taskID  string
+	group   string
+}
+
+func parseShot(args []string) (shotCommand, error) {
+	command := shotCommand{options: devbrowser.ShotOptions{Width: 1440}}
 	flags := flag.NewFlagSet("shot", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	shot, selector, heading, classContains, climb := "", "", "", "", ""
 	settle := 0
-	flags.StringVar(&options.Label, "label", "", "")
-	flags.StringVar(&options.Out, "out", options.Out, "")
+	flags.StringVar(&command.options.Label, "label", "", "")
+	flags.StringVar(&command.taskID, "task", "", "")
+	flags.StringVar(&command.group, "group", "", "")
 	flags.StringVar(&shot, "shot", "", "")
 	flags.StringVar(&selector, "select", "", "")
 	flags.StringVar(&heading, "heading", "", "")
 	flags.StringVar(&classContains, "class-contains", "", "")
 	flags.StringVar(&climb, "climb", "", "")
-	flags.StringVar(&options.Click, "click", "", "")
-	flags.Int64Var(&options.Width, "width", 1440, "")
+	flags.StringVar(&command.options.Click, "click", "", "")
+	flags.Int64Var(&command.options.Width, "width", 1440, "")
 	flags.IntVar(&settle, "settle", 0, "")
 	path := ""
 	flagArgs := make([]string, 0, len(args))
@@ -155,31 +162,34 @@ func parseShot(args []string, root string) (devbrowser.ShotOptions, error) {
 			flagArgs = append(flagArgs, args[index])
 		}
 	}
-	if err := flags.Parse(flagArgs); err != nil || path == "" || options.Label == "" || flags.NArg() != 0 {
-		return options, usage("usage: ./run shot <path> --label <before|after> [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL] [--width N] [--settle MS] [--out DIR]")
+	if err := flags.Parse(flagArgs); err != nil || path == "" || command.options.Label == "" || flags.NArg() != 0 {
+		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL] [--width N] [--settle MS]")
 	}
-	options.Path = path
-	options.Settle = time.Duration(settle) * time.Millisecond
+	command.options.Path = path
+	command.options.Settle = time.Duration(settle) * time.Millisecond
 	if shot != "" {
 		selector = `[data-shot='` + strings.ReplaceAll(shot, `'`, `\'`) + `']`
 	}
 	if selector != "" || heading != "" || classContains != "" {
-		options.Anchor = &devbrowser.Anchor{Selector: selector, Heading: heading, Climb: climb}
+		command.options.Anchor = &devbrowser.Anchor{Selector: selector, Heading: heading, Climb: climb}
 		if classContains != "" {
-			options.Anchor.ClassContains = strings.Split(classContains, ",")
+			command.options.Anchor.ClassContains = strings.Split(classContains, ",")
 		}
 	}
-	if !filepath.IsAbs(options.Out) {
-		options.Out = filepath.Join(root, options.Out)
-	}
-	return options, nil
+	return command, nil
 }
 
 func (a *App) shot(ctx context.Context, args []string) error {
-	options, err := parseShot(args, a.Root)
+	command, err := parseShot(args)
 	if err != nil {
 		return err
 	}
+	task, output, err := a.screenshotOutput(command.taskID, command.group)
+	if err != nil {
+		return err
+	}
+	command.options.Out = output
+	fmt.Fprintf(a.Out, "screenshot task %s -> %s\n", task.ID, output)
 	manager, workspace, err := a.startBrowser(ctx)
 	if err != nil {
 		return err
@@ -189,7 +199,7 @@ func (a *App) shot(ctx context.Context, args []string) error {
 		return err
 	}
 	defer session.Close()
-	paths, err := session.Shot(options)
+	paths, err := session.Shot(command.options)
 	if err != nil {
 		return err
 	}

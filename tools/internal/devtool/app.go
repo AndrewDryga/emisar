@@ -24,8 +24,8 @@ const usageText = `usage: ./run <command> [args]
   certs [--rotate|trust|untrust|status]
                            manage ignored Keycloak certificates and host trust
   browser <start|stop|status>
-  shot <path> ...          capture through the persistent browser
-  capture <docs|console>   run a full screenshot workflow against this workspace
+  shot <path> ...          capture proof into the active task's screenshots
+  capture <docs|console>   capture task-owned console proof or committed docs assets
   e2e <sso|signing|billing>
                            run a cross-component development scenario
   ops <portal|database|drill> ...

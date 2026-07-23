@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b`)
+	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b|\.agent/screenshots\b`)
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
 	publicMCPTool   = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
 	cardPolicy      = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
@@ -149,7 +149,8 @@ func (c *checker) files(paths []string) []string {
 
 func (c *checker) checkManualText() {
 	paths := []string{
-		"AGENTS.md", ".claude/skills", "skills", "portal/AGENTS.md",
+		"AGENTS.md", "dev/README.md", ".claude/skills", "skills", "portal/AGENTS.md",
+		"portal/.agent/kb/rules/design-ui-fix-screenshot-proof.md",
 		"runner/AGENTS.md", "mcp/AGENTS.md", "packs/AGENTS.md", "infra/AGENTS.md",
 	}
 	findings := c.scan(paths, staleManualText)
@@ -157,7 +158,7 @@ func (c *checker) checkManualText() {
 		fmt.Fprintln(c.errOut, finding)
 	}
 	if len(findings) > 0 {
-		c.fail("manuals or skills still mention stale Coop task commands/state names")
+		c.fail("manuals or skills still mention stale task commands or screenshot paths")
 	}
 }
 
@@ -737,7 +738,7 @@ func hasJSONKey(value any, key string) bool {
 
 func (c *checker) run(requireCoop bool) int {
 	c.checkLinks()
-	c.group("manuals and skills use current Coop task commands/state names", c.checkManualText)
+	c.group("manuals and skills use current task commands and screenshot paths", c.checkManualText)
 	c.group("skills use current review commands and product/security wording", c.checkSkillText)
 	if _, err := exec.LookPath("coop"); err == nil {
 		c.group("Coop task commands and queue listing work", c.checkCoop)

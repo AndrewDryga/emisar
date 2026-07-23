@@ -190,6 +190,99 @@ func TestBrowserCacheRootIsStableAndWorkspaceSpecific(t *testing.T) {
 	}
 }
 
+func TestScreenshotOutputUsesTheOnlyInProgressTask(t *testing.T) {
+	app := testApp(t)
+	task := filepath.Join(app.Root, "portal", ".agent", "tasks", "10_in_progress", "task-one")
+	if err := os.MkdirAll(task, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	selected, output, err := app.screenshotOutput("", "pricing/mobile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "task-one" {
+		t.Fatalf("selected task = %q", selected.ID)
+	}
+	want := filepath.Join(task, "screenshots", "pricing", "mobile")
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
+func TestScreenshotOutputRequiresAnInProgressTask(t *testing.T) {
+	app := testApp(t)
+
+	_, _, err := app.screenshotOutput("", "")
+	if err == nil || !strings.Contains(err.Error(), "coop tasks add") || !strings.Contains(err.Error(), "coop tasks claim") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestScreenshotOutputRequiresTaskSelectionWhenSeveralAreActive(t *testing.T) {
+	app := testApp(t)
+	for _, path := range []string{
+		filepath.Join(app.Root, ".agent", "tasks", "10_in_progress", "root-task"),
+		filepath.Join(app.Root, "portal", ".agent", "tasks", "10_in_progress", "portal-task"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, _, err := app.screenshotOutput("", ""); err == nil || !strings.Contains(err.Error(), "--task <id>") {
+		t.Fatalf("ambiguous task error = %v", err)
+	}
+	selected, output, err := app.screenshotOutput("portal-task", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "portal-task" || output != filepath.Join(selected.Path, "screenshots") {
+		t.Fatalf("selection = %#v, output = %q", selected, output)
+	}
+}
+
+func TestScreenshotOutputRejectsEscapingGroup(t *testing.T) {
+	app := testApp(t)
+	if err := os.MkdirAll(filepath.Join(app.Root, ".agent", "tasks", "10_in_progress", "task-one"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := app.screenshotOutput("", "../elsewhere"); err == nil || !strings.Contains(err.Error(), "must stay inside") {
+		t.Fatalf("escaping group error = %v", err)
+	}
+}
+
+func TestParseShotRejectsArbitraryOutputDirectory(t *testing.T) {
+	_, err := parseShot([]string{"/pricing", "--label", "after", "--out", ".agent/screenshots/pricing"})
+	if err == nil || !IsUsage(err) {
+		t.Fatalf("parse error = %v", err)
+	}
+}
+
+func TestParseShotAcceptsTaskOwnedGrouping(t *testing.T) {
+	command, err := parseShot([]string{
+		"/pricing", "--label", "after", "--task", "task-one", "--group", "pricing/mobile", "--heading", "Pricing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.taskID != "task-one" || command.group != "pricing/mobile" || command.options.Path != "/pricing" {
+		t.Fatalf("command = %#v", command)
+	}
+	if command.options.Anchor == nil || command.options.Anchor.Heading != "Pricing" {
+		t.Fatalf("anchor = %#v", command.options.Anchor)
+	}
+}
+
+func TestCaptureConsoleRequiresTaskBeforeStartingBrowser(t *testing.T) {
+	app := testApp(t)
+	err := app.capture(t.Context(), []string{"console"})
+	if err == nil || !strings.Contains(err.Error(), "in-progress task") {
+		t.Fatalf("capture error = %v", err)
+	}
+}
+
 func TestHelpPrintsFocusedGateCommands(t *testing.T) {
 	var out bytes.Buffer
 	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})

@@ -34,6 +34,12 @@ func hasFailure(check *checker, text string) bool {
 	return false
 }
 
+func TestStaleManualTextRejectsGlobalScreenshotDirectory(t *testing.T) {
+	if !staleManualText.MatchString("write to .agent/screenshots/example") {
+		t.Fatal("global screenshot directory is not treated as stale guidance")
+	}
+}
+
 func TestParseFrontmatter(t *testing.T) {
 	metadata, err := parseFrontmatter([]byte("---\nname: workflow-test\ndescription: Test workflow\neffort: high\nallowed-tools: Read, Bash\n---\nbody\n"))
 	if err != nil {
