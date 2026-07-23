@@ -5,6 +5,7 @@
     <.docs_layout
       current="mcp-reference"
       toc={[
+        {"calling-the-endpoint", "Calling the endpoint"},
         {"protocol-methods", "Protocol methods"},
         {"tools", "Twelve fixed tools"},
         {"discovery", "Discovery"},
@@ -26,6 +27,21 @@
       </.docs_header>
 
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
+        <h2 id="calling-the-endpoint">Calling the endpoint</h2>
+        <p>
+          A custom client authenticates with an <code>emk-</code>
+          API key (mint one from <.link navigate={~p"/docs/keys"}>API keys</.link>) and POSTs
+          JSON-RPC to a single endpoint. Send <code>initialize</code>, then
+          <code>tools/list</code>
+          and <code>tools/call</code>
+          — the full contract is below.
+        </p>
+        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
+<span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
+    -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
+    -H <span class="text-brand-300">"Content-Type: application/json"</span> \
+    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
+
         <h2 id="protocol-methods">Protocol methods</h2>
         <p>
           emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP. The current negotiated protocol is <code>2025-11-25</code>;

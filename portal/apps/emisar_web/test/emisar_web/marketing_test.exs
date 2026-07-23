@@ -899,21 +899,15 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "GET /api/mcp/runners"
     end
 
-    test "the CLI-client page renders the verbatim install + endpoint references",
-         %{conn: conn} do
+    test "the CLI-client page renders the verbatim bridge install command", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
 
-      # The bridge install command + remote endpoint + direct JSON-RPC methods
-      # an operator copies verbatim. (The install URL is wrapped in a
-      # syntax-highlight span, so assert the URL and the `| sudo bash` tail
-      # as separate stable pieces rather than one contiguous literal.)
-      assert html =~ "https://emisar.dev/api/mcp/rpc"
+      # The bridge install command an operator copies verbatim. (The install URL
+      # is wrapped in a syntax-highlight span, so assert the URL and the
+      # `| sudo bash` tail as separate stable pieces, not one contiguous literal.)
       assert html =~ "curl -sSL"
       assert html =~ "https://emisar.dev/install-mcp.sh"
       assert html =~ "| sudo bash"
-      assert html =~ "tools/list"
-      assert html =~ "tools/call"
-      refute html =~ "GET /api/mcp/runners"
     end
 
     test "the quickstart renders the install command pinned to the TLS endpoint", %{conn: conn} do
@@ -1058,6 +1052,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "signed_runbook_unsupported"
       assert html =~ "256 runs total"
       assert html =~ "first wave commits"
+
+      # The "Calling the endpoint" on-ramp — the verbatim curl a custom client copies.
+      assert html =~ "curl -X POST"
+      assert html =~ "https://emisar.dev/api/mcp/rpc"
+      assert html =~ "Authorization: Bearer"
+      refute html =~ "GET /api/mcp/runners"
     end
 
     test "the teams-and-access page renders all four roles", %{conn: conn} do

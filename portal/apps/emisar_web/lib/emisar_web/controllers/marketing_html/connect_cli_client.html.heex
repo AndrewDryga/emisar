@@ -6,8 +6,7 @@
       current="connect-a-cli-client"
       toc={[
         {"api-key", "Mint an API key"},
-        {"stdio-bridge", "Set up a stdio client"},
-        {"direct-http", "Direct MCP over HTTP"}
+        {"stdio-bridge", "Set up a stdio client"}
       ]}
     >
       <.docs_header current="connect-a-cli-client">
@@ -15,7 +14,7 @@
           Local AI agents — Claude Desktop, Claude Code, Cursor, Windsurf, Zed, and a dozen
           CLIs — reach your catalog through the tiny
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">emisar-mcp</code>
-          stdio bridge, or a raw bearer token over plain HTTP. Both authenticate with an
+          stdio bridge, authenticated with an
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">emk-</code>
           API key.
         </:dek>
@@ -85,8 +84,10 @@
           <p>
             The cloud connectors — <strong class="text-zinc-400">Claude.ai and ChatGPT</strong>
             — do <strong>not</strong>
-            need an API key; they authenticate with OAuth. Mint a key only
-            for the stdio bridge or plain-HTTP clients below.
+            need an API key; they authenticate with OAuth. Mint a key for the
+            stdio bridge — or for a custom client that calls the <.link navigate={
+              ~p"/docs/mcp-reference"
+            }>MCP endpoint directly</.link>.
           </p>
         </.docs_callout>
       </section>
@@ -343,37 +344,6 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             enforcing runner.
           </p>
         </.docs_callout>
-      </section>
-
-      <%!-- ============================================================ --%>
-      <%!-- Direct Streamable HTTP MCP                                    --%>
-      <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="direct-http">Direct MCP over HTTP</.docs_h2>
-
-        <p class="mt-4 text-base text-zinc-400">
-          A custom MCP client can call the same Streamable HTTP endpoint with
-          an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
-          key from above. Tool discovery, calls, retries, and recovery all use
-          the standard JSON-RPC MCP contract.
-        </p>
-
-        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
-<span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
-    -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
-    -H <span class="text-brand-300">"Content-Type: application/json"</span> \
-    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
-
-        <p class="mt-4 text-base text-zinc-400">
-          Send <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
-          then use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>
-          and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>.
-          Every action dispatch must include a
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
-          — it's logged to the audit trail and shown to approvers. Mutation
-          retries are recovered through the operation ID returned by the MCP
-          contract; clients do not invent a second retry key.
-        </p>
       </section>
     </.docs_layout>
   </section>
