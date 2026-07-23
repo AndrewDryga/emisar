@@ -1,5 +1,5 @@
-# docker-compose.yml — local dev stack for testing the full emisar
-# topology end-to-end. Boots Postgres + the Phoenix control plane
+# docker-compose.yml — packaged smoke/e2e stack for testing the full emisar
+# topology end-to-end. Boots Postgres + the Phoenix release
 # + a one-shot DB seeder + three runners + the MCP bridge image.
 #
 # ╔════════════════════════════════════════════════════════════════╗

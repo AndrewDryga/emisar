@@ -51,6 +51,47 @@ rm -f "$TMP/certs/generated/ca.key" "$TMP/certs/generated/ca.crt"
   fail "generation kept a leaf signed by the missing CA"
 openssl verify -CAfile "$TMP/certs/generated/ca.crt" "$TMP/certs/generated/tls.crt" >/dev/null
 
+DEV_RUN_FUNCTIONS="$TMP/dev-run-functions"
+awk '/^cmd=/{exit} {print}' "$ROOT/dev/run" >"$DEV_RUN_FUNCTIONS"
+
+test_active_serve_owner() {
+  local TMPDIR="$TMP/runtime-active" XDG_RUNTIME_DIR=""
+  export TMPDIR XDG_RUNTIME_DIR
+  # shellcheck disable=SC1090
+  source "$DEV_RUN_FUNCTIONS"
+  claim_serve 43123 "http://localhost:43123"
+  owner_pid=$(sed -n '1p' "$SERVE_OWNER_DIR/pid")
+  [[ "$owner_pid" == "$$" ]] || fail "serve ownership recorded the wrong PID"
+
+  set +e
+  owner_error=$(claim_serve 43123 "http://localhost:43123" 2>&1)
+  owner_status=$?
+  set -e
+  [[ $owner_status -ne 0 ]] || fail "a second serve process claimed an active workspace"
+  [[ "$owner_error" == *"pid $owner_pid"* ]] || fail "active serve error omitted the owner PID"
+  [[ "$owner_error" != *"Waiting for lock"* ]] || fail "active serve reached Mix's build lock"
+
+  release_serve
+  [[ ! -e "$(serve_owner_path 43123)" ]] || fail "serve ownership survived clean release"
+}
+
+test_stale_serve_owner() {
+  local TMPDIR="$TMP/runtime-stale" XDG_RUNTIME_DIR="" stale_owner
+  export TMPDIR XDG_RUNTIME_DIR
+  # shellcheck disable=SC1090
+  source "$DEV_RUN_FUNCTIONS"
+  stale_owner=$(serve_owner_path 43124)
+  mkdir -p "$stale_owner"
+  printf '99999999\n' >"$stale_owner/pid"
+  claim_serve 43124 "http://localhost:43124"
+  [[ "$(sed -n '1p' "$SERVE_OWNER_DIR/pid")" == "$$" ]] ||
+    fail "serve did not replace stale ownership"
+  release_serve
+}
+
+test_active_serve_owner
+test_stale_serve_owner
+
 PACK_ROOT="$TMP/pack-repo"
 mkdir -p \
   "$PACK_ROOT/dev" \

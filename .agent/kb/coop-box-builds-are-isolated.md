@@ -32,7 +32,13 @@ confusing, hard-to-attribute failures:
    emisar's own apps still compile inside the scanned steps, so our warnings are still
    caught.
 
-4. **OIDC keeps one issuer:** Keycloak sees the same forwarded
+4. **Serve has one owner:** `dev/run serve` atomically records the launcher PID
+   in a runtime directory scoped by workspace and listen port. A second launcher
+   reports that PID before invoking Mix, dead records are reclaimed, and occupied
+   Phoenix/metrics ports fail before database preparation. The launcher's signal
+   traps terminate Phoenix, its Coop-side proxies, and the ownership record.
+
+5. **OIDC keeps one issuer:** Keycloak sees the same forwarded
    `https://localhost:<workspace-port>` Host header from the host browser and the box.
    `dev/run` patches one exact callback URL for that workspace and installs the ignored
    dev CA beside the system roots for Erlang. Dynamic hostname acceptance and the
@@ -46,6 +52,8 @@ setup into this repo would duplicate Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-07-22 — added fail-fast serve ownership and listener checks after an
+  abandoned launcher kept an unhealthy Phoenix process and Mix build lock alive.
 - 2026-07-22 — unified host and box sidecars/URLs, moved the box onto Coop's base,
   and added the dynamic Keycloak issuer/callback trust path.
 - 2026-07-16 — created, from the first full in-box gate matrix (all five projects green:

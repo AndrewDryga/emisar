@@ -13,6 +13,61 @@ die() { echo "dev/run: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing $1"; }
 in_box() { [[ -f /.dockerenv && -n "${COOP_SERVE_URL_4000:-}" ]]; }
 
+serve_owner_path() {
+  local runtime_root workspace_key
+  runtime_root=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+  workspace_key=$(printf '%s' "$ROOT" | cksum | awk '{print $1}')
+  printf '%s/emisar-dev-%s/%s/serve-%s\n' \
+    "$runtime_root" "$(id -u)" "$workspace_key" "$1"
+}
+
+serve_owner_is_active() {
+  local pid=$1 expected_started=$2 started
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  started=$(ps -p "$pid" -o lstart= 2>/dev/null) || return 1
+  [[ -n "$expected_started" && "$started" == "$expected_started" ]]
+}
+
+claim_serve() {
+  local port=$1 url=$2 owner_dir pid expected_started stale started
+  owner_dir=$(serve_owner_path "$port")
+  mkdir -p "$(dirname "$owner_dir")"
+
+  if ! mkdir "$owner_dir" 2>/dev/null; then
+    pid=$(sed -n '1p' "$owner_dir/pid" 2>/dev/null || true)
+    expected_started=$(sed -n '2p' "$owner_dir/pid" 2>/dev/null || true)
+    if serve_owner_is_active "$pid" "$expected_started"; then
+      die "Phoenix already belongs to dev/run serve at $url (pid $pid); stop it with: kill $pid"
+    fi
+
+    stale="${owner_dir}.stale.$$"
+    mv "$owner_dir" "$stale" 2>/dev/null ||
+      die "another dev/run serve is claiming $url; try again"
+    rm -rf "$stale"
+    mkdir "$owner_dir" 2>/dev/null ||
+      die "another dev/run serve claimed $url"
+  fi
+
+  started=$(ps -p "$$" -o lstart=)
+  printf '%s\n%s\n' "$$" "$started" >"$owner_dir/pid"
+  SERVE_OWNER_DIR=$owner_dir
+}
+
+release_serve() {
+  [[ -n "${SERVE_OWNER_DIR:-}" ]] || return 0
+  local pid
+  pid=$(sed -n '1p' "$SERVE_OWNER_DIR/pid" 2>/dev/null || true)
+  if [[ "$pid" == "$$" ]]; then
+    rm -rf "$SERVE_OWNER_DIR"
+  fi
+  SERVE_OWNER_DIR=""
+}
+
+port_is_listening() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
+}
+
 usage() {
   cat <<'EOF'
 usage: dev/run <command> [args]
@@ -337,39 +392,78 @@ reset_database() {
 
 serve() {
   up
-  wait_for_dependencies
-  configure_keycloak
-  prepare_database
 
-  local listen_port listen_ip metrics_port portal_proxy_pid="" metrics_proxy_pid=""
+  local listen_port listen_ip metrics_port portal_proxy_pid="" metrics_proxy_pid="" phoenix_pid=""
+  local portal_public_port metrics_public_port
   if in_box; then
     need socat
     listen_port=4000
     metrics_port=9091
     listen_ip=0.0.0.0
-    local portal_public_port=${PORTAL_URL##*:} metrics_public_port=${METRICS_URL##*:}
-    socat "TCP-LISTEN:${portal_public_port},bind=127.0.0.1,fork,reuseaddr" \
-      "TCP:127.0.0.1:${listen_port}" >/dev/null 2>&1 &
-    portal_proxy_pid=$!
-    socat "TCP-LISTEN:${metrics_public_port},bind=127.0.0.1,fork,reuseaddr" \
-      "TCP:127.0.0.1:${metrics_port}" >/dev/null 2>&1 &
-    metrics_proxy_pid=$!
+    portal_public_port=${PORTAL_URL##*:}
+    metrics_public_port=${METRICS_URL##*:}
   else
     listen_port=${PORTAL_URL##*:}
     metrics_port=${METRICS_URL##*:}
     listen_ip=127.0.0.1
   fi
 
+  claim_serve "$listen_port" "$PORTAL_URL"
   cleanup_serve() {
+    if [[ -n "${phoenix_pid:-}" ]] && kill -0 "$phoenix_pid" 2>/dev/null; then
+      local _
+      kill "$phoenix_pid" >/dev/null 2>&1 || true
+      for _ in {1..50}; do
+        kill -0 "$phoenix_pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      kill -KILL "$phoenix_pid" >/dev/null 2>&1 || true
+      wait "$phoenix_pid" 2>/dev/null || true
+    fi
     [[ -z "${portal_proxy_pid:-}" ]] || kill "$portal_proxy_pid" >/dev/null 2>&1 || true
     [[ -z "${metrics_proxy_pid:-}" ]] || kill "$metrics_proxy_pid" >/dev/null 2>&1 || true
+    release_serve
+    return 0
   }
   trap cleanup_serve EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+
+  port_is_listening "$listen_port" &&
+    die "cannot serve at $PORTAL_URL: port $listen_port is already held by an untracked process"
+  port_is_listening "$metrics_port" &&
+    die "cannot serve metrics: port $metrics_port is already held by an untracked process"
+
+  wait_for_dependencies
+  configure_keycloak
+  prepare_database
+
+  if in_box; then
+    port_is_listening "$portal_public_port" &&
+      die "cannot proxy $PORTAL_URL: port $portal_public_port is already in use"
+    port_is_listening "$metrics_public_port" &&
+      die "cannot proxy $METRICS_URL: port $metrics_public_port is already in use"
+    socat "TCP-LISTEN:${portal_public_port},bind=127.0.0.1,fork,reuseaddr" \
+      "TCP:127.0.0.1:${listen_port}" >/dev/null 2>&1 &
+    portal_proxy_pid=$!
+    socat "TCP-LISTEN:${metrics_public_port},bind=127.0.0.1,fork,reuseaddr" \
+      "TCP:127.0.0.1:${metrics_port}" >/dev/null 2>&1 &
+    metrics_proxy_pid=$!
+  fi
+
   echo "✓ serving Phoenix at $PORTAL_URL"
   local status=0
-  (cd "$PORTAL" && METRICS_PORT="$metrics_port" EMISAR_LISTEN_PORT="$listen_port" EMISAR_LISTEN_IP="$listen_ip" mix phx.server) || status=$?
+  (
+    cd "$PORTAL"
+    exec env METRICS_PORT="$metrics_port" EMISAR_LISTEN_PORT="$listen_port" \
+      EMISAR_LISTEN_IP="$listen_ip" mix phx.server
+  ) &
+  phoenix_pid=$!
+  wait "$phoenix_pid" || status=$?
+  phoenix_pid=""
   cleanup_serve
-  trap - EXIT
+  trap - EXIT INT TERM HUP
   return "$status"
 }
 

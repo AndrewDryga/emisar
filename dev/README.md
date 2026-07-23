@@ -5,6 +5,21 @@ of this ships with production releases — the runner tarball
 produced by the release workflow contains exactly the runner binary and its
 config skeleton.
 
+## Compose topologies
+
+The repository has three intentionally separate Compose environments:
+
+- `dev/compose.yml` runs PostgreSQL and Keycloak for the fast host-native and
+  Coop development loop.
+- `docker-compose.yml` builds the packaged Portal release and runs the seeded
+  demo, runners, MCP, and signing smoke tests.
+- `dev/test-packs/docker-compose.yaml` runs real backing services for action-pack
+  integration tests.
+
+The application server stays out of the fast dependency stack, while the
+packaged stack verifies the release image and the pack harness remains isolated
+from both application environments.
+
 ## Fast development loop
 
 `dev/run` is the shared human/agent command surface. `compose.yml` contains the
@@ -25,6 +40,11 @@ dev/run setup
 dev/run seed
 dev/run serve
 ```
+
+`serve` records one owner per workspace and exits before running Mix when that
+owner is still alive. Its error includes the PID to stop. Dead ownership records
+are reclaimed automatically, and an untracked listener on either Phoenix port
+fails immediately instead of leaving later Mix commands waiting on a build lock.
 
 Common feedback commands:
 
