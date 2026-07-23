@@ -37,6 +37,8 @@ var docShots = []docShot{
 	{"sso-add-connection", "docs/sso/sso-add-connection.webp", 850},
 	{"sso-directory-sync", "docs/sso/sso-directory-sync.webp", 0},
 	{"connect-llm-agents", "screenshots/connect-llm-agents.webp", 820},
+	{"runs", "screenshots/runs.webp", 0},
+	{"agents", "screenshots/agents.webp", 0},
 }
 
 var rgbPattern = regexp.MustCompile(`\d+`)
@@ -144,6 +146,8 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		{"/app/demo/runners", Anchor{Selector: "#runners"}, "runner-fleet"},
 		{"/app/demo/settings/team", Anchor{Selector: "#members", Climb: "section"}, "team-page"},
 		{"/app/demo/settings/sso/new", Anchor{Selector: "#provider_form"}, "sso-add-connection"},
+		{"/app/demo/runs", Anchor{Selector: "#runs"}, "runs"},
+		{"/app/demo/agents", Anchor{Selector: "#agents"}, "agents"},
 	}
 	for _, step := range steps {
 		if err := crop(step.path, step.anchor, step.name); err != nil {
