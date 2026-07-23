@@ -32,7 +32,7 @@ and the upgrade path from older versions is non-trivial.
 
 ## Threat model
 
-See [`docs/security-model.md`](../docs/security-model.md) for the
+See [the security model](../.agent/kb/specs/security-model.md) for the
 deliberate scope: what emisar protects against, what it does NOT
 protect against, and what operators are expected to provide.
 
@@ -46,7 +46,7 @@ the runner executed something it should have refused are.
 ## Credential incidents
 
 Operators responding to a suspected credential exposure should follow the
-[key-compromise response runbook](../docs/key-compromise.md). It separates
+[key-compromise response runbook](../.agent/kb/runbooks/key-compromise.md). It separates
 runner enrollment, publisher, provider, portal, DNSSEC, and dispatch-signing
 rotation so one containment action does not silently leave another credential
 usable.

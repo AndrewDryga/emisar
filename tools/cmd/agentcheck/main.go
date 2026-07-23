@@ -1,7 +1,7 @@
 // Command agentcheck verifies the repository's shared agent configuration:
 // canonical instruction links, Coop task conventions, contributor/customer
-// skill metadata, descriptive KB cards, public MCP tool references, and
-// scoped workflow hooks.
+// skill metadata, KB ownership, public MCP tool references, and scoped
+// workflow hooks.
 package main
 
 import (
@@ -394,12 +394,21 @@ func isInternalKnowledge(relative string) bool {
 	return strings.HasPrefix(relative, ".agent/kb/internal/") || strings.Contains(relative, "/.agent/kb/internal/")
 }
 
+func isKnowledgeSpec(relative string) bool {
+	return strings.HasPrefix(relative, ".agent/kb/specs/") || strings.Contains(relative, "/.agent/kb/specs/")
+}
+
+func isKnowledgeRunbook(relative string) bool {
+	return strings.HasPrefix(relative, ".agent/kb/runbooks/") || strings.Contains(relative, "/.agent/kb/runbooks/")
+}
+
 func isKnowledgeCard(relative string, entry fs.DirEntry) bool {
 	if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(entry.Name(), ".md") {
 		return false
 	}
 	isKnowledge := strings.HasPrefix(relative, ".agent/kb/") || strings.Contains(relative, "/.agent/kb/")
-	return isKnowledge && !isKnowledgeRule(relative) && !isInternalKnowledge(relative)
+	return isKnowledge && !isKnowledgeRule(relative) && !isInternalKnowledge(relative) &&
+		!isKnowledgeSpec(relative) && !isKnowledgeRunbook(relative)
 }
 
 func isLegacyKnowledgeDirectory(relative string) bool {
@@ -420,6 +429,10 @@ func (c *checker) checkKnowledgeCards() {
 		"runner":      true,
 	}
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
+		if entry.IsDir() && relative == "docs" {
+			c.fail("retired docs/ is back; repository knowledge lives under .agent/kb")
+			return
+		}
 		if entry.IsDir() && isLegacyKnowledgeDirectory(relative) {
 			c.fail("retired %s is back; durable knowledge lives under .agent/kb", relative)
 			return
@@ -584,7 +597,7 @@ func (c *checker) checkPublicSkills() {
 }
 
 func (c *checker) checkPublicSkillMCPTools() {
-	const schemaPath = "docs/mcp-api-schemas.json"
+	const schemaPath = "portal/apps/emisar_web/priv/mcp/api-schemas.json"
 	data, err := os.ReadFile(c.path(schemaPath))
 	if err != nil {
 		c.fail("%s is required to validate MCP tool names in public skills", schemaPath)
@@ -676,10 +689,10 @@ func (c *checker) run(requireCoop bool) int {
 	}
 	c.group("task queues use expected state names", c.checkTaskDirs)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
-	c.group("public knowledge cards carry descriptive metadata; internal material stays separate", c.checkKnowledgeCards)
+	c.group("repository knowledge uses the KB layout and descriptive cards carry metadata", c.checkKnowledgeCards)
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
-	c.group("public skill MCP tool names exist in docs/mcp-api-schemas.json", c.checkPublicSkillMCPTools)
+	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
 	c.group("sweep Stop guard is skill-scoped; no retired global guard/sentinel", c.checkSweepGuard)
 	if len(c.failures) > 0 {
 		fmt.Fprintf(c.errOut, "\nAgent setup audit failed: %d issue(s)\n", len(c.failures))

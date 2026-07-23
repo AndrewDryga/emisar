@@ -87,7 +87,7 @@ changes.
   permitted call.
 
 Read the exact guarantees, limitations, and threat model in
-[`docs/security-model.md`](docs/security-model.md).
+[`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).
 
 ## What emisar is not
 
@@ -113,8 +113,8 @@ and should not be installed on production runners.
 | Inspect or develop the stdio bridge | [`mcp/README.md`](mcp/README.md) |
 | Browse, install, or author action packs | [`packs/README.md`](packs/README.md) |
 | Let an agent install emisar, connect a client, or author a pack | [`skills/README.md`](skills/README.md) |
-| Review architecture and trust boundaries | [`docs/architecture.md`](docs/architecture.md) |
-| Review protocol contracts | [`docs/wire-protocol.md`](docs/wire-protocol.md) and [`docs/mcp-api-spec.md`](docs/mcp-api-spec.md) |
+| Review architecture and trust boundaries | [`.agent/kb/architecture.md`](.agent/kb/architecture.md) |
+| Review protocol contracts | [`.agent/kb/specs/wire-protocol.md`](.agent/kb/specs/wire-protocol.md) and [`.agent/kb/specs/mcp-api.md`](.agent/kb/specs/mcp-api.md) |
 | Contribute to the control plane | [`portal/README.md`](portal/README.md) |
 | Review the production GCP infrastructure | [`infra/README.md`](infra/README.md) |
 
@@ -128,7 +128,8 @@ packs/    Versioned action-pack catalog
 skills/   Standalone customer skills for coding agents
 infra/    Production Terraform for emisar on Google Cloud
 tools/    Pack-authoring support, repository checks, and maintainer E2E drivers
-docs/     Architecture, security, protocol, release, and distribution references
+distribution/  Published integration manifests, assets, licenses, and package docs
+.agent/kb/     Repository architecture, specifications, runbooks, and rules
 ```
 
 Each top-level project has its own `AGENTS.md` with its architecture, security

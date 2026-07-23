@@ -75,8 +75,8 @@ signoff:
     - A correction from the human during the batch became a rule in the right
       `.agent/kb/rules/` (domain-prefixed filename) — flag any applied once and not recorded.
     - The tree is clean after each commit (git status); nothing untracked smuggled in.
-    - A user-visible change updated the docs it invalidated (docs/, README, or the
-      affected project's docs).
+    - A user-visible change updated the website documentation, README, KB
+      specification/card/runbook, or affected project guide it invalidated.
 
 verify:
   # Verify writes task queues only.

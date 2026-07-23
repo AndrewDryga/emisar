@@ -115,9 +115,10 @@ network failure becomes a correlated JSON-RPC error instead of corrupting the
 client stream.
 
 The portal owns every tool and semantic response. The normative contract is
-[`docs/mcp-api-spec.md`](../docs/mcp-api-spec.md) with machine-readable schemas
-in [`docs/mcp-api-schemas.json`](../docs/mcp-api-schemas.json). Server-side tool
-changes do not require a bridge release.
+[the MCP API specification](../.agent/kb/specs/mcp-api.md) with machine-readable
+schemas in
+[`portal/apps/emisar_web/priv/mcp/api-schemas.json`](../portal/apps/emisar_web/priv/mcp/api-schemas.json).
+Server-side tool changes do not require a bridge release.
 
 ## Transport identity and recovery
 
@@ -171,7 +172,7 @@ replayed, stale, or out-of-scope calls.
 Signing is the only place where the bridge inspects tool semantics. The public
 MCP frame remains unchanged; the attestation travels in a private HTTP header.
 Setup and rotation are documented in
-[`docs/signed-dispatch.md`](../docs/signed-dispatch.md).
+[the signed-dispatch specification](../.agent/kb/specs/signed-dispatch.md).
 
 ## Development
 

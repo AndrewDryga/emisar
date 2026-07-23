@@ -1209,7 +1209,7 @@ defmodule Emisar.Catalog do
       # "low", but the runner that ships the pack authors them: for a pack with a
       # compiled baseline the risk lives inside the trusted hash; for a TOFU pack
       # (no baseline) trusting the hash = trusting the declared risk — an accepted
-      # limitation, like the runner-declared group. See docs/security-model.md.
+      # limitation, like the runner-declared group. See .agent/kb/specs/security-model.md.
       kind: descriptor["kind"] || "exec",
       risk: descriptor["risk"] || "low",
       description: descriptor["description"],

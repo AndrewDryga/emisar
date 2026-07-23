@@ -68,7 +68,7 @@ server-rendered** — that's what crawlers and LLM bots get. Keep it that way:
 ## Honesty rule (this is a security product)
 
 **No overclaiming.** The trust-model limits in the README and
-`docs/security-model.md` are the honesty baseline; marketing must not contradict
+`.agent/kb/specs/security-model.md` are the honesty baseline; marketing must not contradict
 them. Don't imply guarantees the trust model doesn't make. Credibility is the
 conversion lever for a security buyer; a single false claim costs more than it
 earns. Run security-sensitive copy past the `/security-engineer` hat.

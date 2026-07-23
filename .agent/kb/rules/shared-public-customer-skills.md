@@ -13,10 +13,10 @@ repository's internal manuals and tooling. Do not place a customer workflow
 there, even when maintainers also use it.
 
 When a public skill names MCP tools or mechanics, use the canonical names and
-values from `docs/mcp-api-schemas.json` and preserve the live server's
-continuation contract. Follow a returned `next` call verbatim before composing
-another call; compose a new call only for a distinct question the continuation
-does not answer. Do not hand-maintain renamed tool names, enum labels, or
+values from `portal/apps/emisar_web/priv/mcp/api-schemas.json` and preserve the
+live server's continuation contract. Follow a returned `next` call verbatim
+before composing another call; compose a new call only for a distinct question
+the continuation does not answer. Do not hand-maintain renamed tool names, enum labels, or
 derived identifiers in customer instructions.
 
 ## Why
@@ -47,7 +47,7 @@ onboarding and exposes internal process as a false product dependency.
 
 `dev/run check agent-setup` validates the public skill tree,
 portable frontmatter, separation from contributor skill directories, and every
-backticked MCP tool-shaped name against `docs/mcp-api-schemas.json`. Review
-public skill instructions against the live schemas and initialize instructions
-for fields, enum values, and continuation semantics that a name check cannot
-prove.
+backticked MCP tool-shaped name against
+`portal/apps/emisar_web/priv/mcp/api-schemas.json`. Review public skill
+instructions against the live schemas and initialize instructions for fields,
+enum values, and continuation semantics that a name check cannot prove.

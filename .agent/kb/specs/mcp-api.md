@@ -102,7 +102,8 @@ tools may return fewer than the requested
 limit when complete items would exceed the final encoded-frame budget; a cursor
 continues immediately after the last returned item.
 
-[mcp-api-schemas.json](mcp-api-schemas.json) is the normative machine-readable
+[the portal-owned API schema](../../../portal/apps/emisar_web/priv/mcp/api-schemas.json)
+is the normative machine-readable
 source; each `tools` map key is the exact tool name and supplies the exact title,
 description, annotations, input schema, and result schema. The catalog compiler
 bundles only transitively reachable definitions into each self-contained wire
@@ -1684,7 +1685,7 @@ runner, never production actions.
 1. **Trusted catalog**: expand the trusted pack snapshot to the complete bounded
    manifest; add scoped pack, runner, candidate, and exact-action reads.
 2. **Portal MCP boundary**: generate the fixed twelve descriptors from
-   `docs/mcp-api-schemas.json`; publish strict JSON Schema 2020-12
+   `portal/apps/emisar_web/priv/mcp/api-schemas.json`; publish strict JSON Schema 2020-12
    inputs/outputs, common results, live cursors, deterministic search, and
    authenticated operation idempotency without a second signature over HTTPS.
 3. **Operation model**: add durable credential lineages and an operation row

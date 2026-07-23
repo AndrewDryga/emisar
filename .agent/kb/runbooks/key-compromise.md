@@ -88,19 +88,19 @@ registrations and the old key fails at `/runner/register`. If a host's old
 token may have been exposed, replace its runner identity as described above;
 changing only `EMISAR_ENROLLMENT_KEY` does not revoke an already-issued token.
 
-See the runner [installation and connection notes](../runner/README.md#after-install)
+See the runner [installation and connection notes](../../../runner/README.md#after-install)
 for the supported host paths and service layout.
 
 ## MCP Registry publisher key
 
 The private key is the `MCP_PRIVATE_KEY` secret in the protected GitHub
 `mcp-registry-publication` environment. The
-[publication workflow](../.github/workflows/mcp-registry-release.yml) accepts
+[publication workflow](../../../.github/workflows/mcp-registry-release.yml) accepts
 an Ed25519 PEM key or a 64-hex seed, normalizes it, derives the public key, and
 requires it to match the live domain proof before it runs
 `mcp-publisher login http --domain emisar.dev` and publishes `server.json`.
 The matching public key is committed at
-[`portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth`](../portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth)
+[`portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth`](../../../portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth)
 and is served by the portal at
 `https://emisar.dev/.well-known/mcp-registry-auth`.
 
@@ -152,7 +152,7 @@ The application receives these values from sensitive HCP Terraform workspace
 variables. Terraform writes exact Secret Manager versions, and the rendered
 cloud-init names the version explicitly. A variable edit without incrementing
 the matching `local.secret_generations` entry is not a reliable rotation.
-Follow [infra's Secrets procedure](../infra/README.md#secrets): update one
+Follow [infra's Secrets procedure](../../../infra/README.md#secrets): update one
 credential's generation, review the HCP plan, apply it, and watch the managed
 instance group roll to healthy VMs.
 
@@ -236,12 +236,12 @@ treat an HCP Terraform apply as provider rotation.
 
 Use these procedures instead of copying their mechanics into this page:
 
-- [Dispatch signing CA — rotating and revoking](signed-dispatch.md#rotating-and-revoking):
+- [Dispatch signing CA — rotating and revoking](../specs/signed-dispatch.md#rotating-and-revoking):
   add the replacement CA, reload with `SIGHUP`, re-issue certificates, then
   remove the old CA and reload again.
-- [Portal `SECRET_KEY_BASE` and `RELEASE_COOKIE`](../infra/README.md#secrets):
+- [Portal `SECRET_KEY_BASE` and `RELEASE_COOKIE`](../../../infra/README.md#secrets):
   separate generations and separate rollouts; the release cookie must stay
   identical across the serving cluster during its staged cutover.
-- [DNSSEC](../infra/README.md#dns-and-dnssec):
+- [DNSSEC](../../../infra/README.md#dns-and-dnssec):
   activate the child key before publishing the replacement parent DS, and keep
   the old DS until resolver convergence.

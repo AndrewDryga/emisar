@@ -72,7 +72,7 @@ func TestCheckTaskDirsAcceptsLifecycleAndBacklogStates(t *testing.T) {
 
 func TestCheckPublicSkillMCPToolsUsesParsedSchema(t *testing.T) {
 	check := testChecker(t)
-	writeTestFile(t, check.root, "docs/mcp-api-schemas.json", `{"tools":{"list_runners":{}}}`)
+	writeTestFile(t, check.root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", `{"tools":{"list_runners":{}}}`)
 	writeTestFile(t, check.root, "skills/operator/SKILL.md", "Use `list_runners` then `get_runner`.\n")
 
 	check.checkPublicSkillMCPTools()
@@ -171,6 +171,26 @@ func TestCheckKnowledgeCardsSeparatesInternalMaterialAndRejectsLegacyDirectories
 	}
 	if hasFailure(check, ".agent/kb/internal/marketing/launch-plan.md") {
 		t.Fatalf("internal material was parsed as a public descriptive card: %#v", check.failures)
+	}
+}
+
+func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsDocsDirectory(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/specs/wire-protocol.md", "# Protocol\n\nClients must send a version.\n")
+	writeTestFile(t, check.root, ".agent/kb/runbooks/release.md", "# Release\n\nNever publish an unsigned tag.\n")
+	writeTestFile(t, check.root, "docs/stale.md", "# Stale\n")
+
+	check.checkKnowledgeCards()
+
+	if !hasFailure(check, "retired docs/ is back") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+	if hasFailure(check, ".agent/kb/specs/wire-protocol.md") {
+		t.Fatalf("spec was parsed as a descriptive card: %#v", check.failures)
+	}
+	if hasFailure(check, ".agent/kb/runbooks/release.md") {
+		t.Fatalf("runbook was parsed as a descriptive card: %#v", check.failures)
 	}
 }
 

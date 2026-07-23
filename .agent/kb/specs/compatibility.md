@@ -113,7 +113,7 @@ yet been exercised against a live pack.
 
 The content hash is part of this contract. Reusing a pack version with changed
 bytes is not a compatible edit; publish a new version. See
-[`packs/PUBLISHING.md`](../packs/PUBLISHING.md) for the append-only registry and
+[`packs/PUBLISHING.md`](../../../packs/PUBLISHING.md) for the append-only registry and
 retirement rules.
 
 ### MCP transport and the 12-tool surface
@@ -153,8 +153,8 @@ with the required minimum and upgrade URL. The current MCP surface has no
 general deprecation mechanism; removals and renames must use the path below.
 
 The normative tool names and schemas live in
-[`docs/mcp-api-spec.md`](mcp-api-spec.md) and
-[`docs/mcp-api-schemas.json`](mcp-api-schemas.json).
+[MCP API specification](mcp-api.md) and its
+[machine-readable schema](../../../portal/apps/emisar_web/priv/mcp/api-schemas.json).
 
 ### Runner and MCP bridge CLI, configuration, and environment
 

@@ -34,9 +34,9 @@ Walk the relevant layers and name what changes in each (skip what does not apply
   table-driven tests, race/vet gate, and whether the Debian container is needed.
 - **packs/** — pack/action manifest contract, arg bounds, risk, version/hash impact,
   validation command, and redis/cassandra golden update if touched.
-- **infra/** — Terraform resource, SOC 2/security invariant, docs/compliance update, and
+- **infra/** — Terraform resource, SOC 2/security invariant, compliance/knowledge update, and
   fmt/init/validate/tflint gate.
-- **agent tooling/docs** — canonical source of truth, duplicate/stale text removed,
+- **agent tooling/knowledge** — canonical source of truth, duplicate/stale text removed,
   adoption check added or updated.
 
 ## 3. Choose boring on purpose

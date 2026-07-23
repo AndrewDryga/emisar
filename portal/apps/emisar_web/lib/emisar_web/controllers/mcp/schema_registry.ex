@@ -205,7 +205,7 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
     create_runbook_draft
   )
 
-  @schema_path Path.expand("../../../../../../../docs/mcp-api-schemas.json", __DIR__)
+  @schema_path Path.expand("../../../../priv/mcp/api-schemas.json", __DIR__)
   @external_resource @schema_path
   @schema_version @schema_path |> File.read!() |> Jason.decode!() |> Map.fetch!("schema_version")
   @contracts Compiler.compile!(@schema_path, @tool_names)

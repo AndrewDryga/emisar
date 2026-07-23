@@ -85,16 +85,11 @@ COPY install-mcp.sh /install-mcp.sh
 # YAMLs there so the registry can scan them.
 COPY packs /packs
 
-# The fixed MCP descriptor registry is also a compile-time input. Its source
-# path resolves to /docs so release builds use the same normative file as local
-# portal and bridge builds.
-COPY docs/mcp-api-schemas.json /docs/mcp-api-schemas.json
-
 # Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config
 COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
 
-# `apps` includes each app's own priv/ (migrations, assets, etc).
+# `apps` includes each app's own priv/ (migrations, MCP schemas, assets, etc).
 # The umbrella root has no priv/ of its own, so a stray
 # `COPY priv priv` here would break the build.
 COPY portal/apps apps

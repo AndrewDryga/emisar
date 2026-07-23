@@ -86,7 +86,7 @@
     shares the same nonce store, so a policy swap cannot forget a nonce consumed
     during reload. The runner advertises enforcement and the cloud then disables
     its own (operator/runbook/API) dispatch to that host. See
-    [`docs/signed-dispatch.md`](signed-dispatch.md).
+    [`signed-dispatch.md`](signed-dispatch.md).
 
 ## What emisar is not
 
@@ -121,10 +121,10 @@ its actions from itself:
   actions can do whatever the OS lets that user do.
 - Operators who want to grant elevated privileges to specific
   actions configure sudo / polkit / capabilities for the runner
-  user. See [`runner/README.md`](../runner/README.md#granting-elevated-privileges-to-specific-actions).
+  user. See [`runner/README.md`](../../../runner/README.md#granting-elevated-privileges-to-specific-actions).
 - Operators who want defense-in-depth sandboxing on top can drop in
   an opt-in systemd hardening override. See
-  [`runner/README.md`](../runner/README.md#hardening-optional).
+  [`runner/README.md`](../../../runner/README.md#hardening-optional).
 - The runner's **host is the trust anchor**, cloud-side too. Attributes a
   runner declares about itself on connect — notably its `group`, which
   selects the policy override governing dispatches *to that runner* — are
@@ -151,7 +151,7 @@ its actions from itself:
 | Inbound surface attacked                 | There is none.                                                |
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A compiled-baseline pack's risk is inside the trusted hash; a TOFU pack (no baseline) has no such anchor. Pin risk at trust-time if you need it author-independent. |
-| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v4 Ed25519 client signature over an unambiguous claim containing canonical origin, action, immutable pack, exact-args digest, complete generation-bound runner-ref digest, reason, operation, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the display-name/suffix mapping during discovery, and a queued call can become stale. Verify suffixes out of band and use narrow cert scopes for the highest-trust workflows. See `docs/signed-dispatch.md`. |
+| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v4 Ed25519 client signature over an unambiguous claim containing canonical origin, action, immutable pack, exact-args digest, complete generation-bound runner-ref digest, reason, operation, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the display-name/suffix mapping during discovery, and a queued call can become stale. Verify suffixes out of band and use narrow cert scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
 
 ## Threats *not* considered (yet)
 

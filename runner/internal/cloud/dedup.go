@@ -251,7 +251,7 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 // decodeLegacyDedupEntry migrates one pre-v0.10 line — {"request_id", "result"}
 // with no state machine and no dispatch digest. Deleting the original
 // migration bricked dispatch on every upgraded host that carried v0.9 history
-// (the deployed-state break docs/COMPATIBILITY.md warns about), so it is
+// (the deployed-state break .agent/kb/specs/compatibility.md warns about), so it is
 // back: a legacy entry becomes an acknowledged terminal result under a
 // deterministic sentinel digest. A post-migration redelivery of that
 // request_id carries the real digest, mismatches the sentinel, and is refused

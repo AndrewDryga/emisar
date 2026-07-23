@@ -1,3 +1,11 @@
+---
+name: architecture
+description: runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
+subsystem: agent-stack
+sources: [portal, runner, mcp, packs, tools, infra, .github/workflows]
+updated: 2026-07-22
+---
+
 # Architecture
 
 emisar has three runtime components and one versioned action catalog. The
@@ -39,9 +47,9 @@ drivers. It is not shipped to customers and is not part of the runtime system.
    result. The control plane stores the searchable fleet record.
 
 The runner websocket contract is versioned in
-[`wire-protocol.md`](wire-protocol.md). Client-attested dispatch adds an
-optional signature gate described in
-[`signed-dispatch.md`](signed-dispatch.md).
+[`specs/wire-protocol.md`](specs/wire-protocol.md). Client-attested dispatch
+adds an optional signature gate described in
+[`specs/signed-dispatch.md`](specs/signed-dispatch.md).
 
 ## Enforcement ownership
 
@@ -66,12 +74,13 @@ workspace.
 
 At boot, the runner locks its data directory, then loads config, packs, admission
 rules, and the local journal. A runner enforcing signed dispatch also opens its
-durable nonce store before building the verifier; unsigned runners do not depend
-on signing state. It then exchanges a bootstrap key for a per-runner token when
-needed, connects, and advertises state. While enforcement is active, `SIGHUP`
-rebuilds packs and immutable signing policy and atomically swaps them for new
-requests; all verifier generations share the boot-owned nonce store, while
-in-flight actions continue with the policy snapshot they started under.
+durable nonce store before building the verifier; unsigned runners boot
+independently of signing state. It then exchanges a bootstrap key for a
+per-runner token when needed, connects, and advertises state. While enforcement
+is active, `SIGHUP` rebuilds packs and immutable signing policy and atomically
+swaps them for new requests; all verifier generations share the boot-owned
+nonce store, while in-flight actions continue with the policy snapshot they
+started under.
 
 The connection, action, result, and acknowledgement loops are independent so
 an in-flight action can finish across a websocket reconnect. Results remain
@@ -83,10 +92,14 @@ replayed dispatch from silently becoming a second execution.
 The hosted portal runs on Google Cloud behind a global load balancer with
 private application instances and Cloud SQL. CI validates a commit; main-only
 CD publishes the tested image and creates a saved HCP Terraform plan; a human
-reviews and applies that plan. See [`.github/DEPLOYMENT.md`](../.github/DEPLOYMENT.md)
-and [`infra/README.md`](../infra/README.md).
+reviews and applies that plan. See [`.github/DEPLOYMENT.md`](../../.github/DEPLOYMENT.md)
+and [`infra/README.md`](../../infra/README.md).
 
 The runner exposes no inbound network listener. Its durable local state is the
 per-runner credential, dispatch log, installed packs, signing nonces, and the
 JSONL journal. The MCP bridge is a local child process of the MCP client and
 persists only rotated API-key successors in the user's config directory.
+
+## Changelog
+
+- 2026-07-22 - moved into the knowledge base and reverified its source map

@@ -6,8 +6,8 @@ audit, billing, the LiveView operator console, the public website, and the
 remote MCP/OAuth surface. It decides whether an action may be dispatched; the on-host runner remains the execution authority.
 
 This README gets a contributor to a working local portal. Product behavior and
-trust boundaries live in [`../docs/architecture.md`](../docs/architecture.md)
-and [`../docs/security-model.md`](../docs/security-model.md); context boundaries,
+trust boundaries live in [`../.agent/kb/architecture.md`](../.agent/kb/architecture.md)
+and [the security model](../.agent/kb/specs/security-model.md); context boundaries,
 authorization rules, and the required gate live in [`AGENTS.md`](AGENTS.md).
 
 ## Layout

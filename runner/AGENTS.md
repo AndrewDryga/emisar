@@ -43,7 +43,9 @@ Top-level files are the cobra CLI commands: `connect` (the long-running daemon),
 | `internal/config`, `internal/expressions`, `internal/hostscan` | config load; `{{ args.x }}` text substitution; host service detection |
 | `pkg/actionspec`, `pkg/packspec` | pure shared types — no logic, importable by anything |
 
-`docs/architecture.md`, `docs/wire-protocol.md`, `docs/security-model.md` (repo root) carry the boot sequence, wire message types, and validation invariants in full.
+`.agent/kb/architecture.md`, `.agent/kb/specs/wire-protocol.md`, and
+`.agent/kb/specs/security-model.md` (repo root) carry the boot sequence, wire
+message types, and validation invariants in full.
 
 ## Security posture (this binary runs commands on hosts)
 

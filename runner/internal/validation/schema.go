@@ -1,7 +1,7 @@
 // Package validation coerces, defaults, and validates LLM-supplied
 // arguments against the declared arg schema of an action or runbook.
 //
-// Validation invariants (matching docs/security-model.md):
+// Validation invariants (matching .agent/kb/specs/security-model.md):
 //   - unknown arg names are rejected
 //   - missing required args are rejected
 //   - declared defaults are applied before policy evaluation

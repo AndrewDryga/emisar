@@ -632,7 +632,7 @@ defmodule Emisar.Runners do
           # (Policies.resolve_policy), so a compromised host could declare a looser
           # group — but it already owns the box the runner executes on, so it gains
           # nothing it couldn't do locally. The host is the trust anchor. Pin to the
-          # enrollment key if you need it operator-authoritative. See docs/security-model.md.
+          # enrollment key if you need it operator-authoritative. See .agent/kb/specs/security-model.md.
           group: nonblank(payload["group"]) || active_runner.group,
           # Runner-declared too, but trusting it is unconditionally safe: it only
           # makes the runner STRICTER (refuse unsigned dispatch), never looser. A

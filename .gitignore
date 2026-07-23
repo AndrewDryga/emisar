@@ -39,12 +39,9 @@ erl_crash.dump
 # Local dev compose secrets — copy .env.example to .env and fill in.
 /.env
 
-# Repository documentation is always tracked. Working notes and agent history
-# belong under the ignored .agent/ state below, never as hidden files in docs/.
-
 # .agent/ is local working state — only the PUBLIC KNOWLEDGE and CONFIG are committed:
-# kb/ (public current-system cards and normative rules), presets/ (orchestration
-# recipes), scripts/ (agent-only enforcement), project.yaml
+# kb/ (public cards, specifications, runbooks, and normative rules), presets/
+# (orchestration recipes), scripts/ (agent-only enforcement), project.yaml
 # (monorepo/box policy), loop.yaml, and the project Dockerfile.
 # kb/internal/, tasks, the backlog drawer, pending decisions, log, and archive
 # stay on the machine (no internal material in Git, no cross-agent merge

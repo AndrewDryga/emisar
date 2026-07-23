@@ -66,9 +66,9 @@ are needed, but cloud input is still limited to validated substitutions. The
 staging-only `shell` pack is the explicit arbitrary-command exception and must
 not be installed on production runners.
 
-See the [security model](../docs/security-model.md),
-[architecture](../docs/architecture.md), and
-[runner wire protocol](../docs/wire-protocol.md) for the full contract.
+See the [security model](../.agent/kb/specs/security-model.md),
+[architecture](../.agent/kb/architecture.md), and
+[runner wire protocol](../.agent/kb/specs/wire-protocol.md) for the full contract.
 
 ## Files and configuration
 
@@ -278,7 +278,7 @@ its exact arguments, or widen its runner set.
 Run `emisar signing init`, add the generated CA public key under
 `signing.trusted_cas`, and configure the MCP client with the leaf key and
 certificate. Setup, scope, rotation, replay protection, and refusal codes are in
-[`docs/signed-dispatch.md`](../docs/signed-dispatch.md).
+[the signed-dispatch specification](../.agent/kb/specs/signed-dispatch.md).
 
 ## Hardening (optional)
 

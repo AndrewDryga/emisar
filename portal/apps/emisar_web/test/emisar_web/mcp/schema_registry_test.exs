@@ -3,7 +3,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
   alias EmisarWeb.MCP.{ResponseBudget, SchemaRegistry}
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
-  @schema_path Path.expand("../../../../../../docs/mcp-api-schemas.json", __DIR__)
+  @schema_path Path.expand("../../../priv/mcp/api-schemas.json", __DIR__)
   @tool_names ~w(
     list_packs
     list_runners

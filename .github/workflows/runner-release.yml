@@ -201,7 +201,7 @@ jobs:
           (cd runner && go build -trimpath \
             -ldflags "-buildid= -s -w -X main.Version=${VERSION}" \
             -o "../dist/emisar" .)
-          # Bundle runner binary + install.sh + sample packs + docs
+          # Bundle runner binary + install.sh + sample packs + README
           # into the tarball install.sh expects. Tarball internals
           # keep the flat shape (packs/ at the root) so the
           # script's hard-coded paths work after extraction.
@@ -212,8 +212,8 @@ jobs:
           # runner/LICENSE (Apache-2.0 — the license of the shipped
           # binary + packs) and install.sh are repo invariants; missing
           # either is a malformed release, so copy unconditionally (no
-          # `[ -f X ] && ... || true` swallows). `docs/` is gitignored
-          # and read at https://emisar.dev/docs, so it's not shipped.
+          # `[ -f X ] && ... || true` swallows). Customer documentation
+          # is served at https://emisar.dev/docs and is not shipped.
           cp runner/LICENSE "dist/${name}/LICENSE"
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"

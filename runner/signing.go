@@ -85,7 +85,7 @@ func parseScope(s string) (attest.Scope, error) {
 
 // parseTTL accepts Go durations (24h, 90m) plus the long-form Nd / Ny that Go's
 // time.ParseDuration can't express, for solo / break-glass certs. The long TTL
-// trades away revocation granularity — documented in docs/signed-dispatch.md.
+// trades away revocation granularity — documented in .agent/kb/specs/signed-dispatch.md.
 func parseTTL(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if n, ok := strings.CutSuffix(s, "y"); ok {

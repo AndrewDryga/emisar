@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 
 # Cut a release
 
-Read [`docs/release.md`](../../../docs/release.md) in full and execute that
+Read [the release runbook](../../../.agent/kb/runbooks/release.md) in full and execute that
 canonical runbook in order. Cross-read the current changelog entries and use
 `/content-director` for both the plain-text website summary and the Markdown
 GitHub release notes.
