@@ -16,7 +16,10 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/quickstart",
          icon: "hero-rocket-launch",
          desc: "Sign up, install a runner, run your first action in under five minutes."
-       },
+       }
+     ]},
+    {"Connect an LLM",
+     [
        %{
          slug: "connect-an-llm",
          title: "Connect a cloud LLM",
@@ -125,6 +128,14 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/audit-and-siem",
          icon: "hero-document-magnifying-glass",
          desc: "What gets recorded, the dashboard, NDJSON export, and the runner journal."
+       },
+       %{
+         slug: "billing",
+         title: "Plans & billing",
+         path: "/docs/billing",
+         icon: "hero-credit-card",
+         desc:
+           "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
        }
      ]},
     {"Build packs",
@@ -174,14 +185,6 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/security-model",
          icon: "hero-shield-check",
          desc: "Trust boundary, searchable audit, hash-chained journal, redaction on egress."
-       },
-       %{
-         slug: "billing",
-         title: "Plans & billing",
-         path: "/docs/billing",
-         icon: "hero-credit-card",
-         desc:
-           "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
        },
        %{
          slug: "troubleshooting",
