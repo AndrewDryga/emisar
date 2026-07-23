@@ -283,6 +283,47 @@ func TestCaptureConsoleRequiresTaskBeforeStartingBrowser(t *testing.T) {
 	}
 }
 
+func TestNoArgumentsPrintsGroupedHumanHelpAndSucceeds(t *testing.T) {
+	var out bytes.Buffer
+	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})
+
+	if err := app.Run(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	help := out.String()
+	for _, section := range []string{
+		"Emisar development",
+		"First run:",
+		"Fast feedback:",
+		"Local development:",
+		"Test and verify:",
+		"Browser and UI:",
+		"Cross-component scenarios:",
+		"Action packs:",
+		"Production operations:",
+		"More help:",
+	} {
+		if !strings.Contains(help, section) {
+			t.Fatalf("help does not contain %q:\n%s", section, help)
+		}
+	}
+	if strings.Contains(help, "a command is required") {
+		t.Fatalf("no-argument help still reports an error:\n%s", help)
+	}
+}
+
+func TestMainHelpListsEveryPublicCommand(t *testing.T) {
+	for _, command := range []string{
+		"setup", "up", "down", "serve", "seed", "reset", "urls", "doctor", "certs",
+		"test", "check", "gate", "browser", "shot", "capture", "e2e", "loadtest",
+		"smoke", "pack", "ops", "help",
+	} {
+		if !strings.Contains(usageText, "\n  "+command+" ") {
+			t.Errorf("main help does not list %q", command)
+		}
+	}
+}
+
 func TestHelpPrintsFocusedGateCommands(t *testing.T) {
 	var out bytes.Buffer
 	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})

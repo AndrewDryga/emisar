@@ -25,7 +25,7 @@ from both application environments.
 Postgres and Keycloak dependencies used by both host-native Phoenix and Coop;
 Phoenix itself runs directly in the active workspace.
 
-Run `./run help` for the complete map or
+Run `./run` or `./run help` for the complete map, or
 `./run help <check|test|gate|pack|ops>` for one command family.
 `./run setup` verifies the pinned Go/Elixir toolchain plus Chrome or Chromium
 and ImageMagick. Coop supplies the browser and image tools in its project image;

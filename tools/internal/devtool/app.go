@@ -12,41 +12,56 @@ import (
 	"github.com/andrewdryga/emisar/tools/internal/infraops"
 )
 
-const usageText = `usage: ./run <command> [args]
+const usageText = `Emisar development
 
-  setup                    build the box, start dependencies, install deps, migrate
-  up | down                start/stop this workspace's shared dependencies
-  serve                    run Phoenix directly in the host or active Coop box
-  seed                     explicitly apply the idempotent demo seed
-  reset [--seed] [--yes]   destroy and recreate the dev database
-  urls                     print this workspace's Portal, Postgres, and Keycloak URLs
-  doctor                   verify tools, TLS, dependencies, and the OIDC issuer
-  certs [--rotate|trust|untrust|status]
-                           manage ignored Keycloak certificates and host trust
-  browser <start|stop|status>
-  shot <path> ...          capture proof into the active task's screenshots
-  capture <docs|console>   capture task-owned console proof or committed docs assets
-  e2e <sso|signing|billing>
-                           run a cross-component development scenario
-  ops <portal|database|drill> ...
-                           operate production infrastructure from a workstation
-  check changed            compile, then check only changed Portal source files
-  check portal             compile, format-check, and run Credo for all Portal files
-  check staged             validate staged migrations and source formatting
-  check infra-templates    render and validate production cloud-init
-  check pack-environment [repo] [environment]
-                           verify the registry deployment environment
-  check packs              validate every pack and cross-language hash golden
-  check agent-setup        validate shared agent manuals, skills, tasks, and hooks
-  test <target> [args...]  run focused Portal, Go, pack, or installer tests
-  gate <target>            run a canonical project gate; use "gate all" for every gate
-  loadtest <args...>       run the MCP concurrency harness
-  pack check <name>        validate one pack without changing artifacts
-  pack hashes [--write]    verify or refresh cross-language pack hash goldens
-  pack sync <name> --fix   rebuild the authoritative catalog and focused tests
-  smoke                    build and start the packaged root Compose topology
+Usage:
+  ./run <command> [arguments]
 
-Run "./run help <check|test|gate|pack|ops>" for focused help.
+First run:
+  ./run setup                 Prepare tools, services, dependencies, and the database
+  ./run serve                 Start Phoenix with live reload
+
+Fast feedback:
+  ./run test portal --stale   Re-run tests affected by recent edits
+  ./run check changed         Check changed Portal source files
+  ./run gate portal           Run the complete Portal gate before committing
+
+Local development:
+  setup                       Prepare the complete development environment
+  up                          Start PostgreSQL and Keycloak
+  down                        Stop PostgreSQL and Keycloak
+  serve                       Start Phoenix in the active workspace
+  seed                        Load or refresh the idempotent demo data
+  reset [--seed] [--yes]      Recreate the development database
+  urls                        Print Portal, PostgreSQL, and Keycloak URLs
+  doctor                      Diagnose tools, services, TLS, and OIDC
+  certs <action>              Manage certificates and trust: status, trust, untrust, rotate
+
+Test and verify:
+  test <target> [args...]     Run focused Portal, Go, pack, or installer tests
+  check <target>              Run a quick or specialized repository check
+  gate <target>               Run all required checks for a project
+
+Browser and UI:
+  browser <action>            Manage the persistent browser: start, stop, status
+  shot <path> [options]       Save UI proof under the active task
+  capture <docs|console>      Regenerate docs assets or audit the console
+
+Cross-component scenarios:
+  e2e <sso|signing|billing>   Exercise a complete development scenario
+  loadtest [options]          Run the MCP concurrency harness
+  smoke                       Run the packaged, release-like Compose stack
+
+Action packs:
+  pack check <name>           Validate one pack
+  pack hashes [--write]       Verify or refresh pack hash goldens
+  pack sync <name> --fix      Rebuild the catalog and focused tests
+
+Production operations:
+  ops <portal|database|drill>  Operate infrastructure from a workstation
+
+More help:
+  help [topic]                Show help for check, test, gate, pack, or ops
 `
 
 const (
@@ -113,7 +128,7 @@ func exact(args []string, count int, text string) error {
 func (a *App) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		a.usage()
-		return usage("a command is required")
+		return nil
 	}
 
 	command, rest := args[0], args[1:]
