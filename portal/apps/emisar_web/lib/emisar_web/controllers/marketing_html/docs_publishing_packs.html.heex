@@ -45,19 +45,24 @@
               "# a pack is a directory of YAML you write — validate it, install it, trust it once"
           },
           %{k: "cmd", p: "$", t: "emisar pack validate ./my-pack"},
-          %{k: "out", t: "  pack.yaml ✓   3 actions   arg schemas ✓   no undeclared secrets"},
-          %{k: "ok", t: "✓ ./my-pack is valid"},
+          %{k: "out", t: "pack my-pack OK: 2 actions"},
+          %{
+            k: "out",
+            t: "hash: sha256:e0487aa2762564261db5fc8e7efd5bfef895b33c8d9fa6342b1408cc602a97ab"
+          },
           %{k: "blank", t: ""},
           %{k: "cmd", p: "$", t: "sudo emisar pack install ./my-pack"},
-          %{k: "out", t: "  → sha256:9f2c… · installed to /etc/emisar/packs"},
+          %{k: "out", t: "installed my-pack → /etc/emisar/packs/my-pack"},
+          %{k: "out", t: "my-pack — My ops pack  (v0.1.0)"},
+          %{k: "out", t: "  Actions:   2  (2 low)"},
           %{
             k: "note",
             t:
-              "  ⚠ pending trust — a custom pack waits for one click before anything can dispatch it"
+              "  ⚠ a custom pack lands pending — trust its hash once before anything can dispatch it"
           },
           %{k: "blank", t: ""},
           %{k: "note", t: "# in the dashboard: Packs → my-pack → Trust"},
-          %{k: "ok", t: "✓ my-pack trusted · 3 actions now callable, gated by your policy"}
+          %{k: "ok", t: "✓ my-pack trusted · 2 actions now callable, gated by your policy"}
         ]}
       />
 

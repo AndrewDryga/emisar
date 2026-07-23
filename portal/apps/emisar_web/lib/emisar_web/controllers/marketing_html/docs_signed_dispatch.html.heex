@@ -49,12 +49,18 @@
           },
           %{
             k: "out",
-            t: "  → runner signing block (CA public key) · offline CA key · 2 MCP env vars"
+            t:
+              "Initialized signed dispatch (ca_id: acme-2026, key_id: op-e3e3dacf, valid until 2026-07-24T…)."
           },
           %{
-            k: "ok",
-            t: "✓ signing on for group=prod — a valid Ed25519 signature is now required"
+            k: "out",
+            t: "1. Runner config — add under signing on every runner (PUBLIC, safe to commit):"
           },
+          %{
+            k: "out",
+            t: "2. CA PRIVATE key — store OFFLINE; you re-sign certs with it as they expire:"
+          },
+          %{k: "out", t: "3. MCP client — set these env vars (keep the private key SECRET):"},
           %{k: "blank", t: ""},
           %{
             k: "note",
