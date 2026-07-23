@@ -360,13 +360,18 @@ defmodule EmisarWeb.DocsComponents do
   A self-contained terminal cast. The static transcript renders for no-JS
   visitors and crawlers; `assets/js/terminal_cast.js` types the commands and
   streams the output once it scrolls into view (and honors reduced motion).
-  `lines` is a list of `%{k: kind, t: text}` (+ optional `:p` prompt glyph),
-  where kind is `cmd` / `llm` (typed) or `out` / `sys` / `ok` / `note` / `blank`.
+
+  Pass `lines` for a single transcript, or `tabs` — a list of
+  `%{id:, label:, icon:, lines:}` — for a tabbed terminal (tab buttons in the
+  header, like the home-page demo; each tab plays when selected). Each line is
+  `%{k: kind, t: text}` (+ optional `:p` prompt glyph), where kind is
+  `cmd` / `llm` (typed) or `out` / `sys` / `ok` / `install` / `note` / `blank`.
   """
   attr :id, :string, required: true
   attr :label, :string, default: "terminal"
   attr :caption, :string, default: nil
-  attr :lines, :list, required: true
+  attr :lines, :list, default: nil
+  attr :tabs, :list, default: nil
   attr :class, :string, default: nil
 
   def terminal_cast(assigns) do
@@ -385,13 +390,38 @@ defmodule EmisarWeb.DocsComponents do
           <span class="h-3 w-3 rounded-full bg-[#febc2e]"></span>
           <span class="h-3 w-3 rounded-full bg-[#28c840]"></span>
         </span>
-        <span class="font-mono text-xs text-zinc-500">{@label}</span>
+        <div :if={@tabs} class="flex items-center gap-1" role="tablist" aria-label={@label}>
+          <button
+            :for={{tab, i} <- Enum.with_index(@tabs)}
+            type="button"
+            role="tab"
+            data-cast-tab={tab.id}
+            aria-selected={to_string(i == 0)}
+            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
+          >
+            <.icon :if={Map.get(tab, :icon)} name={tab.icon} class="h-3.5 w-3.5" />{tab.label}
+          </button>
+        </div>
+        <span :if={!@tabs} class="font-mono text-xs text-zinc-500">{@label}</span>
       </figcaption>
       <div
         data-cast-screen
         class="max-h-[28rem] overflow-y-auto px-5 py-4 font-mono text-[12.5px] leading-[1.7] [scrollbar-width:thin]"
       >
-        <.cast_line :for={line <- @lines} kind={line.k} prompt={Map.get(line, :p)} text={line.t} />
+        <div
+          :for={{tab, i} <- Enum.with_index(@tabs || [])}
+          data-cast-pane={tab.id}
+          hidden={i != 0}
+        >
+          <.cast_line :for={line <- tab.lines} kind={line.k} prompt={Map.get(line, :p)} text={line.t} />
+        </div>
+        <.cast_line
+          :for={line <- @lines || []}
+          :if={!@tabs}
+          kind={line.k}
+          prompt={Map.get(line, :p)}
+          text={line.t}
+        />
       </div>
       <figcaption class="flex items-center justify-end gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p :if={@caption} class="mr-auto text-[11px] text-zinc-500">{@caption}</p>
@@ -417,10 +447,13 @@ defmodule EmisarWeb.DocsComponents do
     """
   end
 
-  # Installer output — the blue [install] prefix install.sh actually prints.
+  # Installer output — the blue prefix install.sh / install-mcp.sh actually
+  # prints. Defaults to [install]; pass `p: "install-mcp"` for the MCP installer.
   defp cast_line(%{kind: "install"} = assigns) do
+    assigns = assign(assigns, :prefix, assigns.prompt || "install")
+
     ~H"""
-    <div data-cast-line data-kind="install" class="cast-line text-zinc-400" phx-no-format><span class="select-none font-semibold text-sky-400">[install]</span> <span data-cast-text>{@text}</span></div>
+    <div data-cast-line data-kind="install" class="cast-line text-zinc-400" phx-no-format><span class="select-none font-semibold text-sky-400">[{@prefix}]</span> <span data-cast-text>{@text}</span></div>
     """
   end
 

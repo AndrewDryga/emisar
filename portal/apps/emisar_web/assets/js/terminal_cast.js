@@ -9,8 +9,12 @@
 // prompt span + a text span), so no-JS visitors and crawlers get the whole
 // transcript. Here we hide the text, then replay it in DOM order — typing the
 // commands character-by-character with a cursor and streaming the output —
-// once the cast scrolls into view. Multiple casts per page are independent.
-// Honors prefers-reduced-motion (static render).
+// once the cast scrolls into view. Honors prefers-reduced-motion (static).
+//
+// A cast is either single (one [data-cast-screen] of lines) or tabbed (one or
+// more [data-cast-pane] panes inside the screen, switched by [data-cast-tab]
+// buttons in the header, like the home-page demo). Each pane is an independent
+// transcript; switching tabs plays that pane.
 
 const CHAR_MS = 16
 
@@ -35,14 +39,10 @@ export function initTerminalCasts() {
   document.querySelectorAll("[data-terminal-cast]").forEach(setupCast)
 }
 
-function setupCast(root) {
-  const screen = root.querySelector("[data-cast-screen]")
-  const replay = root.querySelector("[data-cast-replay]")
-  const lines = Array.from(root.querySelectorAll("[data-cast-line]"))
-  if (!lines.length) return
-
-  // Snapshot each line's final text (from its text span) so we can clear and
-  // replay it; the prompt glyph stays put.
+// One pane's typed transcript. `screen` is the scroll box; `container` holds the
+// lines — the same element in single mode, the pane in tabbed mode.
+function makeCast(screen, container) {
+  const lines = Array.from(container.querySelectorAll("[data-cast-line]"))
   const cells = lines.map((line) => {
     const text = line.querySelector("[data-cast-text]")
     return { line, text, final: text ? text.textContent : "" }
@@ -51,23 +51,20 @@ function setupCast(root) {
   let timers = []
   let playing = false
 
-  const reduceMotion =
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-
-  function clearTimers() {
+  const clearTimers = () => {
     timers.forEach(clearTimeout)
     timers = []
   }
-  function later(ms, fn) {
+  const later = (ms, fn) => {
     const t = setTimeout(fn, ms)
     timers.push(t)
     return t
   }
-  function stripCursor() {
-    const c = root.querySelector(".cast-cursor")
+  const stripCursor = () => {
+    const c = container.querySelector(".cast-cursor")
     if (c) c.remove()
   }
-  function scrollToEnd() {
+  const scrollToEnd = () => {
     if (screen) screen.scrollTop = screen.scrollHeight
   }
 
@@ -80,6 +77,36 @@ function setupCast(root) {
       if (text) text.textContent = final
       line.hidden = false
     })
+  }
+
+  function hideAll() {
+    clearTimers()
+    playing = false
+    stripCursor()
+    cells.forEach(({ line, text }) => {
+      line.hidden = true
+      if (text) text.textContent = ""
+    })
+  }
+
+  function typeInto(el, final, done) {
+    const cursor = document.createElement("span")
+    cursor.className = "cast-cursor"
+    cursor.setAttribute("aria-hidden", "true")
+    let n = 0
+    const tick = () => {
+      if (!playing) return
+      el.textContent = final.slice(0, n)
+      el.appendChild(cursor)
+      scrollToEnd()
+      if (n++ < final.length) {
+        later(CHAR_MS, tick)
+      } else {
+        cursor.remove()
+        done()
+      }
+    }
+    tick()
   }
 
   function play() {
@@ -114,52 +141,73 @@ function setupCast(root) {
     next()
   }
 
-  function typeInto(el, text, done) {
-    const cursor = document.createElement("span")
-    cursor.className = "cast-cursor"
-    cursor.setAttribute("aria-hidden", "true")
-    let n = 0
-    const tick = () => {
-      if (!playing) return
-      el.textContent = text.slice(0, n)
-      el.appendChild(cursor)
-      scrollToEnd()
-      if (n++ < text.length) {
-        later(CHAR_MS, tick)
-      } else {
-        cursor.remove()
-        done()
-      }
-    }
-    tick()
+  return {play, revealAll, hideAll, stop: clearTimers}
+}
+
+function setupCast(root) {
+  const screen = root.querySelector("[data-cast-screen]")
+  if (!screen) return
+  const replay = root.querySelector("[data-cast-replay]")
+  const panes = Array.from(root.querySelectorAll("[data-cast-pane]"))
+  const tabs = Array.from(root.querySelectorAll("[data-cast-tab]"))
+  const containers = panes.length ? panes : [screen]
+  const casts = containers.map((c) => makeCast(screen, c))
+
+  const reduceMotion =
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  let active = 0
+
+  function showPane(i) {
+    if (panes.length) panes.forEach((p, j) => (p.hidden = j !== i))
+    tabs.forEach((t, j) => t.setAttribute("aria-selected", j === i ? "true" : "false"))
   }
 
-  if (replay) replay.addEventListener("click", play)
+  // Replay + tab clicks target the active pane; static mode reveals, animated plays.
+  const run = (i) => (reduceMotion ? casts[i].revealAll() : casts[i].play())
+  tabs.forEach((t, i) =>
+    t.addEventListener("click", () => {
+      casts.forEach((c) => c.stop())
+      active = i
+      showPane(i)
+      run(i)
+    })
+  )
+  if (replay) replay.addEventListener("click", () => run(active))
 
   if (reduceMotion) {
-    revealAll()
+    casts.forEach((c) => c.revealAll())
+    showPane(active)
     return
   }
 
-  // Freeze the terminal at its full, server-rendered height before hiding any
-  // line, so playback fills a fixed box instead of growing it and shoving the
-  // rest of the page down as each line lands. font-mono is a system stack, so
-  // this measures true without waiting on a web font; overflow-y-auto still
-  // scrolls a cast taller than its max height.
-  if (screen) {
-    const full = screen.getBoundingClientRect().height
-    if (full) screen.style.height = `${full}px`
+  // Freeze the screen at the tallest pane's height so playback AND tab switches
+  // fill a fixed box instead of growing the page. Measure each pane while its
+  // lines are still server-rendered-visible (font-mono is a system stack, so it
+  // measures true); overflow-y-auto still scrolls a cast past its max height.
+  if (panes.length) {
+    let max = 0
+    panes.forEach((p) => {
+      panes.forEach((q) => (q.hidden = q !== p))
+      max = Math.max(max, screen.getBoundingClientRect().height)
+    })
+    showPane(active)
+    if (max) screen.style.height = `${max}px`
+  } else {
+    const h = screen.getBoundingClientRect().height
+    if (h) screen.style.height = `${h}px`
   }
 
-  // Hide, then play once — when scrolled into view, or on a short fallback so
-  // it can NEVER sit frozen-empty if the observer doesn't fire (already in view
-  // on load, a flaky observer, etc.). play() clears the fallback timer.
-  cells.forEach(({ line }) => (line.hidden = true))
+  // Hide every line, then play the active pane once — when scrolled into view, or
+  // on a short fallback so it can NEVER sit frozen-empty (already in view, a flaky
+  // observer, etc.). play() resets the pane before typing.
+  casts.forEach((c) => c.hideAll())
+  showPane(active)
   let started = false
   const start = () => {
     if (started) return
     started = true
-    play()
+    casts[active].play()
   }
   if ("IntersectionObserver" in window) {
     const io = new IntersectionObserver(
@@ -169,10 +217,10 @@ function setupCast(root) {
           start()
         }
       },
-      { threshold: 0.2 }
+      {threshold: 0.2}
     )
     io.observe(root)
-    later(2000, start)
+    setTimeout(start, 2000)
   } else {
     start()
   }
