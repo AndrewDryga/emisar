@@ -722,6 +722,222 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert elapsed < 1_500
   end
 
+  test "wait_for_run seeds an output-tail cursor on a live run's next", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-seed")
+    run = create_mcp_history_run!(account, runner, key, 1)
+
+    snapshot = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    assert snapshot["next"]["tool"] == "wait_for_run"
+    assert snapshot["next"]["arguments"]["run_id"] == run.id
+    assert snapshot["next"]["arguments"]["timeout"] == "60s"
+    assert is_binary(snapshot["next"]["arguments"]["cursor"])
+  end
+
+  test "wait_for_run tails output forward, coalescing streams and never repeating", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-forward")
+    run = create_mcp_history_run!(account, runner, key, 1)
+
+    append_progress!(run, 1, "stdout", "line-1\n")
+    append_progress!(run, 2, "stdout", "line-2\n")
+    append_progress!(run, 3, "stderr", "warn\n")
+    append_progress!(run, 4, "stdout", "line-4\n")
+
+    first =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => seed_cursor!(conn, run),
+        "timeout" => "0"
+      })["run"]
+
+    assert first["output"] == [
+             %{"stream" => "stdout", "text" => "line-1\nline-2\n"},
+             %{"stream" => "stderr", "text" => "warn\n"},
+             %{"stream" => "stdout", "text" => "line-4\n"}
+           ]
+
+    assert first["next"]["arguments"]["timeout"] == "60s"
+    refute Map.has_key?(first, "stdout")
+
+    # Following the returned cursor after more output returns only the new chunk.
+    append_progress!(run, 5, "stdout", "line-5\n")
+
+    second =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => first["next"]["arguments"]["cursor"],
+        "timeout" => "0"
+      })["run"]
+
+    assert second["output"] == [%{"stream" => "stdout", "text" => "line-5\n"}]
+  end
+
+  test "wait_for_run tail returns an empty delta and keeps waiting while live", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-empty")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", "only\n")
+
+    first =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => seed_cursor!(conn, run),
+        "timeout" => "0"
+      })["run"]
+
+    again =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => first["next"]["arguments"]["cursor"],
+        "timeout" => "0"
+      })["run"]
+
+    assert again["output"] == []
+    assert again["next"]["arguments"]["timeout"] == "60s"
+  end
+
+  test "wait_for_run rejects an invalid or foreign output cursor", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-reject")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    other = create_mcp_history_run!(account, runner, key, 2)
+    seed = seed_cursor!(conn, run)
+
+    garbage =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => "not-a-cursor",
+        "timeout" => "0"
+      })
+
+    assert garbage["error"]["code"] == "invalid_cursor"
+
+    # A cursor minted for `run` is bound to it and rejected against `other`.
+    foreign =
+      call(conn, "wait_for_run", %{"run_id" => other.id, "cursor" => seed, "timeout" => "0"})
+
+    assert foreign["error"]["code"] == "invalid_cursor"
+  end
+
+  test "wait_for_run tail wakes on a new output chunk instead of waiting for recheck", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-wake")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", "first\n")
+
+    first =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => seed_cursor!(conn, run),
+        "timeout" => "0"
+      })["run"]
+
+    cursor = first["next"]["arguments"]["cursor"]
+    test_pid = self()
+
+    Task.start(fn ->
+      Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
+      # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
+      Process.sleep(50)
+      append_progress!(run, 2, "stdout", "second\n")
+    end)
+
+    started_at = System.monotonic_time(:millisecond)
+
+    tailed =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => cursor, "timeout" => "5s"})[
+        "run"
+      ]
+
+    elapsed = System.monotonic_time(:millisecond) - started_at
+
+    assert tailed["output"] == [%{"stream" => "stdout", "text" => "second\n"}]
+    assert elapsed < 1_500
+  end
+
+  test "wait_for_run tail drains a finished run then ends with no next", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-drain")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", "done\n")
+    seed = seed_cursor!(conn, run)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{
+               "status" => "success",
+               "exit_code" => 0,
+               "progress_chunks" => 1
+             })
+
+    drained =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => seed, "timeout" => "0"})["run"]
+
+    assert drained["status"] == "success"
+    assert drained["output"] == [%{"stream" => "stdout", "text" => "done\n"}]
+    refute Map.has_key?(drained, "next")
+  end
+
+  test "wait_for_run tail bounds one frame and continues losslessly", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-bounded")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("x", 8_192)
+    for seq <- 1..40, do: append_progress!(run, seq, "stdout", chunk)
+
+    first =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => seed_cursor!(conn, run),
+        "timeout" => "0"
+      })["run"]
+
+    first_text = tail_text(first)
+    # The frame budget truncated a 320 KiB backlog, and a cursor continues it.
+    assert byte_size(first_text) > 0
+    assert byte_size(first_text) < 40 * 8_192
+    assert is_binary(first["next"]["arguments"]["cursor"])
+
+    second =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => first["next"]["arguments"]["cursor"],
+        "timeout" => "0"
+      })["run"]
+
+    # Both frames together reconstruct every byte, in order, nothing repeated.
+    assert first_text <> tail_text(second) == String.duplicate(chunk, 40)
+  end
+
   test "run summaries expose local audit failure only when it occurred", %{
     conn: conn,
     account: account,
@@ -1048,6 +1264,25 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     |> put_req_header("content-type", "application/json")
     |> post(~p"/api/mcp/rpc", Jason.encode!(body))
   end
+
+  defp append_progress!(run, seq, stream, chunk) do
+    assert {:ok, event} =
+             Runs.append_event(run, %{
+               seq: seq,
+               kind: "progress",
+               stream: stream,
+               payload: %{"chunk" => chunk}
+             })
+
+    event
+  end
+
+  defp seed_cursor!(conn, run) do
+    snapshot = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    snapshot["next"]["arguments"]["cursor"]
+  end
+
+  defp tail_text(run), do: Enum.map_join(run["output"], & &1["text"])
 
   defp create_mcp_history_run!(account, runner, key, index, overrides \\ %{}) do
     attrs =

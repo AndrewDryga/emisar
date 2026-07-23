@@ -6,9 +6,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   account/user scope, but expose only rows with the complete fixed MCP contract.
   """
 
-  alias Emisar.{Crypto, MCPOperations, Runbooks, Runs}
-  alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, ResponseBudget}
-  alias EmisarWeb.MCP.{RunbookTools, Service, WaitLimiter}
+  alias Emisar.{MCPOperations, Runbooks, Runs}
+  alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, OutputCursor}
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools, Service, WaitLimiter}
 
   @recheck_ms 2_000
 
@@ -102,6 +102,13 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:error, :cancelled} ->
         :cancelled
 
+      {:error, :invalid_cursor} ->
+        {:error,
+         error(
+           "invalid_cursor",
+           "The cursor is invalid, expired, or belongs to another run. Follow the `next` continuation from a prior response instead of constructing one."
+         )}
+
       {:error, :not_found} ->
         {:error, error("run_not_found", "No visible run or execution has that id.")}
 
@@ -123,8 +130,11 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     {:ok, timeout_ms} = Service.parse_wait(args["timeout"] || "60s")
 
     case args do
-      %{"run_id" => run_id} -> %{kind: :run, id: run_id, timeout_ms: timeout_ms}
-      %{"runbook_execution_id" => id} -> %{kind: :execution, id: id, timeout_ms: timeout_ms}
+      %{"run_id" => run_id} ->
+        %{kind: :run, id: run_id, timeout_ms: timeout_ms, cursor: args["cursor"]}
+
+      %{"runbook_execution_id" => id} ->
+        %{kind: :execution, id: id, timeout_ms: timeout_ms}
     end
   end
 
@@ -139,12 +149,16 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp do_wait_for_target(conn, %{kind: :execution} = target),
     do: wait_for_execution(conn, target)
 
-  defp wait_for_action_run(conn, %{id: run_id, timeout_ms: timeout_ms}) do
+  defp wait_for_action_run(conn, %{id: run_id, timeout_ms: timeout_ms} = target) do
     subject = conn.assigns.current_subject
+    scope = Service.cursor_scope(conn)
 
-    with {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
+    with {:ok, after_seq} <- resolve_output_cursor(target, scope, run_id),
+         {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
+      render = &render_action_run(&1, subject, after_seq, scope)
+
       if timeout_ms == 0 or Runs.ActionRun.terminal?(initial.status) do
-        {:ok, %{run: Service.fixed_run_summary(initial, subject)}}
+        {:ok, %{run: render.(initial)}}
       else
         :ok = Runs.subscribe_run(subject.account.id, run_id)
         deadline = System.monotonic_time(:millisecond) + timeout_ms
@@ -154,8 +168,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
             subject,
             run_id,
             run_token(initial),
+            after_seq,
             deadline,
-            Cancellation.topic(conn)
+            Cancellation.topic(conn),
+            render
           )
         after
           :ok = Runs.unsubscribe_run(subject.account.id, run_id)
@@ -164,24 +180,50 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     end
   end
 
-  defp await_action_run(subject, run_id, initial_token, deadline, cancellation_topic) do
+  defp resolve_output_cursor(%{cursor: nil}, _scope, _run_id), do: {:ok, nil}
+
+  defp resolve_output_cursor(%{cursor: cursor}, scope, run_id),
+    do: OutputCursor.decode(cursor, scope, run_id)
+
+  defp render_action_run(run, subject, nil, scope),
+    do: Service.fixed_run_summary(run, subject, tail_scope: scope)
+
+  defp render_action_run(run, subject, after_seq, scope),
+    do: Service.fixed_run_tail(run, subject, after_seq, scope)
+
+  defp await_action_run(
+         subject,
+         run_id,
+         initial_token,
+         after_seq,
+         deadline,
+         cancellation_topic,
+         render
+       ) do
     with :ok <- not_cancelled(cancellation_topic),
          {:ok, current} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       cond do
         Runs.ActionRun.terminal?(current.status) or run_token(current) != initial_token ->
-          {:ok, %{run: Service.fixed_run_summary(current, subject)}}
+          {:ok, %{run: render.(current)}}
 
         System.monotonic_time(:millisecond) >= deadline ->
-          {:ok, %{run: Service.fixed_run_summary(current, subject)}}
+          {:ok, %{run: render.(current)}}
 
         true ->
-          wait_for_change(deadline, cancellation_topic)
-          |> case do
+          case wait_for_change(deadline, cancellation_topic, after_seq) do
             :cancelled ->
               {:error, :cancelled}
 
             _signal ->
-              await_action_run(subject, run_id, initial_token, deadline, cancellation_topic)
+              await_action_run(
+                subject,
+                run_id,
+                initial_token,
+                after_seq,
+                deadline,
+                cancellation_topic,
+                render
+              )
           end
       end
     end
@@ -223,8 +265,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
           {:ok, %{execution: current.payload}}
 
         true ->
-          wait_for_change(deadline, cancellation_topic)
-          |> case do
+          case wait_for_change(deadline, cancellation_topic, nil) do
             :cancelled ->
               {:error, :cancelled}
 
@@ -252,7 +293,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp recent_runs(conn, args) do
     input = parse_recent_runs(args)
-    scope = cursor_scope(conn)
+    scope = Service.cursor_scope(conn)
     cursor_filters = recent_cursor_filters(input)
 
     with {:ok, page_cursor} <-
@@ -337,16 +378,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
   end
 
-  defp cursor_scope(conn) do
-    key = conn.assigns.api_key
-
-    Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> key.credential_lineage_id)
-  end
-
   defp page_opts(limit, nil), do: [limit: limit]
   defp page_opts(limit, cursor), do: [limit: limit, cursor: cursor]
 
-  defp wait_for_change(deadline, cancellation_topic) do
+  defp wait_for_change(deadline, cancellation_topic, after_seq) do
     timeout = min(max(deadline - System.monotonic_time(:millisecond), 0), @recheck_ms)
 
     receive do
@@ -356,8 +391,14 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:run_updated, _run} ->
         :changed
 
+      # In tail mode, a progress chunk past the caller's cursor is the change it
+      # is waiting for — wake now instead of at the recheck. Snapshot mode
+      # (nil cursor) still only wakes on a status transition.
+      {:run_event, %{kind: :progress, seq: seq}} when is_integer(after_seq) and seq > after_seq ->
+        :changed
+
       {:run_event, _event} ->
-        wait_for_change(deadline, cancellation_topic)
+        wait_for_change(deadline, cancellation_topic, after_seq)
     after
       timeout -> :recheck
     end

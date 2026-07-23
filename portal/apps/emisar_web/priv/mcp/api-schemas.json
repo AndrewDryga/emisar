@@ -203,11 +203,47 @@
       "properties": {
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
+        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
+        "cursor": {"type": "string", "maxLength": 4096, "description": "Opaque output-tail cursor. Do not construct or edit this; pass only the value from a prior response's `next`. Present it to stream a run's output forward from where you left off."}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
         {"required": ["runbook_execution_id"], "not": {"required": ["run_id"]}}
+      ]
+    },
+    "run_tail": {
+      "type": "object",
+      "required": ["run_id", "operation_id", "action_id", "pack_ref", "runner_ref", "status", "created_at", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {"$ref": "#/$defs/run_id"},
+        "operation_id": {"$ref": "#/$defs/operation_id"},
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "status": {"$ref": "#/$defs/run_status"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "finished_at": {"$ref": "#/$defs/timestamp"},
+        "exit_code": {"type": ["integer", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "error_message": {"type": "string", "maxLength": 1024, "x-maxUtf8Bytes": 1024, "description": "Bounded persisted terminal failure or refusal cause, when one was recorded."},
+        "output": {"type": "array", "description": "Forward delta of runner-redacted output after the cursor, in emission order; consecutive same-stream chunks are coalesced. Empty when nothing new has arrived yet.", "items": {"type": "object", "required": ["stream", "text"], "additionalProperties": false, "properties": {"stream": {"enum": ["stdout", "stderr"]}, "text": {"type": "string"}}}},
+        "output_complete": {"const": false, "description": "Present only when the runner or portal detected a missing progress chunk; the delta may then contain gaps. Complete output omits this field."},
+        "local_audit_failed": {"const": true, "description": "The runner could not persist the terminal or refusal event in its local audit journal. The action status remains authoritative."},
+        "structured_output": {"$ref": "#/$defs/structured_output"},
+        "structured_output_omitted": {"const": true, "description": "A structured result exists but was omitted intact to keep this response within its output budget."},
+        "approval": {"$ref": "#/$defs/approval"},
+        "wait_until": {"$ref": "#/$defs/timestamp"},
+        "next": {"$ref": "#/$defs/next_wait"},
+        "run_url": {"type": "string", "format": "uri", "maxLength": 2048}
+      },
+      "allOf": [
+        {"oneOf": [{"required": ["runbook_execution_id", "step_id"]}, {"not": {"anyOf": [{"required": ["runbook_execution_id"]}, {"required": ["step_id"]}]}}]},
+        {"if": {"properties": {"status": {"const": "pending_approval"}}}, "then": {"required": ["approval", "wait_until"]}},
+        {"if": {"properties": {"status": {"const": "sent"}}}, "then": {"required": ["wait_until"]}},
+        {"not": {"required": ["structured_output", "structured_output_omitted"]}}
       ]
     },
     "recent_runs_arguments": {
@@ -1010,6 +1046,15 @@
             "properties": {
               "ok": {"const": true},
               "run": {"$ref": "#/$defs/run_summary"}
+            }
+          },
+          {
+            "type": "object",
+            "required": ["ok", "run"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "run": {"$ref": "#/$defs/run_tail"}
             }
           },
           {

@@ -7,8 +7,8 @@ defmodule EmisarWeb.MCP.Service do
   plain data for the fixed MCP tools.
   """
 
-  alias Emisar.{Approvals, Runs}
-  alias EmisarWeb.MCP.{Cancellation, WaitLimiter}
+  alias Emisar.{Approvals, Crypto, Runs}
+  alias EmisarWeb.MCP.{Cancellation, OutputCursor, WaitLimiter}
 
   @recheck_interval_ms 2_000
   @max_output_events 32
@@ -53,7 +53,7 @@ defmodule EmisarWeb.MCP.Service do
          {:ok, runs} <-
            Runs.list_runs_by_mcp_operation(hd(runs).mcp_operation_record_id, subject),
          true <- complete_target_set?(runs, targets) do
-      {:ok, fixed_run_summaries(runs, subject)}
+      {:ok, fixed_run_summaries(runs, subject, tail_scope: cursor_scope(conn))}
     else
       :cancelled -> {:error, :cancelled}
       false -> {:error, :operation_incomplete}
@@ -112,18 +112,65 @@ defmodule EmisarWeb.MCP.Service do
     MapSet.new(runs, & &1.runner_id) == MapSet.new(targets, & &1.id)
   end
 
-  @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
-  def fixed_run_summaries(runs, subject) when is_list(runs) do
-    stream_cap = min(16_384, div(65_536, max(2 * length(runs), 1)))
-    structured_output_cap = min(8_192, div(65_536, max(length(runs), 1)))
-
-    Enum.map(runs, &fixed_run_summary(&1, subject, stream_cap, structured_output_cap))
+  @doc "The credential-lineage scope binding a run's output cursor to one account + key."
+  def cursor_scope(conn) do
+    key = conn.assigns.api_key
+    Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> key.credential_lineage_id)
   end
 
-  @doc "Renders one fixed-contract run summary. A stream that produced no bytes is omitted."
-  def fixed_run_summary(run, subject, stream_cap \\ 16_384, structured_output_cap \\ 8_192) do
+  @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
+  def fixed_run_summaries(runs, subject, opts \\ []) when is_list(runs) do
+    summary_opts = [
+      stream_cap: min(16_384, div(65_536, max(2 * length(runs), 1))),
+      structured_output_cap: min(8_192, div(65_536, max(length(runs), 1))),
+      tail_scope: Keyword.get(opts, :tail_scope)
+    ]
+
+    Enum.map(runs, &fixed_run_summary(&1, subject, summary_opts))
+  end
+
+  @doc """
+  Renders one fixed-contract run summary (the tail-snapshot shape). A stream that
+  produced no bytes is omitted. Pass `:tail_scope` to seed a live run's `next`
+  with a start cursor so the caller can begin streaming its output forward.
+  """
+  def fixed_run_summary(run, subject, opts \\ []) do
+    stream_cap = Keyword.get(opts, :stream_cap, 16_384)
+    structured_output_cap = Keyword.get(opts, :structured_output_cap, 8_192)
+    tail_scope = Keyword.get(opts, :tail_scope)
     output_preview = run_output_preview(run, subject, stream_cap)
     structured_output = structured_output_summary(run.structured_output, structured_output_cap)
+
+    run
+    |> base_run_fields(subject)
+    |> Map.put(:next, fixed_run_next(run, structured_output, tail_scope))
+    |> Map.merge(structured_output)
+    |> Map.merge(stream_summary(run, output_preview, :stdout))
+    |> Map.merge(stream_summary(run, output_preview, :stderr))
+    |> drop_nil_values()
+  end
+
+  @doc """
+  Renders a run summary in output-tail mode: a forward `output` delta of the
+  progress chunks after `after_seq`, plus a `next` carrying the advanced cursor
+  while the run is live or output remains undrained. Replaces the stdout/stderr
+  tail preview; `scope` binds the emitted cursor to this run and credential.
+  """
+  def fixed_run_tail(run, subject, after_seq, scope)
+      when is_integer(after_seq) and is_binary(scope) do
+    structured_output = structured_output_summary(run.structured_output, 8_192)
+    {output, last_seq, more?} = tail_output_delta(run, subject, after_seq)
+    cursor = OutputCursor.encode(scope, run.id, last_seq)
+
+    run
+    |> base_run_fields(subject)
+    |> Map.put(:output, output)
+    |> Map.put(:next, tail_next(run, more?, cursor))
+    |> Map.merge(structured_output)
+    |> drop_nil_values()
+  end
+
+  defp base_run_fields(run, subject) do
     {approval, approval_wait_until} = fixed_approval(run, subject)
 
     %{
@@ -144,15 +191,78 @@ defmodule EmisarWeb.MCP.Service do
       local_audit_failed: if(run.local_audit_failed, do: true),
       approval: approval,
       wait_until: approval_wait_until || fixed_wait_until(run),
-      next: fixed_run_next(run, structured_output),
       run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
     }
-    |> Map.merge(structured_output)
-    |> Map.merge(stream_summary(run, output_preview, :stdout))
-    |> Map.merge(stream_summary(run, output_preview, :stderr))
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
   end
+
+  defp drop_nil_values(map),
+    do: map |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()
+
+  @tail_read_limit 1_000
+  # Encoded-output budget for one tail frame. Kept well under the 512 KiB
+  # transport ceiling because the frame mirrors the payload twice (a text block
+  # plus structuredContent) and re-escapes it, so the assembled frame runs to
+  # roughly 2x this plus the reserved request-id headroom.
+  @max_tail_output_bytes 200 * 1_024
+
+  defp tail_output_delta(run, subject, after_seq) do
+    {:ok, events} = Runs.list_events_for_run_since(run.id, after_seq, @tail_read_limit, subject)
+    {output, last_seq, frame_truncated?} = coalesce_within_budget(events, after_seq)
+    {output, last_seq, length(events) >= @tail_read_limit or frame_truncated?}
+  end
+
+  # Coalesce consecutive same-stream progress chunks into one element, in seq
+  # order, until the encoded-output budget is reached. Cost is measured on the
+  # escaped JSON, so a control-char-heavy chunk cannot overrun the frame. At
+  # least one chunk always ships, so the cursor advances and a chatty run cannot
+  # stall the tail.
+  defp coalesce_within_budget(events, after_seq) do
+    {reversed, last_seq, _bytes, truncated?} =
+      Enum.reduce_while(events, {[], after_seq, 0, false}, fn event, {acc, seq, bytes, _trunc} ->
+        stream = event_stream(event)
+        chunk = get_chunk(event)
+        next_bytes = bytes + encoded_cost(acc, stream, chunk)
+
+        if next_bytes > @max_tail_output_bytes and acc != [] do
+          {:halt, {acc, seq, bytes, true}}
+        else
+          {:cont, {prepend_output(acc, stream, chunk), event.seq, next_bytes, false}}
+        end
+      end)
+
+    {Enum.reverse(reversed), last_seq, truncated?}
+  end
+
+  # Encoded JSON cost of adding `chunk`: the escaped text, plus one element's
+  # structural bytes when it starts a new (stream-switched) element.
+  defp encoded_cost([%{stream: stream} | _rest], stream, chunk), do: escaped_size(chunk)
+  defp encoded_cost(_acc, _stream, chunk), do: escaped_size(chunk) + 28
+
+  defp escaped_size(chunk), do: byte_size(Jason.encode!(chunk)) - 2
+
+  defp prepend_output([%{stream: stream, text: text} | rest], stream, chunk),
+    do: [%{stream: stream, text: text <> chunk} | rest]
+
+  defp prepend_output(acc, stream, chunk),
+    do: [%{stream: stream, text: chunk} | acc]
+
+  defp event_stream(event) do
+    case event.stream || (event.payload && event.payload["stream"]) do
+      "stderr" -> "stderr"
+      _ -> "stdout"
+    end
+  end
+
+  defp tail_next(run, more?, cursor) do
+    cond do
+      not Runs.ActionRun.terminal?(run.status) -> wait_next(run.id, cursor, "60s")
+      more? -> wait_next(run.id, cursor, "0")
+      true -> nil
+    end
+  end
+
+  defp wait_next(run_id, cursor, timeout),
+    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, cursor: cursor, timeout: timeout}}
 
   defp structured_output_summary(nil, _cap), do: %{}
 
@@ -271,14 +381,20 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_wait_until(_run), do: nil
 
-  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}),
+  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}, _tail_scope),
     do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
 
-  defp fixed_run_next(%{status: status, id: run_id}, _structured_output) do
-    if Runs.ActionRun.terminal?(status),
+  defp fixed_run_next(run, _structured_output, tail_scope) do
+    if Runs.ActionRun.terminal?(run.status),
       do: nil,
-      else: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
+      else: live_snapshot_next(run.id, tail_scope)
   end
+
+  defp live_snapshot_next(run_id, nil),
+    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
+
+  defp live_snapshot_next(run_id, scope),
+    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0), "60s")
 
   # -- Wait parsing ---------------------------------------------------
 
