@@ -199,12 +199,13 @@
       <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The consent screen mints a key bound to <em>your</em>
-        membership. The connector can only run actions your policy
-        already permits, every call is attributed to you in the audit
-        log, and anything needing approval still waits for a human.
-        Revoke access any time from <strong>LLM agents</strong>
-        in the dashboard, or from the connector settings in
-        Claude / ChatGPT.
+        membership, so the connector acts as you — every call is attributed to you, and it reaches
+        only the runners and actions your own access already allows (<.link
+          navigate={~p"/docs/keys#no-scope"}
+          class="text-brand-400 hover:text-brand-300"
+        >how a key inherits its operator's scope</.link>). Revoke it any time from
+        <strong>LLM agents</strong>
+        in the dashboard, or from the connector settings in Claude or ChatGPT.
       </p>
     </.docs_layout>
   </section>
