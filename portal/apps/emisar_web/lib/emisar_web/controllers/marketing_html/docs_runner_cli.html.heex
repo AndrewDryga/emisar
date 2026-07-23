@@ -29,33 +29,13 @@
         </:dek>
       </.docs_header>
 
-      <.terminal_cast
-        id="runner-cli-cast"
-        label="web-01"
-        caption="The operator's local toolbox — reads and diagnostics, straight from the host."
-        lines={[
-          %{
-            k: "note",
-            t: "# inspect, diagnose, and read the journal on the host — no cloud round-trip"
-          },
-          %{k: "cmd", p: "$", t: "sudo emisar doctor"},
-          %{k: "out", t: "  config ✓   credential ✓   4 packs ✓   action binaries ✓   service ✓"},
-          %{k: "ok", t: "✓ control plane reachable · all preflight checks passed"},
-          %{k: "blank", t: ""},
-          %{k: "cmd", p: "$", t: "sudo emisar pack list"},
-          %{k: "out", t: "  linux-core     v1.4.0   32 actions   trusted"},
-          %{k: "out", t: "  debugging      v1.1.0   18 actions   trusted"},
-          %{k: "out", t: "  systemd-deep   v0.9.2   21 actions   trusted"},
-          %{k: "blank", t: ""},
-          %{k: "cmd", p: "$", t: "sudo emisar events tail -f"},
-          %{k: "out", t: "  17:04:12  run.dispatched  linux.uptime  low · allowed by policy"},
-          %{k: "out", t: "  17:04:12  run.succeeded   linux.uptime  320ms · exit 0"},
-          %{
-            k: "note",
-            t: "  17:06:38  run.refused     caddy.reload_config  stale signature — nothing ran"
-          }
-        ]}
-      />
+      <.docs_code phx-no-format label="web-01" copy_text="sudo emisar pack list"><span class="text-zinc-500">$</span> sudo emisar doctor          <span class="text-zinc-500"># preflight: config · credential · packs · binaries · service</span>
+<span class="text-zinc-500">$</span> sudo emisar events tail -f  <span class="text-zinc-500"># the host-side security log, live</span>
+<span class="text-zinc-500">$</span> sudo emisar pack list
+ID            VERSION  ACTIONS  HASH                 DESCRIPTION
+debugging     0.2.10   31       sha256:ae3b9a7c8f11  General-purpose Linux diagnostics + remediation…
+linux-core    0.3.19   34       sha256:8d0ba17ca0e4  Read-only Linux diagnostics + narrow service control…
+systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + operator surface…</.docs_code>
 
       <.docs_h2 id="running">Running the CLI</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

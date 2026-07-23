@@ -37,29 +37,23 @@
         </:dek>
       </.docs_header>
 
-      <.terminal_cast
-        id="containers-cast"
+      <.docs_code
+        phx-no-format
         label="docker host"
-        caption="A runner in a container — egress-only, and the namespace it can see is its scope."
-        lines={[
-          %{
-            k: "note",
-            t: "# a runner in a container dials out like any other — nothing listens inbound"
-          },
-          %{
-            k: "cmd",
-            p: "$",
-            t:
-              "docker run -d --name emisar -v emisar-data:/var/lib/emisar -e EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… you/emisar-runner"
-          },
-          %{k: "cmd", p: "$", t: "docker logs -f emisar"},
-          %{k: "out", t: "level=INFO msg=cloud.connected actions=32 packs=2 inflight_runs=0"},
-          %{
-            k: "ok",
-            t: "✓ online — one container, egress-only; the namespace it sees is its scope"
-          }
-        ]}
-      />
+        copy_text="docker run -d --name emisar -v emisar-data:/var/lib/emisar -e EMISAR_URL=https://emisar.dev -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… you/emisar-runner"
+      ><span class="text-zinc-500">$</span> docker run -d --name emisar \
+    -v emisar-data:/var/lib/emisar \
+    -e EMISAR_URL=https://emisar.dev \
+    -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
+    you/emisar-runner
+<span class="text-zinc-500">$</span> docker logs -f emisar</.docs_code>
+
+      <.docs_callout kind={:note} title="Egress-only, namespace-scoped">
+        Nothing listens inbound — the container dials out to
+        <code class="text-zinc-300">emisar.dev</code>
+        like any other runner. The namespace it can see — its mounts, network, and PID space — is its
+        scope, so give it only what its packs need.
+      </.docs_callout>
 
       <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

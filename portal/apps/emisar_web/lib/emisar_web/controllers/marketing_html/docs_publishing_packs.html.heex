@@ -34,37 +34,21 @@
         </:dek>
       </.docs_header>
 
-      <.terminal_cast
-        id="publishing-packs-cast"
-        label="your host"
-        caption="Author locally, validate, install on the runners you control — trusted once, gated always."
-        lines={[
-          %{
-            k: "note",
-            t:
-              "# a pack is a directory of YAML you write — validate it, install it, trust it once"
-          },
-          %{k: "cmd", p: "$", t: "emisar pack validate ./my-pack"},
-          %{k: "out", t: "pack my-pack OK: 2 actions"},
-          %{
-            k: "out",
-            t: "hash: sha256:e0487aa2762564261db5fc8e7efd5bfef895b33c8d9fa6342b1408cc602a97ab"
-          },
-          %{k: "blank", t: ""},
-          %{k: "cmd", p: "$", t: "sudo emisar pack install ./my-pack"},
-          %{k: "out", t: "installed my-pack → /etc/emisar/packs/my-pack"},
-          %{k: "out", t: "my-pack — My ops pack  (v0.1.0)"},
-          %{k: "out", t: "  Actions:   2  (2 low)"},
-          %{
-            k: "note",
-            t:
-              "  ⚠ a custom pack lands pending — trust its hash once before anything can dispatch it"
-          },
-          %{k: "blank", t: ""},
-          %{k: "note", t: "# in the dashboard: Packs → my-pack → Trust"},
-          %{k: "ok", t: "✓ my-pack trusted · 2 actions now callable, gated by your policy"}
-        ]}
-      />
+      <.docs_code phx-no-format label="your host" copy_text="emisar pack validate ./my-pack"><span class="text-zinc-500">$</span> emisar pack validate ./my-pack
+pack my-pack OK: 2 actions
+hash: sha256:e0487aa2762564261db5fc8e7efd5bfef895b33c8d9fa6342b1408cc602a97ab
+
+<span class="text-zinc-500">$</span> sudo emisar pack install ./my-pack
+installed my-pack → /etc/emisar/packs/my-pack
+my-pack — My ops pack  (v0.1.0)
+  Actions:   2  (2 low)</.docs_code>
+
+      <.docs_callout kind={:note} title="A custom pack lands pending">
+        Stdlib packs auto-trust — their bytes match the catalog emisar publishes. A pack you
+        authored waits: its hash is pending until you trust it once in the dashboard
+        (<strong class="text-zinc-300">Packs → my-pack → Trust</strong>). After that its actions
+        are callable, gated by your policy.
+      </.docs_callout>
 
       <.agent_skill_cta
         class="mt-8"

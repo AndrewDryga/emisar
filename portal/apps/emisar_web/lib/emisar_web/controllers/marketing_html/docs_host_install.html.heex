@@ -52,50 +52,27 @@
         to fetch and verify the release — no inbound rule ever.
       </p>
 
-      <.terminal_cast
-        id="host-install-cast"
+      <.docs_code
+        phx-no-format
         label="db-01"
-        caption="What that one command does — download, verify, install the hardened service, connect. Nothing listens inbound."
-        lines={[
-          %{
-            k: "cmd",
-            p: "$",
-            t:
-              "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
-          },
-          %{k: "install", t: "install target: linux/arm64 via systemd"},
-          %{k: "install", t: "latest release: runner-v0.14.0"},
-          %{k: "install", t: "downloading emisar-0.14.0-linux-arm64.tar.gz"},
-          %{k: "install", t: "checksum verified  sha256:8b8b1ee514a105ec…"},
-          %{k: "install", t: "verified: emisar version 0.14.0"},
-          %{k: "install", t: "creating system user emisar"},
-          %{k: "install", t: "installed binary to /usr/local/bin/emisar"},
-          %{
-            k: "out",
-            t:
-              "install starter packs for this host (linux-core debugging systemd-deep debian)? [y/N] y"
-          },
-          %{
-            k: "out",
-            t:
-              "install host-matched pack recommendations (cassandra cloud-init dell-ipmi firewall java-jvm network-tls nic)? [y/N] y"
-          },
-          %{k: "install", t: "writing pre-configured config to /etc/emisar/config.yaml"},
-          %{k: "install", t: "writing runner.env stub to /etc/emisar/runner.env"},
-          %{k: "install", t: "writing /etc/systemd/system/emisar.service"},
-          %{k: "install", t: "starting emisar.service"},
-          %{
-            k: "out",
-            t: "emisar connecting to wss://emisar.dev (group=db-01 packs=11 actions=228)"
-          },
-          %{
-            k: "out",
-            t:
-              "level=INFO msg=cloud.connected actions=228 packs=11 inflight_runs=0 requeued_starts=0 requeued_results=0"
-          },
-          %{k: "install", t: "installed emisar runner-v0.14.0"}
-        ]}
-      />
+        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
+      ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash
+[install] install target: linux/arm64 via systemd
+[install] latest release: runner-v0.14.0
+[install] downloading emisar-0.14.0-linux-arm64.tar.gz
+[install] checksum verified  sha256:8b8b1ee514a105ec…
+[install] verified: emisar version 0.14.0
+[install] creating system user emisar
+[install] installed binary to /usr/local/bin/emisar
+install starter packs for this host (linux-core debugging systemd-deep debian)? [y/N] y
+install host-matched pack recommendations (cassandra cloud-init dell-ipmi firewall java-jvm network-tls nic)? [y/N] y
+[install] writing pre-configured config to /etc/emisar/config.yaml
+[install] writing runner.env stub to /etc/emisar/runner.env
+[install] writing /etc/systemd/system/emisar.service
+[install] starting emisar.service
+emisar connecting to wss://emisar.dev (group=db-01 packs=11 actions=228)
+level=INFO msg=cloud.connected actions=228 packs=11 inflight_runs=0 requeued_starts=0 requeued_results=0
+[install] installed emisar runner-v0.14.0</.docs_code>
 
       <.docs_h2 id="flags">Flags and environment</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
