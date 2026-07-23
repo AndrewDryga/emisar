@@ -138,15 +138,15 @@
           checksums="SHA256SUMS-MCP"
         />
 
-        <details class="group mt-8">
-          <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
+        <details class="group mt-8 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+          <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
             Set up a client by hand
             <.icon
               name="hero-chevron-down"
               class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
             />
           </summary>
-          <div class="mt-6 space-y-8">
+          <div class="border-t border-zinc-900 px-5 pb-5 pt-4 space-y-8">
             <%!-- Claude Desktop --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>

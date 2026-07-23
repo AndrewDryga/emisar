@@ -253,8 +253,8 @@ defmodule EmisarWeb.DocsComponents do
     assigns = assign(assigns, :commands, commands)
 
     ~H"""
-    <details class="group mt-4">
-      <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
+    <details class="group mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+      <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
         <span class="flex items-center gap-2">
           <.icon name="hero-shield-check" class="h-4 w-4 text-zinc-500" /> Verify this download first
         </span>
@@ -263,7 +263,7 @@ defmodule EmisarWeb.DocsComponents do
           class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
         />
       </summary>
-      <div class="mt-4">
+      <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
           The installer checks the checksum itself; to prove the binary before it runs as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>, download it and run these
           first — a green check names our source repository and the release workflow that built it.
