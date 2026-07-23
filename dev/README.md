@@ -80,6 +80,7 @@ Common feedback commands:
 ./run pack check redis
 ./run pack hashes
 ./run test packs redis
+./run test packs redis --case redis.ping
 ```
 
 `check changed` incrementally compiles the umbrella, then format-checks and runs

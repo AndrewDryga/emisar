@@ -3,6 +3,8 @@ versions:
   - version: "4.14.0"
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:
   AWS_ACCESS_KEY_ID: packtest-canary-aws-s3-access-924e
@@ -54,7 +56,8 @@ cases:
       - argv: [aws, s3, mb, "s3://emisar-packtest-versioning"]
       - argv: [aws, s3api, put-bucket-versioning, --bucket, emisar-packtest-versioning, --versioning-configuration, "Status=Enabled"]
     expect:
-      stdout_contains: [Status, Enabled]
+      json:
+        /Status: Enabled
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-versioning", --force]
   - action: s3.list_buckets

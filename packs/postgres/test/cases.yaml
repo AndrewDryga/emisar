@@ -3,12 +3,12 @@ versions:
   - version: "18.4"
     digest: "@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
     default: true
+  - version: "17.6"
+    digest: "@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929"
 risk_accountability:
   mode: complete
   exceptions:
-    postgres.cancel_query: requires_dynamic_fixture
     postgres.kill_idle: requires_concurrent_session
-    postgres.terminate_backend: requires_dynamic_fixture
 secret_env: [PGPASSWORD]
 env:
   PGDATABASE: testdb
@@ -118,6 +118,38 @@ cases:
       - argv: [psql, -XAt, -c, "SELECT last_vacuum IS NOT NULL FROM pg_stat_user_tables WHERE relname = 'orders'"]
         expect:
           stdout_contains: ["t"]
+  - action: postgres.cancel_query
+    arrange:
+      - argv: [/bin/sh, -c, 'nohup env PGAPPNAME=packtest-cancel-query psql -XAt -c "SELECT pg_sleep(120)" >/tmp/packtest-cancel-query.log 2>&1 &']
+    resolve_args:
+      pid:
+        argv: [psql, -XAt, -c, "SELECT pid FROM pg_stat_activity WHERE application_name = 'packtest-cancel-query' AND state = 'active' LIMIT 1"]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ["t"]
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-cancel-query' AND state = 'active'"]
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 10s
+        retry_every: 250ms
+  - action: postgres.terminate_backend
+    arrange:
+      - argv: [/bin/sh, -c, 'nohup env PGAPPNAME=packtest-terminate-backend psql -XAt -c "SELECT pg_sleep(120)" >/tmp/packtest-terminate-backend.log 2>&1 &']
+    resolve_args:
+      pid:
+        argv: [psql, -XAt, -c, "SELECT pid FROM pg_stat_activity WHERE application_name = 'packtest-terminate-backend' AND state = 'active' LIMIT 1"]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ["t"]
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-terminate-backend'"]
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 10s
+        retry_every: 250ms
   - name: postgres.uptime-missing-credentials
     action: postgres.uptime
     unset_env: [PGPASSWORD]

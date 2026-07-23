@@ -45,6 +45,10 @@ Each supported version row has an exact digest, and exactly one row is the
 default matching Compose. Relevant pull requests run every declared row for the
 changed pack; the weekly workflow runs the full compatibility matrix.
 
+Version rows are support promises, not a release archive. Declare the newest
+supported release and the oldest supported family for high-use databases and
+orchestrators. Do not enumerate every intermediate patch.
+
 ## Plan shape
 
 ```yaml
@@ -57,7 +61,7 @@ versions:
 risk_accountability:
   mode: complete
   exceptions:
-    postgres.terminate_backend: requires_dynamic_fixture
+    postgres.kill_idle: requires_concurrent_session
 
 secret_env: [PGPASSWORD]
 env:
@@ -95,6 +99,20 @@ with `unset_env`. Structured action arguments are encoded as JSON.
 `arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use
 `[/bin/sh, -c, ...]` only when shell syntax is part of the test. Probes may set
 `retry_for` and `retry_every` for eventually consistent state.
+
+When an action target exists only after `arrange`, `resolve_args` captures one
+non-empty output line and converts it to the action argument's declared type:
+
+```yaml
+resolve_args:
+  pid:
+    argv: [psql, -XAt, -c, "SELECT pid FROM pg_stat_activity WHERE application_name = 'packtest-victim'"]
+    retry_for: 10s
+    retry_every: 250ms
+```
+
+Keep this for identifiers created by the isolated case. Static inputs belong in
+`args`; complex fixture lifecycles do not belong in the harness.
 
 ## Risk accountability
 
@@ -176,6 +194,7 @@ the complete reports directory for a failed matrix row.
 
 ```sh
 ./run test packs postgres
+./run test packs postgres --case postgres.uptime
 ./run test packs
 
 # A declared alternate version resolves its committed digest.

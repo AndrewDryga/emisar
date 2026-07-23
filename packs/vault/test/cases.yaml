@@ -38,10 +38,12 @@ cases:
       stdout_contains: [path]
   - action: vault.seal_status
     expect:
-      stdout_contains: ['"sealed": false']
+      json:
+        /sealed: false
   - action: vault.status
     expect:
-      stdout_contains: ['"sealed": false']
+      json:
+        /sealed: false
   - action: vault.token_lookup_self
     expect:
       stdout_contains: [display_name, root]

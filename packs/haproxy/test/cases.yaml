@@ -3,6 +3,8 @@ versions:
   - version: "3.4.2"
     digest: "@sha256:728fec0da177a4010e53a0a1327d2aaef70dfd2151798507c8a0d503d01e4d7f"
     default: true
+risk_accountability:
+  mode: complete
 env:
   HAPROXY_SOCK: /run/haproxy/admin.sock
 cases:

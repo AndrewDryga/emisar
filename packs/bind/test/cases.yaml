@@ -3,6 +3,8 @@ versions:
   - version: edge
     digest: "@sha256:45d541e9688f2c9010d22a78200117b66ed2df31b78f3464876f7e6e15cfaf77"
     default: true
+risk_accountability:
+  mode: complete
 cases:
   - action: bind.rndc_status
     expect:

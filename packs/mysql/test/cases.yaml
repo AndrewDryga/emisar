@@ -3,6 +3,8 @@ versions:
   - version: "9.7.1"
     digest: "@sha256:c109c421c81637a50209b57ec6af7dc0685e8b1ce7efdca0c0902a3d95df6574"
     default: true
+  - version: "8.4.6"
+    digest: "@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9"
 secret_env: [MYSQL_PWD]
 env:
   MYSQL_HOST: mysql

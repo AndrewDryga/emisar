@@ -3,6 +3,8 @@ versions:
   - version: "2.0.4"
     digest: "@sha256:14f0cf3dc43d949e759b50d793529976a1a1a7f391eaf1e048acd55cd5392462"
     default: true
+  - version: "1.10.5"
+    digest: "@sha256:d52fdb89745d8309de690d53c29d6baec8867e920051eb50b2c7f7f85c127e43"
 risk_accountability:
   mode: complete
   exceptions:

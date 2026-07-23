@@ -179,6 +179,32 @@ func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
 	}
 }
 
+func TestSelectPackTestCaseRequiresOneExactCase(t *testing.T) {
+	plans := []packtest.PlanRef{{
+		Name: "postgres",
+		Cases: []packtest.CaseRef{
+			{ID: "postgres.uptime", Action: "postgres.uptime"},
+			{ID: "postgres.connections", Action: "postgres.connections"},
+		},
+	}}
+	selected, err := selectPackTestCase(plans, "postgres.uptime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 1 || len(selected[0].Cases) != 1 ||
+		selected[0].Cases[0].ID != "postgres.uptime" {
+		t.Fatalf("selected plans = %+v", selected)
+	}
+	if _, err := selectPackTestCase(plans, "missing"); err == nil ||
+		!strings.Contains(err.Error(), "has no case") {
+		t.Fatalf("missing case error = %v", err)
+	}
+	if _, err := selectPackTestCase(append(plans, plans[0]), "postgres.uptime"); err == nil ||
+		!strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("ambiguous pack error = %v", err)
+	}
+}
+
 func TestValidatePackTestVersionInput(t *testing.T) {
 	tests := []struct {
 		name    string

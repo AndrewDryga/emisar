@@ -3,6 +3,8 @@ versions:
   - version: "13.1.1"
     digest: "@sha256:7cb8c64c4d57a57e734073f3cc94620adb24a0acb929bd80ba9f14017e3a975b"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [GRAFANA_PASSWORD]
 env:
   GRAFANA_PASSWORD: packtest-canary-grafana-61df
@@ -26,7 +28,8 @@ cases:
       stdout_contains: ["[]"]
   - action: grafana.health
     expect:
-      stdout_contains: ['"database"', '"ok"']
+      json:
+        /database: ok
   - action: grafana.orgs
     expect:
       stdout_contains: [Main Org.]
@@ -36,6 +39,15 @@ cases:
   - action: grafana.users
     expect:
       stdout_contains: [admin]
+  - name: grafana.users-invalid-credentials
+    action: grafana.users
+    env:
+      GRAFANA_PASSWORD: packtest-canary-grafana-invalid-2e4a
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["401"]
   - action: grafana.version
     expect:
       stdout_contains: [buildInfo, version]

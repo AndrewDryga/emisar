@@ -103,6 +103,35 @@ func TestArgumentValuePreservesNumericStrings(t *testing.T) {
 	}
 }
 
+func TestResolveArgumentCapturesAndTypesOneLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	integer, err := resolveArgument(Step{
+		Argv: []string{"/bin/sh", "-c", "printf 42"},
+	}, os.Environ(), "integer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if integer != int64(42) {
+		t.Fatalf("resolved integer = %#v", integer)
+	}
+	text, err := resolveArgument(Step{
+		Argv: []string{"/bin/sh", "-c", "printf fixture-id"},
+	}, os.Environ(), "string")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "fixture-id" {
+		t.Fatalf("resolved string = %#v", text)
+	}
+	if _, err := resolveArgument(Step{
+		Argv: []string{"/bin/sh", "-c", "printf 'one\\ntwo\\n'"},
+	}, os.Environ(), "string"); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("multi-line argument error = %v", err)
+	}
+}
+
 func TestActionAssertionsCoverFailureNegativesAndJSONPointers(t *testing.T) {
 	failed := actionResult{
 		Status: "failed", ExitCode: 42, Reason: "target unavailable",
@@ -133,6 +162,23 @@ func TestActionAssertionsCoverFailureNegativesAndJSONPointers(t *testing.T) {
 		!strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("JSON action accepted invalid output: %v", err)
 	}
+	if err := checkActionResult(actionResult{
+		Status: "failed", ExitCode: 22,
+	}, Expectation{Status: "failure", Exit: []int{22}}, true); err != nil {
+		t.Fatalf("JSON action required a success document for an expected failure: %v", err)
+	}
+}
+
+func TestFailureExpectationDoesNotInheritSuccessSmokeDefault(t *testing.T) {
+	defaults := Expectation{StdoutNotEmpty: true}
+	failure := mergeActionExpectation(defaults, Expectation{Status: "failure", Exit: []int{22}})
+	if failure.StdoutNotEmpty {
+		t.Fatal("expected failure inherited the success-only stdout smoke assertion")
+	}
+	success := mergeActionExpectation(defaults, Expectation{})
+	if !success.StdoutNotEmpty {
+		t.Fatal("expected success did not inherit the stdout smoke assertion")
+	}
 }
 
 func TestSecretCanariesAreAbsentFromResultAndEventLog(t *testing.T) {
@@ -160,6 +206,35 @@ func TestSecretCanariesCanBeEmbeddedAndEnvironmentCanBeUnset(t *testing.T) {
 	got := withoutEnvironment([]string{"A=one", "PASSWORD=secret", "B=two"}, []string{"PASSWORD"})
 	if strings.Join(got, ",") != "A=one,B=two" {
 		t.Fatalf("withoutEnvironment = %v", got)
+	}
+}
+
+func TestSecretCanariesUseEffectiveCaseEnvironment(t *testing.T) {
+	eventLog := filepath.Join(t.TempDir(), "events.jsonl")
+	write(t, eventLog, `{"action_id":"example.inspect"}`+"\n")
+	base := []string{
+		"PASSWORD=packtest-canary-password-plan",
+		"REMOVED=packtest-canary-removed-plan",
+	}
+	effective := environment(base, map[string]string{
+		"PASSWORD": "packtest-canary-password-case",
+	})
+	effective = withoutEnvironment(effective, []string{"REMOVED"})
+	values := environmentMap(effective)
+
+	if values["PASSWORD"] != "packtest-canary-password-case" {
+		t.Fatalf("effective PASSWORD = %q", values["PASSWORD"])
+	}
+	if _, exists := values["REMOVED"]; exists {
+		t.Fatalf("unset secret remains in effective environment: %#v", values)
+	}
+	result := actionResult{
+		Status: "failure",
+		Reason: values["PASSWORD"],
+	}
+	if err := checkSecretCanaries([]string{"PASSWORD", "REMOVED"}, values, result, eventLog); err == nil ||
+		!strings.Contains(err.Error(), "PASSWORD") {
+		t.Fatalf("case-level secret leak passed: %v", err)
 	}
 }
 
@@ -199,7 +274,10 @@ func TestExecuteTimesOutHungCommands(t *testing.T) {
 
 func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 	actions := map[string]actionDefinition{
-		"example.read":           {ID: "example.read", Risk: "low"},
+		"example.read": {
+			ID: "example.read", Risk: "low",
+			Args: []actionArgument{{Name: "target", Type: "string"}},
+		},
 		"example.sensitive_read": {ID: "example.sensitive_read", Risk: "medium", SideEffects: []string{"Read-only, but exposes secrets."}},
 		"example.mutate":         {ID: "example.mutate", Risk: "high"},
 	}
@@ -224,6 +302,30 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		{"case root without reason", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{Action: "example.read", RunnerUser: "root", Expect: Expectation{StdoutContains: []string{"ok"}}},
 		}}, "requires runner_reason"},
+		{"case secret override without canary", Plan{
+			Services:  []string{"fixture"},
+			Versions:  testVersions(),
+			SecretEnv: []string{"PASSWORD"},
+			Env:       map[string]string{"PASSWORD": "packtest-canary-password-plan"},
+			Cases: []Case{{
+				Action: "example.read",
+				Env:    map[string]string{"PASSWORD": "plain-secret"},
+				Expect: Expectation{StdoutContains: []string{"ok"}},
+			}},
+		}, "must contain a packtest-canary- value"},
+		{"unknown resolved argument", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{
+			Action:      "example.read",
+			Expect:      Expectation{StdoutContains: []string{"ok"}},
+			ResolveArgs: map[string]Step{"missing": {Argv: []string{"echo", "value"}}},
+		}}}, "does not name an action argument"},
+		{"duplicate resolved argument", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{
+			Action: "example.read",
+			Args:   map[string]any{"target": "static"},
+			Expect: Expectation{StdoutContains: []string{"ok"}},
+			ResolveArgs: map[string]Step{
+				"target": {Argv: []string{"echo", "dynamic"}},
+			},
+		}}}, "duplicates a static argument"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

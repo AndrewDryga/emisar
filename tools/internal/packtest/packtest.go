@@ -54,6 +54,7 @@ type Case struct {
 	Env          map[string]string `yaml:"env,omitempty"`
 	UnsetEnv     []string          `yaml:"unset_env,omitempty"`
 	Args         map[string]any    `yaml:"args,omitempty"`
+	ResolveArgs  map[string]Step   `yaml:"resolve_args,omitempty"`
 	Reason       string            `yaml:"reason,omitempty"`
 	Expect       Expectation       `yaml:"expect,omitempty"`
 	Arrange      []Step            `yaml:"arrange,omitempty"`
@@ -134,10 +135,16 @@ type Totals struct {
 
 func (totals Totals) Failed() bool { return totals.Fail != 0 || totals.PacksFailed != 0 }
 
+type actionArgument struct {
+	Name string `yaml:"name"`
+	Type string `yaml:"type"`
+}
+
 type actionDefinition struct {
-	ID          string   `yaml:"id"`
-	Risk        string   `yaml:"risk"`
-	SideEffects []string `yaml:"side_effects"`
+	ID          string           `yaml:"id"`
+	Risk        string           `yaml:"risk"`
+	SideEffects []string         `yaml:"side_effects"`
+	Args        []actionArgument `yaml:"args"`
 	Output      struct {
 		Parser string `yaml:"parser"`
 	} `yaml:"output"`
@@ -524,6 +531,9 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		if test.RunnerUser != "root" && strings.TrimSpace(test.RunnerReason) != "" {
 			return fmt.Errorf("%s runner_reason is only valid for runner_user root", location)
 		}
+		if err := validateCaseSecretEnv(plan.SecretEnv, plan.Env, test.Env, test.UnsetEnv); err != nil {
+			return fmt.Errorf("%s: %w", location, err)
+		}
 		expect := mergeActionExpectation(plan.Defaults.Expect, test.Expect)
 		if err := validateActionExpectation(expect); err != nil {
 			return fmt.Errorf("%s expect: %w", location, err)
@@ -542,6 +552,20 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		for j, step := range append(append([]Step{}, test.Arrange...), test.Cleanup...) {
 			if err := validateStep(step, false); err != nil {
 				return fmt.Errorf("%s setup/cleanup[%d]: %w", location, j, err)
+			}
+		}
+		for name, resolver := range test.ResolveArgs {
+			if _, exists := test.Args[name]; exists {
+				return fmt.Errorf("%s resolve_args.%s duplicates a static argument", location, name)
+			}
+			if action.argumentType(name) == "" {
+				return fmt.Errorf("%s resolve_args.%s does not name an action argument", location, name)
+			}
+			if !reflect.DeepEqual(resolver.Expect, Expectation{}) {
+				return fmt.Errorf("%s resolve_args.%s cannot declare expect", location, name)
+			}
+			if err := validateStep(resolver, false); err != nil {
+				return fmt.Errorf("%s resolve_args.%s: %w", location, name, err)
 			}
 		}
 		if action.mutates() && expect.Status == "success" {
@@ -608,6 +632,28 @@ func validateSecretEnv(keys []string, env map[string]string) error {
 		}
 	}
 	return nil
+}
+
+func validateCaseSecretEnv(keys []string, base, overrides map[string]string, unsetKeys []string) error {
+	values := make(map[string]string, len(base)+len(overrides))
+	for key, value := range base {
+		values[key] = value
+	}
+	for key, value := range overrides {
+		values[key] = value
+	}
+	unset := make(map[string]bool, len(unsetKeys))
+	for _, key := range unsetKeys {
+		unset[key] = true
+		delete(values, key)
+	}
+	active := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if !unset[key] {
+			active = append(active, key)
+		}
+	}
+	return validateSecretEnv(active, values)
 }
 
 func validateRiskAccountability(accountability RiskAccountability, actions map[string]actionDefinition, successful map[string]bool) error {
@@ -685,6 +731,15 @@ func (action actionDefinition) risky() bool {
 	return action.Risk == "high" || action.Risk == "critical"
 }
 
+func (action actionDefinition) argumentType(name string) string {
+	for _, argument := range action.Args {
+		if argument.Name == name {
+			return argument.Type
+		}
+	}
+	return ""
+}
+
 func validateStep(step Step, semantic bool) error {
 	if len(step.Argv) == 0 || strings.TrimSpace(step.Argv[0]) == "" {
 		return fmt.Errorf("argv must name an executable")
@@ -733,7 +788,9 @@ func mergeActionExpectation(defaults, override Expectation) Expectation {
 	if len(merged.Exit) == 0 && merged.Status == "success" {
 		merged.Exit = []int{0}
 	}
-	merged.StdoutNotEmpty = merged.StdoutNotEmpty || defaults.StdoutNotEmpty
+	if merged.Status == "success" {
+		merged.StdoutNotEmpty = merged.StdoutNotEmpty || defaults.StdoutNotEmpty
+	}
 	merged.ReasonContains = mergeStrings(defaults.ReasonContains, merged.ReasonContains)
 	merged.StdoutContains = mergeStrings(defaults.StdoutContains, merged.StdoutContains)
 	merged.StdoutNotContains = mergeStrings(defaults.StdoutNotContains, merged.StdoutNotContains)
@@ -830,14 +887,31 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 		}
 	}
 	if len(failures) == 0 {
+		arguments := make(map[string]any, len(test.Args)+len(test.ResolveArgs))
+		for key, value := range test.Args {
+			arguments[key] = value
+		}
+		resolvedKeys := make([]string, 0, len(test.ResolveArgs))
+		for key := range test.ResolveArgs {
+			resolvedKeys = append(resolvedKeys, key)
+		}
+		sort.Strings(resolvedKeys)
+		for _, key := range resolvedKeys {
+			value, err := resolveArgument(test.ResolveArgs[key], env, action.argumentType(key))
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("resolve argument %s: %v", key, err))
+				break
+			}
+			arguments[key] = value
+		}
 		args := []string{"--config", config.Config, "action", "run", test.Action}
-		keys := make([]string, 0, len(test.Args))
-		for key := range test.Args {
+		keys := make([]string, 0, len(arguments))
+		for key := range arguments {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			value, err := argumentValue(test.Args[key])
+			value, err := argumentValue(arguments[key])
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("argument %s: %v", key, err))
 				break
@@ -860,7 +934,7 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 				)
 				secretErr := checkSecretCanaries(
 					plan.SecretEnv,
-					plan.Env,
+					environmentMap(env),
 					result,
 					"/tmp/emisar-test/events.jsonl",
 				)
@@ -894,6 +968,48 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 		return errors.New(strings.Join(failures, "\n"))
 	}
 	return nil
+}
+
+func resolveArgument(step Step, baseEnv []string, argumentType string) (any, error) {
+	retryFor, retryEvery, err := retryDurations(step)
+	if err != nil {
+		return nil, err
+	}
+	env := environment(baseEnv, step.Env)
+	deadline := time.Now().Add(retryFor)
+	for {
+		result, runErr := execute(step.Argv, env)
+		if runErr == nil && result.exitCode != 0 {
+			runErr = fmt.Errorf("exit=%d\nstdout:\n%s\nstderr:\n%s",
+				result.exitCode, result.stdout, result.stderr)
+		}
+		value := strings.TrimSpace(result.stdout)
+		if runErr == nil && (value == "" || strings.ContainsAny(value, "\r\n")) {
+			runErr = fmt.Errorf("stdout must contain exactly one non-empty line\nstdout:\n%s", result.stdout)
+		}
+		if runErr == nil {
+			switch argumentType {
+			case "integer":
+				parsed, parseErr := strconv.ParseInt(value, 10, 64)
+				if parseErr != nil {
+					runErr = fmt.Errorf("parse integer %q: %w", value, parseErr)
+				} else {
+					return parsed, nil
+				}
+			case "string":
+				return value, nil
+			default:
+				return nil, fmt.Errorf("argument type %q cannot be resolved dynamically", argumentType)
+			}
+		}
+		if retryFor == 0 || !time.Now().Before(deadline) {
+			if step.Name != "" {
+				return nil, fmt.Errorf("%s: %w", step.Name, runErr)
+			}
+			return nil, runErr
+		}
+		time.Sleep(min(retryEvery, time.Until(deadline)))
+	}
 }
 
 func executeAction(argv, env []string) (actionResult, error) {
@@ -1048,7 +1164,7 @@ func checkActionResult(result actionResult, expect Expectation, requireJSON bool
 	}, streamExpect); err != nil {
 		return err
 	}
-	if requireJSON || len(expect.JSON) > 0 {
+	if (requireJSON && expect.Status == "success") || len(expect.JSON) > 0 {
 		if err := checkJSONAssertions(result.Stdout, expect.JSON); err != nil {
 			return err
 		}
@@ -1215,13 +1331,7 @@ func argumentValue(value any) (string, error) {
 }
 
 func environment(base []string, overrides map[string]string) []string {
-	values := make(map[string]string, len(base)+len(overrides))
-	for _, entry := range base {
-		key, value, found := strings.Cut(entry, "=")
-		if found {
-			values[key] = value
-		}
-	}
+	values := environmentMap(base)
 	for key, value := range overrides {
 		values[key] = value
 	}
@@ -1235,6 +1345,17 @@ func environment(base []string, overrides map[string]string) []string {
 		env = append(env, key+"="+values[key])
 	}
 	return env
+}
+
+func environmentMap(base []string) map[string]string {
+	values := make(map[string]string, len(base))
+	for _, entry := range base {
+		key, value, found := strings.Cut(entry, "=")
+		if found {
+			values[key] = value
+		}
+	}
+	return values
 }
 
 func withoutEnvironment(base []string, keys []string) []string {

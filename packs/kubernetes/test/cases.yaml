@@ -3,6 +3,8 @@ versions:
   - version: v1.36.2-k3s1
     digest: "@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251f90b446e4dff03513dd87"
     default: true
+  - version: v1.34.6-k3s1
+    digest: "@sha256:73beaf51eaf1ab553d11aedd55ffdb5800d4e7e694f43dea6ca24aa87ff79fcb"
 env:
   KUBECONFIG: /shared/kubeconfig.yaml
 defaults:

@@ -3,11 +3,12 @@ versions:
   - version: 26.6.2.81-alpine
     digest: "@sha256:9acc2bb14b5a55bdaf08485fba63200092f9c04cfa50f70a92f1fccc51482d7f"
     default: true
+  - version: 25.8.28.1-alpine
+    digest: "@sha256:f40cd6034fb8c54dce6a85338750fbad79f387e2705e1991a85f2e7086b5b9ea"
 risk_accountability:
   mode: complete
   exceptions:
     ch.kill_mutation: requires_concurrent_session
-    ch.kill_query: requires_concurrent_session
     ch.system_drop_replica: requires_cluster
     ch.system_restart_replica: requires_cluster
 secret_env: [CH_PASSWORD]
@@ -52,3 +53,18 @@ cases:
       - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM default.packtest_events"']
         expect:
           stdout_contains: ["3"]
+  - action: ch.kill_query
+    args: {query_id: packtest-kill-query}
+    arrange:
+      - argv: [/bin/sh, -c, 'nohup clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query_id packtest-kill-query --query "SELECT sleepEachRow(1) FROM numbers(120) SETTINGS max_block_size=1" >/tmp/packtest-kill-query.log 2>&1 &']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''"']
+        expect:
+          stdout_contains: ["1"]
+        retry_for: 10s
+        retry_every: 250ms
+    probes:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''"']
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 10s
+        retry_every: 250ms

@@ -3,11 +3,11 @@ versions:
   - version: "8.8.0"
     digest: "@sha256:234c902a2db49461a129e2d4aeff85b28cf20187ed274a67f6e50995fa713c7b"
     default: true
+  - version: "7.4.2"
+    digest: "@sha256:fbdbaea47b9ae4ecc2082ecdb4e1cea81e32176ffb1dcf643d422ad07427e5d9"
 risk_accountability:
   mode: complete
   exceptions:
-    redis.client_kill: requires_dynamic_fixture
-    redis.client_pause: requires_concurrent_session
     redis.cluster_failover: requires_cluster
     redis.cluster_forget: requires_cluster
     redis.replicaof: requires_cluster
@@ -149,6 +149,34 @@ cases:
       - argv: [redis-cli, CONFIG, GET, maxmemory-policy]
         expect:
           stdout_contains: [allkeys-lru]
+  - action: redis.client_kill
+    args: {mode: ID}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            printf '%s\r\n' '*2' '$4' AUTH '$28' "$REDISCLI_AUTH" '*3' '$6' CLIENT '$7' SETNAME '$15' packtest-victim '*3' '$5' BLPOP '$14' packtest:never '$3' 120 >/tmp/packtest-redis-victim.req;
+            nohup nc 127.0.0.1 6379 </tmp/packtest-redis-victim.req >/tmp/packtest-redis-victim.log 2>&1 &
+    resolve_args:
+      target:
+        argv: [/bin/sh, -c, "redis-cli CLIENT LIST | sed -n 's/^id=\\([0-9][0-9]*\\).*name=packtest-victim .*/\\1/p'"]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ["1"]
+    probes:
+      - argv: [/bin/sh, -c, "! redis-cli CLIENT LIST | grep -q 'name=packtest-victim ' && echo disconnected"]
+        expect:
+          stdout_contains: [disconnected]
+  - action: redis.client_pause
+    args: {ms: 1000}
+    expect:
+      stdout_contains: [OK]
+    probes:
+      - argv: [/bin/sh, -c, 'start=$(date +%s%3N); redis-cli PING >/dev/null; end=$(date +%s%3N); elapsed=$((end-start)); test "$elapsed" -ge 700 && echo "paused:${elapsed}ms"']
+        expect:
+          stdout_contains: [paused:]
   - action: redis.flush_db
     args: {db: 1, mode: SYNC}
     arrange:

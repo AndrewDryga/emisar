@@ -66,8 +66,8 @@ updates:
       - "/dev/mcp"
       - "/dev/cloud-init"
       - "/dev/test-packs"
-      - "/dev/test-packs/snmpd"
-      - "/dev/test-packs/snmpd-frr"
+      - "/packs/*/test"
+      - "/packs/*/test/*"
     schedule:
       interval: "weekly"
       day: "friday"

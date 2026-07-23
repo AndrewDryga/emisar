@@ -74,9 +74,13 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), nil, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
 }
 
-func (a *App) packTest(ctx context.Context, pattern string, names []string) error {
+func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID string) error {
 	harness := filepath.Join(a.Root, "dev", "test-packs")
 	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
+	if err != nil {
+		return err
+	}
+	plans, err = selectPackTestCase(plans, caseID)
 	if err != nil {
 		return err
 	}
@@ -205,8 +209,10 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 			currentPack = result.Plan.Name
 			writePackTestReportHeader(&aggregate, result.Plan, "all", versionEnvs[result.Plan.Name], result.Plan.Runner.User)
 		}
-		fmt.Fprintf(a.Out, "\n--- %s/%s ---\n", result.Plan.Name, result.Case.ID)
-		copyOutput(a.Out, result.Output)
+		if result.Err != nil {
+			fmt.Fprintf(a.Out, "\n--- %s/%s ---\n", result.Plan.Name, result.Case.ID)
+			copyOutput(a.Out, result.Output)
+		}
 		fmt.Fprintf(&aggregate, "\n--- %s ---\n", result.Case.ID)
 		copyOutput(&aggregate, result.Output)
 		if result.Err != nil {
@@ -219,6 +225,23 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func selectPackTestCase(plans []packtest.PlanRef, caseID string) ([]packtest.PlanRef, error) {
+	if caseID == "" {
+		return plans, nil
+	}
+	if len(plans) != 1 {
+		return nil, fmt.Errorf("--case requires a name that selects exactly one pack")
+	}
+	selected := plans[0]
+	for _, test := range selected.Cases {
+		if test.ID == caseID {
+			selected.Cases = []packtest.CaseRef{test}
+			return []packtest.PlanRef{selected}, nil
+		}
+	}
+	return nil, fmt.Errorf("pack %s has no case %q", selected.Name, caseID)
 }
 
 func writePackTestFailureReports(dir string, plans []packtest.PlanRef, requested map[string]string, failure error) error {

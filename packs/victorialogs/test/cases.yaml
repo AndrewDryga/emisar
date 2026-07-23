@@ -3,6 +3,8 @@ versions:
   - version: v1.35.0
     digest: "@sha256:70f4e739c3594a603487491355d9480f9483e9124c841bc61352951c323a7842"
     default: true
+risk_accountability:
+  mode: complete
 env:
   VL_URL: "http://victorialogs:9428"
 defaults:
