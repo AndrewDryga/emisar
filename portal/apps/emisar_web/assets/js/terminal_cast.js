@@ -140,24 +140,29 @@ function setupCast(root) {
     return
   }
 
-  // Static until scrolled into view, then play once.
+  // Hide, then play once — when scrolled into view, or on a short fallback so
+  // it can NEVER sit frozen-empty if the observer doesn't fire (already in view
+  // on load, a flaky observer, etc.). play() clears the fallback timer.
   cells.forEach(({ line }) => (line.hidden = true))
-  if (!("IntersectionObserver" in window)) {
-    play()
-    return
-  }
   let started = false
-  const io = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting && !started) {
-          started = true
+  const start = () => {
+    if (started) return
+    started = true
+    play()
+  }
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
           io.disconnect()
-          play()
+          start()
         }
-      })
-    },
-    { threshold: 0.35 }
-  )
-  io.observe(root)
+      },
+      { threshold: 0.2 }
+    )
+    io.observe(root)
+    later(2000, start)
+  } else {
+    start()
+  }
 }
