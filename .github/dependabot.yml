@@ -63,7 +63,7 @@ updates:
     directories:
       - "/portal"
       - "/dev/runner"
-      - "/mcp"
+      - "/dev/mcp"
       - "/dev/cloud-init"
       - "/dev/test-packs"
       - "/dev/test-packs/snmpd"

@@ -230,7 +230,7 @@ jobs:
               echo "::error::bundled default pack ${pack} not found"
               exit 1
             fi
-          done < runner/bundled-packs.txt
+          done < runner/release/bundled-packs.txt
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
@@ -250,7 +250,7 @@ jobs:
           test -x "/tmp/release-check/${name}/install.sh"
           test -f "/tmp/release-check/${name}/LICENSE"
           test -f "/tmp/release-check/${name}/README.md"
-          expected_packs=$(grep -cve '^[[:space:]]*$' runner/bundled-packs.txt)
+          expected_packs=$(grep -cve '^[[:space:]]*$' runner/release/bundled-packs.txt)
           test "$(find "/tmp/release-check/${name}/packs" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$expected_packs"
           go version -m "/tmp/release-check/${name}/emisar"
           if [ "$GOOS/$GOARCH" = linux/amd64 ]; then

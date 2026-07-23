@@ -12,16 +12,18 @@ runner:
 cloud:
   url: wss://cloud.example.com/runner/v1
   enrollment_key_env: EMISAR_ENROLLMENT_KEY
-  token_path: ./var/lib/emisar/token
+  token_path: ../var/lib/emisar/token
   heartbeat_every: 30s
   reconnect_min: 1s
   reconnect_max: 60s
 
 paths:
-  data_dir: ./var/lib/emisar
-  work_dir: ./var/lib/emisar/work
+  # Relative paths resolve from this file's directory. These keep development
+  # state under runner/var and load the repository's root packs/.
+  data_dir: ../var/lib/emisar
+  work_dir: ../var/lib/emisar/work
   packs:
-    - ../packs
+    - ../../packs
 
 execution: {}
 
@@ -92,7 +94,7 @@ execution: {}
 #       public_key: e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0
 
 events:
-  jsonl_path: ./var/log/emisar/events.jsonl
+  jsonl_path: ../var/log/emisar/events.jsonl
   max_preview_bytes: 4096
 
 redaction:

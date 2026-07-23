@@ -114,7 +114,7 @@ events:
 
 Groups and labels organize the fleet and participate in scoping. Treat their
 names as durable operational identifiers. The full annotated configuration is
-[`config.example.yaml`](config.example.yaml).
+[`examples/config.yaml`](examples/config.yaml).
 
 ## Pack credentials
 
@@ -355,7 +355,7 @@ Build from the repository root:
 
 ```sh
 (cd runner && go build -o ../bin/emisar .)
-./bin/emisar --config ./runner/config.example.yaml state
+./bin/emisar --config ./runner/examples/config.yaml state
 ```
 
 The module gate is:

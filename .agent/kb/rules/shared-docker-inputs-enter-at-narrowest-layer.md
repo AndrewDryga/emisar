@@ -10,6 +10,13 @@ release metadata to exist. Application compile inputs follow dependency
 compilation; runtime configuration follows application compilation; per-build
 metadata belongs in the final image layer.
 
+`.dockerignore` belongs to the build context, not to the Dockerfile's location.
+Keep one context-level ignore file when every recipe using that context needs
+the same exclusions. Add a Dockerfile-specific
+`<Dockerfile filename>.dockerignore`, which takes precedence for that recipe,
+only when multiple recipes intentionally share one context but require
+different inputs.
+
 ## Why
 
 An `ARG`, `ENV`, `COPY`, or `RUN` changes its Docker layer's cache key. Every
@@ -38,6 +45,9 @@ ARG SOURCE_REVISION=dev
 RUN printf '%s\n' "$SOURCE_REVISION" > /app/REVISION
 ```
 
+When `dev/mcp/Dockerfile` builds with `mcp/` as its context, `mcp/.dockerignore`
+filters the source even though the recipe lives elsewhere.
+
 ## Bad
 
 ```dockerfile
@@ -49,8 +59,14 @@ RUN mix deps.get
 RUN mix deps.compile
 ```
 
+Moving `mcp/.dockerignore` beside a development Dockerfile would detach the
+ignore policy from the `mcp/` context and imply a second policy that does not
+exist.
+
 ## Enforcement
 
 Review the first instruction that consumes every Docker build input. For a
 cache-sensitive change, build variants that alter one input class at a time and
 verify BuildKit reports every preceding expensive step as `CACHED`.
+For every ignore file, identify the exact build context and confirm whether any
+other Dockerfile shares it before introducing a recipe-specific override.

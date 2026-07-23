@@ -1,14 +1,10 @@
-# Dockerfile for the emisar-mcp stdio bridge.
-#
-# Normally emisar-mcp runs on the operator's laptop, spawned as a child
-# process by Claude Code / Cursor / etc. This image exists so the
-# binary is available inside the dev compose stack for ad-hoc testing
-# (e.g., feeding JSON-RPC through stdin to verify end-to-end calls
-# against a local portal).
+# Development image for the emisar-mcp stdio bridge. The packaged Compose
+# topology and `dev/run e2e signing` use it to exercise the real bridge on the
+# same Docker network as the portal. It is not a published product image.
 #
 # Build context is the mcp module (mcp/), so COPY paths are relative.
 #
-#   docker build -f mcp/Dockerfile -t emisar/mcp mcp/
+#   docker build -f dev/mcp/Dockerfile -t emisar/mcp mcp/
 #
 # Driving it (one-shot JSON-RPC request):
 #
@@ -61,7 +57,7 @@ VOLUME ["/config"]
 
 USER emisar
 
-# No ENTRYPOINT — emisar-mcp speaks JSON-RPC over stdio. Compose drives
+# No ENTRYPOINT: emisar-mcp speaks JSON-RPC over stdio. Compose drives
 # this image with `docker compose run --rm -T mcp` and supplies the
 # JSON-RPC payload on stdin.
 CMD ["/usr/local/bin/emisar-mcp"]

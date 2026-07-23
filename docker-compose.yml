@@ -328,7 +328,7 @@ services:
   mcp:
     build:
       context: ./mcp
-      dockerfile: Dockerfile
+      dockerfile: ../dev/mcp/Dockerfile
       args:
         MCP_VERSION: "0.3.0"
     image: emisar/mcp:dev

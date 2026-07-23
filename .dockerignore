@@ -1,5 +1,5 @@
 # Shared build context for .agent/Dockerfile, portal/Dockerfile, and
-# dev/runner/Dockerfile. MCP, cloud-init, and test-pack images have context-local files.
+# dev/runner/Dockerfile. MCP, cloud-init, and test-pack images use narrower contexts.
 
 # Repository and local tool state
 .git

@@ -1,9 +1,8 @@
 # Dev-only fixtures & harnesses
 
 Local-only development commands, dependencies, fixtures, and harnesses. None
-of this ships with production releases — the runner tarball
-produced by the release workflow contains exactly the runner binary and its
-config skeleton.
+of this ships with production releases; release workflows assemble product
+artifacts from the runner, MCP, pack, and root installer sources.
 
 ## Compose topologies
 
@@ -34,6 +33,7 @@ The repository keeps tooling in three ownership buckets:
 
 - `dev/run` is only a cached Go-binary bootstrap and the contributor command surface.
 - `tools/` holds the reusable Go implementation, including browser automation.
+- `dev/*/Dockerfile` recipes build Compose and validation fixtures, never published images.
 - The root `.agent/` holds agent configuration and state, not another command surface.
 - Shell programs under `packs/`, `infra/templates/`, and container fixtures
   execute with their owned runtime artifacts; they are shipped or deployed
