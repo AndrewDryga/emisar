@@ -197,11 +197,11 @@ emisar ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx</.docs_code>
         <.link navigate={~p"/docs/runners"} class="text-brand-400 hover:text-brand-300">
           Runner fleet
         </.link>
-        page. To provision many hosts from a template with a reusable key, see <.link
-          navigate={~p"/docs/runners" <> "#enrollment-keys"}
+        page. To boot ephemeral hosts from an autoscaling group with one reusable key, see <.link
+          navigate={~p"/docs/autoscaling-fleets"}
           class="text-brand-400 hover:text-brand-300"
         >
-          enrollment keys
+          autoscaling fleets
         </.link>; to roll out across a fleet in phases, see the <.link
           navigate={~p"/docs/deployment"}
           class="text-brand-400 hover:text-brand-300"

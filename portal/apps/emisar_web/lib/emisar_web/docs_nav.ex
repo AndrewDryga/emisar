@@ -71,6 +71,14 @@ defmodule EmisarWeb.DocsNav do
            "A Nomad system job placing one runner on every client node, with a worked HCL spec."
        },
        %{
+         slug: "autoscaling-fleets",
+         title: "Autoscaling fleets",
+         path: "/docs/autoscaling-fleets",
+         icon: "hero-cpu-chip",
+         desc:
+           "Enroll ephemeral runners from one reusable key as autoscaling groups — GCP MIG, AWS ASG, Azure VMSS — boot and terminate hosts."
+       },
+       %{
          slug: "deployment",
          title: "Production rollout",
          path: "/docs/deployment",

@@ -42,6 +42,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/containers
     /docs/kubernetes
     /docs/nomad
+    /docs/autoscaling-fleets
     /docs/runs
     /docs/keys
     /docs/runner-cli

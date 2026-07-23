@@ -184,6 +184,7 @@ defmodule EmisarWeb.Router do
     get "/docs/containers", MarketingController, :docs_containers
     get "/docs/kubernetes", MarketingController, :docs_kubernetes
     get "/docs/nomad", MarketingController, :docs_nomad
+    get "/docs/autoscaling-fleets", MarketingController, :docs_autoscaling_fleets
     get "/docs/runs", MarketingController, :docs_runs
     get "/docs/keys", MarketingController, :docs_keys
     get "/docs/runner-cli", MarketingController, :docs_runner_cli
