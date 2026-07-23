@@ -176,6 +176,7 @@ defmodule EmisarWeb.Router do
     get "/docs/runbooks", MarketingController, :docs_runbooks
     get "/docs/teams-and-access", MarketingController, :docs_teams
     get "/docs/sso", MarketingController, :docs_sso
+    get "/docs/scim", MarketingController, :docs_scim
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/deployment", MarketingController, :docs_deployment
     get "/docs/audit-and-siem", MarketingController, :docs_audit

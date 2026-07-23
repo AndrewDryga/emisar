@@ -2382,7 +2382,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         Your IdP provisions members and offboards removed ones automatically.
-        <.doc_link href="/docs/sso">Directory sync docs</.doc_link>
+        <.doc_link href="/docs/scim">Directory sync docs</.doc_link>
       </p>
 
       <div :if={@provider.scim_enabled} class="mt-4 space-y-4">

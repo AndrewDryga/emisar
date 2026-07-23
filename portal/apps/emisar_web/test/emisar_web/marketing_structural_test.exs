@@ -34,6 +34,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runbooks
     /docs/teams-and-access
     /docs/sso
+    /docs/scim
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem

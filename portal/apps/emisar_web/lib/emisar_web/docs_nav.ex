@@ -67,10 +67,18 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "sso",
-         title: "Single sign-on & SCIM",
+         title: "Single sign-on",
          path: "/docs/sso",
          icon: "hero-identification",
-         desc: "OIDC sign-in and SCIM directory sync — offboarding revokes access for you."
+         desc: "OIDC sign-in with Google Workspace, Okta, Keycloak, or any compliant provider."
+       },
+       %{
+         slug: "scim",
+         title: "Directory sync (SCIM)",
+         path: "/docs/scim",
+         icon: "hero-arrow-path",
+         desc:
+           "SCIM 2.0 provisioning and group→role mapping — offboarding in your IdP revokes access."
        },
        %{
          slug: "runners",

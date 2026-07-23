@@ -6,41 +6,39 @@
       current="sso"
       toc={[
         {"sso-login", "Setting up SSO login"},
-        {"scim", "Directory sync (SCIM 2.0)"},
-        {"group-role", "Group → role mapping"},
         {"security-notes", "Security notes"}
       ]}
     >
       <.docs_header current="sso">
         <:dek>
           On Team and Enterprise plans, your team signs in to emisar with your own identity
-          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC. On Enterprise, your
-          directory drives the rest: provision people from the IdP, and when someone is offboarded
-          there, their emisar access is revoked automatically — sessions ended, API keys revoked, no
-          manual cleanup.
+          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC. On Enterprise, pair it
+          with
+          <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">directory sync</.link>
+          to provision people from the IdP and revoke their access automatically when they're
+          offboarded there.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Two pieces, set up independently: <strong class="text-zinc-200">SSO login</strong>
-        (sign in through your IdP) and
-        <strong class="text-zinc-200">directory sync (SCIM)</strong>
-        (provision and deprovision from the directory). You can run login on its own; directory
-        sync builds on a configured connection. Both are managed from
-        <strong class="text-zinc-200">Team → Single sign-on</strong>
-        in your emisar workspace — the Team page lists your connections, and each connection's
-        own page holds its configuration and directory sync. The screenshots below are those
-        pages.
+        This page sets up <strong class="text-zinc-200">SSO login</strong>
+        — signing in through your IdP. Provisioning and deprovisioning from the directory is a
+        separate piece that builds on a configured connection: <.link
+          navigate={~p"/docs/scim"}
+          class="text-brand-300 hover:text-brand-200"
+        >directory sync (SCIM)</.link>.
+        Both are managed from <strong class="text-zinc-200">Team → Single sign-on</strong>
+        in your emisar workspace — the Team page lists your connections, and each connection's own
+        page holds its configuration. The screenshots below are those pages.
       </p>
 
-      <.docs_callout kind={:note} title="Where these flows stand">
+      <.docs_callout kind={:note} title="Where this flow stands">
         <p>
-          emisar speaks standards-based OpenID Connect and SCIM 2.0, and the round-trip — OIDC
-          discovery, ID-token validation, the full SCIM provision / update / deactivate / reactivate
-          lifecycle, and group&nbsp;→&nbsp;role recompute — is verified end to end against a live
-          standards IdP. Vendor-specific certification against hosted Okta and JumpCloud tenants is
-          in progress; until it lands, treat the per-vendor admin-console steps below as our best
-          read of each provider's UI, not a vendor-certified runbook. The emisar side — every step
-          and screenshot on this page — is exactly what you'll see.
+          emisar speaks standards-based OpenID Connect, and the round-trip — OIDC discovery and
+          ID-token validation — is verified end to end against a live standards IdP. Vendor-specific
+          certification against hosted Okta and JumpCloud tenants is in progress; until it lands,
+          treat the per-vendor admin-console steps below as our best read of each provider's UI, not
+          a vendor-certified runbook. The emisar side — every step and screenshot on this page — is
+          exactly what you'll see.
         </p>
       </.docs_callout>
 
@@ -243,163 +241,6 @@
         as usual.
       </p>
 
-      <.docs_h2 id="scim">Directory sync (SCIM 2.0)</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
-        to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
-        and JumpCloud all speak as a provisioning client. The directory-sync panel lives on each
-        connection's page, right under its settings. <.plan_note tier={:enterprise} />
-      </p>
-
-      <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
-        <img
-          src="/images/docs/sso/sso-directory-sync.webp"
-          alt="The Directory sync (SCIM) panel on a configured connection: an enabled badge, Rotate token and Disable buttons, the SCIM base URL with a copy button, and a collapsible 'Point your IdP at this connection' setup guide."
-          loading="lazy"
-          class="w-full"
-        />
-      </figure>
-
-      <ol class="mt-8 space-y-6">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Click <span class="text-zinc-300">Enable directory sync</span> on the connection.
-            </p>
-            <p class="mt-1.5">
-              emisar shows you two things to wire into your provider's SCIM connector — both visible
-              in the panel above:
-            </p>
-            <ul class="mt-2 space-y-2">
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  the <strong class="text-zinc-200">SCIM base URL</strong>
-                  — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
-                  on your emisar host (copy button beside it), and
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  a <strong class="text-zinc-200">bearer token</strong>, shown
-                  <strong class="text-zinc-200">once</strong>
-                  when you enable or rotate it. Like every emisar secret it's write-only after that
-                  — copy it then. Didn't catch it? Use
-                  <strong class="text-zinc-200">Rotate token</strong>
-                  to mint a fresh one (the old one stops working).
-                </span>
-              </li>
-            </ul>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Point your IdP's SCIM connector at that base URL and bearer.
-            </p>
-            <p class="mt-1.5">
-              In your provider, set the SCIM endpoint to the base URL and paste the token as the API
-              token — emisar accepts it in the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
-              header. Enable Create / Update / Deactivate. The connection's
-              <strong class="text-zinc-200">"Point your IdP at this connection"</strong>
-              guide names the per-provider specifics — for Okta, SCIM lives in a <em>separate</em>
-              app (the OIDC login app can't do SCIM); for JumpCloud it's a Custom SCIM config on the
-              same app.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Match the SCIM externalId to the OIDC subject.
-            </p>
-            <p class="mt-1.5">
-              Configure your IdP so the SCIM
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              is the same stable identifier as the connection's identifier claim (the OIDC <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>). Then a member's SSO
-              login and their synced directory record resolve to one emisar identity — no
-              email-matching anywhere. Okta and JumpCloud default both to the directory user id, so
-              this usually needs no change; the brand-bordered note further down covers it in full.
-            </p>
-          </div>
-        </li>
-      </ol>
-
-      <p class="mt-6 text-base leading-7 text-zinc-400">
-        Once it's wired, here's what the sync does:
-      </p>
-      <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Provisioning</strong>
-            creates the user and their membership at the connection's default role — so account
-            access is in place before their first login. Runner access follows the connection's
-            Default runner access setting, which starts at <em>no runners</em>: a provisioned member
-            sees the fleet only once you grant it, per member or by group mapping.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Deprovisioning</strong>
-            — when the IdP marks a user inactive or removes them — <strong class="text-zinc-200">suspends
-            the member</strong>: their sessions are killed and their API keys revoked immediately,
-            so an offboard in your directory revokes emisar access automatically. It does
-            <strong class="text-zinc-200">not</strong>
-            delete the user — the audit trail is preserved. Reactivation in the directory restores
-            access.
-          </span>
-        </li>
-      </ul>
-      <.docs_callout kind={:warn} title="Using Google Workspace?">
-        <p>
-          Google Workspace is a first-class OIDC <em>login</em>
-          provider here, but it has no outbound SCIM — it won't push the user lifecycle to
-          emisar. On its own you get just-in-time provisioning on first login and <strong class="text-zinc-200">no automatic deprovisioning</strong>. To close that gap,
-          route Google through your IdP (Okta, Entra, or JumpCloud) and connect <em>that</em>
-          to emisar's SCIM — an offboard in Google then reaches emisar as the standard
-          <code class="rounded bg-zinc-950 px-1 py-0.5 text-xs">active: false</code>
-          signal and access is revoked automatically, exactly as above. Most orgs already
-          federate Google through an IdP, so there's usually nothing new to stand up. (Native
-          Google directory sync without an IdP is on our roadmap — talk to us if you need it.)
-        </p>
-      </.docs_callout>
-      <.docs_callout kind={:tip} title="Setup note: match the SCIM externalId to the OIDC subject">
-        <p>
-          Configure your IdP so the SCIM
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-          it sends is the same stable identifier as the OIDC
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          (the connection's identifier claim). Then a user's SSO login and their synced directory
-          record resolve to the same emisar identity — no email-matching anywhere. If the two sides
-          can't be configured to share an identifier, that connection can't be reconciled this way.
-        </p>
-      </.docs_callout>
-
-      <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
-        — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
-        or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
-        <strong class="text-zinc-200">highest</strong>
-        role mapped to any of them.
-        <strong class="text-zinc-200">Owner is never assignable through
-        sync</strong>
-        — it stays a deliberate human assignment.
-      </p>
-
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -413,38 +254,25 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The
-            <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
-            — it can provision and deprovision across the account. Treat it like a password, and
-            rotate it from the connection's panel if it's ever exposed (your IdP loses access until
-            you paste the new one).
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            Deprovisioning <strong class="text-zinc-200">suspends, never deletes</strong>
-            — to keep
-            the audit log of what the member did intact.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            Every SSO and directory-sync action lands in the
+            Every SSO sign-in lands in the
             <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-300 hover:text-brand-200"
             >
               audit log
             </.link>
-            with its authentication method, so you can answer "who did this, signed in how" — and
-            see that the directory, not a person, suspended an offboarded member.
+            with its authentication method, so you can answer "who did this, signed in how".
           </span>
         </li>
       </ul>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/scim"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Directory sync (SCIM) <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
         <.link
           navigate={~p"/docs/teams-and-access"}
           class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"

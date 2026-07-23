@@ -18,6 +18,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runbooks
     /docs/teams-and-access
     /docs/sso
+    /docs/scim
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem
@@ -270,18 +271,25 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "sidecar"
   end
 
-  test "SSO docs page covers login, SCIM deprovisioning, and the subject-not-email binding",
-       %{conn: conn} do
+  test "SSO docs page covers login setup and the subject-not-email binding", %{conn: conn} do
     html = conn |> get(~p"/docs/sso") |> html_response(200)
 
-    # The two halves of the feature.
     assert html =~ "Single sign-on"
+    # Links to the directory-sync half.
     assert html =~ "directory sync"
-    # The registered callback + SCIM base URL the operator must wire up.
+    # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
-    assert html =~ "/scim/v2"
-    # The headline value + the honest security posture (must match the built behavior).
+    # The headline security posture (must match the built behavior).
     assert html =~ "issuer + subject, not email"
+  end
+
+  test "SCIM docs page covers directory sync, deprovisioning, and group mapping",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/scim") |> html_response(200)
+
+    # The SCIM base URL the operator must wire up.
+    assert html =~ "/scim/v2"
+    # Deprovisioning suspends, never deletes (must match the built behavior).
     assert html =~ "suspends"
     refute html =~ "deletes the user"
     # Owner is never assignable via sync.
@@ -549,6 +557,7 @@ defmodule EmisarWeb.MarketingTest do
             /docs/runbooks
             /docs/teams-and-access
             /docs/sso
+            /docs/scim
             /docs/runners
             /docs/audit-and-siem
             /docs/action-packs
@@ -1212,18 +1221,23 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "plan notes on plan-gated docs (the upsell markers)" do
-    test "docs/sso marks SSO login as Team+ and SCIM as Enterprise, linking to pricing", %{
-      conn: conn
-    } do
+    test "docs/sso marks SSO login as Team+, linking to pricing", %{conn: conn} do
       html = conn |> get(~p"/docs/sso") |> html_response(200)
 
-      # Each plan-gated feature ends its paragraph with an "Only available on
+      # The plan-gated feature ends its paragraph with an "Only available on
       # <tier>" note naming the tier(s) that have it…
       assert html =~ "Only available on"
       assert html =~ "Team &amp; Enterprise"
       assert html =~ "Available on the Team and Enterprise plans"
-      assert html =~ "Available on the Enterprise plan"
       # …and the tier name is the upsell — it links to pricing.
+      assert html =~ ~s(href="/pricing")
+    end
+
+    test "docs/scim marks directory sync as Enterprise, linking to pricing", %{conn: conn} do
+      html = conn |> get(~p"/docs/scim") |> html_response(200)
+
+      assert html =~ "Only available on"
+      assert html =~ "Available on the Enterprise plan"
       assert html =~ ~s(href="/pricing")
     end
 
@@ -1534,8 +1548,15 @@ defmodule EmisarWeb.MarketingTest do
       # The sitemap is the public, indexable surface only. A leaked /app,
       # sign-in, SCIM, machine-API, or OAuth path would invite crawlers (and
       # scanners) at the authenticated control plane.
+      # Anchor to the host so a public /docs/* page whose slug ends in a
+      # private-route name (e.g. /docs/scim) isn't mistaken for the private
+      # /scim API root — a private route leaks as its own <loc> or a subpath.
       for private <- ~w(/app /sign_in /scim /api /oauth) do
-        refute body =~ "#{private}</loc>", "sitemap leaks a private route: #{private}"
+        refute body =~ "https://emisar.dev#{private}</loc>",
+               "sitemap leaks a private route: #{private}"
+
+        refute body =~ "https://emisar.dev#{private}/",
+               "sitemap leaks a private route: #{private}"
       end
     end
 
