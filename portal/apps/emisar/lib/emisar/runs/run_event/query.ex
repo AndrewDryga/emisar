@@ -53,6 +53,9 @@ defmodule Emisar.Runs.RunEvent.Query do
   def by_seq_after(queryable \\ all(), seq),
     do: where(queryable, [events: e], e.seq > ^seq)
 
+  def by_seq_before(queryable \\ all(), seq),
+    do: where(queryable, [events: e], e.seq < ^seq)
+
   def ordered_by_seq(queryable \\ all()),
     do: order_by(queryable, [events: e], asc: e.seq)
 

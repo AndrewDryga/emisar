@@ -15,6 +15,15 @@ defmodule EmisarWeb.RunDetailLive do
   defp events_truncated?(%{progress_event_count: count}), do: count > @event_window
   defp events_truncated?(_), do: false
 
+  # "Load earlier output" is offered only for terminal runs: a running run's
+  # stream evicts to the most-recent window, so paging earlier chunks in would
+  # fight that eviction. A terminal run streams nothing more, so backfill is safe.
+  defp can_load_earlier?(%{status: status}, more_earlier?),
+    do: Runs.ActionRun.terminal?(status) and more_earlier?
+
+  defp event_seq(nil), do: nil
+  defp event_seq(%{seq: seq}), do: seq
+
   def mount(%{"id" => id}, _session, socket) do
     subject = socket.assigns.current_subject
 
@@ -60,6 +69,8 @@ defmodule EmisarWeb.RunDetailLive do
          # Whether any output was persisted — gates the output panel for an
          # errored run so "result never arrived" doesn't render an empty terminal.
          |> assign(:output_present?, events != [])
+         |> assign(:oldest_seq, event_seq(List.first(events)))
+         |> assign(:more_earlier?, events_truncated?(run))
          |> stream(:events, events)}
     end
   end
@@ -137,6 +148,28 @@ defmodule EmisarWeb.RunDetailLive do
         end
       end
     )
+  end
+
+  # Page the next-older window of trimmed output into a terminal run's viewer.
+  # The subject-gated read is the authorization gate; a vanished run or the start
+  # of output is a quiet no-op rather than a crash.
+  def handle_event("load_earlier", _params, socket) do
+    %{run: run, oldest_seq: oldest_seq, current_subject: subject} = socket.assigns
+
+    with true <- can_load_earlier?(run, socket.assigns.more_earlier?) and is_integer(oldest_seq),
+         {:ok, earlier} <-
+           Runs.list_events_for_run_before(run.id, oldest_seq, event_window(), subject) do
+      socket =
+        earlier
+        |> Enum.reverse()
+        |> Enum.reduce(socket, &stream_insert(&2, :events, &1, at: 0))
+        |> assign(:oldest_seq, event_seq(List.first(earlier)) || oldest_seq)
+        |> assign(:more_earlier?, length(earlier) == event_window())
+
+      {:noreply, socket}
+    else
+      _ -> {:noreply, socket}
+    end
   end
 
   def render(assigns) do
@@ -515,11 +548,23 @@ defmodule EmisarWeb.RunDetailLive do
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-400">
-              <%!-- More chunks were produced than the window shows — say so, so a
-                   trimmed head never reads as the complete output. --%>
-              <span :if={events_truncated?(@run)} class="text-amber-400/80">
+              <%!-- Trimmed head: a running run can only show the live window, so it
+                   says so; a terminal run offers to page the earlier output back
+                   in (gated so backfill never fights the live stream's eviction). --%>
+              <span
+                :if={@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)}
+                class="text-amber-400/80"
+              >
                 latest {event_window()} chunks · earlier output trimmed
               </span>
+              <.button
+                :if={can_load_earlier?(@run, @more_earlier?)}
+                variant={:secondary}
+                size={:sm}
+                phx-click="load_earlier"
+              >
+                Load earlier output
+              </.button>
               <span>stderr in rose</span>
             </div>
           </header>

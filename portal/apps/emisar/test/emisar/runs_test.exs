@@ -4585,6 +4585,53 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_events_for_run_before/4" do
+    setup do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      %{account: account, runner: runner, subject: subject}
+    end
+
+    test "returns the most recent progress chunks before the seq, chronologically", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      for seq <- 1..5 do
+        {:ok, _} =
+          Runs.append_event(run, %{
+            seq: seq,
+            kind: "progress",
+            payload: %{"chunk" => "line#{seq}"}
+          })
+      end
+
+      assert {:ok, [%RunEvent{seq: 2}, %RunEvent{seq: 3}, %RunEvent{seq: 4}]} =
+               Runs.list_events_for_run_before(run.id, 5, 3, subject)
+    end
+
+    test "returns an empty page at the start of output", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
+
+      assert {:ok, []} = Runs.list_events_for_run_before(run.id, 1, 10, subject)
+    end
+
+    test "refuses a cross-account subject", %{account: account, runner: runner} do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Runs.list_events_for_run_before(run.id, 5, 10, subject_b)
+    end
+  end
+
   describe "subscribe_account_runs/1" do
     test "the subscriber receives the account's run create/transition feed" do
       account = Fixtures.Accounts.create_account()

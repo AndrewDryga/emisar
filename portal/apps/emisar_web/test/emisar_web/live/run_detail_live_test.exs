@@ -404,6 +404,60 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "chunk-1\n"
   end
 
+  test "a terminal run pages its earlier trimmed output back in on demand", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+    now = DateTime.utc_now()
+
+    rows =
+      for seq <- 1..501 do
+        %{
+          id: Repo.generate_id(),
+          run_id: run.id,
+          account_id: account.id,
+          seq: seq,
+          kind: :progress,
+          stream: "stdout",
+          payload: %{"chunk" => "chunk-#{seq}\n"},
+          inserted_at: now
+        }
+      end
+
+    {501, _} = Repo.insert_all(RunEvent, rows)
+    Fixtures.Runs.charge_progress_budget(run, events: 501)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The window trims the oldest chunk and offers to page it back in.
+    assert html =~ "chunk-501\n"
+    refute html =~ "chunk-1\n"
+    assert html =~ "Load earlier output"
+
+    # Clicking pages the trimmed head (chunk-1) into the viewer.
+    html = lv |> element("button", "Load earlier output") |> render_click()
+    assert html =~ "chunk-1\n"
+  end
+
+  test "a running run shows the trim note, not a load-earlier control", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "hi\n"}
+      })
+
+    Fixtures.Runs.charge_progress_budget(run, events: 600)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "earlier output trimmed"
+    refute html =~ "Load earlier output"
+  end
+
   # A live-appending stream never evicts on its own, so a chatty run would grow
   # the viewer's DOM one node per chunk without bound. stream_insert's :limit
   # caps the client at the most-recent 500 events: the newest chunk renders, one
