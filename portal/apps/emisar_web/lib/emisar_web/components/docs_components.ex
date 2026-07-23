@@ -49,7 +49,7 @@ defmodule EmisarWeb.DocsComponents do
           <.docs_nav_groups current={@current} />
         </nav>
 
-        <div class="min-w-0">
+        <div class="min-w-0 [&_p]:leading-7 [&_li]:leading-7">
           {render_slot(@inner_block)}
           <.docs_prev_next current={@current} />
         </div>
@@ -204,7 +204,7 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_code(assigns) do
     ~H"""
-    <div class="mt-4 overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+    <div class="mt-5 overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
       <div
         :if={@label}
         class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/80 px-4 py-2"
@@ -239,7 +239,7 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_callout(assigns) do
     ~H"""
-    <div class={["mt-6 flex gap-3 rounded-xl border p-5 text-sm leading-6", docs_callout_box(@kind)]}>
+    <div class={["mt-6 flex gap-3 rounded-xl border p-5 text-sm leading-7", docs_callout_box(@kind)]}>
       <.icon
         name={docs_callout_icon(@kind)}
         class={"mt-0.5 h-5 w-5 flex-none " <> docs_callout_tint(@kind)}

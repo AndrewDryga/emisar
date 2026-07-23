@@ -18,7 +18,7 @@
         </:dek>
       </.docs_header>
 
-      <ul class="mt-4 list-disc space-y-2 pl-6 text-sm text-zinc-300">
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-sm text-zinc-300">
         <li>
           <strong>Remote MCP</strong> (Claude.ai, ChatGPT Apps, recent IDE
           clients) — enter a display name and the emisar server URL. emisar
@@ -71,7 +71,7 @@
       <section>
         <.docs_h2 id="cloud-llm">1. Connect a cloud LLM</.docs_h2>
 
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+        <p class="mt-4 text-sm text-zinc-400">
           Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
           — no header or API key. emisar is a full OAuth&nbsp;2.1 authorization
           server, so the connector discovers it from that URL, registers itself
@@ -100,7 +100,7 @@
           <%!-- Claude.ai (cloud) --%>
           <section>
             <.docs_h3 id="claude-ai">Claude (claude.ai)</.docs_h3>
-            <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
+            <ol class="mt-3 list-decimal space-y-3 pl-6 text-sm text-zinc-300">
               <li>
                 Open <strong>Settings → Connectors</strong>
                 (on Pro/Max it's <strong>Customize → Connectors</strong>).
@@ -153,7 +153,7 @@
             <p class="mt-2 text-sm text-zinc-400">
               ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on all ChatGPT plans.
             </p>
-            <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
+            <ol class="mt-3 list-decimal space-y-3 pl-6 text-sm text-zinc-300">
               <li>
                 Turn on Developer mode once — it's off by default and flagged <strong>Higher risk</strong>: <strong>Settings → Security and login</strong>, toggle <strong>Developer mode</strong>. (The same toggle sits at the bottom of <strong>Settings → Plugins</strong>.)
               </li>
@@ -239,7 +239,7 @@
       <section>
         <.docs_h2 id="api-key">2. Mint an API key (desktop, CLI &amp; direct MCP)</.docs_h2>
 
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+        <p class="mt-4 text-sm text-zinc-400">
           The clients in steps 3 and 4 authenticate with a raw key instead
           of OAuth — but you rarely handle the key yourself. The installer in
           step 3 asks to add emisar to the clients it finds; you approve the
@@ -250,7 +250,7 @@
           it mints a key named after the client, prefilled and ready to paste.
         </p>
 
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+        <p class="mt-4 text-sm text-zinc-400">
           The key itself carries no permissions to tune — what it may run is your account
           <strong>policy</strong>
           (risky actions pause for approval), and which runners it can
@@ -277,7 +277,7 @@
       <section>
         <.docs_h2 id="stdio-bridge">3. Desktop &amp; CLI clients (stdio bridge)</.docs_h2>
 
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+        <p class="mt-4 text-sm text-zinc-400">
           For clients that only speak stdio MCP — Claude Desktop, Claude
           Code, Cursor (local mode), Windsurf, Zed, OpenClaw, OpenCode, Pi,
           Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI — install the
@@ -528,7 +528,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
       <section>
         <.docs_h2 id="direct-http">4. Direct MCP over HTTP</.docs_h2>
 
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+        <p class="mt-4 text-sm text-zinc-400">
           A custom MCP client can call the same Streamable HTTP endpoint with
           an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
           key from step 2. Tool discovery, calls, retries, and recovery all use
