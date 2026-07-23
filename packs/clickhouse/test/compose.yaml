@@ -1,6 +1,6 @@
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:26.6.2.81-alpine
+    image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.6.2.81-alpine}
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -9,6 +9,9 @@ services:
     ulimits:
       nofile: {soft: 262144, hard: 262144}
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      # The entrypoint briefly runs a temporary server for init scripts. Require
+      # two consecutive checks so Compose cannot release the harness during the
+      # handoff to the final server.
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null && sleep 2 && clickhouse-client --query 'SELECT 1' >/dev/null"]
       interval: 5s
       retries: 10

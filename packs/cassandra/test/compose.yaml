@@ -4,6 +4,8 @@ services:
       context: ${EMISAR_ROOT}/packs/cassandra/test
       dockerfile: Dockerfile
       target: client
+      args:
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-5.0.8}
     image: emisar-packtest-cassandra-tools:latest
     network_mode: service:cassandra
     volumes:
@@ -14,6 +16,8 @@ services:
       context: ${EMISAR_ROOT}/packs/cassandra/test
       dockerfile: Dockerfile
       target: sut
+      args:
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-5.0.8}
     image: emisar-packtest-cassandra-sut:latest
     environment:
       CASSANDRA_CLUSTER_NAME: packtest

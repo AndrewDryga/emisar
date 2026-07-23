@@ -1,4 +1,5 @@
-FROM httpd:2.4.68
+ARG PACKTEST_VERSION=2.4.68
+FROM httpd:${PACKTEST_VERSION}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

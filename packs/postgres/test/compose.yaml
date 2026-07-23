@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18.4
+    image: postgres:${PACKTEST_VERSION:-18.4}
     environment:
       POSTGRES_PASSWORD: testpass
       POSTGRES_DB: testdb

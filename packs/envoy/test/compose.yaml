@@ -1,6 +1,6 @@
 services:
   envoy:
-    image: envoyproxy/envoy:v1.39.0
+    image: envoyproxy/envoy:${PACKTEST_VERSION:-v1.39.0}
     command: envoy -c /etc/envoy/envoy.yaml
     volumes:
       - ${EMISAR_ROOT}/packs/envoy/test/fixtures/envoy.yaml:/etc/envoy/envoy.yaml:ro

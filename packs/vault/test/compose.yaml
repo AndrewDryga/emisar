@@ -1,6 +1,6 @@
 services:
   vault:
-    image: hashicorp/vault:2.0.3
+    image: hashicorp/vault:${PACKTEST_VERSION:-2.0.3}
     cap_add: [IPC_LOCK]
     environment:
       VAULT_ADDR: "http://127.0.0.1:8200"

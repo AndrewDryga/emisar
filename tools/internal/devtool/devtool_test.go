@@ -160,6 +160,79 @@ func TestPackTestComposeProjectIsStableAndPackSpecific(t *testing.T) {
 	}
 }
 
+func TestValidatePackTestVersionInput(t *testing.T) {
+	tests := []struct {
+		name    string
+		compose string
+		wantErr string
+	}{
+		{
+			name:    "image",
+			compose: "services:\n  fixture:\n    image: caddy:${PACKTEST_VERSION:-2.11.4}\n",
+		},
+		{
+			name: "build arg",
+			compose: "services:\n  fixture:\n    build:\n      context: .\n" +
+				"      args:\n        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}\n",
+		},
+		{
+			name:    "hardcoded",
+			compose: "services:\n  fixture:\n    image: caddy:2.11.4\n",
+			wantErr: "must consume PACKTEST_VERSION",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "compose.yaml")
+			if err := os.WriteFile(path, []byte(test.compose), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := validatePackTestVersionInput(path, "fixture")
+			if test.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestPackTestVersionEnv(t *testing.T) {
+	lookup := func(values map[string]string) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			value, ok := values[key]
+			return value, ok
+		}
+	}
+
+	env, err := packTestVersionEnv(1, lookup(map[string]string{"PACKTEST_VERSION": "2.10.2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["PACKTEST_VERSION"] != "2.10.2" || env["PACKTEST_DIGEST"] != "" {
+		t.Fatalf("version env = %#v", env)
+	}
+
+	_, err = packTestVersionEnv(2, lookup(map[string]string{"PACKTEST_VERSION": "2.10.2"}))
+	if err == nil || !strings.Contains(err.Error(), "exactly one selected pack") {
+		t.Fatalf("multi-pack version error = %v", err)
+	}
+
+	_, err = packTestVersionEnv(1, lookup(map[string]string{"PACKTEST_DIGEST": "@sha256:abc"}))
+	if err == nil || !strings.Contains(err.Error(), "requires PACKTEST_VERSION") {
+		t.Fatalf("digest-only error = %v", err)
+	}
+
+	_, err = packTestVersionEnv(1, lookup(map[string]string{
+		"PACKTEST_VERSION": "2.10.2",
+		"PACKTEST_DIGEST":  "sha256:abc",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "start with @sha256:") {
+		t.Fatalf("invalid digest error = %v", err)
+	}
+}
+
 func TestTargetsLocalPortRejectsOtherNgrokTargets(t *testing.T) {
 	for _, target := range []string{"http://localhost:4000", "http://127.0.0.1:4000"} {
 		if !targetsLocalPort(target, 4000) {

@@ -1,3 +1,4 @@
-FROM apache/kafka:4.1.1
+ARG PACKTEST_VERSION=4.1.1
+FROM apache/kafka:${PACKTEST_VERSION}
 
 ENV PATH="/opt/kafka/bin:${PATH}"

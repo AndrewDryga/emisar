@@ -3,6 +3,8 @@ services:
     build:
       context: ${EMISAR_ROOT}/packs/bind/test
       dockerfile: Dockerfile
+      args:
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-edge}
     image: emisar-packtest-bind-tools:latest
     network_mode: service:bind
     volumes:
@@ -12,7 +14,7 @@ services:
       - ${EMISAR_ROOT}/packs/bind/test/fixtures/example.test.zone:/etc/bind/example.test.zone:ro
 
   bind:
-    image: ubuntu/bind9:edge
+    image: ubuntu/bind9:${PACKTEST_VERSION:-edge}
     environment:
       BIND9_USER: root
     volumes:

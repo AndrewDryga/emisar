@@ -1,1 +1,2 @@
-FROM rabbitmq:4.3.3-management
+ARG PACKTEST_VERSION=4.3.3-management
+FROM rabbitmq:${PACKTEST_VERSION}

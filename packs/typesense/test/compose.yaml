@@ -1,6 +1,6 @@
 services:
   typesense:
-    image: typesense/typesense:29.0@sha256:316b7e71c21f7e5e5caa8daa150e1b3f2be8c876081ee1f77bc2d92cd7f137d0
+    image: typesense/typesense:${PACKTEST_VERSION:-29.0}${PACKTEST_DIGEST-@sha256:316b7e71c21f7e5e5caa8daa150e1b3f2be8c876081ee1f77bc2d92cd7f137d0}
     command: ["--data-dir=/data", "--api-key=harness-key", "--listen-port=8108"]
     volumes:
       - typesense_data:/data

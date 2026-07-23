@@ -41,6 +41,11 @@ runner file with one pack file under a unique Compose project, so networks,
 volumes, state, and cleanup cannot leak between packs. It builds the runner
 image once and executes up to four pack projects concurrently.
 
+The first service in `cases.yaml` is the primary SUT. Its Compose image or
+pack-local Dockerfile must consume the uniform `PACKTEST_VERSION` input and
+keep the current version as its default. Secondary fixture images stay fixed
+unless their version is itself part of the pack contract.
+
 ## Plan schema
 
 ```yaml
@@ -109,9 +114,20 @@ it cannot be combined with `cleanup`.
 ```sh
 ./run test packs postgres
 ./run test packs
+
+# Exercise one alternate supported version.
+PACKTEST_VERSION=17.6 ./run test packs postgres
+
+# Pin an alternate version to an exact image digest.
+PACKTEST_VERSION=17.6 \
+  PACKTEST_DIGEST=@sha256:0123456789abcdef... \
+  ./run test packs postgres
 ```
 
 The command builds the shared runner and harness once, starts each selected
 pack in an isolated project, writes `reports/<pack>.log`, and removes that
 project and its volumes when it finishes. Completion lines appear as concurrent
 workers finish; detailed results are printed in stable pack-name order.
+`PACKTEST_VERSION` requires exactly one selected pack. When it is set without
+`PACKTEST_DIGEST`, the devtool clears any digest attached to the default image;
+CI can provide the matching digest when the matrix is ready.

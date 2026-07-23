@@ -1,6 +1,6 @@
 services:
   victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.124.0@sha256:2d7fc1f0f19160a06b0d72daff6c96ddd58de1a4560d1d827aa79633b5382524
+    image: victoriametrics/victoria-metrics:${PACKTEST_VERSION:-v1.124.0}${PACKTEST_DIGEST-@sha256:2d7fc1f0f19160a06b0d72daff6c96ddd58de1a4560d1d827aa79633b5382524}
     # Production defaults hide newly ingested samples for 30 seconds. This
     # disposable SUT has no concurrent scrapers, so expose fixtures immediately.
     command: ["-search.latencyOffset=0s"]

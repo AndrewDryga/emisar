@@ -4,7 +4,7 @@ services:
       - k3s_kubeconfig:/shared:ro
 
   k3s:
-    image: rancher/k3s:v1.36.2-k3s1
+    image: rancher/k3s:${PACKTEST_VERSION:-v1.36.2-k3s1}
     command: server --node-name=harness --tls-san=k3s --disable=traefik
     privileged: true
     environment:
@@ -16,7 +16,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "kubectl get nodes | grep -q ' Ready' && kubectl wait --for=condition=Ready pod/probe --timeout=2s >/dev/null && kubectl get crd harnesses.packtest.emisar.dev >/dev/null"]
       interval: 10s
-      retries: 20
+      retries: 30
 
   k3s-kubeconfig:
     image: busybox:1.38.0

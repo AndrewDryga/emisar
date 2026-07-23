@@ -1,6 +1,6 @@
 services:
   memcached:
-    image: memcached:1.6.45
+    image: memcached:${PACKTEST_VERSION:-1.6.45}
     command: ["-o", "track_sizes"]
     healthcheck:
       test: ["CMD", "pidof", "memcached"]

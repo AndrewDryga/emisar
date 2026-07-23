@@ -43,6 +43,11 @@ packs/<name>/
     fixtures/       # optional pack-owned service config or seeded state
 ```
 
+The first service in a behavior plan is its primary SUT. Its Compose image or
+pack-local Dockerfile consumes `PACKTEST_VERSION`, defaulting to the current
+tested release, so local and CI version matrices use one input. Keep helper and
+fixture image versions independent when they are not the product under test.
+
 An **action** declares: `id` (`<namespace>.<name>`), `risk` (low|medium|high|critical), `kind` (exec|script), `args` (typed + validated), `execution` (binary + argv template, timeout, env), and `output` (parser + byte caps + redaction).
 
 ## Conventions (non-negotiable — this is a security product)

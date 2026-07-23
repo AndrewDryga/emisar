@@ -3,6 +3,8 @@ services:
     build:
       context: ${EMISAR_ROOT}/packs/rabbitmq/test
       dockerfile: Dockerfile
+      args:
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-4.3.3-management}
     image: emisar-packtest-rabbitmq-tools:latest
     network_mode: service:rabbitmq
     environment:
@@ -10,7 +12,7 @@ services:
       RABBITMQ_NODENAME: rabbit@rabbitmq
 
   rabbitmq:
-    image: rabbitmq:4.3.3-management
+    image: rabbitmq:${PACKTEST_VERSION:-4.3.3-management}
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: guest

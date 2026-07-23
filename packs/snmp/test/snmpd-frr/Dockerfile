@@ -11,7 +11,8 @@
 # build from Debian 13 (same base as ../snmpd + the Debian fleet): its `frr-snmp`
 # package ships bgpd_snmp.so / ospfd_snmp.so / zebra_snmp.so natively for arm64.
 # Read-only, v2c community "public" — matching the plain snmpd SUT's contract.
-FROM debian:13-slim
+ARG PACKTEST_VERSION=13-slim
+FROM debian:${PACKTEST_VERSION}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends frr frr-snmp snmpd snmp \
     && rm -rf /var/lib/apt/lists/*

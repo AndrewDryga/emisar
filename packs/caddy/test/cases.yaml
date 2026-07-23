@@ -5,7 +5,7 @@ env:
 cases:
   - action: caddy.version
     expect:
-      stdout_contains: [v2.11.4]
+      stdout_contains: [h1:]
   - action: caddy.config_dump
     expect:
       stdout_contains: ['"apps"', '"http"']

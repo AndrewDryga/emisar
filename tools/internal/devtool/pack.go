@@ -18,6 +18,7 @@ import (
 
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
+	"go.yaml.in/yaml/v3"
 )
 
 func (a *App) buildPackTools(ctx context.Context) error {
@@ -74,6 +75,14 @@ func (a *App) packSync(ctx context.Context, name string) error {
 
 func (a *App) packTest(ctx context.Context, pattern string, names []string) error {
 	harness := filepath.Join(a.Root, "dev", "test-packs")
+	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
+	if err != nil {
+		return err
+	}
+	versionEnv, err := packTestVersionEnv(len(plans), os.LookupEnv)
+	if err != nil {
+		return err
+	}
 	bin := filepath.Join(harness, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return err
@@ -86,10 +95,6 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(harness, "reports"), 0o755); err != nil {
-		return err
-	}
-	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
-	if err != nil {
 		return err
 	}
 	baseCompose := filepath.Join(harness, "compose.yaml")
@@ -114,7 +119,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 			for plan := range jobs {
 				var output bytes.Buffer
 				worker := New(a.Root, nil, &output, &output)
-				runErr := worker.runPackTestProject(ctx, baseCompose, plan)
+				runErr := worker.runPackTestProject(ctx, baseCompose, plan, versionEnv)
 				results <- packTestResult{Plan: plan, Output: output.Bytes(), Err: runErr}
 			}
 		}()
@@ -154,15 +159,24 @@ type packTestResult struct {
 	Err    error
 }
 
-func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan packtest.PlanRef) error {
+func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan packtest.PlanRef, versionEnv map[string]string) error {
 	packCompose := filepath.Join(filepath.Dir(plan.Path), "compose.yaml")
 	if !isFile(packCompose) {
 		return fmt.Errorf("behavior plan has no sibling compose.yaml")
+	}
+	if len(plan.Services) == 0 {
+		return fmt.Errorf("behavior plan has no primary SUT service")
+	}
+	if err := validatePackTestVersionInput(packCompose, plan.Services[0]); err != nil {
+		return err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
 	env := map[string]string{
 		"COMPOSE_PROJECT_NAME": packTestComposeProject(a.Root, plan.Name),
 		"EMISAR_ROOT":          a.Root,
+	}
+	for key, value := range versionEnv {
+		env[key] = value
 	}
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
@@ -204,6 +218,62 @@ func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan p
 		cleanupErr = fmt.Errorf("cleanup: %w", cleanupErr)
 	}
 	return errors.Join(runErr, cleanupErr)
+}
+
+type packTestComposeFile struct {
+	Services map[string]packTestComposeService `yaml:"services"`
+}
+
+type packTestComposeService struct {
+	Image string               `yaml:"image"`
+	Build packTestComposeBuild `yaml:"build"`
+}
+
+type packTestComposeBuild struct {
+	Args map[string]string `yaml:"args"`
+}
+
+func validatePackTestVersionInput(path, primaryService string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var compose packTestComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	service, ok := compose.Services[primaryService]
+	if !ok {
+		return fmt.Errorf("Compose project has no primary SUT service %s", primaryService)
+	}
+	if strings.Contains(service.Image, "${PACKTEST_VERSION") ||
+		strings.Contains(service.Build.Args["PACKTEST_VERSION"], "${PACKTEST_VERSION") {
+		return nil
+	}
+	return fmt.Errorf("primary SUT service %s must consume PACKTEST_VERSION", primaryService)
+}
+
+func packTestVersionEnv(planCount int, lookup func(string) (string, bool)) (map[string]string, error) {
+	version, versionSet := lookup("PACKTEST_VERSION")
+	digest, digestSet := lookup("PACKTEST_DIGEST")
+	version = strings.TrimSpace(version)
+	digest = strings.TrimSpace(digest)
+	if !versionSet || version == "" {
+		if digestSet && digest != "" {
+			return nil, fmt.Errorf("PACKTEST_DIGEST requires PACKTEST_VERSION")
+		}
+		return nil, nil
+	}
+	if planCount != 1 {
+		return nil, fmt.Errorf("PACKTEST_VERSION requires exactly one selected pack")
+	}
+	if digest != "" && !strings.HasPrefix(digest, "@sha256:") {
+		return nil, fmt.Errorf("PACKTEST_DIGEST must be empty or start with @sha256:")
+	}
+	return map[string]string{
+		"PACKTEST_VERSION": version,
+		"PACKTEST_DIGEST":  digest,
+	}, nil
 }
 
 func packTestComposeProject(root, pack string) string {

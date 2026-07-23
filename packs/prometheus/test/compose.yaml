@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.13.1
+    image: prom/prometheus:${PACKTEST_VERSION:-v3.13.1}
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.enable-lifecycle

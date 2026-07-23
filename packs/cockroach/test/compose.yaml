@@ -1,6 +1,6 @@
 services:
   cockroach:
-    image: cockroachdb/cockroach:v26.2.4
+    image: cockroachdb/cockroach:${PACKTEST_VERSION:-v26.2.4}
     command: start-single-node --insecure
     healthcheck:
       test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]

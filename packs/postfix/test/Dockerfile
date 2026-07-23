@@ -1,3 +1,5 @@
+ARG PACKTEST_VERSION=5.1.0-alpine
+
 FROM debian:13-slim AS qshape
 
 RUN apt-get update \
@@ -5,7 +7,7 @@ RUN apt-get update \
         postfix \
     && rm -rf /var/lib/apt/lists/*
 
-FROM boky/postfix:5.1.0-alpine
+FROM boky/postfix:${PACKTEST_VERSION}
 
 RUN apk add --no-cache perl
 
