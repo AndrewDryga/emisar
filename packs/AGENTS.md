@@ -44,9 +44,12 @@ packs/<name>/
 ```
 
 The first service in a behavior plan is its primary SUT. Its Compose image or
-pack-local Dockerfile consumes `PACKTEST_VERSION`, defaulting to the current
-tested release, so local and CI version matrices use one input. Keep helper and
-fixture image versions independent when they are not the product under test.
+pack-local Dockerfile consumes `PACKTEST_VERSION` and `PACKTEST_DIGEST`.
+`cases.yaml` declares unique supported version rows with exact digests and
+marks exactly one default matching Compose. Relevant changes run every row for
+that pack; the weekly workflow runs the complete compatibility matrix. Keep
+helper and fixture image versions independent when they are not the product
+under test.
 
 An **action** declares: `id` (`<namespace>.<name>`), `risk` (low|medium|high|critical), `kind` (exec|script), `args` (typed + validated), `execution` (binary + argv template, timeout, env), and `output` (parser + byte caps + redaction).
 

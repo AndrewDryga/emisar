@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:${PACKTEST_VERSION:-9.7.1}
+    image: mysql:${PACKTEST_VERSION:-9.7.1}${PACKTEST_DIGEST-}
     environment:
       MYSQL_ROOT_PASSWORD: testpass
       MYSQL_DATABASE: testdb

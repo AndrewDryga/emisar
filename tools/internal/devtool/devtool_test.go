@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
@@ -168,17 +171,28 @@ func TestValidatePackTestVersionInput(t *testing.T) {
 	}{
 		{
 			name:    "image",
-			compose: "services:\n  fixture:\n    image: caddy:${PACKTEST_VERSION:-2.11.4}\n",
+			compose: "services:\n  fixture:\n    image: caddy:${PACKTEST_VERSION:-2.11.4}${PACKTEST_DIGEST-}\n",
 		},
 		{
 			name: "build arg",
 			compose: "services:\n  fixture:\n    build:\n      context: .\n" +
-				"      args:\n        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}\n",
+				"      args:\n        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.11.4}\n" +
+				"        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}\n",
 		},
 		{
 			name:    "hardcoded",
 			compose: "services:\n  fixture:\n    image: caddy:2.11.4\n",
-			wantErr: "must consume PACKTEST_VERSION",
+			wantErr: "must default PACKTEST_VERSION",
+		},
+		{
+			name:    "wrong default",
+			compose: "services:\n  fixture:\n    image: caddy:${PACKTEST_VERSION:-2.10.2}${PACKTEST_DIGEST-}\n",
+			wantErr: "must default PACKTEST_VERSION",
+		},
+		{
+			name:    "missing digest",
+			compose: "services:\n  fixture:\n    image: caddy:${PACKTEST_VERSION:-2.11.4}\n",
+			wantErr: "must consume PACKTEST_DIGEST",
 		},
 	}
 	for _, test := range tests {
@@ -187,7 +201,7 @@ func TestValidatePackTestVersionInput(t *testing.T) {
 			if err := os.WriteFile(path, []byte(test.compose), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			err := validatePackTestVersionInput(path, "fixture")
+			err := validatePackTestVersionInput(path, "fixture", "2.11.4")
 			if test.wantErr == "" && err != nil {
 				t.Fatal(err)
 			}
@@ -228,8 +242,79 @@ func TestPackTestVersionEnv(t *testing.T) {
 		"PACKTEST_VERSION": "2.10.2",
 		"PACKTEST_DIGEST":  "sha256:abc",
 	}))
-	if err == nil || !strings.Contains(err.Error(), "start with @sha256:") {
+	if err == nil || !strings.Contains(err.Error(), "64 lowercase") {
 		t.Fatalf("invalid digest error = %v", err)
+	}
+
+	_, err = packTestVersionEnv(1, lookup(map[string]string{
+		"PACKTEST_VERSION": "2.10.2",
+		"PACKTEST_DIGEST":  "@sha256:abc",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "64 lowercase") {
+		t.Fatalf("short digest error = %v", err)
+	}
+}
+
+func TestResolvedPackTestVersionEnvUsesDeclaredDigests(t *testing.T) {
+	current := packtest.Version{
+		Version: "2.11.4",
+		Digest:  "@sha256:" + strings.Repeat("a", 64),
+		Default: true,
+	}
+	previous := packtest.Version{
+		Version: "2.10.2",
+		Digest:  "@sha256:" + strings.Repeat("b", 64),
+	}
+	plan := packtest.PlanRef{Name: "caddy", Versions: []packtest.Version{current, previous}}
+
+	env := resolvedPackTestVersionEnv(plan, nil)
+	if env["PACKTEST_VERSION"] != current.Version || env["PACKTEST_DIGEST"] != current.Digest {
+		t.Fatalf("default env = %#v", env)
+	}
+
+	env = resolvedPackTestVersionEnv(plan, map[string]string{
+		"PACKTEST_VERSION": previous.Version,
+		"PACKTEST_DIGEST":  "",
+	})
+	if env["PACKTEST_DIGEST"] != previous.Digest {
+		t.Fatalf("declared override env = %#v", env)
+	}
+
+	env = resolvedPackTestVersionEnv(plan, map[string]string{
+		"PACKTEST_VERSION": "tip",
+		"PACKTEST_DIGEST":  "",
+	})
+	if env["PACKTEST_DIGEST"] != "" {
+		t.Fatalf("ad hoc override unexpectedly pinned = %#v", env)
+	}
+}
+
+func TestWritePackTestFailureReportsIncludesRowAndError(t *testing.T) {
+	dir := t.TempDir()
+	plan := packtest.PlanRef{
+		Name: "caddy",
+		Versions: []packtest.Version{{
+			Version: "2.11.4",
+			Digest:  "@sha256:" + strings.Repeat("a", 64),
+			Default: true,
+		}},
+	}
+	if err := writePackTestFailureReports(dir, []packtest.PlanRef{plan}, nil, errors.New("registry throttled")); err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(dir, "caddy.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"Pack: caddy",
+		"SUT version: 2.11.4",
+		"SUT digest: @sha256:" + strings.Repeat("a", 64),
+		"Error: preflight: registry throttled",
+	} {
+		if !strings.Contains(string(report), expected) {
+			t.Fatalf("report missing %q:\n%s", expected, report)
+		}
 	}
 }
 

@@ -1,4 +1,8 @@
 services: [clickhouse]
+versions:
+  - version: 26.6.2.81-alpine
+    digest: "@sha256:9acc2bb14b5a55bdaf08485fba63200092f9c04cfa50f70a92f1fccc51482d7f"
+    default: true
 env:
   CH_HOST: clickhouse
   CH_USER: default

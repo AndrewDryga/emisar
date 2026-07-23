@@ -1,6 +1,6 @@
 services:
   grafana:
-    image: grafana/grafana:${PACKTEST_VERSION:-13.1.1}
+    image: grafana/grafana:${PACKTEST_VERSION:-13.1.1}${PACKTEST_DIGEST-}
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin

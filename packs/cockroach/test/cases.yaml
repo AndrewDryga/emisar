@@ -1,4 +1,8 @@
 services: [cockroach]
+versions:
+  - version: v26.2.4
+    digest: "@sha256:85417da0fd2f57e4f1b01ae8a4125402c977a38a56b43d0902db93dc2669ab09"
+    default: true
 env:
   COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
 defaults:

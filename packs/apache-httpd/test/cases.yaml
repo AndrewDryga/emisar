@@ -1,4 +1,8 @@
 services: [apache-httpd]
+versions:
+  - version: "2.4.68"
+    digest: "@sha256:305fd8326a27a137fedb8900f26375699ab233cc37793f35cf5d7c65671fb252"
+    default: true
 env:
   HTTPD_ACCESS_LOG: /usr/local/apache2/logs/access_log
   HTTPD_ERROR_LOG: /usr/local/apache2/logs/error_log

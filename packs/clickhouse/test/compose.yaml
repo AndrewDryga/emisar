@@ -1,6 +1,6 @@
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.6.2.81-alpine}
+    image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.6.2.81-alpine}${PACKTEST_DIGEST-}
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1

@@ -1,4 +1,8 @@
 services: [nomad]
+versions:
+  - version: "2.0.4"
+    digest: "@sha256:14f0cf3dc43d949e759b50d793529976a1a1a7f391eaf1e048acd55cd5392462"
+    default: true
 env:
   NOMAD_ADDR: "http://nomad:4646"
 defaults:

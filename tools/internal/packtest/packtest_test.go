@@ -19,6 +19,10 @@ func TestRunExecutesBehaviorProbeAndCleanup(t *testing.T) {
 	write(t, filepath.Join(packDir, "actions", "inspect.yaml"), "id: example.inspect\nrisk: low\n")
 	write(t, filepath.Join(packDir, "actions", "mutate.yaml"), "id: example.mutate\nrisk: high\n")
 	write(t, filepath.Join(packDir, "test", "cases.yaml"), `services: [fixture]
+versions:
+  - version: "1.0"
+    digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    default: true
 env:
   FIXTURE: present
 defaults:
@@ -117,20 +121,20 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		plan Plan
 		want string
 	}{
-		{"no services", Plan{Cases: []Case{{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}}}}, "services"},
-		{"exit only", Plan{Services: []string{"fixture"}, Cases: []Case{{Action: "example.read"}}}, "only an exit-code"},
-		{"unknown action", Plan{Services: []string{"fixture"}, Cases: []Case{{Action: "missing", Expect: Expectation{StdoutNotEmpty: true}}}}, "does not exist"},
-		{"duplicate", Plan{Services: []string{"fixture"}, Cases: []Case{
+		{"no services", Plan{Versions: testVersions(), Cases: []Case{{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}}}}, "services"},
+		{"exit only", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{Action: "example.read"}}}, "only an exit-code"},
+		{"unknown action", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{Action: "missing", Expect: Expectation{StdoutNotEmpty: true}}}}, "does not exist"},
+		{"duplicate", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
 			{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
 		}}, "duplicates"},
-		{"mutation without probe", Plan{Services: []string{"fixture"}, Cases: []Case{
+		{"mutation without probe", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{Action: "example.mutate", Expect: Expectation{StdoutNotEmpty: true}, Cleanup: []Step{{Argv: []string{"true"}}}},
 		}}, "state probe"},
-		{"mutation without cleanup", Plan{Services: []string{"fixture"}, Cases: []Case{
+		{"mutation without cleanup", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{Action: "example.mutate", Probes: []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}}},
 		}}, "needs cleanup"},
-		{"cleanup and justification", Plan{Services: []string{"fixture"}, Cases: []Case{
+		{"cleanup and justification", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{
 				Action:  "example.mutate",
 				Probes:  []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}},
@@ -156,7 +160,7 @@ func TestPlanValidationAcceptsSensitiveReadAndJustifiedMutation(t *testing.T) {
 		},
 		"example.reload": {ID: "example.reload", Risk: "high"},
 	}
-	plan := Plan{Services: []string{"fixture"}, Cases: []Case{
+	plan := Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 		{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
 		{
 			Action: "example.reload", Expect: Expectation{StdoutNotEmpty: true},
@@ -180,7 +184,13 @@ func TestLoadPlanRejectsUnknownFields(t *testing.T) {
 func TestDiscoverSelectsExactNamesAndRejectsMissingPlans(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"alpha", "alphabet"} {
-		write(t, filepath.Join(root, name, "test", "cases.yaml"), "services: [fixture]\ncases: []\n")
+		write(t, filepath.Join(root, name, "test", "cases.yaml"), `services: [fixture]
+versions:
+  - version: "1.0"
+    digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    default: true
+cases: []
+`)
 	}
 	plans, err := Discover(root, "", "alpha")
 	if err != nil {
@@ -191,6 +201,58 @@ func TestDiscoverSelectsExactNamesAndRejectsMissingPlans(t *testing.T) {
 	}
 	if _, err := Discover(root, "", "missing"); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("missing plan error = %v", err)
+	}
+}
+
+func TestVersionsRequireOneDefaultUniqueTagsAndExactDigests(t *testing.T) {
+	tests := []struct {
+		name     string
+		versions []Version
+		want     string
+	}{
+		{"missing", nil, "at least one"},
+		{"no default", []Version{{Version: "1.0", Digest: testDigest("a")}}, "exactly one"},
+		{"two defaults", []Version{
+			{Version: "1.0", Digest: testDigest("a"), Default: true},
+			{Version: "2.0", Digest: testDigest("b"), Default: true},
+		}, "exactly one"},
+		{"duplicate", []Version{
+			{Version: "1.0", Digest: testDigest("a"), Default: true},
+			{Version: "1.0", Digest: testDigest("b")},
+		}, "duplicates"},
+		{"bad tag", []Version{{Version: "bad/tag", Digest: testDigest("a"), Default: true}}, "image tag"},
+		{"short digest", []Version{{Version: "1.0", Digest: "@sha256:abc", Default: true}}, "64 lowercase"},
+		{"uppercase digest", []Version{{Version: "1.0", Digest: testDigest("A"), Default: true}}, "64 lowercase"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateVersions(test.versions)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateVersions error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestMatrixPreservesPlanAndVersionOrder(t *testing.T) {
+	plans := []PlanRef{
+		{Name: "alpha", Versions: []Version{
+			{Version: "2", Digest: testDigest("a"), Default: true},
+			{Version: "1", Digest: testDigest("b")},
+		}},
+		{Name: "beta", Versions: []Version{
+			{Version: "3", Digest: testDigest("c"), Default: true},
+		}},
+	}
+	rows := Matrix(plans)
+	if len(rows) != 3 ||
+		rows[0].Pack != "alpha" || rows[0].Version != "2" ||
+		rows[1].Pack != "alpha" || rows[1].Version != "1" ||
+		rows[2].Pack != "beta" || rows[2].Version != "3" {
+		t.Fatalf("Matrix() = %+v", rows)
+	}
+	if got := plans[0].DefaultVersion(); got.Version != "2" {
+		t.Fatalf("DefaultVersion() = %+v", got)
 	}
 }
 
@@ -207,6 +269,14 @@ func TestRunReportsMalformedPlan(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "parse") {
 		t.Fatalf("malformed plan error = %v", err)
 	}
+}
+
+func testVersions() []Version {
+	return []Version{{Version: "1.0", Digest: testDigest("a"), Default: true}}
+}
+
+func testDigest(character string) string {
+	return "@sha256:" + strings.Repeat(character, 64)
 }
 
 func write(t *testing.T, path, contents string) {

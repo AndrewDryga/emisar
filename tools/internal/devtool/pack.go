@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -79,28 +80,32 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 	if err != nil {
 		return err
 	}
-	versionEnv, err := packTestVersionEnv(len(plans), os.LookupEnv)
+	requestedVersionEnv, err := packTestVersionEnv(len(plans), os.LookupEnv)
 	if err != nil {
 		return err
 	}
+	reports := filepath.Join(harness, "reports")
+	if err := os.MkdirAll(reports, 0o755); err != nil {
+		return err
+	}
 	bin := filepath.Join(harness, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		return err
-	}
-	env := map[string]string{"GOOS": "linux", "GOARCH": runtime.GOARCH, "CGO_ENABLED": "0"}
-	if err := a.run(ctx, filepath.Join(a.Root, "runner"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "emisar"), "."); err != nil {
-		return err
-	}
-	if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(harness, "reports"), 0o755); err != nil {
-		return err
-	}
 	baseCompose := filepath.Join(harness, "compose.yaml")
-	composeEnv := map[string]string{"EMISAR_ROOT": a.Root}
-	if err := a.run(ctx, a.Root, composeEnv, "docker", "compose", "-f", baseCompose, "build", "runner-tools"); err != nil {
-		return err
+	preflightErr := func() error {
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			return err
+		}
+		env := map[string]string{"GOOS": "linux", "GOARCH": runtime.GOARCH, "CGO_ENABLED": "0"}
+		if err := a.run(ctx, filepath.Join(a.Root, "runner"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "emisar"), "."); err != nil {
+			return err
+		}
+		if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
+			return err
+		}
+		composeEnv := map[string]string{"EMISAR_ROOT": a.Root}
+		return a.run(ctx, a.Root, composeEnv, "docker", "compose", "-f", baseCompose, "build", "runner-tools")
+	}()
+	if preflightErr != nil {
+		return errors.Join(preflightErr, writePackTestFailureReports(reports, plans, requestedVersionEnv, preflightErr))
 	}
 
 	jobs := make(chan packtest.PlanRef, len(plans))
@@ -118,8 +123,13 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 			defer workers.Done()
 			for plan := range jobs {
 				var output bytes.Buffer
+				versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
+				writePackTestReportHeader(&output, plan, versionEnv)
 				worker := New(a.Root, nil, &output, &output)
 				runErr := worker.runPackTestProject(ctx, baseCompose, plan, versionEnv)
+				if runErr != nil {
+					fmt.Fprintf(&output, "\nError: %v\n", runErr)
+				}
 				results <- packTestResult{Plan: plan, Output: output.Bytes(), Err: runErr}
 			}
 		}()
@@ -131,6 +141,10 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 
 	completed := make([]packTestResult, 0, len(plans))
 	for result := range results {
+		reportPath := filepath.Join(reports, result.Plan.Name+".log")
+		if err := os.WriteFile(reportPath, result.Output, 0o644); err != nil {
+			result.Err = errors.Join(result.Err, fmt.Errorf("write report: %w", err))
+		}
 		completed = append(completed, result)
 		status := "PASS"
 		if result.Err != nil {
@@ -153,6 +167,25 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 	return errors.Join(failures...)
 }
 
+func writePackTestFailureReports(dir string, plans []packtest.PlanRef, requested map[string]string, failure error) error {
+	var failures []error
+	for _, plan := range plans {
+		var report bytes.Buffer
+		versionEnv := resolvedPackTestVersionEnv(plan, requested)
+		writePackTestReportHeader(&report, plan, versionEnv)
+		fmt.Fprintf(&report, "Error: preflight: %v\n", failure)
+		if err := os.WriteFile(filepath.Join(dir, plan.Name+".log"), report.Bytes(), 0o644); err != nil {
+			failures = append(failures, fmt.Errorf("write %s report: %w", plan.Name, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func writePackTestReportHeader(output io.Writer, plan packtest.PlanRef, versionEnv map[string]string) {
+	fmt.Fprintf(output, "Pack: %s\nSUT version: %s\nSUT digest: %s\n\n",
+		plan.Name, versionEnv["PACKTEST_VERSION"], versionEnv["PACKTEST_DIGEST"])
+}
+
 type packTestResult struct {
 	Plan   packtest.PlanRef
 	Output []byte
@@ -167,7 +200,8 @@ func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan p
 	if len(plan.Services) == 0 {
 		return fmt.Errorf("behavior plan has no primary SUT service")
 	}
-	if err := validatePackTestVersionInput(packCompose, plan.Services[0]); err != nil {
+	defaultVersion := plan.DefaultVersion()
+	if err := validatePackTestVersionInput(packCompose, plan.Services[0], defaultVersion.Version); err != nil {
 		return err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
@@ -233,7 +267,7 @@ type packTestComposeBuild struct {
 	Args map[string]string `yaml:"args"`
 }
 
-func validatePackTestVersionInput(path, primaryService string) error {
+func validatePackTestVersionInput(path, primaryService, defaultVersion string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -246,11 +280,19 @@ func validatePackTestVersionInput(path, primaryService string) error {
 	if !ok {
 		return fmt.Errorf("Compose project has no primary SUT service %s", primaryService)
 	}
-	if strings.Contains(service.Image, "${PACKTEST_VERSION") ||
-		strings.Contains(service.Build.Args["PACKTEST_VERSION"], "${PACKTEST_VERSION") {
-		return nil
+	versionInput := service.Image
+	digestInput := service.Image
+	if service.Build.Args["PACKTEST_VERSION"] != "" {
+		versionInput = service.Build.Args["PACKTEST_VERSION"]
+		digestInput = service.Build.Args["PACKTEST_DIGEST"]
 	}
-	return fmt.Errorf("primary SUT service %s must consume PACKTEST_VERSION", primaryService)
+	if !strings.Contains(versionInput, "${PACKTEST_VERSION:-"+defaultVersion+"}") {
+		return fmt.Errorf("primary SUT service %s must default PACKTEST_VERSION to %s", primaryService, defaultVersion)
+	}
+	if !strings.Contains(digestInput, "${PACKTEST_DIGEST") {
+		return fmt.Errorf("primary SUT service %s must consume PACKTEST_DIGEST", primaryService)
+	}
+	return nil
 }
 
 func packTestVersionEnv(planCount int, lookup func(string) (string, bool)) (map[string]string, error) {
@@ -267,13 +309,49 @@ func packTestVersionEnv(planCount int, lookup func(string) (string, bool)) (map[
 	if planCount != 1 {
 		return nil, fmt.Errorf("PACKTEST_VERSION requires exactly one selected pack")
 	}
-	if digest != "" && !strings.HasPrefix(digest, "@sha256:") {
-		return nil, fmt.Errorf("PACKTEST_DIGEST must be empty or start with @sha256:")
+	if digest != "" && !validPackTestDigest(digest) {
+		return nil, fmt.Errorf("PACKTEST_DIGEST must match @sha256:<64 lowercase hex characters>")
 	}
 	return map[string]string{
 		"PACKTEST_VERSION": version,
 		"PACKTEST_DIGEST":  digest,
 	}, nil
+}
+
+func resolvedPackTestVersionEnv(plan packtest.PlanRef, requested map[string]string) map[string]string {
+	if len(requested) == 0 {
+		version := plan.DefaultVersion()
+		return map[string]string{
+			"PACKTEST_VERSION": version.Version,
+			"PACKTEST_DIGEST":  version.Digest,
+		}
+	}
+	resolved := map[string]string{
+		"PACKTEST_VERSION": requested["PACKTEST_VERSION"],
+		"PACKTEST_DIGEST":  requested["PACKTEST_DIGEST"],
+	}
+	if resolved["PACKTEST_DIGEST"] == "" {
+		for _, version := range plan.Versions {
+			if version.Version == resolved["PACKTEST_VERSION"] {
+				resolved["PACKTEST_DIGEST"] = version.Digest
+				break
+			}
+		}
+	}
+	return resolved
+}
+
+func validPackTestDigest(digest string) bool {
+	const prefix = "@sha256:"
+	if !strings.HasPrefix(digest, prefix) || len(digest) != len(prefix)+64 {
+		return false
+	}
+	encoded := digest[len(prefix):]
+	if encoded != strings.ToLower(encoded) {
+		return false
+	}
+	_, err := hex.DecodeString(encoded)
+	return err == nil
 }
 
 func packTestComposeProject(root, pack string) string {

@@ -1,6 +1,6 @@
 services:
   nomad:
-    image: hashicorp/nomad:${PACKTEST_VERSION:-2.0.4}
+    image: hashicorp/nomad:${PACKTEST_VERSION:-2.0.4}${PACKTEST_DIGEST-}
     command: agent -server -bootstrap-expect=1 -data-dir=/tmp/nomad -bind=0.0.0.0
     privileged: true
     healthcheck:

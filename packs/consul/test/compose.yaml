@@ -1,6 +1,6 @@
 services:
   consul:
-    image: hashicorp/consul:${PACKTEST_VERSION:-2.0.2}
+    image: hashicorp/consul:${PACKTEST_VERSION:-2.0.2}${PACKTEST_DIGEST-}
     command: agent -dev -client=0.0.0.0
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8500/v1/agent/metrics | grep -q '\"Timestamp\"'"]

@@ -1,5 +1,6 @@
 ARG PACKTEST_VERSION=edge
-FROM ubuntu/bind9:${PACKTEST_VERSION}
+ARG PACKTEST_DIGEST
+FROM ubuntu/bind9:${PACKTEST_VERSION}${PACKTEST_DIGEST}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bind9-dnsutils bind9-utils \

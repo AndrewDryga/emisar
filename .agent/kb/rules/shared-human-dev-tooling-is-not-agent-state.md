@@ -19,7 +19,9 @@ owner runs in its own Compose project; concurrency is bounded across projects,
 not achieved by merging every SUT into one stateful topology. The primary SUT
 version enters every behavior plan through one uniform input; its current
 release is the local default, while unrelated fixture images keep independent
-versions.
+versions. Supported SUT versions and exact digests live with the behavior plan;
+selective CI expands the changed pack's rows, and the scheduled compatibility
+sweep expands every row without duplicating version policy in workflow YAML.
 Shell remains only where shell itself is the shipped artifact, container
 entrypoint, or host-command fixture under test. Adding another tooling language
 requires proving Go cannot own the job and documenting the runtime boundary.
@@ -68,11 +70,13 @@ For integration tests, search a central Compose file for unrelated SUTs and
 move each topology plus its fixtures beside the behavior plan that owns it;
 keep only reusable clients and harness configuration centralized. Verify each
 primary SUT image or build consumes the shared version input before adding a
-plan. Search for
+plan, and verify every declared version has an exact digest with one default
+matching Compose. Search for
 repository-global screenshot output and move each capture set into its owning
 task.
 
 **Enforced.** Review and `./run check agent-setup` after agent configuration
 changes; the pack devtool parses each selected Compose plan and rejects a
-primary SUT that does not consume `PACKTEST_VERSION`; `./run gate tooling` runs
-the unit coverage for that check in CI.
+primary SUT that does not consume `PACKTEST_VERSION` and `PACKTEST_DIGEST` or
+whose default drifts from the plan; `./run gate tooling` runs the unit coverage
+for that check in CI.

@@ -1,4 +1,10 @@
 services: [caddy]
+versions:
+  - version: "2.11.4"
+    digest: "@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+    default: true
+  - version: "2.10.2"
+    digest: "@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb"
 env:
   CADDY_ACCESS_LOG: /var/log/caddy/access.log
   CADDY_ADMIN: http://127.0.0.1:2019

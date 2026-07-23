@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-2.4.68}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-apache-httpd-tools:latest
     network_mode: service:apache-httpd
     volumes:
@@ -12,7 +13,7 @@ services:
       - ${EMISAR_ROOT}/packs/apache-httpd/test/fixtures/packtest.conf:/usr/local/apache2/conf/extra/packtest.conf:ro
 
   apache-httpd:
-    image: httpd:${PACKTEST_VERSION:-2.4.68}
+    image: httpd:${PACKTEST_VERSION:-2.4.68}${PACKTEST_DIGEST-}
     command:
       - /bin/sh
       - -c

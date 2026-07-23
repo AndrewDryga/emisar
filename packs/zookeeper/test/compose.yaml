@@ -1,6 +1,6 @@
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:${PACKTEST_VERSION:-7.9.8}
+    image: confluentinc/cp-zookeeper:${PACKTEST_VERSION:-7.9.8}${PACKTEST_DIGEST-}
     environment:
       KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=conf,cons,envi,mntr,ruok,srvr,stat,wchs"
       ZOOKEEPER_CLIENT_PORT: 2181

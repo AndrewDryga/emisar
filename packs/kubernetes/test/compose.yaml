@@ -4,7 +4,7 @@ services:
       - k3s_kubeconfig:/shared:ro
 
   k3s:
-    image: rancher/k3s:${PACKTEST_VERSION:-v1.36.2-k3s1}
+    image: rancher/k3s:${PACKTEST_VERSION:-v1.36.2-k3s1}${PACKTEST_DIGEST-}
     command: server --node-name=harness --tls-san=k3s --disable=traefik
     privileged: true
     environment:

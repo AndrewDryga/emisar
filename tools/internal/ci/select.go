@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 type Selection struct {
@@ -21,7 +23,7 @@ type Selection struct {
 	MCPListing    bool
 	PortalRelease bool
 	PacksRelease  bool
-	PackBehavior  []string
+	PackBehavior  []packtest.MatrixRow
 	SigningE2E    bool
 	SSOE2E        bool
 }
@@ -56,7 +58,11 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		selection.SigningE2E = true
 		selection.SSOE2E = true
 	}
-	selection.PackBehavior = selectPackBehavior(root, files, selection.Workflows)
+	packBehavior, err := selectPackBehavior(root, files, selection.Workflows)
+	if err != nil {
+		return Selection{}, err
+	}
+	selection.PackBehavior = packBehavior
 	if event == "push" {
 		selection.Portal = true
 		selection.PortalRelease = true
@@ -136,7 +142,7 @@ func (selection *Selection) include(file string) {
 	}
 }
 
-func selectPackBehavior(root string, files []string, workflows bool) []string {
+func selectPackBehavior(root string, files []string, workflows bool) ([]packtest.MatrixRow, error) {
 	runAll := workflows
 	selected := make(map[string]bool)
 	for _, file := range files {
@@ -148,15 +154,17 @@ func selectPackBehavior(root string, files []string, workflows bool) []string {
 			selected[parts[1]] = true
 		}
 	}
-	plans, _ := filepath.Glob(filepath.Join(root, "packs", "*", "test", "cases.yaml"))
-	var names []string
-	for _, path := range plans {
-		name := filepath.Base(filepath.Dir(filepath.Dir(path)))
-		if runAll || selected[name] {
-			names = append(names, name)
+	plans, err := packtest.Discover(filepath.Join(root, "packs"), "")
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]packtest.PlanRef, 0, len(plans))
+	for _, plan := range plans {
+		if runAll || selected[plan.Name] {
+			filtered = append(filtered, plan)
 		}
 	}
-	return names
+	return packtest.Matrix(filtered), nil
 }
 
 func packBehaviorSharedPath(file string) bool {

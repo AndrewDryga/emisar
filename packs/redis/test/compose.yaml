@@ -6,7 +6,7 @@ services:
         condition: service_healthy
 
   redis:
-    image: redis:${PACKTEST_VERSION:-8.8.0}
+    image: redis:${PACKTEST_VERSION:-8.8.0}${PACKTEST_DIGEST-}
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

@@ -1,4 +1,8 @@
 services: [vault]
+versions:
+  - version: "2.0.3"
+    digest: "@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54"
+    default: true
 env:
   VAULT_ADDR: "http://vault:8200"
   VAULT_TOKEN: test-root-token

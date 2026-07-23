@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -53,8 +54,15 @@ type Defaults struct {
 	Expect Expectation `yaml:"expect,omitempty"`
 }
 
+type Version struct {
+	Version string `yaml:"version"`
+	Digest  string `yaml:"digest"`
+	Default bool   `yaml:"default,omitempty"`
+}
+
 type Plan struct {
 	Services []string          `yaml:"services"`
+	Versions []Version         `yaml:"versions"`
 	Env      map[string]string `yaml:"env,omitempty"`
 	Defaults Defaults          `yaml:"defaults,omitempty"`
 	Cases    []Case            `yaml:"cases"`
@@ -64,6 +72,13 @@ type PlanRef struct {
 	Name     string
 	Path     string
 	Services []string
+	Versions []Version
+}
+
+type MatrixRow struct {
+	Pack    string `json:"pack"`
+	Version string `json:"version"`
+	Digest  string `json:"digest"`
 }
 
 type Config struct {
@@ -134,7 +149,12 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		plans = append(plans, PlanRef{Name: name, Path: path, Services: plan.Services})
+		if err := validateVersions(plan.Versions); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		plans = append(plans, PlanRef{
+			Name: name, Path: path, Services: plan.Services, Versions: plan.Versions,
+		})
 	}
 	if len(plans) == 0 {
 		if len(wanted) > 0 {
@@ -159,6 +179,27 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		return nil, fmt.Errorf("packs have no behavioral plan: %s", strings.Join(missing, ", "))
 	}
 	return plans, nil
+}
+
+func Matrix(plans []PlanRef) []MatrixRow {
+	var rows []MatrixRow
+	for _, plan := range plans {
+		for _, version := range plan.Versions {
+			rows = append(rows, MatrixRow{
+				Pack: plan.Name, Version: version.Version, Digest: version.Digest,
+			})
+		}
+	}
+	return rows
+}
+
+func (ref PlanRef) DefaultVersion() Version {
+	for _, version := range ref.Versions {
+		if version.Default {
+			return version
+		}
+	}
+	return Version{}
 }
 
 func Run(config Config) (Totals, error) {
@@ -267,6 +308,9 @@ func loadActions(packDir string) (map[string]actionDefinition, error) {
 }
 
 func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) error {
+	if err := validateVersions(plan.Versions); err != nil {
+		return err
+	}
 	if len(plan.Services) == 0 {
 		return fmt.Errorf("services must name at least one disposable Compose service")
 	}
@@ -309,6 +353,39 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		if len(test.Cleanup) > 0 && strings.TrimSpace(test.CleanupNotNeeded) != "" {
 			return fmt.Errorf("%s cannot declare cleanup and cleanup_not_needed", location)
 		}
+	}
+	return nil
+}
+
+var (
+	versionPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	digestPattern  = regexp.MustCompile(`^@sha256:[a-f0-9]{64}$`)
+)
+
+func validateVersions(versions []Version) error {
+	if len(versions) == 0 {
+		return fmt.Errorf("versions must declare at least one supported SUT image")
+	}
+	defaults := 0
+	seen := make(map[string]bool, len(versions))
+	for i, version := range versions {
+		location := fmt.Sprintf("versions[%d]", i)
+		if !versionPattern.MatchString(version.Version) {
+			return fmt.Errorf("%s has invalid image tag %q", location, version.Version)
+		}
+		if !digestPattern.MatchString(version.Digest) {
+			return fmt.Errorf("%s digest must match @sha256:<64 lowercase hex characters>", location)
+		}
+		if seen[version.Version] {
+			return fmt.Errorf("%s duplicates version %q", location, version.Version)
+		}
+		seen[version.Version] = true
+		if version.Default {
+			defaults++
+		}
+	}
+	if defaults != 1 {
+		return fmt.Errorf("versions must mark exactly one default, got %d", defaults)
 	}
 	return nil
 }

@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      packs: ${{ steps.discover.outputs.packs }}
+      matrix: ${{ steps.discover.outputs.matrix }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,11 +33,11 @@ jobs:
           cache-dependency-path: tools/go.*
 
       - id: discover
-        name: Discover committed behavior plans
-        run: echo "packs=$(go run ./tools/cmd/packtest --list --packs ./packs)" >> "$GITHUB_OUTPUT"
+        name: Discover committed compatibility rows
+        run: echo "matrix=$(go run ./tools/cmd/packtest --matrix --packs ./packs)" >> "$GITHUB_OUTPUT"
 
   behavior:
-    name: ${{ matrix.pack }}
+    name: ${{ matrix.pack }} ${{ matrix.version }}
     needs: plans
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,10 +45,12 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        pack: ${{ fromJSON(needs.plans.outputs.packs) }}
+        include: ${{ fromJSON(needs.plans.outputs.matrix) }}
     env:
       GOTOOLCHAIN: local
       PACK: ${{ matrix.pack }}
+      PACKTEST_VERSION: ${{ matrix.version }}
+      PACKTEST_DIGEST: ${{ matrix.digest }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,3 +68,13 @@ jobs:
 
       - name: Exercise pack behavior
         run: ./run test packs "$PACK"
+
+      - name: Upload failed pack report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}
+          path: dev/test-packs/reports/${{ matrix.pack }}.log
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true

@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-5.1.0-alpine}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-postfix-tools:latest
     network_mode: service:postfix
     pid: service:postfix
@@ -13,7 +14,7 @@ services:
       - postfix_spool:/var/spool/postfix
 
   postfix:
-    image: boky/postfix:${PACKTEST_VERSION:-5.1.0-alpine}
+    image: boky/postfix:${PACKTEST_VERSION:-5.1.0-alpine}${PACKTEST_DIGEST-}
     environment:
       HOSTNAME: postfix.example.test
       ALLOWED_SENDER_DOMAINS: example.test

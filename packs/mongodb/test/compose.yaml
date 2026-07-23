@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongo:${PACKTEST_VERSION:-8.2.5}
+    image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: testpass

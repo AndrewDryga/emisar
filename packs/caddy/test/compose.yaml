@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-2.11.4}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-caddy-tools:latest
     network_mode: service:caddy
     volumes:
@@ -12,7 +13,7 @@ services:
       - ${EMISAR_ROOT}/packs/caddy/test/fixtures/Caddyfile:/etc/caddy/Caddyfile:ro
 
   caddy:
-    image: caddy:${PACKTEST_VERSION:-2.11.4}
+    image: caddy:${PACKTEST_VERSION:-2.11.4}${PACKTEST_DIGEST-}
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     volumes:
       - caddy_logs:/var/log/caddy

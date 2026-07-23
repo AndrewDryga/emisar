@@ -6,6 +6,7 @@ services:
       target: client
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-5.0.8}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-cassandra-tools:latest
     network_mode: service:cassandra
     volumes:
@@ -18,6 +19,7 @@ services:
       target: sut
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-5.0.8}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-cassandra-sut:latest
     environment:
       CASSANDRA_CLUSTER_NAME: packtest

@@ -43,13 +43,21 @@ image once and executes up to four pack projects concurrently.
 
 The first service in `cases.yaml` is the primary SUT. Its Compose image or
 pack-local Dockerfile must consume the uniform `PACKTEST_VERSION` input and
-keep the current version as its default. Secondary fixture images stay fixed
-unless their version is itself part of the pack contract.
+`PACKTEST_DIGEST`, keeping the current version as its Compose default.
+`cases.yaml` owns the supported version rows and their exact image digests.
+Secondary fixture images stay fixed unless their version is itself part of the
+pack contract.
 
 ## Plan schema
 
 ```yaml
 services: [postgres]
+versions:
+  - version: "18.4"
+    digest: "@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
+    default: true
+  - version: "17.6"
+    digest: "@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 env:
   PGHOST: postgres
   PGUSER: postgres
@@ -92,6 +100,13 @@ allowlists it. Structured argument values are encoded as JSON. A pack that
 needs special runner networking overrides the shared `runner-tools` service in
 its own Compose file.
 
+`versions` must contain unique Docker image tags, each paired with an exact
+`@sha256:` digest, and mark exactly one row as `default: true`. That row must
+match the primary service's `${PACKTEST_VERSION:-...}` Compose default. A row is
+a compatibility claim: relevant pull requests and main changes run every row
+owned by the changed pack, while the weekly `Pack behavior` workflow runs every
+row across every plan.
+
 `arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use an
 explicit `[/bin/sh, -c, ...]` only when shell syntax is part of the test.
 Cleanup always runs, including after an action or probe failure.
@@ -118,9 +133,9 @@ it cannot be combined with `cleanup`.
 # Exercise one alternate supported version.
 PACKTEST_VERSION=17.6 ./run test packs postgres
 
-# Pin an alternate version to an exact image digest.
+# Exercise an ad hoc version that is not declared by the plan.
 PACKTEST_VERSION=17.6 \
-  PACKTEST_DIGEST=@sha256:0123456789abcdef... \
+  PACKTEST_DIGEST=@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   ./run test packs postgres
 ```
 
@@ -128,6 +143,7 @@ The command builds the shared runner and harness once, starts each selected
 pack in an isolated project, writes `reports/<pack>.log`, and removes that
 project and its volumes when it finishes. Completion lines appear as concurrent
 workers finish; detailed results are printed in stable pack-name order.
-`PACKTEST_VERSION` requires exactly one selected pack. When it is set without
-`PACKTEST_DIGEST`, the devtool clears any digest attached to the default image;
-CI can provide the matching digest when the matrix is ready.
+Without overrides, the devtool uses each plan's declared default version and
+digest. `PACKTEST_VERSION` requires exactly one selected pack. When it matches
+a declared row, the devtool supplies that row's digest automatically; an ad hoc
+version remains unpinned unless `PACKTEST_DIGEST` is supplied explicitly.

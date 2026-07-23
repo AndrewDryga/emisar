@@ -1,4 +1,8 @@
 services: [typesense]
+versions:
+  - version: "29.0"
+    digest: "@sha256:316b7e71c21f7e5e5caa8daa150e1b3f2be8c876081ee1f77bc2d92cd7f137d0"
+    default: true
 env:
   TYPESENSE_API_KEY: harness-key
   TYPESENSE_URL: "http://typesense:8108"

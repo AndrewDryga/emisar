@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +14,13 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 	migration := "portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"
 	writeFixture(t, root, migration, "defmodule Old do\nend\n")
 	writeFixture(t, root, "runner/old.go", "package main\n")
-	writeFixture(t, root, "packs/postgres/test/cases.yaml", "services: [postgres]\ncases: []\n")
-	writeFixture(t, root, "packs/mysql/test/cases.yaml", "services: [mysql]\ncases: []\n")
+	writeFixture(t, root, "packs/postgres/test/cases.yaml", behaviorPlan("postgres",
+		versionRow("18.4", "a", true),
+		versionRow("17.6", "b", false),
+	))
+	writeFixture(t, root, "packs/mysql/test/cases.yaml", behaviorPlan("mysql",
+		versionRow("9.7.1", "c", true),
+	))
 	commitAll(t, root, "base")
 	base := gitText(t, root, "rev-parse", "HEAD")
 
@@ -69,7 +75,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		if selection.PortalRelease || selection.PacksRelease {
 			t.Fatalf("workflow-only PR selected release: %+v", selection)
 		}
-		if len(selection.PackBehavior) != 2 || !selection.SigningE2E || !selection.SSOE2E {
+		if len(selection.PackBehavior) != 3 || !selection.SigningE2E || !selection.SSOE2E {
 			t.Fatalf("workflow selection omitted integration gates: %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -82,7 +88,10 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(selection.PackBehavior) != 1 || selection.PackBehavior[0] != "postgres" {
+		if len(selection.PackBehavior) != 2 ||
+			selection.PackBehavior[0].Pack != "postgres" ||
+			selection.PackBehavior[0].Version != "18.4" ||
+			selection.PackBehavior[1].Version != "17.6" {
 			t.Fatalf("pack behavior selection = %v", selection.PackBehavior)
 		}
 		resetHard(t, root, base)
@@ -108,7 +117,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(selection.PackBehavior) != 2 {
+		if len(selection.PackBehavior) != 3 {
 			t.Fatalf("shared harness selection = %v", selection.PackBehavior)
 		}
 		resetHard(t, root, base)
@@ -191,6 +200,21 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			resetHard(t, root, base)
 		})
 	}
+}
+
+func behaviorPlan(service string, versions ...string) string {
+	return "services: [" + service + "]\nversions:\n" +
+		strings.Join(versions, "") +
+		"cases: []\n"
+}
+
+func versionRow(version, digestCharacter string, defaultVersion bool) string {
+	row := "  - version: \"" + version + "\"\n" +
+		"    digest: \"@sha256:" + strings.Repeat(digestCharacter, 64) + "\"\n"
+	if defaultVersion {
+		row += "    default: true\n"
+	}
+	return row
 }
 
 func newGitRepo(t *testing.T) string {

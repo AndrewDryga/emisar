@@ -22,9 +22,11 @@ func main() {
 	config := packtest.Config{}
 	var names packNames
 	var list bool
+	var matrix bool
 	flag.StringVar(&config.Pattern, "pattern", "", "run pack names containing this value")
 	flag.Var(&names, "pack", "run one exact pack name; repeat for more than one")
 	flag.BoolVar(&list, "list", false, "print selected pack names as JSON without running them")
+	flag.BoolVar(&matrix, "matrix", false, "print selected pack version rows as JSON without running them")
 	flag.StringVar(&config.Emisar, "emisar", "", "path to the emisar runner binary")
 	flag.StringVar(&config.PacksDir, "packs", "", "pack catalog root")
 	flag.StringVar(&config.Config, "config", "", "runner test config")
@@ -35,11 +37,22 @@ func main() {
 		os.Exit(2)
 	}
 	config.Names = names
-	if list {
+	if list && matrix {
+		fmt.Fprintln(os.Stderr, "packtest: --list and --matrix are mutually exclusive")
+		os.Exit(2)
+	}
+	if list || matrix {
 		plans, err := packtest.Discover(config.PacksDir, config.Pattern, config.Names...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "packtest:", err)
 			os.Exit(1)
+		}
+		if matrix {
+			if err := json.NewEncoder(os.Stdout).Encode(packtest.Matrix(plans)); err != nil {
+				fmt.Fprintln(os.Stderr, "packtest:", err)
+				os.Exit(1)
+			}
+			return
 		}
 		selected := make([]string, 0, len(plans))
 		for _, plan := range plans {

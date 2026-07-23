@@ -1,4 +1,8 @@
 services: [mysql]
+versions:
+  - version: "9.7.1"
+    digest: "@sha256:c109c421c81637a50209b57ec6af7dc0685e8b1ce7efdca0c0902a3d95df6574"
+    default: true
 env:
   MYSQL_HOST: mysql
   MYSQL_PWD: testpass

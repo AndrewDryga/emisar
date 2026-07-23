@@ -1,3 +1,3 @@
 services:
   victorialogs:
-    image: victoriametrics/victoria-logs:${PACKTEST_VERSION:-v1.35.0}${PACKTEST_DIGEST-@sha256:70f4e739c3594a603487491355d9480f9483e9124c841bc61352951c323a7842}
+    image: victoriametrics/victoria-logs:${PACKTEST_VERSION:-v1.35.0}${PACKTEST_DIGEST-}

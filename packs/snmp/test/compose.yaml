@@ -4,6 +4,7 @@ services:
       context: ${EMISAR_ROOT}/packs/snmp/test/snmpd
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     command: ["/usr/sbin/snmpd", "-f", "-Lo", "-C", "-c", "/etc/snmp/snmpd.conf"]
     environment:
       MIBS: ""
@@ -20,6 +21,7 @@ services:
       context: ${EMISAR_ROOT}/packs/snmp/test/snmpd-frr
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN

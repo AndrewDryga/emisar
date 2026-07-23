@@ -1,5 +1,6 @@
 ARG PACKTEST_VERSION=1.31.3
-FROM nginx:${PACKTEST_VERSION}
+ARG PACKTEST_DIGEST
+FROM nginx:${PACKTEST_VERSION}${PACKTEST_DIGEST}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl procps \

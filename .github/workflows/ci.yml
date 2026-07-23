@@ -592,7 +592,7 @@ jobs:
         run: ./run check packs
 
   pack-behavior:
-    name: Packs - Behavior (${{ matrix.pack }})
+    name: Packs - Behavior (${{ matrix.pack }} ${{ matrix.version }})
     needs: changes
     if: needs.changes.outputs.pack_behavior != '[]'
     runs-on: ubuntu-latest
@@ -601,10 +601,12 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        pack: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
+        include: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
     env:
       GOTOOLCHAIN: local
       PACK: ${{ matrix.pack }}
+      PACKTEST_VERSION: ${{ matrix.version }}
+      PACKTEST_DIGEST: ${{ matrix.digest }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -622,6 +624,16 @@ jobs:
 
       - name: Exercise pack behavior
         run: ./run test packs "$PACK"
+
+      - name: Upload failed pack report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}
+          path: dev/test-packs/reports/${{ matrix.pack }}.log
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true
 
   signing-e2e:
     name: E2E - Signed dispatch

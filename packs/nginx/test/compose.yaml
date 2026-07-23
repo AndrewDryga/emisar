@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-1.31.3}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-nginx-tools:latest
     network_mode: service:nginx
     volumes:
@@ -12,7 +13,7 @@ services:
       - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
 
   nginx:
-    image: nginx:${PACKTEST_VERSION:-1.31.3}
+    image: nginx:${PACKTEST_VERSION:-1.31.3}${PACKTEST_DIGEST-}
     command:
       - /bin/sh
       - -c
