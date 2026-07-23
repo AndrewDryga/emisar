@@ -133,14 +133,10 @@
           comments and other servers preserved. You shouldn't need the by-hand
           configs below; they're there for reference or an unattended setup.
         </p>
-        <p class="mt-2 text-xs leading-5 text-zinc-400">
-          Rather verify first? The bridge release carries SLSA provenance + a
-          <code class="font-mono">SHA256SUMS-MCP</code>
-          checksum file — see <.link
-            href={~p"/trust" <> "#release-integrity"}
-            class="text-brand-400 hover:text-brand-300"
-          >Release integrity</.link>.
-        </p>
+        <.docs_verify_download
+          tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
+          checksums="SHA256SUMS-MCP"
+        />
 
         <details class="group mt-8">
           <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">

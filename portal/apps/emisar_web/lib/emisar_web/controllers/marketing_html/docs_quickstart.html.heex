@@ -84,20 +84,14 @@
         copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
+      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The key is single-use, so a copy in your shell history goes stale the moment it's used.
         It's a plain, readable shell script —
         <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
           read it first
         </.link>
-        if you'd rather, or
-        <.link
-          href={~p"/trust" <> "#release-integrity"}
-          class="text-brand-400 hover:text-brand-300"
-        >
-          verify the release's provenance + checksum
-        </.link>
-        before you run it. It:
+        if you'd rather. It:
       </p>
       <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">

@@ -233,6 +233,54 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  A collapsible "Verify this download" block placed under an install command:
+  the download-then-verify commands (SLSA provenance + checksum) with THIS
+  release's artifact names, so a security team can prove the binary before it
+  runs as sudo. `tarball`/`checksums` differ between the runner and the
+  emisar-mcp bridge, so each install surface passes its own.
+  """
+  attr :tarball, :string, required: true
+  attr :checksums, :string, required: true
+
+  def docs_verify_download(assigns) do
+    commands = """
+    # provenance — built by our workflow, from our source
+    $ gh attestation verify #{assigns.tarball} --owner andrewdryga
+    # checksums — the bytes match what we published
+    $ sha256sum -c #{assigns.checksums}\
+    """
+
+    assigns = assign(assigns, :commands, commands)
+
+    ~H"""
+    <details class="group mt-4">
+      <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
+        <span class="flex items-center gap-2">
+          <.icon name="hero-shield-check" class="h-4 w-4 text-zinc-500" /> Verify this download first
+        </span>
+        <.icon
+          name="hero-chevron-down"
+          class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+        />
+      </summary>
+      <div class="mt-4">
+        <p class="text-sm leading-7 text-zinc-400">
+          The installer checks the checksum itself; to prove the binary before it runs as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>, download it and run these
+          first — a green check names our source repository and the release workflow that built it.
+        </p>
+        <.docs_code phx-no-format label="shell">{@commands}</.docs_code>
+        <p class="mt-3 text-xs leading-5 text-zinc-500">
+          More on the signing pipeline: <.link
+            href="/trust#release-integrity"
+            class="text-brand-400 hover:text-brand-300"
+          >Release integrity</.link>.
+        </p>
+      </div>
+    </details>
+    """
+  end
+
+  @doc """
   The one callout grammar — a bordered note (`:note`), tip (`:tip`), or
   warning (`:warn`) with a leading icon and an optional bold `title`. Replaces
   the hand-rolled boxes so every docs aside reads the same way.

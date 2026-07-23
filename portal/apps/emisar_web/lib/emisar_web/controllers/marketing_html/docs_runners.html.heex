@@ -132,13 +132,7 @@ execution:
 
 <span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        The installer verifies the download's checksum; to check before you run it, verify the
-        release's SLSA provenance + checksum yourself first — see <.link
-          href={~p"/trust" <> "#release-integrity"}
-          class="text-brand-400 hover:text-brand-300"
-        >Release integrity</.link>.
-      </p>
+      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
         changed pack hash lands as <strong class="text-zinc-200">pending</strong> on the Packs
