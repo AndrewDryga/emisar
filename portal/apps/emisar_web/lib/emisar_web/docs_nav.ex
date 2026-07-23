@@ -27,7 +27,7 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "connect-a-cli-client",
-         title: "Connect a CLI client",
+         title: "Connect a CLI agent",
          path: "/docs/connect-a-cli-client",
          icon: "hero-command-line",
          desc:
