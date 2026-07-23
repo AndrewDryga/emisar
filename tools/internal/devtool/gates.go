@@ -1,0 +1,337 @@
+package devtool
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/packhash"
+)
+
+const (
+	checkUsage = `usage: ./run check <target>
+
+  changed                    compile and check changed Portal source files
+  portal                     compile, format-check, and run Credo
+  staged                     validate staged migrations and source formatting
+  infra-templates            render and validate production cloud-init
+  pack-environment [repo] [environment]
+                             verify the registry deployment environment
+  packs                      validate every pack and cross-language hash golden
+  agent-setup                validate manuals, skills, tasks, hooks, and Coop verbs
+`
+	testUsage = `usage: ./run test <target> [args]
+
+  portal <mix-test-args...>  run focused, --stale, --failed, or listening Portal tests
+  runner [go-test-args...]   run all runner tests, or pass focused go test arguments
+  mcp [go-test-args...]      run all MCP tests, or pass focused go test arguments
+  tools [go-test-args...]    run all tooling tests, or pass focused go test arguments
+  packs [name-pattern]       run generated pack cases against real services
+  install <runner|mcp>       exercise a public installer in an isolated harness
+`
+	gateUsage = `usage: ./run gate <target> [--coverage FILE]
+
+  portal                     compile, format, Credo, and clean-output tests
+  runner                     format, verify, vet, tidy-check, and race-test runner
+  mcp                        format, verify, vet, tidy-check, and race-test MCP
+  packs                      validate packs, hashes, catalog, and focused Portal tests
+  infra                      format, initialize, validate, lint, and test templates
+  tooling                    gate the shared Go tooling, docs, shell, and agent setup
+  all                        run tooling, runner, MCP, packs, infra, and Portal gates
+
+--coverage is supported by runner, mcp, and tooling for CI artifact collection.
+`
+	packUsage = `usage: ./run pack <action> [args]
+
+  check <name>               validate one pack without changing artifacts
+  hashes [--write]           verify or refresh cross-language pack hash goldens
+  sync <name> --fix          rebuild the catalog from the live registry history
+
+Use "./run test packs [name-pattern]" for generated integration cases and
+"./run gate packs" for the complete pack Definition of Done.
+`
+)
+
+func (a *App) help(args []string) error {
+	if len(args) == 0 {
+		a.usage()
+		return nil
+	}
+	if len(args) != 1 {
+		return usage("usage: ./run help [check|test|gate|pack|ops]")
+	}
+	switch args[0] {
+	case "check":
+		fmt.Fprint(a.Out, checkUsage)
+	case "test":
+		fmt.Fprint(a.Out, testUsage)
+	case "gate":
+		fmt.Fprint(a.Out, gateUsage)
+	case "pack":
+		fmt.Fprint(a.Out, packUsage)
+	case "ops":
+		return a.infraOps(context.Background(), []string{"--help"})
+	default:
+		return usage("usage: ./run help [check|test|gate|pack|ops]")
+	}
+	return nil
+}
+
+func (a *App) test(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return usage("%s", testUsage)
+	}
+	target, rest := args[0], args[1:]
+	switch target {
+	case "portal":
+		if len(rest) == 0 {
+			return usage("usage: ./run test portal <paths...|--stale|--failed>")
+		}
+		_, env, err := a.up(ctx)
+		if err != nil {
+			return err
+		}
+		return a.portalTests(ctx, env, rest)
+	case "runner", "mcp", "tools":
+		arguments := append([]string{"test"}, rest...)
+		if len(rest) == 0 {
+			arguments = append(arguments, "-race", "-count=1", "./...")
+		}
+		return a.run(ctx, filepath.Join(a.Root, target), nil, "go", arguments...)
+	case "packs":
+		if len(rest) > 1 {
+			return usage("usage: ./run test packs [name-pattern]")
+		}
+		pattern := ""
+		if len(rest) == 1 {
+			pattern = rest[0]
+		}
+		return a.packTest(ctx, pattern)
+	case "install":
+		if len(rest) != 1 || rest[0] != "runner" && rest[0] != "mcp" {
+			return usage("usage: ./run test install <runner|mcp>")
+		}
+		return a.run(ctx, a.Root, nil, "go", "run", "./tools/cmd/installtest", rest[0])
+	default:
+		return usage("%s", testUsage)
+	}
+}
+
+func parseCoverage(args []string) (string, error) {
+	if len(args) == 0 {
+		return "", nil
+	}
+	if len(args) != 2 || args[0] != "--coverage" || strings.TrimSpace(args[1]) == "" {
+		return "", usage("coverage must be passed as --coverage FILE")
+	}
+	return args[1], nil
+}
+
+func (a *App) goGate(ctx context.Context, module, coverage string) error {
+	dir := filepath.Join(a.Root, module)
+	unformatted, err := a.output(ctx, dir, nil, "gofmt", "-l", "-s", ".")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(unformatted)) != "" {
+		return fmt.Errorf("%s Go files are not formatted:\n%s", module, unformatted)
+	}
+	for _, arguments := range [][]string{{"mod", "verify"}, {"vet", "./..."}, {"mod", "tidy"}} {
+		if err := a.run(ctx, dir, nil, "go", arguments...); err != nil {
+			return err
+		}
+	}
+	moduleFiles := []string{"go.mod", "go.sum"}
+	if module == "mcp" {
+		moduleFiles = []string{"go.mod"}
+		if _, err := os.Stat(filepath.Join(dir, "go.sum")); err == nil {
+			return fmt.Errorf("mcp must remain stdlib-only; go mod tidy created go.sum")
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := a.run(ctx, dir, nil, "git", append([]string{"diff", "--exit-code", "--"}, moduleFiles...)...); err != nil {
+		return fmt.Errorf("%s module files are not tidy: %w", module, err)
+	}
+	testArgs := []string{"test", "-race", "-count=1"}
+	if coverage != "" {
+		testArgs = append(testArgs, "-coverprofile="+coverage)
+	}
+	return a.run(ctx, dir, nil, "go", append(testArgs, "./...")...)
+}
+
+func (a *App) portalGate(ctx context.Context) error {
+	var env map[string]string
+	if os.Getenv("CI") == "" {
+		_, workspaceEnv, err := a.up(ctx)
+		if err != nil {
+			return err
+		}
+		env = workspaceEnv
+	} else if os.Getenv("DATABASE_URL") == "" {
+		return fmt.Errorf("CI portal gate requires DATABASE_URL")
+	}
+	for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
+		if err := a.run(ctx, a.Portal, env, "mix", arguments...); err != nil {
+			return err
+		}
+	}
+	return a.portalTestOutput(ctx, env)
+}
+
+func (a *App) portalTestEnv(ctx context.Context) (map[string]string, error) {
+	if os.Getenv("CI") != "" {
+		if os.Getenv("DATABASE_URL") == "" {
+			return nil, fmt.Errorf("CI pack gate requires DATABASE_URL")
+		}
+		return map[string]string{"MIX_ENV": "test"}, nil
+	}
+	_, env, err := a.up(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env["MIX_ENV"] = "test"
+	return env, nil
+}
+
+func (a *App) validatePacks(ctx context.Context) error {
+	if err := a.buildPackTools(ctx); err != nil {
+		return err
+	}
+	manifests, err := filepath.Glob(filepath.Join(a.Root, "packs", "*", "pack.yaml"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(manifests)
+	if len(manifests) == 0 {
+		return fmt.Errorf("no pack manifests found under packs/")
+	}
+	var failures []string
+	for _, manifest := range manifests {
+		packDir := filepath.Dir(manifest)
+		fmt.Fprintf(a.Out, "\n==> %s\n", filepath.Base(packDir))
+		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "emisar"), "pack", "validate", packDir); err != nil {
+			failures = append(failures, filepath.Base(packDir))
+		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("pack validation failed: %s", strings.Join(failures, ", "))
+	}
+	if err := packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) packsGate(ctx context.Context) error {
+	if err := a.validatePacks(ctx); err != nil {
+		return err
+	}
+	output, err := os.MkdirTemp("", "emisar-pack-gate-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(output)
+	committed := filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json")
+	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
+		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
+		return err
+	}
+	generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
+	if err != nil {
+		return err
+	}
+	current, err := os.ReadFile(committed)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(generated, current) {
+		return fmt.Errorf("bundled pack catalog is stale; run ./run pack sync <changed-pack> --fix")
+	}
+
+	env, err := a.portalTestEnv(ctx)
+	if err != nil {
+		return err
+	}
+	checks := []struct {
+		label string
+		dir   string
+		args  []string
+	}{
+		{"pack baseline tests", filepath.Join(a.Portal, "apps", "emisar"), []string{"test", "test/emisar/catalog/pack_baseline_test.exs"}},
+		{"pack registry tests", filepath.Join(a.Portal, "apps", "emisar_web"), []string{"test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs"}},
+	}
+	for _, check := range checks {
+		if err := a.runCaptured(ctx, check.label, check.dir, env, "mix", check.args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) infraGate(ctx context.Context) error {
+	dir := filepath.Join(a.Root, "infra")
+	for _, command := range []struct {
+		name string
+		args []string
+	}{
+		{"terraform", []string{"fmt", "-check", "-recursive"}},
+		{"terraform", []string{"init", "-backend=false", "-input=false"}},
+		{"terraform", []string{"validate"}},
+		{"tflint", nil},
+	} {
+		if err := a.run(ctx, dir, nil, command.name, command.args...); err != nil {
+			return err
+		}
+	}
+	return a.infraOps(ctx, []string{"validate-templates"})
+}
+
+func (a *App) gate(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return usage("%s", gateUsage)
+	}
+	target, rest := args[0], args[1:]
+	coverage, err := parseCoverage(rest)
+	if err != nil {
+		return err
+	}
+	switch target {
+	case "portal":
+		if coverage != "" {
+			return usage("usage: ./run gate portal")
+		}
+		return a.portalGate(ctx)
+	case "runner", "mcp":
+		return a.goGate(ctx, target, coverage)
+	case "packs":
+		if coverage != "" {
+			return usage("usage: ./run gate packs")
+		}
+		return a.packsGate(ctx)
+	case "infra":
+		if coverage != "" {
+			return usage("usage: ./run gate infra")
+		}
+		return a.infraGate(ctx)
+	case "tooling":
+		return a.toolingGate(ctx, coverage)
+	case "all":
+		if coverage != "" {
+			return usage("usage: ./run gate all")
+		}
+		for _, target := range []string{"tooling", "runner", "mcp", "packs", "infra", "portal"} {
+			fmt.Fprintf(a.Out, "\n==> gate %s\n", target)
+			if err := a.gate(ctx, []string{target}); err != nil {
+				return fmt.Errorf("%s gate failed: %w", target, err)
+			}
+		}
+		return nil
+	default:
+		return usage("%s", gateUsage)
+	}
+}

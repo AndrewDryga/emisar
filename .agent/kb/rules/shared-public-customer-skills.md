@@ -45,7 +45,7 @@ onboarding and exposes internal process as a false product dependency.
 
 ## Enforcement
 
-`dev/run check agent-setup` validates the public skill tree,
+`./run check agent-setup` validates the public skill tree,
 portable frontmatter, separation from contributor skill directories, and every
 backticked MCP tool-shaped name against
 `portal/apps/emisar_web/priv/mcp/api-schemas.json`. Review public skill

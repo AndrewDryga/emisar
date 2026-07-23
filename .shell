@@ -11,11 +11,11 @@ if [ -z "${GIT_ROOT:-}" ]; then
 fi
 
 portal() {
-  "${GIT_ROOT}/dev/run" ops portal "$@"
+  "${GIT_ROOT}/run" ops portal "$@"
 }
 
 database() {
-  "${GIT_ROOT}/dev/run" ops database "$@"
+  "${GIT_ROOT}/run" ops database "$@"
 }
 
 # Set the gcloud project ID for the Google Cloud SDK

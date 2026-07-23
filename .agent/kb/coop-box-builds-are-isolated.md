@@ -2,7 +2,7 @@
 name: coop-box-builds-are-isolated
 description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
-sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, dev/run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
+sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
 updated: 2026-07-22
 ---
 
@@ -11,7 +11,7 @@ confusing, hard-to-attribute failures:
 
 1. **One URL on both sides:** `dev/compose.yml` declares only container ports.
    Coop assigns stable workspace-specific host ports, publishes them on loopback, and
-   mirrors the same `localhost:<port>` URLs into the box. `dev/run` reads those URLs as
+   mirrors the same `localhost:<port>` URLs into the box. `./run` reads those URLs as
    `COOP_SERVICE_*` in a box and from `coop fork ls --json` on the host. Portal receives
    the resulting `DATABASE_URL`; tests receive `PGHOST=localhost` plus the assigned
    `PGPORT`. Service-name-only URLs such as `db:5432` split host and box configuration
@@ -32,14 +32,14 @@ confusing, hard-to-attribute failures:
    emisar's own apps still compile inside the scanned steps, so our warnings are still
    caught.
 
-4. **Serve has one owner:** `dev/run serve` holds an advisory lock scoped by
+4. **Serve has one owner:** `./run serve` holds an advisory lock scoped by
    workspace and listen port. A second launcher fails before invoking Mix, and
    occupied Phoenix/metrics ports fail before database preparation. Go supervises
    Phoenix and the in-process Coop TCP proxies as one lifecycle.
 
 5. **OIDC keeps one issuer:** Keycloak sees the same forwarded
    `https://localhost:<workspace-port>` Host header from the host browser and the box.
-   `dev/run` patches one exact callback URL for that workspace and installs the ignored
+   `./run` patches one exact callback URL for that workspace and installs the ignored
    dev CA beside the system roots for Erlang. Dynamic hostname acceptance and the
    well-known admin credentials belong only to this loopback-published dev sidecar.
 

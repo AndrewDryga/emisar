@@ -171,7 +171,7 @@ func TestPortalHelpDoesNotRequireGcloud(t *testing.T) {
 	if err := app.portal(t.Context(), []string{"--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "usage: dev/run ops portal") {
+	if !strings.Contains(out.String(), "usage: ./run ops portal") {
 		t.Fatalf("unexpected help: %s", out.String())
 	}
 }

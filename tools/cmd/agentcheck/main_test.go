@@ -101,12 +101,12 @@ func TestCheckPublicSkillsRejectsContributorOnlyLists(t *testing.T) {
 func TestCheckKnowledgeCardsAcceptsDescriptiveFacts(t *testing.T) {
 	check := testChecker(t)
 	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
-	writeTestFile(t, check.root, "dev/run", "#!/usr/bin/env bash\n")
+	writeTestFile(t, check.root, "run", "#!/usr/bin/env bash\n")
 	writeTestFile(t, check.root, ".agent/kb/dev-loop.md", `---
 name: dev-loop
 description: how the development loop resolves services
 subsystem: agent-stack
-sources: [dev/run]
+sources: [run]
 updated: 2026-07-22
 ---
 
@@ -122,6 +122,32 @@ The command resolves workspace service URLs before starting Phoenix.
 	check.checkKnowledgeCards()
 
 	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckCommandSurfaceRequiresExecutableRootRun(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "run", "#!/usr/bin/env bash\n")
+
+	check.checkCommandSurface()
+
+	if !hasFailure(check, "must be executable") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckCommandSurfaceRejectsRetiredDevRun(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "run", "#!/usr/bin/env bash\n")
+	if err := os.Chmod(filepath.Join(check.root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, check.root, "dev/run", "#!/usr/bin/env bash\n")
+
+	check.checkCommandSurface()
+
+	if !hasFailure(check, "dev/run is retired") {
 		t.Fatalf("failures = %#v", check.failures)
 	}
 }

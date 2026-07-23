@@ -25,14 +25,12 @@ If there's no plan yet and the change is non-trivial, run `/workflow-spec` first
 3. **Gate before moving on.** Use the touched project's gate:
    - **portal/** — after each `.ex`/`.exs` edit, run `mix credo <file>` from
      `portal/`; step gate with compile/format plus focused tests; final gate below.
-   - **runner/** or **mcp/** — `gofmt -l -s .`, `go vet ./...`, `go mod tidy &&
-     git diff --exit-code go.mod go.sum`, `go test -race -count=1 ./...`.
-   - **packs/** — `emisar pack validate packs/<name>` for each touched pack; update
-     redis/cassandra portal hash golden when those packs change.
-   - **infra/** — `terraform fmt -check -recursive`, `terraform init -backend=false
-     && terraform validate`, `tflint --init && tflint`.
+   - **runner/** or **mcp/** — `./run gate runner` or `./run gate mcp`.
+   - **packs/** — `./run gate packs`; refresh the catalog and redis/cassandra
+     hash golden first when the change requires it.
+   - **infra/** — `./run gate infra`.
    - **agent tooling/docs** — run the changed command plus
-     `dev/run check agent-setup`.
+     `./run check agent-setup`.
 4. **Red gate → stop.** Don't pile the next step on a broken one. Fix it, or report
    the blocker with the error and your read on it. Never edit a test to make a real
    failure pass.
@@ -52,14 +50,15 @@ If there's no plan yet and the change is non-trivial, run `/workflow-spec` first
 
 ## Finish (IL-20 — verify before claiming done)
 
-Run every touched project's final gate exactly as written in its `AGENTS.md`.
-For portal, that is:
+Run every touched project's `./run gate <project>` command exactly as written
+in its `AGENTS.md`. For Portal:
 
 ```sh
-cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test
+./run gate portal
 ```
 
-For agent/tooling changes, include `dev/run check agent-setup`.
+For agent/tooling changes, run `./run gate tooling` and include
+`./run check agent-setup`.
 Then **show the output** and give a plain status: what's done, what's verified,
 what's left. If something is unverified, say so — don't say "should work". Offer
 `/review-ship` or `/review-board` before the PR when risk warrants it.

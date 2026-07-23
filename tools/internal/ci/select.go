@@ -89,7 +89,7 @@ func (selection *Selection) include(file string) {
 	if file == "server.json" {
 		selection.MCPListing = true
 	}
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/") || strings.Contains(file, "/.agent/") || member(file, "go.work", "go.work.sum") || filepath.Ext(file) == ".md" {
+	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {

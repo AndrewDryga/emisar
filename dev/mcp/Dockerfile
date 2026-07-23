@@ -1,5 +1,5 @@
 # Development image for the emisar-mcp stdio bridge. The packaged Compose
-# topology and `dev/run e2e signing` use it to exercise the real bridge on the
+# topology and `./run e2e signing` use it to exercise the real bridge on the
 # same Docker network as the portal. It is not a published product image.
 #
 # Build context is the repository root, shared with the other packaged Compose

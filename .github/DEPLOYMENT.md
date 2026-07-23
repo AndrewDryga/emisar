@@ -53,7 +53,7 @@ only re-approve it; this holds while the repository has a single maintainer.
 — at that point a tag push or job rerun is no longer necessarily the
 maintainer's own decision.
 
-Run `dev/run check pack-environment` and retain the green output before
+Run `./run check pack-environment` and retain the green output before
 enabling pack publication — it confirms the publisher's WIF credentials stay bound
 to protected `main` with no admin bypass.
 

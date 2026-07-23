@@ -1713,9 +1713,8 @@ runner, never production actions.
 
 Project gates:
 
-- Portal: `dev/run gate portal`
-- MCP and runner: `gofmt -l -s .`, `go vet ./...`, tidy with no diff, and
-  `go test -race -count=1 ./...` in each module.
+- Portal: `./run gate portal`
+- MCP and runner: `./run gate mcp` and `./run gate runner`.
 - Root: attestation implementation/vector parity, compile and fixture-check all
   schemas, validate every documentation example, docs check, corpus tests,
   client certification, and repository CI.

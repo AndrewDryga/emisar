@@ -113,7 +113,7 @@ func (a *App) pitrDrill(ctx context.Context, args []string) (runErr error) {
 	if len(args) == 1 && args[0] == "--apply" {
 		apply = true
 	} else if len(args) != 0 {
-		return usage("usage: dev/run ops drill pitr [--apply]")
+		return usage("usage: ./run ops drill pitr [--apply]")
 	}
 	project := os.Getenv("PROJECT_ID")
 	if project == "" {
@@ -180,7 +180,7 @@ func (a *App) pitrDrill(ctx context.Context, args []string) (runErr error) {
 				"cleanup_verified_at": time.Now().UTC().Format(time.RFC3339),
 			})
 		} else if runErr == nil {
-			runErr = fmt.Errorf("drill succeeded but cleanup failed; run dev/run ops drill cleanup --apply %s: %w",
+			runErr = fmt.Errorf("drill succeeded but cleanup failed; run ./run ops drill cleanup --apply %s: %w",
 				prefix, cleanupErr)
 		}
 	}()

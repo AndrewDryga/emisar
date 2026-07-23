@@ -11,14 +11,15 @@ Read the root `../AGENTS.md` (the creed) first; the Go house style is in `runner
 
 ## The gate
 
-Run from `mcp/`:
+Run from the repository root:
 
 ```
-gofmt -l -s .                                       # zero output
-go vet ./...
-go mod tidy && test ! -e go.sum && git diff --exit-code -- go.mod
-go test -race -count=1 ./...
+./run gate mcp
 ```
+
+It checks formatting, module checksums, `go vet`, tidy-as-a-no-op, and race
+tests. Use `./run test mcp [go-test-args...]` for focused feedback; direct Go
+commands are diagnostic, not final verification.
 
 ## Shape
 

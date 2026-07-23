@@ -4,7 +4,7 @@
 or marketing — the fix is a four-step loop, and the FIRST step happens before
 any code is edited:
 
-1. **Before-shot** — capture the reported state from `dev/run serve`,
+1. **Before-shot** — capture the reported state from `./run serve`,
    writing into the folder that owns the work (`--out`):
 
    - **Working a queued task?** Its own `screenshots/` folder:
@@ -14,7 +14,7 @@ any code is edited:
      `.agent/screenshots/2026-07-16-agents-owner-grouping`).
 
    ```sh
-   dev/run shot <path> --label before --select '<css>' \
+   ./run shot <path> --label before --select '<css>' \
      --out .agent/screenshots/<YYYY-MM-DD>-<what-is-fixed>
    ```
 
@@ -25,7 +25,7 @@ any code is edited:
    `--select CSS`, `--heading "exact text"` (+ `--climb section`), or
    `--class-contains a,b` for Tailwind arbitrary classes.
 2. **Fix** — the normal workflow (AGENTS.md, `design-system.md`, the gate).
-3. **Reload** — keep `dev/run serve` running and wait for Phoenix's code reload.
+3. **Reload** — keep `./run serve` running and wait for Phoenix's code reload.
    `shot.mjs` waits for the LiveView connection, fonts, visible images, and
    stable target geometry; do not restore a fixed sleep or rebuild a release
    image for ordinary UI work.
@@ -61,5 +61,5 @@ the full page would have shown.
   desktop+mobile review); no before exists there.
 
 **Enforced.** Process rule (review): a UI-fix report with no before/after pair
-in the conversation is incomplete. Mechanics: `dev/run shot`
+in the conversation is incomplete. Mechanics: `./run shot`
 (see the README in that directory).

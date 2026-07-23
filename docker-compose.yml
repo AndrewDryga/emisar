@@ -17,7 +17,7 @@
 #
 # Generate the ignored dev TLS material, then start the packaged topology:
 #
-#   dev/run smoke
+#   ./run smoke
 #
 # Boots in the right order:
 #   db          starts, becomes healthy (pg_isready)
@@ -354,7 +354,7 @@ services:
   #   /signing/cert.json      EMISAR_SIGNING_CERT for the bridge
   # `docker compose down -v` rotates the keys. Reuses the runner image (emisar
   # binary + a shell); runs as root to write the fresh named volume. Profile-gated
-  # so the default `docker compose up` is unchanged. See `dev/run e2e signing`.
+  # so the default `docker compose up` is unchanged. See `./run e2e signing`.
   # ----------------------------------------------------------------
   signing-init:
     image: emisar/runner:dev
@@ -376,7 +376,7 @@ services:
   # public key), so it runs a dispatch ONLY if it carries a valid, in-scope,
   # CA-vouched Ed25519 attestation — the portal Run button / runbooks can't
   # reach it, only a signed MCP call. Profile-gated so the default stack is
-  # unchanged; brought up by `dev/run e2e signing`.
+  # unchanged; brought up by `./run e2e signing`.
   # ----------------------------------------------------------------
   runner-signed:
     <<: *runner
@@ -399,7 +399,7 @@ services:
   # itself, not the published ports. So the driver runs on the host, where those
   # ports resolve, which is the exact path a host browser takes. Once up:
   #
-  #   dev/run e2e sso
+  #   ./run e2e sso
   #
   # drives BOTH halves — SCIM provisions alice (the real IdP user) + a
   # deprovision lifecycle, then the full OIDC login as alice converges on that

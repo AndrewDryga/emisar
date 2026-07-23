@@ -171,22 +171,12 @@ func packTestComposeProject(root string) string {
 
 func (a *App) pack(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return usage("usage: dev/run pack <check|sync|test> [pack-name] [--fix]")
+		return usage("%s", packUsage)
 	}
 	action := args[0]
-	if action == "test" {
-		if len(args) > 2 {
-			return usage("usage: dev/run pack test [pack-name-pattern]")
-		}
-		pattern := ""
-		if len(args) == 2 {
-			pattern = args[1]
-		}
-		return a.packTest(ctx, pattern)
-	}
 	if action == "hashes" {
 		if len(args) > 2 || len(args) == 2 && args[1] != "--write" {
-			return usage("usage: dev/run pack hashes [--write]")
+			return usage("usage: ./run pack hashes [--write]")
 		}
 		if err := a.buildPackTools(ctx); err != nil {
 			return err
@@ -194,7 +184,7 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), len(args) == 2, a.Out)
 	}
 	if len(args) < 2 || !isDirectory(filepath.Join(a.Root, "packs", args[1])) {
-		return usage("usage: dev/run pack <check|sync> <pack-name> [--fix]")
+		return usage("%s", packUsage)
 	}
 	name := args[1]
 	if err := a.buildPackTools(ctx); err != nil {
@@ -203,7 +193,7 @@ func (a *App) pack(ctx context.Context, args []string) error {
 	switch action {
 	case "check":
 		if len(args) != 2 {
-			return usage("usage: dev/run pack check <pack-name>")
+			return usage("usage: ./run pack check <pack-name>")
 		}
 		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "emisar"), "pack", "validate", filepath.Join(a.Root, "packs", name)); err != nil {
 			return err
@@ -214,11 +204,11 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		return nil
 	case "sync":
 		if len(args) != 3 || args[2] != "--fix" {
-			return usage("catalog sync mutates artifacts; pass: dev/run pack sync <pack-name> --fix")
+			return usage("catalog sync mutates artifacts; pass: ./run pack sync <pack-name> --fix")
 		}
 		return a.packSync(ctx, name)
 	default:
-		return usage("usage: dev/run pack <check|sync|test> [pack-name] [--fix]")
+		return usage("%s", packUsage)
 	}
 }
 

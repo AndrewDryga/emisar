@@ -1,7 +1,7 @@
 # Rule: shared development tooling lives outside agent state
 
 **Rule.** A command used by both people and agents enters through the
-repository's ordinary development surface (`dev/run` here), not through a
+repository's ordinary development surface (`./run` here), not through a
 script hidden under `.agent/` or a project subdirectory. Reusable
 implementations live under `tools/`; `.agent/` holds configuration, state, and
 only narrowly project-owned agent-hook scripts, never another shared command
@@ -9,7 +9,7 @@ surface. Dependency Compose is
 shared by host-native development and the agent box; application servers stay
 outside that file when direct execution materially improves reload speed.
 Shared repository tooling uses Go, including process orchestration and browser
-automation. `dev/run` may contain only the minimal cached-binary bootstrap.
+automation. `./run` may contain only the minimal cached-binary bootstrap.
 Development-only images, Compose fixtures, fake host assets, and test
 configurations live under `dev/`; a product project's Dockerfile exists only
 for an image the project intentionally supports as a shipped artifact.
@@ -25,8 +25,8 @@ different ports, services, and setup rules. One dependency topology plus one
 command surface keeps their runtime contract identical without forcing a
 hot-reload server through Docker filesystem boundaries.
 
-**Good.** `dev/run serve` starts Phoenix directly and reads the workspace URLs
-assigned to `dev/compose.yml`; `dev/run shot` enters the shared Go browser driver;
+**Good.** `./run serve` starts Phoenix directly and reads the workspace URLs
+assigned to `dev/compose.yml`; `./run shot` enters the shared Go browser driver;
 Coop points `box.compose` at the same dependency file;
 pack registry builds replace `dist/packs/` without touching sibling artifacts;
 the Compose-only runner image and its fake host filesystem live under `dev/`.
@@ -39,11 +39,11 @@ under `runner/` that looks like a supported product image.
 
 **Sweep.** Search `.agent/` and project subdirectories for executable helpers,
 search documentation for direct implementation paths that bypass
-`dev/run`, and search all Compose files for duplicate dependency services before
+`./run`, and search all Compose files for duplicate dependency services before
 adding a development command or sidecar. Search tooling manifests and shebangs
 before introducing another language, and search cleanup commands for shared
 output roots before adding a generator. Search product directories for
 Dockerfiles that are consumed only by development Compose or test workflows.
 
-**Enforced.** Review and `dev/run check agent-setup` after agent configuration
-changes; `dev/run check tooling` runs the same check in CI.
+**Enforced.** Review and `./run check agent-setup` after agent configuration
+changes; `./run gate tooling` runs the same check in CI.

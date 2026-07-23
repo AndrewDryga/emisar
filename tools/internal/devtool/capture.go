@@ -12,7 +12,7 @@ import (
 
 func (a *App) capture(ctx context.Context, args []string) error {
 	if len(args) != 1 || (args[0] != "docs" && args[0] != "console") {
-		return usage("usage: dev/run capture <docs|console>")
+		return usage("usage: ./run capture <docs|console>")
 	}
 	manager, workspace, err := a.startBrowser(ctx)
 	if err != nil {

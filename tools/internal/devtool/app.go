@@ -12,7 +12,7 @@ import (
 	"github.com/andrewdryga/emisar/tools/internal/infraops"
 )
 
-const usageText = `usage: dev/run <command> [args]
+const usageText = `usage: ./run <command> [args]
 
   setup                    build the box, start dependencies, install deps, migrate
   up | down                start/stop this workspace's shared dependencies
@@ -36,16 +36,17 @@ const usageText = `usage: dev/run <command> [args]
   check infra-templates    render and validate production cloud-init
   check pack-environment [repo] [environment]
                            verify the registry deployment environment
+  check packs              validate every pack and cross-language hash golden
   check agent-setup        validate shared agent manuals, skills, tasks, and hooks
-  check tooling            lint and test the shared development tooling
-  test portal <args...>    run focused, --stale, --failed, or listening Portal tests
-  gate portal              run the canonical Portal gate
+  test <target> [args...]  run focused Portal, Go, pack, or installer tests
+  gate <target>            run a canonical project gate; use "gate all" for every gate
   loadtest <args...>       run the MCP concurrency harness
   pack check <name>        validate one pack without changing artifacts
   pack hashes [--write]    verify or refresh cross-language pack hash goldens
   pack sync <name> --fix   rebuild the authoritative catalog and focused tests
-  pack test [pattern]      run generated pack cases against their real services
   smoke                    build and start the packaged root Compose topology
+
+Run "./run help <check|test|gate|pack|ops>" for focused help.
 `
 
 const (
@@ -121,12 +122,12 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	}
 	switch command {
 	case "setup":
-		if err := exact(rest, 0, "usage: dev/run setup"); err != nil {
+		if err := exact(rest, 0, "usage: ./run setup"); err != nil {
 			return err
 		}
 		return a.setup(ctx)
 	case "up":
-		if err := exact(rest, 0, "usage: dev/run up"); err != nil {
+		if err := exact(rest, 0, "usage: ./run up"); err != nil {
 			return err
 		}
 		workspace, _, err := a.up(ctx)
@@ -139,27 +140,27 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		a.printURLs(workspace)
 		return nil
 	case "down":
-		if err := exact(rest, 0, "usage: dev/run down"); err != nil {
+		if err := exact(rest, 0, "usage: ./run down"); err != nil {
 			return err
 		}
 		if a.inBox() {
-			return fmt.Errorf("run dev/run down on the host")
+			return fmt.Errorf("run ./run down on the host")
 		}
 		return a.run(ctx, a.Root, nil, "coop", "down")
 	case "serve":
-		if err := exact(rest, 0, "usage: dev/run serve"); err != nil {
+		if err := exact(rest, 0, "usage: ./run serve"); err != nil {
 			return err
 		}
 		return a.serve(ctx)
 	case "seed":
-		if err := exact(rest, 0, "usage: dev/run seed"); err != nil {
+		if err := exact(rest, 0, "usage: ./run seed"); err != nil {
 			return err
 		}
 		return a.seed(ctx)
 	case "reset":
 		return a.reset(ctx, rest)
 	case "urls":
-		if err := exact(rest, 0, "usage: dev/run urls"); err != nil {
+		if err := exact(rest, 0, "usage: ./run urls"); err != nil {
 			return err
 		}
 		workspace, err := a.loadWorkspace(ctx)
@@ -169,7 +170,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		a.printURLs(workspace)
 		return nil
 	case "doctor":
-		if err := exact(rest, 0, "usage: dev/run doctor"); err != nil {
+		if err := exact(rest, 0, "usage: ./run doctor"); err != nil {
 			return err
 		}
 		return a.doctor(ctx)
@@ -185,20 +186,25 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.e2e(ctx, rest)
 	case "ops":
 		return a.infraOps(ctx, rest)
-	case "check", "test", "gate":
-		return a.portalFeedback(ctx, command, rest)
+	case "check":
+		return a.check(ctx, rest)
+	case "test":
+		return a.test(ctx, rest)
+	case "gate":
+		return a.gate(ctx, rest)
 	case "loadtest":
 		return a.run(ctx, a.Root, nil, "go", append([]string{"run", "./tools/cmd/loadtest"}, rest...)...)
 	case "pack":
 		return a.pack(ctx, rest)
 	case "smoke":
-		if err := exact(rest, 0, "usage: dev/run smoke"); err != nil {
+		if err := exact(rest, 0, "usage: ./run smoke"); err != nil {
 			return err
 		}
 		return a.smoke(ctx)
-	case "help", "-h", "--help":
-		a.usage()
-		return nil
+	case "help":
+		return a.help(rest)
+	case "-h", "--help":
+		return a.help(nil)
 	default:
 		a.usage()
 		return usage("unknown command %q", command)

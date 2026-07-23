@@ -94,7 +94,7 @@ func (a *App) startBrowser(ctx context.Context) (*devbrowser.Manager, Workspace,
 
 func (a *App) browserCommand(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return usage("usage: dev/run browser <start|stop|status>")
+		return usage("usage: ./run browser <start|stop|status>")
 	}
 	switch args[0] {
 	case "start":
@@ -122,7 +122,7 @@ func (a *App) browserCommand(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.Out, "running (pid %d)\n", state.BrowserPID)
 		return nil
 	default:
-		return usage("usage: dev/run browser <start|stop|status>")
+		return usage("usage: ./run browser <start|stop|status>")
 	}
 }
 
@@ -156,7 +156,7 @@ func parseShot(args []string, root string) (devbrowser.ShotOptions, error) {
 		}
 	}
 	if err := flags.Parse(flagArgs); err != nil || path == "" || options.Label == "" || flags.NArg() != 0 {
-		return options, usage("usage: dev/run shot <path> --label <before|after> [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL] [--width N] [--settle MS] [--out DIR]")
+		return options, usage("usage: ./run shot <path> --label <before|after> [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL] [--width N] [--settle MS] [--out DIR]")
 	}
 	options.Path = path
 	options.Settle = time.Duration(settle) * time.Millisecond

@@ -6,16 +6,16 @@ It is the most security-sensitive component in the repo: it runs commands on rea
 
 ## The gate (verify before claiming done — creed #4)
 
-A change is done only when this is green, run from `runner/`:
+A change is done only when this is green from the repository root:
 
 ```
-gofmt -l -s .                                       # zero output  (gofmt -w -s . to fix)
-go vet ./...
-go mod tidy && git diff --exit-code go.mod go.sum   # tidy must be a no-op
-go test -race -count=1 ./...
+./run gate runner
 ```
 
-Run the same gate from `mcp/` for that module. Linux-only behavior (Pdeathsig,
+It checks formatting, module checksums, `go vet`, tidy-as-a-no-op, and race
+tests. Use `./run test runner [go-test-args...]` for focused feedback; direct Go
+commands are diagnostic, not final verification. Run `./run gate mcp` for that
+module. Linux-only behavior (Pdeathsig,
 `/var/log` symlinks) verifies in the Coop box from the repo root:
 `coop run -- go -C runner test -race -count=1 ./...`. The box sees the real
 `packs/` fixtures used by runner security contract tests without maintaining a

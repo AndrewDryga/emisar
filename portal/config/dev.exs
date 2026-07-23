@@ -1,6 +1,6 @@
 import Config
 
-# dev/run supplies the same workspace-specific loopback URL on the host and in
+# ./run supplies the same workspace-specific loopback URL on the host and in
 # a Coop box. Keep the conventional localhost fallback for direct Mix usage.
 repo_config =
   case System.get_env("DATABASE_URL") do

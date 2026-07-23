@@ -48,7 +48,7 @@ func (a *App) serveLock(port int, publicURL string) (*os.File, error) {
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		data, _ := io.ReadAll(lock)
 		lock.Close()
-		return nil, fmt.Errorf("Phoenix already belongs to dev/run serve at %s (%s)", publicURL, string(data))
+		return nil, fmt.Errorf("Phoenix already belongs to ./run serve at %s (%s)", publicURL, string(data))
 	}
 	if err := lock.Truncate(0); err != nil {
 		lock.Close()

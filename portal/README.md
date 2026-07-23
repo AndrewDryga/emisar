@@ -25,10 +25,10 @@ Dockerfile        production release image, built from the repository root
 Run from the repository root:
 
 ```sh
-dev/run setup
-dev/run certs trust # macOS, once per workspace
-dev/run seed       # only when demo data is wanted
-dev/run serve
+./run setup
+./run certs trust # macOS, once per workspace
+./run seed       # only when demo data is wanted
+./run serve
 ```
 
 Phoenix runs directly in the current workspace for fast code reload. The
@@ -36,12 +36,12 @@ printed URL is stable for that workspace and distinct across Coop forks. The
 seeded owner is `demo@emisar.dev`; request a magic sign-in link and read it at
 `<portal-url>/dev/mailbox`. Seeds also print a reusable runner enrollment key.
 
-`dev/run setup`, `serve`, and `reset` migrate but do not seed. Use `dev/run seed`
-or `dev/run reset --seed` when the fixtures need to be refreshed.
+`./run setup`, `serve`, and `reset` migrate but do not seed. Use `./run seed`
+or `./run reset --seed` when the fixtures need to be refreshed.
 
-For the shortest feedback loop, use `dev/run check changed` and
-`dev/run test portal --stale`; `dev/run test portal --failed` re-runs only the
-previous failures. The full pre-commit surface remains `dev/run gate portal`.
+For the shortest feedback loop, use `./run check changed` and
+`./run test portal --stale`; `./run test portal --failed` re-runs only the
+previous failures. The full pre-commit surface remains `./run gate portal`.
 
 The repository-root `docker-compose.yml` starts the complete local stack,
 including sample runners. Production delivery is documented in
@@ -50,7 +50,7 @@ including sample runners. Production delivery is documented in
 ## Gate
 
 ```sh
-../dev/run gate portal
+../run gate portal
 ```
 
 The gate compiles, checks formatting and Credo, runs both test suites, and rejects warning/error log

@@ -151,6 +151,6 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 	if len(stale) == 0 {
 		return nil
 	}
-	return fmt.Errorf("cross-implementation hash golden is stale in %s:\n%s\nrun: dev/run pack hashes --write",
+	return fmt.Errorf("cross-implementation hash golden is stale in %s:\n%s\nrun: ./run pack hashes --write",
 		goldenPath, strings.Join(stale, "\n"))
 }

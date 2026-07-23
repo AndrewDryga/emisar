@@ -1,5 +1,5 @@
 // Command sso-e2e is the SSO end-to-end driver. It runs FROM THE HOST (via
-// dev/run e2e sso) against the published localhost ports — portal
+// ./run e2e sso) against the published localhost ports — portal
 // localhost:4010, Keycloak localhost:8443 — which is the exact path a host
 // browser takes, so a green run proves the host-browser SSO flow works.
 // Reads PORTAL_URL / KEYCLOAK_ISSUER / KEYCLOAK_CA / PROVIDER_ID /

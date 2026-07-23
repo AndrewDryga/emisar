@@ -1591,7 +1591,7 @@ case Runners.list_enrollment_keys(owner_subject) do
     :ok
 end
 
-# -- Keycloak OIDC + SCIM provider (dev/run e2e SSO) -----------------
+# -- Keycloak OIDC + SCIM provider (./run e2e SSO) -----------------
 # Seeds an enabled :keycloak IdentityProvider on the demo (enterprise) account
 # pointing at the local Keycloak, plus a fixed dev SCIM bearer — so the shared
 # dev stack exercises OIDC login AND inbound SCIM provisioning end to end.

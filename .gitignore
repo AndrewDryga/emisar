@@ -61,7 +61,7 @@ erl_crash.dump
 **/priv/cert/
 
 # Generated DEV-ONLY Keycloak CA and leaf material. Private keys must never be
-# committed; `dev/run certs` creates this directory during setup.
+# committed; `./run certs` creates this directory during setup.
 /dev/keycloak/certs/generated/
 
 # Terraform (infra/) — state and real var files never get committed; the provider

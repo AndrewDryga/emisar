@@ -31,15 +31,15 @@ shell code; pack-authored argv and bounded fixed-shell programs are explicit).
 - A new dependency is new attack surface — justify it in one sentence or use stdlib.
 
 ## 4. Run the gate (Definition of Done)
-From the module dir (`runner/` or `mcp/`):
+From the repository root:
 
 ```
-gofmt -l -s .
-go vet ./...
-go mod tidy && git diff --exit-code go.mod go.sum
-go test -race -count=1 ./...
+./run gate runner
+./run gate mcp
 ```
 
+Run only the gate for the module you touched. Use
+`./run test <runner|mcp> [go-test-args...]` for focused feedback.
 Linux-only runner behavior (Pdeathsig, `/var/log` symlinks): from the repository
 root run `coop run -- go -C runner test -race -count=1 ./...`.
 Show the output — never "should work". Don't pipe `go test`/`gofmt` through

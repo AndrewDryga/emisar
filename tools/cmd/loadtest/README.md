@@ -20,13 +20,11 @@ verification, and tooling gate as the other development drivers.
 > stack. The harness itself builds and tests without either because its unit
 > tests use an in-process stub. The code-derived limits below need no live run.
 
-## Build & gate
+## Focused test and gate
 
 ```sh
-gofmt -l -s tools/cmd/loadtest  # zero output
-go vet ./tools/cmd/loadtest
-go test -race -count=1 ./tools/cmd/loadtest
-go build -o /tmp/loadtest ./tools/cmd/loadtest
+./run test tools ./cmd/loadtest
+./run gate tooling
 ```
 
 ## Scenario A — MCP client concurrency
@@ -34,7 +32,7 @@ go build -o /tmp/loadtest ./tools/cmd/loadtest
 Bring the stack up (from the repo root), then drive the seeded dev MCP key:
 
 ```sh
-dev/run smoke                   # packaged portal + db + 3 runners on :4010
+./run smoke                   # packaged portal + db + 3 runners on :4010
 go build -o /tmp/loadtest ./tools/cmd/loadtest
 
 # 32 concurrent clients listing the tool catalog for 30s (2s warmup dropped):
@@ -164,10 +162,10 @@ For an iterative run against current Portal code, use the same workspace-native
 loop as normal development:
 
 ```sh
-dev/run setup
-dev/run seed
-dev/run serve                  # keep this terminal open
-dev/run urls                   # copy the workspace Portal URL
+./run setup
+./run seed
+./run serve                  # keep this terminal open
+./run urls                   # copy the workspace Portal URL
 
 go build -o /tmp/loadtest ./tools/cmd/loadtest
 /tmp/loadtest -url http://localhost:<workspace-port> \

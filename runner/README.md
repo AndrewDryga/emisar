@@ -361,11 +361,7 @@ Build from the repository root:
 The module gate is:
 
 ```sh
-cd runner
-gofmt -l -s .
-go vet ./...
-go mod tidy && git diff --exit-code -- go.mod go.sum
-go test -race -count=1 ./...
+./run gate runner
 ```
 
 CLI commands live at the module root. Runtime packages are under `internal/`;

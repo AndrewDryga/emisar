@@ -10,17 +10,16 @@ mapping; this file is the rules.
 ## Gate
 
 ```bash
-terraform fmt -check -recursive
-terraform init -backend=false && terraform validate
-tflint
+./run gate infra
 ```
 
-All three green before commit; CI (the `infra` job in `.github/workflows/ci.yml`) runs the same
-with no cloud credentials. The app-side clustering (`Emisar.Cluster.GCE` +
+Run it from the repository root. It checks Terraform formatting, initializes
+without the remote backend, validates, runs TFLint, and renders and validates
+the production cloud-init templates. CI runs the same gate with no cloud
+credentials. The app-side clustering (`Emisar.Cluster.GCE` +
 `…/gce/client.ex`, `application.ex`, `runtime.exs`, `rel/env.sh.eex`, `mix.exs`)
-lives in `portal/` and is gated by the portal loop (`mix compile --warnings-as-errors
-&& mix format --check-formatted && mix credo && mix test`). A live `plan`/`apply` is
-the separate, creds-gated deploy step.
+lives in `portal/` and is gated by `./run gate portal`. A live `plan`/`apply`
+is the separate, credentials-gated deploy step.
 
 ## Non-negotiable rules
 

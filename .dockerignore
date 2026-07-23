@@ -16,6 +16,7 @@ bin
 dev
 dist
 infra
+run
 test-results
 
 # Dependencies and generated build output

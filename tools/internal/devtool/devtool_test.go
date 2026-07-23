@@ -127,7 +127,7 @@ func TestPortalGateRequiresDatabaseURLInCI(t *testing.T) {
 	t.Setenv("CI", "true")
 	t.Setenv("DATABASE_URL", "")
 	app := New(t.TempDir(), strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-	err := app.portalFeedback(context.Background(), "gate", []string{"portal"})
+	err := app.portalGate(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "requires DATABASE_URL") {
 		t.Fatalf("portal gate error = %v", err)
 	}
@@ -187,5 +187,93 @@ func TestBrowserCacheRootIsStableAndWorkspaceSpecific(t *testing.T) {
 	}
 	if first == browserCacheRoot(cache, "/tmp/workspace-b", 42000) {
 		t.Fatal("browser cache identity aliases two workspaces on the same port")
+	}
+}
+
+func TestHelpPrintsFocusedGateCommands(t *testing.T) {
+	var out bytes.Buffer
+	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})
+
+	if err := app.Run(t.Context(), []string{"help", "gate"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"gate portal", "gate runner", "gate mcp", "gate packs", "gate infra", "gate tooling", "gate all"} {
+		if !strings.Contains(out.String(), strings.TrimPrefix(command, "gate ")) {
+			t.Fatalf("help does not mention %q:\n%s", command, out.String())
+		}
+	}
+}
+
+func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "runner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "fake-bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(root, "commands.log")
+	t.Setenv("COMMAND_LOG", log)
+	t.Setenv("PATH", bin)
+	for _, name := range []string{"gofmt", "go", "git"} {
+		script := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$PWD\" '" + name + "' \"$*\" >> \"$COMMAND_LOG\"\n"
+		path := filepath.Join(bin, name)
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+
+	if err := app.Run(t.Context(), []string{"gate", "runner", "--coverage", "coverage.out"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, err := filepath.EvalSymlinks(filepath.Join(root, "runner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		module + "|gofmt|-l -s .",
+		module + "|go|mod verify",
+		module + "|go|vet ./...",
+		module + "|go|mod tidy",
+		module + "|git|diff --exit-code -- go.mod go.sum",
+		module + "|go|test -race -count=1 -coverprofile=coverage.out ./...",
+	}
+	got := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if !slices.Equal(got, want) {
+		t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "mcp")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.sum"), []byte("unexpected\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "fake-bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	for _, name := range []string{"gofmt", "go"} {
+		path := filepath.Join(bin, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+
+	err := app.Run(t.Context(), []string{"gate", "mcp"})
+	if err == nil || !strings.Contains(err.Error(), "stdlib-only") {
+		t.Fatalf("error = %v", err)
 	}
 }

@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const usageText = `usage: dev/run ops <command> [args]
+const usageText = `usage: ./run ops <command> [args]
 
   portal ...                         operate Portal VMs through IAP
   database ...                       open the private production database tunnel
@@ -71,7 +71,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.database(ctx, args[1:])
 	case "drill":
 		if len(args) < 2 {
-			return usage("usage: dev/run ops drill <pitr|cleanup> [options]")
+			return usage("usage: ./run ops drill <pitr|cleanup> [options]")
 		}
 		switch args[1] {
 		case "pitr":
@@ -83,12 +83,12 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 	case "validate-templates":
 		if len(args) != 1 {
-			return usage("usage: dev/run ops validate-templates")
+			return usage("usage: ./run ops validate-templates")
 		}
 		return a.validateTemplates(ctx)
 	case "verify-pack-environment":
 		if len(args) > 3 {
-			return usage("usage: dev/run ops verify-pack-environment [repo] [environment]")
+			return usage("usage: ./run ops verify-pack-environment [repo] [environment]")
 		}
 		repo := "AndrewDryga/emisar"
 		environment := "pack-registry-production"

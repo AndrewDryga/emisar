@@ -255,7 +255,7 @@ func (a *App) setup(ctx context.Context) error {
 	if err := a.configureKeycloak(ctx, workspace); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, "development setup ready; run 'dev/run seed' once when demo data is needed")
+	fmt.Fprintln(a.Out, "development setup ready; run './run seed' once when demo data is needed")
 	a.printURLs(workspace)
 	return nil
 }
@@ -286,7 +286,7 @@ func (a *App) reset(ctx context.Context, args []string) error {
 		case "--yes":
 			yes = true
 		default:
-			return usage("usage: dev/run reset [--seed] [--yes]")
+			return usage("usage: ./run reset [--seed] [--yes]")
 		}
 	}
 	if !yes {

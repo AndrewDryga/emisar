@@ -21,17 +21,19 @@ from both application environments.
 
 ## Fast development loop
 
-`dev/run` is the shared human/agent command surface. `compose.yml` contains the
+`./run` is the shared human/agent command surface. `compose.yml` contains the
 Postgres and Keycloak dependencies used by both host-native Phoenix and Coop;
 Phoenix itself runs directly in the active workspace.
 
-`dev/run setup` verifies the pinned Go/Elixir toolchain plus Chrome or Chromium
+Run `./run help` for the complete map or
+`./run help <check|test|gate|pack|ops>` for one command family.
+`./run setup` verifies the pinned Go/Elixir toolchain plus Chrome or Chromium
 and ImageMagick. Coop supplies the browser and image tools in its project image;
 host-native development uses the corresponding host installations.
 
 The repository keeps tooling in three ownership buckets:
 
-- `dev/run` is only a cached Go-binary bootstrap and the contributor command surface.
+- `./run` is only a cached Go-binary bootstrap and the contributor command surface.
 - `tools/` holds the reusable Go implementation, including browser automation.
 - `dev/*/Dockerfile` recipes build Compose and validation fixtures, never published images.
 - The root `.agent/` holds agent configuration and state, not another command surface.
@@ -40,9 +42,9 @@ The repository keeps tooling in three ownership buckets:
   code, not alternative dev commands.
 
 ```sh
-dev/run setup
-dev/run seed
-dev/run serve
+./run setup
+./run seed
+./run serve
 ```
 
 `serve` takes an advisory lock per workspace and exits before running Mix when
@@ -52,27 +54,33 @@ immediately instead of leaving later Mix commands waiting on a build lock.
 Common feedback commands:
 
 ```sh
-dev/run check changed
-dev/run test portal --stale
-dev/run test portal --failed
-dev/run test portal --stale --listen-on-stdin
-dev/run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
-dev/run check portal
-dev/run check staged
-dev/run check infra-templates
-dev/run check agent-setup
-dev/run gate portal
-dev/run check tooling
-dev/run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
-dev/run capture console
-dev/run capture docs
-dev/run e2e sso
-dev/run e2e signing
-dev/run e2e billing
-dev/run pack check redis
-dev/run pack hashes
-dev/run pack test redis
-dev/run loadtest --help
+./run check changed
+./run test portal --stale
+./run test portal --failed
+./run test portal --stale --listen-on-stdin
+./run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
+./run check portal
+./run check staged
+./run check infra-templates
+./run check packs
+./run check agent-setup
+./run gate portal
+./run gate runner
+./run gate mcp
+./run gate packs
+./run gate infra
+./run gate tooling
+./run gate all
+./run shot /pricing --label after --heading Pricing --out .agent/screenshots/pricing
+./run capture console
+./run capture docs
+./run e2e sso
+./run e2e signing
+./run e2e billing
+./run pack check redis
+./run pack hashes
+./run test packs redis
+./run loadtest --help
 ```
 
 `check changed` incrementally compiles the umbrella, then format-checks and runs
@@ -81,71 +89,73 @@ start the dependency stack. `mix test --stale` uses Mix's module dependency
 graph rather than guessing test paths from filenames; add `--listen-on-stdin`
 and press Enter after a save to repeat that set in the same shell. `--failed`
 re-runs only the previous failures. `check portal` and `gate portal` remain the
-full pre-commit surfaces.
+quick static and complete pre-commit surfaces, respectively. `test` is focused
+feedback, `check` is quick or specialized validation, and `gate` is the complete
+Definition of Done for its target.
 
 Production workstation helpers use the same entrypoint. Their implementation
 lives in `tools/internal/infraops`; `infra/` contains the Terraform project and
 the artifacts Terraform deploys, not a second command directory:
 
 ```sh
-dev/run ops portal --help
-dev/run ops database --help
-dev/run ops drill pitr
+./run ops portal --help
+./run ops database --help
+./run ops drill pitr
 ```
 
-`dev/run check infra-templates` uses the host `cloud-init` CLI when available.
+`./run check infra-templates` uses the host `cloud-init` CLI when available.
 On macOS it builds and reuses the digest-pinned `cloud-init/Dockerfile`
 validator, so the same schema check works without adding Linux packages to the
 workstation.
 
-`dev/run urls` discovers the assigned URLs without reproducing Coop's hash.
+`./run urls` discovers the assigned URLs without reproducing Coop's hash.
 The Keycloak CA and leaf files are created under `dev/keycloak/certs/generated/`.
 On macOS, opt into browser trust once per workspace and remove it explicitly:
 
 ```sh
-dev/run certs trust
-dev/run certs status
-dev/run certs untrust
+./run certs trust
+./run certs status
+./run certs untrust
 ```
 
 Trust is limited to SSL for `localhost` in the user keychain and removal targets
 the exact CA fingerprint, so parallel workspaces do not remove each other's
-certificates. `dev/run certs --rotate` removes the old fingerprint and restores
+certificates. `./run certs --rotate` removes the old fingerprint and restores
 trust only when it was already enabled. The automated browser uses an exception
-for the exact leaf certificate SPKI, never a blanket TLS bypass. `dev/run doctor`
+for the exact leaf certificate SPKI, never a blanket TLS bypass. `./run doctor`
 verifies services, browser trust on macOS, the exact OIDC issuer, and that
 generated private keys remain ignored.
 
-Setup, serve, and reset never seed implicitly. `dev/run seed` is idempotent;
-`dev/run reset --seed` is the explicit destructive shortcut.
+Setup, serve, and reset never seed implicitly. `./run seed` is idempotent;
+`./run reset --seed` is the explicit destructive shortcut.
 
 ## Browser and screenshot tooling
 
-`dev/run` owns the public commands; the chromedp implementation lives in the
+`./run` owns the contributor commands; the chromedp implementation lives in the
 shared `tools` Go module. The persistent browser is shared across captures for
 the active workspace, including inside Coop:
 
 ```sh
-dev/run browser start
-dev/run shot /app/demo/runners --label before --shot runners
+./run browser start
+./run shot /app/demo/runners --label before --shot runners
 # edit; Phoenix reloads
-dev/run shot /app/demo/runners --label after --shot runners
-dev/run browser stop
+./run shot /app/demo/runners --label after --shot runners
+./run browser stop
 ```
 
 `shot` accepts a stable `data-shot` name, a CSS selector, an exact heading, or a
 class fragment as its crop anchor. Use `--width 390` for a mobile capture and
 put before/after artifacts under the owning task's screenshot directory.
 
-`dev/run capture docs` regenerates the cropped console screenshots embedded in
-the documentation. `dev/run capture console` walks the signed-out and
+`./run capture docs` regenerates the cropped console screenshots embedded in
+the documentation. `./run capture console` walks the signed-out and
 authenticated console at desktop and mobile widths. Both require an active
 seeded workspace and reuse the persistent browser. Automated Chromium allows
 only the active Keycloak leaf certificate's SPKI; certificate validation is not
 disabled globally.
 
 The same Go implementation carries the real Paddle sandbox browser driver,
-exposed as `dev/run e2e billing`. Its ignored credentials remain in
+exposed as `./run e2e billing`. Its ignored credentials remain in
 `portal/.agent/secrets/paddle-sandbox.env`.
 
 ## `runners/`
@@ -201,13 +211,13 @@ runner image.
 ## `test-packs/`
 
 A standalone Compose **integration harness** for the action packs, separate
-from the root demo stack. `dev/run` cross-builds the runner and Go harness,
+from the root demo stack. `./run` cross-builds the runner and Go harness,
 boots the real backing services, runs each pack's generated cases, writes
 per-pack logs, and tears the topology down:
 
 ```sh
-dev/run pack test redis
-dev/run pack test
+./run test packs redis
+./run test packs
 ```
 
 The pack catalog (`packs/`) is mounted read-only at `/packs`; the test cases
@@ -219,7 +229,7 @@ live with each pack at `packs/<pack>/test/cases.json` (generated by
 
 End-to-end coverage for **signed dispatch** (the CA-issued-certificate feature)
 against the root demo stack. Two profile-gated `test` services in
-`docker-compose.yml` plus the `dev/run e2e signing` driver:
+`docker-compose.yml` plus the `./run e2e signing` driver:
 
 - **`signing-init`** mints a CA + leaf key + certificate at stack-up via
   `emisar signing init` (run `init.sh`), into the shared `signing_material`
@@ -235,7 +245,7 @@ against the root demo stack. Two profile-gated `test` services in
   enforcing runner):
 
 ```sh
-dev/run e2e signing
+./run e2e signing
 ```
 
 The host-side stdlib Go driver performs every

@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const portalUsage = `usage: dev/run ops portal [options] <command> [args...]
+const portalUsage = `usage: ./run ops portal [options] <command> [args...]
 
 Options:
   --project PROJECT        GCP project (defaults to EMISAR_GCP_PROJECT or gcloud config)

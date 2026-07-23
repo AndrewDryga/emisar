@@ -35,7 +35,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 | Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
 | Distribution | `pack_registry.tf`, `packs/` |
 | Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
-| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`; run via `dev/run` |
+| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`; run via `./run` |
 
 ## Production controls
 
@@ -147,21 +147,21 @@ pack uses; the pack does not require a custom runner build.
 
 ## Portal VM operations
 
-Use `dev/run ops portal` for IAP and OS Login access to the portal fleet. It limits
+Use `./run ops portal` for IAP and OS Login access to the portal fleet. It limits
 the picker to instances carrying the `cluster_name=emisar` label, supports fzf
 multi-selection for read-only inspection and commands, and caches the selection
 per shell session for repeated checks.
 
 ```sh
-dev/run ops portal status
-dev/run ops portal logs
-dev/run ops portal --host emisar-example-a logs -f
-dev/run ops portal version
-dev/run ops portal remsh
-dev/run ops portal cmd 'uptime && free -h'
-dev/run ops portal --reuse-last-selection logs
-dev/run ops portal --list-hosts
-dev/run ops portal --host emisar-example-a --host emisar-example-b version
+./run ops portal status
+./run ops portal logs
+./run ops portal --host emisar-example-a logs -f
+./run ops portal version
+./run ops portal remsh
+./run ops portal cmd 'uptime && free -h'
+./run ops portal --reuse-last-selection logs
+./run ops portal --list-hosts
+./run ops portal --host emisar-example-a --host emisar-example-b version
 ```
 
 The helper uses the active gcloud project by default. Pass `--project`, or set
@@ -337,9 +337,9 @@ helper:
 
 ```bash
 gcloud auth application-default login
-dev/run ops database                     # Postico 2
-dev/run ops database --psql              # interactive psql
-dev/run ops database --psql -- --command='select current_user;'
+./run ops database                     # Postico 2
+./run ops database --psql              # interactive psql
+./run ops database --psql -- --command='select current_user;'
 ```
 
 The helper selects a running portal VM, opens a local SOCKS5 route to it through
@@ -417,10 +417,10 @@ so an active publication cannot be canceled halfway through.
 
 ## Recovery drills
 
-Run `dev/run ops drill cleanup --apply` before and after every exercise; after
+Run `./run ops drill cleanup --apply` before and after every exercise; after
 client loss an operator must run its 12-hour janitor mode to find abandoned
 labeled/prefixed resources. It is intentionally supervised rather than backed by
-a persistent cross-service delete identity. `dev/run ops drill pitr` is dry-run
+a persistent cross-service delete identity. `./run ops drill pitr` is dry-run
 by default. With `--apply` it clones a recent PITR point into a uniquely named
 scratch instance, creates a temporary scoped IAM principal and private probe VM,
 proves restored data through `emisar_owner`, and runs the independent janitor on
@@ -445,15 +445,13 @@ terraform output livebook_url
 
 ## Validation
 
-Run from this directory:
+Run from the repository root:
 
 ```sh
-terraform fmt -check -recursive
-terraform init -backend=false
-terraform validate
-tflint
-dev/run check infra-templates
+./run gate infra
 ```
 
-These checks are credential-free. A live plan or apply is a separate,
+The gate checks formatting, initializes without the remote backend, validates,
+runs TFLint, and validates rendered cloud-init. It is credential-free. A live
+plan or apply is a separate,
 credentials-gated production action performed through HCP Terraform.

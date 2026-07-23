@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	staleManualText = regexp.MustCompile(`coop tasks list|xx_done`)
+	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b`)
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
 	publicMCPTool   = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
 	cardPolicy      = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
@@ -529,6 +529,25 @@ func (c *checker) checkDistributionLayout() {
 	}
 }
 
+func (c *checker) checkCommandSurface() {
+	info, err := os.Stat(c.path("run"))
+	if err != nil {
+		c.fail("root run command is required: %v", err)
+	} else {
+		if !info.Mode().IsRegular() {
+			c.fail("root run command must be a regular file")
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			c.fail("root run command must be executable")
+		}
+	}
+	if _, err := os.Lstat(c.path("dev/run")); err == nil {
+		c.fail("dev/run is retired; the only contributor command surface is root ./run")
+	} else if !os.IsNotExist(err) {
+		c.fail("stating retired dev/run: %v", err)
+	}
+}
+
 func (c *checker) skillMetadata(path string) map[string]any {
 	data, err := os.ReadFile(c.path(path))
 	if err != nil {
@@ -731,6 +750,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
 	c.group("repository knowledge uses the KB layout and descriptive cards carry metadata", c.checkKnowledgeCards)
 	c.group("tracked dist packages stay separate from generated output", c.checkDistributionLayout)
+	c.group("root ./run is the only contributor command surface", c.checkCommandSurface)
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)

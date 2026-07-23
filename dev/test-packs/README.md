@@ -53,10 +53,10 @@ dev/test-packs/              # mounted in the container at /workspace/test-packs
 
 ```sh
 # Run every generated case. The command owns build, Compose, reports, and cleanup.
-dev/run pack test
+./run test packs
 
 # Run packs whose name contains a pattern.
-dev/run pack test redis
+./run test packs redis
 ```
 
 ## Skip rationale

@@ -2,7 +2,7 @@
 name: development-keycloak-certificates
 description: workspace Keycloak certificate generation, macOS browser trust, and automated Chromium trust boundaries
 subsystem: agent-stack
-sources: [dev/run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
+sources: [run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
 updated: 2026-07-22
 ---
 
@@ -12,11 +12,11 @@ limited to 397 days: macOS rejects longer-lived TLS leaves even when their CA is
 explicitly trusted. The generated `format` marker renews an old-format leaf
 without rotating its CA.
 
-`dev/run certs trust|untrust|status` manages only the generated CA's SHA-256
+`./run certs trust|untrust|status` manages only the generated CA's SHA-256
 fingerprint in the macOS user keychain, constrained to SSL for `localhost`.
 Parallel workspaces may have the same CA common name, so fingerprint selection
 distinguishes the active workspace. Automated Chromium does not depend on host
-trust: `dev/run` derives the current leaf SPKI, and the browser launch permits
+trust: `./run` derives the current leaf SPKI, and the browser launch permits
 only that exact hash while normal TLS validation remains active.
 
 Keycloak reads its certificate at process start. The Go tooling fingerprints the

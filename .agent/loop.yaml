@@ -63,7 +63,7 @@ signoff:
   prompt: |
     - The gate of every project the batch touched is green (exact command in that
       project's AGENTS.md); root-level agent-setup changes keep
-      `dev/run check agent-setup` passing.
+      `./run check agent-setup` passing.
     - No committed DB migration was edited — frozen; a violation reopens the task
       regardless of anything else.
     - Every new surface that ingests runner / LLM / operator input has its abuse case

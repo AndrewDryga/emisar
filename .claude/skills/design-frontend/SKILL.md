@@ -65,16 +65,16 @@ honest.
 When the user points at something broken on a rendered surface, the fix ships
 with before/after screenshot proof — and the BEFORE shot comes before any edit
 (the broken state is unrecoverable once the fix deploys). Shoot the element from
-the active workspace with `dev/run shot` (`--label before`), fix,
+the active workspace with `./run shot` (`--label before`), fix,
 rebuild the stack, re-shoot (`--label after`, full page + element crop), verify
 the pixels yourself, then hand the user both paths for review. Full workflow:
 `portal/.agent/kb/rules/design-ui-fix-screenshot-proof.md`.
 
 ## Finish
 
-`cd portal && mix compile --warnings-as-errors && mix format`, click-test the happy
-path + one error path, and confirm lists stream. Then `mix test` the LV test if one
-exists. Before a rendered surface is done, run the `design-interface-polish`
+Run `./run gate portal` from the repository root, click-test the happy path +
+one error path, and confirm lists stream. Before a rendered surface is done,
+run the `design-interface-polish`
 micro-craft pass (concentric radius, tabular numbers on live counts, hit areas,
 transition specificity) — calm on the console, expressive on marketing. Hand UX
 judgment calls to `/design-ux`; keep this hat on the implementation.

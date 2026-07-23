@@ -4,7 +4,7 @@
 # Bring up just the SUT(s) you need:
 #   docker compose -f test-packs/docker-compose.yaml up -d postgres redis
 #
-# `dev/run pack test [pattern]` builds the runner and Go harness, owns this
+# `./run test packs [pattern]` builds the runner and Go harness, owns this
 # topology, and runs the selected cases in runner-tools.
 
 x-runner-tools: &runner-tools

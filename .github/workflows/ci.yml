@@ -209,7 +209,7 @@ jobs:
       - name: Run the canonical Portal gate
         # Uses the CI-provided Postgres service. The same command starts
         # workspace-isolated dependencies automatically outside CI.
-        run: ../dev/run gate portal
+        run: ../run gate portal
 
   mcp-listing:
     name: Portal - MCP Registry Listing
@@ -467,8 +467,13 @@ jobs:
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
-          # Cache the selected module's own manifest and checksums.
-          cache-dependency-path: ${{ matrix.module }}/go.*
+          # Every gate enters through the tools-backed root command.
+          cache-dependency-path: |
+            ${{ matrix.module }}/go.*
+            tools/go.*
+
+      - name: Install shell validator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
       - name: Check client module boundaries
         # runner/ and mcp/ are CLIENT-SHIPPED modules (self-hosters build and
@@ -487,33 +492,13 @@ jobs:
         if: matrix.module == 'runner' || matrix.module == 'mcp'
         run: go run ./tools/cmd/ci attest-parity
 
-      - name: Run go vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
-
-      - name: Check formatting
+      - name: Run canonical module gate
         run: |
-          diff=$(gofmt -d -s ${{ matrix.module }}/)
-          if [ -n "$diff" ]; then
-            echo "::error::gofmt diff (run 'gofmt -w -s ${{ matrix.module }}/'):"
-            sed -n '1,200p' <<< "$diff"
-            exit 1
+          target="${{ matrix.module }}"
+          if [ "$target" = tools ]; then
+            target=tooling
           fi
-
-      - name: Verify module checksums
-        # Verifies hashes in go.sum match the on-disk module bytes; a
-        # tampered cache won't pass.
-        working-directory: ${{ matrix.module }}
-        run: go mod verify
-
-      - name: Check module tidiness
-        working-directory: ${{ matrix.module }}
-        run: |
-          go mod tidy
-          if ! git diff --exit-code -- go.mod go.sum; then
-            echo "::error::${{ matrix.module }}/go.mod or go.sum are not tidy. Run 'cd ${{ matrix.module }} && go mod tidy' and commit."
-            exit 1
-          fi
+          ./run gate "$target" --coverage coverage.out
 
       - name: Check install script
         # The install script is a permanent part of the module's install
@@ -523,10 +508,9 @@ jobs:
         env:
           EMISAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck "$INSTALL_SCRIPT"
           bash -n "$INSTALL_SCRIPT"
-          go run ./tools/cmd/installtest "${{ matrix.module }}"
+          ./run test install "${{ matrix.module }}"
 
       - name: Scan known vulnerabilities
         # govulncheck reports reachable vulnerable symbols, not merely a module
@@ -543,21 +527,6 @@ jobs:
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@2026.1
           staticcheck ./...
-
-      - name: Run race tests with coverage
-        working-directory: ${{ matrix.module }}
-        run: go test -race -count=1 -coverprofile=coverage.out ./...
-
-      - name: Check repository documentation
-        if: matrix.module == 'tools'
-        working-directory: tools
-        run: go run ./cmd/doccheck
-
-      - name: Check development tooling
-        if: matrix.module == 'tools'
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          dev/run check tooling
 
       - name: Summarize coverage
         if: always()
@@ -612,46 +581,12 @@ jobs:
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: runner/go.sum
+          cache-dependency-path: |
+            runner/go.sum
+            tools/go.sum
 
-      - name: Build emisar CLI
-        run: |
-          cd runner
-          go build -trimpath -o /tmp/emisar .
-          /tmp/emisar version
-
-      - name: Validate every pack
-        # Collect failures so the report names every bad pack instead of
-        # bailing on the first — faster PR triage. `nullglob` + an explicit
-        # floor: an empty packs/ must fail loudly, not masquerade as green.
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          packs=(packs/*/)
-          if [ ${#packs[@]} -lt 1 ]; then
-            echo "::error::no packs found under packs/ — did the layout change?"
-            exit 1
-          fi
-
-          failures=()
-          for pack in "${packs[@]}"; do
-            pack="${pack%/}"
-            name="$(basename "$pack")"
-            printf '\n\033[1m==> %s\033[0m\n' "$name"
-            if ! /tmp/emisar pack validate "$pack"; then
-              failures+=("$name")
-            fi
-          done
-
-          if [ ${#failures[@]} -gt 0 ]; then
-            printf '\n\033[1;31m✗ packs failed validation:\033[0m\n'
-            printf '   - %s\n' "${failures[@]}"
-            exit 1
-          fi
-
-          printf '\n\033[1;32m✓ all %d packs valid\033[0m\n' "${#packs[@]}"
-          echo "✅ all ${#packs[@]} packs valid" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate packs and cross-language hashes
+        run: ./run check packs
 
   infra:
     name: Terraform - Validate
@@ -703,25 +638,13 @@ jobs:
           sudo install -m 0755 tflint /usr/local/bin/tflint
           tflint --version
 
-      - name: Check Terraform formatting
-        working-directory: infra
-        run: terraform fmt -check -recursive
-
-      - name: Validate Terraform
-        working-directory: infra
-        run: |
-          terraform init -backend=false -input=false
-          terraform validate
-
-      - name: Run TFLint
-        working-directory: infra
-        run: tflint
-
-      - name: Validate rendered cloud-init and shell
+      - name: Install template validators
         run: |
           sudo apt-get update
           sudo apt-get install -y cloud-init shellcheck
-          dev/run check infra-templates
+
+      - name: Run canonical Infra gate
+        run: ./run gate infra
 
   dep-age:
     name: Dependencies - Release age

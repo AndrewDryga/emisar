@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const databaseUsage = `usage: dev/run ops database [options] [-- psql-args...]
+const databaseUsage = `usage: ./run ops database [options] [-- psql-args...]
 
 Options:
   --project PROJECT   GCP project

@@ -188,13 +188,7 @@ EMISAR_API_KEY=emk-... \
 The module gate is:
 
 ```sh
-cd mcp
-gofmt -l -s .
-go vet ./...
-go mod tidy
-test ! -e go.sum
-git diff --exit-code -- go.mod
-go test -race -count=1 ./...
+./run gate mcp
 ```
 
 The forwarding path lives in `main.go`; key rotation lives in `rotate.go`; and

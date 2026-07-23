@@ -98,5 +98,6 @@ permissions suffices (see `Policies.fetch_policy_by_id`).
 1. Add the **denial test** (wrong role → `{:error, :unauthorized}`) and, for
    reads, the **cross-account** test (`{:error, :not_found}`). A write without a
    denial test isn't done (§7).
-2. `cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test <file>` (IL-20). `mix credo` (the `Emisar.Checks.*` AST checks) must report zero.
+2. Run `./run gate portal` from the repository root (IL-20). `mix credo`
+   inside that gate (the `Emisar.Checks.*` AST checks) must report zero.
 3. Run `/elixir-iron-review` on the diff if you touched queries.

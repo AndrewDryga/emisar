@@ -35,7 +35,7 @@ func (a *App) e2eSSO(ctx context.Context) error {
 		if response != nil {
 			response.Body.Close()
 		}
-		return fmt.Errorf("Portal is not serving at %s; run dev/run serve in another terminal", workspace.PortalURL)
+		return fmt.Errorf("Portal is not serving at %s; run ./run serve in another terminal", workspace.PortalURL)
 	}
 	response.Body.Close()
 	env := map[string]string{
@@ -389,7 +389,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 
 func (a *App) e2e(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return usage("usage: dev/run e2e <sso|signing|billing>")
+		return usage("usage: ./run e2e <sso|signing|billing>")
 	}
 	switch args[0] {
 	case "sso":
@@ -399,6 +399,6 @@ func (a *App) e2e(ctx context.Context, args []string) error {
 	case "billing":
 		return a.e2eBilling(ctx)
 	default:
-		return usage("usage: dev/run e2e <sso|signing|billing>")
+		return usage("usage: ./run e2e <sso|signing|billing>")
 	}
 }

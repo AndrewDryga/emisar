@@ -127,13 +127,16 @@ mcp/      Go stdio-to-HTTP MCP bridge
 packs/    Versioned action-pack catalog
 skills/   Standalone customer skills for coding agents
 infra/    Production Terraform for emisar on Google Cloud
-tools/    Pack-authoring support, repository checks, and maintainer E2E drivers
-dist/          Tracked distribution packages plus ignored generated build output
-.agent/kb/     Repository architecture, specifications, runbooks, and rules
+run       Root contributor command for development, tests, gates, and operations
+dev/      Development Compose topologies, images, configs, and fixtures
+tools/    Go implementations behind the contributor command and CI
+dist/     Tracked distribution packages plus ignored generated build output
+.agent/kb/ Repository architecture, specifications, runbooks, and rules
 ```
 
 Each top-level project has its own `AGENTS.md` with its architecture, security
-rules, and verification gate.
+rules, and verification gate. Run `./run help` for the complete contributor
+command surface.
 
 ## Develop locally
 
@@ -141,20 +144,20 @@ The fast loop runs Phoenix directly on the host and keeps only PostgreSQL and
 Keycloak in the workspace-isolated Coop dependency stack:
 
 ```sh
-dev/run setup       # first run: tools, sidecars, deps, browser, migrations
-dev/run certs trust # macOS: trust this workspace's Keycloak CA for localhost
-dev/run seed        # explicit, idempotent demo data
-dev/run serve       # live reload at the URL printed by Coop
+./run setup       # first run: tools, sidecars, deps, browser, migrations
+./run certs trust # macOS: trust this workspace's Keycloak CA for localhost
+./run seed        # explicit, idempotent demo data
+./run serve       # live reload at the URL printed by Coop
 ```
 
-`dev/run urls` prints this workspace's distinct Portal, metrics, Postgres, and
+`./run urls` prints this workspace's distinct Portal, metrics, Postgres, and
 Keycloak URLs. Coop forks inherit the same setup but receive different ports and
 volumes. Seeds are never applied by setup, serve, or reset unless explicitly
 requested.
 
 The root `docker-compose.yml` remains the slower packaged topology with the
 release Portal image, seeded demo data, three runners, MCP, and signing. Start it
-with `dev/run smoke`; it serves <http://localhost:4010>. See
+with `./run smoke`; it serves <http://localhost:4010>. See
 [`portal/README.md`](portal/README.md) and [`dev/README.md`](dev/README.md).
 
 ## License

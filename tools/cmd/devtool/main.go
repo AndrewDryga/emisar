@@ -1,5 +1,5 @@
 // Command devtool implements the repository's development workflows. The
-// public entrypoint remains dev/run, which builds and executes this command.
+// public entrypoint is the root ./run bootstrap.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 func main() {
 	root, err := repo.Root()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "dev/run:", err)
+		fmt.Fprintln(os.Stderr, "./run:", err)
 		os.Exit(1)
 	}
 
@@ -25,7 +25,7 @@ func main() {
 
 	app := devtool.New(root, os.Stdin, os.Stdout, os.Stderr)
 	if err := app.Run(ctx, os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "dev/run:", err)
+		fmt.Fprintln(os.Stderr, "./run:", err)
 		if devtool.IsUsage(err) {
 			os.Exit(2)
 		}

@@ -25,6 +25,6 @@ for `.agent/kb/internal` references before shipping. When adding durable marketi
 or company-only material, search outside `internal/` for private drafts that should
 move behind the audience boundary.
 
-**Enforced.** Review plus `dev/run check agent-setup`; Git ignores `internal/`, and
+**Enforced.** Review plus `./run check agent-setup`; Git ignores `internal/`, and
 the knowledge-card audit treats it as a separate material store rather than a
 public descriptive-card namespace.

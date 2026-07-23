@@ -1,5 +1,5 @@
 // Command signing-e2e is the signed-dispatch end-to-end check for the
-// docker-compose stack (driven by dev/run e2e signing).
+// docker-compose stack (driven by ./run e2e signing).
 //
 // Proves the CA-issued-certificate feature works through the WHOLE topology
 // (portal + runner + the real MCP bridge), not just in unit tests:

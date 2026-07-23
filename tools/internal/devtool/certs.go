@@ -242,7 +242,7 @@ func loadCA(dir string) (*x509.Certificate, *rsa.PrivateKey, error) {
 func (a *App) makeCABundle(ctx context.Context) error {
 	ca, err := os.ReadFile(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {
-		return fmt.Errorf("Keycloak CA is missing; run dev/run certs")
+		return fmt.Errorf("Keycloak CA is missing; run ./run certs")
 	}
 	var system []byte
 	if runtime.GOOS == "darwin" {
@@ -277,7 +277,7 @@ func certFingerprint(cert *x509.Certificate) string {
 func (a *App) caFingerprint() (string, error) {
 	cert, err := certificate(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {
-		return "", fmt.Errorf("Keycloak CA is missing; run dev/run certs")
+		return "", fmt.Errorf("Keycloak CA is missing; run ./run certs")
 	}
 	return certFingerprint(cert), nil
 }
@@ -285,7 +285,7 @@ func (a *App) caFingerprint() (string, error) {
 func (a *App) tlsSPKI() (string, error) {
 	cert, err := certificate(filepath.Join(a.Certs, "tls.crt"))
 	if err != nil {
-		return "", fmt.Errorf("Keycloak certificate is missing; run dev/run certs on the host")
+		return "", fmt.Errorf("Keycloak certificate is missing; run ./run certs on the host")
 	}
 	hash := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	encoded := base64.StdEncoding.EncodeToString(hash[:])
@@ -403,7 +403,7 @@ func (a *App) certificateStatus(ctx context.Context) error {
 	}
 	trusted, _ := a.certTrusted(ctx)
 	if !trusted {
-		return fmt.Errorf("not trusted; run: dev/run certs trust")
+		return fmt.Errorf("not trusted; run: ./run certs trust")
 	}
 	fingerprint, _ := a.caFingerprint()
 	fmt.Fprintf(a.Out, "trusted for https://localhost (%s)\n", fingerprint)
@@ -441,7 +441,7 @@ func (a *App) rotateCertificates(ctx context.Context) error {
 
 func (a *App) certsCommand(ctx context.Context, args []string) error {
 	if len(args) > 1 {
-		return usage("usage: dev/run certs [--rotate|trust|untrust|status]")
+		return usage("usage: ./run certs [--rotate|trust|untrust|status]")
 	}
 	if len(args) == 0 {
 		if err := a.generateCertificates(false); err != nil {
@@ -459,6 +459,6 @@ func (a *App) certsCommand(ctx context.Context, args []string) error {
 	case "status":
 		return a.certificateStatus(ctx)
 	default:
-		return usage("usage: dev/run certs [--rotate|trust|untrust|status]")
+		return usage("usage: ./run certs [--rotate|trust|untrust|status]")
 	}
 }

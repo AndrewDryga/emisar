@@ -78,4 +78,4 @@ domain sweep engines in top-level `Emisar.Jobs` and do not recreate
 
 ## Finish
 
-`cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test`.
+Run `./run gate portal` from the repository root.

@@ -77,7 +77,9 @@ Check `test/support/fixtures.ex` for the exact fixture names (`owner_subject_fix
 
 ## Finish
 
-1. The IL-20 gate, green: `cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test test/emisar/<context>_test.exs`. `mix credo` is the mechanical check — the `Emisar.Checks.*` AST rules (AGENTS.md → Enforcement) must report zero.
+1. The IL-20 gate, green: `./run gate portal` from the repository root.
+   `mix credo` inside that gate is the mechanical check — the
+   `Emisar.Checks.*` AST rules (AGENTS.md → Enforcement) must report zero.
 2. Run `/elixir-iron-review` on the diff.
 
 Stop and report what you built + the test output. Don't wire the LiveView in the

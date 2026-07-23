@@ -193,21 +193,12 @@ func (a *App) agentSetupCheck(ctx context.Context, requireCoop bool) error {
 	return a.run(ctx, a.Root, nil, "go", args...)
 }
 
-func (a *App) toolingCheck(ctx context.Context) error {
-	if err := a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "mod", "verify"); err != nil {
+func (a *App) toolingGate(ctx context.Context, coverage string) error {
+	if err := a.goGate(ctx, "tools", coverage); err != nil {
 		return err
 	}
-	unformatted, err := a.output(ctx, a.Root, nil, "gofmt", "-l", "tools")
-	if err != nil {
+	if err := a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck"); err != nil {
 		return err
-	}
-	if strings.TrimSpace(string(unformatted)) != "" {
-		return fmt.Errorf("Go files are not formatted:\n%s", unformatted)
-	}
-	for _, args := range [][]string{{"vet", "./..."}, {"test", "-race", "-count=1", "./..."}} {
-		if err := a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", args...); err != nil {
-			return err
-		}
 	}
 	if err := a.agentSetupCheck(ctx, false); err != nil {
 		return err
@@ -231,13 +222,13 @@ func (a *App) toolingCheck(ctx context.Context) error {
 }
 
 func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
-	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--", ".shell", "dev")
+	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--", ".shell", "run", "dev")
 	if err != nil {
 		return nil, err
 	}
 	var scripts []string
 	for _, path := range nulFields(data) {
-		if path != ".shell" && path != "dev/run" && filepath.Ext(path) != ".sh" {
+		if path != ".shell" && path != "run" && filepath.Ext(path) != ".sh" {
 			continue
 		}
 		if info, statErr := os.Stat(filepath.Join(a.Root, filepath.FromSlash(path))); statErr == nil && !info.IsDir() {
@@ -247,20 +238,20 @@ func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
 	return scripts, nil
 }
 
-func (a *App) portalFeedback(ctx context.Context, level string, args []string) error {
+func (a *App) check(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return usage("usage: dev/run %s <target>", level)
+		return usage("%s", checkUsage)
 	}
 	target, rest := args[0], args[1:]
-	switch level + ":" + target {
-	case "check:changed":
+	switch target {
+	case "changed":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check changed")
+			return usage("usage: ./run check changed")
 		}
 		return a.changedPortalCheck(ctx)
-	case "check:portal":
+	case "portal":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check portal")
+			return usage("usage: ./run check portal")
 		}
 		for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
 			if err := a.run(ctx, a.Portal, nil, "mix", arguments...); err != nil {
@@ -268,61 +259,32 @@ func (a *App) portalFeedback(ctx context.Context, level string, args []string) e
 			}
 		}
 		return nil
-	case "check:staged":
+	case "staged":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check staged")
+			return usage("usage: ./run check staged")
 		}
 		return a.stagedCheck(ctx)
-	case "check:infra-templates":
+	case "infra-templates":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check infra-templates")
+			return usage("usage: ./run check infra-templates")
 		}
 		return a.infraOps(ctx, []string{"validate-templates"})
-	case "check:pack-environment":
+	case "pack-environment":
 		if len(rest) > 2 {
-			return usage("usage: dev/run check pack-environment [repo] [environment]")
+			return usage("usage: ./run check pack-environment [repo] [environment]")
 		}
 		return a.infraOps(ctx, append([]string{"verify-pack-environment"}, rest...))
-	case "check:tooling":
+	case "packs":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check tooling")
+			return usage("usage: ./run check packs")
 		}
-		return a.toolingCheck(ctx)
-	case "check:agent-setup":
+		return a.validatePacks(ctx)
+	case "agent-setup":
 		if len(rest) != 0 {
-			return usage("usage: dev/run check agent-setup")
+			return usage("usage: ./run check agent-setup")
 		}
 		return a.agentSetupCheck(ctx, true)
-	case "test:portal":
-		if len(rest) == 0 {
-			return usage("usage: dev/run test portal <paths...|--stale|--failed>")
-		}
-		_, env, err := a.up(ctx)
-		if err != nil {
-			return err
-		}
-		return a.portalTests(ctx, env, rest)
-	case "gate:portal":
-		if len(rest) != 0 {
-			return usage("usage: dev/run gate portal")
-		}
-		var env map[string]string
-		if os.Getenv("CI") == "" {
-			_, workspaceEnv, err := a.up(ctx)
-			if err != nil {
-				return err
-			}
-			env = workspaceEnv
-		} else if os.Getenv("DATABASE_URL") == "" {
-			return fmt.Errorf("CI portal gate requires DATABASE_URL")
-		}
-		for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
-			if err := a.run(ctx, a.Portal, env, "mix", arguments...); err != nil {
-				return err
-			}
-		}
-		return a.portalTestOutput(ctx, env)
 	default:
-		return usage("usage: dev/run %s <changed|portal|staged|infra-templates|pack-environment|agent-setup|tooling>", level)
+		return usage("%s", checkUsage)
 	}
 }

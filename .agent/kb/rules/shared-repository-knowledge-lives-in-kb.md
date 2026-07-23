@@ -50,7 +50,7 @@ artifacts under an unused repository documentation surface.
 
 ## Enforcement
 
-`dev/run check agent-setup` rejects top-level `docs/` and `distribution/`
+`./run check agent-setup` rejects top-level `docs/` and `distribution/`
 directories, validates descriptive cards separately from specs and runbooks,
 reads public-skill MCP tool names from the portal-owned schema, and exercises
 Git's ignore matcher to prove `dist/cursor-plugin/` is trackable while generated

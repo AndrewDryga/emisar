@@ -42,9 +42,30 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 
 ---
 
+## The repository command surface
+
+`./run` at the repository root is the one contributor command for people, agents,
+hooks, and CI. Start with `./run help`; use `./run help <check|test|gate|pack|ops>`
+for a focused command map.
+
+- **`test` is focused feedback.** Pass a Portal path/Mix selector, Go test args, a
+  pack-name filter, or an installer target.
+- **`check` is quick or specialized validation.** It is not the Definition of Done.
+- **`gate` is complete verification.** Finish with `./run gate <project>` for every
+  project touched, or `./run gate all` for the whole repository.
+- **Direct `mix`, `go`, `terraform`, or Docker commands are for diagnosis.** They
+  may narrow a failure while working, but never replace the canonical final gate.
+
+Canonical gates are `./run gate portal`, `runner`, `mcp`, `packs`, `infra`, and
+`tooling`. Public product interfaces remain separate: `install.sh`,
+`install-mcp.sh`, `emisar`, `emisar-mcp`, and `packctl` are shipped to operators;
+`./run` is repository-only.
+
+---
+
 ## The `.agent/` working state (per project)
 
-Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **The public knowledge and config are committed — `kb/` (descriptive cards, versioned `specs/`, operational `runbooks/`, and normative `rules/`, excluding local `internal/`), `presets/` (orchestration recipes), narrowly project-owned agent-hook `scripts/` where required, and the root `project.yaml`, `loop.yaml`, and `Dockerfile`; everything else is local working state and git-ignored** — internal materials, the queue, backlog drawer, log, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Shared human-and-agent commands enter through `dev/run`; reusable checks live under `tools/`. Files:
+Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **The public knowledge and config are committed — `kb/` (descriptive cards, versioned `specs/`, operational `runbooks/`, and normative `rules/`, excluding local `internal/`), `presets/` (orchestration recipes), narrowly project-owned agent-hook `scripts/` where required, and the root `project.yaml`, `loop.yaml`, and `Dockerfile`; everything else is local working state and git-ignored** — internal materials, the queue, backlog drawer, log, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Shared human-and-agent commands enter through `./run`; reusable checks live under `tools/`. Files:
 
 - **`tasks/`** — the work queue: **a folder per task**, driven by `coop tasks`. A task's **state is its directory**, four states, nothing else, so skipped work has nowhere to hide:
   - `00_todo/` todo · `10_in_progress/` **claimed / in progress** · `50_blocked/` blocked · `99_done/` **done _and_ gated-green _and_ committed**. The numeric prefix just sorts `ls` in lifecycle order; a state change is a **folder move**, never a checkbox edit — always via `coop tasks`, never a manual `mv`.
@@ -131,7 +152,7 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 - **Shared:** [Docker inputs enter at their narrowest layer](.agent/kb/rules/shared-docker-inputs-enter-at-narrowest-layer.md) — introduce each copy, build argument, and environment variable immediately before its first real consumer so unrelated edits preserve dependency, application, and runtime layer caches; reuse the filtered root context for first-party images and keep `.dockerignore` with its context unless a narrower boundary has a concrete benefit.
 - **Shared:** [repository knowledge lives in the KB](.agent/kb/rules/shared-repository-knowledge-lives-in-kb.md) — the website owns product documentation; repository cards, specifications, runbooks, and rules live under `.agent/kb/`, while published integration files use explicit tracked subtrees under `dist/`.
 - **Shared:** [external integration files need explicit proof before deletion](.agent/kb/rules/shared-external-integration-files-need-explicit-proof.md) — no in-repo references does not make externally sourced or discovered files stale; confirm their external consumers before deletion.
-- **Shared:** [human development tooling is not agent state](.agent/kb/rules/shared-human-dev-tooling-is-not-agent-state.md) — expose shared commands through `dev/run`, keep reusable implementations under `tools/`, keep dev-only images and fixtures under `dev/`, share one dependency Compose topology, give generators owned output subtrees, and keep `.agent/` as configuration/state rather than another command surface.
+- **Shared:** [human development tooling is not agent state](.agent/kb/rules/shared-human-dev-tooling-is-not-agent-state.md) — expose shared commands through `./run`, keep reusable implementations under `tools/`, keep dev-only images and fixtures under `dev/`, share one dependency Compose topology, give generators owned output subtrees, and keep `.agent/` as configuration/state rather than another command surface.
 - **Shared:** [durable knowledge has an explicit audience](.agent/kb/rules/shared-knowledge-audience-boundary.md) — keep the tracked KB customer-safe/public, put local non-customer-facing working material under gitignored `kb/internal/`, and review it for the exact destination before publishing an approved result elsewhere.
 - **Shared:** [development TLS trust stays workspace-scoped](.agent/kb/rules/shared-development-tls-trust-stays-workspace-scoped.md) — mutate trust by exact workspace CA fingerprint and scope automated browser exceptions to the current leaf SPKI; never disable TLS validation globally.
 - **Shared:** [browser security exceptions stay response-local](.agent/kb/rules/shared-browser-security-exceptions-stay-response-local.md) — external integration compatibility relaxations happen only after request validation, on the exact response that needs them, with fixed application-controlled targets.
@@ -157,8 +178,8 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 - **State + knowledge** — `.agent/` is read and written identically by both tools.
 - **Contributor skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
 - **Customer skills** — public product artifacts live under `skills/<name>/`, use portable frontmatter and public interfaces, and never depend on a repository checkout, `AGENTS.md`, `.agent/`, internal contributor skills, or `.claude/` / `.codex/` discovery. `skills/README.md` owns direct customer installation.
-- **Enforcement** — Claude hooks under `.claude/` (Stop, commit-gate); reusable *logic* lives under `tools/` and enters through `dev/run` so CI or another tool can call it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
-- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `skills/`, `.codex/`, hooks, or task-queue conventions, run `dev/run check agent-setup`. It checks the cross-tool symlinks, current `coop` verbs/state names, and contributor/customer skill metadata so stale agent instructions fail fast; `dev/run check tooling` and CI run it too.
+- **Enforcement** — Claude hooks under `.claude/` (Stop, commit-gate); reusable *logic* lives under `tools/` and enters through `./run` so CI or another tool can call it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
+- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `skills/`, `.codex/`, hooks, or task-queue conventions, run `./run check agent-setup`. It checks the cross-tool symlinks, current `coop` verbs/state names, and contributor/customer skill metadata so stale agent instructions fail fast; `./run gate tooling` and CI run it too.
 
 ---
 

@@ -177,7 +177,7 @@ func (a *App) cleanupDrills(ctx context.Context, args []string) error {
 	case len(args) == 2 && args[0] == "--apply":
 		apply, requested = true, args[1]
 	default:
-		return usage("usage: dev/run ops drill cleanup [--apply [DRILL_ID]]")
+		return usage("usage: ./run ops drill cleanup [--apply [DRILL_ID]]")
 	}
 	project := os.Getenv("PROJECT_ID")
 	if project == "" {

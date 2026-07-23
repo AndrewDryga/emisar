@@ -109,7 +109,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
-	for _, path := range []string{"dev/run", ".agent/loop.yaml"} {
+	for _, path := range []string{"run", ".agent/loop.yaml"} {
 		t.Run(path+" selects tools", func(t *testing.T) {
 			writeFixture(t, root, path, "fixture\n")
 			commitAll(t, root, path)
