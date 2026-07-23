@@ -24,15 +24,22 @@ type DocsConfig struct {
 }
 
 // shot is one docs screenshot: navigate Path, run any Clicks (reveal flows),
-// then crop to Anchor at viewport Width, drop TopCSS top pixels, write Output.
+// then crop to Anchor at viewport Width, keep only the top TopCSS CSS pixels (or
+// the header + first Rows RowSelector rows) when set, write Output.
 type shot struct {
-	Name   string
-	Path   string
+	Name string
+	Path string
+	// Clicks run in order after navigation to reveal a flow before the crop.
 	Clicks []string
 	Anchor Anchor
 	Width  int // viewport CSS width; 0 → defaultWidth
-	TopCSS int
-	Output string
+	TopCSS int // keep only the top N CSS pixels of the anchor (0 → whole anchor)
+	// Rows + RowSelector cap a long list: hide every RowSelector row past the
+	// first Rows before the shot, so the anchor shrinks to its header + those rows
+	// and the tail falls away. RowSelector matches document-wide.
+	Rows        int
+	RowSelector string
+	Output      string
 }
 
 // The docs measure is ~672px, so a shot displays at ~40% of a 1680px desktop
@@ -62,7 +69,10 @@ var docsShots = []shot{
 	{Name: "policy-editor", Path: "/app/demo/policies", Anchor: Anchor{Heading: "Default policy", Climb: "section"}, Width: docsWidth, Output: "screenshots/policy-editor.webp"},
 	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, Output: "screenshots/audit-view.webp"},
 	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#runners"}, Width: docsWidth, Output: "screenshots/runner-fleet.webp"},
-	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#members", Climb: "section"}, Width: docsWidth, Output: "screenshots/team-page.webp"},
+	// The full roster runs long; the teams-and-access page only needs to show the
+	// shape of a member row, so keep the header + the first 4 (the directory-synced
+	// members sort to the top) and let the tail fall off-crop.
+	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#members", Climb: "section"}, Width: docsWidth, Rows: 4, RowSelector: "#members li", Output: "screenshots/team-page.webp"},
 	{Name: "sso-add-connection", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/sso-add-connection.webp"},
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, Output: "screenshots/runs.webp"},
 	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, Output: "screenshots/agents.webp"},
@@ -99,15 +109,25 @@ func rgbHex(value string) string {
 	return result
 }
 
-func captureDocElement(session *Session, config DocsConfig, anchor Anchor, name string) (string, error) {
-	if err := session.MarkAnchor(anchor, "data-shot"); err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
+func captureDocElement(session *Session, config DocsConfig, s shot) (string, error) {
+	if err := session.MarkAnchor(s.Anchor, "data-shot"); err != nil {
+		return "", fmt.Errorf("%s: %w", s.Name, err)
 	}
 	const selector = `[data-shot="1"]`
+	// A long list (the member roster) makes the anchor far taller than the shot
+	// needs — and past a point the element screenshot clips its top. Hide the rows
+	// past Rows so the anchor shrinks to its header + the first Rows rows before
+	// it settles and is shot; the tail simply doesn't render.
+	if s.Rows > 0 && s.RowSelector != "" {
+		hide := fmt.Sprintf(`(function(){const rows=document.querySelectorAll(%q);for(let i=%d;i<rows.length;i++)rows[i].style.display='none';return true})()`, s.RowSelector, s.Rows)
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(hide, nil)); err != nil {
+			return "", err
+		}
+	}
 	if err := session.Ready(10*time.Second, selector); err != nil {
 		return "", err
 	}
-	path := filepath.Join(config.Temp, name+".png")
+	path := filepath.Join(config.Temp, s.Name+".png")
 	if err := session.ElementScreenshot(selector, path, 2); err != nil {
 		return "", err
 	}
@@ -157,11 +177,11 @@ func captureShot(session *Session, config DocsConfig, s shot) (string, error) {
 			return "", err
 		}
 	}
-	return captureDocElement(session, config, s.Anchor, s.Name)
+	return captureDocElement(session, config, s)
 }
 
-// processShot converts a captured PNG into the bordered, resized webp, dropping
-// TopCSS top pixels first when set.
+// processShot converts a captured PNG into the bordered, resized webp, keeping
+// only the top TopCSS CSS pixels first when set.
 func processShot(config DocsConfig, s shot, color string, out io.Writer) error {
 	png := filepath.Join(config.Temp, s.Name+".png")
 	destination := filepath.Join(config.Static, filepath.FromSlash(s.Output))
