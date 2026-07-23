@@ -13,8 +13,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,10 +26,15 @@ import (
 var commandTimeout = 30 * time.Second
 
 type Expectation struct {
-	Exit           []int    `yaml:"exit,omitempty"`
-	StdoutNotEmpty bool     `yaml:"stdout_not_empty,omitempty"`
-	StdoutContains []string `yaml:"stdout_contains,omitempty"`
-	StderrContains []string `yaml:"stderr_contains,omitempty"`
+	Status            string         `yaml:"status,omitempty"`
+	Exit              []int          `yaml:"exit,omitempty"`
+	ReasonContains    []string       `yaml:"reason_contains,omitempty"`
+	StdoutNotEmpty    bool           `yaml:"stdout_not_empty,omitempty"`
+	StdoutContains    []string       `yaml:"stdout_contains,omitempty"`
+	StdoutNotContains []string       `yaml:"stdout_not_contains,omitempty"`
+	StderrContains    []string       `yaml:"stderr_contains,omitempty"`
+	StderrNotContains []string       `yaml:"stderr_not_contains,omitempty"`
+	JSON              map[string]any `yaml:"json,omitempty"`
 }
 
 type Step struct {
@@ -40,14 +47,18 @@ type Step struct {
 }
 
 type Case struct {
-	Action           string         `yaml:"action"`
-	Args             map[string]any `yaml:"args,omitempty"`
-	Reason           string         `yaml:"reason,omitempty"`
-	Expect           Expectation    `yaml:"expect,omitempty"`
-	Arrange          []Step         `yaml:"arrange,omitempty"`
-	Probes           []Step         `yaml:"probes,omitempty"`
-	Cleanup          []Step         `yaml:"cleanup,omitempty"`
-	CleanupNotNeeded string         `yaml:"cleanup_not_needed,omitempty"`
+	Name         string            `yaml:"name,omitempty"`
+	Action       string            `yaml:"action"`
+	RunnerUser   string            `yaml:"runner_user,omitempty"`
+	RunnerReason string            `yaml:"runner_reason,omitempty"`
+	Env          map[string]string `yaml:"env,omitempty"`
+	UnsetEnv     []string          `yaml:"unset_env,omitempty"`
+	Args         map[string]any    `yaml:"args,omitempty"`
+	Reason       string            `yaml:"reason,omitempty"`
+	Expect       Expectation       `yaml:"expect,omitempty"`
+	Arrange      []Step            `yaml:"arrange,omitempty"`
+	Probes       []Step            `yaml:"probes,omitempty"`
+	Cleanup      []Step            `yaml:"cleanup,omitempty"`
 }
 
 type Defaults struct {
@@ -60,19 +71,41 @@ type Version struct {
 	Default bool   `yaml:"default,omitempty"`
 }
 
+type Runner struct {
+	User   string `yaml:"user,omitempty"`
+	Reason string `yaml:"reason,omitempty"`
+}
+
+type RiskAccountability struct {
+	Mode       string            `yaml:"mode,omitempty"`
+	Exceptions map[string]string `yaml:"exceptions,omitempty"`
+}
+
 type Plan struct {
-	Services []string          `yaml:"services"`
-	Versions []Version         `yaml:"versions"`
-	Env      map[string]string `yaml:"env,omitempty"`
-	Defaults Defaults          `yaml:"defaults,omitempty"`
-	Cases    []Case            `yaml:"cases"`
+	Services           []string           `yaml:"services"`
+	Versions           []Version          `yaml:"versions"`
+	Runner             Runner             `yaml:"runner,omitempty"`
+	RiskAccountability RiskAccountability `yaml:"risk_accountability,omitempty"`
+	SecretEnv          []string           `yaml:"secret_env,omitempty"`
+	Env                map[string]string  `yaml:"env,omitempty"`
+	Defaults           Defaults           `yaml:"defaults,omitempty"`
+	Cases              []Case             `yaml:"cases"`
+}
+
+type CaseRef struct {
+	ID         string
+	Action     string
+	RunnerUser string
 }
 
 type PlanRef struct {
-	Name     string
-	Path     string
-	Services []string
-	Versions []Version
+	Name        string
+	PackVersion string
+	Path        string
+	Services    []string
+	Versions    []Version
+	Runner      Runner
+	Cases       []CaseRef
 }
 
 type MatrixRow struct {
@@ -88,6 +121,7 @@ type Config struct {
 	Reports  string
 	Pattern  string
 	Names    []string
+	Case     string
 	Out      io.Writer
 	BaseEnv  []string
 }
@@ -104,6 +138,9 @@ type actionDefinition struct {
 	ID          string   `yaml:"id"`
 	Risk        string   `yaml:"risk"`
 	SideEffects []string `yaml:"side_effects"`
+	Output      struct {
+		Parser string `yaml:"parser"`
+	} `yaml:"output"`
 }
 
 type commandResult struct {
@@ -113,11 +150,14 @@ type commandResult struct {
 }
 
 type actionResult struct {
-	Status   string `json:"status"`
-	ExitCode int    `json:"exit_code"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	Reason   string `json:"reason"`
+	Status      string `json:"status"`
+	ExitCode    int    `json:"exit_code"`
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+	Reason      string `json:"reason"`
+	Error       string `json:"error"`
+	DurationMS  int64  `json:"duration_ms"`
+	ParserError string `json:"parser_error"`
 }
 
 func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
@@ -152,8 +192,21 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		if err := validateVersions(plan.Versions); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
+		packVersion, err := loadPackVersion(filepath.Dir(filepath.Dir(path)))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		cases := make([]CaseRef, 0, len(plan.Cases))
+		for _, test := range plan.Cases {
+			cases = append(cases, CaseRef{
+				ID:         test.ID(),
+				Action:     test.Action,
+				RunnerUser: effectiveRunnerUser(plan.Runner.User, test.RunnerUser),
+			})
+		}
 		plans = append(plans, PlanRef{
-			Name: name, Path: path, Services: plan.Services, Versions: plan.Versions,
+			Name: name, PackVersion: packVersion, Path: path, Services: plan.Services,
+			Versions: plan.Versions, Runner: plan.Runner, Cases: cases,
 		})
 	}
 	if len(plans) == 0 {
@@ -181,6 +234,95 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 	return plans, nil
 }
 
+// ValidateRiskChanges requires each changed high/critical action in a modeled
+// pack to have a successful behavior case or a machine-readable exception.
+func ValidateRiskChanges(packsDir string, files []string) error {
+	checked := make(map[string]bool)
+	for _, file := range files {
+		parts := strings.Split(filepath.ToSlash(file), "/")
+		if len(parts) != 4 || parts[0] != "packs" || parts[2] != "actions" ||
+			filepath.Ext(parts[3]) != ".yaml" {
+			continue
+		}
+		pack := parts[1]
+		if checked[pack] {
+			continue
+		}
+		checked[pack] = true
+		planPath := filepath.Join(packsDir, pack, "test", "cases.yaml")
+		if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		plan, err := loadPlan(planPath)
+		if err != nil {
+			return err
+		}
+		actions, err := loadActions(filepath.Join(packsDir, pack))
+		if err != nil {
+			return err
+		}
+		successful := successfulBehaviorActions(plan)
+		if err := validateRiskAccountability(plan.RiskAccountability, actions, successful); err != nil {
+			return fmt.Errorf("%s: %w", pack, err)
+		}
+		for _, changed := range files {
+			changedParts := strings.Split(filepath.ToSlash(changed), "/")
+			if len(changedParts) != 4 || changedParts[0] != "packs" ||
+				changedParts[1] != pack || changedParts[2] != "actions" {
+				continue
+			}
+			var action actionDefinition
+			data, err := os.ReadFile(filepath.Join(packsDir, pack, "actions", changedParts[3]))
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if err := yaml.Unmarshal(data, &action); err != nil {
+				return err
+			}
+			if action.risky() && !successful[action.ID] &&
+				plan.RiskAccountability.Exceptions[action.ID] == "" {
+				return fmt.Errorf("%s: changed high/critical action %q needs a successful behavior case or risk exception", pack, action.ID)
+			}
+		}
+	}
+	return nil
+}
+
+func successfulBehaviorActions(plan Plan) map[string]bool {
+	successful := make(map[string]bool, len(plan.Cases))
+	for _, test := range plan.Cases {
+		if mergeActionExpectation(plan.Defaults.Expect, test.Expect).Status == "success" {
+			successful[test.Action] = true
+		}
+	}
+	return successful
+}
+
+func loadPackVersion(packDir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(packDir, "pack.yaml"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "unknown", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var manifest struct {
+		Version string `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(manifest.Version) == "" {
+		return "", fmt.Errorf("pack.yaml has no version")
+	}
+	return manifest.Version, nil
+}
+
 func Matrix(plans []PlanRef) []MatrixRow {
 	var rows []MatrixRow
 	for _, plan := range plans {
@@ -193,6 +335,23 @@ func Matrix(plans []PlanRef) []MatrixRow {
 	return rows
 }
 
+func Validate(plans []PlanRef) error {
+	for _, ref := range plans {
+		plan, err := loadPlan(ref.Path)
+		if err != nil {
+			return err
+		}
+		actions, err := loadActions(filepath.Dir(filepath.Dir(ref.Path)))
+		if err != nil {
+			return err
+		}
+		if err := validatePlan(ref.Name, plan, actions); err != nil {
+			return fmt.Errorf("%s: %w", ref.Name, err)
+		}
+	}
+	return nil
+}
+
 func (ref PlanRef) DefaultVersion() Version {
 	for _, version := range ref.Versions {
 		if version.Default {
@@ -200,6 +359,23 @@ func (ref PlanRef) DefaultVersion() Version {
 		}
 	}
 	return Version{}
+}
+
+func (test Case) ID() string {
+	if test.Name != "" {
+		return test.Name
+	}
+	return test.Action
+}
+
+func effectiveRunnerUser(planUser, caseUser string) string {
+	if caseUser != "" {
+		return caseUser
+	}
+	if planUser != "" {
+		return planUser
+	}
+	return "nonroot"
 }
 
 func Run(config Config) (Totals, error) {
@@ -311,6 +487,12 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	if err := validateVersions(plan.Versions); err != nil {
 		return err
 	}
+	if err := validateRunner(plan.Runner); err != nil {
+		return err
+	}
+	if err := validateSecretEnv(plan.SecretEnv, plan.Env); err != nil {
+		return err
+	}
 	if len(plan.Services) == 0 {
 		return fmt.Errorf("services must name at least one disposable Compose service")
 	}
@@ -318,19 +500,39 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		return fmt.Errorf("cases must contain at least one behavioral case")
 	}
 	seen := make(map[string]bool, len(plan.Cases))
+	successfulActions := make(map[string]bool, len(plan.Cases))
 	for i, test := range plan.Cases {
 		location := fmt.Sprintf("cases[%d]", i)
 		action, ok := actions[test.Action]
 		if !ok {
 			return fmt.Errorf("%s action %q does not exist in pack %s", location, test.Action, pack)
 		}
-		if seen[test.Action] {
-			return fmt.Errorf("%s duplicates action %q", location, test.Action)
+		id := test.ID()
+		if !caseIDPattern.MatchString(id) {
+			return fmt.Errorf("%s has invalid case name %q", location, id)
 		}
-		seen[test.Action] = true
-		expect := mergeExpectation(plan.Defaults.Expect, test.Expect)
+		if seen[id] {
+			return fmt.Errorf("%s duplicates case %q", location, id)
+		}
+		seen[id] = true
+		if err := validateRunnerUser(test.RunnerUser); err != nil {
+			return fmt.Errorf("%s: %w", location, err)
+		}
+		if test.RunnerUser == "root" && strings.TrimSpace(test.RunnerReason) == "" {
+			return fmt.Errorf("%s runner_user root requires runner_reason", location)
+		}
+		if test.RunnerUser != "root" && strings.TrimSpace(test.RunnerReason) != "" {
+			return fmt.Errorf("%s runner_reason is only valid for runner_user root", location)
+		}
+		expect := mergeActionExpectation(plan.Defaults.Expect, test.Expect)
+		if err := validateActionExpectation(expect); err != nil {
+			return fmt.Errorf("%s expect: %w", location, err)
+		}
 		if !expect.semantic() && len(test.Probes) == 0 {
-			return fmt.Errorf("%s action %q has only an exit-code assertion", location, test.Action)
+			return fmt.Errorf("%s action %q has no semantic assertion", location, test.Action)
+		}
+		if expect.Status == "success" {
+			successfulActions[test.Action] = true
 		}
 		for j, probe := range test.Probes {
 			if err := validateStep(probe, true); err != nil {
@@ -342,25 +544,105 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 				return fmt.Errorf("%s setup/cleanup[%d]: %w", location, j, err)
 			}
 		}
-		if action.mutates() {
+		if action.mutates() && expect.Status == "success" {
 			if len(test.Probes) == 0 {
 				return fmt.Errorf("%s mutating action %q needs an observable state probe", location, test.Action)
 			}
-			if len(test.Cleanup) == 0 && strings.TrimSpace(test.CleanupNotNeeded) == "" {
-				return fmt.Errorf("%s mutating action %q needs cleanup or cleanup_not_needed", location, test.Action)
-			}
-		}
-		if len(test.Cleanup) > 0 && strings.TrimSpace(test.CleanupNotNeeded) != "" {
-			return fmt.Errorf("%s cannot declare cleanup and cleanup_not_needed", location)
 		}
 	}
-	return nil
+	return validateRiskAccountability(plan.RiskAccountability, actions, successfulActions)
 }
 
 var (
 	versionPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 	digestPattern  = regexp.MustCompile(`^@sha256:[a-f0-9]{64}$`)
+	caseIDPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+	canaryPattern  = regexp.MustCompile(`packtest-canary-[A-Za-z0-9._-]+`)
 )
+
+var riskExceptionReasons = map[string]bool{
+	"requires_cluster":            true,
+	"requires_concurrent_session": true,
+	"requires_dynamic_fixture":    true,
+	"requires_external_service":   true,
+	"requires_hardware":           true,
+	"requires_privileged_host":    true,
+}
+
+func validateRunner(runner Runner) error {
+	if err := validateRunnerUser(runner.User); err != nil {
+		return err
+	}
+	if runner.User == "root" && strings.TrimSpace(runner.Reason) == "" {
+		return fmt.Errorf("runner.user root requires a reason")
+	}
+	if runner.User != "root" && strings.TrimSpace(runner.Reason) != "" {
+		return fmt.Errorf("runner.reason is only valid for runner.user root")
+	}
+	return nil
+}
+
+func validateRunnerUser(user string) error {
+	if user != "" && user != "nonroot" && user != "root" {
+		return fmt.Errorf("runner user %q must be nonroot or root", user)
+	}
+	return nil
+}
+
+func validateSecretEnv(keys []string, env map[string]string) error {
+	seenValues := make(map[string]string, len(keys))
+	for i, key := range keys {
+		value, ok := env[key]
+		if !ok || value == "" {
+			return fmt.Errorf("secret_env[%d] %q has no non-empty env value", i, key)
+		}
+		canaries := canaryPattern.FindAllString(value, -1)
+		if len(canaries) == 0 {
+			return fmt.Errorf("secret_env[%d] %q must contain a packtest-canary- value", i, key)
+		}
+		for _, canary := range canaries {
+			if previous, exists := seenValues[canary]; exists {
+				return fmt.Errorf("secret_env %q and %q reuse canary %q", previous, key, canary)
+			}
+			seenValues[canary] = key
+		}
+	}
+	return nil
+}
+
+func validateRiskAccountability(accountability RiskAccountability, actions map[string]actionDefinition, successful map[string]bool) error {
+	mode := accountability.Mode
+	if mode == "" {
+		mode = "changed"
+	}
+	if mode != "changed" && mode != "complete" {
+		return fmt.Errorf("risk_accountability.mode %q must be changed or complete", accountability.Mode)
+	}
+	for id, reason := range accountability.Exceptions {
+		action, ok := actions[id]
+		if !ok {
+			return fmt.Errorf("risk exception action %q does not exist", id)
+		}
+		if !action.risky() {
+			return fmt.Errorf("risk exception action %q is not high or critical", id)
+		}
+		if successful[id] {
+			return fmt.Errorf("risk exception action %q already has a successful behavior case", id)
+		}
+		if !riskExceptionReasons[reason] {
+			return fmt.Errorf("risk exception action %q has unknown reason %q", id, reason)
+		}
+	}
+	if mode != "complete" {
+		return nil
+	}
+	for id, action := range actions {
+		if action.risky() && !successful[id] && accountability.Exceptions[id] == "" {
+			return fmt.Errorf("high/critical action %q needs a successful behavior case or risk exception", id)
+		}
+	}
+	return nil
+}
 
 func validateVersions(versions []Version) error {
 	if len(versions) == 0 {
@@ -399,12 +681,22 @@ func (action actionDefinition) mutates() bool {
 	return action.Risk != "" && action.Risk != "low"
 }
 
+func (action actionDefinition) risky() bool {
+	return action.Risk == "high" || action.Risk == "critical"
+}
+
 func validateStep(step Step, semantic bool) error {
 	if len(step.Argv) == 0 || strings.TrimSpace(step.Argv[0]) == "" {
 		return fmt.Errorf("argv must name an executable")
 	}
 	if semantic && !step.Expect.semantic() {
 		return fmt.Errorf("probe needs a semantic output assertion")
+	}
+	if step.Expect.Status != "" || len(step.Expect.ReasonContains) > 0 {
+		return fmt.Errorf("direct command steps cannot assert action status or reason")
+	}
+	if err := validateJSONPointers(step.Expect.JSON); err != nil {
+		return err
 	}
 	if _, _, err := retryDurations(step); err != nil {
 		return err
@@ -413,25 +705,66 @@ func validateStep(step Step, semantic bool) error {
 }
 
 func (expect Expectation) semantic() bool {
-	return expect.StdoutNotEmpty || len(expect.StdoutContains) > 0 || len(expect.StderrContains) > 0
+	return len(expect.ReasonContains) > 0 || len(expect.StdoutContains) > 0 ||
+		len(expect.StderrContains) > 0 || len(expect.JSON) > 0
 }
 
-func mergeExpectation(defaults, override Expectation) Expectation {
+func validateActionExpectation(expect Expectation) error {
+	if expect.Status != "success" && expect.Status != "failure" {
+		return fmt.Errorf("status %q must be success or failure", expect.Status)
+	}
+	if expect.Status == "success" && len(expect.ReasonContains) > 0 {
+		return fmt.Errorf("reason_contains requires failure status")
+	}
+	return validateJSONPointers(expect.JSON)
+}
+
+func mergeActionExpectation(defaults, override Expectation) Expectation {
 	merged := override
+	if merged.Status == "" {
+		merged.Status = defaults.Status
+	}
+	if merged.Status == "" {
+		merged.Status = "success"
+	}
 	if len(merged.Exit) == 0 {
 		merged.Exit = defaults.Exit
 	}
-	if len(merged.Exit) == 0 {
+	if len(merged.Exit) == 0 && merged.Status == "success" {
 		merged.Exit = []int{0}
 	}
 	merged.StdoutNotEmpty = merged.StdoutNotEmpty || defaults.StdoutNotEmpty
-	if len(defaults.StdoutContains) > 0 {
-		merged.StdoutContains = append(append([]string{}, defaults.StdoutContains...), merged.StdoutContains...)
-	}
-	if len(defaults.StderrContains) > 0 {
-		merged.StderrContains = append(append([]string{}, defaults.StderrContains...), merged.StderrContains...)
+	merged.ReasonContains = mergeStrings(defaults.ReasonContains, merged.ReasonContains)
+	merged.StdoutContains = mergeStrings(defaults.StdoutContains, merged.StdoutContains)
+	merged.StdoutNotContains = mergeStrings(defaults.StdoutNotContains, merged.StdoutNotContains)
+	merged.StderrContains = mergeStrings(defaults.StderrContains, merged.StderrContains)
+	merged.StderrNotContains = mergeStrings(defaults.StderrNotContains, merged.StderrNotContains)
+	if len(defaults.JSON) > 0 {
+		if merged.JSON == nil {
+			merged.JSON = make(map[string]any, len(defaults.JSON))
+		}
+		for pointer, value := range defaults.JSON {
+			if _, overridden := merged.JSON[pointer]; !overridden {
+				merged.JSON[pointer] = value
+			}
+		}
 	}
 	return merged
+}
+
+func mergeStepExpectation(expect Expectation) Expectation {
+	merged := expect
+	if len(merged.Exit) == 0 {
+		merged.Exit = []int{0}
+	}
+	return merged
+}
+
+func mergeStrings(defaults, overrides []string) []string {
+	if len(defaults) > 0 {
+		return append(append([]string{}, defaults...), overrides...)
+	}
+	return overrides
 }
 
 func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
@@ -447,15 +780,34 @@ func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
 	if err := validatePlan(ref.Name, plan, actions); err != nil {
 		return Totals{}, err
 	}
+	tests := plan.Cases
+	if config.Case != "" {
+		tests = nil
+		for _, test := range plan.Cases {
+			if test.ID() == config.Case {
+				tests = append(tests, test)
+				break
+			}
+		}
+		if len(tests) == 0 {
+			return Totals{}, fmt.Errorf("pack %s has no case %q", ref.Name, config.Case)
+		}
+	}
 	env := environment(config.BaseEnv, plan.Env)
-	totals := Totals{Actions: len(actions), Behavior: len(plan.Cases), Contract: len(actions) - len(plan.Cases)}
+	covered := make(map[string]bool, len(plan.Cases))
 	for _, test := range plan.Cases {
-		if err := runCase(config, plan, test, env); err != nil {
-			fmt.Fprintf(output, "FAIL %s\n%s\n", test.Action, indent(err.Error()))
+		covered[test.Action] = true
+	}
+	totals := Totals{Actions: len(actions), Behavior: len(covered), Contract: len(actions) - len(covered)}
+	for _, test := range tests {
+		started := time.Now()
+		if err := runCase(config, plan, test, actions[test.Action], env); err != nil {
+			fmt.Fprintf(output, "FAIL %s duration=%s\n%s\n",
+				test.ID(), time.Since(started).Round(time.Millisecond), indent(err.Error()))
 			totals.Fail++
 			continue
 		}
-		fmt.Fprintf(output, "PASS %s\n", test.Action)
+		fmt.Fprintf(output, "PASS %s duration=%s\n", test.ID(), time.Since(started).Round(time.Millisecond))
 		totals.Pass++
 	}
 	fmt.Fprintf(output, "\n[%s] behavior=%d pass=%d fail=%d contract-only=%d total-actions=%d\n",
@@ -466,8 +818,11 @@ func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
 	return totals, nil
 }
 
-func runCase(config Config, plan Plan, test Case, env []string) error {
+func runCase(config Config, plan Plan, test Case, action actionDefinition, env []string) error {
+	env = environment(env, test.Env)
+	env = withoutEnvironment(env, test.UnsetEnv)
 	var failures []string
+	var actionEvidence *actionResult
 	for i, step := range test.Arrange {
 		if err := runStep(step, env, false); err != nil {
 			failures = append(failures, fmt.Sprintf("arrange[%d]: %v", i, err))
@@ -497,7 +852,19 @@ func runCase(config Config, plan Plan, test Case, env []string) error {
 			args = append(args, "--reason", reason)
 			result, err := executeAction(append([]string{config.Emisar}, args...), env)
 			if err == nil {
-				err = checkResult(result, mergeExpectation(plan.Defaults.Expect, test.Expect))
+				actionEvidence = &result
+				resultErr := checkActionResult(
+					result,
+					mergeActionExpectation(plan.Defaults.Expect, test.Expect),
+					action.Output.Parser == "json",
+				)
+				secretErr := checkSecretCanaries(
+					plan.SecretEnv,
+					plan.Env,
+					result,
+					"/tmp/emisar-test/events.jsonl",
+				)
+				err = errors.Join(resultErr, secretErr)
 			}
 			if err != nil {
 				failures = append(failures, "action: "+err.Error())
@@ -518,29 +885,31 @@ func runCase(config Config, plan Plan, test Case, env []string) error {
 		}
 	}
 	if len(failures) > 0 {
+		if actionEvidence != nil {
+			encoded, err := json.MarshalIndent(actionEvidence, "", "  ")
+			if err == nil {
+				failures = append(failures, "action result:\n"+string(encoded))
+			}
+		}
 		return errors.New(strings.Join(failures, "\n"))
 	}
 	return nil
 }
 
-func executeAction(argv, env []string) (commandResult, error) {
+func executeAction(argv, env []string) (actionResult, error) {
 	result, err := execute(argv, env)
 	if err != nil {
-		return commandResult{}, err
+		return actionResult{}, err
 	}
 	if result.exitCode != 0 {
-		return commandResult{}, fmt.Errorf("runner exit=%d\nstdout:\n%s\nstderr:\n%s",
+		return actionResult{}, fmt.Errorf("runner exit=%d\nstdout:\n%s\nstderr:\n%s",
 			result.exitCode, result.stdout, result.stderr)
 	}
 	var action actionResult
 	if err := json.Unmarshal([]byte(result.stdout), &action); err != nil {
-		return commandResult{}, fmt.Errorf("decode action result: %w\nstdout:\n%s", err, result.stdout)
+		return actionResult{}, fmt.Errorf("decode action result: %w\nstdout:\n%s", err, result.stdout)
 	}
-	if action.Status != "success" {
-		return commandResult{}, fmt.Errorf("action status=%s: %s\nstdout:\n%s\nstderr:\n%s",
-			action.Status, action.Reason, action.Stdout, action.Stderr)
-	}
-	return commandResult{exitCode: action.ExitCode, stdout: action.Stdout, stderr: action.Stderr}, nil
+	return action, nil
 }
 
 func runStep(step Step, baseEnv []string, requireSemantic bool) error {
@@ -548,7 +917,7 @@ func runStep(step Step, baseEnv []string, requireSemantic bool) error {
 	if err != nil {
 		return err
 	}
-	expect := mergeExpectation(Expectation{}, step.Expect)
+	expect := mergeStepExpectation(step.Expect)
 	if !requireSemantic && !step.Expect.semantic() {
 		expect.StdoutNotEmpty = false
 	}
@@ -622,7 +991,7 @@ func execute(argv, env []string) (commandResult, error) {
 }
 
 func checkResult(result commandResult, expect Expectation) error {
-	if !accepts(expect.Exit, result.exitCode) {
+	if len(expect.Exit) > 0 && !accepts(expect.Exit, result.exitCode) {
 		return fmt.Errorf("exit=%d, expected=%v\nstdout:\n%s\nstderr:\n%s",
 			result.exitCode, expect.Exit, result.stdout, result.stderr)
 	}
@@ -634,9 +1003,195 @@ func checkResult(result commandResult, expect Expectation) error {
 			return fmt.Errorf("stdout does not contain %q\nstdout:\n%s", needle, result.stdout)
 		}
 	}
+	for _, needle := range expect.StdoutNotContains {
+		if strings.Contains(result.stdout, needle) {
+			return fmt.Errorf("stdout contains forbidden %q\nstdout:\n%s", needle, result.stdout)
+		}
+	}
 	for _, needle := range expect.StderrContains {
 		if !strings.Contains(result.stderr, needle) {
 			return fmt.Errorf("stderr does not contain %q\nstderr:\n%s", needle, result.stderr)
+		}
+	}
+	for _, needle := range expect.StderrNotContains {
+		if strings.Contains(result.stderr, needle) {
+			return fmt.Errorf("stderr contains forbidden %q\nstderr:\n%s", needle, result.stderr)
+		}
+	}
+	if len(expect.JSON) > 0 {
+		return checkJSONAssertions(result.stdout, expect.JSON)
+	}
+	return nil
+}
+
+func checkActionResult(result actionResult, expect Expectation, requireJSON bool) error {
+	success := result.Status == "success"
+	if expect.Status == "success" && !success || expect.Status == "failure" && success {
+		return fmt.Errorf("action status=%s, expected=%s\nreason: %s\nerror: %s\nstdout:\n%s\nstderr:\n%s",
+			result.Status, expect.Status, result.Reason, result.Error, result.Stdout, result.Stderr)
+	}
+	if len(expect.Exit) > 0 && !accepts(expect.Exit, result.ExitCode) {
+		return fmt.Errorf("action exit=%d, expected=%v\nstatus=%s\nreason=%s\nstdout:\n%s\nstderr:\n%s",
+			result.ExitCode, expect.Exit, result.Status, result.Reason, result.Stdout, result.Stderr)
+	}
+	for _, needle := range expect.ReasonContains {
+		if !strings.Contains(result.Reason, needle) {
+			return fmt.Errorf("reason does not contain %q\nreason: %s", needle, result.Reason)
+		}
+	}
+	streamExpect := expect
+	streamExpect.Exit = nil
+	streamExpect.ReasonContains = nil
+	streamExpect.JSON = nil
+	if err := checkResult(commandResult{
+		exitCode: result.ExitCode, stdout: result.Stdout, stderr: result.Stderr,
+	}, streamExpect); err != nil {
+		return err
+	}
+	if requireJSON || len(expect.JSON) > 0 {
+		if err := checkJSONAssertions(result.Stdout, expect.JSON); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateJSONPointers(assertions map[string]any) error {
+	for pointer := range assertions {
+		if _, err := parseJSONPointer(pointer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkJSONAssertions(stdout string, assertions map[string]any) error {
+	var document any
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		return fmt.Errorf("stdout is not valid JSON: %w\nstdout:\n%s", err, stdout)
+	}
+	pointers := make([]string, 0, len(assertions))
+	for pointer := range assertions {
+		pointers = append(pointers, pointer)
+	}
+	sort.Strings(pointers)
+	for _, pointer := range pointers {
+		actual, err := resolveJSONPointer(document, pointer)
+		if err != nil {
+			return err
+		}
+		expected, err := normalizeJSONValue(assertions[pointer])
+		if err != nil {
+			return fmt.Errorf("JSON pointer %q expectation: %w", pointer, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			return fmt.Errorf("JSON pointer %q = %s, expected %s",
+				pointer, jsonValue(actual), jsonValue(expected))
+		}
+	}
+	return nil
+}
+
+func parseJSONPointer(pointer string) ([]string, error) {
+	if pointer == "" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return nil, fmt.Errorf("JSON pointer %q must be empty or start with /", pointer)
+	}
+	encoded := strings.Split(pointer[1:], "/")
+	tokens := make([]string, 0, len(encoded))
+	for _, token := range encoded {
+		var decoded strings.Builder
+		for i := 0; i < len(token); i++ {
+			if token[i] != '~' {
+				decoded.WriteByte(token[i])
+				continue
+			}
+			if i+1 >= len(token) || token[i+1] != '0' && token[i+1] != '1' {
+				return nil, fmt.Errorf("JSON pointer %q has invalid escape", pointer)
+			}
+			i++
+			if token[i] == '0' {
+				decoded.WriteByte('~')
+			} else {
+				decoded.WriteByte('/')
+			}
+		}
+		tokens = append(tokens, decoded.String())
+	}
+	return tokens, nil
+}
+
+func resolveJSONPointer(document any, pointer string) (any, error) {
+	tokens, err := parseJSONPointer(pointer)
+	if err != nil {
+		return nil, err
+	}
+	current := document
+	for _, token := range tokens {
+		switch value := current.(type) {
+		case map[string]any:
+			next, ok := value[token]
+			if !ok {
+				return nil, fmt.Errorf("JSON pointer %q has no object key %q", pointer, token)
+			}
+			current = next
+		case []any:
+			if token == "" || token != "0" && strings.HasPrefix(token, "0") {
+				return nil, fmt.Errorf("JSON pointer %q has invalid array index %q", pointer, token)
+			}
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(value) {
+				return nil, fmt.Errorf("JSON pointer %q has out-of-range array index %q", pointer, token)
+			}
+			current = value[index]
+		default:
+			return nil, fmt.Errorf("JSON pointer %q cannot traverse %q", pointer, token)
+		}
+	}
+	return current, nil
+}
+
+func normalizeJSONValue(value any) (any, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var normalized any
+	if err := json.Unmarshal(encoded, &normalized); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+func jsonValue(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(encoded)
+}
+
+func checkSecretCanaries(keys []string, env map[string]string, result actionResult, eventLog string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	events, err := os.ReadFile(eventLog)
+	if err != nil {
+		return fmt.Errorf("read event log for secret assertion: %w", err)
+	}
+	surfaces := map[string]string{
+		"stdout": result.Stdout, "stderr": result.Stderr, "reason": result.Reason,
+		"error": result.Error, "parser_error": result.ParserError, "event log": string(events),
+	}
+	for _, key := range keys {
+		for _, canary := range canaryPattern.FindAllString(env[key], -1) {
+			for surface, value := range surfaces {
+				if strings.Contains(value, canary) {
+					return fmt.Errorf("secret canary %s leaked in %s", key, surface)
+				}
+			}
 		}
 	}
 	return nil
@@ -680,6 +1235,24 @@ func environment(base []string, overrides map[string]string) []string {
 		env = append(env, key+"="+values[key])
 	}
 	return env
+}
+
+func withoutEnvironment(base []string, keys []string) []string {
+	if len(keys) == 0 {
+		return base
+	}
+	unset := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		unset[key] = true
+	}
+	filtered := make([]string, 0, len(base))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || !unset[key] {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func indent(value string) string {

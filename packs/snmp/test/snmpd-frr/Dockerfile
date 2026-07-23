@@ -10,7 +10,7 @@
 # The official frrouting/frr image ships NO snmp module (and is amd64-only), so
 # build from Debian 13 (same base as ../snmpd + the Debian fleet): its `frr-snmp`
 # package ships bgpd_snmp.so / ospfd_snmp.so / zebra_snmp.so natively for arm64.
-# Read-only, v2c community "public" — matching the plain snmpd SUT's contract.
+# Read-only, v2c canary community — matching the plain snmpd SUT's contract.
 ARG PACKTEST_VERSION=13-slim
 ARG PACKTEST_DIGEST
 FROM debian:${PACKTEST_VERSION}${PACKTEST_DIGEST}

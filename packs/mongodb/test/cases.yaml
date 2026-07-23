@@ -3,8 +3,9 @@ versions:
   - version: "8.2.5"
     digest: "@sha256:60aa240412f473f672ec8b282fd5651aa156dcc7a220f81f5381ce768ccc3167"
     default: true
+secret_env: [MONGO_URI]
 env:
-  MONGO_URI: "mongodb://root:testpass@mongodb:27017/?authSource=admin"
+  MONGO_URI: "mongodb://root:packtest-canary-mongodb-c936@mongodb:27017/?authSource=admin"
 defaults:
   expect:
     stdout_not_empty: true

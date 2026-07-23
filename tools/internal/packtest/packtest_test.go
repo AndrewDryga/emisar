@@ -66,6 +66,33 @@ cases:
 	}
 }
 
+func TestRunCaseRetainsActionResultWhenProbeFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	root := t.TempDir()
+	emisar := filepath.Join(root, "emisar")
+	writeExecutable(t, emisar, "#!/bin/sh\nprintf '{\"status\":\"success\",\"exit_code\":0,\"stdout\":\"ready\",\"duration_ms\":7}\\n'\n")
+
+	err := runCase(
+		Config{Emisar: emisar, Config: "test.yaml"},
+		Plan{},
+		Case{
+			Action: "example.inspect",
+			Expect: Expectation{StdoutContains: []string{"ready"}},
+			Probes: []Step{{
+				Argv:   []string{"/bin/sh", "-c", "exit 1"},
+				Expect: Expectation{StdoutContains: []string{"never"}},
+			}},
+		},
+		actionDefinition{ID: "example.inspect", Risk: "low"},
+		os.Environ(),
+	)
+	if err == nil || !strings.Contains(err.Error(), `"duration_ms": 7`) {
+		t.Fatalf("failed probe did not retain action result: %v", err)
+	}
+}
+
 func TestArgumentValuePreservesNumericStrings(t *testing.T) {
 	got, err := argumentValue("1")
 	if err != nil {
@@ -73,6 +100,66 @@ func TestArgumentValuePreservesNumericStrings(t *testing.T) {
 	}
 	if got != `"1"` {
 		t.Fatalf("argumentValue numeric string = %q, want JSON string", got)
+	}
+}
+
+func TestActionAssertionsCoverFailureNegativesAndJSONPointers(t *testing.T) {
+	failed := actionResult{
+		Status: "failed", ExitCode: 42, Reason: "target unavailable",
+		Stdout: "safe output", Stderr: "connection refused",
+	}
+	err := checkActionResult(failed, Expectation{
+		Status: "failure", Exit: []int{42},
+		ReasonContains:    []string{"unavailable"},
+		StdoutNotContains: []string{"packtest-canary"},
+		StderrContains:    []string{"refused"},
+		StderrNotContains: []string{"password"},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := `{"status":"healthy","items":[{"name":"fixture"}],"a/b":{"~key":true}}`
+	if err := checkJSONAssertions(stdout, map[string]any{
+		"/status":       "healthy",
+		"/items/0/name": "fixture",
+		"/a~1b/~0key":   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkActionResult(actionResult{
+		Status: "success", Stdout: "not-json",
+	}, Expectation{Status: "success", Exit: []int{0}, StdoutContains: []string{"not"}}, true); err == nil ||
+		!strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("JSON action accepted invalid output: %v", err)
+	}
+}
+
+func TestSecretCanariesAreAbsentFromResultAndEventLog(t *testing.T) {
+	eventLog := filepath.Join(t.TempDir(), "events.jsonl")
+	write(t, eventLog, `{"action_id":"example.inspect"}`+"\n")
+	env := map[string]string{"PASSWORD": "packtest-canary-password-9c0fb3"}
+	result := actionResult{Status: "success", Stdout: "safe"}
+	if err := checkSecretCanaries([]string{"PASSWORD"}, env, result, eventLog); err != nil {
+		t.Fatal(err)
+	}
+	result.Reason = env["PASSWORD"]
+	if err := checkSecretCanaries([]string{"PASSWORD"}, env, result, eventLog); err == nil ||
+		!strings.Contains(err.Error(), "reason") {
+		t.Fatalf("leaked canary passed: %v", err)
+	}
+}
+
+func TestSecretCanariesCanBeEmbeddedAndEnvironmentCanBeUnset(t *testing.T) {
+	env := map[string]string{
+		"URL": "https://user:packtest-canary-password-72af@example.test",
+	}
+	if err := validateSecretEnv([]string{"URL"}, env); err != nil {
+		t.Fatal(err)
+	}
+	got := withoutEnvironment([]string{"A=one", "PASSWORD=secret", "B=two"}, []string{"PASSWORD"})
+	if strings.Join(got, ",") != "A=one,B=two" {
+		t.Fatalf("withoutEnvironment = %v", got)
 	}
 }
 
@@ -122,25 +209,21 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		want string
 	}{
 		{"no services", Plan{Versions: testVersions(), Cases: []Case{{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}}}}, "services"},
-		{"exit only", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{Action: "example.read"}}}, "only an exit-code"},
+		{"exit only", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{Action: "example.read"}}}, "no semantic assertion"},
 		{"unknown action", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{{Action: "missing", Expect: Expectation{StdoutNotEmpty: true}}}}, "does not exist"},
 		{"duplicate", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
-			{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
-			{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
+			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
+			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
 		}}, "duplicates"},
 		{"mutation without probe", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
-			{Action: "example.mutate", Expect: Expectation{StdoutNotEmpty: true}, Cleanup: []Step{{Argv: []string{"true"}}}},
+			{Action: "example.mutate", Expect: Expectation{StdoutContains: []string{"changed"}}, Cleanup: []Step{{Argv: []string{"true"}}}},
 		}}, "state probe"},
-		{"mutation without cleanup", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
-			{Action: "example.mutate", Probes: []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}}},
-		}}, "needs cleanup"},
-		{"cleanup and justification", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
-			{
-				Action:  "example.mutate",
-				Probes:  []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}},
-				Cleanup: []Step{{Argv: []string{"true"}}}, CleanupNotNeeded: "idempotent",
-			},
-		}}, "cannot declare cleanup"},
+		{"root without reason", Plan{Services: []string{"fixture"}, Versions: testVersions(), Runner: Runner{User: "root"}, Cases: []Case{
+			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
+		}}, "requires a reason"},
+		{"case root without reason", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
+			{Action: "example.read", RunnerUser: "root", Expect: Expectation{StdoutContains: []string{"ok"}}},
+		}}, "requires runner_reason"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -161,15 +244,49 @@ func TestPlanValidationAcceptsSensitiveReadAndJustifiedMutation(t *testing.T) {
 		"example.reload": {ID: "example.reload", Risk: "high"},
 	}
 	plan := Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
-		{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
+		{Action: "example.read", Expect: Expectation{StdoutContains: []string{"safe"}}},
 		{
-			Action: "example.reload", Expect: Expectation{StdoutNotEmpty: true},
-			Probes:           []Step{{Argv: []string{"echo", "ready"}, Expect: Expectation{StdoutContains: []string{"ready"}}}},
-			CleanupNotNeeded: "Reloading the same config is idempotent.",
+			Action: "example.reload", Expect: Expectation{StdoutContains: []string{"reloaded"}},
+			Probes: []Step{{Argv: []string{"echo", "ready"}, Expect: Expectation{StdoutContains: []string{"ready"}}}},
 		},
 	}}
 	if err := validatePlan("example", plan, actions); err != nil {
 		t.Fatalf("validatePlan error = %v", err)
+	}
+}
+
+func TestCompleteRiskAccountabilityRequiresSuccessOrKnownException(t *testing.T) {
+	actions := map[string]actionDefinition{
+		"example.restart": {ID: "example.restart", Risk: "high"},
+		"example.remove":  {ID: "example.remove", Risk: "critical"},
+	}
+	plan := Plan{
+		Services: []string{"fixture"}, Versions: testVersions(),
+		RiskAccountability: RiskAccountability{Mode: "complete"},
+		Cases: []Case{{
+			Action: "example.restart",
+			Expect: Expectation{Status: "failure", ReasonContains: []string{"denied"}},
+		}},
+	}
+	if err := validatePlan("example", plan, actions); err == nil ||
+		!strings.Contains(err.Error(), "example.restart") {
+		t.Fatalf("failure-only risk case counted as coverage: %v", err)
+	}
+	plan.Cases[0].Expect = Expectation{StdoutContains: []string{"restarted"}}
+	plan.Cases[0].Probes = []Step{{
+		Argv: []string{"echo", "ready"}, Expect: Expectation{StdoutContains: []string{"ready"}},
+	}}
+	plan.RiskAccountability.Exceptions = map[string]string{
+		"example.remove": "requires_cluster",
+	}
+	if err := validatePlan("example", plan, actions); err != nil {
+		t.Fatalf("complete risk accountability rejected: %v", err)
+	}
+}
+
+func TestStdoutNotEmptyIsSmokeNotSemanticCoverage(t *testing.T) {
+	if (Expectation{StdoutNotEmpty: true}).semantic() {
+		t.Fatal("stdout_not_empty counted as semantic coverage")
 	}
 }
 

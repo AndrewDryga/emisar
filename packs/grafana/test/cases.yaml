@@ -3,8 +3,9 @@ versions:
   - version: "13.1.1"
     digest: "@sha256:7cb8c64c4d57a57e734073f3cc94620adb24a0acb929bd80ba9f14017e3a975b"
     default: true
+secret_env: [GRAFANA_PASSWORD]
 env:
-  GRAFANA_PASSWORD: testpass
+  GRAFANA_PASSWORD: packtest-canary-grafana-61df
   GRAFANA_URL: "http://grafana:3000"
   GRAFANA_USER: admin
 defaults:

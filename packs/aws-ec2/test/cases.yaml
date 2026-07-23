@@ -3,11 +3,12 @@ versions:
   - version: "4.14.0"
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
     default: true
+secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:
-  AWS_ACCESS_KEY_ID: test
+  AWS_ACCESS_KEY_ID: packtest-canary-aws-ec2-access-6b17
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: "http://localstack:4566"
-  AWS_SECRET_ACCESS_KEY: test
+  AWS_SECRET_ACCESS_KEY: packtest-canary-aws-ec2-secret-4e90
 defaults:
   expect:
     stdout_not_empty: true

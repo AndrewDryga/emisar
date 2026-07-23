@@ -2,11 +2,11 @@ services:
   mysql:
     image: mysql:${PACKTEST_VERSION:-9.7.1}${PACKTEST_DIGEST-}
     environment:
-      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_ROOT_PASSWORD: packtest-canary-mysql-root-b813
       MYSQL_DATABASE: testdb
     volumes:
       - ${EMISAR_ROOT}/packs/mysql/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -ptestpass -Nse 'SELECT COUNT(*) FROM testdb.orders' >/dev/null"]
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -ppacktest-canary-mysql-root-b813 -Nse 'SELECT COUNT(*) FROM testdb.orders' >/dev/null"]
       interval: 2s
       retries: 30

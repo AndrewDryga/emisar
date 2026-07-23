@@ -25,6 +25,7 @@ func main() {
 	var matrix bool
 	flag.StringVar(&config.Pattern, "pattern", "", "run pack names containing this value")
 	flag.Var(&names, "pack", "run one exact pack name; repeat for more than one")
+	flag.StringVar(&config.Case, "case", "", "run one exact case id from the selected pack")
 	flag.BoolVar(&list, "list", false, "print selected pack names as JSON without running them")
 	flag.BoolVar(&matrix, "matrix", false, "print selected pack version rows as JSON without running them")
 	flag.StringVar(&config.Emisar, "emisar", "", "path to the emisar runner binary")
@@ -37,6 +38,10 @@ func main() {
 		os.Exit(2)
 	}
 	config.Names = names
+	if config.Case != "" && len(config.Names) != 1 {
+		fmt.Fprintln(os.Stderr, "packtest: --case requires exactly one --pack")
+		os.Exit(2)
+	}
 	if list && matrix {
 		fmt.Fprintln(os.Stderr, "packtest: --list and --matrix are mutually exclusive")
 		os.Exit(2)
@@ -48,6 +53,10 @@ func main() {
 			os.Exit(1)
 		}
 		if matrix {
+			if err := packtest.Validate(plans); err != nil {
+				fmt.Fprintln(os.Stderr, "packtest:", err)
+				os.Exit(1)
+			}
 			if err := json.NewEncoder(os.Stdout).Encode(packtest.Matrix(plans)); err != nil {
 				fmt.Fprintln(os.Stderr, "packtest:", err)
 				os.Exit(1)

@@ -3,9 +3,19 @@ versions:
   - version: "8.8.0"
     digest: "@sha256:234c902a2db49461a129e2d4aeff85b28cf20187ed274a67f6e50995fa713c7b"
     default: true
-defaults:
-  expect:
-    stdout_not_empty: true
+risk_accountability:
+  mode: complete
+  exceptions:
+    redis.client_kill: requires_dynamic_fixture
+    redis.client_pause: requires_concurrent_session
+    redis.cluster_failover: requires_cluster
+    redis.cluster_forget: requires_cluster
+    redis.replicaof: requires_cluster
+    redis.sentinel_failover: requires_cluster
+    redis.sentinel_reset: requires_cluster
+secret_env: [REDISCLI_AUTH]
+env:
+  REDISCLI_AUTH: packtest-canary-redis-c08d17
 cases:
   - action: redis.acl_list
     expect:
@@ -35,6 +45,10 @@ cases:
     expect:
       stdout_contains: [redis_version, process_id]
   - action: redis.lastsave
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli LASTSAVE)" -gt 0 && echo valid-timestamp']
+        expect:
+          stdout_contains: [valid-timestamp]
   - action: redis.memory_doctor
     expect:
       stdout_contains: [memory]
@@ -45,6 +59,10 @@ cases:
     args: {key: "packtest:value"}
     arrange:
       - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli MEMORY USAGE packtest:value)" -gt 0 && echo positive-bytes']
+        expect:
+          stdout_contains: [positive-bytes]
     cleanup:
       - argv: [redis-cli, DEL, "packtest:value"]
   - action: redis.object_encoding
@@ -59,6 +77,10 @@ cases:
     args: {key: "packtest:value"}
     arrange:
       - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli OBJECT IDLETIME packtest:value)" -ge 0 && echo valid-idletime']
+        expect:
+          stdout_contains: [valid-idletime]
     cleanup:
       - argv: [redis-cli, DEL, "packtest:value"]
   - action: redis.object_refcount
@@ -91,6 +113,10 @@ cases:
     args: {key: "packtest:ttl"}
     arrange:
       - argv: [redis-cli, SET, "packtest:ttl", "fixture-value", EX, "300"]
+    probes:
+      - argv: [/bin/sh, -c, 'ttl="$(redis-cli TTL packtest:ttl)"; test "$ttl" -gt 0 -a "$ttl" -le 300 && echo valid-ttl']
+        expect:
+          stdout_contains: [valid-ttl]
     cleanup:
       - argv: [redis-cli, DEL, "packtest:ttl"]
   - action: redis.type_of
@@ -117,3 +143,40 @@ cases:
       stdout_contains: ["1"]
     cleanup:
       - argv: [redis-cli, DEL, "packtest:stream"]
+  - action: redis.config_set
+    args: {parameter: maxmemory-policy, value: allkeys-lru}
+    probes:
+      - argv: [redis-cli, CONFIG, GET, maxmemory-policy]
+        expect:
+          stdout_contains: [allkeys-lru]
+  - action: redis.flush_db
+    args: {db: 1, mode: SYNC}
+    arrange:
+      - argv: [redis-cli, -n, "1", SET, packtest:flushdb, present]
+    probes:
+      - argv: [redis-cli, -n, "1", DBSIZE]
+        expect:
+          stdout_contains: ["0"]
+  - action: redis.flushall
+    args: {mode: SYNC}
+    arrange:
+      - argv: [redis-cli, SET, packtest:flushall, present]
+      - argv: [redis-cli, -n, "1", SET, packtest:flushall, present]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli DBSIZE)" = 0 -a "$(redis-cli -n 1 DBSIZE)" = 0 && echo empty']
+        expect:
+          stdout_contains: [empty]
+  - action: redis.shutdown_nosave
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli PING 2>&1; printf :$?)" != "PONG:0" && echo stopped']
+        expect:
+          stdout_contains: [stopped]
+  - action: redis.swapdb
+    args: {i: 0, j: 1}
+    arrange:
+      - argv: [redis-cli, SET, packtest:db, zero]
+      - argv: [redis-cli, -n, "1", SET, packtest:db, one]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli GET packtest:db)" = one -a "$(redis-cli -n 1 GET packtest:db)" = zero && echo swapped']
+        expect:
+          stdout_contains: [swapped]

@@ -46,6 +46,9 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 	for _, file := range files {
 		selection.include(file)
 	}
+	if err := packtest.ValidateRiskChanges(filepath.Join(root, "packs"), files); err != nil {
+		return Selection{}, err
+	}
 	if selection.Workflows {
 		selection.Portal = true
 		selection.Runner = true

@@ -3,7 +3,7 @@ services:
     image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: testpass
+      MONGO_INITDB_ROOT_PASSWORD: packtest-canary-mongodb-c936
     volumes:
       - ${EMISAR_ROOT}/packs/mongodb/test/fixtures/init.js:/docker-entrypoint-initdb.d/init.js:ro
     healthcheck:

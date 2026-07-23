@@ -3,8 +3,9 @@ versions:
   - version: "9.4.4"
     digest: "@sha256:a3545404e436e348721786bed638042a81f2181ebe2e2636501bb43940677747"
     default: true
+secret_env: [ELASTIC_PASSWORD]
 env:
-  ELASTIC_PASSWORD: testpass
+  ELASTIC_PASSWORD: packtest-canary-elasticsearch-5a28
   ELASTIC_URL: "http://elasticsearch:9200"
   ELASTIC_USER: elastic
 defaults:

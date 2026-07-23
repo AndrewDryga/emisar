@@ -3,10 +3,10 @@ versions:
   - version: "9.7.1"
     digest: "@sha256:c109c421c81637a50209b57ec6af7dc0685e8b1ce7efdca0c0902a3d95df6574"
     default: true
+secret_env: [MYSQL_PWD]
 env:
   MYSQL_HOST: mysql
-  MYSQL_PWD: testpass
-  MYSQL_USER: root
+  MYSQL_PWD: packtest-canary-mysql-root-b813
 defaults:
   expect:
     stdout_not_empty: true
@@ -62,7 +62,7 @@ cases:
       stdout_contains: [root, Query]
   - action: mysql.slow_queries
     expect:
-      stdout_contains: [CREATE TABLE]
+      stdout_contains: [SELECT COUNT, testdb, orders]
   - action: mysql.status
     expect:
       stdout_contains: [Threads_connected]

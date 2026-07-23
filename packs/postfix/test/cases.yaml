@@ -24,14 +24,23 @@ cases:
         expect:
           stdout_contains: [config-valid]
   - action: postfix.flush_queue
-    cleanup_not_needed: Flushing an empty fixture queue is idempotent.
+    runner_user: root
+    runner_reason: Postfix reserves queue-control commands for the superuser.
     probes:
       - argv: [/bin/sh, -c, "postfix status && echo running"]
         expect:
           stdout_contains: [running]
   - action: postfix.reload
-    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
+    runner_user: root
+    runner_reason: Postfix reserves daemon-control commands for the superuser.
     probes:
       - argv: [/bin/sh, -c, "postfix status && echo running"]
         expect:
           stdout_contains: [running]
+  - name: postfix.reload-denied-nonroot
+    action: postfix.reload
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [reserved for the superuser]

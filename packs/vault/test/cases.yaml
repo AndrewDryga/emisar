@@ -3,15 +3,19 @@ versions:
   - version: "2.0.3"
     digest: "@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54"
     default: true
+secret_env: [VAULT_TOKEN]
 env:
   VAULT_ADDR: "http://vault:8200"
-  VAULT_TOKEN: test-root-token
+  VAULT_TOKEN: packtest-canary-vault-token-f34c
 defaults:
   expect:
     stdout_not_empty: true
 cases:
   - action: vault.leases_count
     args: {prefix: auth/token}
+    expect:
+      json:
+        /0: create/
   - action: vault.list_audit
     arrange:
       - argv: [vault, audit, enable, file, "file_path=/tmp/packtest-audit.log"]

@@ -8,6 +8,9 @@ services:
       context: ${EMISAR_ROOT}/dev/test-packs
       dockerfile: Dockerfile
     image: emisar-runner-tools:latest
+    user: ${PACKTEST_RUNNER_USER:-65532:65532}
+    environment:
+      HOME: /tmp/packtest
     volumes:
       - ${EMISAR_ROOT}/dev:/workspace:ro
       - ${EMISAR_ROOT}/packs:/packs:ro

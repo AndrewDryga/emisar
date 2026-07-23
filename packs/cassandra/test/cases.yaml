@@ -3,8 +3,10 @@ versions:
   - version: "5.0.8"
     digest: "@sha256:e52bb93c21f69cc5c2f5eb9e7d9736b10a047ad38bc7776480c7dbbf7d4e0ba7"
     default: true
+secret_env: [CQLSH_PASSWORD]
 env:
   CQLSH_HOST: 127.0.0.1
+  CQLSH_PASSWORD: packtest-canary-cassandra-49ab
   CQLSH_PORT: "9042"
 cases:
   - action: cassandra.nodetool_status
@@ -58,10 +60,10 @@ cases:
       stdout_contains: [Compaction History]
   - action: cassandra.nodetool_getconcurrentcompactors
     expect:
-      stdout_not_empty: true
+      stdout_contains: [Current concurrent compactors]
   - action: cassandra.nodetool_getcompactionthroughput
     expect:
-      stdout_not_empty: true
+      stdout_contains: [Current compaction throughput]
   - action: cassandra.analyze_disk_pressure
     args: {keyspace_filter: packtest}
     expect:
@@ -72,7 +74,7 @@ cases:
   - action: cassandra.nodetool_getendpoints
     args: {keyspace: packtest, table: events, key: "1"}
     expect:
-      stdout_not_empty: true
+      stdout_contains: [127.0.0.1]
   - action: cassandra.cqlsh_describe_schema
     expect:
       stdout_contains: [CREATE KEYSPACE packtest]
@@ -94,7 +96,6 @@ cases:
       stdout_contains: [keyspace_name, table_name]
   - action: cassandra.nodetool_flush
     args: {keyspace: packtest, table: events}
-    cleanup_not_needed: Flushing the fixture memtable is idempotent and not reversible.
     expect:
       exit: [0]
     probes:
@@ -111,7 +112,6 @@ cases:
       - argv: [nodetool, clearsnapshot, -t, packtest-snapshot]
   - action: cassandra.nodetool_clearsnapshot
     args: {tag: packtest-clear}
-    cleanup_not_needed: The action removes the temporary snapshot created by arrange.
     arrange:
       - argv: [nodetool, snapshot, -t, packtest-clear, packtest]
     probes:

@@ -35,7 +35,6 @@ cases:
       stdout_contains: ["2026072301"]
   - action: bind.rndc_reload
     args: {zone: example.test}
-    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
     expect:
       stdout_contains: [zone reload up-to-date]
     probes:
@@ -43,7 +42,6 @@ cases:
         expect:
           stdout_contains: [192.0.2.80]
   - action: bind.rndc_flush
-    cleanup_not_needed: The empty resolver cache repopulates naturally.
     expect:
       exit: [0]
     probes:

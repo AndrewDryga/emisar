@@ -3,8 +3,9 @@ versions:
   - version: latest
     digest: "@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
     default: true
+secret_env: [MC_HOST_minio]
 env:
-  MC_HOST_minio: "http://minio_admin:testpass@minio:9000"
+  MC_HOST_minio: "http://minio_admin:packtest-canary-minio-74a9@minio:9000"
 defaults:
   expect:
     stdout_not_empty: true

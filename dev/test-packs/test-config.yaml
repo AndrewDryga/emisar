@@ -34,10 +34,12 @@ execution:
     - CADDY_ACCESS_LOG
     - CADDY_ADMIN
     - CH_HOST
+    - CH_PASSWORD
     - CH_USER
     - COCKROACH_URL
     - CONSUL_HTTP_ADDR
     - CQLSH_HOST
+    - CQLSH_PASSWORD
     - CQLSH_PORT
     - ELASTIC_PASSWORD
     - ELASTIC_URL
@@ -59,7 +61,6 @@ execution:
     - MONGO_URI
     - MYSQL_HOST
     - MYSQL_PWD
-    - MYSQL_USER
     - NOMAD_ADDR
     - PGDATABASE
     - PGHOST
@@ -68,6 +69,7 @@ execution:
     - PROM_URL
     - RABBITMQ_ERLANG_COOKIE
     - RABBITMQ_NODENAME
+    - REDISCLI_AUTH
     - SNMP_COMMUNITY
     - SNMP_VERSION
     - TYPESENSE_API_KEY

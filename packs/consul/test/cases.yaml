@@ -3,11 +3,13 @@ versions:
   - version: "2.0.2"
     digest: "@sha256:7dcf35d6b2682831094f1680aa58be214134969505acce0a9b280249581aa7d2"
     default: true
+risk_accountability:
+  mode: complete
+  exceptions:
+    consul.destroy_session: requires_dynamic_fixture
+    consul.raft_remove_peer: requires_cluster
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: consul.agent_checks
     expect:
@@ -51,3 +53,57 @@ cases:
   - action: consul.raft_peers
     expect:
       stdout_contains: [Node, leader]
+  - action: consul.deregister_service
+    args: {service_id: packtest-service}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service"}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+    probes:
+      - argv: [/bin/sh, -c, '! curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/services" | grep -q packtest-service && echo absent']
+        expect:
+          stdout_contains: [absent]
+  - action: consul.force_check_fail
+    args: {check_id: "service:packtest-service", note: packtest-failed}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service","Check":{"TTL":"30s"}}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -Eq ''"Status":[[:space:]]*"critical"'' && echo critical']
+        expect:
+          stdout_contains: [critical]
+  - action: consul.force_check_pass
+    args: {check_id: "service:packtest-service", note: packtest-passed}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service","Check":{"TTL":"30s"}}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -Eq ''"Status":[[:space:]]*"passing"'' && echo passing']
+        expect:
+          stdout_contains: [passing]
+  - action: consul.force_check_warn
+    args: {check_id: "service:packtest-service", note: packtest-warning}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service","Check":{"TTL":"30s"}}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -Eq ''"Status":[[:space:]]*"warning"'' && echo warning']
+        expect:
+          stdout_contains: [warning]
+  - action: consul.node_maintenance
+    args: {note: packtest-maintenance}
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -q _node_maintenance && echo maintenance']
+        expect:
+          stdout_contains: [maintenance]
+  - action: consul.service_maintenance
+    args: {service_id: packtest-service, note: packtest-maintenance}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service"}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -q _service_maintenance:packtest-service && echo maintenance']
+        expect:
+          stdout_contains: [maintenance]
+  - action: consul.snapshot_restore
+    args: {path: /tmp/packtest.snap}
+    arrange:
+      - argv: [consul, snapshot, save, /tmp/packtest.snap]
+    probes:
+      - argv: [consul, operator, raft, list-peers]
+        expect:
+          stdout_contains: [leader]

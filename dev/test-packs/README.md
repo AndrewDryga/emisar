@@ -1,128 +1,176 @@
 # Pack behavior harness
 
-Pack validation and pack behavior are separate gates:
+Pack contracts and pack behavior are separate checks:
 
 - `./run check packs` validates every manifest and action contract.
-- `./run test packs [name-pattern]` runs the selected pack-owned behavior
-  plans against disposable Compose services.
+- `./run test packs [name-pattern]` runs pack-owned behavior cases against
+  disposable Compose systems.
 
-Behavior plans are handwritten. A case is coverage only when it proves an
-observable result: a stable output assertion, or a state probe after the
-action. Exit code alone is rejected. Mutating cases must probe the changed
-state and clean it up.
+A behavior case must prove something observable. Stable output assertions prove
+read actions; state probes prove mutations. Exit code alone and
+`stdout_not_empty` are smoke checks, not semantic coverage.
 
-Packs without a faithful container model have no plan yet. Their action
-contracts are still validated, but they are reported as contract-only rather
-than hidden behind permanent skips. Host, kernel, hardware, and vendor
-environments will be added separately when they can model the real target.
-
-## Layout
+## Ownership and isolation
 
 ```text
 packs/<pack>/
 ├── pack.yaml
 ├── actions/*.yaml
 └── test/
-    ├── cases.yaml          # behavior and semantic assertions
-    ├── compose.yaml        # this pack's disposable system under test
-    ├── Dockerfile          # optional service-specific action clients
-    └── fixtures/           # optional seeded state or service config
+    ├── cases.yaml          # cases, assertions, risk accounting, SUT versions
+    ├── compose.yaml        # this pack's disposable SUT
+    ├── Dockerfile          # optional pack-specific client or SUT image
+    └── fixtures/           # optional seeded state and service configuration
 
 dev/test-packs/
 ├── Dockerfile              # shared action-client image
-├── compose.yaml            # shared runner-tools service only
-├── test-config.yaml        # disposable runner security/config contract
+├── compose.yaml            # shared runner-tools service
+├── test-config.yaml        # disposable runner security configuration
 ├── bin/                    # ignored runner and harness binaries
-└── reports/                # ignored per-pack logs
+└── reports/                # ignored aggregate and per-case evidence
 ```
 
-Every pack owns its complete SUT topology. The devtool combines the shared
-runner file with one pack file under a unique Compose project, so networks,
-volumes, state, and cleanup cannot leak between packs. It builds the runner
-image once and executes up to four pack projects concurrently.
+Every case gets its own Compose project, network, volumes, SUT lifecycle, and
+runner-tools container. The devtool builds shared and pack-specific images once,
+then runs up to four isolated cases concurrently. Arrange steps can create the
+exact prerequisite state for a case. Terminal actions can stop or destroy their
+fixture without affecting any later case.
+
+Cleanup commands are optional hygiene within a case. The outer devtool always
+destroys the case project and its volumes, including after failure.
 
 The first service in `cases.yaml` is the primary SUT. Its Compose image or
-pack-local Dockerfile must consume the uniform `PACKTEST_VERSION` input and
-`PACKTEST_DIGEST`, keeping the current version as its Compose default.
-`cases.yaml` owns the supported version rows and their exact image digests.
-Secondary fixture images stay fixed unless their version is itself part of the
-pack contract.
+pack-local Dockerfile must consume `PACKTEST_VERSION` and `PACKTEST_DIGEST`.
+Each supported version row has an exact digest, and exactly one row is the
+default matching Compose. Relevant pull requests run every declared row for the
+changed pack; the weekly workflow runs the full compatibility matrix.
 
-## Plan schema
+## Plan shape
 
 ```yaml
 services: [postgres]
 versions:
   - version: "18.4"
-    digest: "@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
+    digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     default: true
-  - version: "17.6"
-    digest: "@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+risk_accountability:
+  mode: complete
+  exceptions:
+    postgres.terminate_backend: requires_dynamic_fixture
+
+secret_env: [PGPASSWORD]
 env:
   PGHOST: postgres
   PGUSER: postgres
-  PGPASSWORD: testpass
+  PGPASSWORD: packtest-canary-postgres-2a6e1c
   PGDATABASE: testdb
+
 cases:
   - action: postgres.uptime
-    args: {}
     expect:
-      exit: [0]
       stdout_contains: [PostgreSQL]
 
-  - action: example.mutate
-    args:
-      name: fixture
-    expect:
-      stdout_not_empty: true
+  - action: postgres.vacuum_table
+    args: {schema: public, table: orders, analyze: true}
     probes:
-      - name: fixture changed
-        argv: [examplectl, get, fixture]
+      - argv: [psql, -XAt, -c, "SELECT last_vacuum IS NOT NULL FROM pg_stat_user_tables WHERE relname = 'orders'"]
         expect:
-          stdout_contains: [changed]
-        retry_for: 10s
-        retry_every: 1s
-    cleanup:
-      - name: restore fixture
-        argv: [examplectl, reset, fixture]
+          stdout_contains: ["t"]
 
-  - action: example.idempotent-mutate
-    cleanup_not_needed: The action only reloads the unchanged fixture.
-    probes:
-      - argv: [examplectl, status]
-        expect:
-          stdout_contains: [running]
+  - name: postgres.uptime-missing-credentials
+    action: postgres.uptime
+    unset_env: [PGPASSWORD]
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [no password supplied]
 ```
 
-`services` must name services in the sibling `compose.yaml`. `env` is passed to
-the runner, but an action can inherit a variable only when `test-config.yaml`
-allowlists it. Structured argument values are encoded as JSON. A pack that
-needs special runner networking overrides the shared `runner-tools` service in
-its own Compose file.
+`env` is passed to the runner and its actions only when `test-config.yaml`
+allowlists the variable. A case can override values with `env` or remove them
+with `unset_env`. Structured action arguments are encoded as JSON.
 
-`versions` must contain unique Docker image tags, each paired with an exact
-`@sha256:` digest, and mark exactly one row as `default: true`. That row must
-match the primary service's `${PACKTEST_VERSION:-...}` Compose default. A row is
-a compatibility claim: relevant pull requests and main changes run every row
-owned by the changed pack, while the weekly `Pack behavior` workflow runs every
-row across every plan.
+`arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use
+`[/bin/sh, -c, ...]` only when shell syntax is part of the test. Probes may set
+`retry_for` and `retry_every` for eventually consistent state.
 
-`arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use an
-explicit `[/bin/sh, -c, ...]` only when shell syntax is part of the test.
-Cleanup always runs, including after an action or probe failure.
+## Risk accountability
 
-Expectations support:
+When a modeled pack adds or changes a `high` or `critical` action, that action
+must have either:
 
-- `exit`: accepted exit codes; defaults to `[0]`
-- `stdout_not_empty`
-- `stdout_contains`
-- `stderr_contains`
+- A successful behavior case, or
+- A machine-readable exception in `risk_accountability.exceptions`.
 
-Unknown fields, duplicate actions, nonexistent action IDs, exit-only cases,
-semantic-free probes, and mutation cases without probes and cleanup fail
-before execution. A mutator that is inherently idempotent or restores the
-arranged state itself may use `cleanup_not_needed` with a concrete reason;
-it cannot be combined with `cleanup`.
+Known exception values are `requires_cluster`, `requires_concurrent_session`,
+`requires_dynamic_fixture`, `requires_external_service`, `requires_hardware`,
+and `requires_privileged_host`.
+
+`mode: changed` is the default and enforces changed risky actions in selective
+CI. `mode: complete` accounts for every risky action in the pack. Exceptions
+cannot hide an action that already has a successful case. There is deliberately
+no coverage percentage.
+
+## Assertions
+
+Action expectations support:
+
+- `status`: `success` (default) or `failure`
+- `exit`: accepted underlying command exit codes; successful actions default to
+  `[0]`
+- `reason_contains`
+- `stdout_not_empty` for smoke only
+- `stdout_contains` / `stdout_not_contains`
+- `stderr_contains` / `stderr_not_contains`
+- `json`: stdlib JSON Pointer assertions
+
+Actions declaring `output.parser: json` are always required to emit valid JSON.
+Pointers address objects and arrays without jq or JSONPath:
+
+```yaml
+expect:
+  json:
+    /status: healthy
+    /items/0/name: fixture
+```
+
+`secret_env` names credential-bearing plan variables. Each must contain a
+unique `packtest-canary-*` token, including credentials embedded in a URL. The
+harness rejects a canary found in action stdout, stderr, reason, error,
+parser error, or the runner event journal. Missing credentials, unavailable
+services, invalid arguments, and missing targets should be represented as
+named failure cases where the pack can model them honestly.
+
+## Execution identity
+
+Runner-tools executes as UID/GID `65532:65532` by default, including when a
+pack supplies a custom client image. A case that genuinely needs superuser
+access declares both fields:
+
+```yaml
+runner_user: root
+runner_reason: Postfix reserves daemon-control commands for the superuser.
+```
+
+Use a second non-root failure case when it usefully proves the permission
+boundary. Privileged SUT containers, capabilities, shared PID namespaces, and
+root runner identity remain explicit in the pack-owned Compose plan or case.
+
+## Reports
+
+The harness writes:
+
+```text
+dev/test-packs/reports/<pack>.log
+dev/test-packs/reports/<pack>/<case>.log
+```
+
+Each case report records the pack and SUT versions, image digest, execution
+identity, resolved images, action result, and durations. Failures also capture
+Compose health, container inspect data, SUT logs, and cleanup errors. CI uploads
+the complete reports directory for a failed matrix row.
 
 ## Running
 
@@ -130,20 +178,11 @@ it cannot be combined with `cleanup`.
 ./run test packs postgres
 ./run test packs
 
-# Exercise one alternate supported version.
+# A declared alternate version resolves its committed digest.
 PACKTEST_VERSION=17.6 ./run test packs postgres
 
-# Exercise an ad hoc version that is not declared by the plan.
+# An ad hoc version must provide an exact digest.
 PACKTEST_VERSION=17.6 \
   PACKTEST_DIGEST=@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   ./run test packs postgres
 ```
-
-The command builds the shared runner and harness once, starts each selected
-pack in an isolated project, writes `reports/<pack>.log`, and removes that
-project and its volumes when it finishes. Completion lines appear as concurrent
-workers finish; detailed results are printed in stable pack-name order.
-Without overrides, the devtool uses each plan's declared default version and
-digest. `PACKTEST_VERSION` requires exactly one selected pack. When it matches
-a declared row, the devtool supplies that row's digest automatically; an ad hoc
-version remains unpinned unless `PACKTEST_DIGEST` is supplied explicitly.

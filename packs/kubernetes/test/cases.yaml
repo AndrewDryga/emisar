@@ -195,9 +195,9 @@ cases:
     expect:
       stdout_contains: [restarted]
     probes:
-      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}"]
+      - argv: [/bin/sh, -c, 'test -n "$(kubectl get deployment harness-deployment -o jsonpath={.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt})" && echo restarted']
         expect:
-          stdout_not_empty: true
+          stdout_contains: [restarted]
     cleanup:
       - argv: [kubectl, annotate, deployment, harness-deployment, "kubectl.kubernetes.io/restartedAt-"]
   - action: kubernetes.rollout_undo

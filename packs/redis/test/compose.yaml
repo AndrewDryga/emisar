@@ -7,7 +7,9 @@ services:
 
   redis:
     image: redis:${PACKTEST_VERSION:-8.8.0}${PACKTEST_DIGEST-}
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass packtest-canary-redis-c08d17
+    environment:
+      REDISCLI_AUTH: packtest-canary-redis-c08d17
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

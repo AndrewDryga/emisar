@@ -30,9 +30,13 @@ services:
         - CMD-SHELL
         - >-
           nodetool status | grep -q UN &&
-          cqlsh -u cassandra -p cassandra -e "CREATE KEYSPACE IF NOT EXISTS packtest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+          (cqlsh -u cassandra -p packtest-canary-cassandra-49ab -e "CREATE KEYSPACE IF NOT EXISTS packtest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
           CREATE TABLE IF NOT EXISTS packtest.events (id int PRIMARY KEY, value text);
-          INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null
+          INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null ||
+          (cqlsh -u cassandra -p cassandra -e "ALTER ROLE cassandra WITH PASSWORD = 'packtest-canary-cassandra-49ab';
+          CREATE KEYSPACE IF NOT EXISTS packtest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+          CREATE TABLE IF NOT EXISTS packtest.events (id int PRIMARY KEY, value text);
+          INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null && exit 1))
       interval: 10s
       timeout: 10s
       retries: 30

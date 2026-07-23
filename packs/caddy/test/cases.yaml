@@ -37,7 +37,6 @@ cases:
     expect:
       stdout_contains: [Valid configuration]
   - action: caddy.reload_config
-    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
     probes:
       - argv: [curl, -fsS, http://127.0.0.1/]
         expect:

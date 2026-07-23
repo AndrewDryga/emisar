@@ -9,7 +9,7 @@ services:
     image: emisar-packtest-rabbitmq-tools:latest
     network_mode: service:rabbitmq
     environment:
-      RABBITMQ_ERLANG_COOKIE: packtest-cookie
+      RABBITMQ_ERLANG_COOKIE: packtest-canary-rabbitmq-cookie-d8b5
       RABBITMQ_NODENAME: rabbit@rabbitmq
 
   rabbitmq:
@@ -18,7 +18,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-      RABBITMQ_ERLANG_COOKIE: packtest-cookie
+      RABBITMQ_ERLANG_COOKIE: packtest-canary-rabbitmq-cookie-d8b5
       RABBITMQ_NODENAME: rabbit@rabbitmq
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmqadmin -u guest -p guest declare queue --name packtest --durable true --non-interactive >/dev/null"]

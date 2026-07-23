@@ -155,11 +155,27 @@ func TestMergedEnvReplacesExistingValue(t *testing.T) {
 }
 
 func TestPackTestComposeProjectIsStableAndPackSpecific(t *testing.T) {
-	first := packTestComposeProject("/tmp/a", "postgres")
-	if first != packTestComposeProject("/tmp/a", "postgres") ||
-		first == packTestComposeProject("/tmp/b", "postgres") ||
-		first == packTestComposeProject("/tmp/a", "mysql") {
+	first := packTestComposeProject("/tmp/a", "postgres", "uptime")
+	if first != packTestComposeProject("/tmp/a", "postgres", "uptime") ||
+		first == packTestComposeProject("/tmp/b", "postgres", "uptime") ||
+		first == packTestComposeProject("/tmp/a", "mysql", "uptime") ||
+		first == packTestComposeProject("/tmp/a", "postgres", "connections") {
 		t.Fatalf("compose projects are not stable and distinct: %q", first)
+	}
+}
+
+func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
+	plan := packtest.PlanRef{Name: "postfix"}
+	nonroot := packTestComposeEnv("/tmp/repo", plan, "read", nil, "")
+	root := packTestComposeEnv("/tmp/repo", plan, "reload", nil, "root")
+	if nonroot["PACKTEST_RUNNER_USER"] != "65532:65532" {
+		t.Fatalf("non-root identity = %q", nonroot["PACKTEST_RUNNER_USER"])
+	}
+	if root["PACKTEST_RUNNER_USER"] != "0:0" {
+		t.Fatalf("root identity = %q", root["PACKTEST_RUNNER_USER"])
+	}
+	if nonroot["COMPOSE_PROJECT_NAME"] == root["COMPOSE_PROJECT_NAME"] {
+		t.Fatal("case-specific projects collided")
 	}
 }
 

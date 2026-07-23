@@ -88,6 +88,13 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 	if err := os.MkdirAll(reports, 0o755); err != nil {
 		return err
 	}
+	for _, plan := range plans {
+		_ = os.Remove(filepath.Join(reports, plan.Name+".log"))
+		_ = os.RemoveAll(filepath.Join(reports, plan.Name))
+	}
+	if err := packtest.Validate(plans); err != nil {
+		return errors.Join(err, writePackTestFailureReports(reports, plans, requestedVersionEnv, err))
+	}
 	bin := filepath.Join(harness, "bin")
 	baseCompose := filepath.Join(harness, "compose.yaml")
 	preflightErr := func() error {
@@ -108,29 +115,49 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 		return errors.Join(preflightErr, writePackTestFailureReports(reports, plans, requestedVersionEnv, preflightErr))
 	}
 
-	jobs := make(chan packtest.PlanRef, len(plans))
-	results := make(chan packTestResult, len(plans))
+	versionEnvs := make(map[string]map[string]string, len(plans))
 	for _, plan := range plans {
-		jobs <- plan
+		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
+		versionEnvs[plan.Name] = versionEnv
+		if err := a.preparePackTestPlan(ctx, baseCompose, plan, versionEnv); err != nil {
+			return errors.Join(err, writePackTestFailureReports(reports, []packtest.PlanRef{plan}, requestedVersionEnv, err))
+		}
+	}
+
+	var queued []packTestJob
+	for _, plan := range plans {
+		for _, test := range plan.Cases {
+			queued = append(queued, packTestJob{Plan: plan, Case: test, VersionEnv: versionEnvs[plan.Name]})
+		}
+	}
+	jobs := make(chan packTestJob, len(queued))
+	results := make(chan packTestCaseResult, len(queued))
+	for _, job := range queued {
+		jobs <- job
 	}
 	close(jobs)
 
-	workerCount := min(4, len(plans))
+	workerCount := min(4, len(queued))
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
 	for range workerCount {
 		go func() {
 			defer workers.Done()
-			for plan := range jobs {
+			for job := range jobs {
 				var output bytes.Buffer
-				versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
-				writePackTestReportHeader(&output, plan, versionEnv)
+				writePackTestReportHeader(&output, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
 				worker := New(a.Root, nil, &output, &output)
-				runErr := worker.runPackTestProject(ctx, baseCompose, plan, versionEnv)
+				started := time.Now()
+				runErr := worker.runPackTestCase(ctx, baseCompose, job)
+				duration := time.Since(started).Round(time.Millisecond)
+				fmt.Fprintf(&output, "\nCase duration: %s\n", duration)
 				if runErr != nil {
 					fmt.Fprintf(&output, "\nError: %v\n", runErr)
 				}
-				results <- packTestResult{Plan: plan, Output: output.Bytes(), Err: runErr}
+				results <- packTestCaseResult{
+					Plan: job.Plan, Case: job.Case, Duration: duration,
+					Output: output.Bytes(), Err: runErr,
+				}
 			}
 		}()
 	}
@@ -139,9 +166,13 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 		close(results)
 	}()
 
-	completed := make([]packTestResult, 0, len(plans))
+	completed := make([]packTestCaseResult, 0, len(queued))
 	for result := range results {
-		reportPath := filepath.Join(reports, result.Plan.Name+".log")
+		reportDir := filepath.Join(reports, result.Plan.Name)
+		if err := os.MkdirAll(reportDir, 0o755); err != nil {
+			result.Err = errors.Join(result.Err, fmt.Errorf("create report directory: %w", err))
+		}
+		reportPath := filepath.Join(reportDir, result.Case.ID+".log")
 		if err := os.WriteFile(reportPath, result.Output, 0o644); err != nil {
 			result.Err = errors.Join(result.Err, fmt.Errorf("write report: %w", err))
 		}
@@ -150,18 +181,41 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 		if result.Err != nil {
 			status = "FAIL"
 		}
-		fmt.Fprintf(a.Out, "[%d/%d] %s %s\n", len(completed), len(plans), status, result.Plan.Name)
+		fmt.Fprintf(a.Out, "[%d/%d] %s %s/%s (%s)\n",
+			len(completed), len(queued), status, result.Plan.Name, result.Case.ID, result.Duration)
 	}
 	sort.Slice(completed, func(i, j int) bool {
-		return completed[i].Plan.Name < completed[j].Plan.Name
+		if completed[i].Plan.Name != completed[j].Plan.Name {
+			return completed[i].Plan.Name < completed[j].Plan.Name
+		}
+		return completed[i].Case.ID < completed[j].Case.ID
 	})
 
 	var failures []error
-	for _, result := range completed {
-		fmt.Fprintf(a.Out, "\n--- %s ---\n", result.Plan.Name)
+	var aggregate bytes.Buffer
+	currentPack := ""
+	for index, result := range completed {
+		if result.Plan.Name != currentPack {
+			if currentPack != "" {
+				if err := os.WriteFile(filepath.Join(reports, currentPack+".log"), aggregate.Bytes(), 0o644); err != nil {
+					failures = append(failures, err)
+				}
+				aggregate.Reset()
+			}
+			currentPack = result.Plan.Name
+			writePackTestReportHeader(&aggregate, result.Plan, "all", versionEnvs[result.Plan.Name], result.Plan.Runner.User)
+		}
+		fmt.Fprintf(a.Out, "\n--- %s/%s ---\n", result.Plan.Name, result.Case.ID)
 		copyOutput(a.Out, result.Output)
+		fmt.Fprintf(&aggregate, "\n--- %s ---\n", result.Case.ID)
+		copyOutput(&aggregate, result.Output)
 		if result.Err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", result.Plan.Name, result.Err))
+			failures = append(failures, fmt.Errorf("%s/%s: %w", result.Plan.Name, result.Case.ID, result.Err))
+		}
+		if index == len(completed)-1 {
+			if err := os.WriteFile(filepath.Join(reports, currentPack+".log"), aggregate.Bytes(), 0o644); err != nil {
+				failures = append(failures, err)
+			}
 		}
 	}
 	return errors.Join(failures...)
@@ -172,27 +226,47 @@ func writePackTestFailureReports(dir string, plans []packtest.PlanRef, requested
 	for _, plan := range plans {
 		var report bytes.Buffer
 		versionEnv := resolvedPackTestVersionEnv(plan, requested)
-		writePackTestReportHeader(&report, plan, versionEnv)
+		writePackTestReportHeader(&report, plan, "preflight", versionEnv, plan.Runner.User)
 		fmt.Fprintf(&report, "Error: preflight: %v\n", failure)
+		reportDir := filepath.Join(dir, plan.Name)
+		if err := os.MkdirAll(reportDir, 0o755); err != nil {
+			failures = append(failures, fmt.Errorf("create %s report directory: %w", plan.Name, err))
+			continue
+		}
 		if err := os.WriteFile(filepath.Join(dir, plan.Name+".log"), report.Bytes(), 0o644); err != nil {
 			failures = append(failures, fmt.Errorf("write %s report: %w", plan.Name, err))
+		}
+		if err := os.WriteFile(filepath.Join(reportDir, "preflight.log"), report.Bytes(), 0o644); err != nil {
+			failures = append(failures, fmt.Errorf("write %s preflight report: %w", plan.Name, err))
 		}
 	}
 	return errors.Join(failures...)
 }
 
-func writePackTestReportHeader(output io.Writer, plan packtest.PlanRef, versionEnv map[string]string) {
-	fmt.Fprintf(output, "Pack: %s\nSUT version: %s\nSUT digest: %s\n\n",
-		plan.Name, versionEnv["PACKTEST_VERSION"], versionEnv["PACKTEST_DIGEST"])
+func writePackTestReportHeader(output io.Writer, plan packtest.PlanRef, caseID string, versionEnv map[string]string, user string) {
+	if user == "" {
+		user = "nonroot"
+	}
+	fmt.Fprintf(output, "Pack: %s\nPack version: %s\nCase: %s\nRunner user: %s\nSUT version: %s\nSUT digest: %s\n\n",
+		plan.Name, plan.PackVersion, caseID, user,
+		versionEnv["PACKTEST_VERSION"], versionEnv["PACKTEST_DIGEST"])
 }
 
-type packTestResult struct {
-	Plan   packtest.PlanRef
-	Output []byte
-	Err    error
+type packTestJob struct {
+	Plan       packtest.PlanRef
+	Case       packtest.CaseRef
+	VersionEnv map[string]string
 }
 
-func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan packtest.PlanRef, versionEnv map[string]string) error {
+type packTestCaseResult struct {
+	Plan     packtest.PlanRef
+	Case     packtest.CaseRef
+	Duration time.Duration
+	Output   []byte
+	Err      error
+}
+
+func (a *App) preparePackTestPlan(ctx context.Context, baseCompose string, plan packtest.PlanRef, versionEnv map[string]string) error {
 	packCompose := filepath.Join(filepath.Dir(plan.Path), "compose.yaml")
 	if !isFile(packCompose) {
 		return fmt.Errorf("behavior plan has no sibling compose.yaml")
@@ -205,13 +279,7 @@ func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan p
 		return err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
-	env := map[string]string{
-		"COMPOSE_PROJECT_NAME": packTestComposeProject(a.Root, plan.Name),
-		"EMISAR_ROOT":          a.Root,
-	}
-	for key, value := range versionEnv {
-		env[key] = value
-	}
+	env := packTestComposeEnv(a.Root, plan, "build", versionEnv, plan.Runner.User)
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
 	if err != nil {
@@ -230,19 +298,42 @@ func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan p
 		}
 	}
 
-	if isFile(filepath.Join(filepath.Dir(plan.Path), "Dockerfile")) {
-		if err := a.run(ctx, a.Root, env, "docker", append(compose, "build", "runner-tools")...); err != nil {
-			return fmt.Errorf("build pack runner tools: %w", err)
+	buildServices, err := packTestBuildServices(packCompose)
+	if err != nil {
+		return err
+	}
+	if len(buildServices) > 0 {
+		buildArgs := append(append([]string{}, compose...), "build")
+		buildArgs = append(buildArgs, buildServices...)
+		if err := a.run(ctx, a.Root, env, "docker", buildArgs...); err != nil {
+			return fmt.Errorf("build pack services: %w", err)
 		}
 	}
-	setupArgs := append(append(compose, "up", "-d", "--wait", "--build"), plan.Services...)
+	return nil
+}
+
+func (a *App) runPackTestCase(ctx context.Context, baseCompose string, job packTestJob) error {
+	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
+	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
+	env := packTestComposeEnv(a.Root, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
+	images, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--images")...)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Out, "Resolved images:\n%s\n", images)
+
+	setupArgs := append(append(compose, "up", "-d", "--wait"), job.Plan.Services...)
 	setupErr := a.run(ctx, a.Root, env, "docker", setupArgs...)
 	var runErr error
 	if setupErr == nil {
-		runArgs := append(compose, "run", "--rm", "--no-deps", "--entrypoint", "/opt/emisar/bin/packtest", "runner-tools", "--pack", plan.Name)
+		runArgs := append(compose, "run", "--rm", "--no-deps", "--entrypoint", "/opt/emisar/bin/packtest",
+			"runner-tools", "--pack", job.Plan.Name, "--case", job.Case.ID, "--reports", "/tmp/packtest-reports")
 		runErr = a.run(ctx, a.Root, env, "docker", runArgs...)
 	} else {
 		runErr = fmt.Errorf("setup: %w", setupErr)
+	}
+	if runErr != nil {
+		a.capturePackTestEvidence(ctx, compose, env, job.Plan.Services)
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -250,6 +341,7 @@ func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan p
 	cleanupErr := a.run(cleanupCtx, a.Root, env, "docker", append(compose, "down", "-v", "--remove-orphans")...)
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("cleanup: %w", cleanupErr)
+		a.capturePackTestEvidence(cleanupCtx, compose, env, job.Plan.Services)
 	}
 	return errors.Join(runErr, cleanupErr)
 }
@@ -264,7 +356,81 @@ type packTestComposeService struct {
 }
 
 type packTestComposeBuild struct {
-	Args map[string]string `yaml:"args"`
+	Context string            `yaml:"context"`
+	Args    map[string]string `yaml:"args"`
+}
+
+func packTestBuildServices(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var compose packTestComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	var services []string
+	for name, service := range compose.Services {
+		if service.Build.Context != "" {
+			services = append(services, name)
+		}
+	}
+	sort.Strings(services)
+	return services, nil
+}
+
+func packTestComposeEnv(root string, plan packtest.PlanRef, caseID string, versionEnv map[string]string, user string) map[string]string {
+	if user == "" {
+		user = "nonroot"
+	}
+	composeUser := "65532:65532"
+	if user == "root" {
+		composeUser = "0:0"
+	}
+	env := map[string]string{
+		"COMPOSE_PROJECT_NAME": packTestComposeProject(root, plan.Name, caseID),
+		"EMISAR_ROOT":          root,
+		"PACKTEST_RUNNER_USER": composeUser,
+	}
+	for key, value := range versionEnv {
+		env[key] = value
+	}
+	return env
+}
+
+func (a *App) capturePackTestEvidence(ctx context.Context, compose []string, env map[string]string, services []string) {
+	fmt.Fprintln(a.Out, "\n=== failure evidence ===")
+	for _, command := range [][]string{
+		append(append([]string{}, compose...), "ps", "--all", "--no-trunc", "--format", "json"),
+		append(append(append([]string{}, compose...), "logs", "--no-color", "--timestamps"), services...),
+	} {
+		output, err := a.output(ctx, a.Root, env, "docker", command...)
+		if err != nil {
+			fmt.Fprintf(a.Out, "evidence command failed: docker %s: %v\n", strings.Join(command, " "), err)
+			continue
+		}
+		copyOutput(a.Out, output)
+		if len(output) > 0 && output[len(output)-1] != '\n' {
+			fmt.Fprintln(a.Out)
+		}
+	}
+	idArgs := append(append([]string{}, compose...), "ps", "--all", "--quiet")
+	ids, err := a.output(ctx, a.Root, env, "docker", idArgs...)
+	if err != nil {
+		fmt.Fprintf(a.Out, "container id discovery failed: %v\n", err)
+		return
+	}
+	fields := strings.Fields(string(ids))
+	if len(fields) == 0 {
+		return
+	}
+	inspectArgs := append([]string{"inspect"}, fields...)
+	inspect, err := a.output(ctx, a.Root, env, "docker", inspectArgs...)
+	if err != nil {
+		fmt.Fprintf(a.Out, "docker inspect failed: %v\n", err)
+		return
+	}
+	copyOutput(a.Out, inspect)
 }
 
 func validatePackTestVersionInput(path, primaryService, defaultVersion string) error {
@@ -354,8 +520,8 @@ func validPackTestDigest(digest string) bool {
 	return err == nil
 }
 
-func packTestComposeProject(root, pack string) string {
-	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+pack))
+func packTestComposeProject(root, pack, caseID string) string {
+	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+pack+"\x00"+caseID))
 	name := strings.Map(func(char rune) rune {
 		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-' || char == '_' {
 			return char

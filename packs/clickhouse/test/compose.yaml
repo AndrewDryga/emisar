@@ -3,6 +3,7 @@ services:
     image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.6.2.81-alpine}${PACKTEST_DIGEST-}
     environment:
       CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: packtest-canary-clickhouse-98e4f2
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
       - ${EMISAR_ROOT}/packs/clickhouse/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

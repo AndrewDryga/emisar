@@ -97,6 +97,27 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("changed risky action needs behavior or exception", func(t *testing.T) {
+		writeFixture(t, root, "packs/postgres/actions/restart.yaml", "id: postgres.restart\nrisk: high\n")
+		commitAll(t, root, "unaccounted risk")
+		if _, err := Select(context.Background(), root, "pull_request", base); err == nil ||
+			!strings.Contains(err.Error(), "needs a successful behavior case or risk exception") {
+			t.Fatalf("unaccounted risky action error = %v", err)
+		}
+		resetHard(t, root, base)
+
+		writeFixture(t, root, "packs/postgres/actions/restart.yaml", "id: postgres.restart\nrisk: high\n")
+		writeFixture(t, root, "packs/postgres/test/cases.yaml", behaviorPlan("postgres",
+			versionRow("18.4", "a", true),
+			versionRow("17.6", "b", false),
+		)+"risk_accountability:\n  exceptions:\n    postgres.restart: requires_cluster\n")
+		commitAll(t, root, "accounted risk")
+		if _, err := Select(context.Background(), root, "pull_request", base); err != nil {
+			t.Fatalf("accounted risky action rejected: %v", err)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("pack without plan remains contract only", func(t *testing.T) {
 		writeFixture(t, root, "packs/host-only/actions/status.yaml", "id: host.status\n")
 		commitAll(t, root, "host only")

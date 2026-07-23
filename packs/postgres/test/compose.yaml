@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:${PACKTEST_VERSION:-18.4}${PACKTEST_DIGEST-}
     environment:
-      POSTGRES_PASSWORD: testpass
+      POSTGRES_PASSWORD: packtest-canary-postgres-2a6e1c
       POSTGRES_DB: testdb
     volumes:
       - ${EMISAR_ROOT}/packs/postgres/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

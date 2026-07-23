@@ -15,8 +15,11 @@ under `dev/`; a product project's Dockerfile exists only for an image the
 project intentionally supports as a shipped artifact. An integration test's
 SUT topology and fixtures live beside the test owner, while only the genuinely
 shared test runner image and harness stay under `dev/`. Each integration-test
-owner runs in its own Compose project; concurrency is bounded across projects,
-not achieved by merging every SUT into one stateful topology. The primary SUT
+case runs in its own Compose project with case-local setup and a disposable SUT
+lifecycle; concurrency is bounded across projects, not achieved by merging
+fixtures or sharing state between cases. Terminal actions destroy only their
+own fixture, so no `fresh_sut` mode or suite-order cleanup contract is needed.
+The primary SUT
 version enters every behavior plan through one uniform input; its current
 release is the local default, while unrelated fixture images keep independent
 versions. Supported SUT versions and exact digests live with the behavior plan;
@@ -47,7 +50,8 @@ pack registry builds replace `dist/packs/` without touching sibling artifacts;
 the shared pack action-client image lives under `dev/test-packs/`, while
 `packs/postgres/test/compose.yaml` and its seed fixture live with the PostgreSQL
 behavior plan; `PACKTEST_VERSION=17.6 ./run test packs postgres` changes only
-that plan's primary PostgreSQL SUT.
+that plan's primary PostgreSQL SUT; every PostgreSQL case gets a separate
+Compose project and can arrange its own prerequisite rows before execution.
 
 **Bad.** `.agent/scripts/dev`, `portal/scripts/shot`, and a JavaScript browser
 tool as separate command surfaces; host and box Compose files that describe the same
@@ -57,7 +61,9 @@ under `runner/` that looks like a supported product image; disposable
 screenshots kept independently of the task that produced them; or one
 repository-wide test Compose file that owns unrelated database, Kubernetes,
 cloud-emulator, and proxy fixtures; or a primary SUT tag hardcoded in Compose
-and its client Dockerfile so each CI matrix needs a different patch.
+and its client Dockerfile so each CI matrix needs a different patch; or a
+pack-wide service lifecycle whose terminal tests need ordering, restart flags,
+or cleanup probes to protect later cases.
 
 **Sweep.** Search `.agent/` and project subdirectories for executable helpers,
 search documentation for direct implementation paths that bypass
@@ -68,10 +74,11 @@ output roots before adding a generator. Search product directories for
 Dockerfiles that are consumed only by development Compose or test workflows.
 For integration tests, search a central Compose file for unrelated SUTs and
 move each topology plus its fixtures beside the behavior plan that owns it;
-keep only reusable clients and harness configuration centralized. Verify each
-primary SUT image or build consumes the shared version input before adding a
-plan, and verify every declared version has an exact digest with one default
-matching Compose. Search for
+keep only reusable clients and harness configuration centralized. Search the
+outer test runner for a project identity derived only from the pack and include
+the case ID so state cannot cross cases. Verify each primary SUT image or build
+consumes the shared version input before adding a plan, and verify every
+declared version has an exact digest with one default matching Compose. Search for
 repository-global screenshot output and move each capture set into its owning
 task.
 
@@ -79,4 +86,5 @@ task.
 changes; the pack devtool parses each selected Compose plan and rejects a
 primary SUT that does not consume `PACKTEST_VERSION` and `PACKTEST_DIGEST` or
 whose default drifts from the plan; `./run gate tooling` runs the unit coverage
-for that check in CI.
+for that check in CI. The pack devtool derives a unique Compose project from
+workspace, pack, and case, then removes its volumes after every result.

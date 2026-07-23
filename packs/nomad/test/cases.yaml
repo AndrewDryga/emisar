@@ -3,11 +3,26 @@ versions:
   - version: "2.0.4"
     digest: "@sha256:14f0cf3dc43d949e759b50d793529976a1a1a7f391eaf1e048acd55cd5392462"
     default: true
+risk_accountability:
+  mode: complete
+  exceptions:
+    nomad.agent_force_leave: requires_cluster
+    nomad.alloc_restart: requires_cluster
+    nomad.alloc_signal: requires_cluster
+    nomad.alloc_stop: requires_cluster
+    nomad.deployment_fail: requires_cluster
+    nomad.job_action_run: requires_cluster
+    nomad.job_dispatch: requires_dynamic_fixture
+    nomad.job_promote: requires_cluster
+    nomad.job_restart: requires_cluster
+    nomad.job_revert: requires_cluster
+    nomad.node_drain: requires_cluster
+    nomad.node_eligibility_disable: requires_cluster
+    nomad.node_purge: requires_cluster
+    nomad.operator_raft_remove_peer: requires_cluster
+    nomad.task_resources_set: requires_cluster
 env:
   NOMAD_ADDR: "http://nomad:4646"
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: nomad.agent_info
     expect:
@@ -42,3 +57,11 @@ cases:
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']
+  - action: nomad.job_stop
+    args: {job: packtest-stop}
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/stop.nomad.hcl]
+    probes:
+      - argv: [nomad, job, status, packtest-stop]
+        expect:
+          stdout_contains: ["Status", dead]

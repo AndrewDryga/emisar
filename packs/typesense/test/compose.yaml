@@ -1,7 +1,7 @@
 services:
   typesense:
     image: typesense/typesense:${PACKTEST_VERSION:-29.0}${PACKTEST_DIGEST-}
-    command: ["--data-dir=/data", "--api-key=harness-key", "--listen-port=8108"]
+    command: ["--data-dir=/data", "--api-key=packtest-canary-typesense-09ae", "--listen-port=8108"]
     volumes:
       - typesense_data:/data
     healthcheck:

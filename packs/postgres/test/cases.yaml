@@ -3,19 +3,27 @@ versions:
   - version: "18.4"
     digest: "@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
     default: true
+risk_accountability:
+  mode: complete
+  exceptions:
+    postgres.cancel_query: requires_dynamic_fixture
+    postgres.kill_idle: requires_concurrent_session
+    postgres.terminate_backend: requires_dynamic_fixture
+secret_env: [PGPASSWORD]
 env:
   PGDATABASE: testdb
   PGHOST: postgres
-  PGPASSWORD: testpass
+  PGPASSWORD: packtest-canary-postgres-2a6e1c
   PGUSER: postgres
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: postgres.activity_states
     expect:
       stdout_contains: [active]
   - action: postgres.bgwriter_stats
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT 'bgwriter-row' FROM pg_stat_bgwriter"]
+        expect:
+          stdout_contains: [bgwriter-row]
   - action: postgres.connections
     expect:
       stdout_contains: [psql]
@@ -77,9 +85,67 @@ cases:
     expect:
       stdout_contains: [public, orders]
   - action: postgres.wal_archive_status
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT 'archiver-row' FROM pg_stat_archiver"]
+        expect:
+          stdout_contains: [archiver-row]
   - action: postgres.wal_status
     expect:
       stdout_contains: ["f"]
   - action: postgres.xid_wraparound_proximity
     expect:
       stdout_contains: [testdb]
+  - action: postgres.explain_analyze
+    args:
+      query: "SELECT * FROM orders WHERE customer = 'alice'"
+    expect:
+      json:
+        /0/Plan/Relation Name: orders
+  - action: postgres.reindex_concurrent
+    args: {schema: public, index: idx_orders_customer}
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT indisvalid FROM pg_index WHERE indexrelid = 'public.idx_orders_customer'::regclass"]
+        expect:
+          stdout_contains: ["t"]
+  - action: postgres.reload_conf
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT pg_conf_load_time() > now() - interval '10 seconds'"]
+        expect:
+          stdout_contains: ["t"]
+  - action: postgres.vacuum_table
+    args: {schema: public, table: orders, analyze: true}
+    probes:
+      - argv: [psql, -XAt, -c, "SELECT last_vacuum IS NOT NULL FROM pg_stat_user_tables WHERE relname = 'orders'"]
+        expect:
+          stdout_contains: ["t"]
+  - name: postgres.uptime-missing-credentials
+    action: postgres.uptime
+    unset_env: [PGPASSWORD]
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [no password supplied]
+  - name: postgres.uptime-unavailable-service
+    action: postgres.uptime
+    env: {PGHOST: 127.0.0.2}
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [Connection refused]
+  - name: postgres.vacuum-table-invalid-arguments
+    action: postgres.vacuum_table
+    args: {schema: public}
+    expect:
+      status: failure
+      exit: [0]
+      reason_contains: [argument table, is required]
+  - name: postgres.vacuum-table-missing-target
+    action: postgres.vacuum_table
+    args: {schema: public, table: missing_table, analyze: true}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [relation "public.missing_table" does not exist]

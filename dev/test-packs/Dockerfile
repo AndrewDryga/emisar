@@ -29,7 +29,9 @@ RUN apt-get update \
         postgresql-client \
         redis-tools \
         snmp \
-    && printf '[client]\nssl-verify-server-cert=0\n' \
+    && groupadd --gid 65532 packtest \
+    && useradd --uid 65532 --gid 65532 --home-dir /tmp/packtest --create-home packtest \
+    && printf '[client]\nuser=root\nssl-verify-server-cert=0\n' \
         > /etc/mysql/mariadb.conf.d/99-packtest.cnf \
     && rm -rf /var/lib/apt/lists/*
 
@@ -54,7 +56,9 @@ RUN ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client \
     && clickhouse-client --version
 
 VOLUME ["/opt/emisar"]
-ENV PATH="/opt/emisar/bin:${PATH}"
+ENV HOME="/tmp/packtest" \
+    PATH="/opt/emisar/bin:${PATH}"
 
 WORKDIR /workspace
+USER packtest
 ENTRYPOINT ["/bin/bash"]
