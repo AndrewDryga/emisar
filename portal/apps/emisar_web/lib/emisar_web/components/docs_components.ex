@@ -417,6 +417,13 @@ defmodule EmisarWeb.DocsComponents do
     """
   end
 
+  # Installer output — the blue [install] prefix install.sh actually prints.
+  defp cast_line(%{kind: "install"} = assigns) do
+    ~H"""
+    <div data-cast-line data-kind="install" class="cast-line text-zinc-400" phx-no-format><span class="select-none font-semibold text-sky-400">[install]</span> <span data-cast-text>{@text}</span></div>
+    """
+  end
+
   # phx-no-format keeps {@text} tight to its span — the JS reads textContent,
   # so leaked template indentation would surface in the typed output.
   defp cast_line(assigns) do

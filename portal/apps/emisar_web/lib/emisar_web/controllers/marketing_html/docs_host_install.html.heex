@@ -52,6 +52,27 @@
         to fetch and verify the release — no inbound rule ever.
       </p>
 
+      <.terminal_cast
+        id="host-install-cast"
+        label="web-01"
+        caption="What that one command does — download, verify, install the hardened service, connect. Nothing listens inbound."
+        lines={[
+          %{k: "cmd", p: "$", t: "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… bash"},
+          %{k: "install", t: "install target: linux/amd64 via systemd"},
+          %{k: "install", t: "latest release: runner-v0.3.1"},
+          %{k: "install", t: "downloading emisar-0.3.1-linux-amd64.tar.gz"},
+          %{k: "install", t: "checksum verified  sha256:9f2c8e1a4b6d3f0c…"},
+          %{k: "install", t: "creating system user emisar"},
+          %{k: "install", t: "writing /etc/emisar/config.yaml + runner.env (mode 0600)"},
+          %{k: "install", t: "installed binary to /usr/local/bin/emisar"},
+          %{k: "install", t: "installed pack linux-core · debugging · systemd-deep"},
+          %{k: "install", t: "writing /etc/systemd/system/emisar.service"},
+          %{k: "install", t: "starting emisar.service"},
+          %{k: "out", t: "level=INFO msg=cloud.connected actions=89 packs=4 inflight_runs=0"},
+          %{k: "ok", t: "✓ web-01 online — the runner dialed out over WSS; no inbound port opened"}
+        ]}
+      />
+
       <.docs_h2 id="flags">Flags and environment</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Pass flags after <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash -s --</code>;

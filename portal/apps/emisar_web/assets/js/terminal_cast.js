@@ -21,6 +21,7 @@ const PAUSE = {
   llm: 460,
   out: 190,
   sys: 150,
+  install: 150,
   ok: 560,
   warn: 720,
   note: 300,
