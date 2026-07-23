@@ -19,22 +19,6 @@ defmodule EmisarWeb.SitemapController do
     "/dpa",
     "/refund-policy",
     "/docs",
-    "/docs/quickstart",
-    "/docs/action-packs",
-    "/docs/publishing-packs",
-    "/docs/pack-registry",
-    "/docs/policies-and-approvals",
-    "/docs/runbooks",
-    "/docs/teams-and-access",
-    "/docs/sso",
-    "/docs/runners",
-    "/docs/deployment",
-    "/docs/audit-and-siem",
-    "/docs/containers",
-    "/docs/security-model",
-    "/docs/signed-dispatch",
-    "/docs/connect-an-llm",
-    "/docs/mcp-reference",
     "/packs",
     "/use-cases",
     "/use-cases/csi-data-loss",
@@ -49,13 +33,15 @@ defmodule EmisarWeb.SitemapController do
   ]
 
   @doc """
-  The canonical marketing/docs paths: the static routes above plus one entry per
-  published guide (derived from the controller's guide list, so a new guide
-  can't be forgotten here). Also the source of truth for the no-orphan link
-  test, so a page added to the sitemap is automatically required to be linked
-  from somewhere.
+  The canonical marketing/docs paths: the static routes above, every page from
+  the documentation navigation, and one entry per published guide. Deriving
+  both collections prevents a new public page from being omitted here. This is
+  also the source of truth for the no-orphan link test.
   """
-  def paths, do: @paths ++ EmisarWeb.MarketingController.guide_paths()
+  def paths do
+    docs_paths = Enum.map(EmisarWeb.DocsNav.flat(), & &1.path)
+    @paths ++ docs_paths ++ EmisarWeb.MarketingController.guide_paths()
+  end
 
   def show(conn, _params) do
     # Static marketing routes + derived guide paths + a synthesized entry per
