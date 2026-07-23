@@ -18,6 +18,10 @@ database() {
   "${GIT_ROOT}/run" ops database "$@"
 }
 
+run() {
+  "${GIT_ROOT}/run" "$@"
+}
+
 # Set the gcloud project ID for the Google Cloud SDK
 export CLOUDSDK_CORE_PROJECT="emisar"
 
