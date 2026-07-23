@@ -421,6 +421,27 @@ pre::-webkit-scrollbar-track,
 }
 
 /* ---------------------------------------------------------------------------
+   Docs terminal casts (marketing `<.terminal_cast>` + assets/js/terminal_cast.js).
+   A single-pane "watch it run" for the docs pages; per-kind colour is Tailwind
+   on the line, so only the pre-wrap and the caret live here. The caret reuses
+   demo-blink and is only inserted while typing, which the JS skips under
+   reduced motion.
+   --------------------------------------------------------------------------- */
+.cast-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cast-cursor {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: #d4d4d8;
+  animation: demo-blink 1s steps(2, start) infinite;
+}
+
+/* ---------------------------------------------------------------------------
    Gate scan line (marketing `<.scan_line animate>`).
 
    A single highlight that sweeps once across the decision point — the moment a

@@ -357,6 +357,83 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_callout_tint(:warn), do: "text-amber-400"
 
   @doc """
+  A self-contained terminal cast. The static transcript renders for no-JS
+  visitors and crawlers; `assets/js/terminal_cast.js` types the commands and
+  streams the output once it scrolls into view (and honors reduced motion).
+  `lines` is a list of `%{k: kind, t: text}` (+ optional `:p` prompt glyph),
+  where kind is `cmd` / `llm` (typed) or `out` / `sys` / `ok` / `note` / `blank`.
+  """
+  attr :id, :string, required: true
+  attr :label, :string, default: "terminal"
+  attr :caption, :string, default: nil
+  attr :lines, :list, required: true
+  attr :class, :string, default: nil
+
+  def terminal_cast(assigns) do
+    ~H"""
+    <figure
+      id={@id}
+      data-terminal-cast
+      class={[
+        "mt-8 overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0e] shadow-lg shadow-black/30",
+        @class
+      ]}
+    >
+      <figcaption class="flex items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/60 px-4 py-2.5">
+        <span class="flex items-center gap-1.5" aria-hidden="true">
+          <span class="h-3 w-3 rounded-full bg-[#ff5f57]"></span>
+          <span class="h-3 w-3 rounded-full bg-[#febc2e]"></span>
+          <span class="h-3 w-3 rounded-full bg-[#28c840]"></span>
+        </span>
+        <span class="font-mono text-xs text-zinc-500">{@label}</span>
+      </figcaption>
+      <div
+        data-cast-screen
+        class="max-h-[28rem] overflow-y-auto px-5 py-4 font-mono text-[12.5px] leading-[1.7] [scrollbar-width:thin]"
+      >
+        <.cast_line :for={line <- @lines} kind={line.k} prompt={Map.get(line, :p)} text={line.t} />
+      </div>
+      <figcaption class="flex items-center justify-end gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
+        <p :if={@caption} class="mr-auto text-[11px] text-zinc-500">{@caption}</p>
+        <button
+          type="button"
+          data-cast-replay
+          class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-brand-300 transition hover:text-brand-200"
+        >
+          <.icon name="hero-arrow-path" class="h-3.5 w-3.5" /> Replay
+        </button>
+      </figcaption>
+    </figure>
+    """
+  end
+
+  attr :kind, :string, required: true
+  attr :prompt, :string, default: nil
+  attr :text, :string, required: true
+
+  defp cast_line(%{kind: "blank"} = assigns) do
+    ~H"""
+    <div class="h-3" aria-hidden="true"></div>
+    """
+  end
+
+  # phx-no-format keeps {@text} tight to its span — the JS reads textContent,
+  # so leaked template indentation would surface in the typed output.
+  defp cast_line(assigns) do
+    ~H"""
+    <div data-cast-line data-kind={@kind} class={["cast-line", cast_line_tone(@kind)]} phx-no-format><span :if={@prompt} class="select-none text-zinc-500">{@prompt} </span><span data-cast-text>{@text}</span></div>
+    """
+  end
+
+  defp cast_line_tone("cmd"), do: "text-zinc-100"
+  defp cast_line_tone("llm"), do: "text-zinc-100"
+  defp cast_line_tone("out"), do: "text-zinc-400"
+  defp cast_line_tone("sys"), do: "text-zinc-500"
+  defp cast_line_tone("ok"), do: "text-brand-400"
+  defp cast_line_tone("note"), do: "text-zinc-500"
+  defp cast_line_tone(_), do: "text-zinc-400"
+
+  @doc """
   The prev/next footer, derived from `DocsNav.prev_next/1`. A missing neighbor
   drops its card; when there is no previous page the next card holds column two.
   """
