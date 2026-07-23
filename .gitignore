@@ -1,6 +1,7 @@
 # Build artifacts
 /bin/
-/dist/
+/dist/*
+!/dist/cursor-plugin/
 **/_build*/
 *.out
 /test-results/

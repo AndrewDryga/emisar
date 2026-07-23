@@ -12,7 +12,8 @@ does not belong in code lives under `.agent/kb/`:
 Machine-readable contracts stay beside the implementation that owns and
 consumes them, with the human specification linking to that source. Published
 manifests, licenses, assets, and package README files stay beside the artifact
-under `distribution/`.
+in an explicitly tracked subtree under `dist/`. Generated `dist/` siblings
+remain ignored.
 
 Do not create a top-level `docs/` directory. It becomes a second, stale
 documentation site beside the actual website and makes agents guess which copy
@@ -33,7 +34,7 @@ false ownership boundaries.
 .agent/kb/specs/wire-protocol.md
 .agent/kb/runbooks/release.md
 portal/apps/emisar_web/priv/mcp/api-schemas.json
-distribution/cursor-plugin/README.md
+dist/cursor-plugin/README.md
 ```
 
 ## Bad
@@ -49,9 +50,13 @@ artifacts under an unused repository documentation surface.
 
 ## Enforcement
 
-`dev/run check agent-setup` rejects a top-level `docs/` directory, validates
-descriptive cards separately from specs and runbooks, and reads public-skill
-MCP tool names from the portal-owned schema.
+`dev/run check agent-setup` rejects top-level `docs/` and `distribution/`
+directories, validates descriptive cards separately from specs and runbooks,
+reads public-skill MCP tool names from the portal-owned schema, and exercises
+Git's ignore matcher to prove `dist/cursor-plugin/` is trackable while generated
+`dist/` siblings stay ignored.
 
 Sweep new Markdown, JSON specifications, release procedures, and distribution
-assets for a `docs/` owner before adding them.
+assets for a `docs/` owner before adding them. A new tracked `dist/` subtree
+must also receive an exact `.gitignore` exception; never unignore generated
+output wholesale.

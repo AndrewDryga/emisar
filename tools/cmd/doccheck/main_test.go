@@ -71,7 +71,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		".agent/rules/old-rule.md":                            true,
 		".agent/presets/frontier/roles/lead.md":               false,
 		agentReview:                                           true,
-		"distribution/cursor-plugin/README.md":                false,
+		"dist/cursor-plugin/README.md":                        false,
 		".agent/kb/runbooks/release.md":                       false,
 		".agent/kb/specs/security-model.md":                   false,
 		"portal/.agent/kb/rules/elixir-doc-contract.md":       false,

@@ -433,6 +433,10 @@ func (c *checker) checkKnowledgeCards() {
 			c.fail("retired docs/ is back; repository knowledge lives under .agent/kb")
 			return
 		}
+		if entry.IsDir() && relative == "distribution" {
+			c.fail("retired distribution/ is back; tracked packages live under dist")
+			return
+		}
 		if entry.IsDir() && isLegacyKnowledgeDirectory(relative) {
 			c.fail("retired %s is back; durable knowledge lives under .agent/kb", relative)
 			return
@@ -487,6 +491,42 @@ func (c *checker) checkKnowledgeCards() {
 			c.fail("%s:%d uses normative policy language; move the constraint to .agent/kb/rules", relative, line)
 		}
 	})
+}
+
+func (c *checker) gitIgnored(relative string) (bool, error) {
+	command := exec.Command("git", "check-ignore", "--no-index", "--quiet", "--", relative)
+	command.Dir = c.root
+	err := command.Run()
+	if err == nil {
+		return true, nil
+	}
+	if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+func (c *checker) checkDistributionLayout() {
+	if _, err := os.Stat(c.path("dist/cursor-plugin")); err != nil {
+		c.fail("dist/cursor-plugin is required as the tracked Cursor package")
+	}
+	for _, test := range []struct {
+		path    string
+		ignored bool
+	}{
+		{path: "dist/generated-sentinel", ignored: true},
+		{path: "dist/packs/generated-sentinel", ignored: true},
+		{path: "dist/cursor-plugin/tracked-sentinel", ignored: false},
+	} {
+		ignored, err := c.gitIgnored(test.path)
+		if err != nil {
+			c.fail("checking ignore policy for %s: %v", test.path, err)
+			continue
+		}
+		if ignored != test.ignored {
+			c.fail("ignore policy for %s is %t, expected %t", test.path, ignored, test.ignored)
+		}
+	}
 }
 
 func (c *checker) skillMetadata(path string) map[string]any {
@@ -690,6 +730,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("task queues use expected state names", c.checkTaskDirs)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
 	c.group("repository knowledge uses the KB layout and descriptive cards carry metadata", c.checkKnowledgeCards)
+	c.group("tracked dist packages stay separate from generated output", c.checkDistributionLayout)
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)

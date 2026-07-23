@@ -128,7 +128,7 @@ packs/    Versioned action-pack catalog
 skills/   Standalone customer skills for coding agents
 infra/    Production Terraform for emisar on Google Cloud
 tools/    Pack-authoring support, repository checks, and maintainer E2E drivers
-distribution/  Published integration manifests, assets, licenses, and package docs
+dist/          Tracked distribution packages plus ignored generated build output
 .agent/kb/     Repository architecture, specifications, runbooks, and rules
 ```
 

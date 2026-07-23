@@ -33,8 +33,8 @@ Use this decision test:
 Reference cards describe; they do not prescribe. Policy language such as `must`,
 `never`, and `do not` belongs in a rule except when quoted from an external interface.
 Published integration manifests, licenses, and package README files stay beside
-their artifact under `distribution/`; they are product inputs, not repository
-knowledge.
+their artifact in an explicitly tracked subtree under `dist/`; generated
+siblings remain ignored. They are product inputs, not repository knowledge.
 
 ## Reading protocol
 

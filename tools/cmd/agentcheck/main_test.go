@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -174,16 +175,20 @@ func TestCheckKnowledgeCardsSeparatesInternalMaterialAndRejectsLegacyDirectories
 	}
 }
 
-func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsDocsDirectory(t *testing.T) {
+func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsRetiredRoots(t *testing.T) {
 	check := testChecker(t)
 	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
 	writeTestFile(t, check.root, ".agent/kb/specs/wire-protocol.md", "# Protocol\n\nClients must send a version.\n")
 	writeTestFile(t, check.root, ".agent/kb/runbooks/release.md", "# Release\n\nNever publish an unsigned tag.\n")
 	writeTestFile(t, check.root, "docs/stale.md", "# Stale\n")
+	writeTestFile(t, check.root, "distribution/stale.md", "# Stale\n")
 
 	check.checkKnowledgeCards()
 
 	if !hasFailure(check, "retired docs/ is back") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+	if !hasFailure(check, "retired distribution/ is back") {
 		t.Fatalf("failures = %#v", check.failures)
 	}
 	if hasFailure(check, ".agent/kb/specs/wire-protocol.md") {
@@ -191,6 +196,30 @@ func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsDocsDirectory(t *te
 	}
 	if hasFailure(check, ".agent/kb/runbooks/release.md") {
 		t.Fatalf("runbook was parsed as a descriptive card: %#v", check.failures)
+	}
+}
+
+func TestCheckDistributionLayoutUsesGitIgnorePolicy(t *testing.T) {
+	check := testChecker(t)
+	command := exec.Command("git", "init", "--quiet")
+	command.Dir = check.root
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v (%s)", err, output)
+	}
+	writeTestFile(t, check.root, ".gitignore", "/dist/*\n!/dist/cursor-plugin/\n")
+	writeTestFile(t, check.root, "dist/cursor-plugin/README.md", "# Cursor\n")
+
+	check.checkDistributionLayout()
+
+	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+
+	writeTestFile(t, check.root, ".gitignore", "/dist/\n")
+	check = &checker{root: check.root, out: io.Discard, errOut: io.Discard}
+	check.checkDistributionLayout()
+	if !hasFailure(check, "dist/cursor-plugin/tracked-sentinel") {
+		t.Fatalf("failures = %#v", check.failures)
 	}
 }
 
