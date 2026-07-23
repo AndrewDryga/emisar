@@ -18,7 +18,7 @@
         </:dek>
       </.docs_header>
 
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-sm text-zinc-300">
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base text-zinc-300">
         <li>
           <strong>Remote MCP</strong> (Claude.ai, ChatGPT Apps, recent IDE
           clients) — enter a display name and the emisar server URL. emisar
@@ -71,7 +71,7 @@
       <section>
         <.docs_h2 id="cloud-llm">1. Connect a cloud LLM</.docs_h2>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
           — no header or API key. emisar is a full OAuth&nbsp;2.1 authorization
           server, so the connector discovers it from that URL, registers itself
@@ -100,7 +100,7 @@
           <%!-- Claude.ai (cloud) --%>
           <section>
             <.docs_h3 id="claude-ai">Claude (claude.ai)</.docs_h3>
-            <ol class="mt-3 list-decimal space-y-3 pl-6 text-sm text-zinc-300">
+            <ol class="mt-3 list-decimal space-y-3 pl-6 text-base text-zinc-300">
               <li>
                 Open <strong>Settings → Connectors</strong>
                 (on Pro/Max it's <strong>Customize → Connectors</strong>).
@@ -150,10 +150,10 @@
           <%!-- ChatGPT --%>
           <section>
             <.docs_h3 id="chatgpt">ChatGPT</.docs_h3>
-            <p class="mt-2 text-sm text-zinc-400">
+            <p class="mt-2 text-base text-zinc-400">
               ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on all ChatGPT plans.
             </p>
-            <ol class="mt-3 list-decimal space-y-3 pl-6 text-sm text-zinc-300">
+            <ol class="mt-3 list-decimal space-y-3 pl-6 text-base text-zinc-300">
               <li>
                 Turn on Developer mode once — it's off by default and flagged <strong>Higher risk</strong>: <strong>Settings → Security and login</strong>, toggle <strong>Developer mode</strong>. (The same toggle sits at the bottom of <strong>Settings → Plugins</strong>.)
               </li>
@@ -220,7 +220,7 @@
           <%!-- What you're authorizing --%>
           <section>
             <.docs_h3 id="sign-in-grants">What the sign-in grants</.docs_h3>
-            <p class="mt-2 text-sm leading-7 text-zinc-400">
+            <p class="mt-2 text-base leading-7 text-zinc-400">
               The consent screen mints a key bound to <em>your</em>
               membership. The connector can only run actions your policy
               already permits, every call is attributed to you in the audit
@@ -239,7 +239,7 @@
       <section>
         <.docs_h2 id="api-key">2. Mint an API key (desktop, CLI &amp; direct MCP)</.docs_h2>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           The clients in steps 3 and 4 authenticate with a raw key instead
           of OAuth — but you rarely handle the key yourself. The installer in
           step 3 asks to add emisar to the clients it finds; you approve the
@@ -250,7 +250,7 @@
           it mints a key named after the client, prefilled and ready to paste.
         </p>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           The key itself carries no permissions to tune — what it may run is your account
           <strong>policy</strong>
           (risky actions pause for approval), and which runners it can
@@ -277,7 +277,7 @@
       <section>
         <.docs_h2 id="stdio-bridge">3. Desktop &amp; CLI clients (stdio bridge)</.docs_h2>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           For clients that only speak stdio MCP — Claude Desktop, Claude
           Code, Cursor (local mode), Windsurf, Zed, OpenClaw, OpenCode, Pi,
           Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI — install the
@@ -293,7 +293,7 @@
         </p>
 
         <.docs_h3 id="install-bridge">Install</.docs_h3>
-        <p class="mt-2 text-sm text-zinc-300">
+        <p class="mt-2 text-base text-zinc-300">
           One-liner — auto-resolves the latest
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
           release, verifies sha256, drops
@@ -333,7 +333,7 @@
             <%!-- Claude Desktop --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -350,7 +350,7 @@
   &#125;
 &#125;</pre>
               </div>
-              <p class="mt-3 text-sm text-zinc-400">
+              <p class="mt-3 text-base text-zinc-400">
                 Restart Claude Desktop. Tools appear under the tool icon
                 as "emisar".
               </p>
@@ -359,7 +359,7 @@
             <%!-- Cursor --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -376,7 +376,7 @@
   &#125;
 &#125;</pre>
               </div>
-              <p class="mt-3 text-sm text-zinc-400">
+              <p class="mt-3 text-base text-zinc-400">
                 Recent Cursor builds also speak remote MCP — point them at
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
                 directly (step 1) if you'd rather skip the bridge.
@@ -386,7 +386,7 @@
             <%!-- Zed --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Zed</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 The installer adds this for you and preserves your existing
                 comments and servers. By hand, Zed reads
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
@@ -415,7 +415,7 @@
             <%!-- Claude Code (CLI) --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 One-line register, user scope (every project):
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -428,7 +428,7 @@
     -e EMISAR_CLIENT=claude-code \
     -- /usr/local/bin/emisar-mcp</pre>
               </div>
-              <p class="mt-3 text-sm text-zinc-400">
+              <p class="mt-3 text-base text-zinc-400">
                 Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
               </p>
             </section>
@@ -436,7 +436,7 @@
             <%!-- Gemini CLI --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -458,7 +458,7 @@
             <%!-- ChatGPT Codex CLI --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -466,7 +466,7 @@
 command = "/usr/local/bin/emisar-mcp"
 env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</pre>
               </div>
-              <p class="mt-3 text-sm text-zinc-400">
+              <p class="mt-3 text-base text-zinc-400">
                 To let emisar calls run without Codex prompts, add
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
                   default_tools_approval_mode = "approve"
@@ -481,7 +481,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             <%!-- Grok CLI --%>
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Grok CLI</h3>
-              <p class="mt-2 text-sm text-zinc-400">
+              <p class="mt-2 text-base text-zinc-400">
                 Register the bridge in your user config:
               </p>
               <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -494,7 +494,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
     -e EMISAR_CLIENT=grok \
     -- /usr/local/bin/emisar-mcp</pre>
               </div>
-              <p class="mt-3 text-sm text-zinc-400">
+              <p class="mt-3 text-base text-zinc-400">
                 To stop Grok's per-tool prompts for emisar only, add
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
                 to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
@@ -528,7 +528,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
       <section>
         <.docs_h2 id="direct-http">4. Direct MCP over HTTP</.docs_h2>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           A custom MCP client can call the same Streamable HTTP endpoint with
           an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
           key from step 2. Tool discovery, calls, retries, and recovery all use
@@ -541,7 +541,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
     -H <span class="text-brand-300">"Content-Type: application/json"</span> \
     -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
 
-        <p class="mt-4 text-sm text-zinc-400">
+        <p class="mt-4 text-base text-zinc-400">
           Send <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
           then use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>
           and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>.

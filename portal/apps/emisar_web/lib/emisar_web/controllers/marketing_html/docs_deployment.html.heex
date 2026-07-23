@@ -24,7 +24,7 @@
           fleet, and setting the envelope around it. This page is the envelope.
         </:dek>
       </.docs_header>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         None of it is much configuration. The defaults are already conservative — reads run,
         mutations wait for a human, <code class="font-mono">critical</code>
         is denied outright. Going to production is mostly deciding <em>where</em>
@@ -32,13 +32,13 @@
       </p>
 
       <.docs_h2 id="fleet-shape">The shape of a production fleet</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Two decisions carry most of the safety, and you make both up front: how runners are <strong class="text-zinc-200">grouped</strong>, and which people are
         <strong class="text-zinc-200">scoped</strong>
         to reach them — an agent's key is bounded by its owner's scope, so scoping the person
         scopes their agent. Get these right and the rest is defaults.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -81,27 +81,27 @@
         </li>
       </ul>
 
-      <p class="mt-6 text-sm leading-7 text-zinc-400">
+      <p class="mt-6 text-base leading-7 text-zinc-400">
         A three-tier layout, concretely — the same fleet three ways, each with the packs it needs
         and the posture it warrants:
       </p>
       <div class="mt-3 divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-800">
         <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
           <div class="font-mono text-sm text-brand-300">web</div>
-          <div class="text-sm leading-7 text-zinc-400">
+          <div class="text-base leading-7 text-zinc-400">
             10 hosts · packs <code class="font-mono">nginx</code>, <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>.
             Reads run on policy; a restart waits for one approval. The everyday tier.
           </div>
         </div>
         <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
           <div class="font-mono text-sm text-amber-300">db-prod</div>
-          <div class="text-sm leading-7 text-zinc-400">
+          <div class="text-base leading-7 text-zinc-400">
             3 hosts · packs <code class="font-mono">postgres</code>, <code class="font-mono">linux-core</code>. Locked: a targeted ruleset denies <code class="font-mono">critical</code>, four-eyes on <code class="font-mono">high</code>, and signed dispatch is on. Only the DBA team in scope.
           </div>
         </div>
         <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
           <div class="font-mono text-sm text-zinc-300">staging</div>
-          <div class="text-sm leading-7 text-zinc-400">
+          <div class="text-base leading-7 text-zinc-400">
             2 hosts · the full catalog, including the <code class="font-mono">shell</code>
             break-glass pack. Looser so an agent can iterate on a fix — never a path to a prod host.
           </div>
@@ -109,11 +109,11 @@
       </div>
 
       <.docs_h2 id="phased-rollout">Roll out in phases</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Each phase is safe to stop at, and each is reversible. You never have a half-configured
         fleet that's more open than the phase before it.
       </p>
-      <ol class="mt-4 list-decimal space-y-3 pl-6 text-sm leading-7 text-zinc-400">
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           <strong class="text-zinc-200">Pilot on one non-prod host.</strong>
           Install, watch it connect, run a read, open the audit row it wrote. Prove the loop end to
@@ -178,12 +178,12 @@
         <h3 class="text-base font-semibold text-zinc-100">
           An on-call agent that reads the web tier and restarts behind approval
         </h3>
-        <p class="mt-2 text-sm leading-7 text-zinc-400">
+        <p class="mt-2 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">Goal:</strong>
           your incident agent should investigate nginx freely, and be able to restart it — but a
           restart should need a human nod.
         </p>
-        <ul class="mt-3 space-y-3 text-sm leading-7 text-zinc-400">
+        <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
             <span>
@@ -214,7 +214,7 @@
             </span>
           </li>
         </ul>
-        <p class="mt-5 text-sm leading-7 text-zinc-400">
+        <p class="mt-5 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">Result:</strong>
           the agent calls <code class="font-mono">nginx.error_log_tail</code>
           and it runs; it calls <code class="font-mono">nginx.restart</code>
@@ -227,12 +227,12 @@
         <h3 class="text-base font-semibold text-zinc-100">
           A destructive action on prod-db, done safely
         </h3>
-        <p class="mt-2 text-sm leading-7 text-zinc-400">
+        <p class="mt-2 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">Goal:</strong>
           a Postgres failover on <code class="font-mono">db-prod</code>
           should be possible — but only when two people approve and the call carries a valid client signature.
         </p>
-        <ul class="mt-3 space-y-3 text-sm leading-7 text-zinc-400">
+        <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
             <span>
@@ -261,7 +261,7 @@
             </span>
           </li>
         </ul>
-        <p class="mt-5 text-sm leading-7 text-zinc-400">
+        <p class="mt-5 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">The flow:</strong>
           a DBA's agent calls <code class="font-mono">postgres.promote_replica</code>
           with a reason; the call carries the DBA's Ed25519 signature. The control plane relays it —
@@ -275,12 +275,12 @@
       </div>
 
       <.docs_h2 id="go-live-checklist">Go-live checklist</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The list to walk before you point production at emisar — the same one a security reviewer
         will:
       </p>
       <.docs_callout kind={:note}>
-        <ul class="space-y-3 text-sm leading-7 text-zinc-300">
+        <ul class="space-y-3 text-base leading-7 text-zinc-300">
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>

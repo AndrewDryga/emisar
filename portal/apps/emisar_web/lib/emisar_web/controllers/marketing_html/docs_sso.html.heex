@@ -20,7 +20,7 @@
           manual cleanup.
         </:dek>
       </.docs_header>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Two pieces, set up independently: <strong class="text-zinc-200">SSO login</strong>
         (sign in through your IdP) and
         <strong class="text-zinc-200">directory sync (SCIM)</strong>
@@ -45,7 +45,7 @@
       </.docs_callout>
 
       <.docs_h2 id="sso-login">Setting up SSO login</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         You need an emisar owner or admin. Open
         <strong class="text-zinc-200">Team → Single sign-on</strong>
         and click <strong class="text-zinc-200">Add provider</strong>; the form opens on its own
@@ -67,7 +67,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             1
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
               Create an OAuth / OIDC app at your provider.
             </p>
@@ -88,7 +88,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             2
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
               Register emisar's redirect URI on that app.
             </p>
@@ -104,7 +104,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             3
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">Fill in the connection and save.</p>
             <p class="mt-1.5">Back on the emisar form, set:</p>
             <ul class="mt-2 space-y-2">
@@ -205,7 +205,7 @@
       </ol>
 
       <.docs_h3 id="signing-in">How members sign in</.docs_h3>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; if you set an
         allowed email domain, entering an address on it routes them straight to your provider. They
         authenticate at the IdP and come back signed in.
@@ -214,7 +214,7 @@
       <.docs_h3 id="subject-not-email">
         Identities are matched by the IdP's subject, never by email
       </.docs_h3>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar binds an SSO login to the provider plus the IdP's stable subject identifier (the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
         claim, or whichever <strong class="text-zinc-200">identifier claim</strong>
@@ -225,13 +225,13 @@
         an email. If an SSO email collides with an existing user, sign-in is refused rather than
         silently linked — an admin links the identity deliberately.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">First login provisions the user</strong>
         at the connection's default role (with the directory as the email authority).
       </p>
 
       <.docs_h3 id="sso-mfa">SSO sessions and your MFA requirement</.docs_h3>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Each connection has a per-provider toggle — <em>"sign-in through this provider satisfies
         the account's 2FA requirement."</em>
         When it's on, an SSO session satisfies an account that
@@ -244,7 +244,7 @@
       </p>
 
       <.docs_h2 id="scim">Directory sync (SCIM 2.0)</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
         and JumpCloud all speak as a provisioning client. The directory-sync panel lives on each
@@ -265,7 +265,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             1
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
               Click <span class="text-zinc-300">Enable directory sync</span> on the connection.
             </p>
@@ -300,7 +300,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             2
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
               Point your IdP's SCIM connector at that base URL and bearer.
             </p>
@@ -320,7 +320,7 @@
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             3
           </span>
-          <div class="min-w-0 text-sm leading-7 text-zinc-400">
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
               Match the SCIM externalId to the OIDC subject.
             </p>
@@ -336,10 +336,10 @@
         </li>
       </ol>
 
-      <p class="mt-6 text-sm leading-7 text-zinc-400">
+      <p class="mt-6 text-base leading-7 text-zinc-400">
         Once it's wired, here's what the sync does:
       </p>
-      <ul class="mt-3 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -389,7 +389,7 @@
       </.docs_callout>
 
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
         — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
         or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
@@ -401,7 +401,7 @@
       </p>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>

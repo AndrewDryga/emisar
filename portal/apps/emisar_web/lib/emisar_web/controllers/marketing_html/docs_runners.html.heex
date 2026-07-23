@@ -36,7 +36,7 @@
       </figure>
 
       <.docs_h2 id="groups-labels">Groups and labels</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Every runner declares a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group</code>
         (one string — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>) and free-form
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">labels</code>
@@ -48,7 +48,7 @@
       </p>
 
       <.docs_h2 id="enrollment-keys">Enrollment keys</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -96,7 +96,7 @@
       </ul>
 
       <.docs_h2 id="pack-credentials">Giving packs their credentials</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
         runner's <em>environment</em>, never from call arguments, so secrets never transit the
         cloud. Two steps on the host:
@@ -110,14 +110,14 @@ execution:
   inherit_env:
     - NOMAD_ADDR
     - NOMAD_TOKEN</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Only allowlisted names reach an action's process (on top of the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>/locale baseline) — the
         runner's own environment and its token never leak through. Restart the service after
         editing; what each pack needs is in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>.
       </p>
 
       <.docs_h2 id="connectivity">Online, offline, and stuck runs</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner heartbeats every 30 seconds; the dashboard's online badge reflects it, and
         either side closes a connection that goes quiet. Disconnects are normal — the runner
         reconnects with exponential backoff and re-advertises its catalog, and in-flight actions
@@ -132,14 +132,14 @@ execution:
 
 <span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The installer verifies the download's checksum; to check before you run it, verify the
         release's SLSA provenance + checksum yourself first — see <.link
           href={~p"/trust" <> "#release-integrity"}
           class="text-brand-400 hover:text-brand-300"
         >Release integrity</.link>.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
         changed pack hash lands as <strong class="text-zinc-200">pending</strong> on the Packs
         page until someone trusts it — updates are visible, never silent.
@@ -151,7 +151,7 @@ execution:
 <span class="text-zinc-500">$</span> sudo emisar pack list             <span class="text-zinc-500"># loaded packs + hashes</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f        <span class="text-zinc-500"># the local JSONL journal, live</span>
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         (The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
         so these work as-is on an installed host.) The runner itself runs as the unprivileged
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
@@ -166,7 +166,7 @@ execution:
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -215,7 +215,7 @@ execution:
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Default uninstall deletes the cached runner token and generated identity. Then delete the
         runner in the dashboard. Its run history and audit events stay — history survives the
         host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
@@ -226,14 +226,14 @@ execution:
       </p>
 
       <.docs_h3 id="resetting-identity">Resetting identity manually</.docs_h3>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Put a new enrollment key in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>,
         then stop the runner before removing its token and generated identity:
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl stop emisar
 <span class="text-zinc-500">$</span> sudo rm -f /var/lib/emisar/token /var/lib/emisar/token.json /var/lib/emisar/runner_id
 <span class="text-zinc-500">$</span> sudo systemctl start emisar</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A reinstall with a different
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
         offers the same reset. In unattended installs, add

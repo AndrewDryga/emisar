@@ -26,7 +26,7 @@
           originate a run. The signature, not the cloud, is the authority.
         </:dek>
       </.docs_header>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
         runbooks, and API keys can't dispatch to that host — only a signed MCP call
         runs. Turn it on where "this came from a customer-authorized MCP client" must be
@@ -34,10 +34,10 @@
       </p>
 
       <.docs_h2 id="how-it-works">How it works</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Three parties, one of them untrusted. Here is the path a signed dispatch takes:
       </p>
-      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+      <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
           <strong>The MCP client signs and presents its cert.</strong>
           For <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>,
@@ -79,14 +79,14 @@
       </.docs_callout>
 
       <.docs_h2 id="turn-on">Turn it on</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         One command mints a CA, an operator key, and a certificate, and prints everything to wire up
         — the runner config block (the CA public key), the CA private key to store offline, and the
         two env vars for your MCP client. Everything is generated offline; the private keys are
         printed locally and sent nowhere.
       </p>
 
-      <p class="mt-6 text-sm leading-7 text-zinc-400">
+      <p class="mt-6 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">1. Bootstrap on an operator machine.</strong>
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signing init</code>
         mints the CA + leaf + cert in one shot. (Already have a CA? Use
@@ -101,7 +101,7 @@
         copy_text="emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"
       ><span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h</.docs_code>
 
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">2. Install the CA public key</strong>
         in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
         on every runner. The CA public key is safe to commit; ship it the way you ship the rest of
@@ -115,7 +115,7 @@ signing:
     - ca_id: acme-2026
       public_key: &lt;CA public key from signing init&gt;</.docs_code>
 
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP client</strong>
         as environment variables — never on the portal, never in version control
         (see <.link
@@ -127,7 +127,7 @@ signing:
 EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
 EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">4. Turn it on — with a restart.</strong>
         The first time you enable enforcement, <strong class="text-zinc-200">restart</strong>
         the runner: it opens the durable replay journal at startup and then advertises that it
@@ -139,7 +139,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
         runner do apply live with a reload, no dropped runs.)
       </p>
       <.docs_code phx-no-format label="shell" copy_text="sudo systemctl restart emisar"><span class="text-zinc-500">$</span> sudo systemctl restart emisar</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Then confirm it landed before you rely on it: the Runner page — and the runners list — shows the
         <strong class="text-zinc-200">Signed dispatch only</strong>
         badge and the Run button is disabled, an MCP
@@ -149,12 +149,12 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </p>
 
       <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The hard part of any signing scheme isn't the math — it's getting the right trust anchor onto
         every host and keeping it current. The CA model keeps that boring: it's one public key per
         fleet, not one per operator, so onboarding someone never touches a runner.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -209,11 +209,11 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </ul>
 
       <.docs_h2 id="rotating">Rotating operators</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Rotating an operator's key never touches a single runner: certs are short-lived and the CA
         already lives in every runner's config. Mint a fresh cert and swap the client's env vars.
       </p>
-      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+      <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
             emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod --ttl 24h
@@ -234,12 +234,12 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </ol>
 
       <.docs_h2 id="revoking">Revoking</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The short cert TTL is the everyday revocation lever — a leaked leaf key is dead once its cert
         expires, with no fleet operation at all. To kill a leaked key <em>now</em>, or to revoke a
         compromised CA, rotate the CA. Be clear-eyed about two things:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -265,7 +265,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </ul>
 
       <.docs_h2 id="best-practices">Best practices</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -314,7 +314,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </ul>
 
       <.docs_h2 id="guarantees">What it does and doesn't guarantee</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -357,10 +357,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </ul>
 
       <.docs_h2 id="troubleshooting">Troubleshooting a refusal</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A refused dispatch comes back as a failed run whose error names the cause:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>

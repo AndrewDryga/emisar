@@ -25,7 +25,7 @@
       </.docs_header>
 
       <.docs_h2 id="the-list">The Runs list</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Runs</strong>
         in the sidebar lists every action dispatched across your account, newest first. Each row is
         one invocation against one host: when it ran, the action id, the target runner, who
@@ -34,11 +34,11 @@
         phone the row collapses to a two-line card — the action and its status on top, then origin,
         runner, and time below.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Four filters narrow the feed, and each one lives in the URL — so the back button, a refresh,
         and a shared link all land on the same view:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -76,14 +76,14 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner's page links straight to its own runs, and an agent's page links to the runs
         dispatched with its key — so the common "what did this host, or this agent, do" question is
         one filtered link, not a hand-built query.
       </p>
 
       <.docs_h2 id="statuses">Run statuses</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A run moves through a small state machine. It starts <em>pending</em>
         — created and queued —
         becomes <em>sent</em>
@@ -132,7 +132,7 @@
           </tbody>
         </table>
       </div>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Three terminal statuses look alike and mean different things — and the difference tells you
         what to do next. <strong class="text-zinc-200">Denied</strong>
         is the control plane's policy refusing the dispatch; the run never left the cloud, so the fix
@@ -144,14 +144,14 @@
       </p>
 
       <.docs_h2 id="run-detail">A single run</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Open a row for the full record of that one invocation. A fact strip leads with the outcome
         and the essentials: <strong>Status</strong>, the <strong>Runner</strong>
         it targeted (a link to that host), <strong>Dispatched by</strong>, <strong>Duration</strong>,
         the process <strong>Exit code</strong>, and the <strong>Started</strong>
         time.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Dispatched by</strong>
         names the accountable person first. An operator run shows the team member who ran it; an
         agent run shows the human who owns the API key the agent used, with the client as secondary
@@ -160,7 +160,7 @@
         attribution the audit trail uses, so "who ran this, and through what" is answered on the row
         itself.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A <strong>Why</strong>
         section carries the justification. Every dispatch requires a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
@@ -170,7 +170,7 @@
         version the decision was made under; a routine allow is left off, because a run that
         dispatched at all already cleared policy.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Below that are the <strong>arguments</strong>
         the action was called with — carrying a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sha256</code>
@@ -188,32 +188,32 @@
       </p>
 
       <.docs_h2 id="output">Live output and caps</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The output panel streams the run's stdout and stderr as the runner produces them, line by
         line. stderr is tinted so errors stand out in a noisy stream, and a <em>streaming</em>
         marker shows while the run is still in flight; a run that produced nothing says so instead of
         showing an empty terminal.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The terminal renders the most recent 500 chunks. A run that streamed more shows a note that
         earlier output was trimmed, so a clipped view never reads as the whole story. This is a
         display limit that keeps a chatty run from growing the page without bound — it caps what's on
         screen, not what the runner sent or what's recorded.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Truncation can also happen at the source. The runner bounds the output it captures per the
         action's output settings; when it hits that limit it clips the stream and flags the run as
         truncated. Each run also records whether every progress chunk arrived, so a gap left by a
         mid-run disconnect is visible rather than silent.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Every run carries a durable output budget: up to 50,000 progress chunks and 64 MiB in total,
         with any single chunk capped at 256 KiB. A run that would exceed the budget stops accepting
         further chunks. The cap is charged under the run's row lock, so it holds across runner
         reconnects — a runaway or hostile runner can't flood the control plane by streaming without
         end.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         To watch a runner from the host itself — its service log and its local event journal — tail
         them over SSH:
       </p>
@@ -232,12 +232,12 @@
       </.docs_callout>
 
       <.docs_h2 id="cancelling">Cancelling a run</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         You can stop a run that hasn't finished. Open it and use <strong>Cancel run</strong> —
         available while the run is pending, sent, or running, to operators and above. What happens
         depends on where the run is:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -257,7 +257,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Cancellation is recorded in the audit trail and is idempotent — asking to cancel a run that
         already finished does nothing. A run that's <em>awaiting approval</em>
         isn't cancelled here; deny its approval instead, which pulls the run back and records the
@@ -268,7 +268,7 @@
       </p>
 
       <.docs_h2 id="operations">Operations and retries</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Each run is one invocation, and each stays a faithful record of one attempt. Re-running an
         action — from a runner's page, a runbook, or an agent — creates a <em>new</em>
         run; emisar never silently retries a finished one. An in-flight run does survive a runner
@@ -278,14 +278,14 @@
           class="text-brand-400 hover:text-brand-300"
         >the runner fleet</.link>.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         When one dispatch targets several hosts at once — an agent fanning an action across a runner
         group over MCP — each host gets its own run, and those runs are grouped under one operation.
         A fan-out reaches up to 16 runners and reads as a single action with a result per host.
         Grouping is also what makes a retry safe: replaying the same operation returns the original
         runs instead of dispatching duplicates, so a lost response never becomes a double execution.
       </p>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A runbook works the same way. One execution groups every run its steps produced, in dispatch
         order, so a multi-step sequence reads as one unit rather than a scatter of unrelated rows —
         see <.link navigate={~p"/docs/runbooks"} class="text-brand-400 hover:text-brand-300">runbooks</.link>. For

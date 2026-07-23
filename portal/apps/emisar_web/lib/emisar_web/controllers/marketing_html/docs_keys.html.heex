@@ -28,7 +28,7 @@
       </.docs_header>
 
       <.docs_h2 id="what-is-a-key">What an MCP key is</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         An MCP key is the credential an LLM agent presents to reach emisar's tool API. It rides as
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization: Bearer emk-…</code>
         on every call to the MCP endpoint. Keys start with
@@ -36,7 +36,7 @@
         followed by a short public identifier; the secret itself is hashed the moment it's created
         and is never stored or shown again.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -66,12 +66,12 @@
       </ul>
 
       <.docs_h2 id="no-scope">A key has no scope of its own</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         An MCP key carries no scope of its own — there is no per-key runner list or permission dial
         to set, and none to forget. What a connected agent can do is decided by two things that live
         on the member who minted the key, not on the key:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -96,7 +96,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         So scoping the person scopes their agents. To limit what an agent can touch, narrow the
         member who owns its key on the
         <.link
@@ -108,7 +108,7 @@
       </p>
 
       <.docs_h2 id="minting">Minting a key</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Keys are minted from the <strong>LLM agents</strong>
         page in the console — the same place you
         connect and revoke agents. Pick the client you're connecting and emisar mints a key for it
@@ -116,7 +116,7 @@
         Cloud clients like Claude.ai and ChatGPT get no pasted key at all — they connect over OAuth
         and mint their backing key only after you approve the connection.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -148,7 +148,7 @@
       </ul>
 
       <.docs_h2 id="rotating">Rotating a key</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Rotating swaps a key's secret without downtime. From an agent's row,
         <strong>Rotate</strong>
         mints a successor that inherits the old key's name, scope, and kind but carries a new secret
@@ -157,7 +157,7 @@
         the client's config with the new secret any time in that window — nothing breaks while you
         do.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -188,7 +188,7 @@
       </ul>
 
       <.docs_h2 id="revoking">Revoking a key</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Revoke</strong>
         is the kill switch, and it's terminal. The moment you confirm, the
         key is dead and the connected client gets a
@@ -207,7 +207,7 @@
       </.docs_callout>
 
       <.docs_h2 id="audit-export">Audit-export tokens are a different kind</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Not every token emisar issues is an MCP key. An <strong>audit-export</strong>
         token is a
         separate kind, minted from the <strong>Audit</strong>
@@ -225,7 +225,7 @@
       </p>
 
       <.docs_h2 id="bridge">The emisar-mcp bridge</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Local LLM clients — Claude Desktop, Cursor, Claude Code, the Gemini and Codex CLIs — speak
         MCP over stdio, not HTTP.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
@@ -235,7 +235,7 @@
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
         header.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -270,14 +270,14 @@
       </ul>
 
       <.docs_h2 id="bridge-version">Keeping the bridge supported</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar supports the emisar-mcp bridge from a declared minimum version
         (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">0.3.0</code>
         today) upward. The bridge reports its version on every request, so both the console and the
         control plane know whether a given agent's bridge is current, merely outdated, or below the
         floor.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>

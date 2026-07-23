@@ -31,7 +31,7 @@
       </figure>
 
       <.docs_h2 id="made-of">What a runbook is made of</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         An ordered list of steps. Each step names an action from your catalog, the arguments to
         pass, and where it runs — a <strong class="text-zinc-200">specific runner</strong>
         or a <strong class="text-zinc-200">runner group</strong>
@@ -41,13 +41,13 @@
       </p>
 
       <.docs_h2 id="authoring">Authoring</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Runbooks → New</strong> in the dashboard. The editor is a form, not a YAML
         textarea: pick an action from the catalog, fill its declared arguments, choose the
         target, reorder steps with the arrow controls. Owners and admins author and edit;
         operators and viewers (and connected LLMs) see published runbooks read-only.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -67,13 +67,13 @@
       </ul>
 
       <.docs_h2 id="running">Running one</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Dispatch from the runbook's page with a required reason — same as any single action.
         Execution runs in waves: up to five runs dispatch together, and the whole wave must reach a
         terminal state before the next wave starts — a run held for approval keeps its wave open, and
         later waves wait. Two properties matter operationally:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -94,7 +94,7 @@
       </ul>
 
       <.docs_h2 id="worked-example">Worked example: a fleet health-check</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The classic case for your first runbook is the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">health-check.sh</code>
         that SSHes to every node and greps a dozen things. As a runbook it's an ordered list of
@@ -104,7 +104,7 @@
         port, every check declared and journaled. Because the checks are read-only they sit in the
         low-risk tier, so they fan out across the whole fleet without stopping for an approval:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -139,7 +139,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Dispatch it with a reason and each group step fans out in parallel waves — one execution row
         per node per step, with that node's output, exit code, and duration. Publish it once and the
         whole sweep is a single click for the on-call, or a single
@@ -151,7 +151,7 @@
       </p>
 
       <.docs_h2 id="llm">Runbooks and your LLM</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Connected agents see four runbook tools:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
         (published

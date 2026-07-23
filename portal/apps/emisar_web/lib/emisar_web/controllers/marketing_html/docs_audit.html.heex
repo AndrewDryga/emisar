@@ -30,7 +30,7 @@
       </figure>
 
       <.docs_h2 id="recorded">What gets recorded</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Events are named
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">domain.action</code>
         — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action_run.denied</code>
@@ -45,7 +45,7 @@
       </p>
 
       <.docs_h2 id="reading">Reading it in the dashboard</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Audit</strong> in the sidebar: filter by event type or actor kind; every
         row expands to the full payload, and references resolve to live labels (the runner's
         name, the user's email) so you're not cross-referencing UUIDs. LLM-driven runs carry
@@ -54,7 +54,7 @@
       </p>
 
       <.docs_h2 id="exporting">Exporting the trail</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Two ways out: the <strong>Export CSV</strong> button on the
         Audit log downloads exactly the view you've filtered to, and the export endpoint serves
         NDJSON — one event per line, cursor-paginated, forward-only.
@@ -69,7 +69,7 @@
 <span class="text-zinc-500"># follow-ups — pass the cursor from the previous response</span>
 <span class="text-zinc-500">$</span> curl -s <span class="text-brand-300">"https://emisar.dev/api/audit?cursor=$NEXT"</span> \
     -H <span class="text-brand-300">"Authorization: Bearer $AUDIT_KEY"</span></.docs_code>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -108,7 +108,7 @@
       </ul>
 
       <.docs_h2 id="journal">The runner-side journal</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Independently of the cloud, every runner writes a JSONL line per action attempt to
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
         — argv hashes, exit codes, redaction counts, output digests — each line chained to the

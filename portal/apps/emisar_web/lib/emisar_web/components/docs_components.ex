@@ -49,7 +49,11 @@ defmodule EmisarWeb.DocsComponents do
           <.docs_nav_groups current={@current} />
         </nav>
 
-        <div class="min-w-0 [&_p]:leading-7 [&_li]:leading-7">
+        <%!-- max-w-2xl caps the reading measure at ~72ch: uncapped, body text
+             runs 100+ chars on wide viewports, which reads dense however loose
+             the leading is. Code, tables, and figures all fit inside 42rem, so
+             one cap on the column keeps every block on the same left edge. --%>
+        <div class="min-w-0 max-w-2xl [&_p]:leading-7 [&_li]:leading-7">
           {render_slot(@inner_block)}
           <.docs_prev_next current={@current} />
         </div>

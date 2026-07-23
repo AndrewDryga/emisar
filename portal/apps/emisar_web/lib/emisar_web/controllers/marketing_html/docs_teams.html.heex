@@ -33,7 +33,7 @@
       </figure>
 
       <.docs_h2 id="roles">Roles</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Four ordered roles plus one specialist seat. Authorization is permission-based under
         the hood, so this table is the contract:
       </p>
@@ -89,7 +89,7 @@
       </div>
 
       <.docs_h2 id="inviting">Inviting your team</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Team → Invite</strong>: enter an email, pick the role, send. The invite link is a
         one-time token (hashed at rest like every credential here); accepting it creates the
         membership at the role you chose. Granting the
@@ -100,14 +100,14 @@
       </p>
 
       <.docs_h2 id="runner-scopes">Per-member runner scopes</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Roles answer <em>what</em>
         someone can do; runner scopes answer <em>where</em>. The owner who
         created the account sees every runner; everyone you invite — and everyone provisioned through
         SSO — starts with <strong class="text-zinc-200">no runner access</strong>
         and is granted up. Add scopes on the member's team page and they see the union of what you list:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -124,7 +124,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Scoping is treated as <strong class="text-zinc-200">existence-hiding</strong>, not just
         permission-denying: out-of-scope runners don't appear in lists, their detail pages 404,
         and their actions vanish from the member's dispatch surface. An API key inherits its
@@ -134,7 +134,7 @@
       </p>
 
       <.docs_h2 id="mfa">MFA</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         TOTP (any standard authenticator app) with one-time recovery codes — codes are shown
         once, stored hashed, and each works exactly once. Replayed TOTP codes are rejected.
         Beyond self-service, an owner or admin can flip
@@ -151,7 +151,7 @@
       </p>
 
       <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>

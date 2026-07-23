@@ -24,7 +24,7 @@
       </.docs_header>
 
       <.docs_h2 id="runner-connect">A runner won't connect</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner names the cause in its own logs — start there before you touch config.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># what the runner is doing right now</span>
@@ -33,7 +33,7 @@
 
 <span class="text-zinc-500"># service stuck in "failed" after repeated crashes — clear it, then start</span>
 <span class="text-zinc-500">$</span> sudo systemctl reset-failed emisar &amp;&amp; sudo systemctl start emisar</.docs_code>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -96,14 +96,14 @@
       </ul>
 
       <.docs_h2 id="offline-stuck">Offline runners and stuck runs</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner heartbeats every 30 seconds and the dashboard's status reflects it. A brief
         disconnect is normal: the runner reconnects with exponential backoff, re-advertises its
         catalog, and in-flight actions keep executing through the gap, with results delivered on
         the new connection. Nothing sits "running" forever — a background sweep resolves anything
         that stopped making progress:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -134,19 +134,19 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The run's detail page shows the exact reason; the <strong>Runners</strong>
         page shows whether the host is connected. A runner that flaps between connected and offline
         is almost always egress or a wandering host clock — check both.
       </p>
 
       <.docs_h2 id="failed-refused-denied">Failed, refused, or denied</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         These look alike when you're in a hurry, but only one of them means the command actually
         ran on the host. Read the run's status and error message first — the distinction tells you
         where to look next.
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -205,7 +205,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The run detail page is the fastest triage — status, exit code, output, policy, and error
         message in one place. <strong>Audit</strong>
         is where you pivot across many runs by actor or event type; how to read and export it is in <.link
@@ -215,11 +215,11 @@
       </p>
 
       <.docs_h2 id="pack-pending">A pack is pending or blocking dispatch</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Packs are administrator-trusted content, pinned by content hash. Two states stop an action
         from dispatching, both by design:
       </p>
-      <ul class="mt-4 space-y-3 text-sm leading-7 text-zinc-400">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -249,7 +249,7 @@
 
 <span class="text-zinc-500"># re-pin a drifted host back to the trusted bytes</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update &lt;id&gt;</.docs_code>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Compare the host's hash against the trusted hash shown on the Packs page to confirm drift.
         The full pack model — trust, drift, and versioning — is in <.link
           navigate={~p"/docs/action-packs"}
@@ -258,7 +258,7 @@
       </p>
 
       <.docs_h2 id="limits">Operational limits</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The caps Emisar enforces so one noisy action, one busy agent, or one aggressive export
         can't overwhelm a page or the API. Most are generous; these are the ones worth knowing
         before you build against them.
@@ -364,7 +364,7 @@
       </.docs_callout>
 
       <.docs_h2 id="data-residency">Where your data lives</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner, its packs, and its local journal live on your hosts. Emisar's control plane —
         the dashboard, the audit log, run history, and the MCP API — is a hosted service on <strong class="text-zinc-200">Google Cloud in the United States</strong>. Data is encrypted
         at rest with provider-managed keys and in transit with TLS, and the runner only ever dials
@@ -375,7 +375,7 @@
       </p>
 
       <.docs_h2 id="support">Still stuck?</.docs_h2>
-      <p class="mt-5 text-sm leading-7 text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         When the runner's logs and the run's error message don't explain it, grab the run id (it's
         in the run's URL) and the host's service logs around that time, and send them to <a
           href={EmisarWeb.MailTo.support()}
