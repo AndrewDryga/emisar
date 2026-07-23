@@ -38,20 +38,28 @@
         to reach them — an agent's key is bounded by its owner's scope, so scoping the person
         scopes their agent. Get these right and the rest is defaults.
       </p>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        (How to install runners and where each shape can act — a host, a <.link
+          navigate={~p"/docs/containers"}
+          class="text-brand-400 hover:text-brand-300"
+        >container</.link>,
+        a
+        <.link navigate={~p"/docs/kubernetes"} class="text-brand-400 hover:text-brand-300">Kubernetes</.link>
+        or
+        <.link navigate={~p"/docs/nomad"} class="text-brand-400 hover:text-brand-300">Nomad</.link>
+        node — is its own set of pages; this one is the envelope you set around them.)
+      </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">One runner per host.</strong>
-            A runner's identity is its account plus a stable id; names are unique within an
-            account. Don't share one across hosts, and don't run two on the same box.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
             <strong class="text-zinc-200">Group by tier, not by host.</strong>
-            A group is the unit that policy, runbooks, member scopes, and agent fan-out all target.
+            A
+            <.link
+              navigate={~p"/docs/runners" <> "#groups-labels"}
+              class="text-brand-400 hover:text-brand-300"
+            >group</.link>
+            is the unit that policy, runbooks, member scopes, and agent fan-out all target.
             Name it for the fleet role — <code class="font-mono">web</code>, <code class="font-mono">edge</code>, <code class="font-mono">db-prod</code>,
             <code class="font-mono">cache</code>
             — not the machine. The installer defaults the group
@@ -124,7 +132,10 @@
           Confirm the tier floor for the whole fleet — <code class="font-mono">low</code>/<code class="font-mono">medium</code>
           allow, <code class="font-mono">high</code>
           require approval, <code class="font-mono">critical</code>
-          deny. Packs are authored so low-risk actions are read-only and destructive ones carry higher tiers. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
+          deny. Packs are authored so low-risk actions are read-only and destructive ones carry higher tiers. Higher tiers can't be made more permissive than lower ones; the editor enforces it. See <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >policies &amp; approvals</.link>.
         </li>
         <li>
           <strong class="text-zinc-200">Add approvals where they matter.</strong>
@@ -136,6 +147,10 @@
           Give each member only the runners or groups they own — their agents' keys are bounded
           by that same scope. Out-of-scope hosts don't render, 404 on their detail pages, and
           vanish from the dispatch surface — it hides the host, it doesn't just gray out a button.
+          See <.link
+            navigate={~p"/docs/teams-and-access" <> "#runner-scopes"}
+            class="text-brand-400 hover:text-brand-300"
+          >per-member runner scopes</.link>.
         </li>
         <li>
           <strong class="text-zinc-200">Lock the sensitive groups.</strong>
@@ -160,15 +175,27 @@
         </li>
         <li>
           <strong class="text-zinc-200">Wire identity.</strong>
-          Require MFA account-wide. Add SSO so people sign in through your IdP; on
-          Enterprise, add SCIM so offboarding someone in the directory suspends them here —
+          Require MFA account-wide. Add
+          <.link
+            navigate={~p"/docs/sso"}
+            class="text-brand-400 hover:text-brand-300"
+          >SSO</.link>
+          so people sign in through your IdP; on Enterprise, add
+          <.link
+            navigate={~p"/docs/scim"}
+            class="text-brand-400 hover:text-brand-300"
+          >SCIM</.link>
+          so offboarding someone in the directory suspends them here —
           sessions killed, keys revoked — with no checklist. <.plan_note tier={:team} />
         </li>
         <li>
           <strong class="text-zinc-200">Ship the audit to your SIEM.</strong>
           Mint an <code class="font-mono">audit-export</code>
           token, point your collector at the NDJSON feed, and alert on the handful of events that
-          actually mean something (below).
+          actually mean something (below) — see <.link
+            navigate={~p"/docs/audit-and-siem"}
+            class="text-brand-400 hover:text-brand-300"
+          >audit &amp; SIEM</.link>.
         </li>
       </ol>
 
