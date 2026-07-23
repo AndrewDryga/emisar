@@ -271,6 +271,12 @@ func (a *App) packsGate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := a.warmPortalTestDependencies(ctx, env); err != nil {
+		return err
+	}
+	if err := a.ensurePortalTestDatabase(ctx, env); err != nil {
+		return err
+	}
 	checks := []struct {
 		label string
 		dir   string

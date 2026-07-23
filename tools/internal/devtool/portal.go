@@ -50,17 +50,17 @@ func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error
 		testEnv[key] = value
 	}
 	testEnv["MIX_ENV"] = "test"
-	fmt.Fprintln(a.Out, "==> deps warm-up (unscanned: third-party compile warnings are not ours)")
-	if err := a.run(ctx, a.Portal, testEnv, "mix", "deps.compile"); err != nil {
-		return fmt.Errorf("deps compile failed: %w", err)
+	if err := a.warmPortalTestDependencies(ctx, testEnv); err != nil {
+		return err
+	}
+	if err := a.ensurePortalTestDatabase(ctx, testEnv); err != nil {
+		return err
 	}
 	checks := []struct {
 		label string
 		dir   string
 		args  []string
 	}{
-		{"database setup and migrations", filepath.Join(a.Portal, "apps", "emisar"), []string{"ecto.create", "--quiet"}},
-		{"database migrations", filepath.Join(a.Portal, "apps", "emisar"), []string{"ecto.migrate", "--quiet"}},
 		{"emisar app tests", filepath.Join(a.Portal, "apps", "emisar"), []string{"test"}},
 		{"emisar_web app tests", filepath.Join(a.Portal, "apps", "emisar_web"), []string{"test"}},
 	}
@@ -70,6 +70,30 @@ func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error
 		}
 	}
 	fmt.Fprintln(a.Out, "ok: portal test output is clean")
+	return nil
+}
+
+func (a *App) warmPortalTestDependencies(ctx context.Context, env map[string]string) error {
+	fmt.Fprintln(a.Out, "==> deps warm-up (unscanned: third-party compile warnings are not ours)")
+	if err := a.run(ctx, a.Portal, env, "mix", "deps.compile"); err != nil {
+		return fmt.Errorf("deps compile failed: %w", err)
+	}
+	return nil
+}
+
+func (a *App) ensurePortalTestDatabase(ctx context.Context, env map[string]string) error {
+	dir := filepath.Join(a.Portal, "apps", "emisar")
+	for _, check := range []struct {
+		label string
+		args  []string
+	}{
+		{"database setup", []string{"ecto.create", "--quiet"}},
+		{"database migrations", []string{"ecto.migrate", "--quiet"}},
+	} {
+		if err := a.runCaptured(ctx, check.label, dir, env, "mix", check.args...); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -181,9 +181,14 @@ root runner identity remain explicit in the pack-owned Compose plan or case.
 The harness writes:
 
 ```text
-dev/test-packs/reports/<pack>.log
-dev/test-packs/reports/<pack>/<case>.log
+dev/test-packs/reports/<invocation>/<pack>.log
+dev/test-packs/reports/<invocation>/<pack>/<case>.log
 ```
+
+Each command prints its invocation-specific report directory. That same
+invocation identity isolates its Compose projects, so separate commands may
+exercise the same pack and case concurrently without sharing containers,
+volumes, networks, runner-tools image tags, or report files.
 
 Each case report records the pack and SUT versions, image digest, execution
 identity, resolved images, action result, and durations. Failures also capture

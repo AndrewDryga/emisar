@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
@@ -154,20 +155,21 @@ func TestMergedEnvReplacesExistingValue(t *testing.T) {
 	}
 }
 
-func TestPackTestComposeProjectIsStableAndPackSpecific(t *testing.T) {
-	first := packTestComposeProject("/tmp/a", "postgres", "uptime")
-	if first != packTestComposeProject("/tmp/a", "postgres", "uptime") ||
-		first == packTestComposeProject("/tmp/b", "postgres", "uptime") ||
-		first == packTestComposeProject("/tmp/a", "mysql", "uptime") ||
-		first == packTestComposeProject("/tmp/a", "postgres", "connections") {
+func TestPackTestComposeProjectIsInvocationAndCaseSpecific(t *testing.T) {
+	first := packTestComposeProject("/tmp/a", "run-1", "postgres", "uptime")
+	if first != packTestComposeProject("/tmp/a", "run-1", "postgres", "uptime") ||
+		first == packTestComposeProject("/tmp/a", "run-2", "postgres", "uptime") ||
+		first == packTestComposeProject("/tmp/b", "run-1", "postgres", "uptime") ||
+		first == packTestComposeProject("/tmp/a", "run-1", "mysql", "uptime") ||
+		first == packTestComposeProject("/tmp/a", "run-1", "postgres", "connections") {
 		t.Fatalf("compose projects are not stable and distinct: %q", first)
 	}
 }
 
 func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
 	plan := packtest.PlanRef{Name: "postfix"}
-	nonroot := packTestComposeEnv("/tmp/repo", plan, "read", nil, "")
-	root := packTestComposeEnv("/tmp/repo", plan, "reload", nil, "root")
+	nonroot := packTestComposeEnv("/tmp/repo", "run-1", plan, "read", nil, "")
+	root := packTestComposeEnv("/tmp/repo", "run-1", plan, "reload", nil, "root")
 	if nonroot["PACKTEST_RUNNER_USER"] != "65532:65532" {
 		t.Fatalf("non-root identity = %q", nonroot["PACKTEST_RUNNER_USER"])
 	}
@@ -176,6 +178,24 @@ func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
 	}
 	if nonroot["COMPOSE_PROJECT_NAME"] == root["COMPOSE_PROJECT_NAME"] {
 		t.Fatal("case-specific projects collided")
+	}
+	if nonroot["PACKTEST_RUNNER_IMAGE"] != packTestRunnerImage("/tmp/repo", "run-1") {
+		t.Fatalf("runner image = %q", nonroot["PACKTEST_RUNNER_IMAGE"])
+	}
+}
+
+func TestPackTestInvocationIDIncludesProcessAndNanoseconds(t *testing.T) {
+	now := time.Date(2026, time.July, 23, 14, 5, 6, 789, time.FixedZone("test", -6*60*60))
+	if got, want := packTestInvocationID(now, 42), "20260723T200506.000000789Z-42"; got != want {
+		t.Fatalf("invocation id = %q, want %q", got, want)
+	}
+}
+
+func TestPackTestRunnerImageIsInvocationSpecific(t *testing.T) {
+	first := packTestRunnerImage("/tmp/repo", "run-1")
+	if first == packTestRunnerImage("/tmp/repo", "run-2") ||
+		first == packTestRunnerImage("/tmp/other", "run-1") {
+		t.Fatalf("runner image is not invocation-specific: %q", first)
 	}
 }
 

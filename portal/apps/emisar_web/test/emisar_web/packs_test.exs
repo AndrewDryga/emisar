@@ -297,7 +297,9 @@ defmodule EmisarWeb.PacksTest do
       # the bug this guards.
       for id <- ~w(dell-ipmi github-cli kubernetes snmp terraform-readonly) do
         assert PacksRegistry.get(id), "expected #{id} to be a real catalog pack"
-        refute Map.has_key?(by_id, id), "#{id} requires only a remote-target client; must not be suggested"
+
+        refute Map.has_key?(by_id, id),
+               "#{id} requires only a remote-target client; must not be suggested"
       end
 
       # Lean shape: only id/name/os/detect — no hash/tarball/description.

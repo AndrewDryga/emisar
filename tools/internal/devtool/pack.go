@@ -88,19 +88,18 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	if err != nil {
 		return err
 	}
-	reports := filepath.Join(harness, "reports")
+	invocationID := packTestInvocationID(time.Now(), os.Getpid())
+	reports := filepath.Join(harness, "reports", invocationID)
 	if err := os.MkdirAll(reports, 0o755); err != nil {
 		return err
 	}
-	for _, plan := range plans {
-		_ = os.Remove(filepath.Join(reports, plan.Name+".log"))
-		_ = os.RemoveAll(filepath.Join(reports, plan.Name))
-	}
+	fmt.Fprintf(a.Out, "Reports: %s\n", filepath.Join("dev", "test-packs", "reports", invocationID))
 	if err := packtest.Validate(plans); err != nil {
 		return errors.Join(err, writePackTestFailureReports(reports, plans, requestedVersionEnv, err))
 	}
 	bin := filepath.Join(harness, "bin")
 	baseCompose := filepath.Join(harness, "compose.yaml")
+	runnerImage := packTestRunnerImage(a.Root, invocationID)
 	preflightErr := func() error {
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
@@ -112,18 +111,22 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
 			return err
 		}
-		composeEnv := map[string]string{"EMISAR_ROOT": a.Root}
+		composeEnv := map[string]string{
+			"EMISAR_ROOT":           a.Root,
+			"PACKTEST_RUNNER_IMAGE": runnerImage,
+		}
 		return a.run(ctx, a.Root, composeEnv, "docker", "compose", "-f", baseCompose, "build", "runner-tools")
 	}()
 	if preflightErr != nil {
 		return errors.Join(preflightErr, writePackTestFailureReports(reports, plans, requestedVersionEnv, preflightErr))
 	}
+	defer a.removePackTestRunnerImage(runnerImage)
 
 	versionEnvs := make(map[string]map[string]string, len(plans))
 	for _, plan := range plans {
 		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
 		versionEnvs[plan.Name] = versionEnv
-		if err := a.preparePackTestPlan(ctx, baseCompose, plan, versionEnv); err != nil {
+		if err := a.preparePackTestPlan(ctx, baseCompose, invocationID, plan, versionEnv); err != nil {
 			return errors.Join(err, writePackTestFailureReports(reports, []packtest.PlanRef{plan}, requestedVersionEnv, err))
 		}
 	}
@@ -131,7 +134,12 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	var queued []packTestJob
 	for _, plan := range plans {
 		for _, test := range plan.Cases {
-			queued = append(queued, packTestJob{Plan: plan, Case: test, VersionEnv: versionEnvs[plan.Name]})
+			queued = append(queued, packTestJob{
+				InvocationID: invocationID,
+				Plan:         plan,
+				Case:         test,
+				VersionEnv:   versionEnvs[plan.Name],
+			})
 		}
 	}
 	jobs := make(chan packTestJob, len(queued))
@@ -276,9 +284,10 @@ func writePackTestReportHeader(output io.Writer, plan packtest.PlanRef, caseID s
 }
 
 type packTestJob struct {
-	Plan       packtest.PlanRef
-	Case       packtest.CaseRef
-	VersionEnv map[string]string
+	InvocationID string
+	Plan         packtest.PlanRef
+	Case         packtest.CaseRef
+	VersionEnv   map[string]string
 }
 
 type packTestCaseResult struct {
@@ -289,7 +298,13 @@ type packTestCaseResult struct {
 	Err      error
 }
 
-func (a *App) preparePackTestPlan(ctx context.Context, baseCompose string, plan packtest.PlanRef, versionEnv map[string]string) error {
+func (a *App) preparePackTestPlan(
+	ctx context.Context,
+	baseCompose string,
+	invocationID string,
+	plan packtest.PlanRef,
+	versionEnv map[string]string,
+) error {
 	packCompose := filepath.Join(filepath.Dir(plan.Path), "compose.yaml")
 	if !isFile(packCompose) {
 		return fmt.Errorf("behavior plan has no sibling compose.yaml")
@@ -302,7 +317,7 @@ func (a *App) preparePackTestPlan(ctx context.Context, baseCompose string, plan 
 		return err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
-	env := packTestComposeEnv(a.Root, plan, "build", versionEnv, plan.Runner.User)
+	env := packTestComposeEnv(a.Root, invocationID, plan, "build", versionEnv, plan.Runner.User)
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
 	if err != nil {
@@ -338,7 +353,14 @@ func (a *App) preparePackTestPlan(ctx context.Context, baseCompose string, plan 
 func (a *App) runPackTestCase(ctx context.Context, baseCompose string, job packTestJob) error {
 	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
-	env := packTestComposeEnv(a.Root, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
+	env := packTestComposeEnv(
+		a.Root,
+		job.InvocationID,
+		job.Plan,
+		job.Case.ID,
+		job.VersionEnv,
+		job.Case.RunnerUser,
+	)
 	images, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--images")...)
 	if err != nil {
 		return err
@@ -402,7 +424,14 @@ func packTestBuildServices(path string) ([]string, error) {
 	return services, nil
 }
 
-func packTestComposeEnv(root string, plan packtest.PlanRef, caseID string, versionEnv map[string]string, user string) map[string]string {
+func packTestComposeEnv(
+	root string,
+	invocationID string,
+	plan packtest.PlanRef,
+	caseID string,
+	versionEnv map[string]string,
+	user string,
+) map[string]string {
 	if user == "" {
 		user = "nonroot"
 	}
@@ -411,9 +440,10 @@ func packTestComposeEnv(root string, plan packtest.PlanRef, caseID string, versi
 		composeUser = "0:0"
 	}
 	env := map[string]string{
-		"COMPOSE_PROJECT_NAME": packTestComposeProject(root, plan.Name, caseID),
-		"EMISAR_ROOT":          root,
-		"PACKTEST_RUNNER_USER": composeUser,
+		"COMPOSE_PROJECT_NAME":  packTestComposeProject(root, invocationID, plan.Name, caseID),
+		"EMISAR_ROOT":           root,
+		"PACKTEST_RUNNER_IMAGE": packTestRunnerImage(root, invocationID),
+		"PACKTEST_RUNNER_USER":  composeUser,
 	}
 	for key, value := range versionEnv {
 		env[key] = value
@@ -543,8 +573,17 @@ func validPackTestDigest(digest string) bool {
 	return err == nil
 }
 
-func packTestComposeProject(root, pack, caseID string) string {
-	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+pack+"\x00"+caseID))
+func packTestInvocationID(now time.Time, pid int) string {
+	return fmt.Sprintf("%s-%d", now.UTC().Format("20060102T150405.000000000Z"), pid)
+}
+
+func packTestRunnerImage(root, invocationID string) string {
+	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+invocationID))
+	return "emisar-runner-tools:" + hash[:12]
+}
+
+func packTestComposeProject(root, invocationID, pack, caseID string) string {
+	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+invocationID+"\x00"+pack+"\x00"+caseID))
 	name := strings.Map(func(char rune) rune {
 		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-' || char == '_' {
 			return char
@@ -555,6 +594,14 @@ func packTestComposeProject(root, pack, caseID string) string {
 		name = name[:24]
 	}
 	return "emisar-packtest-" + name + "-" + hash[:12]
+}
+
+func (a *App) removePackTestRunnerImage(image string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, err := a.output(ctx, a.Root, nil, "docker", "image", "rm", image); err != nil {
+		fmt.Fprintf(a.Err, "warning: remove pack-test image %s: %v\n", image, err)
+	}
 }
 
 func (a *App) pack(ctx context.Context, args []string) error {
