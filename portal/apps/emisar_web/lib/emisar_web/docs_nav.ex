@@ -34,6 +34,23 @@ defmodule EmisarWeb.DocsNav do
            "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
        }
      ]},
+    {"Deploy",
+     [
+       %{
+         slug: "deployment",
+         title: "Production rollout",
+         path: "/docs/deployment",
+         icon: "hero-clipboard-document-check",
+         desc: "Go from one runner to a governed fleet, with a phased rollout and a checklist."
+       },
+       %{
+         slug: "containers",
+         title: "Containers & Kubernetes",
+         path: "/docs/containers",
+         icon: "hero-cube",
+         desc: "Run the runner as a sidecar, a Kubernetes DaemonSet, or a Nomad system job."
+       }
+     ]},
     {"Operate",
      [
        %{
@@ -132,23 +149,6 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/pack-registry",
          icon: "hero-archive-box",
          desc: "Run a private registry on GCS, S3, or any static host with packctl."
-       }
-     ]},
-    {"Deploy",
-     [
-       %{
-         slug: "deployment",
-         title: "Production rollout",
-         path: "/docs/deployment",
-         icon: "hero-clipboard-document-check",
-         desc: "Go from one runner to a governed fleet, with a phased rollout and a checklist."
-       },
-       %{
-         slug: "containers",
-         title: "Containers & Kubernetes",
-         path: "/docs/containers",
-         icon: "hero-cube",
-         desc: "Run the runner as a sidecar, a Kubernetes DaemonSet, or a Nomad system job."
        }
      ]},
     {"Reference",
