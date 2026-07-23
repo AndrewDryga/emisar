@@ -68,6 +68,39 @@ func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	}
 }
 
+func TestStagedCheckFormatsTheIndexNotTheWorkingTree(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+	} {
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	path := filepath.Join(root, "probe.go")
+	if err := os.WriteFile(path, []byte("package probe\nfunc Value( )int{return 1}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "add", "probe.go")
+	command.Dir = root
+	if err := command.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package probe\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	err := app.stagedCheck(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "staged Go files are not formatted") {
+		t.Fatalf("staged check error = %v", err)
+	}
+}
+
 func TestRunCapturedRejectsPollution(t *testing.T) {
 	app := testApp(t)
 	err := app.runCaptured(context.Background(), "fixture", app.Root, nil, "sh", "-c", "printf 'warning: noisy\\n'")

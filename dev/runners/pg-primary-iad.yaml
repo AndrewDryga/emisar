@@ -1,7 +1,7 @@
 schema_version: 1
 
 # Per-runner config for the docker-compose demo stack, mounted over the
-# image's baked-in /etc/emisar/config.yaml. DEV ONLY. See
+# runner image at /etc/emisar/config.yaml. DEV ONLY. See
 # dev/runners/edge-fra-01.yaml for the full rationale — `runner.id` is the
 # external_id the seed pins so this container adopts the "pg-primary-iad" row.
 runner:

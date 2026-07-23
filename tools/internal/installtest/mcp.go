@@ -1,0 +1,741 @@
+package installtest
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// MCP exercises install-mcp.sh, including atomic multi-target activation and
+// the interactive LLM-client configuration flow.
+func MCP(root string, out io.Writer) error {
+	h, err := newHarness(root, out)
+	if err != nil {
+		return err
+	}
+	defer h.close()
+
+	checks := []struct {
+		name string
+		run  func(*harness) error
+	}{
+		{"install directory discovery", mcpInstallDirs},
+		{"installation and rollback", mcpInstallRollback},
+		{"staging integrity", mcpStagingIntegrity},
+		{"atomic multi-target activation", mcpActivationTransaction},
+		{"LLM client configuration", mcpClientConfiguration},
+	}
+	for _, check := range checks {
+		if err := check.run(h); err != nil {
+			return fmt.Errorf("%s: %w", check.name, err)
+		}
+	}
+	fmt.Fprintln(out, "ok: mcp installer smoke test passed")
+	return nil
+}
+
+func mcpInstallDirs(h *harness) error {
+	homeBin := h.path("home", ".local", "bin")
+	systemBin := h.path("system-bin")
+	if err := h.mkdir(homeBin, systemBin); err != nil {
+		return err
+	}
+	for _, path := range []string{filepath.Join(homeBin, "emisar-mcp"), filepath.Join(systemBin, "emisar-mcp")} {
+		if err := writeFile(path, "", 0o755); err != nil {
+			return err
+		}
+	}
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"resolve_install_dirs"},
+		`resolve_install_dirs "$HOME_DIR" "$SYSTEM_BIN"`+"\n",
+		map[string]string{"HOME_DIR": h.path("home"), "SYSTEM_BIN": systemBin})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	expected := homeBin + "\n" + systemBin + "\n"
+	if string(output) != expected {
+		return fmt.Errorf("resolved directories = %q, expected %q", output, expected)
+	}
+	return nil
+}
+
+func installMCP(h *harness, bin string) (string, error) {
+	if err := h.mkdir(bin); err != nil {
+		return "", err
+	}
+	if _, err := h.successful(h.root, map[string]string{"HOME": h.path("home")},
+		"bash", h.repoPath("install-mcp.sh"), "--yes", "--install-dir", bin); err != nil {
+		return "", err
+	}
+	output, err := h.successful(h.root, nil, filepath.Join(bin, "emisar-mcp"), "--version")
+	if err != nil {
+		return "", err
+	}
+	return matchedVersion(mcpVersion, output)
+}
+
+func mcpInstallRollback(h *harness) error {
+	bin := h.path("bin")
+	version, err := installMCP(h, bin)
+	if err != nil {
+		return err
+	}
+	installedOutput, err := h.successful(h.root, nil, filepath.Join(bin, "emisar-mcp"), "--version")
+	if err != nil {
+		return err
+	}
+
+	for _, flag := range []string{"--version", "--install-dir"} {
+		result := h.command(h.root, nil, "bash", h.repoPath("install-mcp.sh"), flag)
+		if result.err == nil || exitCode(result.err) != 2 {
+			return fmt.Errorf("%s without a value exited %d, expected 2", flag, exitCode(result.err))
+		}
+		for _, expected := range []string{"flag " + flag + " requires a value", "Usage: install-mcp.sh"} {
+			if !strings.Contains(string(result.output), expected) {
+				return fmt.Errorf("%s output does not contain %q:\n%s", flag, expected, result.output)
+			}
+		}
+	}
+	result := h.command(h.root, nil, "bash", h.repoPath("install-mcp.sh"), "--version", "--yes")
+	if result.err == nil || exitCode(result.err) != 2 ||
+		!strings.Contains(string(result.output), "flag --version requires a value") {
+		return fmt.Errorf("ambiguous --version parsing was accepted:\n%s", result.output)
+	}
+
+	credential := h.path("home", ".config", "emisar", "mcp-credentials.json")
+	if err := h.mkdir(filepath.Dir(credential)); err != nil {
+		return err
+	}
+	if err := writeFile(credential, `{"bootstrap":{"api_key":"preserve-me"}}`+"\n", 0o600); err != nil {
+		return err
+	}
+	credentialBefore, err := fileSHA(credential)
+	if err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(bin, "emisar-mcp"), `
+if [ "${1:-}" = "--version" ]; then
+  printf 'emisar-mcp 0.0.0\n'
+fi
+`); err != nil {
+		return err
+	}
+	realMove, err := exec.LookPath("mv")
+	if err != nil {
+		return err
+	}
+	fakeBin := h.path("interrupt-bin")
+	if err := h.mkdir(fakeBin); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "mv"),
+		fmt.Sprintf(`%q "$@"`+"\n"+`kill -KILL "$PPID"`, realMove)); err != nil {
+		return err
+	}
+	result = h.command(h.root, map[string]string{
+		"HOME": h.path("home"),
+		"PATH": fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}, "bash", h.repoPath("install-mcp.sh"), "--yes",
+		"--version", "mcp-v"+version, "--install-dir", bin)
+	if result.err == nil {
+		return fmt.Errorf("interrupted upgrade unexpectedly succeeded")
+	}
+	output, err := h.successful(h.root, nil, filepath.Join(bin, "emisar-mcp"), "--version")
+	if err != nil {
+		return err
+	}
+	if string(output) != string(installedOutput) {
+		return fmt.Errorf("interrupted upgrade left version %q, expected %q", output, installedOutput)
+	}
+	credentialAfter, err := fileSHA(credential)
+	if err != nil {
+		return err
+	}
+	if credentialBefore != credentialAfter {
+		return fmt.Errorf("interrupted upgrade changed MCP credentials")
+	}
+	return nil
+}
+
+func mcpStagingIntegrity(h *harness) error {
+	bin := h.path("staging-bin")
+	version, err := installMCP(h, bin)
+	if err != nil {
+		return err
+	}
+	realInstall, err := exec.LookPath("install")
+	if err != nil {
+		return err
+	}
+	hostileBin := h.path("hostile-bin")
+	target := h.path("hostile-target")
+	if err := h.mkdir(hostileBin, target); err != nil {
+		return err
+	}
+	hostileExecuted := h.path("hostile-executed")
+	hostile := fmt.Sprintf(`
+%q "$@"
+destination="${!#}"
+cat >"$destination" <<'PAYLOAD'
+#!/usr/bin/env bash
+touch %q
+printf 'emisar-mcp %s\n' %q
+PAYLOAD
+chmod +x "$destination"
+`, realInstall, hostileExecuted, version, version)
+	if err := fakeExecutable(filepath.Join(hostileBin, "install"), hostile); err != nil {
+		return err
+	}
+	result := h.command(h.root, map[string]string{
+		"HOME": h.path("home"),
+		"PATH": hostileBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}, "bash", h.repoPath("install-mcp.sh"), "--yes",
+		"--version", "mcp-v"+version, "--install-dir", target)
+	if err := expectFailure(result, "staged binary checksum changed"); err != nil {
+		return err
+	}
+	if err := requireAbsent(hostileExecuted); err != nil {
+		return err
+	}
+
+	if os.Geteuid() == 0 {
+		userTemp := h.path("user-controlled-tmp")
+		if err := h.mkdir(userTemp); err != nil {
+			return err
+		}
+		result = h.functions(h.repoPath("install-mcp.sh"), []string{"make_temp_dir"},
+			`make_temp_dir`+"\n", map[string]string{"TMPDIR": userTemp})
+		output, err := requireOutput(result)
+		if err != nil {
+			return err
+		}
+		trusted := strings.TrimSpace(string(output))
+		defer os.RemoveAll(trusted)
+		if !strings.HasPrefix(trusted, "/tmp/emisar-mcp-install.") {
+			return fmt.Errorf("privileged temp directory is %s, expected /tmp", trusted)
+		}
+	}
+	return nil
+}
+
+func shellSHAFunction() string {
+	return `
+warn() { printf '%s\n' "$*" >&2; }
+sha_value() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+`
+}
+
+func mcpActivationTransaction(h *harness) error {
+	installer := h.repoPath("install-mcp.sh")
+	names := []string{"rollback_installations", "activate_installations"}
+
+	linkTarget := h.path("link-target")
+	linkDir := h.path("link-dir")
+	if err := h.mkdir(linkDir); err != nil {
+		return err
+	}
+	if err := writeFile(linkTarget, "linked-old\n", 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(linkTarget, filepath.Join(linkDir, "emisar-mcp")); err != nil {
+		return err
+	}
+	result := h.functions(installer, names, shellSHAFunction()+`
+printf 'new\n' >"$INSTALL_DIR/.emisar-mcp.new.$$"
+source_sha=$(sha_value "$INSTALL_DIR/.emisar-mcp.new.$$")
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+activate_installations
+`, map[string]string{
+		"INSTALL_DIR": linkDir, "install_dirs": linkDir,
+	})
+	if err := expectFailure(result, "is not a regular file; refusing to replace it"); err != nil {
+		return fmt.Errorf("symlink destination: %w", err)
+	}
+	info, err := os.Lstat(filepath.Join(linkDir, "emisar-mcp"))
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("activation replaced the symlink destination")
+	}
+	if err := exactFile(linkTarget, "linked-old\n"); err != nil {
+		return err
+	}
+
+	txA := h.path("tx-a")
+	txB := h.path("tx-b")
+	if err := h.mkdir(txA, txB); err != nil {
+		return err
+	}
+	for _, entry := range []struct {
+		path    string
+		content string
+	}{
+		{filepath.Join(txA, "emisar-mcp"), "old-a\n"},
+		{filepath.Join(txB, "emisar-mcp"), "old-b\n"},
+	} {
+		if err := writeFile(entry.path, entry.content, 0o755); err != nil {
+			return err
+		}
+	}
+	realMove, err := exec.LookPath("mv")
+	if err != nil {
+		return err
+	}
+	failingBin := h.path("failing-mv")
+	if err := h.mkdir(failingBin); err != nil {
+		return err
+	}
+	counter := h.path("mv-count")
+	if err := fakeExecutable(filepath.Join(failingBin, "mv"), fmt.Sprintf(`
+src="${@: -2:1}"
+if [[ "$src" == */.emisar-mcp.new* ]]; then
+  count=0
+  test ! -e %q || read -r count <%q
+  count=$((count + 1))
+  printf '%%s\n' "$count" >%q
+  if [ "$count" -eq 2 ]; then exit 1; fi
+fi
+exec %q "$@"
+`, counter, counter, counter, realMove)); err != nil {
+		return err
+	}
+	installDirs := txA + "\n" + txB
+	result = h.functions(installer, names, shellSHAFunction()+`
+while IFS= read -r dir; do
+  printf 'new\n' >"$dir/.emisar-mcp.new.$$"
+done <<<"$install_dirs"
+source_sha=$(sha_value "$TX_A/.emisar-mcp.new.$$")
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+if activate_installations; then
+  printf 'activation unexpectedly succeeded\n' >&2
+  exit 1
+fi
+rollback_installations
+test "$transaction_active" -eq 0
+	`, map[string]string{
+		"PATH":         failingBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"install_dirs": installDirs, "TX_A": txA,
+	})
+	output, err := requireOutput(result)
+	if err != nil {
+		return fmt.Errorf("rollback transaction: %w", err)
+	}
+	if !strings.Contains(string(output), "could not atomically activate "+filepath.Join(txB, "emisar-mcp")) {
+		return fmt.Errorf("transaction did not report the second-target failure:\n%s", output)
+	}
+	if err := exactFile(filepath.Join(txA, "emisar-mcp"), "old-a\n"); err != nil {
+		return err
+	}
+	if err := exactFile(filepath.Join(txB, "emisar-mcp"), "old-b\n"); err != nil {
+		return err
+	}
+
+	for _, dir := range []string{txA, txB} {
+		matches, err := filepath.Glob(filepath.Join(dir, ".emisar-mcp.old.*"))
+		if err != nil {
+			return err
+		}
+		for _, path := range matches {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+	}
+	result = h.functions(installer, names, shellSHAFunction()+`
+while IFS= read -r dir; do
+  printf 'new\n' >"$dir/.emisar-mcp.new.$$"
+done <<<"$install_dirs"
+source_sha=$(sha_value "$TX_A/.emisar-mcp.new.$$")
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+activate_installations
+printf 'INSTALLED=%s\n' "$installed_paths"
+`, map[string]string{
+		"install_dirs": installDirs, "TX_A": txA,
+	})
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	for _, dir := range []string{txA, txB} {
+		if err := exactFile(filepath.Join(dir, "emisar-mcp"), "new\n"); err != nil {
+			return err
+		}
+		matches, err := filepath.Glob(filepath.Join(dir, ".emisar-mcp.old.*"))
+		if err != nil {
+			return err
+		}
+		if len(matches) != 0 {
+			return fmt.Errorf("successful activation left backups in %s", dir)
+		}
+	}
+	expectedInstalled := filepath.Join(txA, "emisar-mcp") + "\n" + filepath.Join(txB, "emisar-mcp")
+	if !strings.Contains(string(output), "INSTALLED="+expectedInstalled) {
+		return fmt.Errorf("installed paths = %q, expected %q", output, expectedInstalled)
+	}
+	return nil
+}
+
+var clientFunctions = []string{
+	"tty_available", "ask_tty", "json_config_has_emisar",
+	"toml_config_has_emisar", "yaml_config_has_emisar", "file_has_content",
+	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
+	"append_yaml_config", "own_config_file", "install_client_config",
+	"json_string_field", "json_client_key", "request_device_grant",
+	"await_device_approval", "scan_client", "out", "hdr", "ok", "dim",
+	"client_row", "open_browser", "configure_llm_clients",
+}
+
+func clientOverrides(extra string) string {
+	return `
+log() { :; }
+warn() { printf '%s\n' "$*" >&2; }
+tty_available() { return 0; }
+ask_tty() { return 0; }
+sleep() { :; }
+out() { :; }
+ok() { :; }
+dim() { :; }
+client_row() { :; }
+hdr() { :; }
+open_browser() { return 1; }
+` + extra
+}
+
+func clientEnvironment(home, portal string, assumeYes bool) map[string]string {
+	yes := "0"
+	if assumeYes {
+		yes = "1"
+	}
+	return map[string]string{
+		"CLIENT_HOME": home, "EMISAR_URL": portal, "ASSUME_YES": yes,
+		"OS": "linux", "first_bin": "/usr/local/bin/emisar-mcp",
+		"tmp": home, "DEVICE_RESP": filepath.Join(home, "device-authorization.json"),
+		"TOKEN_RESP": filepath.Join(home, "device-token.json"),
+	}
+}
+
+func runClientFlow(h *harness, home, portal string, assumeYes bool, overrides string) commandResult {
+	body := clientOverrides(overrides) + `
+CONFIGURED_CLIENTS=""
+clients_phase_ran=0
+CLIENTS_FOUND=0
+SCANNED=""
+CONSENTED=""
+DEVICE_CODE=""
+DEVICE_USER_CODE=""
+DEVICE_VERIFY_URI=""
+DEVICE_INTERVAL=5
+DEVICE_EXPIRES_IN=900
+configure_llm_clients "$CLIENT_HOME"
+printf '\nCONFIGURED_BEGIN\n%s\nCONFIGURED_END\n' "$CONFIGURED_CLIENTS"
+`
+	return h.functions(h.repoPath("install-mcp.sh"), clientFunctions, body,
+		clientEnvironment(home, portal, assumeYes))
+}
+
+func configuredClients(output string) string {
+	start := strings.Index(output, "CONFIGURED_BEGIN\n")
+	end := strings.Index(output, "\nCONFIGURED_END")
+	if start < 0 || end < start {
+		return ""
+	}
+	return strings.TrimSpace(output[start+len("CONFIGURED_BEGIN\n") : end])
+}
+
+func mcpClientConfiguration(h *harness) error {
+	home := h.path("clients-home")
+	directories := []string{
+		".cursor", ".codex", ".claude", ".openclaw", ".config/opencode",
+		".codeium/windsurf", ".pi", ".copilot", ".config/zed", ".hermes",
+		".config/goose",
+	}
+	for _, directory := range directories {
+		if err := h.mkdir(filepath.Join(home, filepath.FromSlash(directory))); err != nil {
+			return err
+		}
+	}
+	files := map[string]string{
+		".cursor/mcp.json": `{
+  "mcpServers": {
+    "other": { "command": "other-mcp" }
+  }
+}
+`,
+		".codex/config.toml": "[model]\nname = \"gpt\"\n",
+		".config/opencode/opencode.json": `{
+  "mcp": {
+    "other": { "type": "local", "command": ["other-mcp"] }
+  }
+}
+`,
+		".config/zed/settings.json": `{
+  // my editor
+  "theme": "One Dark",
+  "context_servers": {
+    "other": { "source": "custom", "command": "other-mcp" },
+  },
+}
+`,
+		".hermes/config.yaml":       "model: hermes-4\n",
+		".config/goose/config.yaml": "extensions:\n  developer:\n    enabled: true\n",
+	}
+	for relative, contents := range files {
+		if err := writeFile(filepath.Join(home, filepath.FromSlash(relative)), contents, 0o600); err != nil {
+			return err
+		}
+	}
+	goose := filepath.Join(home, ".config", "goose", "config.yaml")
+	gooseBefore, err := fileSHA(goose)
+	if err != nil {
+		return err
+	}
+
+	server := newDeviceServer(false)
+	defer server.close()
+	result := runClientFlow(h, home, server.server.URL, false, "")
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if countLines(configuredClients(string(output))) != 10 {
+		return fmt.Errorf("configured clients = %q, expected 10", configuredClients(string(output)))
+	}
+	if !strings.Contains(string(output), "Goose") {
+		return fmt.Errorf("Goose merge refusal was not reported:\n%s", output)
+	}
+	gooseAfter, err := fileSHA(goose)
+	if err != nil {
+		return err
+	}
+	if gooseBefore != gooseAfter {
+		return fmt.Errorf("Goose configuration changed despite an existing extensions key")
+	}
+	if err := inspectClientConfigs(home, server.server.URL); err != nil {
+		return err
+	}
+
+	cursor := filepath.Join(home, ".cursor", "mcp.json")
+	codex := filepath.Join(home, ".codex", "config.toml")
+	cursorBefore, err := fileSHA(cursor)
+	if err != nil {
+		return err
+	}
+	codexBefore, err := fileSHA(codex)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(home, ".config", "goose")); err != nil {
+		return err
+	}
+	result = runClientFlow(h, home, server.server.URL, false, `
+ask_tty() { printf 'unexpected client prompt on rerun\n' >&2; exit 9; }
+curl() { printf 'unexpected network call on rerun\n' >&2; exit 9; }
+`)
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if configuredClients(string(output)) != "" {
+		return fmt.Errorf("rerun reconfigured clients: %q", configuredClients(string(output)))
+	}
+	cursorAfter, _ := fileSHA(cursor)
+	codexAfter, _ := fileSHA(codex)
+	if cursorBefore != cursorAfter || codexBefore != codexAfter {
+		return fmt.Errorf("hands-off rerun changed existing client configuration")
+	}
+
+	deniedHome := h.path("denied-home")
+	if err := h.mkdir(filepath.Join(deniedHome, ".cursor")); err != nil {
+		return err
+	}
+	denied := newDeviceServer(true)
+	defer denied.close()
+	result = runClientFlow(h, deniedHome, denied.server.URL, false, "")
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if configuredClients(string(output)) != "" {
+		return fmt.Errorf("denied flow configured clients")
+	}
+	if err := requireAbsent(filepath.Join(deniedHome, ".cursor", "mcp.json")); err != nil {
+		return err
+	}
+
+	escaped := h.path("escaped-claude.json")
+	real := h.path("real-claude.json")
+	if err := writeFile(escaped, `{"history":["say \"emisar\" now"],"projects":{"/u/os/emisar":{}}}`+"\n", 0o600); err != nil {
+		return err
+	}
+	if err := writeFile(real, `{"mcpServers":{"emisar":{"command":"emisar-mcp"}}}`+"\n", 0o600); err != nil {
+		return err
+	}
+	result = h.functions(h.repoPath("install-mcp.sh"), clientFunctions, `
+if json_config_has_emisar "$ESCAPED"; then
+  printf 'escaped JSON text misread as configured\n' >&2
+  exit 1
+fi
+json_config_has_emisar "$REAL"
+`, map[string]string{"ESCAPED": escaped, "REAL": real})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+
+	if jq, lookupErr := exec.LookPath("jq"); lookupErr == nil {
+		probe := h.path("jq-probe.json")
+		jqBin := h.path("jq-only-bin")
+		if err := h.mkdir(jqBin); err != nil {
+			return err
+		}
+		if err := os.Symlink(jq, filepath.Join(jqBin, "jq")); err != nil {
+			return err
+		}
+		if err := writeFile(probe,
+			`{"device_code":"emdg-x","interval":7,"client_keys":{"claude-code":"emk-jq"}}`, 0o600); err != nil {
+			return err
+		}
+		result = h.functions(h.repoPath("install-mcp.sh"),
+			[]string{"json_string_field", "json_client_key"}, `
+test "$(json_string_field "$PROBE" device_code)" = emdg-x
+test "$(json_string_field "$PROBE" interval)" = 7
+test "$(json_client_key "$PROBE" claude-code)" = emk-jq
+if json_string_field "$PROBE" missing_key; then exit 1; fi
+`, map[string]string{"PATH": jqBin, "PROBE": probe})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("jq response readers: %w", err)
+		}
+	}
+
+	quietHome := h.path("quiet-home")
+	if err := h.mkdir(filepath.Join(quietHome, ".cursor")); err != nil {
+		return err
+	}
+	result = runClientFlow(h, quietHome, server.server.URL, true, `
+ask_tty() { printf 'unexpected prompt under ASSUME_YES\n' >&2; exit 9; }
+curl() { printf 'unexpected network call under ASSUME_YES\n' >&2; exit 9; }
+`)
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	return requireAbsent(filepath.Join(quietHome, ".cursor", "mcp.json"))
+}
+
+func inspectClientConfigs(home, portal string) error {
+	cursor, err := jsonFile(filepath.Join(home, ".cursor", "mcp.json"))
+	if err != nil {
+		return err
+	}
+	if err := requireNestedString(cursor, "other-mcp", "mcpServers", "other", "command"); err != nil {
+		return err
+	}
+	for expected, keys := range map[string][]string{
+		"emk-cur": {"mcpServers", "emisar", "env", "EMISAR_API_KEY"},
+		portal:    {"mcpServers", "emisar", "env", "EMISAR_URL"},
+	} {
+		if err := requireNestedString(cursor, expected, keys...); err != nil {
+			return err
+		}
+	}
+
+	claude, err := jsonFile(filepath.Join(home, ".claude.json"))
+	if err != nil {
+		return err
+	}
+	if err := requireNestedString(claude, "emk-cc", "mcpServers", "emisar", "env", "EMISAR_API_KEY"); err != nil {
+		return err
+	}
+	if err := requireNestedString(claude, "claude-code", "mcpServers", "emisar", "env", "EMISAR_CLIENT"); err != nil {
+		return err
+	}
+
+	openClaw, err := jsonFile(filepath.Join(home, ".openclaw", "openclaw.json"))
+	if err != nil {
+		return err
+	}
+	if err := requireNestedString(openClaw, "/usr/local/bin/emisar-mcp", "mcp", "servers", "emisar", "command"); err != nil {
+		return err
+	}
+	if err := requireNestedString(openClaw, "emk-claw", "mcp", "servers", "emisar", "env", "EMISAR_API_KEY"); err != nil {
+		return err
+	}
+
+	openCode, err := jsonFile(filepath.Join(home, ".config", "opencode", "opencode.json"))
+	if err != nil {
+		return err
+	}
+	if err := requireNestedString(openCode, "opencode", "mcp", "emisar", "environment", "EMISAR_CLIENT"); err != nil {
+		return err
+	}
+	if err := requireNestedString(openCode, "other-mcp", "mcp", "other", "command", "0"); err == nil {
+		return fmt.Errorf("array traversal unexpectedly used object keys")
+	}
+	command, err := nested(openCode, "mcp", "emisar", "command")
+	if err != nil {
+		return err
+	}
+	commandList, ok := command.([]any)
+	if !ok || len(commandList) != 1 || commandList[0] != "/usr/local/bin/emisar-mcp" {
+		return fmt.Errorf("OpenCode command = %#v", command)
+	}
+
+	for path, client := range map[string]string{
+		".codeium/windsurf/mcp_config.json": "windsurf",
+		".pi/agent/mcp.json":                "pi",
+		".copilot/mcp-config.json":          "copilot-cli",
+	} {
+		config, err := jsonFile(filepath.Join(home, filepath.FromSlash(path)))
+		if err != nil {
+			return err
+		}
+		if err := requireNestedString(config, client, "mcpServers", "emisar", "env", "EMISAR_CLIENT"); err != nil {
+			return err
+		}
+	}
+
+	zed := filepath.Join(home, ".config", "zed", "settings.json")
+	for _, text := range []string{
+		"// my editor", `"theme": "One Dark"`, `"other"`,
+		`"source": "custom"`, `"EMISAR_CLIENT": "zed"`,
+	} {
+		if err := containsFile(zed, text); err != nil {
+			return err
+		}
+	}
+	hermes := filepath.Join(home, ".hermes", "config.yaml")
+	for _, text := range []string{
+		"model: hermes-4", "mcp_servers:",
+		"command: /usr/local/bin/emisar-mcp", `EMISAR_API_KEY: "emk-her"`,
+	} {
+		if err := containsFile(hermes, text); err != nil {
+			return err
+		}
+	}
+	codex := filepath.Join(home, ".codex", "config.toml")
+	for _, text := range []string{
+		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "emk-cod"`, `name = "gpt"`,
+	} {
+		if err := containsFile(codex, text); err != nil {
+			return err
+		}
+	}
+	return nil
+}

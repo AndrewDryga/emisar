@@ -231,13 +231,13 @@ func (a *App) toolingCheck(ctx context.Context) error {
 }
 
 func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
-	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--", "dev", ".github/scripts")
+	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--", ".shell", "dev")
 	if err != nil {
 		return nil, err
 	}
 	var scripts []string
 	for _, path := range nulFields(data) {
-		if path != "dev/run" && filepath.Ext(path) != ".sh" {
+		if path != ".shell" && path != "dev/run" && filepath.Ext(path) != ".sh" {
 			continue
 		}
 		if info, statErr := os.Stat(filepath.Join(a.Root, filepath.FromSlash(path))); statErr == nil && !info.IsDir() {
@@ -268,6 +268,21 @@ func (a *App) portalFeedback(ctx context.Context, level string, args []string) e
 			}
 		}
 		return nil
+	case "check:staged":
+		if len(rest) != 0 {
+			return usage("usage: dev/run check staged")
+		}
+		return a.stagedCheck(ctx)
+	case "check:infra-templates":
+		if len(rest) != 0 {
+			return usage("usage: dev/run check infra-templates")
+		}
+		return a.infraOps(ctx, []string{"validate-templates"})
+	case "check:pack-environment":
+		if len(rest) > 2 {
+			return usage("usage: dev/run check pack-environment [repo] [environment]")
+		}
+		return a.infraOps(ctx, append([]string{"verify-pack-environment"}, rest...))
 	case "check:tooling":
 		if len(rest) != 0 {
 			return usage("usage: dev/run check tooling")
@@ -308,6 +323,6 @@ func (a *App) portalFeedback(ctx context.Context, level string, args []string) e
 		}
 		return a.portalTestOutput(ctx, env)
 	default:
-		return usage("usage: dev/run %s <changed|portal|agent-setup|tooling>", level)
+		return usage("usage: dev/run %s <changed|portal|staged|infra-templates|pack-environment|agent-setup|tooling>", level)
 	}
 }

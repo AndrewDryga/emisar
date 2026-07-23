@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/andrewdryga/emisar/tools/internal/infraops"
 )
 
 const usageText = `usage: dev/run <command> [args]
@@ -26,14 +28,21 @@ const usageText = `usage: dev/run <command> [args]
   capture <docs|console>   run a full screenshot workflow against this workspace
   e2e <sso|signing|billing>
                            run a cross-component development scenario
+  ops <portal|database|drill> ...
+                           operate production infrastructure from a workstation
   check changed            compile, then check only changed Portal source files
   check portal             compile, format-check, and run Credo for all Portal files
+  check staged             validate staged migrations and source formatting
+  check infra-templates    render and validate production cloud-init
+  check pack-environment [repo] [environment]
+                           verify the registry deployment environment
   check agent-setup        validate shared agent manuals, skills, tasks, and hooks
   check tooling            lint and test the shared development tooling
   test portal <args...>    run focused, --stale, --failed, or listening Portal tests
   gate portal              run the canonical Portal gate
   loadtest <args...>       run the MCP concurrency harness
   pack check <name>        validate one pack without changing artifacts
+  pack hashes [--write]    verify or refresh cross-language pack hash goldens
   pack sync <name> --fix   rebuild the authoritative catalog and focused tests
   pack test [pattern]      run generated pack cases against their real services
   smoke                    build and start the packaged root Compose topology
@@ -174,6 +183,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.capture(ctx, rest)
 	case "e2e":
 		return a.e2e(ctx, rest)
+	case "ops":
+		return a.infraOps(ctx, rest)
 	case "check", "test", "gate":
 		return a.portalFeedback(ctx, command, rest)
 	case "loadtest":
@@ -192,6 +203,14 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		a.usage()
 		return usage("unknown command %q", command)
 	}
+}
+
+func (a *App) infraOps(ctx context.Context, args []string) error {
+	err := infraops.New(a.Root, a.In, a.Out, a.Err).Run(ctx, args)
+	if infraops.IsUsage(err) {
+		return usage("%s", err)
+	}
+	return err
 }
 
 func (a *App) cacheRoot() string {

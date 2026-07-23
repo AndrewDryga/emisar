@@ -14,7 +14,7 @@
 /emisar-mcp
 
 # Local runtime state from the example config
-/runner/examples/var/
+/runner/var/
 
 # Cross-compile output (the release workflows' go build matrix)
 emisar-*-linux-*

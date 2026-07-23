@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/packhash"
 )
 
 func (a *App) buildPackTools(ctx context.Context) error {
@@ -182,6 +184,15 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		}
 		return a.packTest(ctx, pattern)
 	}
+	if action == "hashes" {
+		if len(args) > 2 || len(args) == 2 && args[1] != "--write" {
+			return usage("usage: dev/run pack hashes [--write]")
+		}
+		if err := a.buildPackTools(ctx); err != nil {
+			return err
+		}
+		return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), len(args) == 2, a.Out)
+	}
 	if len(args) < 2 || !isDirectory(filepath.Join(a.Root, "packs", args[1])) {
 		return usage("usage: dev/run pack <check|sync> <pack-name> [--fix]")
 	}
@@ -198,7 +209,7 @@ func (a *App) pack(ctx context.Context, args []string) error {
 			return err
 		}
 		if name == "redis" || name == "cassandra" {
-			return a.run(ctx, a.Root, map[string]string{"EMISAR_BIN": "bin/emisar"}, "bash", "packs/.agent/scripts/check-hash-golden.sh")
+			return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out)
 		}
 		return nil
 	case "sync":

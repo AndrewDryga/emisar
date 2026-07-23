@@ -21,7 +21,7 @@ paths:
   data_dir: ./var/lib/emisar
   work_dir: ./var/lib/emisar/work
   packs:
-    - ./packs
+    - ../packs
 
 execution: {}
 

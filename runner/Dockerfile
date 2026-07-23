@@ -1,18 +1,21 @@
-# Dockerfile for the emisar runner. Two stages:
+# Dockerfile for the emisar runner. The default product target contains the
+# runner, its bundled packs, and the minimal tools required by the runtime.
+# The explicit `dev` target adds clients used by the repository demo stack.
 #
 #   builder — compiles the runner binary inside golang:alpine
-#   runner  — minimal distroless-ish base + the binary + example packs
+#   runner  — runtime base + the binary + bundled packs
+#   dev     — runner + demo-only client tools
+#   product — the default, production-pristine runner target
 #
-# Used in dev to test the runner against a local Phoenix server without
-# needing to install the binary on the host. Build context is the REPO
-# ROOT so the sibling packs/ dir is reachable; the runner source is
-# copied from runner/.
+# Build context is the repository root so the sibling packs/ directory is
+# reachable. Mount an operator-owned config at /etc/emisar/config.yaml.
 #
-#   docker build -f runner/docker/Dockerfile -t emisar/runner .
+#   docker build -f runner/Dockerfile -t emisar/runner .
 #   docker run --rm \
 #     -e EMISAR_AUTH_KEY=emkey-auth-... \
-#     -e EMISAR_URL=http://host.docker.internal:4000 \
-#     --add-host=host.docker.internal:host-gateway \
+#     -e EMISAR_URL=https://emisar.dev \
+#     -v /etc/emisar/config.yaml:/etc/emisar/config.yaml:ro \
+#     -v emisar-runner-data:/var/lib/emisar \
 #     emisar/runner
 
 # --- builder -------------------------------------------------------
@@ -57,7 +60,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # share base layers with the portal image.
 
 # Digest-pinned (refresh via the buildx imagetools command noted above).
-FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS runner
 
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
@@ -73,33 +76,14 @@ RUN apt-get update -y \
     && chown root:root /opt/emisar/packs \
     && chmod 0755 /opt/emisar/packs
 
-# DEV-ONLY: the docker-compose demo stack flips DEV_TOOLS=true to add the
-# client binaries the seeded demo packs shell out to (postgres -> psql,
-# caddy / HTTP reads -> curl, redis -> redis-cli, time-sync -> chronyc,
-# network probes -> mtr/dig). Off by default so a real or self-hosted
-# runner image stays minimal — operators install only the binaries the
-# packs they actually run require. Packs whose client can never be real
-# in a container (a JDK, tailscaled, ipmitool against a BMC) stay
-# advertised-but-unavailable, which is the honest fleet shape.
-ARG DEV_TOOLS=false
-RUN if [ "$DEV_TOOLS" = "true" ]; then \
-        apt-get update -y \
-        && apt-get install -y --no-install-recommends \
-            postgresql-client curl redis-tools chrony mtr-tiny bind9-dnsutils \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
-
 COPY --from=builder /out/emisar /usr/local/bin/emisar
 COPY --chown=root:root packs /opt/emisar/packs
-COPY --chown=root:emisar runner/docker/config.yaml /etc/emisar/config.yaml
 
 # Actions execute as the runtime user. Keep the runner's admission/signing
-# configuration and trusted pack bytes immutable to that same user, or an
-# allowed action could alter the next boot's security policy.
-RUN chmod 0640 /etc/emisar/config.yaml \
-    && test "$(stat -c '%U:%G:%a' /etc/emisar/config.yaml)" = "root:emisar:640" \
-    && test "$(stat -c '%U:%G:%a' /opt/emisar/packs)" = "root:root:755"
+# configuration and trusted pack bytes immutable to that same user. The image
+# cannot validate the mounted config's ownership, but it does enforce the pack
+# tree it owns.
+RUN test "$(stat -c '%U:%G:%a' /opt/emisar/packs)" = "root:root:755"
 
 USER emisar
 WORKDIR /var/lib/emisar
@@ -107,3 +91,18 @@ WORKDIR /var/lib/emisar
 # tini reaps zombies cleanly when child processes spawn under the runner.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/emisar", "connect", "--config", "/etc/emisar/config.yaml"]
+
+# The repository demo deliberately includes clients used by its seeded packs.
+# This target is never the default product image.
+FROM runner AS dev
+USER root
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+        postgresql-client curl redis-tools chrony mtr-tiny bind9-dnsutils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+USER emisar
+
+# Keep the default build target production-pristine even though the dev target
+# must be declared after it.
+FROM runner AS product

@@ -35,7 +35,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 | Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
 | Distribution | `pack_registry.tf`, `packs/` |
 | Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
-| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`, `scripts/`, `drills/` |
+| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`; run via `dev/run` |
 
 ## Production controls
 
@@ -147,21 +147,21 @@ pack uses; the pack does not require a custom runner build.
 
 ## Portal VM operations
 
-Use `scripts/portal` for IAP and OS Login access to the portal fleet. It limits
+Use `dev/run ops portal` for IAP and OS Login access to the portal fleet. It limits
 the picker to instances carrying the `cluster_name=emisar` label, supports fzf
 multi-selection for read-only inspection and commands, and caches the selection
 per shell session for repeated checks.
 
 ```sh
-scripts/portal status
-scripts/portal logs
-scripts/portal --host emisar-example-a logs -f
-scripts/portal version
-scripts/portal remsh
-scripts/portal cmd 'uptime && free -h'
-scripts/portal --reuse-last-selection logs
-scripts/portal --list-hosts
-scripts/portal --host emisar-example-a --host emisar-example-b version
+dev/run ops portal status
+dev/run ops portal logs
+dev/run ops portal --host emisar-example-a logs -f
+dev/run ops portal version
+dev/run ops portal remsh
+dev/run ops portal cmd 'uptime && free -h'
+dev/run ops portal --reuse-last-selection logs
+dev/run ops portal --list-hosts
+dev/run ops portal --host emisar-example-a --host emisar-example-b version
 ```
 
 The helper uses the active gcloud project by default. Pass `--project`, or set
@@ -317,7 +317,7 @@ write-only generation.
 
 Production database access is IAM-only. The VM identity logs in through the
 loopback Cloud SQL Auth Proxy, then assumes the non-login `emisar_owner` role for
-migrations and application queries. `scripts/verify-database-iam.sql` proves the
+migrations and application queries. `tests/verify-database-iam.sql` proves the
 login is not elevated, verifies application and pgAudit ownership, and performs
 a reversible DDL probe.
 
@@ -337,9 +337,9 @@ helper:
 
 ```bash
 gcloud auth application-default login
-scripts/database                     # Postico 2
-scripts/database --psql              # interactive psql
-scripts/database --psql -- --command='select current_user;'
+dev/run ops database                     # Postico 2
+dev/run ops database --psql              # interactive psql
+dev/run ops database --psql -- --command='select current_user;'
 ```
 
 The helper selects a running portal VM, opens a local SOCKS5 route to it through
@@ -417,16 +417,17 @@ so an active publication cannot be canceled halfway through.
 
 ## Recovery drills
 
-Run `drills/cleanup-recovery-drills.sh` before and after every exercise; after
+Run `dev/run ops drill cleanup --apply` before and after every exercise; after
 client loss an operator must run its 12-hour janitor mode to find abandoned
 labeled/prefixed resources. It is intentionally supervised rather than backed by
-a persistent cross-service delete identity. `drills/run-pitr-iam.sh` is dry-run by default. With `--apply` it clones a recent
-PITR point into a uniquely named scratch instance, creates a temporary scoped IAM
-principal and private probe VM, proves restored data through `emisar_owner`, and
-uses the independent janitor on exit, and fails a successful drill if cleanup or
-final inventory verification fails. It never patches, stops, or routes traffic
-to production. Evidence manifests live under the git-ignored `.agent/drills/`;
-record actual RPO/RTO and retain the empty-inventory result.
+a persistent cross-service delete identity. `dev/run ops drill pitr` is dry-run
+by default. With `--apply` it clones a recent PITR point into a uniquely named
+scratch instance, creates a temporary scoped IAM principal and private probe VM,
+proves restored data through `emisar_owner`, and runs the independent janitor on
+exit. A successful drill still fails if cleanup or final inventory verification
+fails. It never patches, stops, or routes traffic to production. Evidence
+manifests live under the git-ignored `.agent/drills/`; record actual RPO/RTO and
+retain the empty-inventory result.
 
 ## Outputs
 
@@ -451,7 +452,7 @@ terraform fmt -check -recursive
 terraform init -backend=false
 terraform validate
 tflint
-scripts/validate-templates.sh
+dev/run check infra-templates
 ```
 
 These checks are credential-free. A live plan or apply is a separate,

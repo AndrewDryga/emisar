@@ -104,7 +104,7 @@ func (selection *Selection) include(file string) {
 	if member(file, "portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow") || strings.HasPrefix(file, "tools/cmd/depgate/") {
 		selection.Deps = true
 	}
-	if hasAnyPrefix(file, ".github/workflows/", ".github/scripts/") || file == ".github/dependabot.yml" {
+	if strings.HasPrefix(file, ".github/workflows/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
 }

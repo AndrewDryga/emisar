@@ -35,8 +35,9 @@ The repository keeps tooling in three ownership buckets:
 - `dev/run` is only a cached Go-binary bootstrap and the contributor command surface.
 - `tools/` holds the reusable Go implementation, including browser automation.
 - The root `.agent/` holds agent configuration and state, not another command surface.
-- Shell programs under `packs/` and `infra/` execute with their owned runtime
-  artifacts; they are product/operations code, not alternative dev commands.
+- Shell programs under `packs/`, `infra/templates/`, and container fixtures
+  execute with their owned runtime artifacts; they are shipped or deployed
+  code, not alternative dev commands.
 
 ```sh
 dev/run setup
@@ -57,6 +58,8 @@ dev/run test portal --failed
 dev/run test portal --stale --listen-on-stdin
 dev/run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
 dev/run check portal
+dev/run check staged
+dev/run check infra-templates
 dev/run check agent-setup
 dev/run gate portal
 dev/run check tooling
@@ -67,6 +70,7 @@ dev/run e2e sso
 dev/run e2e signing
 dev/run e2e billing
 dev/run pack check redis
+dev/run pack hashes
 dev/run pack test redis
 dev/run loadtest --help
 ```
@@ -78,6 +82,21 @@ graph rather than guessing test paths from filenames; add `--listen-on-stdin`
 and press Enter after a save to repeat that set in the same shell. `--failed`
 re-runs only the previous failures. `check portal` and `gate portal` remain the
 full pre-commit surfaces.
+
+Production workstation helpers use the same entrypoint. Their implementation
+lives in `tools/internal/infraops`; `infra/` contains the Terraform project and
+the artifacts Terraform deploys, not a second command directory:
+
+```sh
+dev/run ops portal --help
+dev/run ops database --help
+dev/run ops drill pitr
+```
+
+`dev/run check infra-templates` uses the host `cloud-init` CLI when available.
+On macOS it builds and reuses the digest-pinned `cloud-init/Dockerfile`
+validator, so the same schema check works without adding Linux packages to the
+workstation.
 
 `dev/run urls` discovers the assigned URLs without reproducing Coop's hash.
 The Keycloak CA and leaf files are created under `dev/keycloak/certs/generated/`.
@@ -132,8 +151,8 @@ exposed as `dev/run e2e billing`. Its ignored credentials remain in
 ## `runners/`
 
 One config file per docker-compose runner (`edge-fra-01.yaml`,
-`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted over the image's baked-in
-`/etc/emisar/config.yaml`:
+`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted into the dev target built
+from `runner/Dockerfile`:
 
 ```yaml
 volumes:

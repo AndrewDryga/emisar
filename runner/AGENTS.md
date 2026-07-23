@@ -15,7 +15,12 @@ go mod tidy && git diff --exit-code go.mod go.sum   # tidy must be a no-op
 go test -race -count=1 ./...
 ```
 
-Run the same gate from `mcp/` for that module. Linux-only behavior (Pdeathsig, `/var/log` symlinks) verifies in a Debian container — from the repo root run `docker build -f runner/docker/Dockerfile.test -t emisar-test .` then `docker run --rm emisar-test`. The root context includes the real `packs/` fixtures used by runner security contract tests; `.dockerignore` excludes unrelated build state. Run each as a standalone command — never pipe `go test`/`gofmt` through `head`/`tail`; the pipe's exit code masks the tool's.
+Run the same gate from `mcp/` for that module. Linux-only behavior (Pdeathsig,
+`/var/log` symlinks) verifies in the Coop box from the repo root:
+`coop run -- go -C runner test -race -count=1 ./...`. The box sees the real
+`packs/` fixtures used by runner security contract tests without maintaining a
+second toolchain image. Run each check as a standalone command — never pipe
+`go test`/`gofmt` through `head`/`tail`; the pipe's exit code masks the tool's.
 
 ## Architecture (where things live)
 

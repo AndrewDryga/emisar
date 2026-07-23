@@ -1,20 +1,27 @@
 #!/bin/bash
 
-# This file allow to extend your shell environment by adding commands from a specific project
+# This file extends your shell environment with commands from this project.
 # To use it you need to add something like this to your .bashrc or .zshrc:
 #
 #    GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 #    [ -f "${GIT_ROOT}/.shell" ] && source "${GIT_ROOT}/.shell"
 #
-if [ -z "${GIT_ROOT}" ]; then
+if [ -z "${GIT_ROOT:-}" ]; then
   GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 fi
 
-Make scripts/*.sh executable from any folder within the project
-PATH="${GIT_ROOT}/infra/scripts:${PATH}"
+portal() {
+  "${GIT_ROOT}/dev/run" ops portal "$@"
+}
+
+database() {
+  "${GIT_ROOT}/dev/run" ops database "$@"
+}
 
 # Set the gcloud project ID for the Google Cloud SDK
 export CLOUDSDK_CORE_PROJECT="emisar"
 
-# Add the terraform command alias that works from any folder within the project
-alias prod="terraform -chdir=${GIT_ROOT}/infra"
+# Add the Terraform command that works from any folder within the project.
+prod() {
+  terraform -chdir="${GIT_ROOT}/infra" "$@"
+}

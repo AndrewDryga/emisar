@@ -253,19 +253,16 @@ services:
   # nginx/postgres logs). The runner image itself stays production-pristine —
   # only this compose file knows about them.
   runner-1: &runner
-    # Build context is the REPO ROOT (matching the portal) — runner/docker/Dockerfile
+    # Build context is the REPO ROOT (matching the portal) — runner/Dockerfile
     # COPYs both `packs/` (now at the repo root) and `runner/...`, so it can't build
     # from a `./runner` context. RUNNER_VERSION stamps the binary so the live
     # runner reports the same version the seed pinned (else the "dev" build default).
     build:
       context: .
-      dockerfile: runner/docker/Dockerfile
+      dockerfile: runner/Dockerfile
+      target: dev
       args:
         RUNNER_VERSION: "0.10.0"
-        # Bake the demo packs' client binaries (psql, curl) into the dev
-        # image so seeded postgres/caddy actions execute instead of erroring
-        # "executable not found". Off in a real build (see runner/docker/Dockerfile).
-        DEV_TOOLS: "true"
     image: emisar/runner:dev
     hostname: edge-fra-01.northstar.example
     depends_on:

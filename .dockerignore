@@ -1,5 +1,5 @@
 # Shared build context for .agent/Dockerfile, portal/Dockerfile, and
-# runner/docker/Dockerfile. MCP and test-pack images have context-local files.
+# runner/Dockerfile. MCP, cloud-init, and test-pack images have context-local files.
 
 # Repository and local tool state
 .git
@@ -31,7 +31,7 @@ test-results
 portal/apps/emisar/emisar-*.tar
 portal/apps/emisar_web/emisar_web-*.tar
 runner/runner
-runner/examples/var
+runner/var
 emisar-*-linux-*
 emisar-*-darwin-*
 **/priv/static/assets

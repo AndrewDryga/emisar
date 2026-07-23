@@ -62,8 +62,9 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/portal"
-      - "/runner/docker"
+      - "/runner"
       - "/mcp"
+      - "/dev/cloud-init"
       - "/dev/test-packs"
       - "/dev/test-packs/snmpd"
       - "/dev/test-packs/snmpd-frr"

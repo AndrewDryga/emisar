@@ -526,7 +526,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck "$INSTALL_SCRIPT"
           bash -n "$INSTALL_SCRIPT"
-          .github/scripts/smoke-installers.sh "${{ matrix.module }}"
+          go run ./tools/cmd/installtest "${{ matrix.module }}"
 
       - name: Scan known vulnerabilities
         # govulncheck reports reachable vulnerable symbols, not merely a module
@@ -670,6 +670,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - name: Install Terraform (version from .tool-versions, checksum-verified)
         run: |
           ver="$(awk '/^terraform /{print $2}' .tool-versions)"
@@ -714,7 +721,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cloud-init shellcheck
-          infra/scripts/validate-templates.sh
+          dev/run check infra-templates
 
   dep-age:
     name: Dependencies - Release age
@@ -782,11 +789,6 @@ jobs:
           printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
           tar -xzf "$artifact" actionlint
           ./actionlint -color
-
-      - name: Check workflow shell helpers
-        # This stays shell because the shell installers are the artifacts
-        # under test; substantive CI policy lives in tools/cmd/ci.
-        run: shellcheck .github/scripts/smoke-installers.sh
 
   ci-gate:
     name: Required - CI

@@ -5,7 +5,7 @@
   the mechanics are --no-service (install.sh) and identity
   persistence (cloud.token_path + runner.id, since containers
   lack a stable /etc/machine-id). Facts verified against
-  install.sh, runner/docker/, and runner/internal/config.
+  install.sh, runner/Dockerfile, and runner/internal/config.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
@@ -112,15 +112,16 @@
     --volumes-from payments:ro \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
+    -v /etc/emisar/config.yaml:/etc/emisar/config.yaml:ro \
     -v emisar-runner-data:/var/lib/emisar \
     your-registry/emisar-runner</.docs_code>
       <p class="mt-5 text-sm leading-7 text-zinc-400">
         There's a working reference for this shape in the repo —
-        <.external_link href="https://github.com/andrewdryga/emisar/tree/main/runner/docker">
-          runner/docker
+        <.external_link href="https://github.com/andrewdryga/emisar/blob/main/runner/Dockerfile">
+          runner/Dockerfile
         </.external_link>
-        builds and runs the runner as a container's foreground process, with the token volume
-        already wired.
+        builds the runner as a container's foreground process; the command above supplies its
+        operator-owned config and persistent token volume.
       </p>
 
       <.docs_h2 id="daemonset">A DaemonSet across Kubernetes nodes</.docs_h2>
@@ -191,7 +192,7 @@
         above are read-only on purpose — a verb that <em>mutates</em>
         the node (restarting a unit, say) needs its systemd/dbus socket writable, a grant you
         make deliberately, not by default. You own the image (build it from the release tarball
-        or start from <code class="font-mono">runner/docker</code>) and every grant in it; the
+        or start from <code class="font-mono">runner/Dockerfile</code>) and every grant in it; the
         Secret carries a reusable enrollment key, and the state volume keeps each node's runner
         identity stable across pod restarts.
       </p>

@@ -1,7 +1,7 @@
 schema_version: 1
 
 # Per-runner config for the docker-compose demo stack, mounted over the
-# image's baked-in /etc/emisar/config.yaml. DEV ONLY.
+# runner image at /etc/emisar/config.yaml. DEV ONLY.
 #
 # `runner.id` is the durable external_id the runner presents on register.
 # It MUST match the external_id the seed pins on this runner's row
