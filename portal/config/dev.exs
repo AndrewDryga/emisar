@@ -92,6 +92,11 @@ config :emisar_web, EmisarWeb.Endpoint,
 # Enable dev routes for dashboard and mailbox
 config :emisar_web, dev_routes: true
 
+# Dev serves assets undigested at a fixed URL, so revalidate on every load
+# instead of the prod-style immutable freeze — otherwise an edited JS/CSS stays
+# cached (frozen casts, missing icons) until a hard refresh. See endpoint.ex.
+config :emisar_web, :assets_cache_control, "no-cache"
+
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
 
