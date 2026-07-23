@@ -12,23 +12,6 @@ import (
 // run lives here as regular tests instead: the runner CI test job proves the
 // logic whenever this code changes, and the deps job just runs `check`.
 
-const npmLockFixture = `{
-  "lockfileVersion": 3,
-  "packages": {
-    "": {"name": "tooling"},
-    "node_modules/puppeteer-core": {
-      "version": "25.2.0",
-      "resolved": "https://registry.npmjs.org/puppeteer-core/-/puppeteer-core-25.2.0.tgz"
-    },
-    "node_modules/@scoped/pkg": {
-      "version": "1.0.0",
-      "resolved": "https://registry.npmjs.org/@scoped/pkg/-/pkg-1.0.0.tgz"
-    },
-    "node_modules/evil": {"version": "1.0.0", "resolved": "git+https://x/evil.git#abc"},
-    "node_modules/local": {"version": "0.0.1", "link": true}
-  }
-}`
-
 func TestParseHex_SkipsGitAndPathEntries(t *testing.T) {
 	lock := `  "plug": {:hex, :plug, "1.18.0", "hash", [:mix], [], "hexpm", "h"},
   "some_git": {:git, "https://x", "ref", []},
@@ -51,20 +34,6 @@ func TestParseGo_BlockSingleLineAndIndirect(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("parseGo = %v, want %v", got, want)
-	}
-}
-
-func TestParseNpm_RootLinkAndGitEntriesSkipped(t *testing.T) {
-	got, err := parseNpm(npmLockFixture)
-	if err != nil {
-		t.Fatalf("parseNpm: %v", err)
-	}
-	want := map[string]string{
-		"puppeteer-core": "25.2.0",
-		"@scoped/pkg":    "1.0.0",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("parseNpm = %v, want %v", got, want)
 	}
 }
 
@@ -95,12 +64,6 @@ func TestParseNonregistry_SurfacesUnageableSources(t *testing.T) {
 		}
 	})
 
-	t.Run("npm link and git entries", func(t *testing.T) {
-		got := parseNonregistry("npm", npmLockFixture)
-		if len(got) != 2 || got["evil"] == "" || got["local"] != "non-registry: link" {
-			t.Errorf("npm nonregistry = %v, want evil + local", got)
-		}
-	})
 }
 
 func TestBumpType(t *testing.T) {
@@ -137,16 +100,16 @@ func TestEvaluate_RejectsTooFreshAndHonorsAllowlist(t *testing.T) {
 	daysAgo := func(d int) time.Time { return now.AddDate(0, 0, -d) }
 
 	candidates := []candidate{
-		{"hex", "fresh_patch", "1.2.3", "1.2.4"},         // 2d old, patch window 7 -> REJECT
-		{"hex", "aged_patch", "1.2.3", "1.2.4"},          // 30d old, patch window 7 -> allow
-		{"go", "github.com/x/major", "v1.0.0", "v2.0.0"}, // 20d old, major window 30 -> REJECT
-		{"npm", "puppeteer-core", "25.2.0", "25.3.0"},    // 15d old, minor window 14 -> allow
+		{"hex", "fresh_patch", "1.2.3", "1.2.4"},             // 2d old, patch window 7 -> REJECT
+		{"hex", "aged_patch", "1.2.3", "1.2.4"},              // 30d old, patch window 7 -> allow
+		{"go", "github.com/x/major", "v1.0.0", "v2.0.0"},     // 20d old, major window 30 -> REJECT
+		{"go", "example.com/aged-minor", "v1.2.0", "v1.3.0"}, // 15d old, minor window 14 -> allow
 	}
 	ages := map[allowKey]time.Time{
-		{"hex", "fresh_patch", "1.2.4"}:        daysAgo(2),
-		{"hex", "aged_patch", "1.2.4"}:         daysAgo(30),
-		{"go", "github.com/x/major", "v2.0.0"}: daysAgo(20),
-		{"npm", "puppeteer-core", "25.3.0"}:    daysAgo(15),
+		{"hex", "fresh_patch", "1.2.4"}:            daysAgo(2),
+		{"hex", "aged_patch", "1.2.4"}:             daysAgo(30),
+		{"go", "github.com/x/major", "v2.0.0"}:     daysAgo(20),
+		{"go", "example.com/aged-minor", "v1.3.0"}: daysAgo(15),
 	}
 
 	got := evaluate(candidates, ages, map[allowKey]bool{}, now)

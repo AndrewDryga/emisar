@@ -26,8 +26,10 @@ serve:
 # coop context.
 context:
   routes:
-    - paths: [".agent/**", "dev/**", "tools/browser/**", "docker-compose.yml"]
+    - paths: [".agent/**", "dev/**", "tools/internal/browser/**", "tools/internal/devtool/**", "docker-compose.yml"]
       include: [.agent/kb/coop-box-builds-are-isolated.md, .agent/kb/development-keycloak-certificates.md]
+    - paths: [".github/**", "tools/internal/ci/**"]
+      include: [.agent/kb/portal-image-delivery-follows-main.md]
     - paths: ["portal/**", "**/*.ex", "**/*.exs", "**/*.heex"]
       include: [portal/AGENTS.md]
     - paths: ["portal/**/oauth/**", "portal/**/*oauth*", "portal/**/sso/**", "portal/**/*sso*"]

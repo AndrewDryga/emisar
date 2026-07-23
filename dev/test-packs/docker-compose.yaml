@@ -4,57 +4,64 @@
 # Bring up just the SUT(s) you need:
 #   docker compose -f test-packs/docker-compose.yaml up -d postgres redis
 #
-# Then run pack tests from the runner-tools container:
-#   docker compose run --rm runner-tools \
-#     /workspace/test-packs/run-pack-tests.sh postgres
+# `dev/run pack test [pattern]` builds the runner and Go harness, owns this
+# topology, and runs the selected cases in runner-tools.
+
+x-runner-tools: &runner-tools
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: emisar-runner-tools:latest
+  volumes:
+    - ../:/workspace:ro
+    - ../../packs:/packs:ro
+    - ./bin:/opt/emisar/bin:ro
+    - ./reports:/reports
+    - k3s_kubeconfig:/shared:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+  environment:
+    PGHOST: postgres
+    PGUSER: postgres
+    PGPASSWORD: testpass
+    PGDATABASE: testdb
+    MYSQL_HOST: mysql
+    MYSQL_USER: root
+    MYSQL_PWD: testpass
+    MONGO_URI: "mongodb://root:testpass@mongodb:27017/?authSource=admin"
+    REDISCLI_AUTH: ""
+    CONSUL_HTTP_ADDR: "http://consul:8500"
+    VAULT_ADDR: "http://vault:8200"
+    VAULT_TOKEN: "test-root-token"
+    NOMAD_ADDR: "http://nomad:4646"
+    COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
+    CH_HOST: clickhouse
+    CH_USER: default
+    ELASTIC_USER: elastic
+    ELASTIC_PASSWORD: testpass
+    ELASTIC_URL: "http://elasticsearch:9200"
+    PROM_URL: "http://prometheus:9090"
+    ENVOY_ADMIN: "http://envoy:9901"
+    CADDY_ADMIN: "http://caddy:2019"
+    KAFKA_BOOTSTRAP: "kafka:9092"
+    RABBITMQ_HOST: rabbitmq
+    MC_HOST_local: "http://minio_admin:testpass@minio:9000"
+    SNMP_VERSION: "2c"
+    SNMP_COMMUNITY: public
 
 services:
   runner-tools:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: emisar-runner-tools:latest
-    volumes:
-      # /workspace = dev/ (this file's parent), so harness scripts resolve at
-      # /workspace/test-packs/...; packs/ is a repo-root sibling, mounted at /packs.
-      - ../:/workspace:ro
-      - ../../packs:/packs:ro
-      - ./bin:/opt/emisar/bin:ro
-      - ./reports:/reports
-      - k3s_kubeconfig:/shared:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - packtest
-    environment:
-      # Per-pack auth env vars; populated for whichever SUT is up
-      PGHOST: postgres
-      PGUSER: postgres
-      PGPASSWORD: testpass
-      PGDATABASE: testdb
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PWD: testpass
-      MONGO_URI: "mongodb://root:testpass@mongodb:27017/?authSource=admin"
-      REDIS_HOST: redis
-      REDISCLI_AUTH: ""
-      CONSUL_HTTP_ADDR: "http://consul:8500"
-      VAULT_ADDR: "http://vault:8200"
-      VAULT_TOKEN: "test-root-token"
-      NOMAD_ADDR: "http://nomad:4646"
-      COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
-      CH_HOST: clickhouse
-      CH_USER: default
-      ELASTIC_USER: elastic
-      ELASTIC_PASSWORD: testpass
-      ELASTIC_URL: "http://elasticsearch:9200"
-      PROM_URL: "http://prometheus:9090"
-      ENVOY_ADMIN: "http://envoy:9901"
-      CADDY_ADMIN: "http://caddy:2019"
-      KAFKA_BOOTSTRAP: "kafka:9092"
-      RABBITMQ_HOST: rabbitmq
-      MC_HOST_local: "http://minio_admin:testpass@minio:9000"
-      SNMP_VERSION: "2c"
-      SNMP_COMMUNITY: public
+    <<: *runner-tools
+    networks: [packtest]
+
+  # Redis actions intentionally use redis-cli's local default. Sharing the SUT
+  # network namespace tests the same localhost contract a real runner uses.
+  runner-tools-redis:
+    <<: *runner-tools
+    profiles: [focused]
+    network_mode: service:redis
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # Databases
   cockroach:
@@ -269,10 +276,10 @@ services:
 
   # Mail
   postfix:
-    image: catatnight/postfix:latest
+    image: boky/postfix:5.1.0-alpine
     environment:
-      maildomain: example.test
-      smtp_user: testuser:testpass
+      HOSTNAME: postfix.example.test
+      ALLOWED_SENDER_DOMAINS: example.test
     networks: [packtest]
 
   bind:

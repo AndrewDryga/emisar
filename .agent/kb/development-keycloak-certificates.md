@@ -2,7 +2,7 @@
 name: development-keycloak-certificates
 description: workspace Keycloak certificate generation, macOS browser trust, and automated Chromium trust boundaries
 subsystem: agent-stack
-sources: [dev/run, dev/keycloak/certs/gen.sh, tools/browser/resolve-chrome.mjs, tools/browser/browser-server.mjs]
+sources: [dev/run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
 updated: 2026-07-22
 ---
 
@@ -19,7 +19,7 @@ distinguishes the active workspace. Automated Chromium does not depend on host
 trust: `dev/run` derives the current leaf SPKI, and the browser launch permits
 only that exact hash while normal TLS validation remains active.
 
-Keycloak reads its certificate at process start. `dev/run` fingerprints the
+Keycloak reads its certificate at process start. The Go tooling fingerprints the
 leaf before and after generation and recreates the Coop dependency containers
 only when the material changed. The command surface coordinates renewal or
 rotation with sidecar recreation; direct generated-file changes can leave a

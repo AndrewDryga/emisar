@@ -2,7 +2,7 @@
 name: coop-box-builds-are-isolated
 description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
-sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, dev/run, portal/config/dev.exs, portal/config/test.exs, dev/check-portal-test-output.sh]
+sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, dev/run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
 updated: 2026-07-22
 ---
 
@@ -28,15 +28,14 @@ confusing, hard-to-attribute failures:
 3. **The output-hygiene guard needs a warm dep tree:** on a cold build root the guard's
    first scanned step (`ecto.create`) compiles every dependency, and THIRD-PARTY compile
    warnings (sentry's `unused require Logger`) trip the pollution regex on noise that
-   isn't ours. `check-portal-test-output.sh` warms `mix deps.compile` UNSCANNED first;
+   isn't ours. The Go portal gate warms `mix deps.compile` UNSCANNED first;
    emisar's own apps still compile inside the scanned steps, so our warnings are still
    caught.
 
-4. **Serve has one owner:** `dev/run serve` atomically records the launcher PID
-   in a runtime directory scoped by workspace and listen port. A second launcher
-   reports that PID before invoking Mix, dead records are reclaimed, and occupied
-   Phoenix/metrics ports fail before database preparation. The launcher's signal
-   traps terminate Phoenix, its Coop-side proxies, and the ownership record.
+4. **Serve has one owner:** `dev/run serve` holds an advisory lock scoped by
+   workspace and listen port. A second launcher fails before invoking Mix, and
+   occupied Phoenix/metrics ports fail before database preparation. Go supervises
+   Phoenix and the in-process Coop TCP proxies as one lifecycle.
 
 5. **OIDC keeps one issuer:** Keycloak sees the same forwarded
    `https://localhost:<workspace-port>` Host header from the host browser and the box.
@@ -44,7 +43,7 @@ confusing, hard-to-attribute failures:
    dev CA beside the system roots for Erlang. Dynamic hostname acceptance and the
    well-known admin credentials belong only to this loopback-published dev sidecar.
 
-Coop's shared base owns asdf, login-shell PATH repair, agent CLIs, browser libraries,
+Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
 and the localhost sidecar forwarders. `.agent/Dockerfile` extends it only for Emisar's
 extra OS dependencies and platform-specific cache locations. Copying the base image
 setup into this repo would duplicate Coop-owned behavior and cache layers.
@@ -52,6 +51,8 @@ setup into this repo would duplicate Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-07-22 — moved development orchestration and browser automation into the
+  shared Go tools module; replaced PID records, socat, OpenSSL, jq, curl, and npm.
 - 2026-07-22 — added fail-fast serve ownership and listener checks after an
   abandoned launcher kept an unhealthy Phoenix process and Mix build lock alive.
 - 2026-07-22 — unified host and box sidecars/URLs, moved the box onto Coop's base,

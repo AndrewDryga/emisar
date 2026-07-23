@@ -50,11 +50,8 @@ including sample runners. Production delivery is documented in
 ## Gate
 
 ```sh
-mix compile --warnings-as-errors
-mix format --check-formatted
-mix credo
-../dev/check-portal-test-output.sh
+../dev/run gate portal
 ```
 
-The final command runs both umbrella test suites and rejects warning/error log
+The gate compiles, checks formatting and Credo, runs both test suites, and rejects warning/error log
 pollution. Project architecture and security rules are in [`AGENTS.md`](AGENTS.md).

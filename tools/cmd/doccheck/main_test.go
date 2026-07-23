@@ -75,7 +75,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		"docs/sales/battlecard.md":                            false,
 		"docs/security-model.md":                              false,
 		"portal/.agent/kb/rules/elixir-doc-contract.md":       false,
-		"tools/browser/capture-console-audit.mjs":             false,
+		"tools/internal/browser/console.go":                   false,
 		"portal/.agent/kb/runner-socket.md":                   false,
 		"portal/.agent/compose.yml":                           true,
 		"portal/.agent/loop.yaml":                             true,

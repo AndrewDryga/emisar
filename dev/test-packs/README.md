@@ -4,9 +4,10 @@ Every pack has a `test/cases.json` listing one test case per action. It is a
 **generated artifact** — `cd tools && go run ./cmd/gencases` derives it from
 each pack's `actions/*.yaml` plus the policy tables in
 `tools/cmd/gencases/policy.go`; never hand-edit one, change the policy or the
-action YAML and regenerate. The harness boots the backing services the
-actions need, invokes `emisar action run` for each case, and asserts on exit
-code + stdout substrings.
+action YAML and regenerate. The harness selects only the backing services
+needed by matching packs, invokes `emisar action run` for each case, and
+asserts on exit code + stdout substrings. Localhost-only packs share the SUT's
+network namespace, matching how the action runs on a real host.
 
 ## Layout
 
@@ -20,8 +21,8 @@ packs/<pack>/                # at the repo root (a sibling of runner/)
 dev/test-packs/              # mounted in the container at /workspace/test-packs
 ├── Dockerfile               # builds emisar-runner-tools (all CLI binaries)
 ├── docker-compose.yaml      # backing services (postgres, redis, …); mounts packs/ at /packs
-├── harness.sh               # run a single pack's cases
-├── run-all.sh               # run every pack with a cases.json
+├── bin/                     # ignored cross-built runner + Go packtest binaries
+├── reports/                 # ignored per-pack logs
 └── fixtures/                # seed configs, init SQL, etc.
 ```
 
@@ -51,23 +52,11 @@ dev/test-packs/              # mounted in the container at /workspace/test-packs
 ## Running
 
 ```sh
-# 1. Build the emisar runner binary into ./bin (git-ignored, mounted read-only at
-#    /opt/emisar/bin). It must be a LINUX binary matching the container's arch —
-#    `go env GOARCH` gives the host arch, which is also the default image platform.
-( cd runner && GOOS=linux GOARCH="$(go env GOARCH)" go build -o ../dev/test-packs/bin/emisar . )
+# Run every generated case. The command owns build, Compose, reports, and cleanup.
+dev/run pack test
 
-# Build the runner-tools image (one-time)
-docker compose -f dev/test-packs/docker-compose.yaml build runner-tools
-
-# Run every pack (boots all SUTs)
-docker compose -f dev/test-packs/docker-compose.yaml up -d
-docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
-    /workspace/test-packs/run-all.sh
-
-# Run one pack
-docker compose -f dev/test-packs/docker-compose.yaml up -d redis
-docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
-    /workspace/test-packs/harness.sh redis
+# Run packs whose name contains a pattern.
+dev/run pack test redis
 ```
 
 ## Skip rationale

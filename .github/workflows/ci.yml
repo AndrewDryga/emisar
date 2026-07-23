@@ -54,6 +54,8 @@ jobs:
     name: Select checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      GOTOOLCHAIN: local
     outputs:
       portal: ${{ steps.detect.outputs.portal }}
       packs: ${{ steps.detect.outputs.packs }}
@@ -73,17 +75,24 @@ jobs:
           # pushed-over commit.
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - id: detect
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: .github/scripts/select-ci.sh "$EVENT" "$BASE"
+        run: go run ./tools/cmd/ci select "$EVENT" "$BASE"
 
       - name: Enforce frozen migration history
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: .github/scripts/check-frozen-migrations.sh "$EVENT" "$BASE"
+        run: go run ./tools/cmd/ci frozen-migrations "$EVENT" "$BASE"
 
   portal:
     name: Portal - Test
@@ -137,6 +146,13 @@ jobs:
           version-file: .tool-versions
           version-type: strict
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - name: Restore Elixir build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -165,18 +181,6 @@ jobs:
       - name: Fetch locked dependencies
         run: mix deps.get --check-locked
 
-      - name: Compile with warnings as errors
-        run: mix compile --warnings-as-errors
-
-      - name: Check formatting
-        run: mix format --check-formatted
-
-      - name: Run Credo and Iron Laws
-        # The mechanical IL-20 gate: the custom Emisar.Checks.* AST checks
-        # (.credo.exs, strict) + stock UnsafeToAtom/NoProcessDictionary —
-        # the same `mix credo` an agent runs locally.
-        run: mix credo
-
       - name: Audit dependencies
         # emisar is a security product — fail the build on a known advisory.
         # cowlib 2.18.0 is current and has no upstream patch. Its affected
@@ -202,11 +206,10 @@ jobs:
             exit 1
           fi
 
-      - name: Run ExUnit suites
-        # Runs both portal test suites and fails if the output contains
-        # compiler warnings, Logger warning/error lines, or async DB teardown
-        # noise. Dirty test output is a regression: fix the source, don't hide it.
-        run: ../dev/check-portal-test-output.sh
+      - name: Run the canonical Portal gate
+        # Uses the CI-provided Postgres service. The same command starts
+        # workspace-isolated dependencies automatically outside CI.
+        run: ../dev/run gate portal
 
   mcp-listing:
     name: Portal - MCP Registry Listing
@@ -214,16 +217,25 @@ jobs:
     if: needs.changes.outputs.mcp_listing == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - name: Validate registry listing
         run: |
           set -euo pipefail
-          .github/scripts/install-mcp-publisher.sh ./mcp-publisher
+          go run ./tools/cmd/ci install-mcp-publisher ./mcp-publisher
           ./mcp-publisher validate server.json
 
   portal-image:
@@ -473,9 +485,7 @@ jobs:
 
       - name: Check attestation implementation parity
         if: matrix.module == 'runner' || matrix.module == 'mcp'
-        run: |
-          .github/scripts/test-check-attest-parity.sh
-          .github/scripts/check-attest-parity.sh
+        run: go run ./tools/cmd/ci attest-parity
 
       - name: Run go vet
         working-directory: ${{ matrix.module }}
@@ -730,8 +740,8 @@ jobs:
       - name: Enforce dependency release age
         # Supply-chain enforcement: reject a bump to a version published more
         # recently than its release-age window. Dependabot's cooldown only
-        # throttles Dependabot's own PRs; this gate covers supported Hex, Go,
-        # and npm manifest changes. Terraform providers deliberately rely on
+        # throttles Dependabot's own PRs; this gate covers supported Hex and Go
+        # manifest changes. Terraform providers deliberately rely on
         # Dependabot cooldown plus review of the resulting Terraform plan.
         # PR: diff against the PR base. Push to main: diff against the prior
         # tip. The gate's own logic is tested by the Go - Tools job whenever
@@ -774,10 +784,9 @@ jobs:
           ./actionlint -color
 
       - name: Check workflow shell helpers
-        run: shellcheck .github/scripts/*.sh
-
-      - name: Run workflow security regression tests
-        run: .github/scripts/ci.test.sh
+        # This stays shell because the shell installers are the artifacts
+        # under test; substantive CI policy lives in tools/cmd/ci.
+        run: shellcheck .github/scripts/smoke-installers.sh
 
   ci-gate:
     name: Required - CI

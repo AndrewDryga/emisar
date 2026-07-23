@@ -14,14 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chrony \
     rsync xz-utils zstd \
     python3 python3-pip python3-venv \
-    nodejs npm \
+    nodejs \
     default-jre-headless \
     postgresql-client mariadb-client redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# cases.json is consumed by harness.sh with jq (base apt) directly — no YAML
-# bridge. python3/pip/venv above are PACK TARGETS (the python-app pack's
-# actions run them), not harness tooling — the repo itself has no Python.
+# cases.json is consumed by the mounted Go packtest binary. jq and
+# python3/pip/venv above are PACK TARGETS, not harness tooling.
 
 # AWS CLI v2
 RUN curl -sSL "https://awscli.amazonaws.com/awscli-exoscale-linux-$(uname -m).zip" -o /tmp/awscli.zip 2>/dev/null \

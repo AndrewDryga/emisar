@@ -8,10 +8,12 @@ only narrowly project-owned agent-hook scripts, never another shared command
 surface. Dependency Compose is
 shared by host-native development and the agent box; application servers stay
 outside that file when direct execution materially improves reload speed.
-Repository tooling uses Go for reusable parsing and checks, Bash for thin
-process/environment orchestration, and JavaScript only for browser automation.
-Adding another tooling language requires deleting one or proving these three
-cannot own the job. When multiple generators share an ignored output root such
+Shared repository tooling uses Go, including process orchestration and browser
+automation. `dev/run` may contain only the minimal cached-binary bootstrap.
+Shell remains only where shell itself is the shipped artifact, container
+entrypoint, or host-command fixture under test. Adding another tooling language
+requires proving Go cannot own the job and documenting the runtime boundary.
+When multiple generators share an ignored output root such
 as `dist/`, each generator owns a named subtree and cleans only that subtree.
 
 **Why.** A human command hidden under agent state looks private, encourages a
@@ -21,12 +23,12 @@ command surface keeps their runtime contract identical without forcing a
 hot-reload server through Docker filesystem boundaries.
 
 **Good.** `dev/run serve` starts Phoenix directly and reads the workspace URLs
-assigned to `dev/compose.yml`; `dev/run shot` delegates reusable Puppeteer logic
-to `tools/browser/`; Coop points `box.compose` at the same dependency file;
+assigned to `dev/compose.yml`; `dev/run shot` enters the shared Go browser driver;
+Coop points `box.compose` at the same dependency file;
 pack registry builds replace `dist/packs/` without touching sibling artifacts.
 
-**Bad.** `.agent/scripts/dev`, `portal/scripts/shot`, and `tools/browser/shot.mjs`
-as separate public commands; host and box Compose files that describe the same
+**Bad.** `.agent/scripts/dev`, `portal/scripts/shot`, and a JavaScript browser
+tool as separate command surfaces; host and box Compose files that describe the same
 Postgres and Keycloak services with different ports; or one generator deleting
 the shared `dist/` root before writing its own output.
 

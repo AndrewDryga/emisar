@@ -1,0 +1,404 @@
+package devtool
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
+)
+
+func (a *App) e2eSSO(ctx context.Context) error {
+	if err := a.seed(ctx); err != nil {
+		return err
+	}
+	workspace, err := a.loadWorkspace(ctx)
+	if err != nil {
+		return err
+	}
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, workspace.PortalURL+"/healthz", nil)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil || response.StatusCode/100 != 2 {
+		if response != nil {
+			response.Body.Close()
+		}
+		return fmt.Errorf("Portal is not serving at %s; run dev/run serve in another terminal", workspace.PortalURL)
+	}
+	response.Body.Close()
+	env := map[string]string{
+		"PORTAL_URL":      workspace.PortalURL,
+		"KEYCLOAK_ISSUER": workspace.KeycloakURL + "/realms/emisar",
+		"KEYCLOAK_CA":     a.Certs + "/ca.crt",
+		"PROVIDER_ID":     "11111111-1111-7111-8111-111111111111",
+		"SCIM_TOKEN":      scimToken,
+		"KC_USER":         "alice",
+		"KC_PASS":         "Sleep-tight-1234",
+		"ALICE_KC_ID":     "a11ce000-0000-4000-8000-000000000001",
+	}
+	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/sso-e2e")
+}
+
+func (a *App) e2eSigning(ctx context.Context) error {
+	if err := a.generateCertificates(false); err != nil {
+		return err
+	}
+	env := map[string]string{
+		"COMPOSE_PROJECT_NAME": composeProject(a.Root),
+		"PORTAL_PORT":          "0",
+		"KEYCLOAK_PORT":        "0",
+	}
+	compose := func(commandContext context.Context, args ...string) error {
+		return a.run(commandContext, a.Root, env, "docker", append([]string{"compose", "--profile", "test"}, args...)...)
+	}
+	_ = compose(ctx, "down", "-v", "--remove-orphans")
+	defer func() { _ = compose(context.Background(), "down", "-v", "--remove-orphans") }()
+	fmt.Fprintln(a.Out, "[signed-dispatch-e2e] building current portal + runner + mcp images (cached if unchanged)...")
+	if err := compose(ctx, "build", "portal", "runner-signed", "mcp"); err != nil {
+		return err
+	}
+	fmt.Fprintln(a.Out, "[signed-dispatch-e2e] bringing up portal + signing-init + runner-signed (profile: test)...")
+	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal"); err != nil {
+		return err
+	}
+	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed"); err != nil {
+		return err
+	}
+	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/signing-e2e")
+}
+
+var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var paddleCustomerIDPattern = regexp.MustCompile(`^ctm_[A-Za-z0-9]+$`)
+
+func parseEnvFile(path string) (map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	values := make(map[string]string)
+	scanner := bufio.NewScanner(file)
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		key, value, found := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !found || !envKeyPattern.MatchString(key) {
+			return nil, fmt.Errorf("%s:%d: expected KEY=VALUE", path, lineNumber)
+		}
+		if len(value) >= 2 && ((value[0] == '\'' && value[len(value)-1] == '\'') || (value[0] == '"' && value[len(value)-1] == '"')) {
+			value = value[1 : len(value)-1]
+		}
+		values[key] = value
+	}
+	return values, scanner.Err()
+}
+
+func requireValues(values map[string]string, keys ...string) error {
+	for _, key := range keys {
+		if values[key] == "" {
+			return fmt.Errorf("required %s is not set", key)
+		}
+	}
+	return nil
+}
+
+func stopProcess(command *exec.Cmd) {
+	if command == nil || command.Process == nil {
+		return
+	}
+	_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		_ = command.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		<-done
+	}
+}
+
+type ngrokTunnelResponse struct {
+	Tunnels []struct {
+		PublicURL string `json:"public_url"`
+		Config    struct {
+			Address string `json:"addr"`
+		} `json:"config"`
+	} `json:"tunnels"`
+}
+
+func targetsLocalPort(raw string, port int) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return (host == "localhost" || host == "127.0.0.1") && parsed.Port() == strconv.Itoa(port)
+}
+
+func ngrokTunnel() (string, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Get("http://127.0.0.1:4040/api/tunnels")
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode/100 != 2 {
+		return "", fmt.Errorf("ngrok API: HTTP %s", response.Status)
+	}
+	var result ngrokTunnelResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	for _, tunnel := range result.Tunnels {
+		if strings.HasPrefix(tunnel.PublicURL, "https://") && targetsLocalPort(tunnel.Config.Address, 4000) {
+			return tunnel.PublicURL, nil
+		}
+	}
+	return "", fmt.Errorf("no HTTPS ngrok tunnel targets localhost:4000")
+}
+
+func patchPaddleDestination(ctx context.Context, values map[string]string, tunnel string) error {
+	payload, _ := json.Marshal(map[string]any{"destination": tunnel + "/webhooks/paddle", "active": true})
+	endpoint := "https://sandbox-api.paddle.com/notification-settings/" + url.PathEscape(values["PADDLE_E2E_NTFSET"])
+	request, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+values["PADDLE_API_KEY"])
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("Paddle notification destination: HTTP %s: %s", response.Status, body)
+	}
+	return nil
+}
+
+func findPaddleCustomer(ctx context.Context, apiKey, email string) (string, error) {
+	endpoint := "https://sandbox-api.paddle.com/customers?email=" + url.QueryEscape(email) + "&status=active&per_page=10"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return "", fmt.Errorf("Paddle customer lookup: HTTP %s: %s", response.Status, body)
+	}
+	var result struct {
+		Data []struct {
+			ID    string `json:"id"`
+			Email string `json:"email"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	for _, customer := range result.Data {
+		if strings.EqualFold(customer.Email, email) {
+			if !paddleCustomerIDPattern.MatchString(customer.ID) {
+				return "", fmt.Errorf("Paddle returned an invalid customer id")
+			}
+			return customer.ID, nil
+		}
+	}
+	return "", nil
+}
+
+func (a *App) e2eBilling(ctx context.Context) error {
+	if err := a.seed(ctx); err != nil {
+		return err
+	}
+	workspace, err := a.loadWorkspace(ctx)
+	if err != nil {
+		return err
+	}
+	values, err := parseEnvFile(filepath.Join(a.Portal, ".agent", "secrets", "paddle-sandbox.env"))
+	if err != nil {
+		return fmt.Errorf("Paddle sandbox credentials: %w", err)
+	}
+	if err := requireValues(values, "PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET", "PADDLE_E2E_NTFSET"); err != nil {
+		return err
+	}
+	if !strings.Contains(values["PADDLE_API_KEY"], "_sdbx_") {
+		return fmt.Errorf("refusing to run the e2e against a non-sandbox Paddle key")
+	}
+	lock, err := a.serveLock(4000, "http://localhost:4000")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN); _ = lock.Close() }()
+	if portListening(4000) {
+		return fmt.Errorf("localhost:4000 is already in use")
+	}
+	env := a.workspaceEnv(workspace)
+	env["PGPASSWORD"] = "postgres"
+	deleteSQL := `
+delete from billing_subscriptions where account_id = (select id from accounts where slug='demo');
+update accounts
+set paddle_customer_id = null, paddle_customer_synced_at = null
+where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
+	if err := a.run(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-qc", deleteSQL); err != nil {
+		return err
+	}
+	existingCustomer, err := findPaddleCustomer(ctx, values["PADDLE_API_KEY"], "demo@emisar.dev")
+	if err != nil {
+		return err
+	}
+	if existingCustomer != "" {
+		relinkSQL := fmt.Sprintf("update accounts set paddle_customer_id = '%s', paddle_customer_synced_at = null where slug = 'demo';", existingCustomer)
+		if err := a.run(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-qc", relinkSQL); err != nil {
+			return err
+		}
+	}
+
+	var ngrok *exec.Cmd
+	tunnel, tunnelErr := ngrokTunnel()
+	if tunnelErr != nil {
+		logPath := filepath.Join(a.cacheRoot(), "ngrok-billing.log")
+		logFile, openErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if openErr != nil {
+			return openErr
+		}
+		ngrok = exec.Command("ngrok", "http", "4000")
+		ngrok.Stdout, ngrok.Stderr = logFile, logFile
+		ngrok.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := ngrok.Start(); err != nil {
+			logFile.Close()
+			return err
+		}
+		logFile.Close()
+		defer stopProcess(ngrok)
+		for range 40 {
+			tunnel, tunnelErr = ngrokTunnel()
+			if tunnelErr == nil {
+				break
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+	}
+	if tunnelErr != nil || tunnel == "" {
+		return fmt.Errorf("no ngrok tunnel: %w", tunnelErr)
+	}
+	if err := patchPaddleDestination(ctx, values, tunnel); err != nil {
+		return err
+	}
+	for key, value := range values {
+		env[key] = value
+	}
+	env["EMISAR_DEV_URL"] = "http://localhost:4000"
+	env["EMISAR_LISTEN_IP"] = "127.0.0.1"
+	env["EMISAR_LISTEN_PORT"] = "4000"
+	env["EMISAR_DISABLE_BILLING"] = "false"
+	serverLogPath := filepath.Join(a.cacheRoot(), "phoenix-billing.log")
+	serverLog, err := os.OpenFile(serverLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	server := exec.Command("mix", "phx.server")
+	server.Dir = a.Portal
+	server.Env = mergedEnv(env)
+	server.Stdout, server.Stderr = serverLog, serverLog
+	server.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := server.Start(); err != nil {
+		serverLog.Close()
+		return err
+	}
+	serverLog.Close()
+	defer stopProcess(server)
+	client := &http.Client{Timeout: 3 * time.Second}
+	if err := waitUntil(ctx, 90, 2*time.Second, func() error {
+		response, requestErr := client.Get("http://localhost:4000/healthz")
+		if requestErr != nil {
+			return requestErr
+		}
+		response.Body.Close()
+		if response.StatusCode/100 != 2 {
+			return fmt.Errorf("HTTP %s", response.Status)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("billing dev server never came up; see %s: %w", serverLogPath, err)
+	}
+	response, err := client.Get("http://localhost:4000/checkout")
+	if err != nil {
+		return err
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if !bytes.Contains(body, []byte(`data-sandbox="true"`)) {
+		return fmt.Errorf("/checkout is not running sandbox Paddle.js")
+	}
+	manager, _, err := a.startBrowser(ctx)
+	if err != nil {
+		return err
+	}
+	if err := devbrowser.PaddlePurchase(ctx, manager, devbrowser.PaddleConfig{
+		BaseURL: "http://localhost:4000", Out: filepath.Join(a.Root, "test-results", "paddle-e2e"),
+		Log: a.Out,
+	}); err != nil {
+		return err
+	}
+	query := "select plan || '|' || status || '|' || entitlements::text from billing_subscriptions where account_id = (select id from accounts where slug='demo');"
+	row := ""
+	for range 45 {
+		output, queryErr := a.output(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-Atc", query)
+		if queryErr == nil {
+			row = strings.TrimSpace(string(output))
+			if row != "" {
+				break
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if !strings.HasPrefix(row, "team|") || !strings.Contains(row, "runners_limit") {
+		return fmt.Errorf("unexpected mirrored subscription state: %s", row)
+	}
+	fmt.Fprintln(a.Out, "PASS: sandbox purchase mirrored plan=team with entitlements")
+	return nil
+}
+
+func (a *App) e2e(ctx context.Context, args []string) error {
+	if len(args) != 1 {
+		return usage("usage: dev/run e2e <sso|signing|billing>")
+	}
+	switch args[0] {
+	case "sso":
+		return a.e2eSSO(ctx)
+	case "signing":
+		return a.e2eSigning(ctx)
+	case "billing":
+		return a.e2eBilling(ctx)
+	default:
+		return usage("usage: dev/run e2e <sso|signing|billing>")
+	}
+}

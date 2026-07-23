@@ -175,6 +175,7 @@ jobs:
       contents: read
     env:
       LISTING_VERSION: ${{ needs.reconcile.outputs.version }}
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -188,12 +189,19 @@ jobs:
           path: release-source
           persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - name: Normalize and verify publisher key
         env:
           MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          seed=$(.github/scripts/normalize-mcp-private-key.sh)
+          seed=$(go run ./tools/cmd/ci normalize-mcp-private-key)
           echo "::add-mask::${seed}"
           printf '302e020100300506032b657004220420%s' "$seed" | xxd -r -p > private.der
           openssl pkey -inform DER -in private.der -pubout -outform DER -out public.der
@@ -213,7 +221,7 @@ jobs:
           jq --arg version "$LISTING_VERSION" '.version = $version' release-source/server.json > /tmp/server.json
 
       - name: Install verified mcp-publisher
-        run: .github/scripts/install-mcp-publisher.sh
+        run: go run ./tools/cmd/ci install-mcp-publisher
 
       - name: Validate listing
         run: ./mcp-publisher validate /tmp/server.json

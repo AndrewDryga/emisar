@@ -37,7 +37,6 @@ var manifests = []manifest{
 	{"go", "runner/go.mod"},
 	{"go", "mcp/go.mod"},
 	{"go", "tools/go.mod"},
-	{"npm", "tools/browser/package-lock.json"},
 }
 
 const allowlistPath = ".dep-age-allow"
@@ -91,64 +90,19 @@ func parseGo(text string) map[string]string {
 	return out
 }
 
-// npmLock is the slice of package-lock.json (lockfileVersion 2/3) this gate
-// reads: the packages map keyed by node_modules path.
-type npmLock struct {
-	Packages map[string]struct {
-		Name     string `json:"name"`
-		Version  string `json:"version"`
-		Resolved string `json:"resolved"`
-		Link     bool   `json:"link"`
-	} `json:"packages"`
-}
-
-func npmEntryName(path, declared string) string {
-	if declared != "" {
-		return declared
-	}
-	if i := strings.LastIndex(path, "node_modules/"); i >= 0 {
-		return path[i+len("node_modules/"):]
-	}
-	return path
-}
-
-// parseNpm maps package-lock.json to {package: version}, npm-registry entries
-// only. The "" key is the project itself; link entries and non-registry
-// resolved URLs (git/file/tarball) have no registry release date and are
-// surfaced by parseNonregistry.
-func parseNpm(text string) (map[string]string, error) {
-	var lock npmLock
-	if err := json.Unmarshal([]byte(text), &lock); err != nil {
-		return nil, fmt.Errorf("parsing package-lock.json: %w", err)
-	}
-	out := map[string]string{}
-	for path, meta := range lock.Packages {
-		if !strings.HasPrefix(path, "node_modules/") || meta.Link || meta.Version == "" {
-			continue
-		}
-		if meta.Resolved != "" && !strings.HasPrefix(meta.Resolved, "https://registry.npmjs.org/") {
-			continue
-		}
-		out[npmEntryName(path, meta.Name)] = meta.Version
-	}
-	return out, nil
-}
-
 func parseManifest(eco, text string) (map[string]string, error) {
 	switch eco {
 	case "hex":
 		return parseHex(text), nil
 	case "go":
 		return parseGo(text), nil
-	case "npm":
-		return parseNpm(text)
 	}
 	return nil, fmt.Errorf("unknown ecosystem %q", eco)
 }
 
 // parseNonregistry maps a manifest to {name: source-descriptor} for deps with
-// NO registry release date — hex :git/:path packages, go replace targets, npm
-// link/git/file entries. These bypass age enforcement entirely (there is
+// NO registry release date — Hex :git/:path packages and Go replace targets.
+// These bypass age enforcement entirely (there is
 // nothing to age-check), which is exactly the shape a malicious dependency
 // takes to slip a lockfile gate; an added or changed one FAILS for human
 // review rather than being silently trusted.
@@ -178,23 +132,6 @@ func parseNonregistry(eco, text string) map[string]string {
 				if before, after, ok := strings.Cut(line[len("replace "):], "=>"); ok {
 					out[strings.Fields(before)[0]] = "replace: " + strings.TrimSpace(after)
 				}
-			}
-		}
-	case "npm":
-		var lock npmLock
-		if err := json.Unmarshal([]byte(text), &lock); err != nil {
-			return out
-		}
-		for path, meta := range lock.Packages {
-			if !strings.HasPrefix(path, "node_modules/") {
-				continue
-			}
-			if meta.Link || (meta.Resolved != "" && !strings.HasPrefix(meta.Resolved, "https://registry.npmjs.org/")) {
-				src := meta.Resolved
-				if src == "" {
-					src = "link"
-				}
-				out[npmEntryName(path, meta.Name)] = "non-registry: " + src
 			}
 		}
 	}
@@ -325,19 +262,6 @@ func publishedAt(eco, pkg, version string) (time.Time, error) {
 			return time.Time{}, err
 		}
 		return parseRegistryTime(data.Time)
-	case "npm":
-		// Scoped names keep the "@" but escape the "/" (@scope%2Fname).
-		var data struct {
-			Time map[string]string `json:"time"`
-		}
-		if err := getJSON("https://registry.npmjs.org/"+strings.ReplaceAll(pkg, "/", "%2F"), &data); err != nil {
-			return time.Time{}, err
-		}
-		ts, ok := data.Time[version]
-		if !ok {
-			return time.Time{}, fmt.Errorf("npm packument for %s has no time for %s", pkg, version)
-		}
-		return parseRegistryTime(ts)
 	}
 	return time.Time{}, fmt.Errorf("unknown ecosystem %q", eco)
 }
@@ -466,7 +390,7 @@ func runCheck(baseRef string) int {
 		return 2
 	}
 
-	// A non-registry source (hex :git/:path, go replace, npm link/git) has no
+	// A non-registry source (Hex :git/:path or Go replace) has no
 	// release date to age-check, so it would sail through the age gate — the
 	// exact bypass a malicious dep uses. Fail on any added/changed one unless
 	// it's audited in the allowlist under the `nonregistry` keyword.
@@ -491,7 +415,7 @@ func runCheck(baseRef string) int {
 		sort.Strings(nonreg)
 		fmt.Println("::error::dep-age-gate: added/changed non-registry dependency source(s) — cannot age-verify, needs review:")
 		fmt.Println(strings.Join(nonreg, "\n"))
-		fmt.Println("\nA :git/:path (hex), replace (go), or link/git (npm) dependency bypasses release-age enforcement. " +
+		fmt.Println("\nA :git/:path (Hex) or replace (Go) dependency bypasses release-age enforcement. " +
 			"Vet it (/security-deps-audit), then add `<eco> <name> nonregistry <reason>` to " + allowlistPath + ".")
 		return 1
 	}

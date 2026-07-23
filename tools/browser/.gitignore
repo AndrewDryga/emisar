@@ -1,3 +1,0 @@
-# package-lock.json stays committed: npm ci, Dependabot, and tools/cmd/depgate
-# all use the same exact dependency graph.
-node_modules/

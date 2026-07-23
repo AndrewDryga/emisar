@@ -26,12 +26,15 @@ from both application environments.
 Postgres and Keycloak dependencies used by both host-native Phoenix and Coop;
 Phoenix itself runs directly in the active workspace.
 
-The repository keeps tooling in four ownership buckets:
+`dev/run setup` verifies the pinned Go/Elixir toolchain plus Chrome or Chromium
+and ImageMagick. Coop supplies the browser and image tools in its project image;
+host-native development uses the corresponding host installations.
 
-- `dev/run` exposes contributor commands and thin environment orchestration.
-- `tools/` holds reusable Go checks/drivers and the browser-only JavaScript.
-- `.github/scripts/` holds CI-only wrappers; the root `.agent/` holds agent
-  configuration and state, not another command surface.
+The repository keeps tooling in three ownership buckets:
+
+- `dev/run` is only a cached Go-binary bootstrap and the contributor command surface.
+- `tools/` holds the reusable Go implementation, including browser automation.
+- The root `.agent/` holds agent configuration and state, not another command surface.
 - Shell programs under `packs/` and `infra/` execute with their owned runtime
   artifacts; they are product/operations code, not alternative dev commands.
 
@@ -41,10 +44,9 @@ dev/run seed
 dev/run serve
 ```
 
-`serve` records one owner per workspace and exits before running Mix when that
-owner is still alive. Its error includes the PID to stop. Dead ownership records
-are reclaimed automatically, and an untracked listener on either Phoenix port
-fails immediately instead of leaving later Mix commands waiting on a build lock.
+`serve` takes an advisory lock per workspace and exits before running Mix when
+another launcher owns it. An untracked listener on either Phoenix port fails
+immediately instead of leaving later Mix commands waiting on a build lock.
 
 Common feedback commands:
 
@@ -65,6 +67,8 @@ dev/run e2e sso
 dev/run e2e signing
 dev/run e2e billing
 dev/run pack check redis
+dev/run pack test redis
+dev/run loadtest --help
 ```
 
 `check changed` incrementally compiles the umbrella, then format-checks and runs
@@ -76,7 +80,7 @@ re-runs only the previous failures. `check portal` and `gate portal` remain the
 full pre-commit surfaces.
 
 `dev/run urls` discovers the assigned URLs without reproducing Coop's hash.
-The Keycloak CA and leaf files are created under `keycloak/certs/generated/`.
+The Keycloak CA and leaf files are created under `dev/keycloak/certs/generated/`.
 On macOS, opt into browser trust once per workspace and remove it explicitly:
 
 ```sh
@@ -98,9 +102,9 @@ Setup, serve, and reset never seed implicitly. `dev/run seed` is idempotent;
 
 ## Browser and screenshot tooling
 
-`dev/run` owns the public commands; the reusable Puppeteer implementation and
-its pinned npm dependencies live in `tools/browser/`. The persistent browser is
-shared across captures for the active workspace, including inside Coop:
+`dev/run` owns the public commands; the chromedp implementation lives in the
+shared `tools` Go module. The persistent browser is shared across captures for
+the active workspace, including inside Coop:
 
 ```sh
 dev/run browser start
@@ -121,8 +125,8 @@ seeded workspace and reuse the persistent browser. Automated Chromium allows
 only the active Keycloak leaf certificate's SPKI; certificate validation is not
 disabled globally.
 
-The same implementation carries the real Paddle sandbox browser driver, exposed
-as `dev/run e2e billing`. Its ignored credentials remain in
+The same Go implementation carries the real Paddle sandbox browser driver,
+exposed as `dev/run e2e billing`. Its ignored credentials remain in
 `portal/.agent/secrets/paddle-sandbox.env`.
 
 ## `runners/`
@@ -176,15 +180,14 @@ already have the real `/usr/bin/systemctl`, `/usr/bin/journalctl`,
 
 ## `test-packs/`
 
-A standalone docker-compose **integration harness** for the action packs —
-separate from the root demo stack. It boots the real backing services
-(postgres, redis, consul, …), then runs each pack's `test/cases.json`
-through the runner binary and asserts on exit code + stdout:
+A standalone Compose **integration harness** for the action packs, separate
+from the root demo stack. `dev/run` cross-builds the runner and Go harness,
+boots the real backing services, runs each pack's generated cases, writes
+per-pack logs, and tears the topology down:
 
 ```sh
-docker compose -f dev/test-packs/docker-compose.yaml up -d redis
-docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
-    /workspace/test-packs/harness.sh redis
+dev/run pack test redis
+dev/run pack test
 ```
 
 The pack catalog (`packs/`) is mounted read-only at `/packs`; the test cases

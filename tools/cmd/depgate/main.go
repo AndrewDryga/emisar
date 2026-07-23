@@ -13,7 +13,7 @@
 // package-manager layers help but none of them ENFORCE across every author
 // (re-verified 2026-07-12): Hex >= 2.5 has a resolver cooldown, adopted via
 // HEX_COOLDOWN — but versions already in mix.lock bypass it by design; Go
-// modules and npm (as of 11.17) have no age control at all; Dependabot's
+// modules have no age control at all; Dependabot's
 // cooldown only shapes the PRs it opens itself. So CI diffs the committed
 // manifests against the base ref and rejects any added/upgraded version
 // published more recently than the policy window for its bump type — a human

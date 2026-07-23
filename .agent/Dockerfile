@@ -3,8 +3,7 @@ FROM ${COOP_BASE_IMAGE}
 
 USER node
 ENV MIX_BUILD_ROOT=/home/node/.cache/mix-build/emisar \
-    GOMODCACHE=/home/node/.cache/go-mod \
-    PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
+    GOMODCACHE=/home/node/.cache/go-mod
 
 # New boxes and forks should not compile Erlang before doing useful work. This
 # layer changes only when the repo's canonical toolchain pins change.
@@ -16,24 +15,14 @@ RUN cd /home/node \
  && mix local.hex --force \
  && mix local.rebar --force
 
-# Keep UI-only packages below the toolchain layer so browser changes do not
-# trigger another Erlang/Elixir/Go build. Debian provides native ARM Chromium.
+# Keep UI-only packages below the toolchain layer. The Go browser driver uses
+# Debian Chromium on every box architecture; no second package manager or
+# separately downloaded browser enters the build.
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium-headless-shell imagemagick \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-# Bake the exact pinned browser on amd64. ARM boxes use Debian's native shell;
-# Puppeteer's Linux download is x86_64 even when the build host is ARM64.
 USER node
-ENV PUPPETEER_CACHE_DIR=/home/node/.local/share/puppeteer
-COPY --chown=node:node tools/browser/package.json \
-     tools/browser/package-lock.json \
-     tools/browser/install-browser.mjs \
-     /home/node/emisar-screenshot-tooling/
-RUN cd /home/node/emisar-screenshot-tooling \
- && npm ci --ignore-scripts \
- && if [ "$(dpkg --print-architecture)" = amd64 ]; then npm run browser:install; fi
-
 WORKDIR /workspace

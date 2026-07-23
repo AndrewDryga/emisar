@@ -124,7 +124,7 @@ Never title a product release with a bare `vX.Y.Z`.
    years. Each released version carries its own conversion promise.
 6. **Update the marketing test** newest-entry assertions.
 7. **Reconcile the bundled pack catalog with production.** Fetch `https://registry.emisar.dev/v1/catalog.json`, build the current packs with that file as `packctl catalog build --previous`, and copy the result to `portal/apps/emisar/priv/packs/catalog.json`. This removes unpublished intermediate versions left by canceled releases and makes the later CD byte check deterministic. See `packs/PUBLISHING.md` for the exact commands.
-8. **Gate** from `portal/`: `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../dev/check-portal-test-output.sh`. Green before committing. Never pipe the format/compile checks through `head`/`tail` (it masks the exit code).
+8. **Gate** from the repository root: `dev/run gate portal`. Green before committing. Never pipe the format/compile checks through `head`/`tail` (it masks the exit code).
 9. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
 10. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*

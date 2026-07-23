@@ -1,6 +1,6 @@
 // Command gencases regenerates packs/*/test/cases.json — one smoke-test case
-// per action — from each pack's actions/*.yaml. The harness
-// (dev/test-packs/harness.sh) consumes the JSON directly with jq; the files
+// per action — from each pack's actions/*.yaml. The Go packtest harness
+// consumes the JSON directly; the files
 // are GENERATED artifacts: never hand-edit one, change the policy tables
 // (policy.go) or the action YAML and regenerate.
 //
