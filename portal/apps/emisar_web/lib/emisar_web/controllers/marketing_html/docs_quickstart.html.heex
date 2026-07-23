@@ -64,15 +64,15 @@
         </ul>
       </.docs_callout>
 
-      <.docs_h2 id="create-account">1 · Create your account</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="create-account">1. Create your account</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Sign up at <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">/sign_up</.link>. Free covers
         <strong class="text-zinc-300">3 runners and 1 user</strong>
         — no credit card.
       </p>
 
-      <.docs_h2 id="install-runner">2 · Install the runner</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         In the dashboard, click <strong>Connect a runner</strong>. emisar shows a one-line command
         carrying a single-use enrollment key
         (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
@@ -84,7 +84,7 @@
         copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         The key is single-use, so a copy in your shell history goes stale the moment it's used.
         It's a plain, readable shell script —
         <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
@@ -99,7 +99,7 @@
         </.link>
         before you run it. It:
       </p>
-      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-3 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>verifies the download's SHA-256;</span>
@@ -130,14 +130,14 @@
         </li>
       </ul>
 
-      <.docs_h2 id="watch-connect">3 · Watch it connect</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Refresh the dashboard — your host appears under <strong>Runners</strong>, online,
         advertising its action catalog. On the host you can watch the same thing:
       </p>
       <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
 <span class="text-zinc-500">level=INFO msg=cloud.connected actions=89 packs=4 inflight_runs=0</span></.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash
         auto-pins as trusted. (A <em>custom or edited</em>
@@ -147,14 +147,14 @@
         you change a pack.)
       </p>
 
-      <.docs_h2 id="first-action">4 · Run your first action</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="first-action">4. Run your first action</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Open the runner, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
         required <strong>reason</strong>
         (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
       </p>
       <.docs_code phx-no-format label="output"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="font-mono">linux.uptime</code>
         is <code class="text-brand-300">low</code>
         risk, so the default policy runs it on the spot. A <code class="text-amber-300">high</code>-risk
@@ -163,15 +163,15 @@
         audit and the runner's hash-chained journal, tagged with your reason.
       </p>
 
-      <.docs_h2 id="connect-llm">5 · Point your LLM at it</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         In the dashboard, open <strong>LLM agents</strong>
         and pick your client. Claude.ai and ChatGPT connect over remote MCP with OAuth; local
         clients — Claude Code, Cursor, Zed, Copilot CLI, and ten more — run a one-line installer that
         opens a browser approval and writes a scoped key into the client's config, so the secret
         never touches your clipboard.
       </p>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Your model now has twelve stable tools and sees only the packs, actions, and runners in its
         scope. Ask <em>"what's the load on web-01?"</em>
         and it runs <code class="font-mono">linux.uptime</code>; ask it to restart a service and that
@@ -241,8 +241,8 @@
         </ul>
       </.docs_callout>
 
-      <.docs_h2 id="workflow">6 · The workflow we recommend</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <.docs_h2 id="workflow">6. The workflow we recommend</.docs_h2>
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         emisar is built for the incident, not the steady state. Use it to
         <strong class="text-zinc-200">investigate fast</strong>
         — let the agent work down the layers through declared, audited reads — and to
@@ -252,11 +252,11 @@
         is your configuration manager. Standing changes an agent makes on a live host are how you
         get drift nobody can reproduce.
       </p>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         So the durable pattern — the one we'd actually recommend — pairs the agent with your
         infrastructure-as-code:
       </p>
-      <ol class="mt-4 list-decimal space-y-2 pl-6 text-sm leading-6 text-zinc-400">
+      <ol class="mt-4 list-decimal space-y-2 pl-6 text-sm leading-7 text-zinc-400">
         <li>
           The agent <strong class="text-zinc-200">investigates</strong>
           through emisar and finds the root cause — reads run on policy, so this part is unattended
@@ -273,7 +273,7 @@
           through your normal pipeline.
         </li>
       </ol>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         See it end to end on a real incident:
         <.link
           navigate={~p"/use-cases/csi-data-loss"}

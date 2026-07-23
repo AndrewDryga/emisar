@@ -30,7 +30,7 @@
       </.docs_header>
 
       <.docs_h2 id="running">Running the CLI</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         On an installed host the binary lives at
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>
         and every subcommand auto-discovers its configuration, so you rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config and the
@@ -39,7 +39,7 @@
         with no arguments prints a Paths footer showing exactly where this host keeps its config,
         packs, token, and journal.
       </p>
-      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-4 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -66,7 +66,7 @@
           </span>
         </li>
       </ul>
-      <p class="mt-6 text-sm leading-6 text-zinc-400">
+      <p class="mt-6 text-sm leading-7 text-zinc-400">
         Where an installed host keeps things — the installer's defaults; config keys or the install
         flags below move them:
       </p>
@@ -96,7 +96,7 @@
       </div>
 
       <.docs_h2 id="connect">The connect daemon</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect</code>
         is the long-running daemon: it dials out over a TLS websocket, advertises this host's
         actions, executes incoming dispatches, streams redacted output back, and journals every
@@ -105,7 +105,7 @@
         default <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>)
         for a cached per-runner token, so the key can be unset afterward.
       </p>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         You normally don't run
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">connect</code>
         by hand — the installer registers it as a supervised service
@@ -121,7 +121,7 @@
 <span class="text-zinc-500">$</span> sudo journalctl -u emisar -f      <span class="text-zinc-500"># stream its logs</span>
 <span class="text-zinc-500">$</span> sudo systemctl reload emisar      <span class="text-zinc-500"># re-read packs + signing config (SIGHUP)</span>
 <span class="text-zinc-500">$</span> sudo systemctl restart emisar     <span class="text-zinc-500"># full restart</span></.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         On a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
         host (a container, CI box, or cloud shell) there is no unit; run the daemon yourself with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect --config /etc/emisar/config.yaml</code>. The full fleet lifecycle — groups, enrollment keys, pack credentials — is in the
         <.link
@@ -132,7 +132,7 @@
       </p>
 
       <.docs_h2 id="actions">Actions</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Inspect the catalog this host advertises, and run one action locally while you're debugging a
         pack. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar actions</code>
         is an accepted alias for the group.
@@ -163,10 +163,10 @@
           </tbody>
         </table>
       </div>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Flags on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action run</code>:
       </p>
-      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-3 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -207,7 +207,7 @@
       </.docs_callout>
 
       <.docs_h2 id="packs">Packs</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack</code>
         (alias <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">packs</code>) manages this host's
         action catalog — the versioned bundles of action schemas it may execute.
@@ -242,10 +242,10 @@
           </tbody>
         </table>
       </div>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Flags on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack install</code>:
       </p>
-      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-3 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -286,7 +286,7 @@
 <span class="text-zinc-500">$</span> sudo emisar pack update redis postgres --dry-run
 <span class="text-zinc-500"># validate a pack you are authoring, before you trust it</span>
 <span class="text-zinc-500">$</span> emisar pack validate ./my-pack</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update</code>, and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>
         signal a running daemon to reload — the same SIGHUP as
@@ -306,7 +306,7 @@
       </p>
 
       <.docs_h2 id="diagnose">Diagnose and audit</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         When a runner won't connect or an action fails, these read-only verbs answer why without
         opening a cloud session.
       </p>
@@ -341,7 +341,7 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar doctor              <span class="text-zinc-500"># offline preflight — run this first</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f      <span class="text-zinc-500"># the local journal, live</span>
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
         never opens a cloud session and one failing check never aborts the rest, so a single run
         surfaces every problem at once.
@@ -364,7 +364,7 @@
       </.docs_callout>
 
       <.docs_h2 id="signing">Signed-dispatch keys</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing</code>
         sets up client-attested dispatch: an enforcing runner then requires a CA-signed certificate
         on every action, so a compromised control plane can relay a dispatch but never mint one.
@@ -396,7 +396,7 @@
           </tbody>
         </table>
       </div>
-      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-4 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -435,7 +435,7 @@
 <span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h
 <span class="text-zinc-500"># later, renew a cert against the offline CA (no runner reload needed)</span>
 <span class="text-zinc-500">$</span> emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         The generated
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
         and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
@@ -447,7 +447,7 @@
       </p>
 
       <.docs_h2 id="lifecycle">Install, update, and removal</.docs_h2>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         The binary is installed and upgraded by the same script; it isn't self-updating. Re-running
         the installer upgrades in place and preserves config and packs. It requires systemd on Linux
         (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
@@ -458,7 +458,7 @@
 <span class="text-zinc-500"># pin a version, or provision unattended with a fixed pack set</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
-      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+      <ul class="mt-4 space-y-2 text-sm leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
@@ -530,7 +530,7 @@
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or delete everything, including config, data, and logs</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         After uninstalling, delete the runner in the dashboard — its run history and audit events
         survive the host. Removing a runner cleanly, including manual identity resets, is covered in <.link
           navigate={~p"/docs/runners"}

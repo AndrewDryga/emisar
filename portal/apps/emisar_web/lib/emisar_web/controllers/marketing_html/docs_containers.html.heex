@@ -31,7 +31,7 @@
       </.docs_header>
 
       <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         A runner can only act on what its own namespace can reach. On a VM or bare metal that's
         the whole machine — which is why the
         <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
@@ -41,7 +41,7 @@
         host. Put the same runner in a bare container and those packs now see the container —
         its processes, its filesystem, its network.
       </p>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         That isn't a failure mode; it's a scoping decision. A sidecar that can only see one app
         is a tightly scoped runner — the agent operating through it can't touch anything else,
         no matter what it asks for. You just have to pick the shape that matches what you want
@@ -49,7 +49,7 @@
       </p>
 
       <.docs_h2 id="building-blocks">The two mechanics every shape shares</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <strong class="text-zinc-200">First, skip the service.</strong>
         The default installer creates a systemd service, so on a host without a real init it
         refuses with <em>"this looks like a container or cloud shell"</em>
@@ -65,7 +65,7 @@
         label="shell"
         copy_text="curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service"
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service</.docs_code>
-      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         <strong class="text-zinc-200">Second, persist identity.</strong>
         After the first connect, the per-runner token lands at
         <code class="font-mono">cloud.token_path</code>
@@ -88,7 +88,7 @@
 <span class="text-sky-300">cloud</span>:
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
   <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
-      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         One more thing before a fleet: the dashboard's Connect-a-runner key is single-use —
         right for one host, wrong for a template that scales. For DaemonSets and system jobs,
         mint a <strong class="text-zinc-200">reusable enrollment key</strong>
@@ -99,7 +99,7 @@
       </p>
 
       <.docs_h2 id="sidecar">A sidecar next to one app</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         When the thing you want the agent to operate <em>is</em> the app — read its logs,
         inspect its processes, poke its admin CLI — run the runner as a second container that joins
         the app container's PID, network, and (read-only) volumes. The runner then sees exactly that
@@ -114,7 +114,7 @@
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
     -v emisar-runner-data:/var/lib/emisar \
     your-registry/emisar-runner</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         There's a working reference for this shape in the repo —
         <.external_link href="https://github.com/andrewdryga/emisar/tree/main/runner/docker">
           runner/docker
@@ -124,7 +124,7 @@
       </p>
 
       <.docs_h2 id="daemonset">A DaemonSet across Kubernetes nodes</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         To operate the nodes themselves, run one runner per node. The runner can only act on
         what the pod spec grants, which makes the manifest your blast-radius dial — and the
         manifest below is the observation-heavy variant: it can watch anything running on the
@@ -182,7 +182,7 @@
         - <span class="text-sky-300">name</span>: systemd-run
           <span class="text-sky-300">hostPath</span>:
             <span class="text-sky-300">path</span>: /run/systemd</.docs_code>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         With this, process packs see every node process (<code class="font-mono">hostPID</code>),
         network packs see the node's real ports (<code class="font-mono">hostNetwork</code>),
         journal reads work against the mounted journal, and file-inspection actions reach node
@@ -197,7 +197,7 @@
       </p>
 
       <.docs_h2 id="nomad">A Nomad system job</.docs_h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Same idea on Nomad: a <code class="font-mono">system</code>
         job places one instance on every client node. Fetch the release tarball in an
         <code class="font-mono">artifact</code>

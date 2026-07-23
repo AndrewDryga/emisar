@@ -31,7 +31,7 @@
           every packs change.
         </:dek>
       </.docs_header>
-      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+      <p class="mt-5 text-sm leading-7 text-zinc-400">
         Distribution and trust are deliberately separate: <strong class="text-zinc-200">trust never
           rests on the registry</strong>. Installs pin a
         <code>sha256</code>
@@ -58,7 +58,7 @@
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Author and validate your packs</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             Packs are directories of YAML — the
             <.link
               navigate={~p"/docs/publishing-packs"}
@@ -85,7 +85,7 @@
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Get packctl</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             <code>packctl</code>
             builds and publishes registries. It's deliberately a
             <strong class="text-zinc-200">separate
@@ -110,13 +110,13 @@
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Build the registry tree</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             <code>--base-url</code>
             is wherever you'll host it; tarball URLs in the catalog join onto it:
           </p>
           <.docs_code phx-no-format label="shell">packctl catalog build --packs ./packs --out ./dist \
   --base-url https://packs.acme.internal</.docs_code>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             The output is the whole registry — immutable versioned or content-addressed artifacts,
             plus two mutable pointers:
           </p>
@@ -134,13 +134,13 @@ v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pac
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Host it anywhere static</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             GCS is native — immutable objects upload precondition-protected so existing bytes are
             never overwritten, and the pointers flip last:
           </p>
           <.docs_code phx-no-format label="shell">GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
   packctl catalog publish --dir ./dist --bucket acme-pack-registry</.docs_code>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             S3, MinIO, nginx, or anything else: the tree is plain files — sync it with any tool.
             Upload the immutable objects first, then the two pointers:
           </p>
@@ -160,7 +160,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Install from it, fleet-wide</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             Install by the pack's immutable tarball URL from the tree you built, and pin the hash you
             reviewed — <code>emisar pack validate</code>
             printed it in step 1, and every version carries it in <code>catalog.json</code>. A tampered
@@ -170,7 +170,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
           <.docs_code phx-no-format label="shell">sudo emisar pack install \
   https://packs.acme.internal/v1/packs/billing-tools/0.4.0/&lt;sha256&gt;/pack.tar.gz \
   --hash sha256:&lt;reviewed&gt;</.docs_code>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             Then trust the pack once on the dashboard's
             <strong class="text-zinc-200">Packs</strong>
             page — actions gate on that per-account trust, not on where the bytes came from. Edit
@@ -188,7 +188,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Publish the next version safely</h2>
           </header>
-          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+          <p class="mt-5 text-sm leading-7 text-zinc-400">
             Always build against the currently-published catalog so history carries forward.
             <code>--previous</code>
             enforces the registry's core guarantee: a pack that changed bytes for an
