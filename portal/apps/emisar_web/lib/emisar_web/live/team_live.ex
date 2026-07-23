@@ -1405,12 +1405,11 @@ defmodule EmisarWeb.TeamLive do
                           <.chip :for={runner_id <- access.runner_ids} tone={:neutral}>
                             Runner: {runner_access_runner_label(runner_id, @runners_by_id)}
                           </.chip>
-                          <span
-                            :if={membership.runner_access_directory_managed}
-                            class="text-xs text-zinc-500"
-                          >
-                            · managed by identity provider
-                          </span>
+                          <%!-- No "managed by identity provider" note here: the sync badge
+                           by the name already says the member is IdP-provisioned, and the
+                           role lock says its settings are IdP-owned. Runner access has no
+                           inline control in the roster to lock, so an FYI is pure repetition.
+                           The edit flow still guards + explains the directory lock. --%>
                         </div>
                       </div>
                     </div>
