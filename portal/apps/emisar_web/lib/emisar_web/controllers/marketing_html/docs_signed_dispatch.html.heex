@@ -38,12 +38,29 @@
         label="prod"
         caption="Signing on: only a signature from an authorized MCP client runs — the portal, runbooks, and API keys can't."
         lines={[
-          %{k: "note", t: "# require a real person's signature on every dispatch — mint a CA + cert once"},
-          %{k: "cmd", p: "$", t: "emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"},
-          %{k: "out", t: "  → runner signing block (CA public key) · offline CA key · 2 MCP env vars"},
-          %{k: "ok", t: "✓ signing on for group=prod — a valid Ed25519 signature is now required"},
+          %{
+            k: "note",
+            t: "# require a real person's signature on every dispatch — mint a CA + cert once"
+          },
+          %{
+            k: "cmd",
+            p: "$",
+            t: "emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"
+          },
+          %{
+            k: "out",
+            t: "  → runner signing block (CA public key) · offline CA key · 2 MCP env vars"
+          },
+          %{
+            k: "ok",
+            t: "✓ signing on for group=prod — a valid Ed25519 signature is now required"
+          },
           %{k: "blank", t: ""},
-          %{k: "note", t: "# an agent dispatches; its MCP client signs the exact call with the operator's leaf key"},
+          %{
+            k: "note",
+            t:
+              "# an agent dispatches; its MCP client signs the exact call with the operator's leaf key"
+          },
           %{k: "out", t: "⏺ emisar · systemd.restart · checkout-api.service · api-iad-02"},
           %{k: "ok", t: "  ⎿ signature verified vs CA acme-2026 · signed by maya@acme · running"},
           %{k: "blank", t: ""},

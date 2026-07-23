@@ -42,11 +42,22 @@
         label="docker host"
         caption="A runner in a container — egress-only, and the namespace it can see is its scope."
         lines={[
-          %{k: "note", t: "# a runner in a container dials out like any other — nothing listens inbound"},
-          %{k: "cmd", p: "$", t: "docker run -d --name emisar -v emisar-data:/var/lib/emisar -e EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… you/emisar-runner"},
+          %{
+            k: "note",
+            t: "# a runner in a container dials out like any other — nothing listens inbound"
+          },
+          %{
+            k: "cmd",
+            p: "$",
+            t:
+              "docker run -d --name emisar -v emisar-data:/var/lib/emisar -e EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… you/emisar-runner"
+          },
           %{k: "cmd", p: "$", t: "docker logs -f emisar"},
           %{k: "out", t: "level=INFO msg=cloud.connected actions=32 packs=2 inflight_runs=0"},
-          %{k: "ok", t: "✓ online — one container, egress-only; the namespace it sees is its scope"}
+          %{
+            k: "ok",
+            t: "✓ online — one container, egress-only; the namespace it sees is its scope"
+          }
         ]}
       />
 

@@ -30,13 +30,42 @@
         label="siem"
         caption="The same trail as NDJSON — read-only, forward-only, straight into your pipeline."
         lines={[
-          %{k: "note", t: "# stream the tamper-evident trail to your SIEM — one event per line, cursor-paginated"},
-          %{k: "cmd", p: "$", t: "curl -sN -H \"Authorization: Bearer $AUDIT_KEY\" https://emisar.dev/api/audit?since=2026-07-23T00:00:00Z"},
-          %{k: "out", t: "{\"occurred_at\":\"2026-07-23T14:32:07Z\",\"event_type\":\"run.succeeded\",\"actor_label\":\"maya@acme\",\"target_label\":\"linux.uptime · web-01\"}"},
-          %{k: "out", t: "{\"occurred_at\":\"2026-07-23T14:35:11Z\",\"event_type\":\"run.awaiting_approval\",\"actor_label\":\"jordan@acme\",\"target_label\":\"systemd.restart · api-iad-02\"}"},
-          %{k: "out", t: "{\"occurred_at\":\"2026-07-23T14:36:03Z\",\"event_type\":\"approval.granted\",\"actor_label\":\"maya@acme\",\"target_label\":\"systemd.restart · api-iad-02\"}"},
-          %{k: "note", t: "  # every line also carries id, actor_kind, target_kind, ip_address, request_id, and the full payload"},
-          %{k: "ok", t: "✓ forward-only cursor — pipe straight to Splunk, Elastic, or a file; no polling gaps"}
+          %{
+            k: "note",
+            t:
+              "# stream the tamper-evident trail to your SIEM — one event per line, cursor-paginated"
+          },
+          %{
+            k: "cmd",
+            p: "$",
+            t:
+              "curl -sN -H \"Authorization: Bearer $AUDIT_KEY\" https://emisar.dev/api/audit?since=2026-07-23T00:00:00Z"
+          },
+          %{
+            k: "out",
+            t:
+              "{\"occurred_at\":\"2026-07-23T14:32:07Z\",\"event_type\":\"run.succeeded\",\"actor_label\":\"maya@acme\",\"target_label\":\"linux.uptime · web-01\"}"
+          },
+          %{
+            k: "out",
+            t:
+              "{\"occurred_at\":\"2026-07-23T14:35:11Z\",\"event_type\":\"run.awaiting_approval\",\"actor_label\":\"jordan@acme\",\"target_label\":\"systemd.restart · api-iad-02\"}"
+          },
+          %{
+            k: "out",
+            t:
+              "{\"occurred_at\":\"2026-07-23T14:36:03Z\",\"event_type\":\"approval.granted\",\"actor_label\":\"maya@acme\",\"target_label\":\"systemd.restart · api-iad-02\"}"
+          },
+          %{
+            k: "note",
+            t:
+              "  # every line also carries id, actor_kind, target_kind, ip_address, request_id, and the full payload"
+          },
+          %{
+            k: "ok",
+            t:
+              "✓ forward-only cursor — pipe straight to Splunk, Elastic, or a file; no polling gaps"
+          }
         ]}
       />
 

@@ -29,13 +29,24 @@
         caption="About five minutes, start to finish — every action gated by policy and on the record."
         lines={[
           %{k: "note", t: "# install the runner on a host — one line, nothing listens inbound"},
-          %{k: "cmd", p: "$", t: "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… bash"},
-          %{k: "sys", t: "→ release verified (sha256) · emisar.service up · packs: linux-core, debugging"},
+          %{
+            k: "cmd",
+            p: "$",
+            t:
+              "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… bash"
+          },
+          %{
+            k: "sys",
+            t: "→ release verified (sha256) · emisar.service up · packs: linux-core, debugging"
+          },
           %{k: "ok", t: "✓ web-01 connected · 89 actions online"},
           %{k: "blank", t: ""},
           %{k: "note", t: "# connect your coding agent to the same catalog over MCP"},
           %{k: "cmd", p: "$", t: "curl -sSL https://emisar.dev/install-mcp.sh | sh"},
-          %{k: "sys", t: "→ browser approval → scoped key written to ~/.claude, never your clipboard"},
+          %{
+            k: "sys",
+            t: "→ browser approval → scoped key written to ~/.claude, never your clipboard"
+          },
           %{k: "ok", t: "✓ emisar connected · 12 tools in scope"},
           %{k: "blank", t: ""},
           %{k: "note", t: "# now just ask"},
@@ -44,8 +55,14 @@
           %{k: "out", t: "⏺ emisar · linux.uptime · web-01"},
           %{k: "note", t: "  ⎿ low risk → allowed by policy · no approval needed"},
           %{k: "out", t: "  14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48"},
-          %{k: "out", t: "⏺ web-01's been up 18 days; load's light at 0.42. Nothing looks wrong."},
-          %{k: "ok", t: "✓ on the record — jordan@acme via Claude Code · reason \"uptime spot-check\""}
+          %{
+            k: "out",
+            t: "⏺ web-01's been up 18 days; load's light at 0.42. Nothing looks wrong."
+          },
+          %{
+            k: "ok",
+            t: "✓ on the record — jordan@acme via Claude Code · reason \"uptime spot-check\""
+          }
         ]}
       />
 

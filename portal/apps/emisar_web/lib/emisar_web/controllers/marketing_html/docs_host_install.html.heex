@@ -57,7 +57,12 @@
         label="web-01"
         caption="What that one command does — download, verify, install the hardened service, connect. Nothing listens inbound."
         lines={[
-          %{k: "cmd", p: "$", t: "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… bash"},
+          %{
+            k: "cmd",
+            p: "$",
+            t:
+              "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-7f3a… bash"
+          },
           %{k: "install", t: "install target: linux/amd64 via systemd"},
           %{k: "install", t: "latest release: runner-v0.3.1"},
           %{k: "install", t: "downloading emisar-0.3.1-linux-amd64.tar.gz"},
@@ -69,7 +74,10 @@
           %{k: "install", t: "writing /etc/systemd/system/emisar.service"},
           %{k: "install", t: "starting emisar.service"},
           %{k: "out", t: "level=INFO msg=cloud.connected actions=89 packs=4 inflight_runs=0"},
-          %{k: "ok", t: "✓ web-01 online — the runner dialed out over WSS; no inbound port opened"}
+          %{
+            k: "ok",
+            t: "✓ web-01 online — the runner dialed out over WSS; no inbound port opened"
+          }
         ]}
       />
 

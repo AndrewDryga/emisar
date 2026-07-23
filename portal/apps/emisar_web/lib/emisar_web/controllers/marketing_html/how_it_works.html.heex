@@ -35,16 +35,26 @@
         class="mx-auto max-w-3xl"
         caption="One request, traced end to end — the requester, the gate, the approver, the runner, the record."
         lines={[
-          %{k: "note", t: "# an agent asks for one declared action — your policy decides what happens next"},
+          %{
+            k: "note",
+            t: "# an agent asks for one declared action — your policy decides what happens next"
+          },
           %{k: "cmd", p: "$", t: "claude"},
           %{k: "llm", p: "›", t: "checkout-api on api-iad-02 is throwing 502s — restart it"},
           %{k: "out", t: "⏺ emisar · systemd.restart · checkout-api.service · api-iad-02"},
           %{k: "warn", t: "  ⎿ HIGH risk → your policy requires approval before this runs"},
-          %{k: "warn", t: "⏸ paused · waiting for a human — the requester can't approve their own action"},
+          %{
+            k: "warn",
+            t: "⏸ paused · waiting for a human — the requester can't approve their own action"
+          },
           %{k: "ok", t: "  ⎿ jordan@acme approved in the dashboard"},
           %{k: "out", t: "⏺ restarting checkout-api.service …  active (running) · exit 0 · 1.2s"},
           %{k: "out", t: "⏺ checkout-api is back up on api-iad-02 — the 502s cleared."},
-          %{k: "ok", t: "✓ on the record — maya@acme via Claude Code, approved by jordan@acme · reason \"checkout 502s\""}
+          %{
+            k: "ok",
+            t:
+              "✓ on the record — maya@acme via Claude Code, approved by jordan@acme · reason \"checkout 502s\""
+          }
         ]}
       />
     </div>

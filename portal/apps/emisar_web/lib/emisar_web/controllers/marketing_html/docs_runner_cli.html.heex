@@ -34,7 +34,10 @@
         label="web-01"
         caption="The operator's local toolbox — reads and diagnostics, straight from the host."
         lines={[
-          %{k: "note", t: "# inspect, diagnose, and read the journal on the host — no cloud round-trip"},
+          %{
+            k: "note",
+            t: "# inspect, diagnose, and read the journal on the host — no cloud round-trip"
+          },
           %{k: "cmd", p: "$", t: "sudo emisar doctor"},
           %{k: "out", t: "  config ✓   credential ✓   4 packs ✓   action binaries ✓   service ✓"},
           %{k: "ok", t: "✓ control plane reachable · all preflight checks passed"},
@@ -47,7 +50,10 @@
           %{k: "cmd", p: "$", t: "sudo emisar events tail -f"},
           %{k: "out", t: "  17:04:12  run.dispatched  linux.uptime  low · allowed by policy"},
           %{k: "out", t: "  17:04:12  run.succeeded   linux.uptime  320ms · exit 0"},
-          %{k: "note", t: "  17:06:38  run.refused     caddy.reload_config  stale signature — nothing ran"}
+          %{
+            k: "note",
+            t: "  17:06:38  run.refused     caddy.reload_config  stale signature — nothing ran"
+          }
         ]}
       />
 
