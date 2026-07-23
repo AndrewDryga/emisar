@@ -69,6 +69,8 @@ var docsShots = []shot{
 	// Connect form: click a cloud client to reveal the connector fields, then crop
 	// to the form panel — #connect-panel excludes the how-keys-work rail beside it.
 	{Name: "connect-llm-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude.ai")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-llm-agents.webp"},
+	// Same connect panel with a LOCAL/CLI client selected — the bridge + key setup.
+	{Name: "connect-cli-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude Code")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-cli-agents.webp"},
 	// Runbook editor: open a seeded runbook and crop to its ordered, gated steps —
 	// what a runbook IS, not two list rows.
 	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
