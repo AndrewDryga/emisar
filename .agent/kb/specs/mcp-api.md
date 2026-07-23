@@ -70,7 +70,7 @@ time.
 | `get_action` | Fetch one exact argument contract and compatible targets. |
 | `run_action` | Dispatch one exact action to explicit runner references. |
 | `get_operation` | Recover one exact bridge mutation after an ambiguous response. |
-| `wait_for_run` | Wait for one run or runbook execution to change or finish. |
+| `wait_for_run` | Wait for one run or runbook execution to change or finish, and stream its output forward. |
 | `recent_runs` | Inspect and paginate scoped run activity. |
 | `list_runbooks` | List published runbooks. |
 | `get_runbook` | Inspect one immutable published runbook revision. |
@@ -1122,7 +1122,9 @@ Input:
 
 Exactly one of `run_id` or `runbook_execution_id` is required. `timeout` accepts
 `0`, or an integer duration with `ms` or `s`; default and maximum are 60 seconds.
-Values above the maximum are rejected. One credential lineage may hold at most
+Values above the maximum are rejected. The optional `cursor` switches the call
+into output-tail mode (below); it is an opaque value the caller only echoes back
+from a prior `next`, never constructs. One credential lineage may hold at most
 eight waits on each portal node. Saturation returns retryable `wait_saturated`;
 call again after an active wait finishes. The call returns on a state change,
 terminal status, or timeout. Every nonterminal result includes another `next`;
@@ -1174,6 +1176,61 @@ The bridge HTTP deadline is 90 seconds, above the portal's 60-second maximum
 wait. It reads subsequent stdio frames concurrently and uses one serialized
 stdout writer, so a wait cannot block ping, cancellation, or unrelated calls
 or interleave response frames.
+
+#### Streaming output with a cursor
+
+Long-running actions stream their output to the caller through the same
+`wait_for_run` loop, so an operator or model watches a job progress instead of
+blocking on one final blob. The runner already redacts and streams each output
+line to the portal; the cursor exposes that stream forward.
+
+Without a cursor, the result is the tail snapshot above: bounded `stdout` and
+`stderr` previews of the most recent output. With a cursor, the result instead
+carries an `output` array — the forward delta of redacted chunks after that
+cursor, in emission order, with consecutive same-stream chunks coalesced into
+one `{stream, text}` element — and no `stdout`/`stderr` preview. `run_action`
+and a cursorless `wait_for_run` seed a start cursor onto their live-run `next`,
+so following `next` verbatim streams a run from its first byte, losslessly.
+
+```json
+{
+  "ok": true,
+  "run": {
+    "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+    "operation_id": "op_01J0D85Q1BKR5W6N7E2T4Y8P3C",
+    "action_id": "postgres.vacuum",
+    "pack_ref": "postgres@1.4.0/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
+    "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
+    "status": "running",
+    "created_at": "2026-07-13T14:42:10Z",
+    "output": [
+      {"stream": "stdout", "text": "INFO:  vacuuming \"public.events\"\n"},
+      {"stream": "stderr", "text": "WARNING:  skipping locked relation\n"}
+    ],
+    "next": {
+      "tool": "wait_for_run",
+      "arguments": {
+        "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+        "cursor": "<opaque>",
+        "timeout": "60s"
+      }
+    }
+  }
+}
+```
+
+The cursor lives only inside `next.arguments.cursor`; the caller follows `next`
+verbatim and never assembles a cursor. It is opaque and bound to one run and one
+credential lineage, so a forged, expired, or cross-bound value returns
+`invalid_cursor` rather than silently re-reading or skipping output. `next` is
+present while the run is live (`timeout: "60s"`, and the wait wakes as soon as a
+new chunk arrives) or while a large backlog is still draining (`timeout: "0"`,
+so the caller pulls the next frame immediately); it is absent once the run is
+terminal and its output is fully drained. An `output` frame is bounded to the
+encoded-frame budget, so a chatty run drains across several `next` hops with
+nothing repeated. A dropped progress chunk surfaces as `output_complete: false`,
+never a silent gap. Output reads write no audit event; the run lifecycle and the
+runner's local journal remain the audit record.
 
 ### `recent_runs`
 

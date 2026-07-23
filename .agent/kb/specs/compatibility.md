@@ -136,6 +136,12 @@ Every descriptor carries its complete, self-contained `inputSchema`; response
 schemas stay server-side as normative contracts exercised by the portal's
 fixture and integration tests, so `tools/list` stays small on every client.
 
+The `wait_for_run` output-tail `cursor` input and its `output`-delta result
+(`run_tail`) are additive v1 fields. A client that never sends `cursor` keeps
+the unchanged tail-snapshot result; the streamed shape is a distinct member of
+the tool's output `oneOf`, so neither the input nor the output contract of an
+existing caller changes.
+
 **How it is versioned today.** MCP transport negotiation accepts
 `2025-11-25` and `2025-06-18` during `initialize`. The negotiated
 `MCP-Protocol-Version` must be sent on later requests; an unsupported header is
