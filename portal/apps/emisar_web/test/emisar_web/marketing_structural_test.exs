@@ -38,12 +38,14 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem
+    /docs/host-install
     /docs/containers
+    /docs/kubernetes
+    /docs/nomad
     /docs/runs
     /docs/keys
     /docs/runner-cli
     /docs/billing
-    /docs/troubleshooting
     /docs/limits
     /changelog
     /about

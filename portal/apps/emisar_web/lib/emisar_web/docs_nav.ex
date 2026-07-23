@@ -40,18 +40,42 @@ defmodule EmisarWeb.DocsNav do
     {"Deploy",
      [
        %{
+         slug: "host-install",
+         title: "Install on a host",
+         path: "/docs/host-install",
+         icon: "hero-server",
+         desc:
+           "The full runner install: every flag, the service it creates, the config file, and the user it runs as."
+       },
+       %{
+         slug: "containers",
+         title: "Containers",
+         path: "/docs/containers",
+         icon: "hero-cube",
+         desc:
+           "Run the runner in a container — what it can see, the two shared mechanics, and a sidecar."
+       },
+       %{
+         slug: "kubernetes",
+         title: "Kubernetes",
+         path: "/docs/kubernetes",
+         icon: "hero-squares-2x2",
+         desc: "One runner per node as a DaemonSet, with the pod spec as your blast-radius dial."
+       },
+       %{
+         slug: "nomad",
+         title: "Nomad",
+         path: "/docs/nomad",
+         icon: "hero-rectangle-stack",
+         desc:
+           "A Nomad system job placing one runner on every client node, with a worked HCL spec."
+       },
+       %{
          slug: "deployment",
          title: "Production rollout",
          path: "/docs/deployment",
          icon: "hero-clipboard-document-check",
          desc: "Go from one runner to a governed fleet, with a phased rollout and a checklist."
-       },
-       %{
-         slug: "containers",
-         title: "Containers & Kubernetes",
-         path: "/docs/containers",
-         icon: "hero-cube",
-         desc: "Run the runner as a sidecar, a Kubernetes DaemonSet, or a Nomad system job."
        }
      ]},
     {"Operate",
@@ -185,14 +209,6 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/security-model",
          icon: "hero-shield-check",
          desc: "Trust boundary, searchable audit, hash-chained journal, redaction on egress."
-       },
-       %{
-         slug: "troubleshooting",
-         title: "Troubleshooting",
-         path: "/docs/troubleshooting",
-         icon: "hero-wrench-screwdriver",
-         desc:
-           "When a runner won't connect, what a denied versus refused versus failed run means, and where your data lives."
        },
        %{
          slug: "limits",

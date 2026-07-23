@@ -1,10 +1,10 @@
 <%!-- ============================================================
-  Containers & Kubernetes — the runner in a container: sidecar,
-  DaemonSet, Nomad system job. The honest core is namespace
-  visibility (a runner acts on what its namespace can reach);
-  the mechanics are --no-service (install.sh) and identity
-  persistence (cloud.token_path + runner.id, since containers
-  lack a stable /etc/machine-id). Facts verified against
+  Containers — the runner in a container. The honest core is
+  namespace visibility (a runner acts on what its namespace can
+  reach); the two shared mechanics are --no-service (install.sh)
+  and identity persistence (cloud.token_path + runner.id, since
+  containers lack a stable /etc/machine-id). Kubernetes (DaemonSet)
+  and Nomad (system job) build on this page. Facts verified against
   install.sh and runner/internal/config.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
@@ -17,16 +17,23 @@
         {"what-it-sees", "What a containerized runner sees"},
         {"building-blocks", "The two mechanics every shape shares"},
         {"sidecar", "A sidecar next to one app"},
-        {"daemonset", "A DaemonSet across Kubernetes nodes"},
-        {"nomad", "A Nomad system job"}
+        {"orchestrators", "One per node: Kubernetes and Nomad"}
       ]}
     >
       <.docs_header current="containers">
         <:dek>
           The runner is a plain foreground process — it runs fine in a container. What changes
-          isn't whether it runs; it's what it can see. This page covers the three container
-          shapes that work well — a sidecar next to one app, a DaemonSet across your Kubernetes
-          nodes, a Nomad system job — and the two mechanics they all share.
+          isn't whether it runs; it's what it can see. This page covers what a containerized runner
+          can reach, the two mechanics every container shape shares, and the sidecar shape. To run
+          one per node, it feeds into
+          <.link
+            navigate={~p"/docs/kubernetes"}
+            class="text-brand-400 hover:text-brand-300"
+          >Kubernetes</.link>
+          and <.link
+            navigate={~p"/docs/nomad"}
+            class="text-brand-400 hover:text-brand-300"
+          >Nomad</.link>.
         </:dek>
       </.docs_header>
 
@@ -34,10 +41,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner can only act on what its own namespace can reach. On a VM or bare metal that's
         the whole machine — which is why the
-        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
-          quickstart
+        <.link navigate={~p"/docs/host-install"} class="text-brand-400 hover:text-brand-300">
+          host install
         </.link>
-        steers you there: most packs are host-oriented, and some literally require a systemd
+        is the default: most packs are host-oriented, and some literally require a systemd
         host. Put the same runner in a bare container and those packs now see the container —
         its processes, its filesystem, its network.
       </p>
@@ -116,97 +123,43 @@
     -v emisar-runner-data:/var/lib/emisar \
     your-registry/emisar-runner</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Emisar does not publish a universal runner image. Build yours from the release binary
+        emisar does not publish a universal runner image. Build yours from the release binary
         with exactly the tools its selected packs call; the command above supplies its
         operator-owned config and persistent token volume. The image contents are part of the
         runner's capability boundary, so keep them as narrow as the workload allows.
       </p>
 
-      <.docs_h2 id="daemonset">A DaemonSet across Kubernetes nodes</.docs_h2>
+      <.docs_h2 id="orchestrators">One per node: Kubernetes and Nomad</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To operate the nodes themselves, run one runner per node. The runner can only act on
-        what the pod spec grants, which makes the manifest your blast-radius dial — and the
-        manifest below is the observation-heavy variant: it can watch anything running on the
-        node, from processes to ports to journals.
+        To operate the <em>nodes</em> instead of a single app, run one runner per node — a
+        Kubernetes DaemonSet or a Nomad system job. Both reuse the two mechanics above (a
+        service-less binary and a persistent state volume) and a reusable enrollment key; each has
+        its own worked manifest:
       </p>
-      <.docs_code phx-no-format label="yaml"><span class="text-sky-300">apiVersion</span>: apps/v1
-<span class="text-sky-300">kind</span>: DaemonSet
-<span class="text-sky-300">metadata</span>:
-  <span class="text-sky-300">name</span>: emisar-runner
-<span class="text-sky-300">spec</span>:
-  <span class="text-sky-300">selector</span>:
-    <span class="text-sky-300">matchLabels</span>:
-      <span class="text-sky-300">app</span>: emisar-runner
-  <span class="text-sky-300">template</span>:
-    <span class="text-sky-300">metadata</span>:
-      <span class="text-sky-300">labels</span>:
-        <span class="text-sky-300">app</span>: emisar-runner
-    <span class="text-sky-300">spec</span>:
-      <span class="text-sky-300">hostPID</span>: <span class="text-amber-300">true</span>      <span class="text-zinc-600"># see every process on the node</span>
-      <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
-      <span class="text-sky-300">containers</span>:
-        - <span class="text-sky-300">name</span>: runner
-          <span class="text-sky-300">image</span>: your-registry/emisar-runner
-          <span class="text-sky-300">env</span>:
-            - <span class="text-sky-300">name</span>: EMISAR_URL
-              <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
-            - <span class="text-sky-300">name</span>: EMISAR_ENROLLMENT_KEY
-              <span class="text-sky-300">valueFrom</span>:
-                <span class="text-sky-300">secretKeyRef</span>:
-                  <span class="text-sky-300">name</span>: emisar-runner
-                  <span class="text-sky-300">key</span>: enrollment-key
-          <span class="text-sky-300">volumeMounts</span>:
-            - <span class="text-sky-300">name</span>: state
-              <span class="text-sky-300">mountPath</span>: /var/lib/emisar
-            - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-600"># node filesystem, read-only, for file inspection</span>
-              <span class="text-sky-300">mountPath</span>: /host
-              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
-            - <span class="text-sky-300">name</span>: journal        <span class="text-zinc-600"># journald logs on systemd nodes</span>
-              <span class="text-sky-300">mountPath</span>: /var/log/journal
-              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
-            - <span class="text-sky-300">name</span>: systemd-run    <span class="text-zinc-600"># systemd state, for unit status reads</span>
-              <span class="text-sky-300">mountPath</span>: /run/systemd
-              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
-      <span class="text-sky-300">volumes</span>:
-        - <span class="text-sky-300">name</span>: state
-          <span class="text-sky-300">hostPath</span>:
-            <span class="text-sky-300">path</span>: /var/lib/emisar
-            <span class="text-sky-300">type</span>: DirectoryOrCreate
-        - <span class="text-sky-300">name</span>: host-root
-          <span class="text-sky-300">hostPath</span>:
-            <span class="text-sky-300">path</span>: /
-        - <span class="text-sky-300">name</span>: journal
-          <span class="text-sky-300">hostPath</span>:
-            <span class="text-sky-300">path</span>: /var/log/journal
-        - <span class="text-sky-300">name</span>: systemd-run
-          <span class="text-sky-300">hostPath</span>:
-            <span class="text-sky-300">path</span>: /run/systemd</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        With this, process packs see every node process (<code class="font-mono">hostPID</code>),
-        network packs see the node's real ports (<code class="font-mono">hostNetwork</code>),
-        journal reads work against the mounted journal, and file-inspection actions reach node
-        paths under <code class="font-mono">/host</code>. Two honest limits: pack binaries run
-        from the container's image, so put the tools your packs call into it; and the mounts
-        above are read-only on purpose — a verb that <em>mutates</em>
-        the node (restarting a unit, say) needs its systemd/dbus socket writable, a grant you
-        make deliberately, not by default. You own the image, built from the release tarball,
-        and every grant in it; the Secret carries a reusable enrollment key, and the state volume
-        keeps each node's runner identity stable across pod restarts.
-      </p>
-
-      <.docs_h2 id="nomad">A Nomad system job</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Same idea on Nomad: a <code class="font-mono">system</code>
-        job places one instance on every client node. Fetch the release tarball in an
-        <code class="font-mono">artifact</code>
-        stanza (or use a Docker image), pass <code class="font-mono">EMISAR_URL</code>
-        and the reusable enrollment key through the environment or Vault, and persist
-        <code class="font-mono">/var/lib/emisar</code>
-        with a host volume so identity survives reschedules. If the job runs with
-        <code class="font-mono">driver = "exec"</code>
-        directly on the client, the runner sees the node — same visibility as a host install,
-        supervised by Nomad instead of systemd.
-      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <.link navigate={~p"/docs/kubernetes"} class="text-brand-400 hover:text-brand-300">
+              <strong class="text-zinc-200">Kubernetes</strong>
+            </.link>
+            — a DaemonSet whose pod spec is your blast-radius dial: <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>
+            and read-only host mounts decide exactly what each node's runner can see.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <.link navigate={~p"/docs/nomad"} class="text-brand-400 hover:text-brand-300">
+              <strong class="text-zinc-200">Nomad</strong>
+            </.link>
+            — a <code class="font-mono">system</code>
+            job placing one instance on every client node, with the release binary fetched in an
+            <code class="font-mono">artifact</code>
+            stanza and identity persisted on a host volume.
+          </span>
+        </li>
+      </ul>
     </.docs_layout>
   </section>
 

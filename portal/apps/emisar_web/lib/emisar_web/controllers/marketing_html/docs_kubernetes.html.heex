@@ -1,0 +1,121 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="kubernetes"
+      toc={[
+        {"daemonset", "The DaemonSet"},
+        {"visibility", "What the pod spec grants"},
+        {"mutating", "Letting a node action mutate"}
+      ]}
+    >
+      <.docs_header current="kubernetes">
+        <:dek>
+          To operate the nodes themselves, run one runner per node as a DaemonSet. The runner can
+          only act on what the pod spec grants — which makes the manifest your blast-radius dial.
+          This page is the worked manifest; the two mechanics it relies on (a service-less binary
+          and a persistent state volume) are on <.link
+            navigate={~p"/docs/containers"}
+            class="text-brand-400 hover:text-brand-300"
+          >Containers</.link>.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="daemonset">The DaemonSet</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The manifest below is the observation-heavy variant: one runner per node that can watch
+        anything running on it, from processes to ports to journals. It reuses a
+        <strong class="text-zinc-200">reusable enrollment key</strong>
+        (via a Secret) and a per-node <code class="font-mono">/var/lib/emisar</code>
+        state volume so each node's runner keeps a stable identity across pod restarts — see the <.link
+          navigate={~p"/docs/containers" <> "#building-blocks"}
+          class="text-brand-400 hover:text-brand-300"
+        >shared mechanics</.link>.
+      </p>
+      <.docs_code phx-no-format label="yaml"><span class="text-sky-300">apiVersion</span>: apps/v1
+<span class="text-sky-300">kind</span>: DaemonSet
+<span class="text-sky-300">metadata</span>:
+  <span class="text-sky-300">name</span>: emisar-runner
+<span class="text-sky-300">spec</span>:
+  <span class="text-sky-300">selector</span>:
+    <span class="text-sky-300">matchLabels</span>:
+      <span class="text-sky-300">app</span>: emisar-runner
+  <span class="text-sky-300">template</span>:
+    <span class="text-sky-300">metadata</span>:
+      <span class="text-sky-300">labels</span>:
+        <span class="text-sky-300">app</span>: emisar-runner
+    <span class="text-sky-300">spec</span>:
+      <span class="text-sky-300">hostPID</span>: <span class="text-amber-300">true</span>      <span class="text-zinc-600"># see every process on the node</span>
+      <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
+      <span class="text-sky-300">containers</span>:
+        - <span class="text-sky-300">name</span>: runner
+          <span class="text-sky-300">image</span>: your-registry/emisar-runner
+          <span class="text-sky-300">env</span>:
+            - <span class="text-sky-300">name</span>: EMISAR_URL
+              <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
+            - <span class="text-sky-300">name</span>: EMISAR_ENROLLMENT_KEY
+              <span class="text-sky-300">valueFrom</span>:
+                <span class="text-sky-300">secretKeyRef</span>:
+                  <span class="text-sky-300">name</span>: emisar-runner
+                  <span class="text-sky-300">key</span>: enrollment-key
+          <span class="text-sky-300">volumeMounts</span>:
+            - <span class="text-sky-300">name</span>: state
+              <span class="text-sky-300">mountPath</span>: /var/lib/emisar
+            - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-600"># node filesystem, read-only, for file inspection</span>
+              <span class="text-sky-300">mountPath</span>: /host
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+            - <span class="text-sky-300">name</span>: journal        <span class="text-zinc-600"># journald logs on systemd nodes</span>
+              <span class="text-sky-300">mountPath</span>: /var/log/journal
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+            - <span class="text-sky-300">name</span>: systemd-run    <span class="text-zinc-600"># systemd state, for unit status reads</span>
+              <span class="text-sky-300">mountPath</span>: /run/systemd
+              <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
+      <span class="text-sky-300">volumes</span>:
+        - <span class="text-sky-300">name</span>: state
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /var/lib/emisar
+            <span class="text-sky-300">type</span>: DirectoryOrCreate
+        - <span class="text-sky-300">name</span>: host-root
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /
+        - <span class="text-sky-300">name</span>: journal
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /var/log/journal
+        - <span class="text-sky-300">name</span>: systemd-run
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /run/systemd</.docs_code>
+
+      <.docs_h2 id="visibility">What the pod spec grants</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        With the manifest above, process packs see every node process
+        (<code class="font-mono">hostPID</code>), network packs see the node's real ports
+        (<code class="font-mono">hostNetwork</code>), journal reads work against the mounted
+        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Two honest limits: pack binaries run from the
+        container's image, so put the tools your packs call into it; and the mounts above are
+        read-only on purpose. You own the image, built from the release tarball, and every grant in
+        it — narrow the mounts and drop <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>
+        for a tighter runner that only inspects what you allow.
+      </p>
+
+      <.docs_h2 id="mutating">Letting a node action mutate</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A verb that <em>mutates</em>
+        the node — restarting a unit, say — needs the systemd/dbus socket writable, a grant you
+        make deliberately rather than by default: mount
+        <code class="font-mono">/run/systemd</code>
+        and <code class="font-mono">/run/dbus</code>
+        writable and give the runner the privileges that action calls for (see the runner's user
+        and the sudoers pattern on the <.link
+          navigate={~p"/docs/host-install" <> "#user"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          host-install page
+        </.link>). Keep those grants scoped to the exact actions you intend the node runner to
+        perform — the manifest is where the blast radius is set.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

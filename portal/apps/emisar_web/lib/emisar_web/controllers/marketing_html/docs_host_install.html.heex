@@ -1,0 +1,216 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="host-install"
+      toc={[
+        {"install", "The install command"},
+        {"flags", "Flags and environment"},
+        {"what-it-does", "What the installer does"},
+        {"config", "The config file"},
+        {"user", "The runner's user and privileged actions"},
+        {"next", "After it's connected"}
+      ]}
+    >
+      <.docs_header current="host-install">
+        <:dek>
+          The
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+            quickstart
+          </.link>
+          gets one runner online in a minute. This page is the full install: every flag, what the
+          installer actually does to the host, the service it creates, the config file it writes,
+          and the unprivileged user it runs as. For a container instead of a host, see <.link
+            navigate={~p"/docs/containers"}
+            class="text-brand-400 hover:text-brand-300"
+          >Containers</.link>.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="install">The install command</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        One command, run as root, on a Linux host with systemd. It downloads the signed binary,
+        checksum-verifies it, creates the service user and unit, writes the config, and starts the
+        runner — which enrolls with the key and connects. The
+        <strong class="text-zinc-200">Runners → Connect a runner</strong>
+        button generates this exact line with a fresh single-use key baked in.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
+      ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
+    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
+      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        It's a plain, readable shell script —
+        <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">read it first</.link>
+        if you'd rather. The host needs outbound 443 to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>, and to
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">github.com</code>
+        + <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api.github.com</code>
+        to fetch and verify the release — no inbound rule ever.
+      </p>
+
+      <.docs_h2 id="flags">Flags and environment</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Pass flags after <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash -s --</code>;
+        pass values as environment variables before <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash</code>. The ones you'll reach for:
+      </p>
+      <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[560px] border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-zinc-900 bg-zinc-950/80 text-[11px] uppercase tracking-widest text-zinc-500">
+              <th class="px-4 py-2.5 font-medium">Flag / variable</th>
+              <th class="px-4 py-2.5 font-medium">What it does</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {name, meaning} <- [
+              {"EMISAR_URL", "Your control-plane URL — baked into config.yaml (default https://emisar.dev)."},
+              {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner trades for its own token on first connect."},
+              {"RUNNER_GROUP / RUNNER_ROLE / RUNNER_ENVIRONMENT", "Seed the runner's group and labels at install time."},
+              {"--packs LIST", "Install these packs during setup, e.g. --packs linux-core,docker."},
+              {"--version TAG", "Pin a specific release instead of latest."},
+              {"--no-start", "Install everything but don't start the service yet — for image bakes."},
+              {"--reset-identity", "With a new key on an existing install, drop the cached token and re-enroll as a fresh runner."},
+              {"--no-service", "Binary only: skip the service user, unit, and activation. For containers and CI — see Containers."}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{name}</td>
+                <td class="px-4 py-3 align-top leading-6">{meaning}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="what-it-does">What the installer does</.docs_h2>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Linux + systemd (the production target).</strong>
+            Creates an unprivileged
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+            system user, drops the binary in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>, and
+            installs a hardened
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
+            unit that runs as that user with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Restart=on-failure</code>. systemd
+            is required — the installer checks for it and stops if it's missing, pointing you at
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+            for hosts you supervise yourself.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">macOS + launchd (dev / eval).</strong>
+            Installs the binary in
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+            and a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">LaunchDaemon</code>
+            at
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/Library/LaunchDaemons/com.emisar.runner.plist</code>
+            with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">KeepAlive</code>. Good for
+            trying packs on a laptop; production runs on Linux.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Config + secrets.</strong>
+            Writes
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+            (the non-secret settings) and
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
+            (mode 0600 — the enrollment key and any pack credentials). State and logs live under
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar</code>.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="config">The config file</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+        is operator-owned and readable — nothing secret lives here (the key rides in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>). The fields you'll
+        actually set:
+      </p>
+      <.docs_code phx-no-format label="/etc/emisar/config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
+<span class="text-sky-300">runner</span>:
+  <span class="text-sky-300">group</span>: <span class="text-brand-300">"web"</span>              <span class="text-zinc-600"># the fleet tier this host belongs to (targeted by runbooks + scopes)</span>
+  <span class="text-sky-300">labels</span>:                    <span class="text-zinc-600"># free-form, for finer targeting</span>
+    <span class="text-sky-300">role</span>: <span class="text-brand-300">"frontend"</span>
+    <span class="text-sky-300">region</span>: <span class="text-brand-300">"us-east-1"</span>
+  <span class="text-zinc-600"># id: "web-01"           # optional — defaults to a persisted UUID</span>
+<span class="text-sky-300">cloud</span>:
+  <span class="text-sky-300">url</span>: <span class="text-brand-300">"https://emisar.dev"</span>
+  <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
+<span class="text-sky-300">execution</span>:
+  <span class="text-sky-300">inherit_env</span>:              <span class="text-zinc-600"># env-var names a pack may read for credentials</span>
+    - <span class="text-brand-300">NOMAD_ADDR</span>
+    - <span class="text-brand-300">NOMAD_TOKEN</span>
+<span class="text-zinc-600"># admission:               # optional local defense-in-depth — see the security model</span>
+<span class="text-zinc-600"># signing:                 # optional signed-dispatch enforcement — see signed dispatch</span></.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Restart the service after editing (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo systemctl restart emisar</code>,
+        or SIGHUP to reload packs without dropping runs). Two fields have their own pages:
+        <.link navigate={~p"/docs/security-model"} class="text-brand-400 hover:text-brand-300">
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">admission</code>
+        </.link>
+        (a local allow/deny list and risk ceiling the cloud can't override) and
+        <.link navigate={~p"/docs/signed-dispatch"} class="text-brand-400 hover:text-brand-300">
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signing</code>
+        </.link>
+        (require a customer signature on every dispatch).
+      </p>
+
+      <.docs_h2 id="user">The runner's user and privileged actions</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The service runs as the unprivileged
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        user, not root — so by default an action can read logs, list processes, and query services,
+        but can't touch anything that needs privilege. When a pack action legitimately needs root —
+        restarting a system service, editing system config — you grant that one capability
+        explicitly, so the blast radius is a list you wrote, not "the runner is root":
+      </p>
+      <.docs_code phx-no-format label="/etc/sudoers.d/emisar"><span class="text-zinc-500"># let the runner restart exactly nginx, nothing else</span>
+emisar ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The action calls <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo systemctl restart nginx</code>;
+        a polkit rule works the same way. On Linux, an action with a
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user:</code>
+        set also drops to that user before exec, so even a runner under a broad account runs the
+        declared action as the lower-privilege user. The full host defense-in-depth picture —
+        setuid drop, local admission, systemd hardening — is in the <.link
+          navigate={~p"/docs/security-model"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          security model
+        </.link>.
+      </p>
+
+      <.docs_h2 id="next">After it's connected</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Everything past the first connect — groups and labels, pack credentials, updating the binary
+        and packs, reconnect behavior, the host-side CLI, and clean removal — lives on the
+        <.link navigate={~p"/docs/runners"} class="text-brand-400 hover:text-brand-300">
+          Runner fleet
+        </.link>
+        page. To provision many hosts from a template with a reusable key, see <.link
+          navigate={~p"/docs/runners" <> "#enrollment-keys"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          enrollment keys
+        </.link>; to roll out across a fleet in phases, see the <.link
+          navigate={~p"/docs/deployment"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          production rollout
+        </.link>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

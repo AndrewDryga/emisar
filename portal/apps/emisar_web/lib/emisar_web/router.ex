@@ -180,12 +180,14 @@ defmodule EmisarWeb.Router do
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/deployment", MarketingController, :docs_deployment
     get "/docs/audit-and-siem", MarketingController, :docs_audit
+    get "/docs/host-install", MarketingController, :docs_host_install
     get "/docs/containers", MarketingController, :docs_containers
+    get "/docs/kubernetes", MarketingController, :docs_kubernetes
+    get "/docs/nomad", MarketingController, :docs_nomad
     get "/docs/runs", MarketingController, :docs_runs
     get "/docs/keys", MarketingController, :docs_keys
     get "/docs/runner-cli", MarketingController, :docs_runner_cli
     get "/docs/billing", MarketingController, :docs_billing
-    get "/docs/troubleshooting", MarketingController, :docs_troubleshooting
     get "/docs/limits", MarketingController, :docs_limits
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
