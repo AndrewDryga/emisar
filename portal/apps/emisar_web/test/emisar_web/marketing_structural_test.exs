@@ -44,6 +44,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runner-cli
     /docs/billing
     /docs/troubleshooting
+    /docs/limits
     /changelog
     /about
     /support

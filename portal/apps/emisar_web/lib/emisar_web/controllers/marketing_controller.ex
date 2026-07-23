@@ -111,9 +111,10 @@ defmodule EmisarWeb.MarketingController do
      "Reference for the on-host emisar runner CLI — connect, action, pack, doctor, events, audit, and signing verbs, their key flags, and which read or change the host."},
     {"/docs/billing", :docs_billing, :docs_billing, "Plans & billing",
      "The emisar plans and their limits — runner and member caps, audit retention, feature tiers, and how upgrades, invoices, and payment failures work."},
-    {"/docs/troubleshooting", :docs_troubleshooting, :docs_troubleshooting,
-     "Troubleshooting & limits",
-     "Triage guide for emisar: a runner that won't connect, denied vs refused vs failed runs, stuck runs, and the output, MCP, audit, and retention limits."}
+    {"/docs/troubleshooting", :docs_troubleshooting, :docs_troubleshooting, "Troubleshooting",
+     "Triage guide for emisar: a runner that won't connect, denied vs refused vs failed runs, stuck runs, and where your data lives."},
+    {"/docs/limits", :docs_limits, :docs_limits, "Operational limits",
+     "The caps emisar enforces — per-action output, live-output lines, MCP list pages, long-poll waits, response size, runbook projection, audit-export pages, and audit retention — and what happens at each."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ

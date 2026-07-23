@@ -186,6 +186,7 @@ defmodule EmisarWeb.Router do
     get "/docs/runner-cli", MarketingController, :docs_runner_cli
     get "/docs/billing", MarketingController, :docs_billing
     get "/docs/troubleshooting", MarketingController, :docs_troubleshooting
+    get "/docs/limits", MarketingController, :docs_limits
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show

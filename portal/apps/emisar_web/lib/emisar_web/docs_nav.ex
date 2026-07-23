@@ -188,11 +188,19 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "troubleshooting",
-         title: "Troubleshooting & limits",
+         title: "Troubleshooting",
          path: "/docs/troubleshooting",
          icon: "hero-wrench-screwdriver",
          desc:
-           "When a runner won't connect, what a denied versus failed run means, the operational limits, and where your data lives."
+           "When a runner won't connect, what a denied versus refused versus failed run means, and where your data lives."
+       },
+       %{
+         slug: "limits",
+         title: "Operational limits",
+         path: "/docs/limits",
+         icon: "hero-adjustments-horizontal",
+         desc:
+           "The output, MCP, audit-export, and retention caps emisar enforces — and what happens at each."
        }
      ]}
   ]

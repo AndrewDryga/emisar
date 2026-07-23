@@ -1,0 +1,117 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout current="limits">
+      <.docs_header current="limits">
+        <:dek>
+          The caps emisar enforces so one noisy action, one busy agent, or one aggressive export
+          can't overwhelm a page or the API. Most are generous; these are the ones worth knowing
+          before you build against them.
+        </:dek>
+      </.docs_header>
+
+      <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-zinc-900 bg-zinc-950/80 text-[11px] uppercase tracking-widest text-zinc-500">
+              <th class="px-4 py-2.5 font-medium">What</th>
+              <th class="px-4 py-2.5 font-medium">Cap</th>
+              <th class="px-4 py-2.5 font-medium">At the cap</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Action output</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Set per action in the pack (a few KB to a few MB)
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Bytes past the cap are dropped from the delivered output but counted, and the run is
+                flagged truncated.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                Live output in the dashboard
+              </td>
+              <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Older lines are trimmed from the browser view with a note; the run history and the
+                host journal keep the full record.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP list pages</td>
+              <td class="px-4 py-3 align-top leading-6">
+                15 per page by default (up to 50;
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
+                up to 100,
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">find_actions</code>
+                up to 15)
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Continue with the cursor the previous response returned; a catalog cursor is bound
+                to its exact query and expires after 15 minutes.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP long-poll wait</td>
+              <td class="px-4 py-3 align-top leading-6">Up to 60 seconds per call</td>
+              <td class="px-4 py-3 align-top leading-6">
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>, and
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
+                return the current state at the deadline; one credential may hold 8 concurrent waits
+                per node.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP response size</td>
+              <td class="px-4 py-3 align-top leading-6">512 KiB per tool result</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Oversized structured output is dropped and replaced with a
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+                continuation that fetches it.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Runbooks over MCP</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Up to 32 steps, 16 runners per step, 256 runs, and a 56 KiB definition
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Larger runbooks still run from the dashboard; only the model-facing projection is
+                bounded.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Audit export</td>
+              <td class="px-4 py-3 align-top leading-6">100 events per page, 1,000 maximum</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Cursor-paginated forward; page with the cursor each response returns.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Audit retention</td>
+              <td class="px-4 py-3 align-top leading-6">
+                7 days on Free, 90 on Team, 365 on Enterprise
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Fixed per event when it's written; stream to your SIEM to keep it longer.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <.docs_callout kind={:tip} title="Scripting against the API?">
+        The full MCP contract — every method, parameter, error code, and the idempotency rules that
+        make a retried dispatch safe — is in the <.link
+          navigate={~p"/docs/mcp-reference"}
+          class="text-brand-400 hover:text-brand-300"
+        >MCP reference</.link>.
+      </.docs_callout>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>
