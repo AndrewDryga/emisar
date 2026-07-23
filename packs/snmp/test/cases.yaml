@@ -1,0 +1,10 @@
+services: [snmpd]
+env:
+  SNMP_COMMUNITY: public
+  SNMP_VERSION: "2c"
+cases:
+  - action: snmp.system
+    args:
+      host: snmpd
+    expect:
+      stdout_contains: [snmpd-sut, packtest]

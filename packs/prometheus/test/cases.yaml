@@ -1,0 +1,7 @@
+services: [prometheus]
+env:
+  PROM_URL: "http://prometheus:9090"
+cases:
+  - action: prom.build_info
+    expect:
+      stdout_contains: ['"status":"success"', '"version"']

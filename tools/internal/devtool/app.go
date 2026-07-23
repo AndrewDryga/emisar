@@ -49,7 +49,6 @@ Browser and UI:
 
 Cross-component scenarios:
   e2e <sso|signing|billing>   Exercise a complete development scenario
-  loadtest [options]          Run the MCP concurrency harness
   smoke                       Run the packaged, release-like Compose stack
 
 Action packs:
@@ -207,8 +206,6 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.test(ctx, rest)
 	case "gate":
 		return a.gate(ctx, rest)
-	case "loadtest":
-		return a.run(ctx, a.Root, nil, "go", append([]string{"run", "./tools/cmd/loadtest"}, rest...)...)
 	case "pack":
 		return a.pack(ctx, rest)
 	case "smoke":

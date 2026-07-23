@@ -1,0 +1,68 @@
+name: Pack behavior
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: pack-behavior
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plans:
+    name: Discover plans
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packs: ${{ steps.discover.outputs.packs }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - id: discover
+        name: Discover committed behavior plans
+        run: echo "packs=$(go run ./tools/cmd/packtest --list --packs ./packs)" >> "$GITHUB_OUTPUT"
+
+  behavior:
+    name: ${{ matrix.pack }}
+    needs: plans
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        pack: ${{ fromJSON(needs.plans.outputs.packs) }}
+    env:
+      GOTOOLCHAIN: local
+      PACK: ${{ matrix.pack }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: |
+            runner/go.sum
+            tools/go.sum
+
+      - name: Exercise pack behavior
+        run: ./run test packs "$PACK"

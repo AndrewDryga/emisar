@@ -1,110 +1,54 @@
-FROM debian:13-slim
+# One shared action-client image for container-backed pack behavior tests.
+# Specialist clients come from the exact image used by the matching SUT. This
+# avoids remote install scripts and keeps client versions aligned with servers.
+
+FROM hashicorp/consul:2.0.2@sha256:7dcf35d6b2682831094f1680aa58be214134969505acce0a9b280249581aa7d2 AS consul
+FROM hashicorp/nomad:2.0.4@sha256:14f0cf3dc43d949e759b50d793529976a1a1a7f391eaf1e048acd55cd5392462 AS nomad
+FROM hashicorp/vault:2.0.3@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54 AS vault
+FROM rancher/k3s:v1.36.2-k3s1@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251f90b446e4dff03513dd87 AS k3s
+FROM mongo:8.2.5@sha256:60aa240412f473f672ec8b282fd5651aa156dcc7a220f81f5381ce768ccc3167 AS mongo
+FROM cockroachdb/cockroach:v26.2.4@sha256:85417da0fd2f57e4f1b01ae8a4125402c977a38a56b43d0902db93dc2669ab09 AS cockroach
+FROM clickhouse/clickhouse-server:26.6.2.81-alpine@sha256:9acc2bb14b5a55bdaf08485fba63200092f9c04cfa50f70a92f1fccc51482d7f AS clickhouse
+
+FROM debian:13-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Base system + every CLI binary referenced by the packs.
-# Built once; cached layer is reused across all pack tests.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl wget gnupg lsb-release apt-transport-https unzip \
-    bash coreutils procps iproute2 net-tools iputils-ping dnsutils \
-    file findutils grep gawk sed jq nano vim-tiny \
-    git openssl openssh-client \
-    psmisc lsof strace gdb sysstat netcat-openbsd ngrep \
-    iptables nftables conntrack tcpdump \
-    chrony \
-    rsync xz-utils zstd \
-    python3 python3-pip python3-venv \
-    nodejs \
-    default-jre-headless \
-    postgresql-client mariadb-client redis-tools \
+# Debian-owned clients cover the generic HTTP, SQL, AWS, SNMP, and protocol
+# plans. apt failures fail the build; no behavior plan is silently skipped.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        awscli \
+        bash \
+        ca-certificates \
+        curl \
+        jq \
+        mariadb-client \
+        netcat-openbsd \
+        postgresql-client \
+        snmp \
     && rm -rf /var/lib/apt/lists/*
 
-# cases.json is consumed by the mounted Go packtest binary. jq and
-# python3/pip/venv above are PACK TARGETS, not harness tooling.
+COPY --from=consul /bin/consul /usr/local/bin/consul
+COPY --from=nomad /bin/nomad /usr/local/bin/nomad
+COPY --from=vault /bin/vault /usr/local/bin/vault
+COPY --from=k3s /bin/k3s /usr/local/bin/kubectl
+COPY --from=mongo /usr/bin/mongosh /usr/local/bin/mongosh
+COPY --from=cockroach /cockroach/cockroach /usr/local/bin/cockroach
+COPY --from=clickhouse /usr/bin/clickhouse /usr/local/bin/clickhouse
 
-# AWS CLI v2
-RUN curl -sSL "https://awscli.amazonaws.com/awscli-exoscale-linux-$(uname -m).zip" -o /tmp/awscli.zip 2>/dev/null \
-    || curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscli.zip \
-    && cd /tmp && unzip -q awscli.zip && ./aws/install && rm -rf /tmp/awscli.zip /tmp/aws \
-    || echo "aws-cli not installed; aws-* pack tests will be skipped"
+RUN ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client \
+    && aws --version \
+    && cockroach version | head -1 \
+    && consul version \
+    && kubectl version --client \
+    && mongosh --version \
+    && nomad version \
+    && vault version \
+    && clickhouse-client --version
 
-# kubectl
-RUN curl -sSL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" -o /usr/local/bin/kubectl \
-    && chmod +x /usr/local/bin/kubectl || true
-
-# GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/* || true
-
-# HashiCorp tools (consul, nomad, vault, terraform)
-RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list \
-    && apt-get update && apt-get install -y --no-install-recommends consul nomad vault terraform && rm -rf /var/lib/apt/lists/* || true
-
-# Docker CLI (for docker pack tests; runs against host docker socket)
-RUN curl -fsSL https://get.docker.com | sh || true
-
-# Pack-specific binaries. Two gotchas make this a single honest install rather
-# than a best-effort one: `fail2ban-client` is NOT a package (the client binary
-# ships in `fail2ban`), and `zfsutils-linux` lives in `contrib`, which
-# debian:13-slim doesn't enable — so add the contrib pocket first. Fail the
-# build loudly if any of these go missing; a silent gap hides broken pack
-# coverage (nginx/apache/bind/nfs/php-fpm/rabbitmq/zfs tests need these tools).
-RUN echo "deb http://deb.debian.org/debian trixie contrib" > /etc/apt/sources.list.d/contrib.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    nginx-common apache2-utils \
-    bind9-utils bind9-dnsutils \
-    fail2ban \
-    haproxy socat \
-    wireguard-tools \
-    nfs-common rpcbind \
-    zfsutils-linux \
-    php-cli php-fpm composer \
-    rabbitmq-server \
-    && rm -rf /var/lib/apt/lists/*
-
-# JVM diagnostic tools come with default-jdk
-RUN apt-get update && apt-get install -y --no-install-recommends default-jdk-headless \
-    && rm -rf /var/lib/apt/lists/* || true
-
-# net-snmp client (snmpget/snmpwalk/snmptable) for the snmp pack's actions
-RUN apt-get update && apt-get install -y --no-install-recommends snmp \
-    && rm -rf /var/lib/apt/lists/*
-
-# mongosh for the mongodb pack (single static tarball — no apt repo).
-RUN set -eux; case "$(dpkg --print-architecture)" in arm64) m=arm64;; amd64) m=x64;; *) m=x64;; esac; \
-    curl -fsSL "https://downloads.mongodb.com/compass/mongosh-2.9.2-linux-$m.tgz" -o /tmp/mongosh.tgz; \
-    tar -xzf /tmp/mongosh.tgz -C /tmp; \
-    mv /tmp/mongosh-*/bin/mongosh /usr/local/bin/mongosh; \
-    rm -rf /tmp/mongosh*; \
-    mongosh --version
-
-# cockroach CLI for the cockroach pack (the single binary from the release tarball).
-RUN set -eux; v=v26.2.4; arch="$(dpkg --print-architecture)"; \
-    curl -fsSL "https://binaries.cockroachdb.com/cockroach-$v.linux-$arch.tgz" -o /tmp/crdb.tgz; \
-    tar -xzf /tmp/crdb.tgz -C /tmp; \
-    mv "/tmp/cockroach-$v.linux-$arch/cockroach" /usr/local/bin/cockroach; \
-    rm -rf /tmp/crdb.tgz "/tmp/cockroach-$v.linux-$arch"; \
-    cockroach version | head -1
-
-# clickhouse-client for the clickhouse pack — the single multicall `clickhouse`
-# binary from the pinned common-static tgz (no apt repo / GPG keyserver), symlinked
-# so the pack's bare `clickhouse-client` invocation resolves. Keep it aligned with the SUT.
-RUN set -eux; v=26.6.2.81; case "$(dpkg --print-architecture)" in arm64) a=arm64;; *) a=amd64;; esac; \
-    curl -fsSL "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$v-$a.tgz" -o /tmp/ch.tgz; \
-    tar -xzf /tmp/ch.tgz -C /tmp; \
-    mv "/tmp/clickhouse-common-static-$v/usr/bin/clickhouse" /usr/local/bin/clickhouse; \
-    ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client; \
-    rm -rf /tmp/ch.tgz "/tmp/clickhouse-common-static-$v"; \
-    clickhouse-client --version
-
-# emisar binary (mounted at runtime via volume)
 VOLUME ["/opt/emisar"]
 ENV PATH="/opt/emisar/bin:${PATH}"
 
-# Pack catalog + test harness mounted at runtime
 WORKDIR /workspace
-
 ENTRYPOINT ["/bin/bash"]

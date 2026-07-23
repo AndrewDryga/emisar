@@ -1,0 +1,16 @@
+services: [localstack]
+env:
+  AWS_ACCESS_KEY_ID: test
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ENDPOINT_URL: "http://localstack:4566"
+  AWS_SECRET_ACCESS_KEY: test
+cases:
+  - action: s3.list_buckets
+    arrange:
+      - name: create fixture bucket
+        argv: [aws, s3, mb, "s3://emisar-packtest"]
+    expect:
+      stdout_contains: [emisar-packtest]
+    cleanup:
+      - name: remove fixture bucket
+        argv: [aws, s3, rb, "s3://emisar-packtest", --force]

@@ -1,0 +1,7 @@
+services: [consul]
+env:
+  CONSUL_HTTP_ADDR: "http://consul:8500"
+cases:
+  - action: consul.members
+    expect:
+      stdout_contains: [alive, server]

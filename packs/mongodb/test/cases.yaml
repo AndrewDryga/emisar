@@ -1,0 +1,7 @@
+services: [mongodb]
+env:
+  MONGO_URI: "mongodb://root:testpass@mongodb:27017/?authSource=admin"
+cases:
+  - action: mongo.build_info
+    expect:
+      stdout_contains: ['"version"']

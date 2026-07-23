@@ -181,14 +181,3 @@ func TestJournal_ReturnsSinkCloseError(t *testing.T) {
 		t.Fatal("Close did not close sink")
 	}
 }
-
-func BenchmarkJournalRecord(b *testing.B) {
-	j := New(Defaults{AgentID: "agt"}, &memSink{})
-	ev := Event{Type: EventExecutionCompleted, ActionID: "x.do"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := j.Record(context.Background(), ev); err != nil {
-			b.Fatal(err)
-		}
-	}
-}

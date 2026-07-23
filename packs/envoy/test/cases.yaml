@@ -1,0 +1,7 @@
+services: [envoy]
+env:
+  ENVOY_ADMIN: "http://envoy:9901"
+cases:
+  - action: envoy.ready
+    expect:
+      stdout_contains: ["200"]

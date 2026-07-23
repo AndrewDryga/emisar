@@ -1,0 +1,9 @@
+services: [mysql]
+env:
+  MYSQL_HOST: mysql
+  MYSQL_PWD: testpass
+  MYSQL_USER: root
+cases:
+  - action: mysql.uptime
+    expect:
+      stdout_contains: [Uptime]

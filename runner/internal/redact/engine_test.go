@@ -164,27 +164,3 @@ func TestEngine_OrderSensitivityIsIntentional(t *testing.T) {
 		t.Fatalf("only the narrow rule should fire when ordered first, got %+v", hits)
 	}
 }
-
-// Apply scales linearly with rule count and does no per-call
-// recompilation. Throughput baseline; no functional assertion.
-func BenchmarkEngine_ApplyRuleCount(b *testing.B) {
-	rules := make([]Rule, 0, 64)
-	for i := 0; i < 64; i++ {
-		c, err := CompileRule(actionspec.RedactionRule{
-			Name:    "r" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
-			Type:    "regex",
-			Pattern: `\bzzz` + string(rune('a'+i%26)) + `[0-9]+\b`,
-		})
-		if err != nil {
-			b.Fatal(err)
-		}
-		rules = append(rules, c)
-	}
-	e := New(rules)
-	input := "the quick brown fox logs INFO at 2026-06-21 with no secrets at all here\n"
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = e.Apply(input)
-	}
-}

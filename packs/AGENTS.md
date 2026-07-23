@@ -14,7 +14,7 @@ It validates every pack with the runner's load-time checks, verifies the
 cross-language hash goldens, rebuilds the catalog into a temporary directory
 and byte-compares it with the committed artifact, then runs the focused Portal
 catalog tests. Use `./run pack check <name>` while editing one pack and
-`./run test packs [name-pattern]` for generated integration cases. A malformed
+`./run test packs [name-pattern]` for pack-owned behavioral cases. A malformed
 pack breaks **both** consumers: the runner (loads + SHA-256-pins each pack at
 runtime) and the portal (which serves the catalog **artifact** built from
 `packs/`).

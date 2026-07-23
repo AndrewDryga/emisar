@@ -1,0 +1,9 @@
+services: [elasticsearch]
+env:
+  ELASTIC_PASSWORD: testpass
+  ELASTIC_URL: "http://elasticsearch:9200"
+  ELASTIC_USER: elastic
+cases:
+  - action: es.cluster_health
+    expect:
+      stdout_contains: ['"cluster_name"']

@@ -30,7 +30,8 @@ const (
   runner [go-test-args...]   run all runner tests, or pass focused go test arguments
   mcp [go-test-args...]      run all MCP tests, or pass focused go test arguments
   tools [go-test-args...]    run all tooling tests, or pass focused go test arguments
-  packs [name-pattern]       run generated pack cases against real services
+  packs [name-pattern]       run pack behavior plans against real services
+  packs --names a,b          run an exact set of pack behavior plans
   install <runner|mcp>       exercise a public installer in an isolated harness
 `
 	gateUsage = `usage: ./run gate <target> [--coverage FILE]
@@ -51,7 +52,7 @@ const (
   hashes [--write]           verify or refresh cross-language pack hash goldens
   sync <name> --fix          rebuild the catalog from the live registry history
 
-Use "./run test packs [name-pattern]" for generated integration cases and
+Use "./run test packs [name-pattern]" for pack-owned behavior cases and
 "./run gate packs" for the complete pack Definition of Done.
 `
 )
@@ -103,14 +104,23 @@ func (a *App) test(ctx context.Context, args []string) error {
 		}
 		return a.run(ctx, filepath.Join(a.Root, target), nil, "go", arguments...)
 	case "packs":
+		if len(rest) == 2 && rest[0] == "--names" {
+			names := strings.Split(rest[1], ",")
+			for _, name := range names {
+				if name == "" {
+					return usage("usage: ./run test packs --names pack-a,pack-b")
+				}
+			}
+			return a.packTest(ctx, "", names)
+		}
 		if len(rest) > 1 {
-			return usage("usage: ./run test packs [name-pattern]")
+			return usage("usage: ./run test packs [name-pattern] | ./run test packs --names pack-a,pack-b")
 		}
 		pattern := ""
 		if len(rest) == 1 {
 			pattern = rest[0]
 		}
-		return a.packTest(ctx, pattern)
+		return a.packTest(ctx, pattern, nil)
 	case "install":
 		if len(rest) != 1 || rest[0] != "runner" && rest[0] != "mcp" {
 			return usage("usage: ./run test install <runner|mcp>")

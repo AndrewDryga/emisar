@@ -282,27 +282,3 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 		t.Fatalf("default rules must all compile: %v", err)
 	}
 }
-
-// redaction throughput baseline over a large buffer with the
-// full default rule set. No assertion beyond "completes"; guards against an
-// accidental super-linear blowup in the rule set.
-func BenchmarkDefaultRules_ApplyLargeBuffer(b *testing.B) {
-	rules, err := CompileAll(DefaultRules())
-	if err != nil {
-		b.Fatal(err)
-	}
-	e := New(rules)
-	// ~64 KiB of mostly-benign log lines with a few secrets sprinkled in.
-	var sb strings.Builder
-	for sb.Len() < 64<<10 {
-		sb.WriteString("INFO 2026-06-21 request handled in 12ms, status=200, path=/v1/things\n")
-		sb.WriteString("Authorization: Bearer abc123def456ghi789jklmno\n")
-	}
-	input := sb.String()
-	b.ReportAllocs()
-	b.SetBytes(int64(len(input)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = e.Apply(input)
-	}
-}

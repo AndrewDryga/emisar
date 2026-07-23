@@ -28,6 +28,10 @@ execution:
   # service in docker-compose.yaml) must be allowlisted here or the actions get
   # a silent "auth missing". Add a var here when you wire a new SUT.
   inherit_env:
+    - AWS_ACCESS_KEY_ID
+    - AWS_DEFAULT_REGION
+    - AWS_ENDPOINT_URL
+    - AWS_SECRET_ACCESS_KEY
     - CADDY_ADMIN
     - CH_HOST
     - CH_PASSWORD
@@ -38,8 +42,11 @@ execution:
     - ELASTIC_URL
     - ELASTIC_USER
     - ENVOY_ADMIN
+    - GRAFANA_URL
     - KAFKA_BOOTSTRAP
     - KUBECONFIG
+    - MEMCACHED_HOST
+    - MEMCACHED_PORT
     - MONGO_URI
     - MYSQL_HOST
     - MYSQL_PWD

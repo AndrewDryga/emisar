@@ -1,0 +1,7 @@
+services: [nomad]
+env:
+  NOMAD_ADDR: "http://nomad:4646"
+cases:
+  - action: nomad.leader
+    expect:
+      stdout_contains: ["4647"]

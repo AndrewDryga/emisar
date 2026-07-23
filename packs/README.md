@@ -210,6 +210,6 @@ Private-registry and publishing workflows are documented at
 ## Repository maintenance
 
 Catalog contributors must read [`AGENTS.md`](AGENTS.md). A pack change is not
-complete until the pack validates, its generated cases and catalog artifacts
-are current, the runner/portal contract checks pass, and the public counts above
-match the manifests.
+complete until the pack validates, its behavior plan passes when one exists,
+the catalog artifacts are current, the runner/portal contract checks pass, and
+the public counts above match the manifests.

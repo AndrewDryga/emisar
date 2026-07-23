@@ -3,12 +3,15 @@ package devtool
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
@@ -150,12 +153,28 @@ func TestMergedEnvReplacesExistingValue(t *testing.T) {
 	}
 }
 
-func TestSelectPackServicesUsesDirectAndAliasedServices(t *testing.T) {
+func TestSelectPlanServicesUsesPackOwnedDependencies(t *testing.T) {
 	available := map[string]bool{"postgres": true, "redis": true, "k3s": true, "k3s-kubeconfig": true, "runner-tools": true}
-	got := selectPackServices([]string{"postgres", "kubernetes", "linux-core"}, available)
+	got, err := selectPlanServices([]packtest.PlanRef{
+		{Name: "postgres", Services: []string{"postgres"}},
+		{Name: "kubernetes", Services: []string{"k3s", "k3s-kubeconfig"}},
+	}, available)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"k3s", "k3s-kubeconfig", "postgres"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("services = %v, want %v", got, want)
+	}
+}
+
+func TestSelectPlanServicesRejectsUnknownService(t *testing.T) {
+	_, err := selectPlanServices(
+		[]packtest.PlanRef{{Name: "example", Services: []string{"missing"}}},
+		map[string]bool{"runner-tools": true},
+	)
+	if err == nil || !strings.Contains(err.Error(), "example requires unknown Compose service missing") {
+		t.Fatalf("selectPlanServices error = %v", err)
 	}
 }
 
@@ -176,6 +195,37 @@ func TestTargetsLocalPortRejectsOtherNgrokTargets(t *testing.T) {
 		if targetsLocalPort(target, 4000) {
 			t.Fatalf("accepted unrelated target %q", target)
 		}
+	}
+}
+
+func TestWriteSSORealmChangesOnlyPortalRedirect(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "realm.json")
+	destination := filepath.Join(t.TempDir(), "generated.json")
+	fixture := `{"realm":"emisar","clients":[{"clientId":"other","redirectUris":["https://example.com"]},{"clientId":"emisar-portal","redirectUris":["http://localhost:4010/old"]}]}`
+	if err := os.WriteFile(source, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSSORealm(source, destination, 43210); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var realm struct {
+		Clients []struct {
+			ID        string   `json:"clientId"`
+			Redirects []string `json:"redirectUris"`
+		} `json:"clients"`
+	}
+	if err := json.Unmarshal(data, &realm); err != nil {
+		t.Fatal(err)
+	}
+	if got := realm.Clients[0].Redirects; !slices.Equal(got, []string{"https://example.com"}) {
+		t.Fatalf("other redirects = %v", got)
+	}
+	if got := realm.Clients[1].Redirects; !slices.Equal(got, []string{"http://localhost:43210/sign_in/sso/callback"}) {
+		t.Fatalf("portal redirects = %v", got)
 	}
 }
 
@@ -315,7 +365,7 @@ func TestNoArgumentsPrintsGroupedHumanHelpAndSucceeds(t *testing.T) {
 func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 	for _, command := range []string{
 		"setup", "up", "down", "serve", "seed", "reset", "urls", "doctor", "certs",
-		"test", "check", "gate", "browser", "shot", "capture", "e2e", "loadtest",
+		"test", "check", "gate", "browser", "shot", "capture", "e2e",
 		"smoke", "pack", "ops", "help",
 	} {
 		if !strings.Contains(usageText, "\n  "+command+" ") {

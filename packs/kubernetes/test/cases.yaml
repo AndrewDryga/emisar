@@ -1,0 +1,21 @@
+services: [k3s, k3s-kubeconfig]
+env:
+  KUBECONFIG: /shared/kubeconfig.yaml
+cases:
+  - action: kubernetes.nodes_list
+    expect:
+      stdout_contains: [harness, Ready]
+  - action: kubernetes.cordon
+    args:
+      name: harness
+    expect:
+      stdout_contains: [cordoned]
+    probes:
+      - name: node is unschedulable
+        argv: [kubectl, get, node, harness, -o, "jsonpath={.spec.unschedulable}"]
+        expect:
+          stdout_contains: ["true"]
+        retry_for: 10s
+    cleanup:
+      - name: make node schedulable
+        argv: [kubectl, uncordon, harness]

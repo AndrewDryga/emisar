@@ -775,54 +775,6 @@ func TestNonceCacheKeyIsRawString(t *testing.T) {
 	}
 }
 
-// the enforcement gate's per-call cost is one Ed25519
-// verify plus a bounded prune — no unbounded growth across a window of distinct
-// nonces. This is the perf baseline for the dispatch hot path.
-func BenchmarkCheck(b *testing.B) {
-	caSeed, _ := hex.DecodeString(testCASeedHex)
-	caPriv := ed25519.NewKeyFromSeed(caSeed)
-	caPub := caPriv.Public().(ed25519.PublicKey)
-	leafSeed, _ := hex.DecodeString(testLeafSeed)
-	priv := ed25519.NewKeyFromSeed(leafSeed)
-	leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey))
-
-	v, err := NewVerifier(true, []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, time.Hour, testRunnerID, testOrigin, testGroup, testLabels(), NewMemoryNonceStore())
-	if err != nil {
-		b.Fatalf("NewVerifier: %v", err)
-	}
-	// Pin the clock to the vectors' instant so the fixed issued_at stays in-window.
-	now, err := time.Parse(time.RFC3339, fixedNow)
-	if err != nil {
-		b.Fatalf("parse fixedNow: %v", err)
-	}
-	v.now = func() time.Time { return now }
-	args := map[string]any{"container": "web", "force": true}
-
-	// One wide-window, any-scope cert vouching for the leaf, reused every iteration
-	// (the per-call cost the benchmark measures is one cert verify + one leaf verify).
-	cert := attest.Cert{CAID: testCAID, KeyID: "op-test", PublicKey: leafPub, ValidFrom: "2026-01-01T00:00:00Z", ValidUntil: "2030-01-01T00:00:00Z", Serial: "01BENCH00000000000000000000"}
-	csig, err := attest.SignCert(caPriv, cert)
-	if err != nil {
-		b.Fatalf("SignCert: %v", err)
-	}
-	cert.Sig = csig
-
-	// Pre-sign distinct-nonce attestations so each iteration is a fresh, valid
-	// dispatch (no replay short-circuit, no signing cost in the measured loop).
-	atts := make([]*Attestation, b.N)
-	for i := range atts {
-		nonce := testNonce(fmt.Sprintf("n%d", i))
-		atts[i] = signedAttestation(b, priv, testDispatch(b, "docker.restart", args), []string{testRunnerRef(b)}, nonce, fixedNow, cert)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if d := v.Check(testDispatch(b, "docker.restart", args), atts[i]); !d.Allowed {
-			b.Fatalf("benchmark dispatch refused: %+v", d)
-		}
-	}
-}
-
 // persistCAs returns the trusted-CA config + the leaf private key both
 // persistence tests sign with — the same fixtures as newTestVerifier.
 func persistCAs(t *testing.T) ([]CAConfig, ed25519.PrivateKey) {

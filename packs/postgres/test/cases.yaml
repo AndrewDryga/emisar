@@ -1,0 +1,10 @@
+services: [postgres]
+env:
+  PGDATABASE: testdb
+  PGHOST: postgres
+  PGPASSWORD: testpass
+  PGUSER: postgres
+cases:
+  - action: postgres.uptime
+    expect:
+      stdout_contains: [PostgreSQL]

@@ -66,6 +66,9 @@ jobs:
       go_modules: ${{ steps.detect.outputs.go_modules }}
       portal_release: ${{ steps.detect.outputs.portal_release }}
       packs_release: ${{ steps.detect.outputs.packs_release }}
+      pack_behavior: ${{ steps.detect.outputs.pack_behavior }}
+      signing_e2e: ${{ steps.detect.outputs.signing_e2e }}
+      sso_e2e: ${{ steps.detect.outputs.sso_e2e }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -588,6 +591,89 @@ jobs:
       - name: Validate packs and cross-language hashes
         run: ./run check packs
 
+  pack-behavior:
+    name: Packs - Behavior (${{ matrix.pack }})
+    needs: changes
+    if: needs.changes.outputs.pack_behavior != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        pack: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
+    env:
+      GOTOOLCHAIN: local
+      PACK: ${{ matrix.pack }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: |
+            runner/go.sum
+            tools/go.sum
+
+      - name: Exercise pack behavior
+        run: ./run test packs "$PACK"
+
+  signing-e2e:
+    name: E2E - Signed dispatch
+    needs: changes
+    if: needs.changes.outputs.signing_e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: |
+            runner/go.sum
+            mcp/go.sum
+            tools/go.sum
+
+      - name: Exercise signed dispatch end to end
+        run: ./run e2e signing
+
+  sso-e2e:
+    name: E2E - SSO and SCIM
+    needs: changes
+    if: needs.changes.outputs.sso_e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Exercise SSO and SCIM end to end
+        run: ./run e2e sso
+
   infra:
     name: Terraform - Validate
     needs: changes
@@ -716,7 +802,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, packs, infra, dep-age, actionlint]
+    needs: [changes, portal, portal-image, mcp-listing, go, packs, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -730,6 +816,12 @@ jobs:
       GO_MODULES: ${{ needs.changes.outputs.go_modules }}
       PACKS: ${{ needs.packs.result }}
       SELECT_PACKS: ${{ needs.changes.outputs.packs }}
+      PACK_BEHAVIOR: ${{ needs.pack-behavior.result }}
+      SELECT_PACK_BEHAVIOR: ${{ needs.changes.outputs.pack_behavior }}
+      SIGNING_E2E: ${{ needs.signing-e2e.result }}
+      SELECT_SIGNING_E2E: ${{ needs.changes.outputs.signing_e2e }}
+      SSO_E2E: ${{ needs.sso-e2e.result }}
+      SELECT_SSO_E2E: ${{ needs.changes.outputs.sso_e2e }}
       INFRA: ${{ needs.infra.result }}
       SELECT_INFRA: ${{ needs.changes.outputs.infra }}
       DEP_AGE: ${{ needs.dep-age.result }}
@@ -764,6 +856,13 @@ jobs:
             require_selected GO true
           fi
           require_selected PACKS "$SELECT_PACKS"
+          if [ "$SELECT_PACK_BEHAVIOR" = '[]' ]; then
+            require_selected PACK_BEHAVIOR false
+          else
+            require_selected PACK_BEHAVIOR true
+          fi
+          require_selected SIGNING_E2E "$SELECT_SIGNING_E2E"
+          require_selected SSO_E2E "$SELECT_SSO_E2E"
           require_selected INFRA "$SELECT_INFRA"
           require_selected DEP_AGE "$SELECT_DEP_AGE"
           require_selected ACTIONLINT "$SELECT_ACTIONLINT"

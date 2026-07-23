@@ -40,11 +40,18 @@ x-runner-tools: &runner-tools
     ELASTIC_PASSWORD: testpass
     ELASTIC_URL: "http://elasticsearch:9200"
     PROM_URL: "http://prometheus:9090"
+    GRAFANA_URL: "http://grafana:3000"
     ENVOY_ADMIN: "http://envoy:9901"
     CADDY_ADMIN: "http://caddy:2019"
     KAFKA_BOOTSTRAP: "kafka:9092"
     RABBITMQ_HOST: rabbitmq
+    MEMCACHED_HOST: memcached
+    MEMCACHED_PORT: "11211"
     MC_HOST_local: "http://minio_admin:testpass@minio:9000"
+    AWS_ACCESS_KEY_ID: test
+    AWS_DEFAULT_REGION: us-east-1
+    AWS_ENDPOINT_URL: "http://localstack:4566"
+    AWS_SECRET_ACCESS_KEY: test
     SNMP_VERSION: "2c"
     SNMP_COMMUNITY: public
 
@@ -52,16 +59,6 @@ services:
   runner-tools:
     <<: *runner-tools
     networks: [packtest]
-
-  # Redis actions intentionally use redis-cli's local default. Sharing the SUT
-  # network namespace tests the same localhost contract a real runner uses.
-  runner-tools-redis:
-    <<: *runner-tools
-    profiles: [focused]
-    network_mode: service:redis
-    depends_on:
-      redis:
-        condition: service_healthy
 
   # Databases
   cockroach:
@@ -107,7 +104,7 @@ services:
       retries: 10
 
   mongodb:
-    image: mongo:8.3.4
+    image: mongo:8.2.5
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: testpass
@@ -356,14 +353,20 @@ services:
       interval: 10s
       retries: 20
 
-  # One-shot: rewrite the k3s-written kubeconfig's server 127.0.0.1 -> k3s (the service
-  # name, reachable over packtest) so runner-tools' kubectl connects. Waits, rewrites, exits.
+  # Rewrite the k3s-written kubeconfig's server 127.0.0.1 -> k3s (the service
+  # name, reachable over packtest) so runner-tools' kubectl connects. It stays
+  # alive after the one-time rewrite so Compose --wait has a uniform health
+  # contract for every selected dependency.
   k3s-kubeconfig:
     image: busybox:1.38.0
     depends_on: [k3s]
     volumes:
       - k3s_kubeconfig:/shared
-    command: sh -c 'until [ -f /shared/kubeconfig.yaml ]; do sleep 1; done; sed -i "s#https://127.0.0.1:6443#https://k3s:6443#" /shared/kubeconfig.yaml; echo kubeconfig-rewritten'
+    command: sh -c 'until [ -f /shared/kubeconfig.yaml ]; do sleep 1; done; sed -i "s#https://127.0.0.1:6443#https://k3s:6443#" /shared/kubeconfig.yaml; touch /shared/ready; exec tail -f /dev/null'
+    healthcheck:
+      test: ["CMD", "test", "-f", "/shared/ready"]
+      interval: 2s
+      retries: 20
     networks: [packtest]
 
 networks:

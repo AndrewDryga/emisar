@@ -1,0 +1,8 @@
+services: [clickhouse]
+env:
+  CH_HOST: clickhouse
+  CH_USER: default
+cases:
+  - action: ch.uptime
+    expect:
+      stdout_contains: ["version()", "uptime()"]

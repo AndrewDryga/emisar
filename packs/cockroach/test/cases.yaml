@@ -1,0 +1,7 @@
+services: [cockroach]
+env:
+  COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
+cases:
+  - action: cockroach.databases
+    expect:
+      stdout_contains: [defaultdb]

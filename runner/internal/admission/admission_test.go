@@ -1,7 +1,6 @@
 package admission
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -277,30 +276,5 @@ func TestNew_StoresDefensiveCopies(t *testing.T) {
 	}
 	if ok, reason := p.Admit("linux.systemctl_restart"); ok {
 		t.Fatalf("denylist mutation leaked: linux.systemctl_restart should still be denied, got admitted (reason=%q)", reason)
-	}
-}
-
-// BenchmarkAdmit_LargeRuleSet covers: Admit is linear in the rule
-// count and compiled once at boot — no per-call recompile. The id matches the
-// last allow pattern and no deny pattern (the worst case: every allow scanned).
-func BenchmarkAdmit_LargeRuleSet(b *testing.B) {
-	const n = 256
-	allow := make([]string, n)
-	deny := make([]string, n)
-	for i := range allow {
-		allow[i] = fmt.Sprintf("pack%03d.*", i)
-		deny[i] = fmt.Sprintf("pack%03d.drop_database", i)
-	}
-	p, err := New(allow, deny, "")
-	if err != nil {
-		b.Fatalf("New: %v", err)
-	}
-	id := fmt.Sprintf("pack%03d.restart", n-1) // matches last allow, no deny
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if ok, _ := p.Admit(id); !ok {
-			b.Fatal("expected admit")
-		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,33 +23,113 @@ import (
 )
 
 func (a *App) e2eSSO(ctx context.Context) error {
-	if err := a.seed(ctx); err != nil {
+	if err := a.generateCertificates(false); err != nil {
 		return err
 	}
-	workspace, err := a.loadWorkspace(ctx)
+	portalPort, err := availableTCPPort()
 	if err != nil {
 		return err
 	}
-	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, workspace.PortalURL+"/healthz", nil)
-	response, err := http.DefaultClient.Do(request)
-	if err != nil || response.StatusCode/100 != 2 {
-		if response != nil {
-			response.Body.Close()
-		}
-		return fmt.Errorf("Portal is not serving at %s; run ./run serve in another terminal", workspace.PortalURL)
+	keycloakPort, err := availableTCPPort()
+	if err != nil {
+		return err
 	}
-	response.Body.Close()
+	if err := os.MkdirAll(a.cacheRoot(), 0o700); err != nil {
+		return err
+	}
+	realm, err := os.CreateTemp(a.cacheRoot(), "sso-realm-*.json")
+	if err != nil {
+		return err
+	}
+	realmPath := realm.Name()
+	if err := realm.Close(); err != nil {
+		return err
+	}
+	defer os.Remove(realmPath)
+	if err := writeSSORealm(
+		filepath.Join(a.Root, "dev", "keycloak", "realm.json"),
+		realmPath,
+		portalPort,
+	); err != nil {
+		return err
+	}
+
 	env := map[string]string{
-		"PORTAL_URL":      workspace.PortalURL,
-		"KEYCLOAK_ISSUER": workspace.KeycloakURL + "/realms/emisar",
-		"KEYCLOAK_CA":     a.Certs + "/ca.crt",
-		"PROVIDER_ID":     "11111111-1111-7111-8111-111111111111",
-		"SCIM_TOKEN":      scimToken,
-		"KC_USER":         "alice",
-		"KC_PASS":         "Sleep-tight-1234",
-		"ALICE_KC_ID":     "a11ce000-0000-4000-8000-000000000001",
+		"COMPOSE_PROJECT_NAME":  fmt.Sprintf("%s-sso-%d", composeProject(a.Root), portalPort),
+		"PORTAL_PORT":           strconv.Itoa(portalPort),
+		"KEYCLOAK_PORT":         strconv.Itoa(keycloakPort),
+		"KEYCLOAK_PUBLISH_PORT": strconv.Itoa(keycloakPort),
+		"KEYCLOAK_REALM_FILE":   realmPath,
 	}
+	compose := func(commandContext context.Context, args ...string) error {
+		return a.run(commandContext, a.Root, env, "docker", append([]string{"compose"}, args...)...)
+	}
+	defer func() { _ = compose(context.Background(), "down", "-v", "--remove-orphans") }()
+	fmt.Fprintln(a.Out, "[sso-e2e] building current portal image (cached if unchanged)...")
+	if err := compose(ctx, "build", "portal"); err != nil {
+		return err
+	}
+	fmt.Fprintln(a.Out, "[sso-e2e] starting isolated Portal and Keycloak...")
+	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal", "keycloak"); err != nil {
+		return err
+	}
+	if err := compose(ctx, "run", "--rm", "seeder"); err != nil {
+		return err
+	}
+	env["PORTAL_URL"] = fmt.Sprintf("http://localhost:%d", portalPort)
+	env["KEYCLOAK_ISSUER"] = fmt.Sprintf("https://localhost:%d/realms/emisar", keycloakPort)
+	env["KEYCLOAK_CA"] = a.Certs + "/ca.crt"
+	env["PROVIDER_ID"] = "11111111-1111-7111-8111-111111111111"
+	env["SCIM_TOKEN"] = scimToken
+	env["KC_USER"] = "alice"
+	env["KC_PASS"] = "Sleep-tight-1234"
+	env["ALICE_KC_ID"] = "a11ce000-0000-4000-8000-000000000001"
 	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/sso-e2e")
+}
+
+func availableTCPPort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+func writeSSORealm(source, destination string, portalPort int) error {
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	var realm map[string]any
+	if err := json.Unmarshal(data, &realm); err != nil {
+		return fmt.Errorf("parse Keycloak realm: %w", err)
+	}
+	clients, ok := realm["clients"].([]any)
+	if !ok {
+		return fmt.Errorf("Keycloak realm has no clients")
+	}
+	updated := false
+	for _, raw := range clients {
+		client, ok := raw.(map[string]any)
+		if !ok || client["clientId"] != "emisar-portal" {
+			continue
+		}
+		client["redirectUris"] = []any{
+			fmt.Sprintf("http://localhost:%d/sign_in/sso/callback", portalPort),
+		}
+		updated = true
+		break
+	}
+	if !updated {
+		return fmt.Errorf("Keycloak realm has no emisar-portal client")
+	}
+	data, err = json.MarshalIndent(realm, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(destination, data, 0o600)
 }
 
 func (a *App) e2eSigning(ctx context.Context) error {
@@ -56,9 +137,9 @@ func (a *App) e2eSigning(ctx context.Context) error {
 		return err
 	}
 	env := map[string]string{
-		"COMPOSE_PROJECT_NAME": composeProject(a.Root),
-		"PORTAL_PORT":          "0",
-		"KEYCLOAK_PORT":        "0",
+		"COMPOSE_PROJECT_NAME":  composeProject(a.Root),
+		"PORTAL_PORT":           "0",
+		"KEYCLOAK_PUBLISH_PORT": "0",
 	}
 	compose := func(commandContext context.Context, args ...string) error {
 		return a.run(commandContext, a.Root, env, "docker", append([]string{"compose", "--profile", "test"}, args...)...)

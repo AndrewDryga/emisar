@@ -1,0 +1,8 @@
+services: [memcached]
+env:
+  MEMCACHED_HOST: memcached
+  MEMCACHED_PORT: "11211"
+cases:
+  - action: mc.version
+    expect:
+      stdout_contains: [VERSION]

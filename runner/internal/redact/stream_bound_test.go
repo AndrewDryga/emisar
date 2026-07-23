@@ -163,35 +163,3 @@ func TestStreamRedactor_EmptyWriteAndFlush(t *testing.T) {
 		t.Fatalf("expected no hits on an empty stream, got %+v", hits)
 	}
 }
-
-// streaming throughput vs the hold + soundness re-redact
-// overhead. Baseline only; guards against accidental quadratic behavior in the
-// commit path over a large stream.
-func BenchmarkStreamRedactor_LargeStream(b *testing.B) {
-	rules, err := CompileAll(DefaultRules())
-	if err != nil {
-		b.Fatal(err)
-	}
-	eng := New(rules)
-
-	var sb strings.Builder
-	for sb.Len() < 256<<10 { // 256 KiB of benign-ish output
-		sb.WriteString("INFO 2026-06-21 handled request status=200 path=/v1/x in 9ms\n")
-	}
-	input := []byte(sb.String())
-
-	b.ReportAllocs()
-	b.SetBytes(int64(len(input)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		sr := eng.StreamRedactor()
-		for j := 0; j < len(input); j += 4096 {
-			end := j + 4096
-			if end > len(input) {
-				end = len(input)
-			}
-			_ = sr.Write(input[j:end])
-		}
-		_ = sr.Flush()
-	}
-}

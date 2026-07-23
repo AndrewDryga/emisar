@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
+	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 func (a *App) buildPackTools(ctx context.Context) error {
@@ -67,7 +68,7 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), nil, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
 }
 
-func (a *App) packTest(ctx context.Context, pattern string) error {
+func (a *App) packTest(ctx context.Context, pattern string, names []string) error {
 	bin := filepath.Join(a.Root, "dev", "test-packs", "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return err
@@ -87,14 +88,11 @@ func (a *App) packTest(ctx context.Context, pattern string) error {
 	defer func() {
 		_ = a.run(context.Background(), a.Root, composeEnv, "docker", append(compose, "down", "-v", "--remove-orphans")...)
 	}()
-	services, packs, err := a.packTestServices(ctx, compose, pattern)
+	services, err := a.packTestServices(ctx, compose, pattern, names)
 	if err != nil {
 		return err
 	}
 	runnerService := "runner-tools"
-	if len(packs) == 1 && packs[0] == "redis" {
-		runnerService = "runner-tools-redis"
-	}
 	if err := a.run(ctx, a.Root, composeEnv, "docker", append(compose, "build", runnerService)...); err != nil {
 		return err
 	}
@@ -108,51 +106,35 @@ func (a *App) packTest(ctx context.Context, pattern string) error {
 	if pattern != "" {
 		arguments = append(arguments, "--pattern", pattern)
 	}
+	for _, name := range names {
+		arguments = append(arguments, "--pack", name)
+	}
 	return a.run(ctx, a.Root, composeEnv, "docker", arguments...)
 }
 
-var packServiceAliases = map[string][]string{
-	"aws-cloudwatch": {"localstack"}, "aws-cost": {"localstack"}, "aws-ec2": {"localstack"},
-	"aws-iam": {"localstack"}, "aws-rds": {"localstack"}, "aws-s3": {"localstack"},
-	"kubernetes": {"k3s", "k3s-kubeconfig"},
-	"snmp":       {"snmpd", "snmpd-frr"},
-}
-
-func (a *App) packTestServices(ctx context.Context, compose []string, pattern string) ([]string, []string, error) {
-	paths, err := filepath.Glob(filepath.Join(a.Root, "packs", "*", "test", "cases.json"))
+func (a *App) packTestServices(ctx context.Context, compose []string, pattern string, names []string) ([]string, error) {
+	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
 	if err != nil {
-		return nil, nil, err
-	}
-	var packs []string
-	for _, path := range paths {
-		name := filepath.Base(filepath.Dir(filepath.Dir(path)))
-		if pattern == "" || strings.Contains(name, pattern) {
-			packs = append(packs, name)
-		}
-	}
-	if len(packs) == 0 {
-		return nil, nil, fmt.Errorf("no pack cases matched %q", pattern)
+		return nil, err
 	}
 	output, err := a.output(ctx, a.Root, nil, "docker", append(compose, "config", "--services")...)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	available := make(map[string]bool)
 	for _, service := range strings.Fields(string(output)) {
 		available[service] = true
 	}
-	services := selectPackServices(packs, available)
-	sort.Strings(packs)
-	return services, packs, nil
+	return selectPlanServices(plans, available)
 }
 
-func selectPackServices(packs []string, available map[string]bool) []string {
+func selectPlanServices(plans []packtest.PlanRef, available map[string]bool) ([]string, error) {
 	selected := make(map[string]bool)
-	for _, pack := range packs {
-		if available[pack] {
-			selected[pack] = true
-		}
-		for _, service := range packServiceAliases[pack] {
+	for _, plan := range plans {
+		for _, service := range plan.Services {
+			if !available[service] {
+				return nil, fmt.Errorf("pack %s requires unknown Compose service %s", plan.Name, service)
+			}
 			selected[service] = true
 		}
 	}
@@ -161,7 +143,7 @@ func selectPackServices(packs []string, available map[string]bool) []string {
 		services = append(services, service)
 	}
 	sort.Strings(services)
-	return services
+	return services, nil
 }
 
 func packTestComposeProject(root string) string {

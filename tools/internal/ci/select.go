@@ -21,6 +21,9 @@ type Selection struct {
 	MCPListing    bool
 	PortalRelease bool
 	PacksRelease  bool
+	PackBehavior  []string
+	SigningE2E    bool
+	SSOE2E        bool
 }
 
 func Select(ctx context.Context, root, event, base string) (Selection, error) {
@@ -50,7 +53,10 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		selection.Infra = true
 		selection.Deps = true
 		selection.MCPListing = true
+		selection.SigningE2E = true
+		selection.SSOE2E = true
 	}
+	selection.PackBehavior = selectPackBehavior(root, files, selection.Workflows)
 	if event == "push" {
 		selection.Portal = true
 		selection.PortalRelease = true
@@ -64,6 +70,7 @@ func (selection *Selection) include(file string) {
 			Portal: true, Runner: true, MCP: true, Tools: true, Packs: true,
 			Infra: true, Deps: true, Workflows: true, MCPListing: true,
 			PortalRelease: true, PacksRelease: true,
+			SigningE2E: true, SSOE2E: true,
 		}
 		return
 	}
@@ -107,6 +114,73 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, ".github/workflows/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
+	if hasAnyPrefix(
+		file,
+		"tools/cmd/signing-e2e/",
+		"dev/signing/",
+		"runner/internal/signing/",
+		"runner/internal/attest/",
+		"mcp/internal/signing/",
+	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
+		selection.SigningE2E = true
+	}
+	if hasAnyPrefix(
+		file,
+		"tools/cmd/sso-e2e/",
+		"dev/keycloak/",
+		"portal/apps/emisar/lib/emisar/sso/",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/auth",
+		"portal/apps/emisar_web/lib/emisar_web/live/sso",
+	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
+		selection.SSOE2E = true
+	}
+}
+
+func selectPackBehavior(root string, files []string, workflows bool) []string {
+	runAll := workflows
+	selected := make(map[string]bool)
+	for _, file := range files {
+		if file == "__run_all__" || packBehaviorSharedPath(file) {
+			runAll = true
+		}
+		parts := strings.Split(file, "/")
+		if len(parts) >= 2 && parts[0] == "packs" {
+			selected[parts[1]] = true
+		}
+	}
+	plans, _ := filepath.Glob(filepath.Join(root, "packs", "*", "test", "cases.yaml"))
+	var names []string
+	for _, path := range plans {
+		name := filepath.Base(filepath.Dir(filepath.Dir(path)))
+		if runAll || selected[name] {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func packBehaviorSharedPath(file string) bool {
+	return hasAnyPrefix(
+		file,
+		"dev/test-packs/",
+		"tools/cmd/packtest/",
+		"tools/internal/packtest/",
+		"runner/internal/executor/",
+		"runner/internal/packs/",
+		"runner/pkg/actionspec/",
+		"runner/pkg/packspec/",
+	) || member(
+		file,
+		"tools/internal/devtool/pack.go",
+		"runner/action.go",
+		"runner/config.go",
+		"runner/go.mod",
+		"runner/go.sum",
+		"tools/go.mod",
+		"tools/go.sum",
+		"go.work",
+		"go.work.sum",
+	)
 }
 
 func member(value string, candidates ...string) bool {
@@ -150,8 +224,15 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\n",
-		selection.Portal, selection.Packs, selection.Infra, selection.Deps, selection.Workflows, selection.MCPListing, modules, selection.PortalRelease, selection.PacksRelease)
+	packBehavior, err := json.Marshal(selection.PackBehavior)
+	if err != nil {
+		return err
+	}
+	output := fmt.Sprintf("portal=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+		selection.Portal, selection.Packs, selection.Infra, selection.Deps,
+		selection.Workflows, selection.MCPListing, modules,
+		selection.PortalRelease, selection.PacksRelease, packBehavior,
+		selection.SigningE2E, selection.SSOE2E)
 	if err := appendOrPrint(outputPath, output); err != nil {
 		return err
 	}
@@ -162,8 +243,13 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
-		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs), mark(selection.Infra), mark(selection.Deps), mark(selection.Workflows), mark(selection.MCPListing))
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner),
+		mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
+		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
+		mark(selection.SigningE2E), mark(selection.SSOE2E),
+		mark(selection.Infra), mark(selection.Deps), mark(selection.Workflows),
+		mark(selection.MCPListing))
 	if summaryPath != "" {
 		return appendFile(summaryPath, summary)
 	}

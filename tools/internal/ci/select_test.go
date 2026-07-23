@@ -13,6 +13,8 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 	migration := "portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"
 	writeFixture(t, root, migration, "defmodule Old do\nend\n")
 	writeFixture(t, root, "runner/old.go", "package main\n")
+	writeFixture(t, root, "packs/postgres/test/cases.yaml", "services: [postgres]\ncases: []\n")
+	writeFixture(t, root, "packs/mysql/test/cases.yaml", "services: [mysql]\ncases: []\n")
 	commitAll(t, root, "base")
 	base := gitText(t, root, "rev-parse", "HEAD")
 
@@ -66,6 +68,72 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 		if selection.PortalRelease || selection.PacksRelease {
 			t.Fatalf("workflow-only PR selected release: %+v", selection)
+		}
+		if len(selection.PackBehavior) != 2 || !selection.SigningE2E || !selection.SSOE2E {
+			t.Fatalf("workflow selection omitted integration gates: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack change selects only its behavior plan", func(t *testing.T) {
+		writeFixture(t, root, "packs/postgres/actions/uptime.yaml", "id: postgres.uptime\n")
+		commitAll(t, root, "postgres")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 1 || selection.PackBehavior[0] != "postgres" {
+			t.Fatalf("pack behavior selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack without plan remains contract only", func(t *testing.T) {
+		writeFixture(t, root, "packs/host-only/actions/status.yaml", "id: host.status\n")
+		commitAll(t, root, "host only")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 0 || !selection.Packs {
+			t.Fatalf("contract-only selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("shared pack harness selects every plan", func(t *testing.T) {
+		writeFixture(t, root, "tools/internal/packtest/packtest.go", "package packtest\n")
+		commitAll(t, root, "harness")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 2 {
+			t.Fatalf("shared harness selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("e2e paths select their scenario", func(t *testing.T) {
+		writeFixture(t, root, "tools/cmd/signing-e2e/main.go", "package main\n")
+		commitAll(t, root, "signing")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.SigningE2E || selection.SSOE2E {
+			t.Fatalf("signing selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+
+		writeFixture(t, root, "dev/keycloak/realm.json", "{}\n")
+		commitAll(t, root, "sso")
+		selection, err = Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection.SigningE2E || !selection.SSOE2E {
+			t.Fatalf("SSO selection = %+v", selection)
 		}
 		resetHard(t, root, base)
 	})

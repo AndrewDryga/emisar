@@ -1,73 +1,100 @@
-# Pack test harness
+# Pack behavior harness
 
-Every pack has a `test/cases.json` listing one test case per action. It is a
-**generated artifact** — `cd tools && go run ./cmd/gencases` derives it from
-each pack's `actions/*.yaml` plus the policy tables in
-`tools/cmd/gencases/policy.go`; never hand-edit one, change the policy or the
-action YAML and regenerate. The harness selects only the backing services
-needed by matching packs, invokes `emisar action run` for each case, and
-asserts on exit code + stdout substrings. Localhost-only packs share the SUT's
-network namespace, matching how the action runs on a real host.
+Pack validation and pack behavior are separate gates:
+
+- `./run check packs` validates every manifest and action contract.
+- `./run test packs [name-pattern]` runs the selected pack-owned behavior
+  plans against disposable Compose services.
+
+Behavior plans are handwritten. A case is coverage only when it proves an
+observable result: a stable output assertion, or a state probe after the
+action. Exit code alone is rejected. Mutating cases must probe the changed
+state and clean it up.
+
+Packs without a faithful container model have no plan yet. Their action
+contracts are still validated, but they are reported as contract-only rather
+than hidden behind permanent skips. Host, kernel, hardware, and vendor
+environments will be added separately when they can model the real target.
 
 ## Layout
 
-```
-packs/<pack>/                # at the repo root (a sibling of runner/)
+```text
+packs/<pack>/
 ├── pack.yaml
 ├── actions/*.yaml
 └── test/
-    └── cases.json          # GENERATED: one entry per action under actions/
+    └── cases.yaml          # pack-owned behavior plan
 
-dev/test-packs/              # mounted in the container at /workspace/test-packs
-├── Dockerfile               # builds emisar-runner-tools (all CLI binaries)
-├── docker-compose.yaml      # backing services (postgres, redis, …); mounts packs/ at /packs
-├── bin/                     # ignored cross-built runner + Go packtest binaries
-├── reports/                 # ignored per-pack logs
-└── fixtures/                # seed configs, init SQL, etc.
+dev/test-packs/
+├── Dockerfile              # shared action-client image
+├── docker-compose.yaml     # disposable systems under test
+├── fixtures/               # service configuration and seeded state
+├── bin/                    # ignored runner and harness binaries
+└── reports/                # ignored per-pack logs
 ```
 
-## cases.json schema
+Each plan declares its own Compose dependencies. The harness starts only the
+union needed by the selected plans.
 
-```json
-{
-  "defaults": {
-    "env": {"PGHOST": "postgres", "PGPASSWORD": "testpass"}
-  },
-  "cases": [
-    {"action": "postgres.uptime", "args": {}, "expect_exit": 0,
-     "expect_stdout_contains": ["start"]},
-    {"action": "postgres.kill_pid", "args": {"pid": 99999},
-     "expect_exit": [0, 1],
-     "skip": "set to non-empty to skip with a note"}
-  ]
-}
+## Plan schema
+
+```yaml
+services: [postgres]
+env:
+  PGHOST: postgres
+  PGUSER: postgres
+  PGPASSWORD: testpass
+  PGDATABASE: testdb
+cases:
+  - action: postgres.uptime
+    args: {}
+    expect:
+      exit: [0]
+      stdout_contains: [PostgreSQL]
+
+  - action: example.mutate
+    args:
+      name: fixture
+    expect:
+      stdout_not_empty: true
+    probes:
+      - name: fixture changed
+        argv: [examplectl, get, fixture]
+        expect:
+          stdout_contains: [changed]
+        retry_for: 10s
+        retry_every: 1s
+    cleanup:
+      - name: restore fixture
+        argv: [examplectl, reset, fixture]
 ```
 
-- `args`: passed verbatim as `--arg key=value` to `emisar action run`.
-- `expect_exit`: scalar or list of accepted exit codes.
-- `expect_stdout_contains`: every needle must be present.
-- `skip`: non-empty value skips this case (useful for actions that need
-  a multi-node fixture we can't easily provide in compose).
+`services` must name services in `docker-compose.yaml`. `env` is passed to the
+runner, but an action can inherit a variable only when `test-config.yaml`
+allowlists it. Structured argument values are encoded as JSON.
+
+`arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use an
+explicit `[/bin/sh, -c, ...]` only when shell syntax is part of the test.
+Cleanup always runs, including after an action or probe failure.
+
+Expectations support:
+
+- `exit`: accepted exit codes; defaults to `[0]`
+- `stdout_not_empty`
+- `stdout_contains`
+- `stderr_contains`
+
+Unknown fields, duplicate actions, nonexistent action IDs, exit-only cases,
+semantic-free probes, and mutation cases without probes and cleanup fail
+before execution.
 
 ## Running
 
 ```sh
-# Run every generated case. The command owns build, Compose, reports, and cleanup.
+./run test packs postgres
 ./run test packs
-
-# Run packs whose name contains a pattern.
-./run test packs redis
 ```
 
-## Skip rationale
-
-Some actions can't be tested without specific multi-node fixtures
-(e.g. `consul.raft_remove_peer` needs a real dead peer, `clickhouse.system_drop_replica`
-needs a dead replica with leftover metadata). Those cases set `skip:`
-with a one-line reason. They still count as coverage when reading the
-catalog — they're marked, not forgotten.
-
-Cloud packs (`aws-*`, `cloudflare`) require credentials or LocalStack.
-The compose file includes LocalStack for AWS smoke tests; cloudflare and
-`github-cli` mutator cases are skipped unless `CF_API_TOKEN` /
-`GH_TOKEN` are set.
+The command builds the runner and harness, starts the selected disposable
+services, writes `reports/<pack>.log`, and removes the Compose project and
+volumes when it finishes.

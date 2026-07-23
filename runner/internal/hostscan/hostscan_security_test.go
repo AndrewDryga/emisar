@@ -88,14 +88,3 @@ func TestScanBinaries_NamesNormalizedAndDeduped(t *testing.T) {
 		}
 	}
 }
-
-// BenchmarkDetect — Detect is a bounded read-only scan (PATH +
-// standard dirs for the probed names, plus /proc when present); it never execs.
-// Measures the scan cost over a realistic set of probe names on the build host.
-func BenchmarkDetect(b *testing.B) {
-	names := []string{"go", "consul", "nomad", "vault", "redis-cli", "docker", "definitely-absent-xyz"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = Detect(names)
-	}
-}
