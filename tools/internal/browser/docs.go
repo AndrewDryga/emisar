@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,23 +23,63 @@ type DocsConfig struct {
 	Static  string
 }
 
-type docShot struct {
+// shot is one docs screenshot: navigate Path, run any Clicks (reveal flows),
+// then crop to Anchor at viewport Width, drop TopCSS top pixels, write Output.
+type shot struct {
 	Name   string
-	Output string
+	Path   string
+	Clicks []string
+	Anchor Anchor
+	Width  int // viewport CSS width; 0 → defaultWidth
 	TopCSS int
+	Output string
 }
 
-var docShots = []docShot{
-	{"policy-editor", "screenshots/policy-editor.webp", 0},
-	{"audit-view", "screenshots/audit-view.webp", 1180},
-	{"runbooks", "screenshots/runbooks.webp", 0},
-	{"runner-fleet", "screenshots/runner-fleet.webp", 0},
-	{"team-page", "screenshots/team-page.webp", 0},
-	{"sso-add-connection", "docs/sso/sso-add-connection.webp", 850},
-	{"sso-directory-sync", "docs/sso/sso-directory-sync.webp", 0},
-	{"connect-llm-agents", "screenshots/connect-llm-agents.webp", 820},
-	{"runs", "screenshots/runs.webp", 0},
-	{"agents", "screenshots/agents.webp", 0},
+// The docs measure is ~672px, so a shot displays at ~40% of a 1680px desktop
+// capture — text turns illegible. Capturing narrower renders the same feature
+// LARGER in the column, and a sub-xl width also lets the how-keys/what-is help
+// rails (xl-gated on connect + agents) stack off-crop, since the docs prose
+// beside the image already teaches them.
+const (
+	defaultWidth = 1680
+	docsWidth    = 1120
+)
+
+// clickText clicks the first button/link/[phx-click] whose trimmed text equals label.
+func clickText(label string) string {
+	return fmt.Sprintf(`(()=>{const b=[...document.querySelectorAll('button,a,[phx-click]')].find(x=>x.textContent.trim()===%q);if(b){b.click();return true}return false})()`, label)
+}
+
+// clickFirstEditLink opens a runbook's editor from the runbooks list.
+const clickFirstEditLink = `(()=>{const a=document.querySelector('a[href*="/edit"]');if(a){a.click();return true}return false})()`
+
+// clickSSOConnection opens an SSO connection's detail page from the team page.
+const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`
+
+// docsShots — one entry per docs screenshot, each cropped to the one feature
+// its page teaches, at docsWidth unless the content genuinely needs more room.
+var docsShots = []shot{
+	{Name: "policy-editor", Path: "/app/demo/policies", Anchor: Anchor{Heading: "Default policy", Climb: "section"}, Width: docsWidth, Output: "screenshots/policy-editor.webp"},
+	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, Output: "screenshots/audit-view.webp"},
+	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#runners"}, Width: docsWidth, Output: "screenshots/runner-fleet.webp"},
+	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#members", Climb: "section"}, Width: docsWidth, Output: "screenshots/team-page.webp"},
+	{Name: "sso-add-connection", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/sso-add-connection.webp"},
+	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, Output: "screenshots/runs.webp"},
+	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, Output: "screenshots/agents.webp"},
+	// Connect form: click a cloud client to reveal the connector fields, then crop
+	// to the form panel — #connect-panel excludes the how-keys-work rail beside it.
+	{Name: "connect-llm-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude.ai")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-llm-agents.webp"},
+	// Runbook editor: open a seeded runbook and crop to its ordered, gated steps —
+	// what a runbook IS, not two list rows.
+	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
+	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+}
+
+func (s shot) width() int {
+	if s.Width == 0 {
+		return defaultWidth
+	}
+	return s.Width
 }
 
 var rgbPattern = regexp.MustCompile(`\d+`)
@@ -97,6 +138,51 @@ func clickByScript(session *Session, script, label string) error {
 	return nil
 }
 
+// captureShot sets the shot's viewport, navigates, runs its reveal clicks, and
+// crops to its anchor. Returns the cropped element's background color.
+func captureShot(session *Session, config DocsConfig, s shot) (string, error) {
+	if err := session.Viewport(int64(s.width()), 2800, 2, false); err != nil {
+		return "", err
+	}
+	if err := session.Navigate(s.Path); err != nil {
+		return "", err
+	}
+	for _, click := range s.Clicks {
+		if err := clickByScript(session, click, s.Name); err != nil {
+			return "", err
+		}
+		if err := session.Ready(10*time.Second, ""); err != nil {
+			return "", err
+		}
+	}
+	return captureDocElement(session, config, s.Anchor, s.Name)
+}
+
+// processShot converts a captured PNG into the bordered, resized webp, dropping
+// TopCSS top pixels first when set.
+func processShot(config DocsConfig, s shot, color string, out io.Writer) error {
+	png := filepath.Join(config.Temp, s.Name+".png")
+	destination := filepath.Join(config.Static, filepath.FromSlash(s.Output))
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
+	}
+	widthOutput, commandErr := imageCommand("identify", "-format", "%w", png)
+	if commandErr != nil {
+		return fmt.Errorf("identify %s: %w: %s", png, commandErr, widthOutput)
+	}
+	width := strings.TrimSpace(string(widthOutput))
+	args := []string{png}
+	if s.TopCSS != 0 {
+		args = append(args, "-crop", fmt.Sprintf("%sx%d+0+0", width, s.TopCSS*2), "+repage")
+	}
+	args = append(args, "-resize", "1600x>", "-bordercolor", color, "-border", "40", "-quality", "82", destination)
+	if output, commandErr := imageCommand("convert", args...); commandErr != nil {
+		return fmt.Errorf("convert %s: %w: %s", s.Name, commandErr, bytes.TrimSpace(output))
+	}
+	fmt.Fprintf(out, "  -> %s\n", s.Output)
+	return nil
+}
+
 func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error {
 	if config.Email == "" {
 		config.Email = "demo@emisar.dev"
@@ -111,7 +197,8 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		return err
 	}
 	defer session.Close()
-	if err := session.Viewport(1680, 2800, 2, false); err != nil {
+	// Log in once at a default viewport; each shot sets its own width.
+	if err := session.Viewport(defaultWidth, 2800, 2, false); err != nil {
 		return err
 	}
 	if err := session.Navigate("/app/demo"); err != nil {
@@ -123,86 +210,32 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 			return err
 		}
 	}
-	colors := map[string]string{}
-	crop := func(path string, anchor Anchor, name string) error {
-		if err := session.Navigate(path); err != nil {
-			return err
-		}
-		color, cropErr := captureDocElement(session, config, anchor, name)
-		if cropErr == nil {
-			colors[name] = color
-			fmt.Fprintf(manager.Out, "  %s bg=%s\n", name, color)
-		}
-		return cropErr
-	}
-	steps := []struct {
-		path   string
-		anchor Anchor
-		name   string
-	}{
-		{"/app/demo/policies", Anchor{Heading: "Default policy", Climb: "section"}, "policy-editor"},
-		{"/app/demo/audit?event_type[]=group:Run", Anchor{Selector: "#audit-events", Climb: ".space-y-4"}, "audit-view"},
-		{"/app/demo/runbooks", Anchor{Selector: "#runbooks"}, "runbooks"},
-		{"/app/demo/runners", Anchor{Selector: "#runners"}, "runner-fleet"},
-		{"/app/demo/settings/team", Anchor{Selector: "#members", Climb: "section"}, "team-page"},
-		{"/app/demo/settings/sso/new", Anchor{Selector: "#provider_form"}, "sso-add-connection"},
-		{"/app/demo/runs", Anchor{Selector: "#runs"}, "runs"},
-		{"/app/demo/agents", Anchor{Selector: "#agents"}, "agents"},
-	}
-	for _, step := range steps {
-		if err := crop(step.path, step.anchor, step.name); err != nil {
-			return err
-		}
-	}
-	if err := session.Navigate("/app/demo/settings/team"); err != nil {
-		return err
-	}
-	if err := clickByScript(session, `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`, "SSO connection link"); err != nil {
-		return err
-	}
-	if err := session.Ready(10*time.Second, ""); err != nil {
-		return err
-	}
-	color, err := captureDocElement(session, config, Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, "sso-directory-sync")
-	if err != nil {
-		return err
-	}
-	colors["sso-directory-sync"] = color
-	if err := session.Navigate("/app/demo/agents/connect"); err != nil {
-		return err
-	}
-	if err := clickByScript(session, `(()=>{const b=[...document.querySelectorAll('button,a,[phx-click]')].find(x=>x.textContent.trim()==='Claude.ai');if(b){b.click();return true}return false})()`, "Claude.ai integration control"); err != nil {
-		return err
-	}
-	if err := session.Ready(10*time.Second, ""); err != nil {
-		return err
-	}
-	color, err = captureDocElement(session, config, Anchor{ClassContains: []string{"grid-cols-[minmax(0,1fr)_22rem]", "gap-x-16"}}, "connect-llm-agents")
-	if err != nil {
-		return err
-	}
-	colors["connect-llm-agents"] = color
 
-	for _, shot := range docShots {
-		png := filepath.Join(config.Temp, shot.Name+".png")
-		destination := filepath.Join(config.Static, filepath.FromSlash(shot.Output))
-		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+	// Capture each shot independently: one bad anchor skips its shot, never the run.
+	colors := map[string]string{}
+	var failed []string
+	for _, s := range docsShots {
+		color, captureErr := captureShot(session, config, s)
+		if captureErr != nil {
+			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, captureErr))
+			fmt.Fprintf(manager.Out, "  SKIP %s: %v\n", s.Name, captureErr)
+			continue
+		}
+		colors[s.Name] = color
+		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", s.Name, s.width(), color)
+	}
+
+	for _, s := range docsShots {
+		color, ok := colors[s.Name]
+		if !ok {
+			continue
+		}
+		if err := processShot(config, s, color, manager.Out); err != nil {
 			return err
 		}
-		widthOutput, commandErr := imageCommand("identify", "-format", "%w", png)
-		if commandErr != nil {
-			return fmt.Errorf("identify %s: %w: %s", png, commandErr, widthOutput)
-		}
-		width := strings.TrimSpace(string(widthOutput))
-		args := []string{png}
-		if shot.TopCSS != 0 {
-			args = append(args, "-crop", fmt.Sprintf("%sx%d+0+0", width, shot.TopCSS*2), "+repage")
-		}
-		args = append(args, "-resize", "1600x>", "-bordercolor", colors[shot.Name], "-border", "40", "-quality", "82", destination)
-		if output, commandErr := imageCommand("convert", args...); commandErr != nil {
-			return fmt.Errorf("convert %s: %w: %s", shot.Name, commandErr, bytes.TrimSpace(output))
-		}
-		fmt.Fprintf(manager.Out, "  -> %s\n", shot.Output)
+	}
+	if len(failed) > 0 {
+		fmt.Fprintf(manager.Out, "  %d shot(s) skipped: %s\n", len(failed), strings.Join(failed, "; "))
 	}
 	return nil
 }

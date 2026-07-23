@@ -1415,7 +1415,7 @@ defmodule EmisarWeb.AgentsLive do
          header never jumps: the picker + per-client setup are the task on the
          left; the "how keys work" explainer fills the rail on the right. --%>
     <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-16">
-      <div>
+      <div id="connect-panel">
         <%!-- Client picker on the canvas — grouped into two transport families.
            Cloud first (the no-install path most new users want); Local below
            for IDE / desktop clients that go through the stdio bridge. Small

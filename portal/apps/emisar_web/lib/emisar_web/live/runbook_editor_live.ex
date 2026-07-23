@@ -495,7 +495,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
       <div class="mt-4">
         <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section>
+          <section id="runbook-steps">
             <%!-- ONE add affordance: the dashed composer row below the list
                (where the next step lands) — a twin title-row button
                double-stated the action. --%>
