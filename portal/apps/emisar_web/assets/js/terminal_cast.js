@@ -22,6 +22,7 @@ const PAUSE = {
   out: 190,
   sys: 150,
   ok: 560,
+  warn: 720,
   note: 300,
   blank: 130
 }

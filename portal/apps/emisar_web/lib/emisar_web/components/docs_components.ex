@@ -430,6 +430,7 @@ defmodule EmisarWeb.DocsComponents do
   defp cast_line_tone("out"), do: "text-zinc-400"
   defp cast_line_tone("sys"), do: "text-zinc-500"
   defp cast_line_tone("ok"), do: "text-brand-400"
+  defp cast_line_tone("warn"), do: "text-amber-400"
   defp cast_line_tone("note"), do: "text-zinc-500"
   defp cast_line_tone(_), do: "text-zinc-400"
 
