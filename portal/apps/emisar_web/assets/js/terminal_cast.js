@@ -141,6 +141,16 @@ function setupCast(root) {
     return
   }
 
+  // Freeze the terminal at its full, server-rendered height before hiding any
+  // line, so playback fills a fixed box instead of growing it and shoving the
+  // rest of the page down as each line lands. font-mono is a system stack, so
+  // this measures true without waiting on a web font; overflow-y-auto still
+  // scrolls a cast taller than its max height.
+  if (screen) {
+    const full = screen.getBoundingClientRect().height
+    if (full) screen.style.height = `${full}px`
+  }
+
   // Hide, then play once — when scrolled into view, or on a short fallback so
   // it can NEVER sit frozen-empty if the observer doesn't fire (already in view
   // on load, a flaky observer, etc.). play() clears the fallback timer.
