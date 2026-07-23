@@ -34,6 +34,25 @@
         </:dek>
       </.docs_header>
 
+      <.terminal_cast
+        id="publishing-packs-cast"
+        label="your host"
+        caption="Author locally, validate, install on the runners you control — trusted once, gated always."
+        lines={[
+          %{k: "note", t: "# a pack is a directory of YAML you write — validate it, install it, trust it once"},
+          %{k: "cmd", p: "$", t: "emisar pack validate ./my-pack"},
+          %{k: "out", t: "  pack.yaml ✓   3 actions   arg schemas ✓   no undeclared secrets"},
+          %{k: "ok", t: "✓ ./my-pack is valid"},
+          %{k: "blank", t: ""},
+          %{k: "cmd", p: "$", t: "sudo emisar pack install ./my-pack"},
+          %{k: "out", t: "  → sha256:9f2c… · installed to /etc/emisar/packs"},
+          %{k: "note", t: "  ⚠ pending trust — a custom pack waits for one click before anything can dispatch it"},
+          %{k: "blank", t: ""},
+          %{k: "note", t: "# in the dashboard: Packs → my-pack → Trust"},
+          %{k: "ok", t: "✓ my-pack trusted · 3 actions now callable, gated by your policy"}
+        ]}
+      />
+
       <.agent_skill_cta
         class="mt-8"
         skill="author-pack"
