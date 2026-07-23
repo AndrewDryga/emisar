@@ -41,19 +41,22 @@
           },
           %{k: "cmd", p: "$", t: "claude"},
           %{k: "llm", p: "›", t: "checkout-api on api-iad-02 is throwing 502s — restart it"},
-          %{k: "out", t: "⏺ emisar · systemd.restart · checkout-api.service · api-iad-02"},
+          %{
+            k: "out",
+            t: "⏺ emisar · run_action · systemd.unit_restart · checkout-api.service · api-iad-02"
+          },
           %{k: "warn", t: "  ⎿ HIGH risk → your policy requires approval before this runs"},
           %{
             k: "warn",
-            t: "⏸ paused · waiting for a human — the requester can't approve their own action"
+            t: "⏸ paused · waiting for a human — an agent can't approve its own request"
           },
-          %{k: "ok", t: "  ⎿ jordan@acme approved in the dashboard"},
-          %{k: "out", t: "⏺ restarting checkout-api.service …  active (running) · exit 0 · 1.2s"},
-          %{k: "out", t: "⏺ checkout-api is back up on api-iad-02 — the 502s cleared."},
+          %{k: "ok", t: "  ⎿ Jordan Lee approved in the dashboard"},
+          %{k: "out", t: "⏺ restarted checkout-api.service on api-iad-02 · exit 0"},
+          %{k: "out", t: "⏺ checkout-api is back up."},
           %{
             k: "ok",
             t:
-              "✓ on the record — maya@acme via Claude Code, approved by jordan@acme · reason \"checkout 502s\""
+              "✓ on the record — Maya Chen via Claude Code, approved by Jordan Lee · reason \"checkout-api 502s\""
           }
         ]}
       />
