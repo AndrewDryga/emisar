@@ -340,7 +340,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             Enforcement requires a data directory. Every accepted nonce is appended and synced
             before dispatch, and expired records are compacted atomically. The journal refuses new
             work rather than evicting a fresh nonce when its 100,000-entry or 16 MiB bound is reached.
-            Its persisted freshness horizon also prevents an unsafe
+            Its persisted freshness horizon — the newest attestation timestamp it has accepted — also prevents an unsafe
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
             increase from reopening replay after old records were compacted.
           </span>

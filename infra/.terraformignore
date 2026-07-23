@@ -1,17 +1,33 @@
-# Exclude local state, secrets, and non-infra material from any Terraform package
-# uploaded for a remote run. Patterns are relative to this module dir (infra/).
+# Remote-run upload context for infra/. Keep Terraform source plus templates,
+# packs, Livebook assets, and the dependency lock; exclude local-only material.
+
+# Repository and local tool state
 .git
-.terraform/
+.agent/
+.DS_Store
+
+# Terraform state, plans, overrides, and provider downloads
 **/.terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 crash.log
 crash.*.log
-# real var files may hold values; the committed *.example template is fine to keep
-terraform.tfvars
-*.auto.tfvars
-# Local agent state must never ride along in an infra package.
-.agent/
-# Local validation and drill fixtures never enter the workspace package.
-tests/
+
+# Local variable files can contain secrets. Committed examples remain included.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+
+# Developer documentation, checks, and operational helpers are not run by HCP.
+.tflint.hcl
+AGENTS.md
+README.md
 drills/
+scripts/
+tests/

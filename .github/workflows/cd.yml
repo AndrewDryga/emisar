@@ -224,7 +224,7 @@ jobs:
         run: |
           /tmp/packctl catalog build \
             --packs packs \
-            --out dist \
+            --out dist/packs \
             --previous /tmp/previous.json
 
       - name: Refuse a superseded release
@@ -251,7 +251,7 @@ jobs:
           GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           set -euo pipefail
-          /tmp/packctl catalog publish --dir dist | tee /tmp/publish.log
+          /tmp/packctl catalog publish --dir dist/packs | tee /tmp/publish.log
           {
             echo "### Pack registry published"
             echo '```'
@@ -267,30 +267,30 @@ jobs:
             curl -fsS "$metadata_url" -o /tmp/catalog-metadata.json
             media_url=$(jq -er .mediaLink /tmp/catalog-metadata.json)
             curl -fsS "$media_url" -o /tmp/gcs-catalog.json
-            cmp dist/v1/catalog.json /tmp/gcs-catalog.json && break
+            cmp dist/packs/v1/catalog.json /tmp/gcs-catalog.json && break
             [ "$attempt" = 5 ] && { echo "::error::published catalog bytes did not converge"; exit 1; }
             sleep 2
           done
-          cmp dist/v1/catalog.json /tmp/gcs-catalog.json
+          cmp dist/packs/v1/catalog.json /tmp/gcs-catalog.json
           test "$(jq -r .cacheControl /tmp/catalog-metadata.json)" = no-store || {
             echo "::error::mutable catalog must publish with Cache-Control: no-store"
             exit 1
           }
-          pack_object=$(jq -er '.objects[] | select(.path | startswith("v1/packs/linux-core/")) | .path' dist/manifest.json)
+          pack_object=$(jq -er '.objects[] | select(.path | startswith("v1/packs/linux-core/")) | .path' dist/packs/manifest.json)
           curl -fsS --retry 3 --retry-delay 2 \
             "${REGISTRY_BASE}/${pack_object}" -o /tmp/gcs-linux-core.tar.gz
-          cmp "dist/${pack_object}" /tmp/gcs-linux-core.tar.gz
+          cmp "dist/packs/${pack_object}" /tmp/gcs-linux-core.tar.gz
 
           curl -fsS --retry 5 --retry-delay 2 \
             "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
-          cmp dist/v1/catalog.json /tmp/canonical-catalog.json
+          cmp dist/packs/v1/catalog.json /tmp/canonical-catalog.json
 
           while IFS= read -r path; do
             published=/tmp/"$(basename "$(dirname "$path")")-$(basename "$path")"
             curl -fsS --retry 3 --retry-delay 2 \
               "https://registry.emisar.dev/${path}" -o "$published"
-            cmp "dist/${path}" "$published"
-          done < <(jq -r '.objects[] | select(.path | endswith("/pack.tar.gz")) | .path' dist/manifest.json)
+            cmp "dist/packs/${path}" "$published"
+          done < <(jq -r '.objects[] | select(.path | endswith("/pack.tar.gz")) | .path' dist/packs/manifest.json)
 
           while IFS= read -r url; do
             case "$url" in

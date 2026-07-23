@@ -41,13 +41,13 @@ transport adds no trust the hash doesn't already carry.
 
 ```bash
 # Build the artifact tree from the repo packs dir.
-packctl catalog build --packs ./packs --out ./dist
+packctl catalog build --packs ./packs --out ./dist/packs
 
 # Enforce the "preserve every version/hash" guarantee: fetch the currently
 # published catalog first and pass it as --previous. The build FAILS if any
 # pack changed bytes for an already-published id+version — bump the version.
 curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
+packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
 ```
 
 The build is deterministic: identical packs produce an identical catalog hash
@@ -56,7 +56,7 @@ and byte-identical tarballs, so re-running it is safe.
 The downloaded live catalog is the only valid history source once the registry
 exists. Do not substitute the repository's bundled catalog: a canceled release
 can leave that file containing a pack version that was never published. After
-the build, copy `dist/v1/catalog.json` to
+the build, copy `dist/packs/v1/catalog.json` to
 `portal/apps/emisar/priv/packs/catalog.json` so the portal's compiled trust
 baseline and the next CD publication use the same bytes.
 
@@ -67,12 +67,12 @@ baseline and the next CD publication use the same bytes.
 export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)
 
 # Preview first — no network calls.
-packctl catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run
+packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry --dry-run
 
 # Upload. Immutable objects use an if-generation-match:0 precondition, so an
 # existing object is never overwritten (a precondition failure = identical bytes
 # already published = skipped). The mutable pointers are overwritten last.
-packctl catalog publish --dir ./dist --bucket emisar-pack-registry
+packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 ```
 
 The publisher service account (`emisar-pack-publisher`) holds **`objectCreator`
@@ -125,12 +125,12 @@ retired_below: 0.2.4   # 0.2.3 and earlier are now retired
 #    publish. Old tarballs stay installable — retirement blocks dispatch, not
 #    installation.
 curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
-packctl catalog publish --dir ./dist --bucket emisar-pack-registry
+packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
+packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 
 # 3. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
 #    commit as the pack edit (retired_below is baked into PackBaseline):
-cp ./dist/v1/catalog.json ../portal/apps/emisar/priv/packs/catalog.json
+cp ./dist/packs/v1/catalog.json ./portal/apps/emisar/priv/packs/catalog.json
 #    then from portal/: mix test test/emisar/catalog/pack_baseline_test.exs (apps/emisar)
 #                       mix test test/emisar_web/packs_registry/cache_test.exs (apps/emisar_web)
 

@@ -10,11 +10,11 @@ if [ -z "${GIT_ROOT}" ]; then
   GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 fi
 
-# Make scripts/*.sh executable from any folder within the project
-# PATH="${GIT_ROOT}/scripts:${PATH}"
+Make scripts/*.sh executable from any folder within the project
+PATH="${GIT_ROOT}/infra/scripts:${PATH}"
 
 # Set the gcloud project ID for the Google Cloud SDK
 export CLOUDSDK_CORE_PROJECT="emisar"
 
 # Add the terraform command alias that works from any folder within the project
-alias prod="terraform -chdir=${GIT_ROOT}/terraform/gcp"
+alias prod="terraform -chdir=${GIT_ROOT}/infra"

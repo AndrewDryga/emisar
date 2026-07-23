@@ -614,20 +614,21 @@ defmodule EmisarWeb.MarketingTest do
     } do
       html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200)
 
-      assert html =~ "The useful unit is an action"
-      assert html =~ "Follow one restart"
-      assert html =~ "Twelve MCP tools, however many actions"
-      assert html =~ "Packs can wrap your own work"
-      assert html =~ "The host can still say no"
-      assert html =~ "Where the guarantees end"
-      assert html =~ "signed dispatch"
-      assert html =~ "not a VM, a container, or a kernel sandbox"
+      assert html =~ "What the agent can do"
+      assert html =~ "Following one request"
+      assert html =~ "Audit, redaction, and privileges"
+      assert html =~ "The MCP surface"
+      assert html =~ "Signed dispatch"
+      assert html =~ "Private packs"
+      assert html =~ "not a VM, container, or kernel sandbox"
       assert html =~ "emisar.admin.access.diagnose"
       assert html =~ "fixed release-RPC script"
-      assert html =~ "linux-core/actions/systemctl_restart.yaml"
-      assert html =~ "run_action input"
-      assert html =~ "selected fields from the completed result"
-      assert html =~ "/etc/emisar/config.yaml"
+      assert html =~ "linux-core/actions/systemctl_restart.yaml (trimmed)"
+      assert html =~ "linux.journalctl"
+      assert html =~ "1. read logs — run_action input"
+      assert html =~ "2. restart service — run_action input"
+      assert html =~ "3. verify service — run_action input"
+      assert html =~ "linux.systemctl_status"
     end
 
     test "the home hero aligns its peer verdict chips", %{conn: conn} do

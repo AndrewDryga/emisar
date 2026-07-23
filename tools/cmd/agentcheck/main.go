@@ -390,12 +390,16 @@ func isKnowledgeRule(relative string) bool {
 	return strings.HasPrefix(relative, ".agent/kb/rules/") || strings.Contains(relative, "/.agent/kb/rules/")
 }
 
+func isInternalKnowledge(relative string) bool {
+	return strings.HasPrefix(relative, ".agent/kb/internal/") || strings.Contains(relative, "/.agent/kb/internal/")
+}
+
 func isKnowledgeCard(relative string, entry fs.DirEntry) bool {
 	if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(entry.Name(), ".md") {
 		return false
 	}
 	isKnowledge := strings.HasPrefix(relative, ".agent/kb/") || strings.Contains(relative, "/.agent/kb/")
-	return isKnowledge && !isKnowledgeRule(relative)
+	return isKnowledge && !isKnowledgeRule(relative) && !isInternalKnowledge(relative)
 }
 
 func isLegacyKnowledgeDirectory(relative string) bool {
@@ -407,7 +411,6 @@ func (c *checker) checkKnowledgeCards() {
 	if _, err := os.Stat(c.path(".agent/kb/README.md")); err != nil {
 		c.fail(".agent/kb/README.md is required as the knowledge index")
 	}
-
 	allowedSubsystems := map[string]bool{
 		"agent-stack": true,
 		"infra":       true,
@@ -673,7 +676,7 @@ func (c *checker) run(requireCoop bool) int {
 	}
 	c.group("task queues use expected state names", c.checkTaskDirs)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
-	c.group("knowledge cards carry descriptive metadata and keep policy in kb/rules", c.checkKnowledgeCards)
+	c.group("public knowledge cards carry descriptive metadata; internal material stays separate", c.checkKnowledgeCards)
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in docs/mcp-api-schemas.json", c.checkPublicSkillMCPTools)

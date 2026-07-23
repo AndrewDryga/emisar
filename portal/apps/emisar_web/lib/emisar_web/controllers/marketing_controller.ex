@@ -391,9 +391,9 @@ defmodule EmisarWeb.MarketingController do
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
     {"how-emisar-works", :guide_how_emisar_works, "How emisar works",
-     "Giving an agent SSH is easy. emisar gives it named actions instead: the control plane decides what may run, and the runner checks and executes the exact command on the host.",
-     "July 2026", "8 min read",
-     "See how emisar turns an AI agent request into one checked action on a production host, from pack discovery and policy to runner validation and the final audit record."},
+     "How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down?",
+     "July 2026", "9 min read",
+     "See what an AI agent can actually do through emisar and what stops it doing something else, following one service restart from MCP request to runner execution and audit."},
     {"give-ai-agents-safe-production-access", :guide_safe_access,
      "How to give an AI agent safe access to production",
      "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",

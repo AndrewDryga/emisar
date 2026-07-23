@@ -39,6 +39,5 @@ emisar_web-*.tar
 /priv/static/**/*.gz
 
 # In case you use Node.js/npm, you want to ignore these.
-npm-debug.log
+npm-debug.log*
 /assets/node_modules/
-

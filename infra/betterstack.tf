@@ -6,10 +6,6 @@
 # paging, and customer communication all survive the outage they report on. It
 # monitors the public hostname rather than a provider-internal endpoint.
 
-provider "betteruptime" {
-  api_token = var.betterstack_api_token
-}
-
 # ── On-call & escalation ──────────────────────────────────────────────────────
 # The roster lives in var.oncall_emails (a SENSITIVE workspace variable), so the
 # public repo reveals neither who is on call nor how many people that is — the

@@ -29,6 +29,8 @@ writer first.
 
 - Lead with the reader's actual job, question, or decision.
 - Put the product mechanism or evidence next to the benefit it supports.
+- Explain a fact once, in the order the reader needs it. Do not follow an
+  abstract summary with a paraphrase of the same behavior.
 - Use active verbs and the ordinary word when it is equally precise.
 - Vary rhythm with the idea, not through arbitrary fragments or decoration.
 - Use humor only when it sharpens the point and preserves trust.
@@ -40,6 +42,8 @@ writer first.
 - Open with `In today's fast-paced landscape` or another empty scene-setter.
 - Repeat `not just X, but Y`, forced triads, rhetorical reveals, or identical
   paragraph shapes until the structure becomes visible.
+- Turn ordinary behavior into a punchy metaphor just to make the sentence sound
+  quotable. If the image adds no precision, state what the system does.
 - Add typos, slang, fake anecdotes, or random sentence variation to "sound
   human."
 - Make docs sell, make UI errors joke, or make marketing copy read like a manual.

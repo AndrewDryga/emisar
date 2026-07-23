@@ -1,25 +1,56 @@
-# Build context is the REPO ROOT (see portal/Dockerfile). The image only
-# needs source; everything below is either rebuilt inside the container
-# (_build, deps via `mix deps.get`/`mix release`) or never COPY-ed at all.
+# Shared build context for .agent/Dockerfile, portal/Dockerfile, and
+# runner/docker/Dockerfile. MCP and test-pack images have context-local files.
+
+# Repository and local tool state
 .git
 .github
-.agent
 **/.agent
-.expert
 **/.expert
 .claude
 .codex
+.gemini
+
+# Trees and root outputs unused by every root-context image
 bin
 dev
-**/_build
+dist
+infra
+mcp
+test-results
+
+# Dependencies and generated build output
+**/_build*
 **/deps
 **/.elixir_ls
 **/node_modules
+**/cover
+**/doc
+**/tmp
+**/*.ez
+**/*.out
+portal/apps/emisar/emisar-*.tar
+portal/apps/emisar_web/emisar_web-*.tar
+runner/runner
+runner/examples/var
+emisar-*-linux-*
+emisar-*-darwin-*
+**/priv/static/assets
+**/priv/static/cache_manifest.json
+**/priv/static/**/*-????????????????????????????????.*
+**/priv/static/**/*.gz
+
+# Local configuration and runtime residue
 **/.env
 **/.env.*
-**/cover
 **/erl_crash.dump
+**/events.jsonl*
 **/*.log
-portal/apps/emisar_web/priv/cert
-.DS_Store
+**/priv/cert
+
+# Editor and operating-system noise
+**/.idea
+**/.vscode
+**/*.swp
+**/*.swo
+**/*~
 **/.DS_Store

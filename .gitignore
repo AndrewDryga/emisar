@@ -1,8 +1,8 @@
 # Build artifacts
 /bin/
 /dist/
+**/_build*/
 *.out
-coverage.out
 /test-results/
 
 # Stray dev binaries — `go build` from inside a module dir writes here
@@ -22,7 +22,6 @@ emisar-*-darwin-*
 
 # Test JSONL logs that might be dropped if a test forgets to t.TempDir()
 events.jsonl
-events.jsonl.cursor
 events.jsonl.*
 
 # Erlang/BEAM crash dumps — written to the CWD when the VM aborts.
@@ -43,21 +42,22 @@ erl_crash.dump
 # Repository documentation is always tracked. Working notes and agent history
 # belong under the ignored .agent/ state below, never as hidden files in docs/.
 
-# .agent/ is local working state — only the KNOWLEDGE and CONFIG are committed:
-# kb/ (current-system cards plus normative rules/), presets/ (orchestration
+# .agent/ is local working state — only the PUBLIC KNOWLEDGE and CONFIG are committed:
+# kb/ (public current-system cards and normative rules), presets/ (orchestration
 # recipes), scripts/ (agent-only enforcement), project.yaml
 # (monorepo/box policy), loop.yaml, and the project Dockerfile.
-# Tasks, the backlog drawer, pending decisions, log, archive all stay on the
-# machine (no commit noise, no cross-agent merge conflicts). See AGENTS.md.
+# kb/internal/, tasks, the backlog drawer, pending decisions, log, and archive
+# stay on the machine (no internal material in Git, no cross-agent merge
+# conflicts). See AGENTS.md.
 **/.agent/*
 !**/.agent/scripts
 !**/.agent/kb
+**/.agent/kb/internal/
 !**/.agent/presets
 !.agent/project.yaml
 !.agent/loop.yaml
 !.agent/Dockerfile
 .expert/*.log
-.claude/.sweep-active
 
 # Self-signed dev/e2e TLS certs (mix phx.gen.cert)
 **/priv/cert/
@@ -73,6 +73,13 @@ erl_crash.dump
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
 !*.tfvars.example
+!*.tfvars.json.example
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 crash.log
 crash.*.log

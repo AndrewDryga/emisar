@@ -1,0 +1,6 @@
+# The image does not consume local harness output.
+bin/
+reports/
+__pycache__/
+*.pyc
+.DS_Store

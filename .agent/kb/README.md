@@ -1,11 +1,17 @@
 # .agent/kb — durable knowledge
 
-One home for operational knowledge the code does not obviously carry:
+One home for operational knowledge the code does not obviously carry. Everything
+under `kb/` is customer-safe and public by default except the explicit
+`kb/internal/` subtree:
 
 - Cards directly under `kb/` are DESCRIPTIVE current-system facts: subsystem maps,
   cross-cutting mechanics, and hard-won gotchas.
 - Files under `kb/rules/` are NORMATIVE constraints: "do X, not Y," with the reason,
   examples, sweep target, and enforcement.
+- `kb/internal/` is the gitignored, non-customer-facing local home for working knowledge and assets:
+  campaign materials, positioning drafts, launch plans, private operating notes,
+  and similar company context. It is not a secret store: credentials, customer
+  data, and sensitive exports never belong in the repository.
 
 Use this decision test:
 
@@ -23,6 +29,14 @@ Read this INDEX at boot; open a card ONLY when your task touches its subsystem. 
 bulk-load the KB into a prompt — the index is the routing table, and cards are
 pulled on demand (like skills). That scoping is also the safety rail: a card only reaches the
 prompts of tasks in its own subsystem, so a wrong card can't poison work it doesn't touch.
+
+For marketing, positioning, launches, company operations, or other explicitly
+internal work, use `internal/`, creating its local topic directories as needed,
+and read only the relevant material already there.
+Do not quote, link, publish, or derive customer-facing claims from `internal/`
+without explicit review for that destination. Customer-facing knowledge belongs
+outside `internal/`; move the final, approved fact or rule rather than making public
+surfaces depend on an internal file.
 
 ## Maintain descriptive cards directly
 

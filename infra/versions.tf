@@ -25,4 +25,19 @@ terraform {
       version = "~> 0.21"
     }
   }
+
+  # State + variables live in Terraform Cloud (org Dryga, project emisar). This
+  # matters more than usual: runtime secrets enter as SENSITIVE workspace
+  # variables. Provider write-only arguments and ephemeral random values keep
+  # payloads out of new state snapshots, but TFC still holds the externally
+  # issued credentials and gates them behind workspace RBAC + audit logs. Treat
+  # access to this workspace as access to production.
+  cloud {
+    organization = "Dryga"
+
+    workspaces {
+      project = "emisar"
+      name    = "emisar"
+    }
+  }
 }

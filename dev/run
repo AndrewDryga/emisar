@@ -736,13 +736,14 @@ pack_command() {
         rm -f "$previous"
         return 1
       fi
-      rm -rf "$ROOT/dist"
-      if ! "$ROOT/bin/packctl" catalog build --packs "$ROOT/packs" --out "$ROOT/dist" --previous "$previous"; then
+      local output="$ROOT/dist/packs"
+      rm -rf "$output"
+      if ! "$ROOT/bin/packctl" catalog build --packs "$ROOT/packs" --out "$output" --previous "$previous"; then
         rm -f "$previous"
         return 1
       fi
       rm -f "$previous"
-      cp "$ROOT/dist/catalog.json" "$ROOT/portal/apps/emisar/priv/packs/catalog.json"
+      cp "$output/v1/catalog.json" "$ROOT/portal/apps/emisar/priv/packs/catalog.json"
       (cd "$PORTAL/apps/emisar" && mix test test/emisar/catalog/pack_baseline_test.exs)
       (cd "$PORTAL/apps/emisar_web" && mix test test/emisar_web/packs_registry/cache_test.exs test/emisar_web/packs_test.exs)
       ;;

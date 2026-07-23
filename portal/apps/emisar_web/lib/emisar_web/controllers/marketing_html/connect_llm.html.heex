@@ -54,6 +54,17 @@
         />
       </figure>
 
+      <.docs_callout kind={:note} title="Before you connect">
+        <p>
+          Point your client at an account that already has at least one runner online — otherwise the
+          agent signs in fine but finds an empty catalog with nothing to call. New here? Run the
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+            quickstart
+          </.link>
+          first (install a runner, run one action), then come back to wire in your LLM.
+        </p>
+      </.docs_callout>
+
       <%!-- ============================================================ --%>
       <%!-- Step 1: Remote MCP (OAuth)                                    --%>
       <%!-- ============================================================ --%>

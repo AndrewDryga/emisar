@@ -154,9 +154,10 @@ The callback must preserve this value.
 	}
 }
 
-func TestCheckKnowledgeCardsIgnoresRulesAndRejectsLegacyDirectories(t *testing.T) {
+func TestCheckKnowledgeCardsSeparatesInternalMaterialAndRejectsLegacyDirectories(t *testing.T) {
 	check := testChecker(t)
 	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/internal/marketing/launch-plan.md", "This draft must remain internal.\n")
 	writeTestFile(t, check.root, ".agent/kb/rules/shared-example.md", "# Rule: values must stay scoped\n")
 	writeTestFile(t, check.root, "portal/.agent/rules/.gitkeep", "")
 
@@ -167,6 +168,9 @@ func TestCheckKnowledgeCardsIgnoresRulesAndRejectsLegacyDirectories(t *testing.T
 	}
 	if hasFailure(check, ".agent/kb/rules/shared-example.md") {
 		t.Fatalf("rule was parsed as a descriptive card: %#v", check.failures)
+	}
+	if hasFailure(check, ".agent/kb/internal/marketing/launch-plan.md") {
+		t.Fatalf("internal material was parsed as a public descriptive card: %#v", check.failures)
 	}
 }
 
