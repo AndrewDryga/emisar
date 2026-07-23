@@ -119,6 +119,7 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 ### Rule index
 
 - **Content:** [plain, specific prose](.agent/kb/rules/content-plain-specific-prose.md) — write for one known reader, make every sentence earn its place, and adapt the density and tone to the surface instead of falling back to corporate or generated language.
+- **Content:** [say it once](.agent/kb/rules/content-say-it-once.md) — state each idea in its clearest place once; every later paragraph/callout/slogan must add something new (example, caveat, limit, link), never restate it — simple writing is understood on the first read, not forced in by repetition.
 - **Content:** [bounded autonomy leads the positioning](.agent/kb/rules/content-position-bounded-autonomy.md) — lead with the agent work the operator can safely leave running; earn that promise with declared actions, the pack catalog, and enforcement, while keeping approvals and audit in their supporting role.
 - **Content:** [repository maps come from the tree](.agent/kb/rules/content-repository-maps-come-from-the-tree.md) — inspect the actual files, commands, and owner docs before summarizing a repository area; preserve production status and every primary responsibility.
 - **Content:** [guides teach; the chrome sells](.agent/kb/rules/content-guides-teach-not-sell.md) — vendor-neutral guides keep product mentions to one designated section while explicitly titled product explainers teach mechanisms and limits without repeated pitches; the page chrome carries the conversion.
