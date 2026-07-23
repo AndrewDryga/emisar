@@ -33,6 +33,26 @@
         cryptographically true, not merely asserted by the control plane.
       </p>
 
+      <.terminal_cast
+        id="signed-dispatch-cast"
+        label="prod"
+        caption="Signing on: only a signature from an authorized MCP client runs — the portal, runbooks, and API keys can't."
+        lines={[
+          %{k: "note", t: "# require a real person's signature on every dispatch — mint a CA + cert once"},
+          %{k: "cmd", p: "$", t: "emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"},
+          %{k: "out", t: "  → runner signing block (CA public key) · offline CA key · 2 MCP env vars"},
+          %{k: "ok", t: "✓ signing on for group=prod — a valid Ed25519 signature is now required"},
+          %{k: "blank", t: ""},
+          %{k: "note", t: "# an agent dispatches; its MCP client signs the exact call with the operator's leaf key"},
+          %{k: "out", t: "⏺ emisar · systemd.restart · checkout-api.service · api-iad-02"},
+          %{k: "ok", t: "  ⎿ signature verified vs CA acme-2026 · signed by maya@acme · running"},
+          %{k: "blank", t: ""},
+          %{k: "note", t: "# a missing or stale signature never reaches the shell"},
+          %{k: "out", t: "⏺ caddy.reload_config · edge-fra-01"},
+          %{k: "warn", t: "  ⎿ ✗ refused at the runner · signature stale — nothing executed"}
+        ]}
+      />
+
       <.docs_h2 id="how-it-works">How it works</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Three parties, one of them untrusted. Here is the path a signed dispatch takes:
