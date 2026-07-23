@@ -2,7 +2,7 @@
 
 The pack catalog is published as **immutable, versioned artifacts** to the
 public-read GCS bucket `emisar-pack-registry` (provisioned in
-`infra/packs_registry.tf`; see `infra/README.md`). `emisar pack install` and
+`infra/pack_registry.tf`; see `infra/README.md`). `emisar pack install` and
 `emisar pack suggest` resolve against it unauthenticated, so every pack
 version/hash ever published must stay installable — publishing **appends**,
 never overwrites history. Public access is GET-only for exact object paths; the
@@ -173,7 +173,7 @@ gcloud storage cat gs://emisar-pack-registry/v1/catalog.json#<generation> \
 
 The pack registry's canonical base is **`https://registry.emisar.dev`** — the
 vendor-neutral serving domain. The shared HTTPS LB routes that host straight to
-the same bucket (`infra/packs_registry.tf` + the host rule in `infra/lb.tf`), so
+the same bucket (`infra/pack_registry.tf` + the host rule in `infra/load_balancer.tf`), so
 every object path resolves identically at both bases (`…/v1/catalog.json`).
 `packctl` bakes `registry.emisar.dev` tarball URLs into the catalog it builds
 (`defaultRegistryBaseURL`), and the portal refreshes + pins against the same base
