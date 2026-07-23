@@ -31,4 +31,3 @@ hex hpax 1.0.4 GHSA-jj2p-32j7-whj2 security fix blocks the release
 hex cowboy 2.17.0 transitive requirement of the Phoenix and Plug security updates
 hex cowlib 2.18.0 transitive requirement of the security updates; no fixed Cowlib release exists yet
 go golang.org/x/text v0.40.0 owner-approved complete dependency refresh; runner gate verifies compatibility
-npm modern-tar 0.7.7 owner-approved complete dependency refresh; npm audit verifies the transitive update
