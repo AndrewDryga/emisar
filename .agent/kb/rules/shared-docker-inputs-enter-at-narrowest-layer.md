@@ -17,6 +17,12 @@ the same exclusions. Add a Dockerfile-specific
 only when multiple recipes intentionally share one context but require
 different inputs.
 
+When first-party images already share an intentionally filtered repository-root
+context, use that context consistently unless a narrower context is a real
+isolation boundary or materially reduces inputs. Do not preserve a
+module-specific context and ignore file solely because its Dockerfile used to
+live beside the module.
+
 ## Why
 
 An `ARG`, `ENV`, `COPY`, or `RUN` changes its Docker layer's cache key. Every
@@ -45,8 +51,9 @@ ARG SOURCE_REVISION=dev
 RUN printf '%s\n' "$SOURCE_REVISION" > /app/REVISION
 ```
 
-When `dev/mcp/Dockerfile` builds with `mcp/` as its context, `mcp/.dockerignore`
-filters the source even though the recipe lives elsewhere.
+`dev/mcp/Dockerfile` shares the filtered repository-root context with the
+packaged Portal and runner images, then copies only `mcp/go.mod` and `mcp/`.
+Unrelated repository edits do not invalidate those layers.
 
 ## Bad
 
@@ -59,9 +66,9 @@ RUN mix deps.get
 RUN mix deps.compile
 ```
 
-Moving `mcp/.dockerignore` beside a development Dockerfile would detach the
-ignore policy from the `mcp/` context and imply a second policy that does not
-exist.
+Keeping `mcp/` as a one-off context with its own `.dockerignore` after every
+packaged Compose image adopts the filtered root context creates a second policy
+and different path semantics without creating a meaningful isolation boundary.
 
 ## Enforcement
 
@@ -70,3 +77,6 @@ cache-sensitive change, build variants that alter one input class at a time and
 verify BuildKit reports every preceding expensive step as `CACHED`.
 For every ignore file, identify the exact build context and confirm whether any
 other Dockerfile shares it before introducing a recipe-specific override.
+Before adding a module-local context, compare the filtered context size and the
+Dockerfile's actual `COPY` inputs; keep the exception only when the narrower
+boundary has a concrete benefit.

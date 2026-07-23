@@ -1,5 +1,6 @@
-# Shared build context for .agent/Dockerfile, portal/Dockerfile, and
-# dev/runner/Dockerfile. MCP, cloud-init, and test-pack images use narrower contexts.
+# Shared build context for .agent/Dockerfile, portal/Dockerfile,
+# dev/runner/Dockerfile, and dev/mcp/Dockerfile. Cloud-init and test-pack
+# images use narrower contexts.
 
 # Repository and local tool state
 .git
@@ -15,7 +16,6 @@ bin
 dev
 dist
 infra
-mcp
 test-results
 
 # Dependencies and generated build output
@@ -30,6 +30,7 @@ test-results
 **/*.out
 portal/apps/emisar/emisar-*.tar
 portal/apps/emisar_web/emisar_web-*.tar
+mcp/mcp
 runner/runner
 runner/var
 emisar-*-linux-*

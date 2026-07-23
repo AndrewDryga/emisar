@@ -1,4 +1,0 @@
-# The MCP image builds from this directory; keep generated local output out.
-.agent/
-coverage.out
-mcp

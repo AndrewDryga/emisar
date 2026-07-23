@@ -2,9 +2,10 @@
 # topology and `dev/run e2e signing` use it to exercise the real bridge on the
 # same Docker network as the portal. It is not a published product image.
 #
-# Build context is the mcp module (mcp/), so COPY paths are relative.
+# Build context is the repository root, shared with the other packaged Compose
+# images. COPY still introduces only the MCP module's inputs.
 #
-#   docker build -f dev/mcp/Dockerfile -t emisar/mcp mcp/
+#   docker build -f dev/mcp/Dockerfile -t emisar/mcp .
 #
 # Driving it (one-shot JSON-RPC request):
 #
@@ -29,11 +30,11 @@
 FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 WORKDIR /src
-COPY go.mod ./
+COPY mcp/go.mod ./
 # mcp/ has no third-party deps so there's no go.sum to copy.
 RUN go mod download
 
-COPY . ./
+COPY mcp/ ./
 ARG MCP_VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.Version=${MCP_VERSION}" \
