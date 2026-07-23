@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Set the gcloud project ID for the Google Cloud SDK
+export CLOUDSDK_CORE_PROJECT="emisar"
+
 # This file extends your shell environment with commands from this project.
 # To use it you need to add something like this to your .bashrc or .zshrc:
 #
@@ -21,9 +24,6 @@ database() {
 run() {
   "${GIT_ROOT}/run" "$@"
 }
-
-# Set the gcloud project ID for the Google Cloud SDK
-export CLOUDSDK_CORE_PROJECT="emisar"
 
 # Add the Terraform command that works from any folder within the project.
 prod() {
