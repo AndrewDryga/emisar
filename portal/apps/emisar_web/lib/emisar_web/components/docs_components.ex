@@ -281,6 +281,41 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  A docs screenshot that opens fullscreen on click. Pure CSS (a hidden
+  checkbox toggles a fixed overlay via `peer-checked`) so it works on these
+  controller-rendered pages with no JS and no CSP inline. `id` is derived from
+  the filename so each figure's checkbox drives only its own overlay.
+  """
+  attr :src, :string, required: true
+  attr :alt, :string, required: true
+
+  def docs_screenshot(assigns) do
+    assigns =
+      assign(assigns, :lb_id, "lb-" <> (assigns.src |> Path.basename() |> Path.rootname()))
+
+    ~H"""
+    <figure class="mt-8">
+      <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
+      <label
+        for={@lb_id}
+        class="group relative block cursor-zoom-in overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30"
+      >
+        <img src={@src} alt={@alt} loading="lazy" class="w-full" />
+        <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-zinc-100 opacity-0 backdrop-blur transition group-hover:opacity-100">
+          <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
+        </span>
+      </label>
+      <label
+        for={@lb_id}
+        class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm peer-checked:flex sm:p-10"
+      >
+        <img src={@src} alt={@alt} class="max-h-full max-w-full rounded-lg shadow-2xl" />
+      </label>
+    </figure>
+    """
+  end
+
+  @doc """
   The one callout grammar — a bordered note (`:note`), tip (`:tip`), or
   warning (`:warn`) with a leading icon and an optional bold `title`. Replaces
   the hand-rolled boxes so every docs aside reads the same way.

@@ -51,14 +51,10 @@
         <.plan_note tier={:team} />
       </p>
 
-      <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
-        <img
-          src="/images/docs/sso/sso-add-connection.webp"
-          alt="The emisar Add-connection form: a Provider type dropdown and display name, then the OIDC connection section — a step-by-step setup guide with the fixed redirect URI to register (and a Copy button), and fields for the Issuer URL, Client ID, Client secret, and the identifier claim (sub by default)."
-          loading="lazy"
-          class="w-full"
-        />
-      </figure>
+      <.docs_screenshot
+        src="/images/docs/sso/sso-add-connection.webp"
+        alt="The emisar Add-connection form: a Provider type dropdown and display name, then the OIDC connection section — a step-by-step setup guide with the fixed redirect URI to register (and a Copy button), and fields for the Issuer URL, Client ID, Client secret, and the identifier claim (sub by default)."
+      />
 
       <ol class="mt-8 space-y-6">
         <li class="flex gap-4">
