@@ -19,10 +19,19 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "connect-an-llm",
-         title: "Connect an LLM",
+         title: "Connect a cloud LLM",
          path: "/docs/connect-an-llm",
-         icon: "hero-puzzle-piece",
-         desc: "Point Claude, ChatGPT, Cursor, and other clients at your catalog over MCP."
+         icon: "hero-cloud",
+         desc:
+           "Point Claude.ai and ChatGPT at your catalog over remote MCP and OAuth — no key to manage."
+       },
+       %{
+         slug: "connect-a-cli-client",
+         title: "Connect a CLI client",
+         path: "/docs/connect-a-cli-client",
+         icon: "hero-command-line",
+         desc:
+           "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
        }
      ]},
     {"Operate",

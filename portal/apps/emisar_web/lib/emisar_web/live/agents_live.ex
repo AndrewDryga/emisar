@@ -1568,7 +1568,7 @@ defmodule EmisarWeb.AgentsLive do
                     {if config_target_is_file?(@config),
                       do: "Restart #{client_label(@selected_client)} after saving.",
                       else: "Start a fresh #{client_label(@selected_client)} session to use it."} Shown once — pick the client again for a fresh key if you lose it.
-                    <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
+                    <.doc_link href={~p"/docs/connect-a-cli-client"}>Troubleshooting</.doc_link>
                   </p>
                 <% else %>
                   <p class="text-sm text-zinc-400">One moment — minting this client's key…</p>
@@ -1730,7 +1730,7 @@ defmodule EmisarWeb.AgentsLive do
                16px heading — doc_link inherits ambient size, and step_header's
                actions slot sets none. --%>
           <div class="flex items-center gap-3 text-xs">
-            <.doc_link href={~p"/docs/connect-an-llm"}>Manual install</.doc_link>
+            <.doc_link href={~p"/docs/connect-a-cli-client"}>Manual install</.doc_link>
             <.doc_link href={~p"/trust" <> "#release-integrity"}>Verify the release</.doc_link>
           </div>
         </:actions>

@@ -27,6 +27,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/security-model
     /docs/signed-dispatch
     /docs/connect-an-llm
+    /docs/connect-a-cli-client
     /docs/publishing-packs
     /docs/pack-registry
     /docs/policies-and-approvals

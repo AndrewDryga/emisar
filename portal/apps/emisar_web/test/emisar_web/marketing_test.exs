@@ -11,6 +11,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/security-model
     /docs/signed-dispatch
     /docs/connect-an-llm
+    /docs/connect-a-cli-client
     /docs/publishing-packs
     /docs/pack-registry
     /docs/policies-and-approvals
@@ -543,6 +544,7 @@ defmodule EmisarWeb.MarketingTest do
       for path <- ~w(
             /docs/quickstart
             /docs/connect-an-llm
+            /docs/connect-a-cli-client
             /docs/policies-and-approvals
             /docs/runbooks
             /docs/teams-and-access
@@ -737,7 +739,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Claude-eBook-Zero-Trust-for-AI-Agents"
     end
 
-    test "the connect-an-llm page renders every client config block", %{conn: conn} do
+    test "the cloud LLM page renders the OAuth connector setup for Claude and ChatGPT",
+         %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
       # Current ChatGPT Developer-mode setup path: OAuth, no static token.
@@ -753,7 +756,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Allow low-risk actions"
       assert html =~ "Allow all actions"
 
-      # Claude's connector block on the same page is unchanged.
+      # Claude's connector block on the same page.
       assert html =~ "Settings → Connectors"
       assert html =~ "Connector name"
       assert html =~ "OAuth Client ID / Client Secret"
@@ -766,6 +769,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "choose <strong>More</strong>"
       assert html =~ "conversation context"
       assert html =~ "choose <strong>Refresh</strong>"
+    end
+
+    test "the CLI-client page renders every stdio client config block", %{conn: conn} do
+      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
 
       # The stdio-bridge config for each supported desktop/CLI client.
       assert html =~ "claude_desktop_config.json"
@@ -874,11 +881,21 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://github.com/andrewdryga/emisar"
     end
 
-    test "the connect-an-llm page renders the verbatim endpoint references", %{conn: conn} do
+    test "the cloud LLM page renders the remote MCP endpoint", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
-      # The remote MCP endpoint + bridge install command + direct JSON-RPC
-      # methods an operator copies verbatim. (The install URL is wrapped in a
+      # The remote MCP server URL an operator pastes into the connector; no
+      # REST-style path is implied.
+      assert html =~ "https://emisar.dev/api/mcp/rpc"
+      refute html =~ "GET /api/mcp/runners"
+    end
+
+    test "the CLI-client page renders the verbatim install + endpoint references",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+
+      # The bridge install command + remote endpoint + direct JSON-RPC methods
+      # an operator copies verbatim. (The install URL is wrapped in a
       # syntax-highlight span, so assert the URL and the `| sudo bash` tail
       # as separate stable pieces rather than one contiguous literal.)
       assert html =~ "https://emisar.dev/api/mcp/rpc"
@@ -1552,12 +1569,12 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "install scripts match their documented endpoints" do
-    test "the install-mcp.sh URL quoted on /docs/connect-an-llm is the live endpoint",
+    test "the install-mcp.sh URL quoted on /docs/connect-a-cli-client is the live endpoint",
          %{conn: conn} do
       # The docs page tells operators to `curl … /install-mcp.sh | sudo bash`;
       # that exact URL must resolve to the real script, never a 404/HTML —
       # a `curl | bash` integrity guarantee.
-      html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
       assert html =~ "https://emisar.dev/install-mcp.sh"
 
       conn = get(conn, ~p"/install-mcp.sh")

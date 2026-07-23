@@ -5,45 +5,31 @@
     <.docs_layout
       current="connect-an-llm"
       toc={[
-        {"cloud-llm", "Connect a cloud LLM"},
-        {"api-key", "Mint an API key"},
-        {"stdio-bridge", "Desktop & CLI clients"},
-        {"direct-http", "Direct MCP over HTTP"}
+        {"claude-ai", "Claude (claude.ai)"},
+        {"chatgpt", "ChatGPT"},
+        {"sign-in-grants", "What the sign-in grants"}
       ]}
     >
       <.docs_header current="connect-an-llm">
         <:dek>
-          emisar exposes your runners and their action catalog as a Model
-          Context Protocol server. Two ways to plug an LLM in:
+          Connect a cloud app — Claude.ai, ChatGPT Apps, and recent IDE clients — to your
+          runners and their action catalog over remote MCP. emisar signs you in with OAuth,
+          so there's no API key or header to manage.
         </:dek>
       </.docs_header>
 
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-base text-zinc-300">
-        <li>
-          <strong>Remote MCP</strong> (Claude.ai, ChatGPT Apps, recent IDE
-          clients) — enter a display name and the emisar server URL. emisar
-          signs you in over OAuth; there is no API key or header to manage.
-          Leave optional OAuth client credentials empty so the connector can
-          register itself.
-        </li>
-        <li>
-          <strong>Stdio bridge or static key</strong> (Claude Desktop,
-          Claude Code, Cursor, Windsurf, Zed, OpenClaw, OpenCode, Pi, Copilot CLI,
-          Codex CLI, Gemini CLI, Goose, Hermes, Grok CLI, plain HTTP) — a tiny
-          binary on your machine, or a raw bearer token, authenticated with
-          an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code> API key.
-        </li>
-      </ul>
-
-      <.agent_skill_cta
-        class="mt-8"
-        skill="connect-llm"
-        prompt="Connect this machine's coding agent to my emisar account over MCP — install the emisar-mcp bridge, register the client, and prove a run end to end. First ask me which client I use. Use the connect-llm skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/connect-llm/SKILL.md"
-      >
-        Or have your coding agent do it — the <code class="text-zinc-300">connect-llm</code>
-        skill walks it through installing the bridge, registering your client, and proving a run
-        end to end.
-      </.agent_skill_cta>
+      <.docs_callout kind={:note} title="Using a CLI or local client?">
+        <p>
+          Claude Code, Cursor, Claude Desktop, and the CLIs connect through the
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          stdio bridge or a raw API key — see <.link
+            navigate={~p"/docs/connect-a-cli-client"}
+            class="text-brand-400 hover:text-brand-300"
+          >
+            Connect a CLI client
+          </.link>.
+        </p>
+      </.docs_callout>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
@@ -65,493 +51,164 @@
         </p>
       </.docs_callout>
 
-      <%!-- ============================================================ --%>
-      <%!-- Step 1: Remote MCP (OAuth)                                    --%>
-      <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="cloud-llm">1. Connect a cloud LLM</.docs_h2>
+      <p class="mt-8 text-base text-zinc-400">
+        Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
+        — no header or API key. emisar is a full OAuth&nbsp;2.1 authorization
+        server, so the connector discovers it from that URL, registers itself
+        automatically, and sends you through a one-time emisar sign-in. Enter
+        these values:
+      </p>
 
-        <p class="mt-4 text-base text-zinc-400">
-          Claude.ai and ChatGPT Apps ask for a display name and a <strong>server URL</strong>
-          — no header or API key. emisar is a full OAuth&nbsp;2.1 authorization
-          server, so the connector discovers it from that URL, registers itself
-          automatically, and sends you through a one-time emisar sign-in. Enter
-          these values:
-        </p>
-
-        <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="grid border-b border-zinc-900 sm:grid-cols-[10rem_1fr] sm:items-center">
-            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
-              connector name
-            </div>
-            <code class="break-all px-3 pb-3 text-xs text-zinc-300 sm:py-3">Emisar</code>
+      <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <div class="grid border-b border-zinc-900 sm:grid-cols-[10rem_1fr] sm:items-center">
+          <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
+            connector name
           </div>
-          <div class="grid sm:grid-cols-[10rem_1fr] sm:items-center">
-            <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
-              remote MCP server URL
-            </div>
-            <code class="break-all px-3 pb-3 text-xs text-brand-300 sm:py-3">
-              https://emisar.dev/api/mcp/rpc
-            </code>
-          </div>
+          <code class="break-all px-3 pb-3 text-xs text-zinc-300 sm:py-3">Emisar</code>
         </div>
-
-        <div class="mt-8 space-y-10">
-          <%!-- Claude.ai (cloud) --%>
-          <section>
-            <.docs_h3 id="claude-ai">Claude (claude.ai)</.docs_h3>
-            <ol class="mt-3 list-decimal space-y-3 pl-6 text-base text-zinc-300">
-              <li>
-                Open <strong>Settings → Connectors</strong>
-                (on Pro/Max it's <strong>Customize → Connectors</strong>).
-              </li>
-              <li>
-                Click <strong>+</strong> → <strong>Add custom connector</strong>.
-              </li>
-              <li>
-                Enter <strong>Emisar</strong>
-                as the <strong>Connector name</strong>, then paste the
-                <strong>Remote MCP server URL</strong>
-                above into the URL field.
-              </li>
-              <li>
-                Leave <strong>Advanced settings</strong>
-                (OAuth Client ID / Client Secret) <strong>empty</strong>
-                —
-                emisar registers your client for you via Dynamic Client
-                Registration. Click <strong>Add</strong>.
-              </li>
-              <li>
-                Claude opens an emisar tab. Sign in, review what the
-                connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
-              </li>
-              <li>
-                Optional: open <strong>Settings → Connectors → Emisar</strong>. Under <strong>Tool permissions</strong>, set both
-                <strong>Read-only tools</strong>
-                and <strong>Write/delete tools</strong>
-                to <strong>Always allow</strong>. This removes Claude's own per-tool prompts; emisar policy, approvals, and audit still apply.
-              </li>
-              <li>
-                Turn it on for a chat: the <strong>+</strong> button (lower-left of the composer)
-                → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
-              </li>
-            </ol>
-            <.docs_callout kind={:note}>
-              <p>
-                <strong class="text-zinc-400">Team / Enterprise:</strong>
-                only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
-                Members then open <strong>Customize → Connectors</strong>
-                and click <strong>Connect</strong>
-                to run the same sign-in.
-              </p>
-            </.docs_callout>
-          </section>
-
-          <%!-- ChatGPT --%>
-          <section>
-            <.docs_h3 id="chatgpt">ChatGPT</.docs_h3>
-            <p class="mt-2 text-base text-zinc-400">
-              ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on all ChatGPT plans.
-            </p>
-            <ol class="mt-3 list-decimal space-y-3 pl-6 text-base text-zinc-300">
-              <li>
-                Turn on Developer mode once — it's off by default and flagged <strong>Higher risk</strong>: <strong>Settings → Security and login</strong>, toggle <strong>Developer mode</strong>. (The same toggle sits at the bottom of <strong>Settings → Plugins</strong>.)
-              </li>
-              <li>
-                Open <strong>Settings → Plugins</strong>
-                (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">chatgpt.com/plugins</code>)
-                and click <strong>Create</strong>.
-              </li>
-              <li>
-                Fill the form:
-                <ul class="mt-1 list-disc space-y-1 pl-6 text-zinc-400">
-                  <li>
-                    <strong>Name</strong>
-                    — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
-                  </li>
-                  <li>
-                    <strong>Description</strong> (optional) — e.g. "Run approved
-                    infrastructure actions on my fleet."
-                  </li>
-                  <li>
-                    <strong>Connection</strong>
-                    → <strong>Server URL</strong>, then paste
-                    <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                      https://emisar.dev/api/mcp/rpc
-                    </code>
-                  </li>
-                  <li><strong>Authentication</strong> — choose <strong>OAuth</strong></li>
-                </ul>
-                Check <strong>I understand and want to continue</strong>, then click <strong>Create</strong>.
-              </li>
-              <li>
-                ChatGPT sends you to an emisar sign-in → <strong>Authorize</strong>. On success it
-                lists the tools emisar advertises.
-              </li>
-              <li>
-                Optional — stop the per-call prompts: open <strong>emisar</strong>
-                under <strong>Settings → Plugins</strong>, go to <strong>Permissions</strong>, and
-                switch it from <strong>Allow low-risk actions</strong>
-                (the default) to <strong>Allow all actions</strong>. ChatGPT then stops asking before
-                each call; emisar policy, approvals, and audit still apply, so the gate stays on the
-                server, not ChatGPT's prompt.
-              </li>
-              <li>
-                Use it from a <strong>new chat</strong>: click the <strong>+</strong>
-                button near the composer, choose <strong>More</strong>, then select <strong>emisar</strong>. Seeing tools in settings only proves ChatGPT
-                fetched metadata; this step adds emisar to the conversation context
-                so the model can call it.
-              </li>
-              <li>
-                After changing emisar's tool metadata, open the connector under
-                <strong>Settings → Plugins</strong>
-                and choose <strong>Refresh</strong>
-                before testing
-                again.
-              </li>
-            </ol>
-            <p class="mt-3 text-xs leading-relaxed text-zinc-400">
-              ChatGPT connects to remote HTTPS MCP servers only — there is
-              no stdio option. The emisar endpoint is already remote, so
-              nothing extra to host.
-            </p>
-          </section>
-
-          <%!-- What you're authorizing --%>
-          <section>
-            <.docs_h3 id="sign-in-grants">What the sign-in grants</.docs_h3>
-            <p class="mt-2 text-base leading-7 text-zinc-400">
-              The consent screen mints a key bound to <em>your</em>
-              membership. The connector can only run actions your policy
-              already permits, every call is attributed to you in the audit
-              log, and anything needing approval still waits for a human.
-              Revoke access any time from <strong>LLM agents</strong>
-              in the dashboard, or from the connector settings in
-              Claude / ChatGPT.
-            </p>
-          </section>
-        </div>
-      </section>
-
-      <%!-- ============================================================ --%>
-      <%!-- Step 2: API key (bridge + direct MCP)                        --%>
-      <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="api-key">2. Mint an API key (desktop, CLI &amp; direct MCP)</.docs_h2>
-
-        <p class="mt-4 text-base text-zinc-400">
-          The clients in steps 3 and 4 authenticate with a raw key instead
-          of OAuth — but you rarely handle the key yourself. The installer in
-          step 3 asks to add emisar to the clients it finds; you approve the
-          connection in your browser and the keys are minted and written into
-          the client configs for you. Setting up by hand instead? In the
-          dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>,
-          pick your client from the tab strip, and reveal the manual snippet —
-          it mints a key named after the client, prefilled and ready to paste.
-        </p>
-
-        <p class="mt-4 text-base text-zinc-400">
-          The key itself carries no permissions to tune — what it may run is your account
-          <strong>policy</strong>
-          (risky actions pause for approval), and which runners it can
-          reach is the runner scope of the member who mints it (set on the <strong>Team</strong>
-          page). To hand one agent a tighter blast radius, mint it under a member whose runner
-          scope is already narrow. A separate read-only <strong>audit-export</strong>
-          token —
-          minted on the audit page — ships the audit log to a SIEM and can never execute an
-          action. The dashboard reveals the raw key once; copy and store it.
-        </p>
-
-        <.docs_callout kind={:note}>
-          <p>
-            The cloud connectors in step 1 do <strong>not</strong>
-            need an API key — they authenticate with OAuth. Mint a key only
-            for the stdio bridge or plain-HTTP clients below.
-          </p>
-        </.docs_callout>
-      </section>
-
-      <%!-- ============================================================ --%>
-      <%!-- Step 3: Stdio bridge                                          --%>
-      <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="stdio-bridge">3. Desktop &amp; CLI clients (stdio bridge)</.docs_h2>
-
-        <p class="mt-4 text-base text-zinc-400">
-          For clients that only speak stdio MCP — Claude Desktop, Claude
-          Code, Cursor (local mode), Windsurf, Zed, OpenClaw, OpenCode, Pi,
-          Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI — install the
-          tiny <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
-          binary. It's a thin shim that forwards stdio JSON-RPC frames
-          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-          endpoint.
-          Every MCP semantic — tool descriptors, content blocks,
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
-          — is implemented in the portal,
-          so MCP spec updates land server-side — you only redownload the bridge when the portal
-          raises its minimum supported version.
-        </p>
-
-        <.docs_h3 id="install-bridge">Install</.docs_h3>
-        <p class="mt-2 text-base text-zinc-300">
-          One-liner — auto-resolves the latest
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
-          release, verifies sha256, drops
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
-          into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>:
-        </p>
-        <.docs_code
-          phx-no-format
-          label="shell"
-          copy_text="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
-        ><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
-        <p class="mt-2 text-xs leading-5 text-zinc-400">
-          The installer is automated: it finds the LLM clients on the machine,
-          and once you approve the connection in your browser it mints each
-          client its own key and writes its config for you — your existing
-          comments and other servers preserved. You shouldn't need the by-hand
-          configs below; they're there for reference or an unattended setup.
-        </p>
-        <p class="mt-2 text-xs leading-5 text-zinc-400">
-          Rather verify first? The bridge release carries SLSA provenance + a
-          <code class="font-mono">SHA256SUMS-MCP</code>
-          checksum file — see <.link
-            href={~p"/trust" <> "#release-integrity"}
-            class="text-brand-400 hover:text-brand-300"
-          >Release integrity</.link>.
-        </p>
-
-        <details class="group mt-8">
-          <summary class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-900 bg-black/40 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30">
-            Set up a client by hand
-            <.icon
-              name="hero-chevron-down"
-              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
-            />
-          </summary>
-          <div class="mt-6 space-y-8">
-            <%!-- Claude Desktop --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "claude-desktop"
-      &#125;
-    &#125;
-  &#125;
-&#125;</pre>
-              </div>
-              <p class="mt-3 text-base text-zinc-400">
-                Restart Claude Desktop. Tools appear under the tool icon
-                as "emisar".
-              </p>
-            </section>
-
-            <%!-- Cursor --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "cursor"
-      &#125;
-    &#125;
-  &#125;
-&#125;</pre>
-              </div>
-              <p class="mt-3 text-base text-zinc-400">
-                Recent Cursor builds also speak remote MCP — point them at
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-                directly (step 1) if you'd rather skip the bridge.
-              </p>
-            </section>
-
-            <%!-- Zed --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Zed</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                The installer adds this for you and preserves your existing
-                comments and servers. By hand, Zed reads
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                  ~/.config/zed/settings.json
-                </code>
-                and nests MCP servers under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">context_servers</code>, not <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcpServers</code>:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
-  "context_servers": &#123;
-    "emisar": &#123;
-      "source": "custom",
-      "command": "/usr/local/bin/emisar-mcp",
-      "args": [],
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "zed"
-      &#125;
-    &#125;
-  &#125;
-&#125;</pre>
-              </div>
-            </section>
-
-            <%!-- Claude Code (CLI) --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                One-line register, user scope (every project):
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                  terminal
-                </div>
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
-    -e EMISAR_URL=https://emisar.dev \
-    -e EMISAR_API_KEY=emk-... \
-    -e EMISAR_CLIENT=claude-code \
-    -- /usr/local/bin/emisar-mcp</pre>
-              </div>
-              <p class="mt-3 text-base text-zinc-400">
-                Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
-              </p>
-            </section>
-
-            <%!-- Gemini CLI --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "gemini"
-      &#125;
-    &#125;
-  &#125;
-&#125;</pre>
-              </div>
-            </section>
-
-            <%!-- ChatGPT Codex CLI --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
-command = "/usr/local/bin/emisar-mcp"
-env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</pre>
-              </div>
-              <p class="mt-3 text-base text-zinc-400">
-                To let emisar calls run without Codex prompts, add
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                  default_tools_approval_mode = "approve"
-                </code>
-                below
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
-                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
-                This trusts only the emisar MCP server; emisar still applies its own policies and approvals.
-              </p>
-            </section>
-
-            <%!-- Grok CLI --%>
-            <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Grok CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Register the bridge in your user config:
-              </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                  terminal
-                </div>
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> grok mcp add emisar \
-    -e EMISAR_URL=https://emisar.dev \
-    -e EMISAR_API_KEY=emk-... \
-    -e EMISAR_CLIENT=grok \
-    -- /usr/local/bin/emisar-mcp</pre>
-              </div>
-              <p class="mt-3 text-base text-zinc-400">
-                To stop Grok's per-tool prompts for emisar only, add
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
-                to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
-                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.grok/config.toml</code>.
-              </p>
-            </section>
+        <div class="grid sm:grid-cols-[10rem_1fr] sm:items-center">
+          <div class="px-3 pt-3 font-mono text-[11px] text-zinc-400 sm:py-3">
+            remote MCP server URL
           </div>
-        </details>
-
-        <.docs_callout kind={:note}>
-          <p>
-            <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>
-            If a runner enforces <.link
-              navigate={~p"/docs/signed-dispatch"}
-              class="text-brand-400 hover:text-brand-300"
-            >signed dispatch</.link>, add
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
-            (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
-            to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
-            block — the bridge signs every action dispatch so an enforcing runner will run it. Keep both secret,
-            never on the portal. The cloud connectors in step&nbsp;1 sign nothing, so they can't reach an
-            enforcing runner.
-          </p>
-        </.docs_callout>
-      </section>
+          <code class="break-all px-3 pb-3 text-xs text-brand-300 sm:py-3">
+            https://emisar.dev/api/mcp/rpc
+          </code>
+        </div>
+      </div>
 
       <%!-- ============================================================ --%>
-      <%!-- Step 4: Direct Streamable HTTP MCP                            --%>
+      <%!-- Claude.ai (cloud)                                            --%>
       <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="direct-http">4. Direct MCP over HTTP</.docs_h2>
-
-        <p class="mt-4 text-base text-zinc-400">
-          A custom MCP client can call the same Streamable HTTP endpoint with
-          an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
-          key from step 2. Tool discovery, calls, retries, and recovery all use
-          the standard JSON-RPC MCP contract.
+      <.docs_h2 id="claude-ai">Claude (claude.ai)</.docs_h2>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+        <li>
+          Open <strong>Settings → Connectors</strong>
+          (on Pro/Max it's <strong>Customize → Connectors</strong>).
+        </li>
+        <li>
+          Click <strong>+</strong> → <strong>Add custom connector</strong>.
+        </li>
+        <li>
+          Enter <strong>Emisar</strong>
+          as the <strong>Connector name</strong>, then paste the
+          <strong>Remote MCP server URL</strong>
+          above into the URL field.
+        </li>
+        <li>
+          Leave <strong>Advanced settings</strong>
+          (OAuth Client ID / Client Secret) <strong>empty</strong>
+          —
+          emisar registers your client for you via Dynamic Client
+          Registration. Click <strong>Add</strong>.
+        </li>
+        <li>
+          Claude opens an emisar tab. Sign in, review what the
+          connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
+        </li>
+        <li>
+          Optional: open <strong>Settings → Connectors → Emisar</strong>. Under <strong>Tool permissions</strong>, set both
+          <strong>Read-only tools</strong>
+          and <strong>Write/delete tools</strong>
+          to <strong>Always allow</strong>. This removes Claude's own per-tool prompts; emisar policy, approvals, and audit still apply.
+        </li>
+        <li>
+          Turn it on for a chat: the <strong>+</strong> button (lower-left of the composer)
+          → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
+        </li>
+      </ol>
+      <.docs_callout kind={:note}>
+        <p>
+          <strong class="text-zinc-400">Team / Enterprise:</strong>
+          only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
+          Members then open <strong>Customize → Connectors</strong>
+          and click <strong>Connect</strong>
+          to run the same sign-in.
         </p>
+      </.docs_callout>
 
-        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
-<span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
-    -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
-    -H <span class="text-brand-300">"Content-Type: application/json"</span> \
-    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
+      <%!-- ============================================================ --%>
+      <%!-- ChatGPT                                                      --%>
+      <%!-- ============================================================ --%>
+      <.docs_h2 id="chatgpt">ChatGPT</.docs_h2>
+      <p class="mt-4 text-base text-zinc-400">
+        ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Available on all ChatGPT plans.
+      </p>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+        <li>
+          Turn on Developer mode once — it's off by default and flagged <strong>Higher risk</strong>: <strong>Settings → Security and login</strong>, toggle <strong>Developer mode</strong>. (The same toggle sits at the bottom of <strong>Settings → Plugins</strong>.)
+        </li>
+        <li>
+          Open <strong>Settings → Plugins</strong>
+          (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">chatgpt.com/plugins</code>)
+          and click <strong>Create</strong>.
+        </li>
+        <li>
+          Fill the form:
+          <ul class="mt-1 list-disc space-y-1 pl-6 text-zinc-400">
+            <li>
+              <strong>Name</strong>
+              — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+            </li>
+            <li>
+              <strong>Description</strong> (optional) — e.g. "Run approved
+              infrastructure actions on my fleet."
+            </li>
+            <li>
+              <strong>Connection</strong>
+              → <strong>Server URL</strong>, then paste
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                https://emisar.dev/api/mcp/rpc
+              </code>
+            </li>
+            <li><strong>Authentication</strong> — choose <strong>OAuth</strong></li>
+          </ul>
+          Check <strong>I understand and want to continue</strong>, then click <strong>Create</strong>.
+        </li>
+        <li>
+          ChatGPT sends you to an emisar sign-in → <strong>Authorize</strong>. On success it
+          lists the tools emisar advertises.
+        </li>
+        <li>
+          Optional — stop the per-call prompts: open <strong>emisar</strong>
+          under <strong>Settings → Plugins</strong>, go to <strong>Permissions</strong>, and
+          switch it from <strong>Allow low-risk actions</strong>
+          (the default) to <strong>Allow all actions</strong>. ChatGPT then stops asking before
+          each call; emisar policy, approvals, and audit still apply, so the gate stays on the
+          server, not ChatGPT's prompt.
+        </li>
+        <li>
+          Use it from a <strong>new chat</strong>: click the <strong>+</strong>
+          button near the composer, choose <strong>More</strong>, then select <strong>emisar</strong>. Seeing tools in settings only proves ChatGPT
+          fetched metadata; this step adds emisar to the conversation context
+          so the model can call it.
+        </li>
+        <li>
+          After changing emisar's tool metadata, open the connector under
+          <strong>Settings → Plugins</strong>
+          and choose <strong>Refresh</strong>
+          before testing
+          again.
+        </li>
+      </ol>
+      <p class="mt-3 text-xs leading-relaxed text-zinc-400">
+        ChatGPT connects to remote HTTPS MCP servers only — there is
+        no stdio option. The emisar endpoint is already remote, so
+        nothing extra to host.
+      </p>
 
-        <p class="mt-4 text-base text-zinc-400">
-          Send <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
-          then use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>
-          and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>.
-          Every action dispatch must include a
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
-          — it's logged to the audit trail and shown to approvers. Mutation
-          retries are recovered through the operation ID returned by the MCP
-          contract; clients do not invent a second retry key.
-        </p>
-      </section>
+      <%!-- ============================================================ --%>
+      <%!-- What you're authorizing                                      --%>
+      <%!-- ============================================================ --%>
+      <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        The consent screen mints a key bound to <em>your</em>
+        membership. The connector can only run actions your policy
+        already permits, every call is attributed to you in the audit
+        log, and anything needing approval still waits for a human.
+        Revoke access any time from <strong>LLM agents</strong>
+        in the dashboard, or from the connector settings in
+        Claude / ChatGPT.
+      </p>
     </.docs_layout>
   </section>
 

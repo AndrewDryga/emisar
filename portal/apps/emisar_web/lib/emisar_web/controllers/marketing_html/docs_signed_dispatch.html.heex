@@ -119,9 +119,9 @@ signing:
         <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP client</strong>
         as environment variables — never on the portal, never in version control
         (see <.link
-          navigate={~p"/docs/connect-an-llm"}
+          navigate={~p"/docs/connect-a-cli-client"}
           class="text-brand-400 hover:text-brand-300"
-        >connect an LLM</.link>). Store the CA private key offline; you re-sign certs with it as they expire.
+        >connect a CLI client</.link>). Store the CA private key offline; you re-sign certs with it as they expire.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP client — not the portal, not git</span>
 EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
@@ -449,7 +449,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           Fleet config &amp; reload <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
-          navigate={~p"/docs/connect-an-llm"}
+          navigate={~p"/docs/connect-a-cli-client"}
           class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Set the signing key on your client <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />

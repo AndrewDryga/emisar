@@ -144,6 +144,7 @@ defmodule EmisarWeb.Router do
     get "/dpa", MarketingController, :dpa
     get "/refund-policy", MarketingController, :refund
     get "/docs/connect-an-llm", MarketingController, :connect_llm
+    get "/docs/connect-a-cli-client", MarketingController, :connect_cli_client
     get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/action-packs", MarketingController, :docs_action_packs

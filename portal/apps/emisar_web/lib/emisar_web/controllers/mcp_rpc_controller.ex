@@ -664,7 +664,7 @@ defmodule EmisarWeb.MCPRpcController do
        %{
          minimum: Compat.mcp_minimum(),
          your_version: version,
-         upgrade: "Update the emisar-mcp bridge: https://emisar.dev/docs/connect-an-llm"
+         upgrade: "Update the emisar-mcp bridge: https://emisar.dev/docs/connect-a-cli-client"
        }}
     else
       :ok
