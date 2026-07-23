@@ -68,7 +68,8 @@ func loadReg(t *testing.T, root string) *packs.Registry {
 }
 
 // threePackRoot writes: alpha (generic-only requires → stripped detect),
-// beta (explicit detect wins), remote (no detect signal → suggest omits it).
+// beta (explicit detect wins), remote (requires only a generic helper + a
+// remote-target client → no signal → suggest omits it).
 func threePackRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -81,8 +82,10 @@ func threePackRoot(t *testing.T) string {
 			"requires:\n  binaries: [curl]\ndetect:\n  binaries: [beta-bin]\n  processes: [betad]\n  ports: [1234]\n"),
 		"actions/a.yaml": execAction("beta"),
 	})
+	// ipmitool is a remote BMC client, not a host-presence signal: a pack
+	// requiring only it (dell-ipmi) must not be auto-suggested.
 	writePack(t, root, "remote", map[string]string{
-		"pack.yaml":      packYAML("remote", "0.1.0", "requires:\n  binaries: [curl]\n"),
+		"pack.yaml":      packYAML("remote", "0.1.0", "requires:\n  binaries: [curl, ipmitool]\n"),
 		"actions/a.yaml": execAction("remote"),
 	})
 	return root
@@ -241,6 +244,31 @@ func TestSuggest_OmitsDetectlessPacks(t *testing.T) {
 	}
 	if got["remote"] {
 		t.Error("suggest must omit remote (no detect signal)")
+	}
+}
+
+func TestDeriveDetect_StripsNonSignalBinaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		requires []string
+		detect   []string
+		want     []string
+	}{
+		{"generic helper stripped, real tool kept", []string{"curl", "nomad"}, nil, []string{"nomad"}},
+		{"remote BMC client stripped (dell-ipmi)", []string{"ipmitool"}, nil, []string{}},
+		{"remote SaaS/cluster clients stripped", []string{"gh", "kubectl", "terraform"}, nil, []string{}},
+		{"remote SNMP clients stripped (snmp)", []string{"snmpget", "snmpbulkwalk"}, nil, []string{}},
+		{"local-service client kept (postgres)", []string{"psql"}, nil, []string{"psql"}},
+		{"explicit detect wins, never stripped", []string{"curl"}, []string{"ipmitool"}, []string{"ipmitool"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := deriveDetect(test.requires, test.detect, nil, nil).Binaries
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("deriveDetect(requires=%v, detect=%v).Binaries = %v, want %v",
+					test.requires, test.detect, got, test.want)
+			}
+		})
 	}
 }
 

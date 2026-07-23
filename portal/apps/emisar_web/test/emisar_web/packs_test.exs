@@ -289,6 +289,17 @@ defmodule EmisarWeb.PacksTest do
       # signal → omitted entirely (a remote-API pack isn't host-detectable).
       refute Map.has_key?(by_id, "cloudflare")
 
+      # Remote-target client CLIs are not a host-presence signal: a pack that
+      # requires only ipmitool (BMC), gh (GitHub), kubectl (a remote cluster),
+      # terraform (remote infra), or snmpget (remote agents) is omitted, so a
+      # host that merely has the CLI installed is never suggested the pack.
+      # dell-ipmi suggested on a GCP box that happened to ship ipmitool was
+      # the bug this guards.
+      for id <- ~w(dell-ipmi github-cli kubernetes snmp terraform-readonly) do
+        assert PacksRegistry.get(id), "expected #{id} to be a real catalog pack"
+        refute Map.has_key?(by_id, id), "#{id} requires only a remote-target client; must not be suggested"
+      end
+
       # Lean shape: only id/name/os/detect — no hash/tarball/description.
       assert grafana |> Map.keys() |> Enum.sort() == [:detect, :id, :name, :os]
     end

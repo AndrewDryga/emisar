@@ -5,12 +5,12 @@
 // of those fire.
 //
 // Detection is path-agnostic: a binary in /usr/local/bin or /opt counts
-// the same as one on $PATH. And the policy of WHICH binaries are too
-// generic to be a signal (curl, nc, …) lives server-side — the portal
-// strips ubiquitous helpers from each pack's detect signal before the
-// runner ever sees it — so this package is pure mechanism: "is this
-// signal present on this host?". That keeps the curated list editable on
-// a portal deploy, with no runner release.
+// the same as one on $PATH. And the policy of WHICH binaries aren't a
+// service-presence signal — generic helpers (curl, nc, …) and remote-target
+// clients (ipmitool, kubectl, …) — lives on the catalog-build side, stripped
+// from each pack's detect signal before the runner ever sees it, so this
+// package is pure mechanism: "is this signal present on this host?". That
+// keeps the curated list editable on a publish, with no runner release.
 package hostscan
 
 import (

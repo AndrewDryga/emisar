@@ -45,13 +45,29 @@ const DefaultRepoURL = "https://github.com/andrewdryga/emisar"
 // genericBinaries are ubiquitous helpers present on nearly every host and
 // used only to TALK to a service (curl hits an HTTP API). They say nothing
 // about which services run here, so they are stripped when a pack's detect
-// signal is derived from its `requires` binaries. This mirrors the portal's
-// server-side list (EmisarWeb.PacksRegistry @generic_binaries) — the filter
-// lives on the build/catalog side, not the runner, so it evolves with a
-// publish rather than a runner upgrade.
+// signal is derived from its `requires` binaries. The filter lives on the
+// build/catalog side, not the runner, so it evolves with a publish rather
+// than a runner upgrade.
 var genericBinaries = map[string]struct{}{
 	"curl": {}, "wget": {}, "nc": {}, "ncat": {}, "netcat": {},
 	"socat": {}, "jq": {}, "openssl": {},
+}
+
+// remoteClientBinaries are service-specific CLIs whose target is inherently
+// OFF-HOST — a hardware BMC (ipmitool), a SaaS API (gh), a remote cluster
+// (kubectl), remote infrastructure (terraform), remote SNMP agents
+// (snmpget/snmpbulkwalk). Unlike a local-service client whose service
+// commonly runs on the same box (psql→postgres, redis-cli→redis), these
+// never indicate the target runs HERE, so — like generic helpers — they are
+// stripped from a pack's requires-derived detect signal. A pack that requires
+// only these declares no detect block and is therefore never auto-suggested
+// (the packspec Detect contract): merely having the client installed says
+// nothing about what the host runs. Add a remote-target client here when its
+// pack would otherwise be wrongly suggested on any box that happens to have
+// the CLI (dell-ipmi suggested on a GCP host with ipmitool was the bug).
+var remoteClientBinaries = map[string]struct{}{
+	"ipmitool": {}, "gh": {}, "kubectl": {},
+	"terraform": {}, "snmpget": {}, "snmpbulkwalk": {},
 }
 
 // Catalog is the full published catalog.json document.
@@ -484,13 +500,14 @@ func catalogAction(a *actionspec.Action) (Action, error) {
 	return out, nil
 }
 
-// deriveDetect mirrors the portal's detect_signal: an explicit
-// detect.binaries wins; otherwise derive from requires binaries minus
-// generic helpers. Declared processes/ports are always kept.
+// deriveDetect derives a pack's suggest signal: an explicit detect.binaries
+// wins; otherwise fall back to its requires binaries minus non-signal
+// binaries (generic helpers + remote-target clients). Declared
+// processes/ports are always kept.
 func deriveDetect(requiresBinaries, detectBinaries, processes []string, ports []int) Detect {
 	binaries := detectBinaries
 	if len(binaries) == 0 {
-		binaries = stripGeneric(requiresBinaries)
+		binaries = stripNonSignal(requiresBinaries)
 	}
 	return Detect{
 		Binaries:  nonNil(binaries),
@@ -499,10 +516,17 @@ func deriveDetect(requiresBinaries, detectBinaries, processes []string, ports []
 	}
 }
 
-func stripGeneric(binaries []string) []string {
+// stripNonSignal drops binaries that are not evidence the pack's target
+// service runs on this host — generic helpers and remote-target clients —
+// leaving only service-specific local binaries as a suggestion signal.
+func stripNonSignal(binaries []string) []string {
 	out := []string{}
 	for _, b := range binaries {
-		if _, generic := genericBinaries[strings.ToLower(b)]; generic {
+		key := strings.ToLower(b)
+		if _, generic := genericBinaries[key]; generic {
+			continue
+		}
+		if _, remote := remoteClientBinaries[key]; remote {
 			continue
 		}
 		out = append(out, b)
