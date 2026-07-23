@@ -1,0 +1,240 @@
+# Auto-deployed by k3s so read actions have stable, named resources and
+# mutating cases can target disposable workloads.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe
+  namespace: default
+  labels: { app: harness-probe }
+spec:
+  containers:
+    - name: probe
+      image: busybox:1.38.0
+      command: [sh, -c, "echo harness-probe-log; sleep 3600"]
+  restartPolicy: Never
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: warning-probe
+  namespace: default
+  labels: { app: warning-probe }
+spec:
+  containers:
+    - name: warning-probe
+      image: example.invalid/packtest/missing:never
+  restartPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harness-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: harness-deployment }
+  template:
+    metadata:
+      labels: { app: harness-deployment }
+    spec:
+      containers:
+        - name: probe
+          image: busybox:1.38.0
+          command: [sh, -c, "echo harness-deployment-log; sleep 3600"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: harness-service
+  namespace: default
+spec:
+  selector: { app: harness-deployment }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: harness-statefulset
+  namespace: default
+spec:
+  serviceName: harness-service
+  replicas: 0
+  selector:
+    matchLabels: { app: harness-statefulset }
+  template:
+    metadata:
+      labels: { app: harness-statefulset }
+    spec:
+      containers:
+        - name: probe
+          image: busybox:1.38.0
+          command: [sh, -c, "sleep 3600"]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: harness-daemonset
+  namespace: default
+spec:
+  selector:
+    matchLabels: { app: harness-daemonset }
+  template:
+    metadata:
+      labels: { app: harness-daemonset }
+    spec:
+      nodeSelector:
+        packtest.emisar.dev/disabled: "true"
+      containers:
+        - name: probe
+          image: busybox:1.38.0
+          command: [sh, -c, "sleep 3600"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harness-job
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: probe
+          image: busybox:1.38.0
+          command: [sh, -c, "echo harness-job"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: harness-cronjob
+  namespace: default
+spec:
+  schedule: "0 0 31 2 *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: probe
+              image: busybox:1.38.0
+              command: [sh, -c, "echo harness-cronjob"]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: harness-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: harness-deployment
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: harness-ingress
+  namespace: default
+spec:
+  rules:
+    - host: harness.example.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: harness-service
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: harness-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels: { app: harness-deployment }
+  policyTypes: [Ingress]
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: harness-quota
+  namespace: default
+spec:
+  hard:
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: harness-limits
+  namespace: default
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 1m
+        memory: 1Mi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harness-pv
+spec:
+  capacity:
+    storage: 1Mi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /tmp/packtest-pv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: harness-pvc
+  namespace: default
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  volumeName: harness-pv
+  resources:
+    requests:
+      storage: 1Mi
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: harnesses.packtest.emisar.dev
+spec:
+  group: packtest.emisar.dev
+  scope: Namespaced
+  names:
+    plural: harnesses
+    singular: harness
+    kind: Harness
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object

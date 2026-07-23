@@ -1,0 +1,25 @@
+services:
+  snmpd:
+    build:
+      context: ${EMISAR_ROOT}/packs/snmp/test/snmpd
+    command: ["/usr/sbin/snmpd", "-f", "-Lo", "-C", "-c", "/etc/snmp/snmpd.conf"]
+    environment:
+      MIBS: ""
+    volumes:
+      - ${EMISAR_ROOT}/packs/snmp/test/fixtures/snmpd.conf:/etc/snmp/snmpd.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "snmpget -v2c -c public -On 127.0.0.1 1.3.6.1.2.1.1.5.0 >/dev/null 2>&1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  snmpd-frr:
+    build:
+      context: ${EMISAR_ROOT}/packs/snmp/test/snmpd-frr
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    healthcheck:
+      test: ["CMD-SHELL", "MIBS='' snmpbulkwalk -v2c -c public -On 127.0.0.1 1.3.6.1.2.1.14.10 2>/dev/null | grep -q 192.168.99.2"]
+      interval: 2s
+      retries: 30

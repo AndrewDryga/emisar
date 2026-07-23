@@ -1,17 +1,17 @@
 schema_version: 1
 id: envoy.logging_get
-title: GET /logging
+title: POST /logging
 kind: exec
 risk: low
 description: Show current per-component log levels.
-side_effects: ["One admin GET.", "Read-only."]
+side_effects: ["One admin POST without mutation parameters.", "Read-only."]
 args: []
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging\""
+      - "curl -fsS -X POST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging\""
   timeout: 15s
 output:
   parser: text

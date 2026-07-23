@@ -1,7 +1,40 @@
 services: [nomad]
 env:
   NOMAD_ADDR: "http://nomad:4646"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: nomad.agent_info
+    expect:
+      stdout_contains: [nomad, server, raft]
+  - action: nomad.agent_members
+    expect:
+      stdout_contains: [alive, role=nomad]
+  - action: nomad.agent_self
+    expect:
+      stdout_contains: [config, member]
   - action: nomad.leader
     expect:
       stdout_contains: ["4647"]
+  - action: nomad.namespace_list
+    expect:
+      stdout_contains: [default]
+  - action: nomad.node_pool_list
+    expect:
+      stdout_contains: [default, all]
+  - action: nomad.operator_autopilot_get_config
+    expect:
+      stdout_contains: [CleanupDeadServers]
+  - action: nomad.operator_autopilot_state
+    expect:
+      stdout_contains: [Healthy, Leader]
+  - action: nomad.operator_raft_list_peers
+    expect:
+      stdout_contains: [Node, leader]
+  - action: nomad.operator_scheduler_get_config
+    expect:
+      stdout_contains: [Scheduler Algorithm]
+  - action: nomad.server_members
+    expect:
+      stdout_contains: ['"Status":"alive"', '"ServerName"']

@@ -1,8 +1,10 @@
 package devtool
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +13,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
@@ -69,7 +73,8 @@ func (a *App) packSync(ctx context.Context, name string) error {
 }
 
 func (a *App) packTest(ctx context.Context, pattern string, names []string) error {
-	bin := filepath.Join(a.Root, "dev", "test-packs", "bin")
+	harness := filepath.Join(a.Root, "dev", "test-packs")
+	bin := filepath.Join(harness, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return err
 	}
@@ -80,75 +85,139 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string) erro
 	if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(a.Root, "dev", "test-packs", "reports"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(harness, "reports"), 0o755); err != nil {
 		return err
 	}
-	compose := []string{"compose", "-f", "dev/test-packs/docker-compose.yaml"}
-	composeEnv := map[string]string{"COMPOSE_PROJECT_NAME": packTestComposeProject(a.Root)}
-	defer func() {
-		_ = a.run(context.Background(), a.Root, composeEnv, "docker", append(compose, "down", "-v", "--remove-orphans")...)
-	}()
-	services, err := a.packTestServices(ctx, compose, pattern, names)
-	if err != nil {
-		return err
-	}
-	runnerService := "runner-tools"
-	if err := a.run(ctx, a.Root, composeEnv, "docker", append(compose, "build", runnerService)...); err != nil {
-		return err
-	}
-	if len(services) > 0 {
-		arguments := append(append(compose, "up", "-d", "--wait"), services...)
-		if err := a.run(ctx, a.Root, composeEnv, "docker", arguments...); err != nil {
-			return err
-		}
-	}
-	arguments := append(compose, "run", "--rm", "--entrypoint", "/opt/emisar/bin/packtest", runnerService)
-	if pattern != "" {
-		arguments = append(arguments, "--pattern", pattern)
-	}
-	for _, name := range names {
-		arguments = append(arguments, "--pack", name)
-	}
-	return a.run(ctx, a.Root, composeEnv, "docker", arguments...)
-}
-
-func (a *App) packTestServices(ctx context.Context, compose []string, pattern string, names []string) ([]string, error) {
 	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	output, err := a.output(ctx, a.Root, nil, "docker", append(compose, "config", "--services")...)
+	baseCompose := filepath.Join(harness, "compose.yaml")
+	composeEnv := map[string]string{"EMISAR_ROOT": a.Root}
+	if err := a.run(ctx, a.Root, composeEnv, "docker", "compose", "-f", baseCompose, "build", "runner-tools"); err != nil {
+		return err
+	}
+
+	jobs := make(chan packtest.PlanRef, len(plans))
+	results := make(chan packTestResult, len(plans))
+	for _, plan := range plans {
+		jobs <- plan
+	}
+	close(jobs)
+
+	workerCount := min(4, len(plans))
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for plan := range jobs {
+				var output bytes.Buffer
+				worker := New(a.Root, nil, &output, &output)
+				runErr := worker.runPackTestProject(ctx, baseCompose, plan)
+				results <- packTestResult{Plan: plan, Output: output.Bytes(), Err: runErr}
+			}
+		}()
+	}
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	completed := make([]packTestResult, 0, len(plans))
+	for result := range results {
+		completed = append(completed, result)
+		status := "PASS"
+		if result.Err != nil {
+			status = "FAIL"
+		}
+		fmt.Fprintf(a.Out, "[%d/%d] %s %s\n", len(completed), len(plans), status, result.Plan.Name)
+	}
+	sort.Slice(completed, func(i, j int) bool {
+		return completed[i].Plan.Name < completed[j].Plan.Name
+	})
+
+	var failures []error
+	for _, result := range completed {
+		fmt.Fprintf(a.Out, "\n--- %s ---\n", result.Plan.Name)
+		copyOutput(a.Out, result.Output)
+		if result.Err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", result.Plan.Name, result.Err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+type packTestResult struct {
+	Plan   packtest.PlanRef
+	Output []byte
+	Err    error
+}
+
+func (a *App) runPackTestProject(ctx context.Context, baseCompose string, plan packtest.PlanRef) error {
+	packCompose := filepath.Join(filepath.Dir(plan.Path), "compose.yaml")
+	if !isFile(packCompose) {
+		return fmt.Errorf("behavior plan has no sibling compose.yaml")
+	}
+	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
+	env := map[string]string{
+		"COMPOSE_PROJECT_NAME": packTestComposeProject(a.Root, plan.Name),
+		"EMISAR_ROOT":          a.Root,
+	}
+
+	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	available := make(map[string]bool)
 	for _, service := range strings.Fields(string(output)) {
 		available[service] = true
 	}
-	return selectPlanServices(plans, available)
-}
-
-func selectPlanServices(plans []packtest.PlanRef, available map[string]bool) ([]string, error) {
-	selected := make(map[string]bool)
-	for _, plan := range plans {
-		for _, service := range plan.Services {
-			if !available[service] {
-				return nil, fmt.Errorf("pack %s requires unknown Compose service %s", plan.Name, service)
-			}
-			selected[service] = true
+	if !available["runner-tools"] {
+		return fmt.Errorf("Compose project has no runner-tools service")
+	}
+	for _, service := range plan.Services {
+		if !available[service] {
+			return fmt.Errorf("requires unknown Compose service %s", service)
 		}
 	}
-	services := make([]string, 0, len(selected))
-	for service := range selected {
-		services = append(services, service)
+
+	if isFile(filepath.Join(filepath.Dir(plan.Path), "Dockerfile")) {
+		if err := a.run(ctx, a.Root, env, "docker", append(compose, "build", "runner-tools")...); err != nil {
+			return fmt.Errorf("build pack runner tools: %w", err)
+		}
 	}
-	sort.Strings(services)
-	return services, nil
+	setupArgs := append(append(compose, "up", "-d", "--wait", "--build"), plan.Services...)
+	setupErr := a.run(ctx, a.Root, env, "docker", setupArgs...)
+	var runErr error
+	if setupErr == nil {
+		runArgs := append(compose, "run", "--rm", "--no-deps", "--entrypoint", "/opt/emisar/bin/packtest", "runner-tools", "--pack", plan.Name)
+		runErr = a.run(ctx, a.Root, env, "docker", runArgs...)
+	} else {
+		runErr = fmt.Errorf("setup: %w", setupErr)
+	}
+
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cleanupErr := a.run(cleanupCtx, a.Root, env, "docker", append(compose, "down", "-v", "--remove-orphans")...)
+	if cleanupErr != nil {
+		cleanupErr = fmt.Errorf("cleanup: %w", cleanupErr)
+	}
+	return errors.Join(runErr, cleanupErr)
 }
 
-func packTestComposeProject(root string) string {
-	hash := fmt.Sprintf("%x", sha256sum(root))
-	return "emisar-packtest-" + hash[:12]
+func packTestComposeProject(root, pack string) string {
+	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+pack))
+	name := strings.Map(func(char rune) rune {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-' || char == '_' {
+			return char
+		}
+		return '-'
+	}, strings.ToLower(pack))
+	if len(name) > 24 {
+		name = name[:24]
+	}
+	return "emisar-packtest-" + name + "-" + hash[:12]
 }
 
 func (a *App) pack(ctx context.Context, args []string) error {
@@ -197,6 +266,11 @@ func (a *App) pack(ctx context.Context, args []string) error {
 func isDirectory(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func composeProject(root string) string {

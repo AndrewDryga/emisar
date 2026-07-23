@@ -1,7 +1,55 @@
 services: [cockroach]
 env:
   COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: cockroach.cluster_queries
+    expect:
+      stdout_contains: [query_id, cluster_queries]
+  - action: cockroach.cluster_sessions
+    expect:
+      stdout_contains: [session_id, root]
+  - action: cockroach.cluster_settings
+    expect:
+      stdout_contains: [version, setting]
   - action: cockroach.databases
     expect:
       stdout_contains: [defaultdb]
+  - action: cockroach.node_liveness
+    expect:
+      stdout_contains: [node_id, active]
+  - action: cockroach.node_status
+    expect:
+      stdout_contains: [id, address, available]
+  - action: cockroach.node_status_one
+    args: {node_id: 1}
+    expect:
+      stdout_contains: ["1", available]
+  - action: cockroach.replication_stats
+    expect:
+      stdout_contains: [total, under_replicated, unavailable]
+  - action: cockroach.statement_stats
+    arrange:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "SELECT 424242"]
+    expect:
+      stdout_contains: [app_name, count, query]
+  - action: cockroach.store_status
+    expect:
+      stdout_contains: [node_id, store_id, capacity]
+  - action: cockroach.table_ranges
+    args: {database: defaultdb, table: packtest_orders}
+    arrange:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "CREATE TABLE IF NOT EXISTS packtest_orders (id INT PRIMARY KEY, status STRING); UPSERT INTO packtest_orders VALUES (1, 'paid'), (2, 'pending')"]
+    expect:
+      stdout_contains: [range_id, lease_holder]
+    cleanup:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "DROP TABLE IF EXISTS packtest_orders"]
+  - action: cockroach.table_row_counts
+    arrange:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "CREATE TABLE IF NOT EXISTS packtest_rows (id INT PRIMARY KEY); UPSERT INTO packtest_rows VALUES (1), (2), (3); ANALYZE packtest_rows"]
+    expect:
+      stdout_contains: [table_name, packtest_rows]
+    cleanup:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "DROP TABLE IF EXISTS packtest_rows"]

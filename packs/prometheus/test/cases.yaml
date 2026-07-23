@@ -1,7 +1,35 @@
 services: [prometheus]
 env:
   PROM_URL: "http://prometheus:9090"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: prom.alertmanagers
+    expect:
+      stdout_contains: ['"status":"success"', '"activeAlertmanagers"']
+  - action: prom.alerts
+    expect:
+      stdout_contains: ['"status":"success"', '"alerts"']
   - action: prom.build_info
     expect:
       stdout_contains: ['"status":"success"', '"version"']
+  - action: prom.flags
+    expect:
+      stdout_contains: ['"status":"success"', '"config.file"']
+  - action: prom.query_instant
+    args: {query: up}
+    expect:
+      stdout_contains: ['"status":"success"', '"resultType":"vector"', '"job":"prometheus"']
+  - action: prom.rules
+    expect:
+      stdout_contains: ['"status":"success"', '"groups"']
+  - action: prom.runtime_info
+    expect:
+      stdout_contains: ['"status":"success"', '"startTime"']
+  - action: prom.targets
+    expect:
+      stdout_contains: ['"status":"success"', '"job":"prometheus"']
+  - action: prom.tsdb_stats
+    expect:
+      stdout_contains: ['"status":"success"', '"headStats"']

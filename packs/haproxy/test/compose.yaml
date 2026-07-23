@@ -1,0 +1,22 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/haproxy/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-haproxy-tools:latest
+    volumes:
+      - haproxy_run:/run/haproxy
+
+  haproxy:
+    image: haproxy:3.4.2
+    user: root
+    volumes:
+      - haproxy_run:/run/haproxy
+      - ${EMISAR_ROOT}/packs/haproxy/test/fixtures/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/haproxy/admin.sock"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  haproxy_run:

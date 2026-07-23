@@ -1,7 +1,75 @@
 services: [mongodb]
 env:
   MONGO_URI: "mongodb://root:testpass@mongodb:27017/?authSource=admin"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
   - action: mongo.build_info
     expect:
       stdout_contains: ['"version"']
+  - action: mongo.collection_list
+    args: {database: packtest}
+    expect:
+      stdout_contains: [orders]
+  - action: mongo.collection_stats
+    args: {database: packtest, collection: orders}
+    expect:
+      stdout_contains: ['"ns":"packtest.orders"', '"count":3']
+  - action: mongo.concurrent_transactions
+    expect:
+      stdout_contains: [read, write]
+  - action: mongo.connection_stats
+    expect:
+      stdout_contains: ['"current"', '"available"']
+  - action: mongo.connections
+    expect:
+      stdout_contains: ['"numClientConnections"']
+  - action: mongo.current_op
+    expect:
+      stdout_contains: ['"inprog"']
+  - action: mongo.cursor_stats
+    expect:
+      stdout_contains: ['"open"']
+  - action: mongo.db_list
+    expect:
+      stdout_contains: ['"databases"', packtest]
+  - action: mongo.db_stats
+    args: {database: packtest}
+    expect:
+      stdout_contains: ['"db":"packtest"', '"collections"']
+  - action: mongo.explain_query
+    args:
+      database: packtest
+      collection: orders
+      # Leading whitespace keeps the runner CLI from decoding this string as
+      # an object before the action passes it to JSON.parse.
+      filter_json: ' {"status":"paid"}'
+    expect:
+      stdout_contains: ['"executionStats"', status_1]
+  - action: mongo.get_parameter
+    expect:
+      stdout_contains: ['"authenticationMechanisms"']
+  - action: mongo.global_lock
+    expect:
+      stdout_contains: ['"totalTime"']
+  - action: mongo.host_info
+    expect:
+      stdout_contains: ['"system"', '"os"']
+  - action: mongo.index_stats
+    args: {database: packtest, collection: orders}
+    expect:
+      stdout_contains: [customer_1, status_1]
+  - action: mongo.profiler_status
+    args: {database: packtest}
+    expect:
+      stdout_contains: ['"was"', '"slowms"']
+  - action: mongo.server_status
+    expect:
+      stdout_contains: ['"host"', '"connections"', '"version"']
+  - action: mongo.top
+    expect:
+      stdout_contains: ['"totals"', packtest.orders]
+  - action: mongo.wiredtiger_cache
+    expect:
+      stdout_contains: [maximum, bytes]

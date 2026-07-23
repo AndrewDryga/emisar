@@ -1,7 +1,35 @@
 services: [envoy]
 env:
   ENVOY_ADMIN: "http://envoy:9901"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: envoy.certs
+    expect:
+      stdout_contains: [certificates]
+  - action: envoy.clusters
+    expect:
+      stdout_contains: [harness_backend]
+  - action: envoy.config_dump
+    expect:
+      stdout_contains: [configs]
+  - action: envoy.listeners
+    expect:
+      stdout_contains: [listener_0, "10000"]
+  - action: envoy.logging_get
+    expect:
+      stdout_contains: [active loggers]
   - action: envoy.ready
     expect:
       stdout_contains: ["200"]
+  - action: envoy.runtime
+    expect:
+      stdout_contains: [layers]
+  - action: envoy.server_info
+    expect:
+      stdout_contains: [version, state]
+  - action: envoy.stats
+    args: {filter: server}
+    expect:
+      stdout_contains: [server.]

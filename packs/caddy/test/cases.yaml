@@ -1,0 +1,38 @@
+services: [caddy]
+env:
+  CADDY_ACCESS_LOG: /var/log/caddy/access.log
+  CADDY_ADMIN: http://127.0.0.1:2019
+cases:
+  - action: caddy.version
+    expect:
+      stdout_contains: [v2.11.4]
+  - action: caddy.config_dump
+    expect:
+      stdout_contains: ['"apps"', '"http"']
+    probes:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        expect:
+          stdout_contains: [pack-test ok]
+  - action: caddy.adapt_caddyfile
+    expect:
+      stdout_contains: ['"apps"', '"http"']
+  - action: caddy.runtime_metrics
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+    expect:
+      stdout_contains: [caddy_http_requests_in_flight, go_gc_duration_seconds]
+  - action: caddy.access_log_tail
+    args: {lines: 10}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/packtest]
+    expect:
+      stdout_contains: [packtest, "200"]
+  - action: caddy.validate_config
+    expect:
+      stdout_contains: [Valid configuration]
+  - action: caddy.reload_config
+    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
+    probes:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        expect:
+          stdout_contains: [pack-test ok]

@@ -1,7 +1,49 @@
 services: [consul]
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: consul.agent_checks
+    expect:
+      stdout_contains: ["{}"]
+  - action: consul.agent_host_info
+    expect:
+      stdout_contains: [Memory, CPU]
+  - action: consul.agent_metrics
+    expect:
+      stdout_contains: [Timestamp, Gauges]
+  - action: consul.agent_self
+    expect:
+      stdout_contains: [Config, Member]
+  - action: consul.agent_services
+    expect:
+      stdout_contains: ["{}"]
+  - action: consul.autopilot_state
+    expect:
+      stdout_contains: [Healthy, Servers]
+  - action: consul.catalog_datacenters
+    expect:
+      stdout_contains: [dc1]
+  - action: consul.connect_ca_configuration
+    expect:
+      stdout_contains: [Provider, Config]
+  - action: consul.connect_ca_roots
+    expect:
+      stdout_contains: [ActiveRootID, Roots]
+  - action: consul.leader
+    expect:
+      stdout_contains: ["8300"]
+  - action: consul.list_nodes
+    expect:
+      stdout_contains: [Node, Address]
+  - action: consul.list_services
+    expect:
+      stdout_contains: [consul]
   - action: consul.members
     expect:
       stdout_contains: [alive, server]
+  - action: consul.raft_peers
+    expect:
+      stdout_contains: [Node, leader]

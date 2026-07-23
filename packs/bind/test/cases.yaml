@@ -1,0 +1,48 @@
+services: [bind]
+cases:
+  - action: bind.rndc_status
+    expect:
+      stdout_contains: [version, boot time, server is up and running]
+  - action: bind.rndc_stats
+    expect:
+      stdout_contains: [Statistics Dump, Incoming Queries, Cache Statistics]
+  - action: bind.named_checkconf
+    expect:
+      exit: [0]
+    probes:
+      - argv: [/bin/sh, -c, "named-checkconf /etc/bind/named.conf && echo config-valid"]
+        expect:
+          stdout_contains: [config-valid]
+  - action: bind.named_checkzone
+    args: {zone: example.test, file: /etc/bind/example.test.zone}
+    expect:
+      stdout_contains: [loaded serial 2026072301, OK]
+  - action: bind.zone_dump
+    args: {zone: example.test}
+    expect:
+      stdout_contains: [192.0.2.80, 2026072301]
+  - action: bind.query_local
+    args: {name: www.example.test, type: A}
+    expect:
+      stdout_contains: [192.0.2.80]
+  - action: bind.zone_serial
+    args: {zone: example.test}
+    expect:
+      stdout_contains: ["2026072301"]
+  - action: bind.rndc_reload
+    args: {zone: example.test}
+    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
+    expect:
+      stdout_contains: [zone reload up-to-date]
+    probes:
+      - argv: [dig, "@127.0.0.1", www.example.test, A, +short]
+        expect:
+          stdout_contains: [192.0.2.80]
+  - action: bind.rndc_flush
+    cleanup_not_needed: The empty resolver cache repopulates naturally.
+    expect:
+      exit: [0]
+    probes:
+      - argv: [dig, "@127.0.0.1", www.example.test, A, +short]
+        expect:
+          stdout_contains: [192.0.2.80]

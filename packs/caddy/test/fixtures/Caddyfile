@@ -1,0 +1,12 @@
+{
+    admin :2019
+    auto_https off
+    metrics
+}
+
+:80 {
+    log {
+        output file /var/log/caddy/access.log
+    }
+    respond "pack-test ok" 200
+}

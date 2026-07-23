@@ -2,7 +2,37 @@ services: [clickhouse]
 env:
   CH_HOST: clickhouse
   CH_USER: default
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: ch.asynchronous_metrics
+    expect:
+      stdout_contains: ['"metric"', '"value"']
+  - action: ch.disks
+    expect:
+      stdout_contains: ['"name":"default"', '"path"']
+  - action: ch.parts_by_partition
+    expect:
+      stdout_contains: ['"table":"packtest_events"', '"rows":3']
+  - action: ch.parts_summary
+    expect:
+      stdout_contains: ['"table":"packtest_events"', '"rows":3']
+  - action: ch.processes
+    expect:
+      stdout_contains: ['"query_id"', system.processes]
+  - action: ch.system_events
+    expect:
+      stdout_contains: ['"event"', '"value"']
+  - action: ch.system_metrics
+    expect:
+      stdout_contains: ['"metric"', '"value"']
+  - action: ch.table_sizes
+    expect:
+      stdout_contains: ['"name":"packtest_events"', '"total_rows":3']
+  - action: ch.tables_overview
+    expect:
+      stdout_contains: ['"name":"packtest_events"', '"engine":"MergeTree"']
   - action: ch.uptime
     expect:
       stdout_contains: ["version()", "uptime()"]

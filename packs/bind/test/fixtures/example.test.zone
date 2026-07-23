@@ -1,0 +1,7 @@
+$TTL 60
+@ IN SOA ns.example.test. admin.example.test. (
+    2026072301 60 60 3600 60
+)
+@  IN NS ns.example.test.
+ns IN A 192.0.2.53
+www IN A 192.0.2.80

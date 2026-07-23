@@ -1,0 +1,13 @@
+services:
+  typesense:
+    image: typesense/typesense:29.0@sha256:316b7e71c21f7e5e5caa8daa150e1b3f2be8c876081ee1f77bc2d92cd7f137d0
+    command: ["--data-dir=/data", "--api-key=harness-key", "--listen-port=8108"]
+    volumes:
+      - typesense_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8108; printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3; grep -q '\"ok\":true' <&3"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  typesense_data:

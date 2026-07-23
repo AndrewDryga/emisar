@@ -1,8 +1,0 @@
-{
-    admin :2019
-    auto_https off
-}
-
-:80 {
-    respond "pack-test ok" 200
-}

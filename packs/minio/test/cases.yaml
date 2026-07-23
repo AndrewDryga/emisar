@@ -1,0 +1,65 @@
+services: [minio]
+env:
+  MC_HOST_minio: "http://minio_admin:testpass@minio:9000"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: minio.admin_info
+    args: {alias: minio}
+    expect:
+      stdout_contains: ['"status":"success"', '"servers"']
+  - action: minio.ls_buckets
+    args: {alias: minio}
+    arrange:
+      - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
+    expect:
+      stdout_contains: [harness-bucket]
+    cleanup:
+      - argv: [mc, rb, "--force", minio/harness-bucket]
+  - action: minio.bucket_stat
+    args: {alias: minio, bucket: harness-bucket}
+    arrange:
+      - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
+      - argv: [/bin/sh, -c, 'printf packtest | mc pipe minio/harness-bucket/probe.txt']
+    expect:
+      stdout_contains: [harness-bucket, object]
+    cleanup:
+      - argv: [mc, rb, "--force", minio/harness-bucket]
+  - action: minio.list_policies
+    args: {alias: minio}
+    expect:
+      stdout_contains: [consoleAdmin, readonly]
+  - action: minio.list_users
+    args: {alias: minio}
+    arrange:
+      - argv: [mc, admin, user, add, minio, harness_user, harness_password]
+    expect:
+      stdout_contains: ['"userStatus":"enabled"']
+    cleanup:
+      - argv: [mc, admin, user, remove, minio, harness_user]
+  - action: minio.user_disable
+    args: {alias: minio, user: harness_user}
+    arrange:
+      - argv: [mc, admin, user, add, minio, harness_user, harness_password]
+    expect:
+      stdout_contains: [Disabled, successfully]
+    probes:
+      - argv: [mc, admin, user, info, minio, harness_user]
+        expect:
+          stdout_contains: [disabled]
+    cleanup:
+      - argv: [mc, admin, user, remove, minio, harness_user]
+  - action: minio.user_enable
+    args: {alias: minio, user: harness_user}
+    arrange:
+      - argv: [mc, admin, user, add, minio, harness_user, harness_password]
+      - argv: [mc, admin, user, disable, minio, harness_user]
+    expect:
+      stdout_contains: [Enabled, successfully]
+    probes:
+      - argv: [mc, admin, user, info, minio, harness_user]
+        expect:
+          stdout_contains: [enabled]
+    cleanup:
+      - argv: [mc, admin, user, remove, minio, harness_user]

@@ -1,0 +1,135 @@
+services: [cassandra]
+env:
+  CQLSH_HOST: 127.0.0.1
+  CQLSH_PORT: "9042"
+cases:
+  - action: cassandra.nodetool_status
+    expect:
+      stdout_contains: [Datacenter, UN]
+  - action: cassandra.nodetool_describecluster
+    expect:
+      stdout_contains: [packtest, Schema versions]
+  - action: cassandra.nodetool_info
+    expect:
+      stdout_contains: [Gossip active, Native Transport active]
+  - action: cassandra.nodetool_version
+    expect:
+      stdout_contains: [ReleaseVersion]
+  - action: cassandra.nodetool_gossipinfo
+    expect:
+      stdout_contains: [STATUS, RELEASE_VERSION]
+  - action: cassandra.nodetool_ring
+    args: {keyspace: packtest}
+    expect:
+      stdout_contains: [Datacenter, Normal]
+  - action: cassandra.nodetool_failuredetector
+    expect:
+      stdout_contains: [Endpoint, Phi]
+  - action: cassandra.nodetool_describering
+    args: {keyspace: packtest}
+    expect:
+      stdout_contains: [Schema Version, TokenRange]
+  - action: cassandra.nodetool_tpstats
+    expect:
+      stdout_contains: [Pool Name, Dropped]
+  - action: cassandra.nodetool_netstats
+    expect:
+      stdout_contains: [Mode, Not sending any streams]
+  - action: cassandra.nodetool_proxyhistograms
+    expect:
+      stdout_contains: [Percentile, Read Latency]
+  - action: cassandra.nodetool_tablehistograms
+    args: {keyspace: packtest, table: events}
+    expect:
+      stdout_contains: [Percentile, SSTables]
+  - action: cassandra.nodetool_tablestats
+    args: {keyspace: packtest}
+    expect:
+      stdout_contains: [Keyspace, events]
+  - action: cassandra.nodetool_compactionstats
+    expect:
+      stdout_contains: [pending tasks]
+  - action: cassandra.nodetool_compactionhistory
+    expect:
+      stdout_contains: [Compaction History]
+  - action: cassandra.nodetool_getconcurrentcompactors
+    expect:
+      stdout_not_empty: true
+  - action: cassandra.nodetool_getcompactionthroughput
+    expect:
+      stdout_not_empty: true
+  - action: cassandra.analyze_disk_pressure
+    args: {keyspace_filter: packtest}
+    expect:
+      stdout_contains: [packtest, events]
+  - action: cassandra.nodetool_listsnapshots
+    expect:
+      stdout_contains: [Snapshot Details]
+  - action: cassandra.nodetool_getendpoints
+    args: {keyspace: packtest, table: events, key: "1"}
+    expect:
+      stdout_not_empty: true
+  - action: cassandra.cqlsh_describe_schema
+    expect:
+      stdout_contains: [CREATE KEYSPACE packtest]
+  - action: cassandra.cqlsh_list_keyspaces
+    expect:
+      stdout_contains: [packtest, system_schema]
+  - action: cassandra.cqlsh_describe_keyspace
+    args: {keyspace: packtest}
+    expect:
+      stdout_contains: [CREATE KEYSPACE packtest, CREATE TABLE packtest.events]
+  - action: cassandra.cqlsh_list_roles
+    expect:
+      stdout_contains: [role, cassandra]
+  - action: cassandra.cqlsh_system_peers
+    expect:
+      stdout_contains: [peer, data_center]
+  - action: cassandra.cqlsh_system_size_estimates
+    expect:
+      stdout_contains: [keyspace_name, table_name]
+  - action: cassandra.nodetool_flush
+    args: {keyspace: packtest, table: events}
+    cleanup_not_needed: Flushing the fixture memtable is idempotent and not reversible.
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: [SSTable count]
+  - action: cassandra.nodetool_snapshot
+    args: {tag: packtest-snapshot, keyspace: packtest}
+    probes:
+      - argv: [nodetool, listsnapshots]
+        expect:
+          stdout_contains: [packtest-snapshot, events]
+    cleanup:
+      - argv: [nodetool, clearsnapshot, -t, packtest-snapshot]
+  - action: cassandra.nodetool_clearsnapshot
+    args: {tag: packtest-clear}
+    cleanup_not_needed: The action removes the temporary snapshot created by arrange.
+    arrange:
+      - argv: [nodetool, snapshot, -t, packtest-clear, packtest]
+    probes:
+      - argv: [/bin/sh, -c, "! nodetool listsnapshots | grep -q packtest-clear && echo cleared"]
+        expect:
+          stdout_contains: [cleared]
+  - action: cassandra.nodetool_setcompactionthroughput
+    args: {mb_per_sec: 32}
+    probes:
+      - argv: [nodetool, getcompactionthroughput]
+        expect:
+          stdout_contains: ["32"]
+    cleanup:
+      - argv: [nodetool, setcompactionthroughput, "64"]
+  - action: cassandra.nodetool_getlogginglevels
+    expect:
+      stdout_contains: [Logger Name, ROOT]
+  - action: cassandra.nodetool_setlogginglevel
+    args: {logger: ROOT, level: INFO}
+    probes:
+      - argv: [nodetool, getlogginglevels]
+        expect:
+          stdout_contains: [ROOT, INFO]
+    cleanup:
+      - argv: [nodetool, setlogginglevel, ROOT, INFO]

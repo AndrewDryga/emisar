@@ -1,7 +1,36 @@
 services: [grafana]
 env:
+  GRAFANA_PASSWORD: testpass
   GRAFANA_URL: "http://grafana:3000"
+  GRAFANA_USER: admin
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: grafana.alerting_rules
+    expect:
+      stdout_contains: [groups]
+  - action: grafana.alerting_state
+    expect:
+      stdout_contains: ["[]"]
+  - action: grafana.dashboards_search
+    expect:
+      stdout_contains: ["[]"]
+  - action: grafana.datasources
+    expect:
+      stdout_contains: ["[]"]
   - action: grafana.health
     expect:
       stdout_contains: ['"database"', '"ok"']
+  - action: grafana.orgs
+    expect:
+      stdout_contains: [Main Org.]
+  - action: grafana.settings
+    expect:
+      stdout_contains: [DEFAULT, app_mode]
+  - action: grafana.users
+    expect:
+      stdout_contains: [admin]
+  - action: grafana.version
+    expect:
+      stdout_contains: [buildInfo, version]

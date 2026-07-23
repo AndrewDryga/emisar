@@ -1,0 +1,14 @@
+services:
+  runner-tools:
+    network_mode: service:redis
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:8.8.0
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10

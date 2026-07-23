@@ -1,0 +1,60 @@
+services: [kafka]
+env:
+  KAFKA_BOOTSTRAP: kafka:9092
+cases:
+  - action: kafka.cluster_info
+    expect:
+      stdout_contains: [kafka:9092, Produce, Fetch]
+  - action: kafka.broker_api_versions
+    expect:
+      stdout_contains: [Produce, Fetch]
+  - action: kafka.broker_configs
+    args: {broker_id: "1"}
+    expect:
+      stdout_contains: [Dynamic configs for broker 1]
+  - action: kafka.list_topics
+    expect:
+      stdout_contains: [orders]
+  - action: kafka.describe_topic
+    args: {topic: orders}
+    expect:
+      stdout_contains: [Topic, orders, PartitionCount, "2"]
+  - action: kafka.topic_configs
+    args: {topic: orders}
+    expect:
+      stdout_contains: [Dynamic configs for topic orders]
+  - action: kafka.list_acls
+    arrange:
+      - argv: [kafka-acls.sh, --bootstrap-server, kafka:9092, --add, --allow-principal, "User:ANONYMOUS", --operation, Read, --topic, orders]
+    expect:
+      stdout_contains: [User:ANONYMOUS, orders]
+    cleanup:
+      - argv: [kafka-acls.sh, --bootstrap-server, kafka:9092, --remove, --allow-principal, "User:ANONYMOUS", --operation, Read, --topic, orders, --force]
+  - action: kafka.leader_partitions
+    expect:
+      stdout_contains: ["2 1"]
+  - action: kafka.under_replicated
+    expect:
+      exit: [0]
+    probes:
+      - argv: [/bin/sh, -c, 'test -z "$(kafka-topics.sh --bootstrap-server kafka:9092 --describe --under-replicated-partitions)" && echo fully-replicated']
+        expect:
+          stdout_contains: [fully-replicated]
+  - action: kafka.unavailable_partitions
+    expect:
+      exit: [0]
+    probes:
+      - argv: [/bin/sh, -c, 'test -z "$(kafka-topics.sh --bootstrap-server kafka:9092 --describe --unavailable-partitions)" && echo all-partitions-available']
+        expect:
+          stdout_contains: [all-partitions-available]
+  - action: kafka.reassign_status
+    expect:
+      stdout_contains: [No partition reassignments found]
+  - action: kafka.alter_topic_retention
+    args: {topic: orders, retention_ms: 60000}
+    probes:
+      - argv: [/opt/kafka/bin/kafka-configs.sh, --bootstrap-server, kafka:9092, --describe, --entity-type, topics, --entity-name, orders]
+        expect:
+          stdout_contains: [retention.ms=60000]
+    cleanup:
+      - argv: [/opt/kafka/bin/kafka-configs.sh, --bootstrap-server, kafka:9092, --alter, --entity-type, topics, --entity-name, orders, --delete-config, retention.ms]

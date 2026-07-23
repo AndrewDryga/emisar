@@ -1,0 +1,8 @@
+services:
+  memcached:
+    image: memcached:1.6.45
+    command: ["-o", "track_sizes"]
+    healthcheck:
+      test: ["CMD", "pidof", "memcached"]
+      interval: 5s
+      retries: 10

@@ -1,0 +1,28 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/postfix/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-postfix-tools:latest
+    network_mode: service:postfix
+    pid: service:postfix
+    volumes:
+      - postfix_config:/etc/postfix
+      - postfix_spool:/var/spool/postfix
+
+  postfix:
+    image: boky/postfix:5.1.0-alpine
+    environment:
+      HOSTNAME: postfix.example.test
+      ALLOWED_SENDER_DOMAINS: example.test
+    volumes:
+      - postfix_config:/etc/postfix
+      - postfix_spool:/var/spool/postfix
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null && postconf -h myhostname | grep -q postfix.example.test"]
+      interval: 5s
+      retries: 30
+
+volumes:
+  postfix_config:
+  postfix_spool:

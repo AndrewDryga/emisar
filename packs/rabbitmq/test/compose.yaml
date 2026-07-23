@@ -1,0 +1,23 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/rabbitmq/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-rabbitmq-tools:latest
+    network_mode: service:rabbitmq
+    environment:
+      RABBITMQ_ERLANG_COOKIE: packtest-cookie
+      RABBITMQ_NODENAME: rabbit@rabbitmq
+
+  rabbitmq:
+    image: rabbitmq:4.3.3-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_ERLANG_COOKIE: packtest-cookie
+      RABBITMQ_NODENAME: rabbit@rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmqadmin -u guest -p guest declare queue --name packtest --durable true --non-interactive >/dev/null"]
+      interval: 5s
+      retries: 30

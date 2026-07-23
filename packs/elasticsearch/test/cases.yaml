@@ -3,7 +3,75 @@ env:
   ELASTIC_PASSWORD: testpass
   ELASTIC_URL: "http://elasticsearch:9200"
   ELASTIC_USER: elastic
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: es.cat_aliases
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null && curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X POST "$ELASTIC_URL/_aliases" -d "{\"actions\":[{\"add\":{\"index\":\"packtest\",\"alias\":\"packtest-ready\"}}]}" >/dev/null']
+    expect:
+      stdout_contains: [packtest-ready, packtest]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.cat_indices
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: [packtest, open]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.cat_nodes
+    expect:
+      stdout_contains: [ip, heap.percent]
+  - action: es.cat_shards
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: [packtest, STARTED]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.cat_thread_pool
+    expect:
+      stdout_contains: [node_name, active]
   - action: es.cluster_health
     expect:
       stdout_contains: ['"cluster_name"']
+  - action: es.cluster_settings
+    expect:
+      stdout_contains: ['"persistent"', '"transient"']
+  - action: es.index_count
+    args: {index: packtest}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: ['"count" : 1']
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.index_mapping
+    args: {index: packtest}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: [packtest, status, keyword]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.index_settings
+    args: {index: packtest}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: [packtest, number_of_shards]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.index_stats
+    args: {index: packtest}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: [packtest, primaries, docs]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  - action: es.pending_tasks
+    expect:
+      stdout_contains: ['"tasks"']

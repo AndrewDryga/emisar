@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT coalesce(sum(total_ranges),0) AS total, coalesce(sum(under_replicated_ranges),0) AS under_replicated, coalesce(sum(unavailable_ranges),0) AS unavailable, coalesce(sum(over_replicated_ranges),0) AS over_replicated FROM system.replication_stats\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET allow_unsafe_internals = true; SELECT coalesce(sum(total_ranges),0) AS total, coalesce(sum(under_replicated_ranges),0) AS under_replicated, coalesce(sum(unavailable_ranges),0) AS unavailable, coalesce(sum(over_replicated_ranges),0) AS over_replicated FROM system.replication_stats\""
   timeout: 20s
 output:
   parser: text

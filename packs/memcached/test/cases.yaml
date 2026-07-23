@@ -2,7 +2,40 @@ services: [memcached]
 env:
   MEMCACHED_HOST: memcached
   MEMCACHED_PORT: "11211"
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: mc.flush_all
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "set harness 0 0 5\r\nvalue\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" | grep -q STORED']
+    expect:
+      stdout_contains: [OK]
+    probes:
+      - argv: [/bin/sh, -c, 'output="$(printf "get harness\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT")"; ! printf "%s" "$output" | grep -q VALUE && printf absent']
+        expect:
+          stdout_contains: [absent]
+    cleanup:
+      - argv: [/bin/sh, -c, 'printf "delete harness\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" >/dev/null']
+  - action: mc.stats
+    expect:
+      stdout_contains: [STAT version, STAT uptime, END]
+  - action: mc.stats_items
+    expect:
+      stdout_contains: [END]
+  - action: mc.stats_settings
+    expect:
+      stdout_contains: [STAT maxbytes, END]
+  - action: mc.stats_sizes
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "set harness 0 0 5\r\nvalue\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" | grep -q STORED']
+    expect:
+      stdout_contains: [STAT, END]
+    cleanup:
+      - argv: [/bin/sh, -c, 'printf "delete harness\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" >/dev/null']
+  - action: mc.stats_slabs
+    expect:
+      stdout_contains: [END]
   - action: mc.version
     expect:
       stdout_contains: [VERSION]

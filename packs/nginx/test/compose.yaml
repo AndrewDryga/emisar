@@ -1,0 +1,27 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/nginx/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-nginx-tools:latest
+    network_mode: service:nginx
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
+
+  nginx:
+    image: nginx:1.31.3
+    command:
+      - /bin/sh
+      - -c
+      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log && exec /docker-entrypoint.sh nginx -g 'daemon off;'
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/nginx_status | grep -q 'Active connections'"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  nginx_logs:

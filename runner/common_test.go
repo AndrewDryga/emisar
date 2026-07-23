@@ -64,6 +64,9 @@ func TestCoerceArgValue_NoEvaluation(t *testing.T) {
 	if got := coerceArgValue("42"); got != int64(42) {
 		t.Fatalf(`coerceArgValue("42") = %#v, want int64 42`, got)
 	}
+	if got := coerceArgValue(`"42"`); got != "42" {
+		t.Fatalf(`coerceArgValue("\"42\"") = %#v, want string "42"`, got)
+	}
 }
 
 // TestDefaultConfigPaths_ExcludesCwd: config auto-discovery must never search

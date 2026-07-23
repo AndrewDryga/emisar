@@ -1,0 +1,33 @@
+services:
+  runner-tools:
+    volumes:
+      - k3s_kubeconfig:/shared:ro
+
+  k3s:
+    image: rancher/k3s:v1.36.2-k3s1
+    command: server --node-name=harness --tls-san=k3s --disable=traefik
+    privileged: true
+    environment:
+      K3S_KUBECONFIG_MODE: "666"
+      K3S_KUBECONFIG_OUTPUT: /shared/kubeconfig.yaml
+    volumes:
+      - k3s_kubeconfig:/shared
+      - ${EMISAR_ROOT}/packs/kubernetes/test/fixtures/probe.yaml:/var/lib/rancher/k3s/server/manifests/probe.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get nodes | grep -q ' Ready' && kubectl wait --for=condition=Ready pod/probe --timeout=2s >/dev/null && kubectl get crd harnesses.packtest.emisar.dev >/dev/null"]
+      interval: 10s
+      retries: 20
+
+  k3s-kubeconfig:
+    image: busybox:1.38.0
+    depends_on: [k3s]
+    volumes:
+      - k3s_kubeconfig:/shared
+    command: sh -c 'until [ -f /shared/kubeconfig.yaml ]; do sleep 1; done; sed -i "s#https://127.0.0.1:6443#https://k3s:6443#" /shared/kubeconfig.yaml; touch /shared/ready; exec tail -f /dev/null'
+    healthcheck:
+      test: ["CMD", "test", "-f", "/shared/ready"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  k3s_kubeconfig:

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunExecutesBehaviorProbeAndCleanup(t *testing.T) {
@@ -27,7 +28,7 @@ cases:
   - action: example.inspect
     args: {count: 3, name: demo}
     expect:
-      stdout_contains: [present, "count=3", "name=demo"]
+      stdout_contains: [present, "count=3", 'name="demo"']
   - action: example.mutate
     probes:
       - argv: ["`+filepath.Join(root, "probe")+`"]
@@ -37,7 +38,7 @@ cases:
       - argv: ["`+filepath.Join(root, "cleanup")+`"]
 `)
 	emisar := filepath.Join(root, "emisar")
-	writeExecutable(t, emisar, "#!/bin/sh\nprintf '%s\\n' \"$FIXTURE\" \"$@\"\nprintf changed > \""+filepath.Join(root, "state")+"\"\n")
+	writeExecutable(t, emisar, "#!/bin/sh\nprintf '{\"status\":\"success\",\"exit_code\":0,\"stdout\":\"present count=3 name=\\\\\"demo\\\\\"\"}\\n'\nprintf changed > \""+filepath.Join(root, "state")+"\"\n")
 	writeExecutable(t, filepath.Join(root, "probe"), "#!/bin/sh\ncat \""+filepath.Join(root, "state")+"\"\n")
 	writeExecutable(t, filepath.Join(root, "cleanup"), "#!/bin/sh\nprintf cleaned > \""+filepath.Join(root, "state")+"\"\n")
 
@@ -61,6 +62,16 @@ cases:
 	}
 }
 
+func TestArgumentValuePreservesNumericStrings(t *testing.T) {
+	got, err := argumentValue("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != `"1"` {
+		t.Fatalf("argumentValue numeric string = %q, want JSON string", got)
+	}
+}
+
 func TestRunStepRetriesAtTheConfiguredDeadline(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture executable is POSIX shell")
@@ -81,10 +92,25 @@ func TestRunStepRetriesAtTheConfiguredDeadline(t *testing.T) {
 	}
 }
 
+func TestExecuteTimesOutHungCommands(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	previous := commandTimeout
+	commandTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { commandTimeout = previous })
+
+	_, err := execute([]string{"/bin/sh", "-c", "sleep 1"}, os.Environ())
+	if err == nil || !strings.Contains(err.Error(), "command timed out after 10ms") {
+		t.Fatalf("execute error = %v", err)
+	}
+}
+
 func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 	actions := map[string]actionDefinition{
-		"example.read":   {ID: "example.read", Risk: "low"},
-		"example.mutate": {ID: "example.mutate", Risk: "high"},
+		"example.read":           {ID: "example.read", Risk: "low"},
+		"example.sensitive_read": {ID: "example.sensitive_read", Risk: "medium", SideEffects: []string{"Read-only, but exposes secrets."}},
+		"example.mutate":         {ID: "example.mutate", Risk: "high"},
 	}
 	tests := []struct {
 		name string
@@ -104,6 +130,13 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		{"mutation without cleanup", Plan{Services: []string{"fixture"}, Cases: []Case{
 			{Action: "example.mutate", Probes: []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}}},
 		}}, "needs cleanup"},
+		{"cleanup and justification", Plan{Services: []string{"fixture"}, Cases: []Case{
+			{
+				Action:  "example.mutate",
+				Probes:  []Step{{Argv: []string{"true"}, Expect: Expectation{StdoutNotEmpty: true}}},
+				Cleanup: []Step{{Argv: []string{"true"}}}, CleanupNotNeeded: "idempotent",
+			},
+		}}, "cannot declare cleanup"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -112,6 +145,27 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 				t.Fatalf("validatePlan error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestPlanValidationAcceptsSensitiveReadAndJustifiedMutation(t *testing.T) {
+	actions := map[string]actionDefinition{
+		"example.read": {
+			ID: "example.read", Risk: "medium",
+			SideEffects: []string{"Read-only, but may expose secrets."},
+		},
+		"example.reload": {ID: "example.reload", Risk: "high"},
+	}
+	plan := Plan{Services: []string{"fixture"}, Cases: []Case{
+		{Action: "example.read", Expect: Expectation{StdoutNotEmpty: true}},
+		{
+			Action: "example.reload", Expect: Expectation{StdoutNotEmpty: true},
+			Probes:           []Step{{Argv: []string{"echo", "ready"}, Expect: Expectation{StdoutContains: []string{"ready"}}}},
+			CleanupNotNeeded: "Reloading the same config is idempotent.",
+		},
+	}}
+	if err := validatePlan("example", plan, actions); err != nil {
+		t.Fatalf("validatePlan error = %v", err)
 	}
 }
 

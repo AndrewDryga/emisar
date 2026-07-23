@@ -1,0 +1,29 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/bind/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-bind-tools:latest
+    network_mode: service:bind
+    volumes:
+      - bind_cache:/var/cache/bind
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/named.conf:/etc/bind/named.conf:ro
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/rndc.key:/etc/bind/rndc.key:ro
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/example.test.zone:/etc/bind/example.test.zone:ro
+
+  bind:
+    image: ubuntu/bind9:edge
+    environment:
+      BIND9_USER: root
+    volumes:
+      - bind_cache:/var/cache/bind
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/named.conf:/etc/bind/named.conf:ro
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/rndc.key:/etc/bind/rndc.key:ro
+      - ${EMISAR_ROOT}/packs/bind/test/fixtures/example.test.zone:/etc/bind/example.test.zone:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rndc status >/dev/null"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  bind_cache:

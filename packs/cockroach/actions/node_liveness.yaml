@@ -16,7 +16,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT node_id, epoch, draining, decommissioning, membership, updated_at FROM crdb_internal.gossip_liveness ORDER BY node_id\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET allow_unsafe_internals = true; SELECT node_id, epoch, draining, decommissioning, membership, updated_at FROM crdb_internal.gossip_liveness ORDER BY node_id\""
   timeout: 20s
 output:
   parser: text

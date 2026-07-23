@@ -1,0 +1,24 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/caddy/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-caddy-tools:latest
+    network_mode: service:caddy
+    volumes:
+      - caddy_logs:/var/log/caddy
+      - ${EMISAR_ROOT}/packs/caddy/test/fixtures/Caddyfile:/etc/caddy/Caddyfile:ro
+
+  caddy:
+    image: caddy:2.11.4
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - caddy_logs:/var/log/caddy
+      - ${EMISAR_ROOT}/packs/caddy/test/fixtures/Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  caddy_logs:

@@ -1,0 +1,13 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+      - --web.enable-admin-api
+    volumes:
+      - ${EMISAR_ROOT}/packs/prometheus/test/fixtures/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- 'http://localhost:9090/api/v1/query?query=up' | grep -q '\"job\":\"prometheus\"'"]
+      interval: 2s
+      retries: 30

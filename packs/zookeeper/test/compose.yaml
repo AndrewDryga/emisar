@@ -1,0 +1,11 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.8
+    environment:
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=conf,cons,envi,mntr,ruok,srvr,stat,wchs"
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -w 2 localhost 2181 | grep -q imok"]
+      interval: 5s
+      retries: 10

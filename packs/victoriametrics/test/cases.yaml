@@ -1,0 +1,53 @@
+services: [victoriametrics]
+env:
+  VM_URL: "http://victoriametrics:8428/prometheus"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: vm.query_instant
+    args: {query: harness_metric}
+    arrange: &ingest_metric
+      # Keep the sample away from the range query's moving "now" boundary.
+      - argv: [/bin/sh, -c, 'printf ''harness_metric{job="packtest"} 7 %s000\n'' "$(( $(date +%s) - 120 ))" | curl -fsS -X POST --data-binary @- http://victoriametrics:8428/api/v1/import/prometheus']
+      - name: wait for the imported series
+        argv: [/bin/sh, -c, 'curl -fsSG --data-urlencode query=harness_metric http://victoriametrics:8428/prometheus/api/v1/query']
+        expect:
+          stdout_contains: [harness_metric, packtest]
+        retry_for: 30s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ['"status":"success"', harness_metric, packtest]
+  - action: vm.query_range
+    args: {query: harness_metric, window: 1h, step: 1m}
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: ['"status":"success"', matrix, harness_metric]
+  - action: vm.series
+    args: {match: harness_metric, limit: 10}
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [harness_metric, packtest]
+  - action: vm.labels
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [__name__, job]
+  - action: vm.label_values
+    args: {label: job}
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [packtest]
+  - action: vm.tsdb_status
+    args: {top_n: 10}
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [seriesCountByMetricName, harness_metric]
+  - action: vm.active_queries
+    expect:
+      stdout_contains: ['"status":"ok"', '"data"']
+  - action: vm.top_queries
+    args: {top_n: 10}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -G --data-urlencode query=harness_metric http://victoriametrics:8428/prometheus/api/v1/query >/dev/null']
+    expect:
+      stdout_contains: [topByCount, topByAvgDuration]

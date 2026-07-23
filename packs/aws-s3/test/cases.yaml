@@ -4,13 +4,76 @@ env:
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: "http://localstack:4566"
   AWS_SECRET_ACCESS_KEY: test
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: s3.bucket_encryption
+    args: {bucket: emisar-packtest-encryption}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-encryption"]
+      - argv: [aws, s3api, put-bucket-encryption, --bucket, emisar-packtest-encryption, --server-side-encryption-configuration, '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}']
+    expect:
+      stdout_contains: [ServerSideEncryptionConfiguration, AES256]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-encryption", --force]
+  - action: s3.bucket_lifecycle
+    args: {bucket: emisar-packtest-lifecycle}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-lifecycle"]
+      - argv: [aws, s3api, put-bucket-lifecycle-configuration, --bucket, emisar-packtest-lifecycle, --lifecycle-configuration, '{"Rules":[{"ID":"expire-logs","Status":"Enabled","Filter":{"Prefix":"logs/"},"Expiration":{"Days":30}}]}']
+    expect:
+      stdout_contains: [expire-logs, Enabled]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-lifecycle", --force]
+  - action: s3.bucket_location
+    args: {bucket: emisar-packtest-location}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-location"]
+    expect:
+      stdout_contains: [LocationConstraint]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-location", --force]
+  - action: s3.bucket_policy
+    args: {bucket: emisar-packtest-policy}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-policy"]
+      - argv: [aws, s3api, put-bucket-policy, --bucket, emisar-packtest-policy, --policy, '{"Version":"2012-10-17","Statement":[{"Sid":"HarnessRead","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::emisar-packtest-policy/*"}]}']
+    expect:
+      stdout_contains: [HarnessRead, s3:GetObject]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-policy", --force]
+  - action: s3.bucket_versioning
+    args: {bucket: emisar-packtest-versioning}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-versioning"]
+      - argv: [aws, s3api, put-bucket-versioning, --bucket, emisar-packtest-versioning, --versioning-configuration, "Status=Enabled"]
+    expect:
+      stdout_contains: [Status, Enabled]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-versioning", --force]
   - action: s3.list_buckets
     arrange:
-      - name: create fixture bucket
-        argv: [aws, s3, mb, "s3://emisar-packtest"]
+      - argv: [aws, s3, mb, "s3://emisar-packtest-list"]
     expect:
-      stdout_contains: [emisar-packtest]
+      stdout_contains: [emisar-packtest-list]
     cleanup:
-      - name: remove fixture bucket
-        argv: [aws, s3, rb, "s3://emisar-packtest", --force]
+      - argv: [aws, s3, rb, "s3://emisar-packtest-list", --force]
+  - action: s3.list_objects
+    args: {bucket: emisar-packtest-objects, prefix: logs/}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-objects"]
+      - argv: [/bin/sh, -c, 'printf harness-object | aws s3 cp - s3://emisar-packtest-objects/logs/probe.txt']
+    expect:
+      stdout_contains: [probe.txt]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-objects", --force]
+  - action: s3.object_metadata
+    args: {bucket: emisar-packtest-metadata, key: probe.txt}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-metadata"]
+      - argv: [/bin/sh, -c, 'printf harness-object | aws s3 cp - s3://emisar-packtest-metadata/probe.txt --content-type text/plain']
+    expect:
+      stdout_contains: [ContentLength, ContentType, text/plain]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-metadata", --force]

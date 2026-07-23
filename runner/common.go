@@ -167,9 +167,8 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 	}, nil
 }
 
-// parseArgFlag turns a list of "key=value" flags into a typed map. JSON-ish
-// literals (true/false/null/numbers/arrays/objects) are decoded; otherwise
-// the value is kept as a string.
+// parseArgFlag turns a list of "key=value" flags into a typed map. JSON
+// literals are decoded; otherwise the value is kept as a string.
 func parseArgFlag(pairs []string) (map[string]any, error) {
 	out := make(map[string]any, len(pairs))
 	for _, p := range pairs {
@@ -202,7 +201,7 @@ func coerceArgValue(raw string) any {
 		return f
 	}
 	switch raw[0] {
-	case '[', '{':
+	case '"', '[', '{':
 		var v any
 		if err := json.Unmarshal([]byte(raw), &v); err == nil {
 			return v

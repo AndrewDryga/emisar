@@ -1,0 +1,58 @@
+services: [rabbitmq]
+env:
+  HOME: /var/lib/rabbitmq
+  RABBITMQ_ERLANG_COOKIE: packtest-cookie
+  RABBITMQ_NODENAME: rabbit@rabbitmq
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: rmq.cluster_status
+    expect:
+      stdout_contains: [Cluster status, rabbit@rabbitmq]
+  - action: rmq.node_health_check
+    expect:
+      stdout_contains: [fully booted and running]
+  - action: rmq.list_nodes
+    expect:
+      stdout_contains: [rabbit@rabbitmq]
+  - action: rmq.list_vhosts
+    expect:
+      stdout_contains: [Listing vhosts, /]
+  - action: rmq.list_users
+    expect:
+      stdout_contains: [guest, administrator]
+  - action: rmq.list_policies
+    expect:
+      stdout_contains: [Listing policies]
+  - action: rmq.list_parameters
+    expect:
+      stdout_contains: [Listing runtime parameters]
+  - action: rmq.list_queues
+    expect:
+      stdout_contains: [packtest, messages_ready]
+  - action: rmq.list_exchanges
+    expect:
+      stdout_contains: [amq.direct, direct]
+  - action: rmq.list_bindings
+    expect:
+      stdout_contains: [Listing bindings]
+  - action: rmq.list_connections
+    expect:
+      stdout_contains: [Listing connections]
+  - action: rmq.list_channels
+    expect:
+      stdout_contains: [Listing channels]
+  - action: rmq.list_consumers
+    expect:
+      stdout_contains: [Listing consumers]
+  - action: rmq.purge_queue
+    args: {vhost: /, queue: packtest}
+    arrange:
+      - argv: [rabbitmqadmin, -u, guest, -p, guest, publish, message, --routing-key, packtest, --payload, ready, --non-interactive]
+    probes:
+      - argv: [rabbitmqctl, list_queues, name, messages_ready]
+        expect:
+          stdout_contains: [packtest, "0"]
+    cleanup:
+      - argv: [rabbitmqadmin, -u, guest, -p, guest, publish, message, --routing-key, packtest, --payload, ready, --non-interactive]

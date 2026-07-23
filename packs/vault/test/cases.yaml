@@ -2,7 +2,38 @@ services: [vault]
 env:
   VAULT_ADDR: "http://vault:8200"
   VAULT_TOKEN: test-root-token
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: vault.leases_count
+    args: {prefix: auth/token}
+  - action: vault.list_audit
+    arrange:
+      - argv: [vault, audit, enable, file, "file_path=/tmp/packtest-audit.log"]
+    expect:
+      stdout_contains: [file/, type]
+    cleanup:
+      - argv: [vault, audit, disable, file/]
+  - action: vault.list_auth
+    expect:
+      stdout_contains: [token/, token]
+  - action: vault.list_mounts
+    expect:
+      stdout_contains: [secret/, kv]
+  - action: vault.list_policies
+    expect:
+      stdout_contains: [default, root]
+  - action: vault.read_policy
+    args: {name: default}
+    expect:
+      stdout_contains: [path]
+  - action: vault.seal_status
+    expect:
+      stdout_contains: ['"sealed": false']
   - action: vault.status
     expect:
       stdout_contains: ['"sealed": false']
+  - action: vault.token_lookup_self
+    expect:
+      stdout_contains: [display_name, root]

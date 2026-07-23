@@ -1,0 +1,51 @@
+services: [haproxy]
+env:
+  HAPROXY_SOCK: /run/haproxy/admin.sock
+cases:
+  - action: haproxy.show_info
+    expect:
+      stdout_contains: [Name, HAProxy, Version]
+  - action: haproxy.show_stat
+    expect:
+      stdout_contains: [pxname, fe_main, be_main]
+  - action: haproxy.show_servers_state
+    expect:
+      stdout_contains: [be_name, be_main, s1]
+  - action: haproxy.show_pools
+    expect:
+      stdout_contains: [Dumping pools usage, Total]
+  - action: haproxy.show_errors
+    expect:
+      stdout_contains: [Total events captured]
+  - action: haproxy.show_backend
+    expect:
+      stdout_contains: [be_main]
+  - action: haproxy.show_frontend
+    expect:
+      stdout_contains: [fe_main]
+  - action: haproxy.disable_server
+    args: {backend: be_main, server: s1}
+    probes:
+      - argv: [/bin/sh, -c, "echo 'show stat' | socat - UNIX-CONNECT:/run/haproxy/admin.sock | grep 'be_main,s1' | grep -q MAINT && echo disabled"]
+        expect:
+          stdout_contains: [disabled]
+    cleanup:
+      - argv: [/bin/sh, -c, "echo 'enable server be_main/s1' | socat - UNIX-CONNECT:/run/haproxy/admin.sock"]
+  - action: haproxy.enable_server
+    args: {backend: be_main, server: s1}
+    arrange:
+      - argv: [/bin/sh, -c, "echo 'disable server be_main/s1' | socat - UNIX-CONNECT:/run/haproxy/admin.sock"]
+    probes:
+      - argv: [/bin/sh, -c, "echo 'show stat' | socat - UNIX-CONNECT:/run/haproxy/admin.sock | grep 'be_main,s1' | grep -vq MAINT && echo enabled"]
+        expect:
+          stdout_contains: [enabled]
+    cleanup:
+      - argv: [/bin/sh, -c, "echo 'enable server be_main/s1' | socat - UNIX-CONNECT:/run/haproxy/admin.sock"]
+  - action: haproxy.set_maxconn
+    args: {frontend: fe_main, maxconn: 123}
+    probes:
+      - argv: [/bin/sh, -c, "echo 'show stat' | socat - UNIX-CONNECT:/run/haproxy/admin.sock | grep 'fe_main,FRONTEND' | grep -q ',123,' && echo maxconn-123"]
+        expect:
+          stdout_contains: [maxconn-123]
+    cleanup:
+      - argv: [/bin/sh, -c, "echo 'set maxconn frontend fe_main 2000' | socat - UNIX-CONNECT:/run/haproxy/admin.sock"]

@@ -22,7 +22,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$GRAFANA_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$GRAFANA_TOKEN\"; } | curl -sS -H @- \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/datasources/uid/{{ args.uid }}/health\""
+      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/datasources/uid/{{ args.uid }}/health\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/datasources/uid/{{ args.uid }}/health\"; fi"
   timeout: 30s
 output:
   parser: json

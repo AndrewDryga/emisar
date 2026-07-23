@@ -1,0 +1,15 @@
+# Shared action-client container for pack-owned behavior projects.
+#
+# Each packs/<name>/test/compose.yaml adds only that pack's disposable system
+# under test. The devtool combines both files under a unique Compose project.
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/dev/test-packs
+      dockerfile: Dockerfile
+    image: emisar-runner-tools:latest
+    volumes:
+      - ${EMISAR_ROOT}/dev:/workspace:ro
+      - ${EMISAR_ROOT}/packs:/packs:ro
+      - ${EMISAR_ROOT}/dev/test-packs/bin:/opt/emisar/bin:ro
+      - ${EMISAR_ROOT}/dev/test-packs/reports:/reports

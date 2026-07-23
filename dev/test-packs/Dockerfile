@@ -9,6 +9,7 @@ FROM rancher/k3s:v1.36.2-k3s1@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251
 FROM mongo:8.2.5@sha256:60aa240412f473f672ec8b282fd5651aa156dcc7a220f81f5381ce768ccc3167 AS mongo
 FROM cockroachdb/cockroach:v26.2.4@sha256:85417da0fd2f57e4f1b01ae8a4125402c977a38a56b43d0902db93dc2669ab09 AS cockroach
 FROM clickhouse/clickhouse-server:26.6.2.81-alpine@sha256:9acc2bb14b5a55bdaf08485fba63200092f9c04cfa50f70a92f1fccc51482d7f AS clickhouse
+FROM minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e AS minio
 
 FROM debian:13-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
 
@@ -26,7 +27,10 @@ RUN apt-get update \
         mariadb-client \
         netcat-openbsd \
         postgresql-client \
+        redis-tools \
         snmp \
+    && printf '[client]\nssl-verify-server-cert=0\n' \
+        > /etc/mysql/mariadb.conf.d/99-packtest.cnf \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=consul /bin/consul /usr/local/bin/consul
@@ -36,6 +40,7 @@ COPY --from=k3s /bin/k3s /usr/local/bin/kubectl
 COPY --from=mongo /usr/bin/mongosh /usr/local/bin/mongosh
 COPY --from=cockroach /cockroach/cockroach /usr/local/bin/cockroach
 COPY --from=clickhouse /usr/bin/clickhouse /usr/local/bin/clickhouse
+COPY --from=minio /usr/bin/mc /usr/local/bin/mc
 
 RUN ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client \
     && aws --version \
@@ -43,6 +48,7 @@ RUN ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client \
     && consul version \
     && kubectl version --client \
     && mongosh --version \
+    && mc --version \
     && nomad version \
     && vault version \
     && clickhouse-client --version

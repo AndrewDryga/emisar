@@ -1,0 +1,74 @@
+services: [nginx]
+cases:
+  - action: nginx.active_version
+    expect:
+      stderr_contains: [nginx version]
+  - action: nginx.compiled_modules
+    expect:
+      stdout_contains: [--with-http_ssl_module, --with-http_stub_status_module]
+  - action: nginx.connections_now
+    args: {url: http://127.0.0.1/nginx_status}
+    expect:
+      stdout_contains: [Active connections, Reading, Writing, Waiting]
+  - action: nginx.status
+    args: {url: http://127.0.0.1/nginx_status}
+    expect:
+      stdout_contains: [Active connections, server accepts handled requests]
+  - action: nginx.config_dump
+    expect:
+      stdout_contains: [packtest.local, packtest_backend]
+    probes:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        expect:
+          stdout_contains: [pack-test ok]
+  - action: nginx.vhost_list
+    expect:
+      stdout_contains: [packtest.local]
+  - action: nginx.upstream_list
+    expect:
+      stdout_contains: [packtest_backend, 127.0.0.1:8081]
+  - action: nginx.access_top_urls
+    args: {lines: 1000, limit: 30, log_path: /var/log/nginx/access.log}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/packtest]
+    expect:
+      stdout_contains: [/packtest]
+  - action: nginx.access_top_clients
+    args: {lines: 1000, limit: 30, log_path: /var/log/nginx/access.log}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+    expect:
+      stdout_contains: [127.0.0.1]
+  - action: nginx.log_grep_4xx
+    args: {lines: 100, log_path: /var/log/nginx/access.log}
+    arrange:
+      - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/missing]
+    expect:
+      stdout_contains: [GET /missing, "404"]
+  - action: nginx.log_grep_5xx
+    args: {lines: 100, log_path: /var/log/nginx/access.log}
+    arrange:
+      - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/error500]
+    expect:
+      stdout_contains: [GET /error500, "500"]
+  - action: nginx.bytes_by_url
+    args: {lines: 1000, limit: 30}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/bytes]
+    expect:
+      stdout_contains: [/bytes]
+  - action: nginx.slow_requests
+    args: {lines: 1000, limit: 30, column: 14}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/slow]
+    expect:
+      stdout_contains: [/slow]
+  - action: nginx.error_tail
+    args: {lines: 20, log_path: /var/log/nginx/error.log}
+    arrange:
+      - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/log-error]
+    expect:
+      stdout_contains: [/nonexistent/log-error, failed]
+  - action: nginx.test_config
+    expect:
+      stderr_contains: [syntax is ok, test is successful]

@@ -1,0 +1,44 @@
+services: [typesense]
+env:
+  TYPESENSE_API_KEY: harness-key
+  TYPESENSE_URL: "http://typesense:8108"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: typesense.health
+    expect:
+      stdout_contains: ['"ok":true']
+  - action: typesense.debug
+    expect:
+      stdout_contains: ['"version"', '"state"']
+  - action: typesense.stats
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" "$TYPESENSE_URL/health" >/dev/null']
+    expect:
+      stdout_contains: [requests_per_second, latency_ms]
+  - action: typesense.metrics
+    expect:
+      stdout_contains: [system_cpu, system_memory]
+  - action: typesense.collections
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -H "Content-Type: application/json" -X POST "$TYPESENSE_URL/collections" -d "{\"name\":\"harness-products\",\"fields\":[{\"name\":\"title\",\"type\":\"string\"}]}" >/dev/null']
+    expect:
+      stdout_contains: [harness-products, title]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -X DELETE "$TYPESENSE_URL/collections/harness-products" >/dev/null']
+  - action: typesense.collection
+    args: {name: harness-products}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -H "Content-Type: application/json" -X POST "$TYPESENSE_URL/collections" -d "{\"name\":\"harness-products\",\"fields\":[{\"name\":\"title\",\"type\":\"string\"}]}" >/dev/null']
+    expect:
+      stdout_contains: [harness-products, title]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -X DELETE "$TYPESENSE_URL/collections/harness-products" >/dev/null']
+  - action: typesense.keys
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -H "Content-Type: application/json" -X POST "$TYPESENSE_URL/keys" -d "{\"description\":\"harness-search-key\",\"actions\":[\"documents:search\"],\"collections\":[\"*\"]}" >/dev/null']
+    expect:
+      stdout_contains: [harness-search-key, "documents:search"]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" "$TYPESENSE_URL/keys" | jq -r ''.keys[] | select(.description == "harness-search-key") | .id'' | xargs -r -n1 -I{} curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" -X DELETE "$TYPESENSE_URL/keys/{}" >/dev/null']

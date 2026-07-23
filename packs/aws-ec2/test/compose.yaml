@@ -1,0 +1,6 @@
+services:
+  localstack:
+    image: localstack/localstack:4.14.0
+    environment:
+      SERVICES: ec2
+      DEFAULT_REGION: us-east-1

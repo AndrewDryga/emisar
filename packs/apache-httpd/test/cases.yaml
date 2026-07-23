@@ -1,0 +1,40 @@
+services: [apache-httpd]
+env:
+  HTTPD_ACCESS_LOG: /usr/local/apache2/logs/access_log
+  HTTPD_ERROR_LOG: /usr/local/apache2/logs/error_log
+  HTTPD_STATUS_URL: http://127.0.0.1/server-status?auto
+cases:
+  - action: httpd.version
+    expect:
+      stdout_contains: [Server version, Apache]
+  - action: httpd.modules
+    expect:
+      stdout_contains: [Loaded Modules, core_module]
+  - action: httpd.vhosts
+    expect:
+      stdout_contains: [ServerRoot, DocumentRoot]
+  - action: httpd.test_config
+    expect:
+      stderr_contains: [Syntax OK]
+  - action: httpd.status
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    expect:
+      stdout_contains: [ServerVersion, BusyWorkers]
+  - action: httpd.error_tail
+    expect:
+      stdout_contains: [resuming normal operations]
+  - action: httpd.access_top_clients
+    args: {lines: 100}
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+    expect:
+      stdout_contains: [127.0.0.1]
+  - action: httpd.access_top_urls
+    args: {lines: 100}
+    arrange:
+      - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/packtest]
+    expect:
+      stdout_contains: [/packtest]

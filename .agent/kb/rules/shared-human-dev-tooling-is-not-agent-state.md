@@ -10,9 +10,13 @@ shared by host-native development and the agent box; application servers stay
 outside that file when direct execution materially improves reload speed.
 Shared repository tooling uses Go, including process orchestration and browser
 automation. `./run` may contain only the minimal cached-binary bootstrap.
-Development-only images, Compose fixtures, fake host assets, and test
-configurations live under `dev/`; a product project's Dockerfile exists only
-for an image the project intentionally supports as a shipped artifact.
+Shared development-only images, fake host assets, and test configurations live
+under `dev/`; a product project's Dockerfile exists only for an image the
+project intentionally supports as a shipped artifact. An integration test's
+SUT topology and fixtures live beside the test owner, while only the genuinely
+shared test runner image and harness stay under `dev/`. Each integration-test
+owner runs in its own Compose project; concurrency is bounded across projects,
+not achieved by merging every SUT into one stateful topology.
 Shell remains only where shell itself is the shipped artifact, container
 entrypoint, or host-command fixture under test. Adding another tooling language
 requires proving Go cannot own the job and documenting the runtime boundary.
@@ -35,14 +39,18 @@ assigned to `dev/compose.yml`; `./run shot` enters the shared Go browser driver
 and writes into its selected in-progress task;
 Coop points `box.compose` at the same dependency file;
 pack registry builds replace `dist/packs/` without touching sibling artifacts;
-the Compose-only runner image and its fake host filesystem live under `dev/`.
+the shared pack action-client image lives under `dev/test-packs/`, while
+`packs/postgres/test/compose.yaml` and its seed fixture live with the PostgreSQL
+behavior plan.
 
 **Bad.** `.agent/scripts/dev`, `portal/scripts/shot`, and a JavaScript browser
 tool as separate command surfaces; host and box Compose files that describe the same
 Postgres and Keycloak services with different ports; or one generator deleting
 the shared `dist/` root before writing its own output; or a demo-only Dockerfile
-under `runner/` that looks like a supported product image; or disposable
-screenshots kept independently of the task that produced them.
+under `runner/` that looks like a supported product image; disposable
+screenshots kept independently of the task that produced them; or one
+repository-wide test Compose file that owns unrelated database, Kubernetes,
+cloud-emulator, and proxy fixtures.
 
 **Sweep.** Search `.agent/` and project subdirectories for executable helpers,
 search documentation for direct implementation paths that bypass
@@ -51,8 +59,11 @@ adding a development command or sidecar. Search tooling manifests and shebangs
 before introducing another language, and search cleanup commands for shared
 output roots before adding a generator. Search product directories for
 Dockerfiles that are consumed only by development Compose or test workflows.
-Search for repository-global screenshot output and move each capture set into
-its owning task.
+For integration tests, search a central Compose file for unrelated SUTs and
+move each topology plus its fixtures beside the behavior plan that owns it;
+keep only reusable clients and harness configuration centralized. Search for
+repository-global screenshot output and move each capture set into its owning
+task.
 
 **Enforced.** Review and `./run check agent-setup` after agent configuration
 changes; `./run gate tooling` runs the same check in CI.

@@ -4,7 +4,60 @@ env:
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: "http://localstack:4566"
   AWS_SECRET_ACCESS_KEY: test
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
-  - action: cw.log_groups
+  - action: cw.alarms_in_alarm
+    arrange:
+      - argv: [aws, cloudwatch, put-metric-alarm, --alarm-name, harness-alarm, --namespace, Harness, --metric-name, Requests, --statistic, Average, --period, "60", --evaluation-periods, "1", --threshold, "1", --comparison-operator, GreaterThanThreshold]
+      - argv: [aws, cloudwatch, set-alarm-state, --alarm-name, harness-alarm, --state-value, ALARM, --state-reason, packtest]
     expect:
-      stdout_contains: ['"logGroups"']
+      stdout_contains: [harness-alarm, ALARM]
+    cleanup:
+      - argv: [aws, cloudwatch, delete-alarms, --alarm-names, harness-alarm]
+  - action: cw.describe_alarms
+    arrange:
+      - argv: [aws, cloudwatch, put-metric-alarm, --alarm-name, harness-alarm, --namespace, Harness, --metric-name, Requests, --statistic, Average, --period, "60", --evaluation-periods, "1", --threshold, "1", --comparison-operator, GreaterThanThreshold]
+    expect:
+      stdout_contains: [harness-alarm, MetricAlarms]
+    cleanup:
+      - argv: [aws, cloudwatch, delete-alarms, --alarm-names, harness-alarm]
+  - action: cw.get_metric_statistics
+    args: {namespace: Harness, metric: Requests}
+    arrange:
+      - argv: [/bin/sh, -c, "aws cloudwatch put-metric-data --namespace Harness --metric-name Requests --value 7 --timestamp \"$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)\""]
+    expect:
+      stdout_contains: [Datapoints, Average, Maximum]
+  - action: cw.list_metrics
+    args: {namespace: Harness}
+    arrange:
+      - argv: [aws, cloudwatch, put-metric-data, --namespace, Harness, --metric-name, Requests, --value, "7"]
+    expect:
+      stdout_contains: [Harness, Requests]
+  - action: cw.log_groups
+    arrange:
+      - argv: [aws, logs, create-log-group, --log-group-name, /packtest/harness]
+    expect:
+      stdout_contains: [/packtest/harness]
+    cleanup:
+      - argv: [aws, logs, delete-log-group, --log-group-name, /packtest/harness]
+  - action: cw.log_streams
+    args: {log_group: /packtest/harness}
+    arrange:
+      - argv: [aws, logs, create-log-group, --log-group-name, /packtest/harness]
+      - argv: [aws, logs, create-log-stream, --log-group-name, /packtest/harness, --log-stream-name, harness-stream]
+    expect:
+      stdout_contains: [harness-stream]
+    cleanup:
+      - argv: [aws, logs, delete-log-group, --log-group-name, /packtest/harness]
+  - action: cw.log_tail
+    args: {log_group: /packtest/harness, since: 1h}
+    arrange:
+      - argv: [aws, logs, create-log-group, --log-group-name, /packtest/harness]
+      - argv: [aws, logs, create-log-stream, --log-group-name, /packtest/harness, --log-stream-name, harness-stream]
+      - argv: [/bin/sh, -c, 'aws logs put-log-events --log-group-name /packtest/harness --log-stream-name harness-stream --log-events "timestamp=$(date +%s000),message=harness-log-event" >/dev/null']
+    expect:
+      stdout_contains: [harness-log-event]
+    cleanup:
+      - argv: [aws, logs, delete-log-group, --log-group-name, /packtest/harness]

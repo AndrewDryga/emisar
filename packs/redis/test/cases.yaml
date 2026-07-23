@@ -1,0 +1,115 @@
+services: [redis]
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: redis.acl_list
+    expect:
+      stdout_contains: [user, default, "+@all"]
+  - action: redis.acl_whoami
+    expect:
+      stdout_contains: [default]
+  - action: redis.client_list
+    expect:
+      stdout_contains: [addr=, cmd=client]
+  - action: redis.command_stats
+    expect:
+      stdout_contains: [cmdstat]
+  - action: redis.config_get
+    args: {pattern: maxmemory}
+    expect:
+      stdout_contains: [maxmemory]
+  - action: redis.dbsize
+    arrange:
+      - argv: [redis-cli, SET, packtest:ready, "yes"]
+    expect:
+      stdout_contains: ["1"]
+    cleanup:
+      - argv: [redis-cli, DEL, packtest:ready]
+  - action: redis.info
+    args: {section: server}
+    expect:
+      stdout_contains: [redis_version, process_id]
+  - action: redis.lastsave
+  - action: redis.memory_doctor
+    expect:
+      stdout_contains: [memory]
+  - action: redis.memory_stats
+    expect:
+      stdout_contains: [peak.allocated]
+  - action: redis.memory_usage
+    args: {key: "packtest:value"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:value"]
+  - action: redis.object_encoding
+    args: {key: "packtest:value"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    expect:
+      stdout_contains: [embstr]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:value"]
+  - action: redis.object_idletime
+    args: {key: "packtest:value"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:value"]
+  - action: redis.object_refcount
+    args: {key: "packtest:value"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    expect:
+      stdout_contains: ["1"]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:value"]
+  - action: redis.randomkey
+    arrange:
+      - argv: [redis-cli, SET, "packtest:random", "fixture-value"]
+    expect:
+      stdout_contains: [packtest:random]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:random"]
+  - action: redis.role
+    expect:
+      stdout_contains: [master]
+  - action: redis.scan
+    args: {match: "packtest:*"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:scan", "fixture-value"]
+    expect:
+      stdout_contains: [packtest:scan]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:scan"]
+  - action: redis.ttl_of
+    args: {key: "packtest:ttl"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:ttl", "fixture-value", EX, "300"]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:ttl"]
+  - action: redis.type_of
+    args: {key: "packtest:value"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    expect:
+      stdout_contains: [string]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:value"]
+  - action: redis.xinfo_stream
+    args: {key: "packtest:stream"}
+    arrange:
+      - argv: [redis-cli, XADD, "packtest:stream", "*", event, ready]
+    expect:
+      stdout_contains: [length, first-entry]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:stream"]
+  - action: redis.xlen
+    args: {key: "packtest:stream"}
+    arrange:
+      - argv: [redis-cli, XADD, "packtest:stream", "*", event, ready]
+    expect:
+      stdout_contains: ["1"]
+    cleanup:
+      - argv: [redis-cli, DEL, "packtest:stream"]

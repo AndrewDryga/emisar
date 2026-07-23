@@ -5,6 +5,77 @@ env:
   AWS_ENDPOINT_URL: "http://localstack:4566"
   AWS_SECRET_ACCESS_KEY: test
 cases:
-  - action: iam.list_users
+  - action: iam.get_role
+    args: {role: HarnessRole}
+    arrange:
+      - argv: [aws, iam, create-role, --role-name, HarnessRole, --assume-role-policy-document, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}']
     expect:
-      stdout_contains: ['"Users"']
+      stdout_contains: [HarnessRole, AssumeRolePolicyDocument]
+    cleanup:
+      - argv: [aws, iam, delete-role, --role-name, HarnessRole]
+  - action: iam.get_user
+    args: {user: harness-user}
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-user]
+    expect:
+      stdout_contains: [harness-user, User]
+    cleanup:
+      - argv: [aws, iam, delete-user, --user-name, harness-user]
+  - action: iam.list_access_keys
+    args: {user: harness-user}
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-user]
+      - argv: [aws, iam, create-access-key, --user-name, harness-user]
+    expect:
+      stdout_contains: [AccessKeyMetadata, Active]
+    cleanup:
+      - argv: [/bin/sh, -c, 'aws iam list-access-keys --user-name harness-user --query "AccessKeyMetadata[].AccessKeyId" --output text | xargs -n1 aws iam delete-access-key --user-name harness-user --access-key-id']
+      - argv: [aws, iam, delete-user, --user-name, harness-user]
+  - action: iam.list_attached_user_policies
+    args: {user: harness-user}
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-user]
+      - argv: [aws, iam, create-policy, --policy-name, HarnessPolicy, --policy-document, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"}]}']
+      - argv: [aws, iam, attach-user-policy, --user-name, harness-user, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+    expect:
+      stdout_contains: [HarnessPolicy, AttachedPolicies]
+    cleanup:
+      - argv: [aws, iam, detach-user-policy, --user-name, harness-user, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+      - argv: [aws, iam, delete-policy, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+      - argv: [aws, iam, delete-user, --user-name, harness-user]
+  - action: iam.list_policies
+    arrange:
+      - argv: [aws, iam, create-policy, --policy-name, HarnessPolicy, --policy-document, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"}]}']
+    expect:
+      stdout_contains: [HarnessPolicy, Policies]
+    cleanup:
+      - argv: [aws, iam, delete-policy, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+  - action: iam.list_roles
+    arrange:
+      - argv: [aws, iam, create-role, --role-name, HarnessRole, --assume-role-policy-document, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}']
+    expect:
+      stdout_contains: [HarnessRole, Roles]
+    cleanup:
+      - argv: [aws, iam, delete-role, --role-name, HarnessRole]
+  - action: iam.list_users
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-user]
+    expect:
+      stdout_contains: [harness-user, Users]
+    cleanup:
+      - argv: [aws, iam, delete-user, --user-name, harness-user]
+  - action: iam.detach_user_policy
+    args:
+      user_name: harness-user
+      policy_arn: "arn:aws:iam::000000000000:policy/HarnessPolicy"
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-user]
+      - argv: [aws, iam, create-policy, --policy-name, HarnessPolicy, --policy-document, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"}]}']
+      - argv: [aws, iam, attach-user-policy, --user-name, harness-user, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+    probes:
+      - argv: [aws, iam, list-attached-user-policies, --user-name, harness-user]
+        expect:
+          stdout_contains: ['"AttachedPolicies": []']
+    cleanup:
+      - argv: [aws, iam, delete-policy, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
+      - argv: [aws, iam, delete-user, --user-name, harness-user]

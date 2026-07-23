@@ -16,7 +16,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT table_id, table_name, estimated_row_count FROM crdb_internal.table_row_statistics ORDER BY estimated_row_count DESC LIMIT 200\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET allow_unsafe_internals = true; SELECT table_id, table_name, estimated_row_count FROM crdb_internal.table_row_statistics ORDER BY estimated_row_count DESC LIMIT 200\""
   timeout: 20s
 output:
   parser: text

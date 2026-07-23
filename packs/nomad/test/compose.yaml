@@ -1,0 +1,9 @@
+services:
+  nomad:
+    image: hashicorp/nomad:2.0.4
+    command: agent -server -bootstrap-expect=1 -data-dir=/tmp/nomad -bind=0.0.0.0
+    privileged: true
+    healthcheck:
+      test: ["CMD", "nomad", "server", "members"]
+      interval: 5s
+      retries: 10

@@ -4,7 +4,34 @@ env:
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: "http://localstack:4566"
   AWS_SECRET_ACCESS_KEY: test
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
   - action: ec2.describe_instances
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
     expect:
-      stdout_contains: ['"Reservations"']
+      stdout_contains: [InstanceId, ami-12345678]
+    cleanup:
+      - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
+  - action: ec2.describe_security_groups
+    expect:
+      stdout_contains: [SecurityGroups, default]
+  - action: ec2.describe_subnets
+    expect:
+      stdout_contains: [Subnets, SubnetId]
+  - action: ec2.describe_volumes
+    arrange:
+      - argv: [aws, ec2, create-volume, --availability-zone, us-east-1a, --size, "1"]
+    expect:
+      stdout_contains: [Volumes, VolumeId]
+    cleanup:
+      - argv: [/bin/sh, -c, 'aws ec2 describe-volumes --query "Volumes[].VolumeId" --output text | xargs -n1 aws ec2 delete-volume --volume-id']
+  - action: ec2.instance_status
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
+    expect:
+      stdout_contains: [InstanceStatuses, InstanceId]
+    cleanup:
+      - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']

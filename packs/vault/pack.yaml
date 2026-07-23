@@ -2,7 +2,7 @@ schema_version: 1
 
 id: vault
 name: HashiCorp Vault operations
-version: 0.1.7
+version: 0.1.8
 retired_below: 0.1.7
 description: >
   Vault status, seal state, auth/audit/secret backends, mount listing,

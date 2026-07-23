@@ -23,18 +23,23 @@ packs/<pack>/
 ├── pack.yaml
 ├── actions/*.yaml
 └── test/
-    └── cases.yaml          # pack-owned behavior plan
+    ├── cases.yaml          # behavior and semantic assertions
+    ├── compose.yaml        # this pack's disposable system under test
+    ├── Dockerfile          # optional service-specific action clients
+    └── fixtures/           # optional seeded state or service config
 
 dev/test-packs/
 ├── Dockerfile              # shared action-client image
-├── docker-compose.yaml     # disposable systems under test
-├── fixtures/               # service configuration and seeded state
+├── compose.yaml            # shared runner-tools service only
+├── test-config.yaml        # disposable runner security/config contract
 ├── bin/                    # ignored runner and harness binaries
 └── reports/                # ignored per-pack logs
 ```
 
-Each plan declares its own Compose dependencies. The harness starts only the
-union needed by the selected plans.
+Every pack owns its complete SUT topology. The devtool combines the shared
+runner file with one pack file under a unique Compose project, so networks,
+volumes, state, and cleanup cannot leak between packs. It builds the runner
+image once and executes up to four pack projects concurrently.
 
 ## Plan schema
 
@@ -67,11 +72,20 @@ cases:
     cleanup:
       - name: restore fixture
         argv: [examplectl, reset, fixture]
+
+  - action: example.idempotent-mutate
+    cleanup_not_needed: The action only reloads the unchanged fixture.
+    probes:
+      - argv: [examplectl, status]
+        expect:
+          stdout_contains: [running]
 ```
 
-`services` must name services in `docker-compose.yaml`. `env` is passed to the
-runner, but an action can inherit a variable only when `test-config.yaml`
-allowlists it. Structured argument values are encoded as JSON.
+`services` must name services in the sibling `compose.yaml`. `env` is passed to
+the runner, but an action can inherit a variable only when `test-config.yaml`
+allowlists it. Structured argument values are encoded as JSON. A pack that
+needs special runner networking overrides the shared `runner-tools` service in
+its own Compose file.
 
 `arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use an
 explicit `[/bin/sh, -c, ...]` only when shell syntax is part of the test.
@@ -86,7 +100,9 @@ Expectations support:
 
 Unknown fields, duplicate actions, nonexistent action IDs, exit-only cases,
 semantic-free probes, and mutation cases without probes and cleanup fail
-before execution.
+before execution. A mutator that is inherently idempotent or restores the
+arranged state itself may use `cleanup_not_needed` with a concrete reason;
+it cannot be combined with `cleanup`.
 
 ## Running
 
@@ -95,6 +111,7 @@ before execution.
 ./run test packs
 ```
 
-The command builds the runner and harness, starts the selected disposable
-services, writes `reports/<pack>.log`, and removes the Compose project and
-volumes when it finishes.
+The command builds the shared runner and harness once, starts each selected
+pack in an isolated project, writes `reports/<pack>.log`, and removes that
+project and its volumes when it finishes. Completion lines appear as concurrent
+workers finish; detailed results are printed in stable pack-name order.

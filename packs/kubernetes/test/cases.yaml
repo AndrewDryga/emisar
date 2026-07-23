@@ -1,13 +1,143 @@
 services: [k3s, k3s-kubeconfig]
 env:
   KUBECONFIG: /shared/kubeconfig.yaml
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: kubernetes.api_versions
+    expect:
+      stdout_contains: [apps/v1, v1]
+  - action: kubernetes.auth_can_i
+    args: {namespace: default}
+    expect:
+      stdout_contains: [Resources, Verbs]
+  - action: kubernetes.cluster_info
+    expect:
+      stdout_contains: [Kubernetes control plane, CoreDNS]
+  - action: kubernetes.control_plane_health
+    expect:
+      stdout_contains: [readyz check passed]
+  - action: kubernetes.crds_list
+    expect:
+      stdout_contains: [harnesses.packtest.emisar.dev]
+  - action: kubernetes.cronjobs_list
+    expect:
+      stdout_contains: [harness-cronjob, "True"]
+  - action: kubernetes.daemonsets_list
+    expect:
+      stdout_contains: [harness-daemonset]
+  - action: kubernetes.deployments_list
+    expect:
+      stdout_contains: [harness-deployment]
+  - action: kubernetes.endpoints_list
+    arrange:
+      - name: service has a ready endpoint
+        argv: [/bin/sh, -c, 'test -n "$(kubectl get endpoints harness-service -o jsonpath={.subsets[0].addresses[0].ip})"']
+        retry_for: 60s
+        retry_every: 2s
+    expect:
+      stdout_contains: [harness-service, "8080"]
+  - action: kubernetes.events_for_pod
+    args: {namespace: default, name: probe}
+    expect:
+      stdout_contains: [probe]
+  - action: kubernetes.events_recent
+    expect:
+      stdout_contains: [default, probe]
+  - action: kubernetes.events_warnings
+    arrange:
+      - name: image pull warning exists
+        argv: [/bin/sh, -c, 'kubectl get events -n default --field-selector type=Warning | grep -q warning-probe']
+        retry_for: 60s
+        retry_every: 2s
+    expect:
+      stdout_contains: [warning-probe]
+  - action: kubernetes.get_yaml
+    args: {namespace: default, kind: deployment, name: harness-deployment}
+    expect:
+      stdout_contains: ["kind: Deployment", "name: harness-deployment"]
+  - action: kubernetes.hpa_list
+    expect:
+      stdout_contains: [harness-hpa, harness-deployment]
+  - action: kubernetes.ingresses_list
+    expect:
+      stdout_contains: [harness-ingress, harness.example.test]
+  - action: kubernetes.jobs_list
+    expect:
+      stdout_contains: [harness-job]
+  - action: kubernetes.namespaces
+    expect:
+      stdout_contains: [default, Active]
+  - action: kubernetes.networkpolicies_list
+    expect:
+      stdout_contains: [harness-network-policy]
+  - action: kubernetes.node_describe
+    args: {name: harness}
+    expect:
+      stdout_contains: ["Name:", harness, Ready]
   - action: kubernetes.nodes_list
     expect:
       stdout_contains: [harness, Ready]
+  - action: kubernetes.nodes_top
+    arrange:
+      - name: node metrics are available
+        argv: [/bin/sh, -c, 'kubectl top nodes | grep -q harness']
+        retry_for: 90s
+        retry_every: 5s
+    expect:
+      stdout_contains: [harness, CPU]
+  - action: kubernetes.pod_describe
+    args: {namespace: default, name: probe}
+    expect:
+      stdout_contains: ["Name:", probe, Running]
+  - action: kubernetes.pod_logs
+    args: {namespace: default, name: probe, lines: 10}
+    expect:
+      stdout_contains: [harness-probe-log]
+  - action: kubernetes.pods_list
+    expect:
+      stdout_contains: [probe, Running, harness]
+  - action: kubernetes.pods_problem
+    expect:
+      stdout_contains: [warning-probe]
+  - action: kubernetes.pods_top
+    arrange:
+      - name: pod metrics are available
+        argv: [/bin/sh, -c, 'kubectl top pod -A | grep -q harness-deployment']
+        retry_for: 90s
+        retry_every: 5s
+    expect:
+      stdout_contains: [harness-deployment, CPU]
+  - action: kubernetes.pv_list
+    expect:
+      stdout_contains: [harness-pv, Bound]
+  - action: kubernetes.pvcs_list
+    expect:
+      stdout_contains: [harness-pvc, Bound]
+  - action: kubernetes.quotas_list
+    args: {namespace: default}
+    expect:
+      stdout_contains: [harness-quota, harness-limits]
+  - action: kubernetes.rollout_history
+    args: {namespace: default, kind: deployment, name: harness-deployment}
+    expect:
+      stdout_contains: [harness-deployment, REVISION]
+  - action: kubernetes.rollout_status
+    args: {namespace: default, kind: deployment, name: harness-deployment}
+    expect:
+      stdout_contains: [successfully rolled out]
+  - action: kubernetes.services_list
+    expect:
+      stdout_contains: [harness-service, ClusterIP]
+  - action: kubernetes.statefulsets_list
+    expect:
+      stdout_contains: [harness-statefulset]
+  - action: kubernetes.storageclasses_list
+    expect:
+      stdout_contains: [local-path]
   - action: kubernetes.cordon
-    args:
-      name: harness
+    args: {name: harness}
     expect:
       stdout_contains: [cordoned]
     probes:
@@ -19,3 +149,76 @@ cases:
     cleanup:
       - name: make node schedulable
         argv: [kubectl, uncordon, harness]
+  - action: kubernetes.uncordon
+    args: {name: harness}
+    arrange:
+      - argv: [kubectl, cordon, harness]
+    expect:
+      stdout_contains: [uncordoned]
+    probes:
+      - name: node is schedulable
+        argv: [/bin/sh, -c, 'test "$(kubectl get node harness -o jsonpath={.spec.unschedulable})" != true && echo schedulable']
+        expect:
+          stdout_contains: [schedulable]
+    cleanup:
+      - argv: [kubectl, uncordon, harness]
+  - action: kubernetes.scale_deployment
+    args: {namespace: default, name: harness-deployment, replicas: 0}
+    expect:
+      stdout_contains: [scaled]
+    probes:
+      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.replicas}"]
+        expect:
+          stdout_contains: ["0"]
+    cleanup:
+      - argv: [kubectl, scale, deployment/harness-deployment, "--replicas=1"]
+  - action: kubernetes.set_image
+    args:
+      namespace: default
+      name: harness-deployment
+      container: probe
+      image: busybox:1.37.0
+    expect:
+      stdout_contains: [image, updated]
+    probes:
+      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.template.spec.containers[0].image}"]
+        expect:
+          stdout_contains: ["busybox:1.37.0"]
+    cleanup:
+      - argv: [kubectl, set, image, deployment/harness-deployment, "probe=busybox:1.38.0"]
+  - action: kubernetes.rollout_restart
+    args: {namespace: default, kind: deployment, name: harness-deployment}
+    expect:
+      stdout_contains: [restarted]
+    probes:
+      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}"]
+        expect:
+          stdout_not_empty: true
+    cleanup:
+      - argv: [kubectl, annotate, deployment, harness-deployment, "kubectl.kubernetes.io/restartedAt-"]
+  - action: kubernetes.rollout_undo
+    args: {namespace: default, kind: deployment, name: harness-deployment}
+    arrange:
+      - argv: [kubectl, set, image, deployment/harness-deployment, "probe=busybox:1.37.0"]
+      - argv: [kubectl, set, image, deployment/harness-deployment, "probe=busybox:1.36.1"]
+    expect:
+      stdout_contains: [rolled, back]
+    probes:
+      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.template.spec.containers[0].image}"]
+        expect:
+          stdout_contains: ["busybox:1.37.0"]
+    cleanup:
+      - argv: [kubectl, set, image, deployment/harness-deployment, "probe=busybox:1.38.0"]
+  - action: kubernetes.delete_pod
+    args: {namespace: default, name: delete-probe}
+    arrange:
+      - argv: [kubectl, delete, pod, delete-probe, "--ignore-not-found"]
+      - argv: [kubectl, run, delete-probe, "--image=busybox:1.38.0", "--restart=Never", '--overrides={"spec":{"terminationGracePeriodSeconds":0}}', --, sleep, "3600"]
+    expect:
+      stdout_contains: [deleted]
+    probes:
+      - argv: [/bin/sh, -c, 'test -z "$(kubectl get pod delete-probe --ignore-not-found -o name)" && echo absent']
+        expect:
+          stdout_contains: [absent]
+    cleanup:
+      - argv: [kubectl, delete, pod, delete-probe, "--ignore-not-found"]

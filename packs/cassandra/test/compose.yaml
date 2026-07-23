@@ -1,0 +1,37 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/cassandra/test
+      dockerfile: Dockerfile
+      target: client
+    image: emisar-packtest-cassandra-tools:latest
+    network_mode: service:cassandra
+    volumes:
+      - cassandra_data:/var/lib/cassandra:ro
+
+  cassandra:
+    build:
+      context: ${EMISAR_ROOT}/packs/cassandra/test
+      dockerfile: Dockerfile
+      target: sut
+    image: emisar-packtest-cassandra-sut:latest
+    environment:
+      CASSANDRA_CLUSTER_NAME: packtest
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          nodetool status | grep -q UN &&
+          cqlsh -u cassandra -p cassandra -e "CREATE KEYSPACE IF NOT EXISTS packtest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+          CREATE TABLE IF NOT EXISTS packtest.events (id int PRIMARY KEY, value text);
+          INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+
+volumes:
+  cassandra_data:

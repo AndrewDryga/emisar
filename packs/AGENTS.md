@@ -37,6 +37,10 @@ runtime) and the portal (which serves the catalog **artifact** built from
 packs/<name>/
   pack.yaml        # id, name, version, description, requires/detect/setup, actions: [actions/*.yaml]
   actions/*.yaml   # one action each (kind: script also ships scripts/*.sh)
+  test/
+    cases.yaml      # semantic behavior cases
+    compose.yaml    # this pack's isolated disposable SUT
+    fixtures/       # optional pack-owned service config or seeded state
 ```
 
 An **action** declares: `id` (`<namespace>.<name>`), `risk` (low|medium|high|critical), `kind` (exec|script), `args` (typed + validated), `execution` (binary + argv template, timeout, env), and `output` (parser + byte caps + redaction).

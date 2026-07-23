@@ -42,6 +42,8 @@ execution:
     - "--data-urlencode"
     - "start=-{{ args.window }}"
     - "--data-urlencode"
+    - "end=now"
+    - "--data-urlencode"
     - "step={{ args.step }}"
   timeout: 120s
 output:

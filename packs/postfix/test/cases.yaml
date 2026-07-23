@@ -1,0 +1,33 @@
+services: [postfix]
+cases:
+  - action: postfix.mailq
+    expect:
+      stdout_contains: [Mail queue is empty]
+  - action: postfix.qshape
+    expect:
+      stdout_contains: [TOTAL]
+  - action: postfix.queue_counts
+    expect:
+      stdout_contains: [active, deferred, hold]
+  - action: postfix.postconf
+    expect:
+      stdout_contains: [myhostname, postfix.example.test]
+  - action: postfix.check_config
+    expect:
+      exit: [0]
+    probes:
+      - argv: [/bin/sh, -c, "postfix check && echo config-valid"]
+        expect:
+          stdout_contains: [config-valid]
+  - action: postfix.flush_queue
+    cleanup_not_needed: Flushing an empty fixture queue is idempotent.
+    probes:
+      - argv: [/bin/sh, -c, "postfix status && echo running"]
+        expect:
+          stdout_contains: [running]
+  - action: postfix.reload
+    cleanup_not_needed: Reloading the unchanged fixture is idempotent.
+    probes:
+      - argv: [/bin/sh, -c, "postfix status && echo running"]
+        expect:
+          stdout_contains: [running]

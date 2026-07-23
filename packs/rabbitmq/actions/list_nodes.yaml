@@ -1,6 +1,6 @@
 schema_version: 1
 id: rmq.list_nodes
-title: rabbitmqctl list_nodes
+title: Known cluster nodes
 kind: exec
 risk: low
 description: List all known cluster nodes.
@@ -12,7 +12,7 @@ execution:
   command:
     binary: rabbitmqctl
     argv:
-      - "list_nodes"
+      - "cluster_status"
   timeout: 15s
 output:
   parser: text

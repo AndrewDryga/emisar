@@ -4,7 +4,78 @@ env:
   PGHOST: postgres
   PGPASSWORD: testpass
   PGUSER: postgres
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: postgres.activity_states
+    expect:
+      stdout_contains: [active]
+  - action: postgres.bgwriter_stats
+  - action: postgres.connections
+    expect:
+      stdout_contains: [psql]
+  - action: postgres.database_stats
+    expect:
+      stdout_contains: [testdb]
+  - action: postgres.db_sizes
+    expect:
+      stdout_contains: [testdb]
+  - action: postgres.duplicate_indexes
+    arrange:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "CREATE INDEX idx_orders_customer_duplicate ON orders (customer)"]
+    expect:
+      stdout_contains: [idx_orders_customer, idx_orders_customer_duplicate, orders]
+    cleanup:
+      - argv: [psql, -XAt, -c, "DROP INDEX IF EXISTS idx_orders_customer_duplicate"]
+  - action: postgres.explain_query
+    args:
+      query: "SELECT * FROM orders WHERE customer = 'alice'"
+    expect:
+      stdout_contains: ['"Plan"', idx_orders_customer]
+  - action: postgres.extensions_installed
+    expect:
+      stdout_contains: [pg_stat_statements]
+  - action: postgres.index_sizes
+    expect:
+      stdout_contains: [idx_orders_customer]
+  - action: postgres.is_in_recovery
+    expect:
+      stdout_contains: ["f"]
+  - action: postgres.largest_tables_full
+    expect:
+      stdout_contains: [public.orders]
+  - action: postgres.last_vacuum_per_table
+    expect:
+      stdout_contains: [public.orders]
+  - action: postgres.pg_hba_rules
+    expect:
+      stdout_contains: [scram-sha-256]
+  - action: postgres.settings_non_default
+    expect:
+      stdout_contains: [max_connections, configuration file]
+  - action: postgres.ssl_connections
+    expect:
+      stdout_contains: [postgres, psql]
+  - action: postgres.table_io
+    expect:
+      stdout_contains: [public.orders]
+  - action: postgres.table_sizes
+    expect:
+      stdout_contains: [public, orders]
+  - action: postgres.unused_indexes
+    expect:
+      stdout_contains: [orders, idx_orders]
   - action: postgres.uptime
     expect:
       stdout_contains: [PostgreSQL]
+  - action: postgres.vacuum_status
+    expect:
+      stdout_contains: [public, orders]
+  - action: postgres.wal_archive_status
+  - action: postgres.wal_status
+    expect:
+      stdout_contains: ["f"]
+  - action: postgres.xid_wraparound_proximity
+    expect:
+      stdout_contains: [testdb]

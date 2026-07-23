@@ -1,0 +1,12 @@
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: testdb
+    volumes:
+      - ${EMISAR_ROOT}/packs/postgres/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10

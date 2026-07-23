@@ -24,27 +24,36 @@ events:
 
 execution:
   # The executor scrubs the action env to PATH/LANG/LC_ALL/TERM by default, so
-  # every credential/endpoint var the SUTs expose (set on the runner-tools
-  # service in docker-compose.yaml) must be allowlisted here or the actions get
-  # a silent "auth missing". Add a var here when you wire a new SUT.
+  # every credential/endpoint var supplied by a pack's cases.yaml must be
+  # allowlisted here or the action gets a silent "auth missing".
   inherit_env:
     - AWS_ACCESS_KEY_ID
     - AWS_DEFAULT_REGION
     - AWS_ENDPOINT_URL
     - AWS_SECRET_ACCESS_KEY
+    - CADDY_ACCESS_LOG
     - CADDY_ADMIN
     - CH_HOST
-    - CH_PASSWORD
     - CH_USER
     - COCKROACH_URL
     - CONSUL_HTTP_ADDR
+    - CQLSH_HOST
+    - CQLSH_PORT
     - ELASTIC_PASSWORD
     - ELASTIC_URL
     - ELASTIC_USER
     - ENVOY_ADMIN
+    - GRAFANA_PASSWORD
     - GRAFANA_URL
+    - GRAFANA_USER
+    - HAPROXY_SOCK
+    - HOME
+    - HTTPD_ACCESS_LOG
+    - HTTPD_ERROR_LOG
+    - HTTPD_STATUS_URL
     - KAFKA_BOOTSTRAP
     - KUBECONFIG
+    - MC_HOST_minio
     - MEMCACHED_HOST
     - MEMCACHED_PORT
     - MONGO_URI
@@ -57,10 +66,13 @@ execution:
     - PGPASSWORD
     - PGUSER
     - PROM_URL
-    - RABBITMQ_HOST
-    - REDIS_HOST
-    - REDISCLI_AUTH
+    - RABBITMQ_ERLANG_COOKIE
+    - RABBITMQ_NODENAME
     - SNMP_COMMUNITY
     - SNMP_VERSION
+    - TYPESENSE_API_KEY
+    - TYPESENSE_URL
     - VAULT_ADDR
     - VAULT_TOKEN
+    - VL_URL
+    - VM_URL

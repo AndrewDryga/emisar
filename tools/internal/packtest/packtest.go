@@ -5,6 +5,7 @@ package packtest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 )
+
+var commandTimeout = 30 * time.Second
 
 type Expectation struct {
 	Exit           []int    `yaml:"exit,omitempty"`
@@ -36,13 +39,14 @@ type Step struct {
 }
 
 type Case struct {
-	Action  string         `yaml:"action"`
-	Args    map[string]any `yaml:"args,omitempty"`
-	Reason  string         `yaml:"reason,omitempty"`
-	Expect  Expectation    `yaml:"expect,omitempty"`
-	Arrange []Step         `yaml:"arrange,omitempty"`
-	Probes  []Step         `yaml:"probes,omitempty"`
-	Cleanup []Step         `yaml:"cleanup,omitempty"`
+	Action           string         `yaml:"action"`
+	Args             map[string]any `yaml:"args,omitempty"`
+	Reason           string         `yaml:"reason,omitempty"`
+	Expect           Expectation    `yaml:"expect,omitempty"`
+	Arrange          []Step         `yaml:"arrange,omitempty"`
+	Probes           []Step         `yaml:"probes,omitempty"`
+	Cleanup          []Step         `yaml:"cleanup,omitempty"`
+	CleanupNotNeeded string         `yaml:"cleanup_not_needed,omitempty"`
 }
 
 type Defaults struct {
@@ -82,14 +86,23 @@ type Totals struct {
 func (totals Totals) Failed() bool { return totals.Fail != 0 || totals.PacksFailed != 0 }
 
 type actionDefinition struct {
-	ID   string `yaml:"id"`
-	Risk string `yaml:"risk"`
+	ID          string   `yaml:"id"`
+	Risk        string   `yaml:"risk"`
+	SideEffects []string `yaml:"side_effects"`
 }
 
 type commandResult struct {
 	exitCode int
 	stdout   string
 	stderr   string
+}
+
+type actionResult struct {
+	Status   string `json:"status"`
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	Reason   string `json:"reason"`
 }
 
 func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
@@ -285,16 +298,28 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 				return fmt.Errorf("%s setup/cleanup[%d]: %w", location, j, err)
 			}
 		}
-		if action.Risk != "" && action.Risk != "low" {
+		if action.mutates() {
 			if len(test.Probes) == 0 {
 				return fmt.Errorf("%s mutating action %q needs an observable state probe", location, test.Action)
 			}
-			if len(test.Cleanup) == 0 {
-				return fmt.Errorf("%s mutating action %q needs cleanup", location, test.Action)
+			if len(test.Cleanup) == 0 && strings.TrimSpace(test.CleanupNotNeeded) == "" {
+				return fmt.Errorf("%s mutating action %q needs cleanup or cleanup_not_needed", location, test.Action)
 			}
+		}
+		if len(test.Cleanup) > 0 && strings.TrimSpace(test.CleanupNotNeeded) != "" {
+			return fmt.Errorf("%s cannot declare cleanup and cleanup_not_needed", location)
 		}
 	}
 	return nil
+}
+
+func (action actionDefinition) mutates() bool {
+	for _, effect := range action.SideEffects {
+		if strings.Contains(strings.ToLower(effect), "read-only") {
+			return false
+		}
+	}
+	return action.Risk != "" && action.Risk != "low"
 }
 
 func validateStep(step Step, semantic bool) error {
@@ -392,8 +417,8 @@ func runCase(config Config, plan Plan, test Case, env []string) error {
 			if reason == "" {
 				reason = "pack behavior test"
 			}
-			args = append(args, "--reason", reason, "--stream")
-			result, err := execute(append([]string{config.Emisar}, args...), env)
+			args = append(args, "--reason", reason)
+			result, err := executeAction(append([]string{config.Emisar}, args...), env)
 			if err == nil {
 				err = checkResult(result, mergeExpectation(plan.Defaults.Expect, test.Expect))
 			}
@@ -419,6 +444,26 @@ func runCase(config Config, plan Plan, test Case, env []string) error {
 		return errors.New(strings.Join(failures, "\n"))
 	}
 	return nil
+}
+
+func executeAction(argv, env []string) (commandResult, error) {
+	result, err := execute(argv, env)
+	if err != nil {
+		return commandResult{}, err
+	}
+	if result.exitCode != 0 {
+		return commandResult{}, fmt.Errorf("runner exit=%d\nstdout:\n%s\nstderr:\n%s",
+			result.exitCode, result.stdout, result.stderr)
+	}
+	var action actionResult
+	if err := json.Unmarshal([]byte(result.stdout), &action); err != nil {
+		return commandResult{}, fmt.Errorf("decode action result: %w\nstdout:\n%s", err, result.stdout)
+	}
+	if action.Status != "success" {
+		return commandResult{}, fmt.Errorf("action status=%s: %s\nstdout:\n%s\nstderr:\n%s",
+			action.Status, action.Reason, action.Stdout, action.Stderr)
+	}
+	return commandResult{exitCode: action.ExitCode, stdout: action.Stdout, stderr: action.Stderr}, nil
 }
 
 func runStep(step Step, baseEnv []string, requireSemantic bool) error {
@@ -476,12 +521,18 @@ func execute(argv, env []string) (commandResult, error) {
 	if len(argv) == 0 {
 		return commandResult{}, fmt.Errorf("empty argv")
 	}
-	command := exec.Command(argv[0], argv[1:]...)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Env = env
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	err := command.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return commandResult{stdout: stdout.String(), stderr: stderr.String()},
+			fmt.Errorf("command timed out after %s: %s", commandTimeout, strings.Join(argv, " "))
+	}
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -524,9 +575,6 @@ func accepts(codes []int, code int) bool {
 }
 
 func argumentValue(value any) (string, error) {
-	if text, ok := value.(string); ok {
-		return text, nil
-	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return "", err

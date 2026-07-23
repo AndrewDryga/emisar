@@ -12,12 +12,12 @@ The repository has three intentionally separate Compose environments:
   Coop development loop.
 - `docker-compose.yml` builds the packaged Portal release and runs the seeded
   demo, runners, MCP, and signing smoke tests.
-- `dev/test-packs/docker-compose.yaml` runs real backing services for action-pack
-  integration tests.
+- `dev/test-packs/compose.yaml` supplies the shared action-client container;
+  each `packs/<name>/test/compose.yaml` owns its disposable system under test.
 
 The application server stays out of the fast dependency stack, while the
-packaged stack verifies the release image and the pack harness remains isolated
-from both application environments.
+packaged stack verifies the release image and every pack behavior project stays
+isolated from both application environments and other packs.
 
 ## Fast development loop
 

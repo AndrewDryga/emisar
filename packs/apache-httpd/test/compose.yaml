@@ -1,0 +1,27 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/apache-httpd/test
+      dockerfile: Dockerfile
+    image: emisar-packtest-apache-httpd-tools:latest
+    network_mode: service:apache-httpd
+    volumes:
+      - apache_logs:/usr/local/apache2/logs
+      - ${EMISAR_ROOT}/packs/apache-httpd/test/fixtures/packtest.conf:/usr/local/apache2/conf/extra/packtest.conf:ro
+
+  apache-httpd:
+    image: httpd:2.4.68
+    command:
+      - /bin/sh
+      - -c
+      - printf '\nInclude conf/extra/packtest.conf\n' >> /usr/local/apache2/conf/httpd.conf && exec httpd-foreground
+    volumes:
+      - apache_logs:/usr/local/apache2/logs
+      - ${EMISAR_ROOT}/packs/apache-httpd/test/fixtures/packtest.conf:/usr/local/apache2/conf/extra/packtest.conf:ro
+    healthcheck:
+      test: ["CMD", "httpd", "-t"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  apache_logs:

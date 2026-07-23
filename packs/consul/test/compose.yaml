@@ -1,0 +1,8 @@
+services:
+  consul:
+    image: hashicorp/consul:2.0.2
+    command: agent -dev -client=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8500/v1/agent/metrics | grep -q '\"Timestamp\"'"]
+      interval: 2s
+      retries: 30

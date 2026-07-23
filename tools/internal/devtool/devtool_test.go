@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
@@ -153,34 +151,11 @@ func TestMergedEnvReplacesExistingValue(t *testing.T) {
 	}
 }
 
-func TestSelectPlanServicesUsesPackOwnedDependencies(t *testing.T) {
-	available := map[string]bool{"postgres": true, "redis": true, "k3s": true, "k3s-kubeconfig": true, "runner-tools": true}
-	got, err := selectPlanServices([]packtest.PlanRef{
-		{Name: "postgres", Services: []string{"postgres"}},
-		{Name: "kubernetes", Services: []string{"k3s", "k3s-kubeconfig"}},
-	}, available)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"k3s", "k3s-kubeconfig", "postgres"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("services = %v, want %v", got, want)
-	}
-}
-
-func TestSelectPlanServicesRejectsUnknownService(t *testing.T) {
-	_, err := selectPlanServices(
-		[]packtest.PlanRef{{Name: "example", Services: []string{"missing"}}},
-		map[string]bool{"runner-tools": true},
-	)
-	if err == nil || !strings.Contains(err.Error(), "example requires unknown Compose service missing") {
-		t.Fatalf("selectPlanServices error = %v", err)
-	}
-}
-
-func TestPackTestComposeProjectIsStableAndWorkspaceSpecific(t *testing.T) {
-	first := packTestComposeProject("/tmp/a")
-	if first != packTestComposeProject("/tmp/a") || first == packTestComposeProject("/tmp/b") {
+func TestPackTestComposeProjectIsStableAndPackSpecific(t *testing.T) {
+	first := packTestComposeProject("/tmp/a", "postgres")
+	if first != packTestComposeProject("/tmp/a", "postgres") ||
+		first == packTestComposeProject("/tmp/b", "postgres") ||
+		first == packTestComposeProject("/tmp/a", "mysql") {
 		t.Fatalf("compose projects are not stable and distinct: %q", first)
 	}
 }

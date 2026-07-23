@@ -3,7 +3,79 @@ env:
   MYSQL_HOST: mysql
   MYSQL_PWD: testpass
   MYSQL_USER: root
+defaults:
+  expect:
+    stdout_not_empty: true
 cases:
+  - action: mysql.analyze_table
+    args: {database: testdb, table: packtest_analyze}
+    arrange:
+      - argv: [mysql, -e, "CREATE TABLE testdb.packtest_analyze (id INT PRIMARY KEY); INSERT INTO testdb.packtest_analyze VALUES (1)"]
+    expect:
+      stdout_contains: [testdb.packtest_analyze, status, OK]
+    probes:
+      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM testdb.packtest_analyze"]
+        expect:
+          stdout_contains: ["1"]
+    cleanup:
+      - argv: [mysql, -e, "DROP TABLE IF EXISTS testdb.packtest_analyze"]
+  - action: mysql.connections_summary
+    expect:
+      stdout_contains: [Threads_connected, max_connections]
+  - action: mysql.db_sizes
+    expect:
+      stdout_contains: [testdb]
+  - action: mysql.engines
+    expect:
+      stdout_contains: [InnoDB, DEFAULT]
+  - action: mysql.index_unused
+    arrange:
+      - argv: [mysql, -e, "SELECT * FROM testdb.orders WHERE status = 'paid'"]
+    expect:
+      stdout_contains: [testdb, orders]
+  - action: mysql.innodb_status
+    expect:
+      stdout_contains: [INNODB MONITOR OUTPUT]
+  - action: mysql.open_tables
+    arrange:
+      - argv: [mysql, -e, "SELECT * FROM testdb.orders"]
+    expect:
+      stdout_contains: [testdb, orders]
+  - action: mysql.optimize_table
+    args: {database: testdb, table: packtest_optimize}
+    arrange:
+      - argv: [mysql, -e, "CREATE TABLE testdb.packtest_optimize (id INT PRIMARY KEY); INSERT INTO testdb.packtest_optimize VALUES (1)"]
+    expect:
+      stdout_contains: [testdb.packtest_optimize, status, OK]
+    probes:
+      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM testdb.packtest_optimize"]
+        expect:
+          stdout_contains: ["1"]
+    cleanup:
+      - argv: [mysql, -e, "DROP TABLE IF EXISTS testdb.packtest_optimize"]
+  - action: mysql.processlist
+    expect:
+      stdout_contains: [root, Query]
+  - action: mysql.slow_queries
+    expect:
+      stdout_contains: [CREATE TABLE]
+  - action: mysql.status
+    expect:
+      stdout_contains: [Threads_connected]
+  - action: mysql.table_io_summary
+    arrange:
+      - argv: [mysql, -e, "SELECT * FROM testdb.orders WHERE customer = 'alice'"]
+    expect:
+      stdout_contains: [testdb, orders]
+  - action: mysql.table_sizes
+    expect:
+      stdout_contains: [testdb, orders]
   - action: mysql.uptime
     expect:
       stdout_contains: [Uptime]
+  - action: mysql.users_grants
+    expect:
+      stdout_contains: [root]
+  - action: mysql.variables
+    expect:
+      stdout_contains: [innodb_buffer_pool_size]

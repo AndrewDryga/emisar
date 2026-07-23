@@ -1,0 +1,49 @@
+services: [victorialogs]
+env:
+  VL_URL: "http://victorialogs:9428"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: vl.query
+    args: {query: "_time:1h harness-log-event", limit: 10}
+    arrange: &ingest_log
+      - argv: [/bin/sh, -c, 'printf ''{"_msg":"harness-log-event","level":"info","app":"packtest"}\n'' | curl -fsS -X POST -H "Content-Type: application/stream+json" --data-binary @- "http://victorialogs:9428/insert/jsonline?_stream_fields=app&_msg_field=_msg"']
+      - name: wait for the imported log
+        argv: [/bin/sh, -c, 'curl -fsSG --data-urlencode "query=_time:1h harness-log-event" --data-urlencode limit=1 http://victorialogs:9428/select/logsql/query']
+        expect:
+          stdout_contains: [harness-log-event, packtest]
+        retry_for: 5s
+        retry_every: 100ms
+    expect:
+      stdout_contains: [harness-log-event, packtest]
+  - action: vl.hits
+    args: {query: "_time:1h harness-log-event", step: 5m}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [timestamps, values]
+  - action: vl.field_names
+    args: {query: "_time:1h *"}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [level, app]
+  - action: vl.field_values
+    args: {field: level, query: "_time:1h *", limit: 10}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [info]
+  - action: vl.streams
+    args: {query: "_time:1h *", limit: 10}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [packtest]
+  - action: vl.stats_query
+    args: {query: "_time:1h * | stats count() logs"}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [logs, vector]
+  - action: vl.stats_query_range
+    args: {query: "_time:1h * | stats count() logs", step: 5m}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [logs, matrix]

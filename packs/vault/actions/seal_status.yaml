@@ -1,6 +1,6 @@
 schema_version: 1
 id: vault.seal_status
-title: vault operator seal-status
+title: vault status (seal fields)
 kind: exec
 risk: low
 description: Show sealed/unsealed state + threshold + progress.
@@ -12,8 +12,7 @@ execution:
   command:
     binary: vault
     argv:
-      - "operator"
-      - "seal-status"
+      - "status"
       - "-format=json"
   timeout: 15s
 output:

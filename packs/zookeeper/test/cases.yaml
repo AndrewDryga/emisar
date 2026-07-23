@@ -1,0 +1,37 @@
+services: [zookeeper]
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: zk.conf
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [clientPort, dataDir]
+  - action: zk.cons
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [queued, recved]
+  - action: zk.envi
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [Environment, zookeeper.version]
+  - action: zk.mntr
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [zk_version, zk_server_state]
+  - action: zk.ruok
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [imok]
+  - action: zk.srvr
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [Zookeeper version, Mode]
+  - action: zk.stat
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [Zookeeper version, Connections]
+  - action: zk.wchs
+    args: {server: "zookeeper:2181"}
+    expect:
+      stdout_contains: [connections watching, Total watches]
