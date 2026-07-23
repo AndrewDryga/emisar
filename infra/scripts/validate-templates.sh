@@ -176,7 +176,7 @@ grep -Fq -- '--user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-p
 grep -Fq -- '--tmpfs /app/tmp:rw,nosuid,nodev,size=64m' "$livebook_rendered"
 grep -Fq -- '--tmpfs /home/livebook:rw,exec,nosuid,nodev,size=512m' "$livebook_rendered"
 grep -Fq -- "--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges $proxy_image --private-ip --auto-iam-authn" "$livebook_rendered"
-grep -Fq '/public/health' "${infra_dir}/lb.tf"
+grep -Fq '/public/health' "${infra_dir}/load_balancer.tf"
 grep -Fq 'System.cmd("/bin/bash", ["/opt/emisar/list-portal-nodes"])' "${infra_dir}/README.md"
 if grep -Fq 'LIVEBOOK_PASSWORD' "$livebook_rendered"; then
   echo "IAP-only Livebook must not configure a second password login" >&2

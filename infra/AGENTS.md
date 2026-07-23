@@ -106,7 +106,7 @@ the separate, creds-gated deploy step.
 
 Match `../onlytty/infra`: comments explain **why** (the abuse case, the ordering
 hazard, the SOC 2 control), never restate the resource. One concern per file
-(`network`/`compute`/`db`/`lb`/`secrets`/`iam`/`monitoring`/`dns`). Values that vary
+(`network`/`compute`/`database`/`load_balancer`/`secrets`/`iam`/`monitoring_*`/`dns`). Values that vary
 or carry a security decision are variables with a description that IS the
 documentation. **This is a PUBLIC repo — committed defaults are a generic
 reference configuration, never the production deployment's actual shape.**

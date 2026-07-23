@@ -263,7 +263,7 @@ resource "google_compute_url_map" "https" {
   ]
 
   # registry.<domain> serves the public pack-registry bucket straight from the
-  # LB (packs_registry.tf) — no portal hop, so `emisar pack install` keeps
+  # LB (pack_registry.tf) — no portal hop, so `emisar pack install` keeps
   # working even when the app tier is down or mid-deploy.
   host_rule {
     hosts        = ["registry.${var.domain}"]
@@ -430,4 +430,3 @@ resource "google_compute_global_forwarding_rule" "http_v6" {
   port_range            = "80"
   target                = google_compute_target_http_proxy.redirect.id
 }
-

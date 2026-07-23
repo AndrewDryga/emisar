@@ -236,4 +236,3 @@ resource "google_monitoring_alert_policy" "dispatch_backlog" {
 
   notification_channels = local.paging_notification_channels
 }
-

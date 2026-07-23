@@ -1,5 +1,5 @@
 # ── External uptime, on-call & status page (Better Stack) — SOC 2 CC7 ────────
-# Google's uptime check (monitoring.tf) shares a failure domain with everything
+# Google's uptime check (monitoring_uptime.tf) shares a failure domain with everything
 # it watches: an incident in the serving cloud can take out the site AND the
 # alert path in one stroke. Better Stack probes from independent infrastructure,
 # runs the on-call escalation, and hosts the public status page — so detection,
@@ -91,7 +91,8 @@ resource "betteruptime_policy" "incident" {
 }
 
 # ── GCP internal alarms → this same escalation (paid tier) ───────────────────
-# The severe, silent-failure GCP alerts (monitoring.tf) can deliver here so they
+# Severe GCP alerts from monitoring_database.tf and monitoring_platform.tf can
+# deliver here, so they
 # page the on-call exactly like the external monitors: a Cloud SQL transaction
 # wraparound climbing toward the write freeze, or NAT egress quietly failing,
 # should wake someone, not wait in an inbox. GCP posts to webhook_url;
@@ -130,7 +131,7 @@ resource "betteruptime_monitor" "portal" {
   remember_cookies = false
   verify_ssl       = true
 
-  # Independent of the GCP-side cert-renewal alert (monitoring.tf): these watch
+  # Independent of the GCP-side cert-renewal alert (monitoring_platform.tf): these watch
   # expiry on whatever is actually serving the domain, from outside.
   ssl_expiration    = 7
   domain_expiration = 14
@@ -141,7 +142,7 @@ resource "betteruptime_monitor" "portal" {
 # publish carries the full retained version window), so a GET check fails on
 # size while the registry is healthy. HEAD still exercises DNS, TLS, the LB,
 # and the bucket serving path; catalog CONTENT semantics are watched by the
-# GCP semantic check in monitoring.tf, which inspects only the first bytes.
+# GCP semantic check in monitoring_uptime.tf, which inspects only the first bytes.
 resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
   monitor_type = "status"

@@ -165,19 +165,17 @@
 
       <.docs_h2 id="connect-llm">5 · Point your LLM at it</.docs_h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        A runner on its own is just a safer way to click buttons. The payoff is handing the catalog
-        to a model. In the dashboard open <strong>LLM agents</strong> and pick your client:
-        Claude.ai and ChatGPT connect over remote MCP with OAuth, and local clients — Claude Code,
-        Cursor, Zed, Copilot CLI, and ten more — use a one-line installer that opens a browser
-        approval and writes a scoped key straight into the client's config, so the secret never
-        touches your clipboard.
+        In the dashboard, open <strong>LLM agents</strong>
+        and pick your client. Claude.ai and ChatGPT connect over remote MCP with OAuth; local
+        clients — Claude Code, Cursor, Zed, Copilot CLI, and ten more — run a one-line installer that
+        opens a browser approval and writes a scoped key into the client's config, so the secret
+        never touches your clipboard.
       </p>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Now your model gets twelve stable tools and discovers only the packs, actions, and runners
-        in scope. Ask it <em>"what's the load on web-01?"</em>
-        and it finds <code class="font-mono">linux.uptime</code>, reads its exact schema, then calls <code class="font-mono">run_action</code>; ask it to restart a service and
-        that high-risk action stops for your approval. Reads run under policy, risky calls stop for a
-        human, and the model never gets a shell — every call is audited. Full walkthrough: <.link
+        Your model now has twelve stable tools and sees only the packs, actions, and runners in its
+        scope. Ask <em>"what's the load on web-01?"</em>
+        and it runs <code class="font-mono">linux.uptime</code>; ask it to restart a service and that
+        high-risk action stops for your approval. Full walkthrough: <.link
           navigate={~p"/docs/connect-an-llm"}
           class="text-brand-400 hover:text-brand-300"
         >/docs/connect-an-llm</.link>.

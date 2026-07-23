@@ -174,7 +174,7 @@ resource "google_iap_web_backend_service_iam_member" "livebook_user" {
 
 # Keep human database access attributable to a personal IAM identity. These
 # roles authorize connector login only for this instance; PostgreSQL privileges
-# remain separately bounded by db.tf.
+# remain separately bounded by database.tf.
 resource "google_project_iam_member" "database_operator_cloudsql" {
   for_each = nonsensitive(var.database_operator_iam_user != null) ? toset([
     "roles/cloudsql.client",
@@ -194,7 +194,7 @@ resource "google_project_iam_member" "database_operator_cloudsql" {
 
 # Cloud SQL Studio needs project-scoped console discovery permissions that an
 # instance condition would deny. Database authentication remains confined to
-# emisar because that is the only instance where db.tf creates this IAM user.
+# emisar because that is the only instance where database.tf creates this IAM user.
 resource "google_project_iam_member" "database_operator_studio" {
   count = nonsensitive(var.database_operator_iam_user != null) ? 1 : 0
 

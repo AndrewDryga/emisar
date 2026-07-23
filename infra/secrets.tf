@@ -5,7 +5,7 @@
 # whole stack up — no out-of-band `gcloud secrets versions add` step. The
 # Write-only provider arguments keep payloads out of new Terraform state. The
 # external values still live in sensitive TFC workspace variables, so workspace
-# access remains production access (see main.tf). These initial write-only
+# access remains production access (see versions.tf). These initial write-only
 # versions are intentionally stable: a real rotation is a reviewed maintenance
 # change to the affected credential, never a global infrastructure knob.
 #

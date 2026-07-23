@@ -25,6 +25,18 @@ Operators -> IAP + OS Login for SSH
 Better Stack -> external probes, on-call escalation (severe GCP alarms page in), status page
 ```
 
+## Layout
+
+| Area | Files |
+|---|---|
+| Terraform and HCP contract | `versions.tf`, `providers.tf`, `project.tf`, `variables.tf`, `outputs.tf` |
+| Runtime | `network.tf`, `compute.tf`, `database.tf`, `livebook.tf` |
+| Public edge | `certificates.tf`, `load_balancer.tf`, `mta_sts.tf`, `dns.tf` |
+| Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
+| Distribution | `pack_registry.tf`, `packs/` |
+| Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
+| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`, `scripts/`, `drills/` |
+
 ## Production controls
 
 | Area | Configuration |

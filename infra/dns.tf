@@ -2,8 +2,9 @@
 #
 # Cloud DNS is authoritative, so only records defined here resolve.
 #
-# The apex A/AAAA point at the Google HTTPS load balancer (lb.tf); the Certificate
-# Manager DNS-auth CNAME proves domain control for the Google-managed cert. The
+# The apex A/AAAA point at the Google HTTPS load balancer (load_balancer.tf); the
+# Certificate Manager DNS-auth CNAME proves domain control for the managed cert
+# in certificates.tf. The
 # email records (MX / SPF / two DKIM / Postmark Return-Path / DMARC / CAA / TLS-RPT
 # / MTA-STS) are managed together — a spoofable domain
 # is an account-takeover phishing vector for a magic-link product.
@@ -65,7 +66,7 @@ resource "google_dns_record_set" "aaaa" {
   rrdatas      = [google_compute_global_address.ipv6.address]
 }
 
-# www resolves to the shared LB; host rules in lb.tf redirect it to the apex.
+# www resolves to the shared LB; host rules in load_balancer.tf redirect it to the apex.
 resource "google_dns_record_set" "www" {
   name         = "www.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -95,7 +96,7 @@ resource "google_dns_record_set" "livebook_aaaa" {
 }
 
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
-# Proves domain control so the Google-managed cert (lb.tf) provisions. One record
+# Proves domain control so the Google-managed cert (certificates.tf) provisions. One record
 # per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
 # ride the same cert). Published into our own zone, so the cert goes ACTIVE minutes
 # while these records remain authoritative.
@@ -268,7 +269,7 @@ resource "google_dns_record_set" "tlsrpt" {
 # The policy is served at https://mta-sts.emisar.dev/.well-known/mta-sts.txt from
 # a dedicated one-object GCS backend; `mta-sts` CNAMEs to the apex, so it rides
 # the same GCP LB and its TLS comes from the Certificate Manager cert
-# (lb.tf), which carries the mta-sts SAN + cert-map entry — without them the policy
+# (certificates.tf), which carries the mta-sts SAN + cert-map entry — without them the policy
 # is unfetchable and this control silently no-ops. Ships in `mode: testing` —
 # failures are reported via TLS-RPT above but NO mail is blocked. The TXT id is
 # derived from the policy bytes, so any reviewed policy edit forces a refetch.

@@ -95,7 +95,7 @@ resource "google_service_account_iam_member" "pack_publisher_wif" {
 # Vendor-neutral artifact URLs: published catalogs bake tarball URLs into
 # immutable objects forever, so they should name OUR domain, not a Google
 # endpoint we can never rotate away from. The host rides the existing LB
-# (lb.tf adds a host rule → this backend bucket), so it costs no extra
+# (load_balancer.tf adds a host rule → this backend bucket), so it costs no extra
 # forwarding rules and pack installs never depend on the app tier — the LB
 # serves the bucket directly. storage.googleapis.com URLs keep working
 # unchanged; this is an additive read-side alias.
@@ -119,7 +119,7 @@ resource "google_compute_backend_bucket" "pack_registry" {
   depends_on = [google_project_service.apis]
 }
 
-# Its OWN managed cert, not a new SAN on the emisar cert (lb.tf): adding a SAN
+# Its OWN managed cert, not a new SAN on the emisar cert (certificates.tf): adding a SAN
 # re-provisions the existing cert, briefly risking apex TLS during replacement for a
 # hostname that has nothing to do with the console. The shared certificate map
 # selects certs purely by SNI, so an independent cert + map entry is the

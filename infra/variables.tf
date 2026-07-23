@@ -378,7 +378,7 @@ variable "slack_alert_channel_id" {
 
 variable "betterstack_api_token" {
   type        = string
-  description = "Better Stack (BetterUptime) API token — the provider credential for the external uptime monitors + public status page (uptime.tf). Same custody as the app secrets: a SENSITIVE Terraform Cloud workspace variable, never a committed value. No default on purpose — the workspace must hold it before any plan runs."
+  description = "Better Stack (BetterUptime) API token — the provider credential for the external uptime monitors + public status page (betterstack.tf). Same custody as the app secrets: a SENSITIVE Terraform Cloud workspace variable, never a committed value. No default on purpose — the workspace must hold it before any plan runs."
   sensitive   = true
 }
 
@@ -395,7 +395,7 @@ variable "oncall_emails" {
 
 variable "betterstack_gcp_paging" {
   type        = bool
-  description = "Page the Better Stack on-call for the severe, silent-failure GCP alarms via its Google Monitoring integration (uptime.tf). Requires a PAID Better Stack tier — the free tier returns 403 on google-monitoring-integrations. When false those alarms still email + Slack like the rest, and the external uptime monitors page regardless; flip to true after upgrading."
+  description = "Page the Better Stack on-call for the severe, silent-failure GCP alarms via its Google Monitoring integration (betterstack.tf). Requires a PAID Better Stack tier — the free tier returns 403 on google-monitoring-integrations. When false those alarms still email + Slack like the rest, and the external uptime monitors page regardless; flip to true after upgrading."
   default     = false
 }
 
