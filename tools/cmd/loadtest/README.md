@@ -12,9 +12,9 @@ halves, one boring principle each:
   `emisar connect` binary. The runner already is the load client; reproducing its
   websocket protocol in a fake would only drift from the real thing.
 
-This harness is a **separate Go module, deliberately not in `../../go.work`**, so
-it never ships and never joins the `runner/`/`mcp/` gates. Because it's outside
-the workspace, every `go` command here needs `GOWORK=off`.
+This harness is a command in the repository's shared `tools` Go module. It never
+ships with the product, but it shares the same pinned Go toolchain, dependency
+verification, and tooling gate as the other development drivers.
 
 > A live run needs the normal Coop dependency services or the packaged smoke
 > stack. The harness itself builds and tests without either because its unit
@@ -23,11 +23,10 @@ the workspace, every `go` command here needs `GOWORK=off`.
 ## Build & gate
 
 ```sh
-cd dev/loadtest
-GOWORK=off gofmt -l -s .        # zero output
-GOWORK=off go vet ./...
-GOWORK=off go test -race -count=1 ./...
-GOWORK=off go build -o /tmp/loadtest .
+gofmt -l -s tools/cmd/loadtest  # zero output
+go vet ./tools/cmd/loadtest
+go test -race -count=1 ./tools/cmd/loadtest
+go build -o /tmp/loadtest ./tools/cmd/loadtest
 ```
 
 ## Scenario A — MCP client concurrency
@@ -36,7 +35,7 @@ Bring the stack up (from the repo root), then drive the seeded dev MCP key:
 
 ```sh
 dev/run smoke                   # packaged portal + db + 3 runners on :4010
-cd dev/loadtest && GOWORK=off go build -o /tmp/loadtest .
+go build -o /tmp/loadtest ./tools/cmd/loadtest
 
 # 32 concurrent clients listing the tool catalog for 30s (2s warmup dropped):
 /tmp/loadtest -clients 32 -duration 30s -scenario tools_list
@@ -170,8 +169,7 @@ dev/run seed
 dev/run serve                  # keep this terminal open
 dev/run urls                   # copy the workspace Portal URL
 
-cd dev/loadtest
-GOWORK=off go build -o /tmp/loadtest .
+go build -o /tmp/loadtest ./tools/cmd/loadtest
 /tmp/loadtest -url http://localhost:<workspace-port> \
   -clients 32 -duration 30s -scenario tools_list
 ```

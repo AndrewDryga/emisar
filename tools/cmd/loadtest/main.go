@@ -36,7 +36,7 @@ import (
 // The docker-compose stack seeds this fixed MCP key (kind :mcp) so the harness
 // works against `docker compose up` with no manual key minting. It is a
 // well-known DEV secret — never a real deployment.
-const devMCPKey = "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+const devMCPKey = "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 // maxResponseBytes caps the buffered response per request. The stats only need
 // the status + whether the JSON-RPC body carried an error, so a small cap keeps
