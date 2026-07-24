@@ -448,21 +448,15 @@ defmodule EmisarWeb.RunnersLive do
                             {runner.hostname || runner.external_id || "no host"}
                           </:seg>
                           <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
+                          <%!-- Zero is the default, not a signal — the count joins the meta
+                           line only while something is actually running. --%>
+                          <:seg :if={runner.action_load > 0}>
+                            {active_runs_label(runner.action_load)}
+                          </:seg>
                         </.meta_line>
                       </div>
 
                       <div class="flex items-center gap-4 text-right">
-                        <%!-- Zero is the default, not a signal — muted em-dash;
-                         "N active runs" only when something is running. --%>
-                        <div class="hidden w-20 text-xs tabular-nums text-zinc-400 sm:block">
-                          <%!-- Blank at zero, not an em-dash: with every runner idle this column
-                           rendered a stack of dashes that read as a BUG, not data (the
-                           muted-dash rule is for an occasionally-empty cell, not a
-                           usually-empty column). The w-20 slot keeps pills aligned. --%>
-                          <span :if={runner.action_load > 0} class="tabular-nums">
-                            {runner.action_load} active runs
-                          </span>
-                        </div>
                         <.runner_status_badge
                           state={connection}
                           version={runner.runner_version}
@@ -611,4 +605,7 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   defp heartbeat_status(assigns), do: ~H"never connected"
+
+  defp active_runs_label(1), do: "1 active run"
+  defp active_runs_label(count), do: "#{count} active runs"
 end

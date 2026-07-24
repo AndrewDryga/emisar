@@ -34,6 +34,39 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ ~p"/app/#{account}/runners/keys"
     end
 
+    test "one active run is singular; more than one is plural", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      one = Fixtures.Runners.create_runner(account_id: account.id, name: "one", connected?: true)
+
+      many =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "many", connected?: true)
+
+      {:ok, _} =
+        Runners.record_heartbeat(
+          account.id,
+          one.id,
+          one.connection_generation,
+          one.connection_lease_id,
+          1
+        )
+
+      {:ok, _} =
+        Runners.record_heartbeat(
+          account.id,
+          many.id,
+          many.connection_generation,
+          many.connection_lease_id,
+          3
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      # "1 active run" is a substring of "1 active runs", so the refute is what pins it.
+      assert html =~ "1 active run"
+      refute html =~ "1 active runs"
+      assert html =~ "3 active runs"
+    end
+
     test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
