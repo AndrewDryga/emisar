@@ -1077,6 +1077,46 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert tail_text(resumed) == "after\n"
   end
 
+  test "a drain whose remaining whole events were pruned ends flagged, not clean", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-pruned-whole")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("x", 8_192)
+    for seq <- 1..40, do: append_progress!(run, seq, "stdout", chunk)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 40})
+
+    # The terminal summary seeds a drain that owes all 40 events.
+    seed =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["next"][
+        "arguments"
+      ]["cursor"]
+
+    first = call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => seed, "timeout" => "0"})
+
+    # Mid-drain, retention removes every remaining WHOLE event — an offset-zero
+    # boundary, so no single event is left half-delivered.
+    Repo.delete_all(Emisar.Runs.RunEvent)
+
+    resumed =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => first["run"]["next"]["arguments"]["cursor"],
+        "timeout" => "0"
+      })["run"]
+
+    # The drain still owed events it can no longer serve. That must end as
+    # INCOMPLETE output, never as a clean finish that silently skipped them.
+    assert resumed["output"] == []
+    assert resumed["output_complete"] == false
+    refute Map.has_key?(resumed, "next")
+  end
+
   test "a live run's buffered backlog returns immediately instead of long-polling", %{
     conn: conn,
     account: account,
@@ -1238,6 +1278,37 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     {drained, frames} = drain_tail!(conn, run, seed, "", 0)
 
+    assert drained == chunk
+    assert frames > 1
+  end
+
+  test "a compact-JSON backlog never overruns the transport frame", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-compact-json")
+    run = create_mcp_history_run!(account, runner, key, 1)
+
+    # The realistic worst case the frame-estimate bug escaped through: compact JSON
+    # is almost half quotes and backslashes, and the frame re-escapes those TWICE —
+    # once in structuredContent, again in the mirrored text block. This ~165 KiB
+    # chunk stays under the 256 KiB per-event ingestion cap, but mirrored and
+    # double-escaped it assembles a frame far past 512 KiB if shipped whole; the
+    # budget must measure the real frame and fragment it across hops.
+    segment = ~s({"k":"v","a":["b","c"],"p":"a\\b"})
+    chunk = String.duplicate(segment, 5_000)
+    append_progress!(run, 1, "stdout", chunk)
+    seed = seed_cursor!(conn, run)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 1})
+
+    {drained, frames} = drain_tail!(conn, run, seed, "", 0)
+
+    # Every hop returned a real run (an overrun would come back as response_too_large),
+    # the cursor advanced each hop, and the fragments reconstruct the input byte-exactly.
     assert drained == chunk
     assert frames > 1
   end

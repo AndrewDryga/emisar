@@ -106,7 +106,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
         {:error,
          error(
            "invalid_cursor",
-           "The cursor is invalid, expired, or belongs to another run. Follow the `next` continuation from a prior response instead of constructing one."
+           "The cursor is invalid, expired, or belongs to another run. Follow the `next` continuation from a prior response instead of constructing one. If it has expired, call wait_for_run again with just the run_id and no cursor to re-seed the tail from the run's current output."
          )}
 
       {:error, :not_found} ->
@@ -202,13 +202,13 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp render_action_run(run, subject, nil, scope),
     do: Service.fixed_run_summary(run, subject, tail_scope: scope)
 
-  defp render_action_run(run, subject, {_, _} = position, scope),
+  defp render_action_run(run, subject, {_, _, _} = position, scope),
     do: Service.fixed_run_tail(run, subject, position, scope)
 
   # The wake watches for the NEXT event to deliver; a fragmented mid-event
   # position drains immediately (timeout "0"), so only its seq matters here.
   defp wake_seq(nil), do: nil
-  defp wake_seq({seq, _offset}), do: seq
+  defp wake_seq({seq, _offset, _remaining}), do: seq
 
   defp await_action_run(
          subject,

@@ -2758,6 +2758,26 @@ defmodule Emisar.Runs do
   defp progress_chunk(_event), do: ""
 
   @doc """
+  The number of progress chunks currently persisted for a run. Backs the MCP
+  terminal-output drain: the count is captured when a drain is seeded (a
+  terminal run cannot gain events), so the drain can prove at its end that
+  every persisted event was delivered — or flag that retention pruned some.
+  The run is fetched via `fetch_run_by_id/3` first so the subject's account
+  scope and permission gate apply. Returns `{:ok, count}`.
+  """
+  def count_progress_events_for_run(run_id, %Subject{} = subject) do
+    with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
+      count =
+        RunEvent.Query.all()
+        |> RunEvent.Query.by_run_id(run_id)
+        |> RunEvent.Query.by_kind(:progress)
+        |> Repo.aggregate(:count)
+
+      {:ok, count}
+    end
+  end
+
+  @doc """
   The most recent `limit` progress chunks before `before_seq`, in chronological
   (`seq`-ASC) order — the next older page for the run-detail output viewer's
   "load earlier" control. The run is fetched via `fetch_run_by_id/3` first so the

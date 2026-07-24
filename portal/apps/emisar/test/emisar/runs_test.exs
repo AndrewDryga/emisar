@@ -4608,6 +4608,37 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "count_progress_events_for_run/2" do
+    setup do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      %{account: account, runner: runner, subject: subject}
+    end
+
+    test "counts only persisted progress chunks", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
+      {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "transition", payload: %{}})
+      {:ok, _} = Runs.append_event(run, %{seq: 3, kind: "progress", payload: %{"chunk" => "b"}})
+
+      assert Runs.count_progress_events_for_run(run.id, subject) == {:ok, 2}
+    end
+
+    test "refuses a cross-account subject", %{account: account, runner: runner} do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert Runs.count_progress_events_for_run(run.id, subject_b) == {:error, :not_found}
+    end
+  end
+
   describe "list_events_for_run_before/4" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()

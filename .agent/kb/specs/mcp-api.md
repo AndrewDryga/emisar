@@ -1241,10 +1241,12 @@ so the caller pulls the next frame immediately); it is absent once the run is
 terminal and its output is fully drained. Each frame is sized against the real
 assembled transport frame, so a chatty or escape-heavy run drains across several
 `next` hops with nothing repeated. A dropped progress chunk surfaces as
-`output_complete: false`, never a silent gap — as does a cursor that resumes
-mid-event after retention already pruned that event's remaining bytes. Output
-reads write no audit event; the run lifecycle and the runner's local journal
-remain the audit record.
+`output_complete: false`, never a silent gap — as does a drain that retention
+pruned mid-flight: a cursor resuming inside a pruned event flags immediately,
+and a terminal drain that ends still owing whole events (the seed captured the
+exact persisted count, which a finished run cannot change) ends flagged rather
+than clean. Output reads write no audit event; the run lifecycle and the
+runner's local journal remain the audit record.
 
 ### `recent_runs`
 

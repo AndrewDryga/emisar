@@ -146,7 +146,7 @@ defmodule EmisarWeb.MCP.Service do
 
     run
     |> base_run_fields(subject)
-    |> Map.put(:next, fixed_run_next(run, structured_output, tail_scope, output_preview))
+    |> Map.put(:next, fixed_run_next(run, subject, structured_output, tail_scope, output_preview))
     |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
     |> Map.merge(stream_summary(run, output_preview, :stderr))
@@ -159,7 +159,7 @@ defmodule EmisarWeb.MCP.Service do
   while the run is live or output remains undrained. Replaces the stdout/stderr
   tail preview; `scope` binds the emitted cursor to this run and credential.
   """
-  def fixed_run_tail(run, subject, {from_seq, offset} = position, scope)
+  def fixed_run_tail(run, subject, {from_seq, offset, _remaining} = position, scope)
       when is_integer(from_seq) and is_integer(offset) and is_binary(scope) do
     {:ok, events, read_more?} =
       Runs.list_events_for_run_since(run.id, from_seq, @max_tail_read_bytes, subject)
@@ -204,16 +204,21 @@ defmodule EmisarWeb.MCP.Service do
   defp largest_fitting_take(_build, _lo, _hi, best), do: best
 
   defp tail_summary(context, take) do
-    {output, {next_seq, next_offset}, cut?} =
+    {output, {next_seq, next_offset, remaining}, cut?} =
       take_segments(context.segments, take, context.position)
 
-    cursor = OutputCursor.encode(context.scope, context.run.id, next_seq, next_offset)
+    cursor = OutputCursor.encode(context.scope, context.run.id, next_seq, next_offset, remaining)
+    more? = cut? or context.read_more?
+
+    # A terminal drain that reaches the end of persisted output still owing
+    # events proves retention pruned rows mid-drain — end flagged, never clean.
+    pruned? = not more? and Runs.ActionRun.terminal?(context.run.status) and remaining > 0
 
     context.run
     |> base_run_fields(context.subject)
     |> Map.put(:output, output)
-    |> Map.put(:next, tail_next(context.run, cut? or context.read_more?, cursor))
-    |> flag_output_gap(context.gap?)
+    |> Map.put(:next, tail_next(context.run, more?, cursor))
+    |> flag_output_gap(context.gap? or pruned?)
     |> Map.merge(context.structured_output)
     |> drop_nil_values()
   end
@@ -253,7 +258,7 @@ defmodule EmisarWeb.MCP.Service do
   # event it names — if retention removed that event, its remaining bytes are
   # gone, so flag the gap rather than silently resuming at the next event.
   # Zero-length segments are kept so the cursor still advances past them.
-  defp deliverable_segments(events, {from_seq, offset}) do
+  defp deliverable_segments(events, {from_seq, offset, _remaining}) do
     gap? = offset > 0 and not Enum.any?(events, &(&1.seq == from_seq))
 
     segments =
@@ -274,32 +279,35 @@ defmodule EmisarWeb.MCP.Service do
   # Take the first `limit` bytes across the segments, coalescing consecutive
   # same-stream text. A segment too large for the remaining room is FRAGMENTED
   # and its `{seq, offset}` carried in the cursor, so the next frame resumes
-  # mid-event — output is never lost or duplicated.
+  # mid-event — output is never lost or duplicated. Each fully consumed event
+  # decrements the cursor's owed-event count (a fragment doesn't, until done).
   defp take_segments(segments, limit, position) do
-    {reversed, cursor, _remaining, cut?} =
+    {reversed, cursor, _room, cut?} =
       Enum.reduce_while(segments, {[], position, limit, false}, fn segment,
-                                                                   {acc, _cursor, remaining, _cut} ->
-        if byte_size(segment.text) <= remaining do
+                                                                   {acc, cursor, room, _cut} ->
+        {_seq, _offset, remaining} = cursor
+
+        if byte_size(segment.text) <= room do
           {:cont,
-           {prepend_output(acc, segment.stream, segment.text), {segment.seq + 1, 0},
-            remaining - byte_size(segment.text), false}}
+           {prepend_output(acc, segment.stream, segment.text),
+            {segment.seq + 1, 0, max(remaining - 1, 0)}, room - byte_size(segment.text), false}}
         else
-          halt_fragment(acc, segment, remaining)
+          halt_fragment(acc, segment, remaining, room)
         end
       end)
 
     {Enum.reverse(reversed), cursor, cut?}
   end
 
-  defp halt_fragment(acc, segment, remaining) do
-    prefix = segment.text |> binary_part(0, remaining) |> trim_to_utf8_boundary()
+  defp halt_fragment(acc, segment, remaining, room) do
+    prefix = segment.text |> binary_part(0, room) |> trim_to_utf8_boundary()
 
     if prefix == "" do
-      {:halt, {acc, {segment.seq, segment.start}, 0, true}}
+      {:halt, {acc, {segment.seq, segment.start, remaining}, 0, true}}
     else
       {:halt,
        {prepend_output(acc, segment.stream, prefix),
-        {segment.seq, segment.start + byte_size(prefix)}, 0, true}}
+        {segment.seq, segment.start + byte_size(prefix), remaining}, 0, true}}
     end
   end
 
@@ -464,10 +472,16 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_wait_until(_run), do: nil
 
-  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}, _tail_scope, _preview),
-    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
+  defp fixed_run_next(
+         %{id: run_id},
+         _subject,
+         %{structured_output_omitted: true},
+         _tail_scope,
+         _preview
+       ),
+       do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
 
-  defp fixed_run_next(run, _structured_output, tail_scope, preview) do
+  defp fixed_run_next(run, subject, _structured_output, tail_scope, preview) do
     cond do
       not Runs.ActionRun.terminal?(run.status) ->
         live_snapshot_next(run.id, tail_scope)
@@ -476,18 +490,29 @@ defmodule EmisarWeb.MCP.Service do
       # drainable — hand back a start cursor so the caller can stream the rest
       # instead of being stuck with the bounded tail preview.
       preview.persisted_omitted and is_binary(tail_scope) ->
-        wait_next(run.id, OutputCursor.encode(tail_scope, run.id, 0, 0), "0")
+        terminal_drain_next(run, subject, tail_scope)
 
       true ->
         nil
     end
   end
 
+  # A terminal run cannot gain events, so the count captured here is exact. The
+  # drain's cursor carries it down, decremented per delivered event, and a
+  # nonzero remainder at the end of output proves retention pruned rows the
+  # caller never saw — the drain then ends flagged instead of clean.
+  defp terminal_drain_next(run, subject, scope) do
+    {:ok, drainable} = Runs.count_progress_events_for_run(run.id, subject)
+    wait_next(run.id, OutputCursor.encode(scope, run.id, 0, 0, drainable), "0")
+  end
+
+  # A live cursor asserts no owed-event minimum (remaining 0): retention only
+  # prunes runs finished days ago, far beyond a live cursor's lifetime.
   defp live_snapshot_next(run_id, nil),
     do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
 
   defp live_snapshot_next(run_id, scope),
-    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0, 0), "60s")
+    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0, 0, 0), "60s")
 
   # -- Wait parsing ---------------------------------------------------
 
