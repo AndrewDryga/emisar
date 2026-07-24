@@ -708,6 +708,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/images/screenshots/loop/approval-approved.webp"
       assert html =~ "/images/screenshots/loop/run-success.webp"
       assert html =~ "/images/screenshots/loop/audit-trail.webp"
+      assert html =~ "/images/screenshots/loop/audit-event.webp"
     end
 
     test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do

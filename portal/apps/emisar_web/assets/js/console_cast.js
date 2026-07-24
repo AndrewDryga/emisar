@@ -9,21 +9,24 @@
 // Progressive enhancement: the server renders the full storyboard — every
 // frame with its step label and caption — so no-JS visitors and crawlers get
 // the whole story stacked. Here we collapse the storyboard into one stacked
-// stage and PLAY the take once it scrolls into view: an overlay cursor
-// travels to the active frame's declared click point, a ripple fires, and the
-// next frame crossfades in — the transitions read as the real interaction
-// that produced the captures (which they were: the frames come from a live
-// driven session, tools/internal/browser/docs.go captureLoopTake). A tab
-// click takes manual control and stops the autoplay; Replay runs it again.
-// Honors prefers-reduced-motion: no autoplay, no cursor, instant swaps, tabs
-// still work, annotations still shown.
+// stage and PLAY the take once it scrolls into view. Each frame's beat:
+// its spotlight dims everything except the one element that matters (with a
+// short label pinned to it), then the spotlight lifts, the overlay cursor
+// travels to the frame's declared click point, a ripple fires, and the next
+// frame crossfades in — the transitions read as the real interaction that
+// produced the captures (which they were: the frames come from a live driven
+// session, tools/internal/browser/docs.go captureLoopTake). A tab click
+// takes manual control (frame + its spotlight, no autoplay); Replay runs the
+// take again. Honors prefers-reduced-motion: no autoplay, no cursor, instant
+// swaps, tabs still work, spotlights still shown.
 
-// The read beat on a frame before its transition starts, and the cursor's
-// travel + click beats. Slower than a slideshow, faster than a demo video.
-const DWELL_MS = 2600
+// The rhythm: spotlight in → read → spotlight out → travel → click → swap.
+const SPOT_IN_MS = 450
+const SPOT_HOLD_MS = 2100
+const SPOT_OUT_MS = 350
 const TRAVEL_MS = 550
 const CLICK_MS = 420
-const NOTE_DELAY_MS = 500
+const PLAIN_DWELL_MS = 1800
 
 export function initConsoleCasts() {
   document.querySelectorAll("[data-console-cast]").forEach(setupCast)
@@ -35,6 +38,12 @@ function parsePoint(value) {
   return Number.isFinite(x) && Number.isFinite(y) ? {x, y} : null
 }
 
+function parseRect(value) {
+  if (!value) return null
+  const [x, y, w, h] = value.split(",").map((part) => parseFloat(part))
+  return [x, y, w, h].every(Number.isFinite) ? {x, y, w, h} : null
+}
+
 function setupCast(root) {
   const stage = root.querySelector("[data-cast-stage]")
   const frames = Array.from(root.querySelectorAll("[data-cast-frame]"))
@@ -43,6 +52,7 @@ function setupCast(root) {
   const replay = root.querySelector("[data-cast-replay]")
   const cursor = root.querySelector("[data-cast-cursor]")
   const ripple = root.querySelector("[data-cast-ripple]")
+  const rippleRing = root.querySelector("[data-cast-ripple-ring]")
   if (!stage || frames.length < 2) return
 
   const reduceMotion =
@@ -96,41 +106,50 @@ function setupCast(root) {
     el.style.top = box.top + (point.y / 100) * box.height + "px"
   }
 
-  const showNote = (frame) => {
-    const note = frame.querySelector("[data-cast-note]")
-    if (!note) return
-    const at = parsePoint(note.dataset.noteAt)
-    if (!at) return
-    // On a phone the frame renders ~340px wide — a pill over it covers half
-    // the screen it annotates. The captions below carry the same information.
-    if (imageBox().width < 480) return
-    // Anchor the pill just above its target point, inside the image.
-    note.style.left = at.x + "%"
-    note.style.top = at.y + "%"
-    note.style.transform = "translate(-50%, -140%)"
-    note.hidden = false
-    later(NOTE_DELAY_MS, () => note.classList.remove("opacity-0"))
+  const spotOf = (frame) => frame.querySelector("[data-cast-spot]")
+
+  const showSpot = (frame) => {
+    const spot = spotOf(frame)
+    if (!spot) return
+    const rect = parseRect(spot.dataset.spot)
+    if (!rect) return
+    spot.style.left = rect.x + "%"
+    spot.style.top = rect.y + "%"
+    spot.style.width = rect.w + "%"
+    spot.style.height = rect.h + "%"
+    const label = spot.querySelector("[data-cast-spot-label]")
+    if (label) {
+      // Pin the label to whichever edge has room; drop it on phones, where a
+      // pill would cover the ~340px frame it annotates (captions carry it).
+      label.hidden = imageBox().width < 480
+      label.style.top = rect.y > 16 ? "auto" : "100%"
+      label.style.bottom = rect.y > 16 ? "100%" : "auto"
+      label.style.marginTop = rect.y > 16 ? "0" : "8px"
+      label.style.marginBottom = rect.y > 16 ? "8px" : "0"
+    }
+    spot.hidden = false
+    later(reduceMotion ? 0 : SPOT_IN_MS, () => spot.classList.remove("opacity-0"))
   }
 
-  const hideNotes = () => {
-    frames.forEach((frame) =>
-      frame.querySelectorAll("[data-cast-note]").forEach((note) => {
-        note.classList.add("opacity-0")
-        note.hidden = true
-      })
-    )
+  const hideSpots = (instant) => {
+    frames.forEach((frame) => {
+      const spot = spotOf(frame)
+      if (!spot) return
+      spot.classList.add("opacity-0")
+      if (instant) spot.hidden = true
+    })
   }
 
   const show = (index) => {
     active = index
-    hideNotes()
+    hideSpots(true)
     frames.forEach((frame, i) => {
       frame.classList.toggle("opacity-0", i !== index)
       frame.classList.toggle("pointer-events-none", i !== index)
       frame.setAttribute("aria-hidden", String(i !== index))
     })
     steps.forEach((step, i) => step.setAttribute("aria-selected", String(i === index)))
-    showNote(frames[index])
+    showSpot(frames[index])
   }
 
   const hideCursor = () => {
@@ -142,46 +161,56 @@ function setupCast(root) {
   }
 
   const clickRipple = (point) => {
-    if (!ripple) return
+    if (!ripple || !rippleRing) return
     placeAt(ripple, point)
     ripple.hidden = false
-    ripple.classList.add("animate-ping")
+    rippleRing.classList.add("animate-ping")
     later(CLICK_MS, () => {
-      ripple.classList.remove("animate-ping")
+      rippleRing.classList.remove("animate-ping")
       ripple.hidden = true
     })
   }
 
-  // One transition: travel the cursor to the frame's click point, click, then
-  // crossfade to the next frame and queue the one after.
+  // One transition: lift the spotlight, travel the cursor to the frame's
+  // click point, click, then crossfade to the next frame and queue onward.
   const advance = () => {
     if (active >= frames.length - 1) return
     const click = parsePoint(frames[active].dataset.click)
-    if (!click || !cursor) {
-      show(active + 1)
-      queue()
-      return
-    }
-    cursor.hidden = false
-    cursor.style.transition = `left ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms`
-    cursor.classList.remove("opacity-0")
-    placeAt(cursor, click)
-    later(TRAVEL_MS + 60, () => {
-      clickRipple(click)
-      later(CLICK_MS - 60, () => {
+    const go = () => {
+      if (!click || !cursor) {
         show(active + 1)
         queue()
+        return
+      }
+      cursor.hidden = false
+      cursor.style.transition = `left ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms`
+      cursor.classList.remove("opacity-0")
+      placeAt(cursor, click)
+      later(TRAVEL_MS + 60, () => {
+        clickRipple(click)
+        later(CLICK_MS - 60, () => {
+          show(active + 1)
+          queue()
+        })
       })
-    })
+    }
+    if (spotOf(frames[active])) {
+      hideSpots(false)
+      later(SPOT_OUT_MS, go)
+    } else {
+      go()
+    }
   }
 
   const queue = () => {
-    if (reduceMotion || active >= frames.length - 1) {
-      // The take rests on its last frame — the audit is the closing beat.
-      if (active >= frames.length - 1) later(DWELL_MS, hideCursor)
+    if (reduceMotion) return
+    if (active >= frames.length - 1) {
+      // The take rests on its last frame — the evidence is the closing beat.
+      later(SPOT_IN_MS + SPOT_HOLD_MS, hideCursor)
       return
     }
-    later(DWELL_MS, advance)
+    const dwell = spotOf(frames[active]) ? SPOT_IN_MS + SPOT_HOLD_MS : PLAIN_DWELL_MS
+    later(dwell, advance)
   }
 
   steps.forEach((step, i) =>
@@ -197,7 +226,7 @@ function setupCast(root) {
       if (cursor && !reduceMotion) {
         // Restart the cursor from a neutral spot so the first travel reads.
         cursor.style.transition = "none"
-        placeAt(cursor, {x: 55, y: 78})
+        placeAt(cursor, {x: 55, y: 82})
       }
       show(0)
       queue()
@@ -208,7 +237,7 @@ function setupCast(root) {
 
   if (cursor) {
     cursor.style.transition = "none"
-    placeAt(cursor, {x: 55, y: 78})
+    placeAt(cursor, {x: 55, y: 82})
   }
 
   let started = false

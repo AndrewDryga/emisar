@@ -139,23 +139,33 @@ var loopFrames = []shot{
 	// drawer still narrates them ("Filters — Type: …"), so the narrowing
 	// stays visible while the frame is the timeline itself.
 	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+	// The closing beat: the take clicks the loop's own "Run succeeded" row and
+	// photographs the audit event detail — the forensic close-up (actor,
+	// target, request id, payload) one click deep.
+	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
 }
 
 // The note Jordan types during the take — it becomes the decision_reason on
 // the real request, so it must read like an operator wrote it.
 const loopDecisionNote = "validated config, active connections drained, deploy window open"
 
-// loopTargets reports the centers of the cast's cursor/annotation anchors as
-// percentages of the #shell-canvas box — paste the printed JSON into the
-// console_cast frame attrs on security.html.heex after a re-capture, so the
-// overlay cursor keeps landing on the real controls.
+// loopTargets reports the cast's cursor/spotlight anchors as percentages of
+// the captured frame — paste the printed JSON into the console_cast frame
+// attrs on security.html.heex after a re-capture, so the overlay cursor and
+// spotlights keep landing on the real controls. The frame's content height is
+// derived from the canvas WIDTH (width x TopCSS/1280 CSS): the capture crop is
+// proportional, so this holds whatever viewport the capture browser really
+// used (chromedp's emulation override is not reliably honored).
 const loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
-const frameH=860;
+const frameH=c.width*860/1280;
 const point=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
 return {x:Math.round((b.x+b.width/2-c.x)/c.width*1000)/10,y:Math.round((b.y+b.height/2-c.y)/frameH*1000)/10}};
-const pct=(sel)=>point(document.querySelector(sel));
-const byText=(t)=>point([...document.querySelectorAll('a,button')].find(x=>x.textContent.trim()===t));
-return JSON.stringify({note:pct('#approval-decision-form textarea[name="reason"]'),approve:pct('#approval-decision-form button[value="approve"]'),view_run:byText('View run'),view_activity:byText('View activity'),command:pct('#shell-canvas [id^="approval-command-"]')})})()`
+const rect=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
+return {x:Math.round((b.x-c.x)/c.width*1000)/10,y:Math.round((b.y-c.y)/frameH*1000)/10,w:Math.round(b.width/c.width*1000)/10,h:Math.round(b.height/frameH*1000)/10}};
+const q=(sel)=>document.querySelector(sel);
+const byText=(t)=>[...document.querySelectorAll('a,button')].find(x=>x.textContent.trim()===t);
+const rowByText=(t)=>[...document.querySelectorAll('#audit-events li')].find(x=>x.textContent.includes(t));
+return JSON.stringify({note:point(q('#approval-decision-form textarea[name="reason"]')),note_rect:rect(q('#approval-decision-form textarea[name="reason"]')),approve:point(q('#approval-decision-form button[value="approve"]')),view_run:point(byText('View run')),view_activity:point(byText('View activity')),command_rect:rect(q('#shell-canvas [id^="approval-command-"]')),audit_row:point(rowByText('Run succeeded')),audit_row_rect:rect(rowByText('Run succeeded')),payload_rect:rect(q('#audit-payload-json'))})})()`
 
 func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (map[string]string, error) {
 	// An isolated session (own profile) so signing in as Jordan never touches
@@ -261,6 +271,23 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	if err := frame("loop-audit-trail"); err != nil {
 		return nil, err
 	}
+	printTargets(session, manager.Out, "audit")
+
+	// The loop's own succeeded row (the newest) opens the forensic close-up
+	// through the row's real link.
+	if err := clickByScript(session, clickRowLink(`#audit-events a[href*="/audit/"]`, "Run succeeded"), "Run succeeded audit row"); err != nil {
+		return nil, err
+	}
+	if err := waitText(session, "Payload", 15*time.Second); err != nil {
+		return nil, fmt.Errorf("audit event detail did not open: %w", err)
+	}
+	if err := session.Ready(10*time.Second, ""); err != nil {
+		return nil, err
+	}
+	if err := frame("loop-audit-event"); err != nil {
+		return nil, err
+	}
+	printTargets(session, manager.Out, "audit event")
 	return colors, nil
 }
 

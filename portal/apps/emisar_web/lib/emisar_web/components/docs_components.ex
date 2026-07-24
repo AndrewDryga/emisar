@@ -328,18 +328,21 @@ defmodule EmisarWeb.DocsComponents do
   @doc """
   The one callout grammar — a bordered note (`:note`), tip (`:tip`), or
   warning (`:warn`) with a leading icon and an optional bold `title`. Replaces
-  the hand-rolled boxes so every docs aside reads the same way.
+  the hand-rolled boxes so every docs aside reads the same way. Pass `icon` to
+  swap the kind's default glyph for a semantically sharper one (a checklist on
+  a prerequisites note) while keeping the kind's box and tint.
   """
   attr :kind, :atom, default: :note, values: [:note, :tip, :warn]
   attr :title, :string, default: nil
+  attr :icon, :string, default: nil, doc: "override the kind's default glyph"
   slot :inner_block, required: true
 
   def docs_callout(assigns) do
     ~H"""
     <div class={["mt-6 flex gap-3 rounded-xl border p-5 text-sm leading-7", docs_callout_box(@kind)]}>
       <.icon
-        name={docs_callout_icon(@kind)}
-        class={"mt-0.5 h-5 w-5 flex-none " <> docs_callout_tint(@kind)}
+        name={@icon || docs_callout_icon(@kind)}
+        class={"mt-1 h-5 w-5 flex-none " <> docs_callout_tint(@kind)}
       />
       <div>
         <strong :if={@title} class="text-zinc-100">{@title}</strong>
@@ -500,9 +503,11 @@ defmodule EmisarWeb.DocsComponents do
   from `./run capture docs loop-*`), `label` for its step tab, `caption` for
   the line under the image. `click` is where the cursor clicks to leave this
   frame ("x,y" percentages of the image, from the capture take's printed
-  targets); `note`/`note_at` place one short annotation over the image.
-  Annotations and the cursor are presentation for sighted motion users —
-  captions and alt text carry the story for everyone else.
+  targets); `spot` ("x,y,w,h" percentages) spotlights one element — the rest
+  of the frame dims through the spotlight's punched-hole shadow — with `note`
+  as the short label pinned to it. The spotlight and cursor are presentation
+  for sighted motion users — captions and alt text carry the story for
+  everyone else.
   """
   attr :id, :string, required: true
   attr :class, :string, default: nil
@@ -513,8 +518,8 @@ defmodule EmisarWeb.DocsComponents do
     attr :label, :string, required: true
     attr :caption, :string, required: true
     attr :click, :string
+    attr :spot, :string
     attr :note, :string
-    attr :note_at, :string
   end
 
   def console_cast(assigns) do
@@ -564,36 +569,46 @@ defmodule EmisarWeb.DocsComponents do
           >
             Step {index + 1} · {frame.label}
           </p>
-          <div class="relative">
+          <div class="relative overflow-hidden rounded-lg border border-zinc-800/80">
             <img
               src={frame.src}
               alt={frame.alt}
               width="1600"
               height="1075"
               loading="lazy"
-              class="w-full rounded-lg border border-zinc-800/80"
+              class="w-full"
             />
+            <%!-- The spotlight: a transparent hole whose oversized shadow dims
+                 everything else in the (overflow-clipped) frame; the label
+                 pins to the hole's edge. --%>
             <span
-              :if={frame[:note]}
-              data-cast-note
-              data-note-at={frame[:note_at]}
+              :if={frame[:spot]}
+              data-cast-spot
+              data-spot={frame[:spot]}
               hidden
               aria-hidden="true"
-              class="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium text-brand-300 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-300"
+              class="pointer-events-none absolute z-10 rounded-md ring-1 ring-brand-400/70 opacity-0 shadow-[0_0_0_9999px_rgba(9,9,11,0.62)] transition-opacity duration-500"
             >
-              {frame.note}
+              <span
+                :if={frame[:note]}
+                data-cast-spot-label
+                class="absolute left-0 whitespace-nowrap rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium text-brand-300 shadow-lg shadow-black/40"
+              >
+                {frame.note}
+              </span>
             </span>
           </div>
           <p class="mt-3 text-sm leading-6 text-zinc-400">{frame.caption}</p>
         </div>
         <%!-- The shared cursor + click ripple, positioned by JS over the active
              frame's image. Presentation only: hidden from AT, no-JS never sees
-             them, reduced-motion never enables them. --%>
+             them, reduced-motion never enables them. The cursor's negative
+             margins put the arrow TIP on the positioned point. --%>
         <span
           data-cast-cursor
           hidden
           aria-hidden="true"
-          class="pointer-events-none absolute z-20 opacity-0"
+          class="pointer-events-none absolute z-20 -ml-[5px] -mt-[3px] opacity-0"
         >
           <svg
             width="22"
@@ -610,12 +625,17 @@ defmodule EmisarWeb.DocsComponents do
             />
           </svg>
         </span>
+        <%!-- Two spans: the outer centers on the click point with static
+             negative margins; the inner carries animate-ping, whose keyframe
+             transform would otherwise overwrite a centering translate. --%>
         <span
           data-cast-ripple
           hidden
           aria-hidden="true"
-          class="pointer-events-none absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brand-400/90"
-        ></span>
+          class="pointer-events-none absolute z-10 -ml-4 -mt-4 h-8 w-8"
+        >
+          <span data-cast-ripple-ring class="block h-8 w-8 rounded-full border-2 border-brand-400/90"></span>
+        </span>
       </div>
       <figcaption class="flex items-center justify-between gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p class="text-[11px] text-zinc-500">
