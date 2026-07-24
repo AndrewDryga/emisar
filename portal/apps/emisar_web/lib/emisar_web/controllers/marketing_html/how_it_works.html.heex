@@ -28,38 +28,6 @@
         away, gets refused, or waits for a person to approve it. A small program on your server
         called the runner does the actual work, and every step is written down in the audit log.
       </p>
-
-      <.terminal_cast
-        id="how-it-works-cast"
-        label="claude"
-        class="mx-auto max-w-3xl"
-        caption="One request, traced end to end — the requester, the gate, the approver, the runner, the record."
-        lines={[
-          %{
-            k: "note",
-            t: "# an agent asks for one declared action — your policy decides what happens next"
-          },
-          %{k: "cmd", p: "$", t: "claude"},
-          %{k: "llm", p: "›", t: "checkout-api on api-iad-02 is throwing 502s — restart it"},
-          %{
-            k: "out",
-            t: "⏺ emisar · run_action · systemd.unit_restart · checkout-api.service · api-iad-02"
-          },
-          %{k: "warn", t: "  ⎿ HIGH risk → your policy requires approval before this runs"},
-          %{
-            k: "warn",
-            t: "⏸ paused · waiting for a human — an agent can't approve its own request"
-          },
-          %{k: "ok", t: "  ⎿ Jordan Lee approved in the dashboard"},
-          %{k: "out", t: "⏺ restarted checkout-api.service on api-iad-02 · exit 0"},
-          %{k: "out", t: "⏺ checkout-api is back up."},
-          %{
-            k: "ok",
-            t:
-              "✓ on the record — Maya Chen via Claude Code, approved by Jordan Lee · reason \"checkout-api 502s\""
-          }
-        ]}
-      />
     </div>
   </section>
 
@@ -96,6 +64,25 @@
           </div>
         <% end %>
       </div>
+    </div>
+  </section>
+
+  <%!-- Watch it work — the live demo: all three pieces run one real incident end to end. --%>
+  <section class="py-24 sm:py-32">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          A real incident, start to finish.
+        </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
+          A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
+          investigate through declared actions, stop the writes behind one approval, and hand
+          back the durable fix as a Terraform PR — over MCP, no SSH, every step on the record.
+        </p>
+      </div>
+
+      <.emisar_demo />
     </div>
   </section>
 
