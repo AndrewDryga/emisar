@@ -1238,11 +1238,13 @@ credential lineage, so a forged, expired, or cross-bound value returns
 present while the run is live (`timeout: "60s"`, and the wait wakes as soon as a
 new chunk arrives) or while a large backlog is still draining (`timeout: "0"`,
 so the caller pulls the next frame immediately); it is absent once the run is
-terminal and its output is fully drained. An `output` frame is bounded to the
-encoded-frame budget, so a chatty run drains across several `next` hops with
-nothing repeated. A dropped progress chunk surfaces as `output_complete: false`,
-never a silent gap. Output reads write no audit event; the run lifecycle and the
-runner's local journal remain the audit record.
+terminal and its output is fully drained. Each frame is sized against the real
+assembled transport frame, so a chatty or escape-heavy run drains across several
+`next` hops with nothing repeated. A dropped progress chunk surfaces as
+`output_complete: false`, never a silent gap — as does a cursor that resumes
+mid-event after retention already pruned that event's remaining bytes. Output
+reads write no audit event; the run lifecycle and the runner's local journal
+remain the audit record.
 
 ### `recent_runs`
 

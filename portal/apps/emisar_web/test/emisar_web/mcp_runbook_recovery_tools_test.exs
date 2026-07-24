@@ -1044,6 +1044,92 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(summary, "next")
   end
 
+  test "a pruned fragmented event surfaces as a gap, not silence", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-pruned-fragment")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", String.duplicate("x", 250_000))
+    append_progress!(run, 2, "stdout", "after\n")
+    seed = seed_cursor!(conn, run)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 2})
+
+    first =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => seed, "timeout" => "0"})["run"]
+
+    # Mid-event position, then retention removes the event it points into.
+    cursor = first["next"]["arguments"]["cursor"]
+    Repo.delete_all(Emisar.Runs.RunEvent.Query.by_seq_before(Emisar.Runs.RunEvent.Query.all(), 2))
+
+    resumed =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => cursor, "timeout" => "0"})[
+        "run"
+      ]
+
+    # The remainder of event 1 is gone. That must read as INCOMPLETE output, not
+    # as a clean continuation that silently skipped bytes.
+    assert resumed["output_complete"] == false
+    assert tail_text(resumed) == "after\n"
+  end
+
+  test "a live run's buffered backlog returns immediately instead of long-polling", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-live-backlog")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", "already-here\n")
+
+    seed = seed_cursor!(conn, run)
+
+    # The run stays LIVE and no new event arrives during the call — yet output
+    # past the cursor already exists, so a 60s wait must return it at once.
+    started_at = System.monotonic_time(:millisecond)
+
+    tailed =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => seed, "timeout" => "5s"})[
+        "run"
+      ]
+
+    elapsed = System.monotonic_time(:millisecond) - started_at
+
+    assert tail_text(tailed) == "already-here\n"
+    assert elapsed < 1_500
+  end
+
+  test "a quote-heavy event stays within the transport frame", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-quotes")
+    run = create_mcp_history_run!(account, runner, key, 1)
+
+    # A quote costs 2 bytes in structuredContent and 4 more inside the mirrored,
+    # re-escaped text block. Its own encoded size therefore badly understates the
+    # assembled frame: sized by that estimate this single chunk ships whole and
+    # blows the 512 KiB ceiling. The budget must measure the real frame.
+    chunk = String.duplicate("\"", 102_386)
+    append_progress!(run, 1, "stdout", chunk)
+    seed = seed_cursor!(conn, run)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 1})
+
+    {drained, frames} = drain_tail!(conn, run, seed, "", 0)
+
+    assert drained == chunk
+    assert frames > 1
+  end
+
   test "run_action seeds a followable output cursor on its live run", %{
     conn: conn,
     account: account,

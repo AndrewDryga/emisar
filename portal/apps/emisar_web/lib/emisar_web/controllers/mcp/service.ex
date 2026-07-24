@@ -8,11 +8,14 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Approvals, Crypto, Runs}
-  alias EmisarWeb.MCP.{Cancellation, OutputCursor, WaitLimiter}
+  alias EmisarWeb.MCP.{Cancellation, OutputCursor, ResponseBudget, WaitLimiter}
 
   @recheck_interval_ms 2_000
   @max_output_events 32
   @max_error_message_bytes 1_024
+  # Raw-byte budget for ONE tail read. Bounds memory and sizes a frame; the
+  # frame's real ceiling is enforced by `fits_frame?/1`, not by this number.
+  @max_tail_read_bytes 200 * 1_024
 
   @doc "Dispatches a preflighted fixed-catalog action and returns current run summaries."
   def dispatch_fixed_action(conn, targets, intent, wait_ms) do
@@ -158,17 +161,65 @@ defmodule EmisarWeb.MCP.Service do
   """
   def fixed_run_tail(run, subject, {from_seq, offset} = position, scope)
       when is_integer(from_seq) and is_integer(offset) and is_binary(scope) do
-    structured_output = structured_output_summary(run.structured_output, 8_192)
-    {output, {next_seq, next_offset}, more?} = tail_output_delta(run, subject, position)
-    cursor = OutputCursor.encode(scope, run.id, next_seq, next_offset)
+    {:ok, events, read_more?} =
+      Runs.list_events_for_run_since(run.id, from_seq, @max_tail_read_bytes, subject)
 
-    run
-    |> base_run_fields(subject)
+    {segments, gap?} = deliverable_segments(events, position)
+    structured_output = structured_output_summary(run.structured_output, 8_192)
+
+    context = %{
+      run: run,
+      subject: subject,
+      scope: scope,
+      position: position,
+      segments: segments,
+      structured_output: structured_output,
+      read_more?: read_more?,
+      gap?: gap?
+    }
+
+    build = &tail_summary(context, &1)
+    total = Enum.reduce(segments, 0, &(byte_size(&1.text) + &2))
+    summary = build.(total)
+
+    # Measure the REAL assembled frame instead of estimating it. The transport
+    # mirrors the payload into BOTH structuredContent and an escaped text block,
+    # so escape-heavy output (a quote costs 2 bytes in one and 4 in the other)
+    # runs far past its own encoded size. Only shrink when it actually overruns.
+    if fits_frame?(summary),
+      do: summary,
+      else: build.(largest_fitting_take(build, 0, total, 0))
+  end
+
+  defp fits_frame?(summary), do: ResponseBudget.fits_payload?(%{ok: true, run: summary})
+
+  defp largest_fitting_take(build, lo, hi, best) when lo <= hi do
+    mid = div(lo + hi, 2)
+
+    if fits_frame?(build.(mid)),
+      do: largest_fitting_take(build, mid + 1, hi, mid),
+      else: largest_fitting_take(build, lo, mid - 1, best)
+  end
+
+  defp largest_fitting_take(_build, _lo, _hi, best), do: best
+
+  defp tail_summary(context, take) do
+    {output, {next_seq, next_offset}, cut?} =
+      take_segments(context.segments, take, context.position)
+
+    cursor = OutputCursor.encode(context.scope, context.run.id, next_seq, next_offset)
+
+    context.run
+    |> base_run_fields(context.subject)
     |> Map.put(:output, output)
-    |> Map.put(:next, tail_next(run, more?, cursor))
-    |> Map.merge(structured_output)
+    |> Map.put(:next, tail_next(context.run, cut? or context.read_more?, cursor))
+    |> flag_output_gap(context.gap?)
+    |> Map.merge(context.structured_output)
     |> drop_nil_values()
   end
+
+  defp flag_output_gap(summary, false), do: summary
+  defp flag_output_gap(summary, true), do: Map.put(summary, :output_complete, false)
 
   defp base_run_fields(run, subject) do
     {approval, approval_wait_until} = fixed_approval(run, subject)
@@ -198,61 +249,57 @@ defmodule EmisarWeb.MCP.Service do
   defp drop_nil_values(map),
     do: map |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()
 
-  # Encoded-output budget for one tail frame. Kept well under the 512 KiB
-  # transport ceiling because the frame mirrors the payload twice (a text block
-  # plus structuredContent) and re-escapes it, so the assembled frame runs to
-  # roughly 2x this plus the reserved request-id headroom.
-  @max_tail_output_bytes 200 * 1_024
+  # Each event's still-undelivered bytes. The cursor's offset applies ONLY to the
+  # event it names — if retention removed that event, its remaining bytes are
+  # gone, so flag the gap rather than silently resuming at the next event.
+  # Zero-length segments are kept so the cursor still advances past them.
+  defp deliverable_segments(events, {from_seq, offset}) do
+    gap? = offset > 0 and not Enum.any?(events, &(&1.seq == from_seq))
 
-  defp tail_output_delta(run, subject, {from_seq, offset}) do
-    {:ok, events, read_more?} =
-      Runs.list_events_for_run_since(run.id, from_seq, @max_tail_output_bytes, subject)
+    segments =
+      Enum.map(events, fn event ->
+        start = if event.seq == from_seq, do: offset, else: 0
 
-    items = Enum.map(events, &%{seq: &1.seq, stream: event_stream(&1), text: get_chunk(&1)})
+        %{
+          seq: event.seq,
+          start: start,
+          stream: event_stream(event),
+          text: binary_from(get_chunk(event), start)
+        }
+      end)
 
-    {output, {next_seq, next_offset}, frame_more?} =
-      coalesce_within_budget(items, from_seq, offset)
-
-    {output, {next_seq, next_offset}, frame_more? or read_more?}
+    {segments, gap?}
   end
 
-  # Coalesce consecutive same-stream chunks into one element, in seq order, until
-  # the encoded-output budget is reached. Cost is measured on the escaped JSON,
-  # so a control-char-heavy chunk cannot overrun the frame; an event larger than
-  # one frame is FRAGMENTED and its `{seq, offset}` position carried in the
-  # cursor, so the next frame resumes mid-event — output is never lost or
-  # duplicated. The first item always ships at least a fragment, so the cursor
-  # advances and a chatty (or huge-chunk) run cannot stall the tail.
-  defp coalesce_within_budget(items, from_seq, offset0) do
-    initial = {[], {from_seq, offset0}, 0, false}
+  # Take the first `limit` bytes across the segments, coalescing consecutive
+  # same-stream text. A segment too large for the remaining room is FRAGMENTED
+  # and its `{seq, offset}` carried in the cursor, so the next frame resumes
+  # mid-event — output is never lost or duplicated.
+  defp take_segments(segments, limit, position) do
+    {reversed, cursor, _remaining, cut?} =
+      Enum.reduce_while(segments, {[], position, limit, false}, fn segment,
+                                                                   {acc, _cursor, remaining, _cut} ->
+        if byte_size(segment.text) <= remaining do
+          {:cont,
+           {prepend_output(acc, segment.stream, segment.text), {segment.seq + 1, 0},
+            remaining - byte_size(segment.text), false}}
+        else
+          halt_fragment(acc, segment, remaining)
+        end
+      end)
 
-    {reversed, cursor, _bytes, more?} =
-      Enum.reduce_while(items, initial, &step_item(&1, from_seq, offset0, &2))
-
-    {Enum.reverse(reversed), cursor, more?}
+    {Enum.reverse(reversed), cursor, cut?}
   end
 
-  defp step_item(item, from_seq, offset0, {acc, _cursor, bytes, _more}) do
-    start = if item.seq == from_seq, do: offset0, else: 0
-    text = binary_from(item.text, start)
-    remaining = @max_tail_output_bytes - bytes
-    cost = encoded_cost(acc, item.stream, text)
+  defp halt_fragment(acc, segment, remaining) do
+    prefix = segment.text |> binary_part(0, remaining) |> trim_to_utf8_boundary()
 
-    if cost <= remaining do
-      {:cont, {prepend_output(acc, item.stream, text), {item.seq + 1, 0}, bytes + cost, false}}
+    if prefix == "" do
+      {:halt, {acc, {segment.seq, segment.start}, 0, true}}
     else
-      halt_fragment(acc, item, start, text, remaining, bytes)
-    end
-  end
-
-  defp halt_fragment(acc, item, start, text, remaining, bytes) do
-    case fit_prefix(acc, item.stream, text, remaining) do
-      "" ->
-        {:halt, {acc, {item.seq, start}, bytes, true}}
-
-      prefix ->
-        emitted = prepend_output(acc, item.stream, prefix)
-        {:halt, {emitted, {item.seq, start + byte_size(prefix)}, bytes, true}}
+      {:halt,
+       {prepend_output(acc, segment.stream, prefix),
+        {segment.seq, segment.start + byte_size(prefix)}, 0, true}}
     end
   end
 
@@ -263,39 +310,15 @@ defmodule EmisarWeb.MCP.Service do
 
   defp binary_from(_text, _start), do: ""
 
-  # The largest UTF-8-safe prefix of `text` whose encoded cost fits `remaining`,
-  # or "" when not even one character fits. Binary search over byte length; each
-  # probe is trimmed to a codepoint boundary before it is measured (so Jason
-  # never sees a split character) and only a non-empty prefix updates the best.
-  defp fit_prefix(acc, stream, text, remaining),
-    do: largest_fitting(acc, stream, text, remaining, 0, byte_size(text), "")
-
-  defp largest_fitting(acc, stream, text, remaining, lo, hi, best) when lo <= hi do
-    mid = div(lo + hi, 2)
-    prefix = text |> binary_part(0, mid) |> trim_to_utf8_boundary()
-
-    if encoded_cost(acc, stream, prefix) <= remaining do
-      best = if byte_size(prefix) > byte_size(best), do: prefix, else: best
-      largest_fitting(acc, stream, text, remaining, mid + 1, hi, best)
-    else
-      largest_fitting(acc, stream, text, remaining, lo, mid - 1, best)
-    end
-  end
-
-  defp largest_fitting(_acc, _stream, _text, _remaining, _lo, _hi, best), do: best
-
   defp trim_to_utf8_boundary(binary) do
     if String.valid?(binary),
       do: binary,
       else: trim_to_utf8_boundary(binary_part(binary, 0, byte_size(binary) - 1))
   end
 
-  # Encoded JSON cost of adding `chunk`: the escaped text, plus one element's
-  # structural bytes when it starts a new (stream-switched) element.
-  defp encoded_cost([%{stream: stream} | _rest], stream, chunk), do: escaped_size(chunk)
-  defp encoded_cost(_acc, _stream, chunk), do: escaped_size(chunk) + 28
-
-  defp escaped_size(chunk), do: byte_size(Jason.encode!(chunk)) - 2
+  # A zero-length chunk carries no output, so it never becomes an element — but
+  # the cursor still advances past it, so a run of empty chunks cannot stall.
+  defp prepend_output(acc, _stream, ""), do: acc
 
   defp prepend_output([%{stream: stream, text: text} | rest], stream, chunk),
     do: [%{stream: stream, text: text <> chunk} | rest]
@@ -312,8 +335,11 @@ defmodule EmisarWeb.MCP.Service do
 
   defp tail_next(run, more?, cursor) do
     cond do
-      not Runs.ActionRun.terminal?(run.status) -> wait_next(run.id, cursor, "60s")
+      # Known backlog drains immediately. Checked BEFORE liveness: telling a
+      # caller to long-poll for output the server already holds would block it
+      # for the full window with nothing left to wake it.
       more? -> wait_next(run.id, cursor, "0")
+      not Runs.ActionRun.terminal?(run.status) -> wait_next(run.id, cursor, "60s")
       true -> nil
     end
   end

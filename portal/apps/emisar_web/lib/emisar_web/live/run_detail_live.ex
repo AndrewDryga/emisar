@@ -157,14 +157,19 @@ defmodule EmisarWeb.RunDetailLive do
     %{run: run, oldest_seq: oldest_seq, current_subject: subject} = socket.assigns
 
     with true <- can_load_earlier?(run, socket.assigns.more_earlier?) and is_integer(oldest_seq),
-         {:ok, earlier} <-
-           Runs.list_events_for_run_before(run.id, oldest_seq, event_window(), subject) do
+         {:ok, page} <-
+           Runs.list_events_for_run_before(run.id, oldest_seq, event_window() + 1, subject) do
+      # Reading one row past the window is what tells us anything older remains,
+      # so an exactly-full final page doesn't leave the control offering a no-op.
+      {earlier, more_earlier?} =
+        if length(page) > event_window(), do: {tl(page), true}, else: {page, false}
+
       socket =
         earlier
         |> Enum.reverse()
         |> Enum.reduce(socket, &stream_insert(&2, :events, &1, at: 0))
         |> assign(:oldest_seq, event_seq(List.first(earlier)) || oldest_seq)
-        |> assign(:more_earlier?, length(earlier) == event_window())
+        |> assign(:more_earlier?, more_earlier?)
 
       {:noreply, socket}
     else

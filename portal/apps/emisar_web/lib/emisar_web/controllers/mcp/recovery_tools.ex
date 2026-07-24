@@ -156,29 +156,43 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     with {:ok, position} <- resolve_output_cursor(target, scope, run_id),
          {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       render = &render_action_run(&1, subject, position, scope)
+      rendered = render.(initial)
 
-      if timeout_ms == 0 or Runs.ActionRun.terminal?(initial.status) do
-        {:ok, %{run: render.(initial)}}
-      else
-        :ok = Runs.subscribe_run(subject.account.id, run_id)
-        deadline = System.monotonic_time(:millisecond) + timeout_ms
+      cond do
+        timeout_ms == 0 or Runs.ActionRun.terminal?(initial.status) ->
+          {:ok, %{run: rendered}}
 
-        try do
-          await_action_run(
-            subject,
-            run_id,
-            run_token(initial),
-            wake_seq(position),
-            deadline,
-            Cancellation.topic(conn),
-            render
-          )
-        after
-          :ok = Runs.unsubscribe_run(subject.account.id, run_id)
-        end
+        # Output is already waiting past the cursor. Return it now: it is already
+        # counted in this request's token, so no later event would wake the wait
+        # and the caller would block the whole window for output we already have.
+        tail_advanced?(rendered) ->
+          {:ok, %{run: rendered}}
+
+        true ->
+          :ok = Runs.subscribe_run(subject.account.id, run_id)
+          deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+          try do
+            await_action_run(
+              subject,
+              run_id,
+              run_token(initial),
+              wake_seq(position),
+              deadline,
+              Cancellation.topic(conn),
+              render
+            )
+          after
+            :ok = Runs.unsubscribe_run(subject.account.id, run_id)
+          end
       end
     end
   end
+
+  # A cursor-mode render that already produced output — there is nothing to wait
+  # for. A snapshot render has no `:output` key and always falls through to wait.
+  defp tail_advanced?(%{output: [_ | _]}), do: true
+  defp tail_advanced?(_rendered), do: false
 
   defp resolve_output_cursor(%{cursor: nil}, _scope, _run_id), do: {:ok, nil}
 
