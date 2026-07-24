@@ -38,6 +38,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run
   end
 
+  defp output_index(html, needle) do
+    {position, _length} = :binary.match(html, needle)
+    position
+  end
+
+  defp output_count(html, needle), do: length(:binary.matches(html, needle))
+
   test "View activity links the dispatch's request_id trace", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})
@@ -436,6 +443,47 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # Clicking pages the trimmed head (chunk-1) into the viewer.
     html = lv |> element("button", "Load earlier output") |> render_click()
     assert html =~ "chunk-1\n"
+  end
+
+  test "load earlier pages back through multiple windows in order", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+    now = DateTime.utc_now()
+
+    rows =
+      for seq <- 1..1200 do
+        %{
+          id: Repo.generate_id(),
+          run_id: run.id,
+          account_id: account.id,
+          seq: seq,
+          kind: :progress,
+          stream: "stdout",
+          payload: %{"chunk" => "chunk-#{seq}\n"},
+          inserted_at: now
+        }
+      end
+
+    {1200, _} = Repo.insert_all(RunEvent, rows)
+    Fixtures.Runs.charge_progress_budget(run, events: 1200)
+
+    # The window shows the newest 500 (seq 701..1200).
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    assert html =~ "chunk-701\n"
+    refute html =~ "chunk-201\n"
+
+    html = lv |> element("button", "Load earlier output") |> render_click()
+    assert html =~ "chunk-201\n"
+    refute html =~ "chunk-1\n"
+
+    html = lv |> element("button", "Load earlier output") |> render_click()
+    assert html =~ "chunk-1\n"
+
+    # Chronological across all three windows, and nothing loaded twice.
+    assert output_index(html, "chunk-1\n") < output_index(html, "chunk-701\n")
+    assert output_index(html, "chunk-701\n") < output_index(html, "chunk-1200\n")
+    assert output_count(html, "chunk-701\n") == 1
+    assert output_count(html, "chunk-201\n") == 1
   end
 
   test "a running run shows the trim note, not a load-earlier control", %{conn: conn} do

@@ -585,7 +585,10 @@ defmodule EmisarWeb.RunDetailLive do
           </p>
           <%!-- min-height only while IN FLIGHT (room for chunks to stream into);
                a terminal run's panel hugs its real output instead of padding a
-               two-line result with a 24rem void. --%>
+               two-line result with a 24rem void. "Load earlier output" prepends
+               into this scroll container; nothing sets `overflow-anchor`, so the
+               browser default (auto) keeps the operator's visible line put while
+               the earlier window is inserted above it. --%>
           <pre
             :if={@output_present? or @run.status in [:sent, :running, :cancelling]}
             id="run-output"
