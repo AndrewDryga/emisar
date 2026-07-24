@@ -14,10 +14,7 @@ import (
 
 func (a *App) capture(ctx context.Context, args []string) error {
 	if len(args) == 0 || (args[0] != "docs" && args[0] != "console") {
-		return usage("usage: ./run capture docs | ./run capture console [--task ID] [--group NAME]")
-	}
-	if args[0] == "docs" && len(args) != 1 {
-		return usage("usage: ./run capture docs")
+		return usage("usage: ./run capture docs [shot...] | ./run capture console [--task ID] [--group NAME]")
 	}
 	consoleTask := screenshotTask{}
 	consoleOut := ""
@@ -54,6 +51,7 @@ func (a *App) capture(ctx context.Context, args []string) error {
 			Email:   os.Getenv("EMAIL"),
 			Temp:    filepath.Join(a.cacheRoot(), fmt.Sprintf("docshots-%d", port)),
 			Static:  filepath.Join(a.Portal, "apps", "emisar_web", "priv", "static", "images"),
+			Only:    args[1:],
 		})
 	}
 	return nil

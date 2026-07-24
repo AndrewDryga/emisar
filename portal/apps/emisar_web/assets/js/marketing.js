@@ -16,6 +16,7 @@
 // `root.html.heex` picks the bundle from the `@app_js?` assign, which the
 // global LiveView `on_mount` hook sets on every live render.
 import {setupCopyToClipboardDelegation} from "./copy.js"
+import {initConsoleCasts} from "./console_cast.js"
 import {initDocsToc} from "./docs-toc.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initStaticFlashes} from "./flash.js"
@@ -30,6 +31,7 @@ import {initTerminalCasts} from "./terminal_cast.js"
 
 setupCopyToClipboardDelegation()
 initStaticFlashes()
+initConsoleCasts()
 initEmisarDemo()
 // The docs shell and the legal pages share the [data-toc-link] TOC contract but
 // drive the active state differently, so run exactly one scroll-spy per page —

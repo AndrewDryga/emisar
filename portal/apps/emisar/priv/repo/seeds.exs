@@ -1055,15 +1055,21 @@ if existing_runs == [] do
     |> Repo.update!()
   end
 
+  # `finished_at` may come from the caller (a backdated run) — the audit row is
+  # stamped at that same moment so the demo audit timeline matches the runs it
+  # records instead of bunching every event at seed time.
   persist_terminal_run = fn run, status, attrs ->
     changeset =
-      ActionRun.Changeset.transition(run, status, Map.put(attrs, :finished_at, now.()))
+      ActionRun.Changeset.transition(run, status, Map.put_new(attrs, :finished_at, now.()))
 
     {:ok, %{run: run}} =
       Ecto.Multi.new()
       |> Ecto.Multi.update(:run, changeset)
       |> Ecto.Multi.run(:audit, fn repo, %{run: run} ->
-        repo.insert(Audit.run_event_changeset(run))
+        run
+        |> Audit.run_event_changeset()
+        |> Ecto.Changeset.change(occurred_at: run.finished_at)
+        |> repo.insert()
       end)
       |> Repo.commit_multi()
 
@@ -1077,6 +1083,18 @@ if existing_runs == [] do
       expires_at: DateTime.add(requested_at, 24 * 3600, :second)
     )
     |> Repo.update!()
+  end
+
+  # `Runs.create_run` writes the `action_run.pending_approval` hold row at seed
+  # time; move it back to the request's claimed moment so the audit timeline
+  # stays causally ordered (awaiting -> decided -> terminal).
+  backdate_dispatch_audit = fn run, occurred_at ->
+    Audit.Event.Query.all()
+    |> Repo.all()
+    |> Enum.filter(&(&1.request_id == run.request_id))
+    |> Enum.each(fn event ->
+      event |> Ecto.Changeset.change(occurred_at: occurred_at) |> Repo.update!()
+    end)
   end
 
   # Append a synthetic stdout/stderr chunk to a run so the RunDetail
@@ -1102,6 +1120,7 @@ if existing_runs == [] do
 
     run =
       persist_terminal_run.(run, :success, %{
+        finished_at: finished_at,
         exit_code: 0,
         duration_ms: duration_ms,
         emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
@@ -1113,32 +1132,25 @@ if existing_runs == [] do
       })
 
     run
-    |> Ecto.Changeset.change(
-      finished_at: finished_at,
-      sent_at: DateTime.add(finished_at, -duration_ms, :millisecond)
-    )
+    |> Ecto.Changeset.change(sent_at: DateTime.add(finished_at, -duration_ms, :millisecond))
     |> Repo.update!()
   end
 
   finalize_failure = fn run, finished_at, exit_code, reason, chunks ->
     append_chunks.(run, chunks)
 
-    run =
-      persist_terminal_run.(run, :failed, %{
-        exit_code: exit_code,
-        duration_ms: 4500,
-        error_message: reason,
-        emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
-        emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
-        emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
-        emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
-        output_complete: true,
-        event_id: "seed-" <> Ecto.UUID.generate()
-      })
-
-    run
-    |> Ecto.Changeset.change(finished_at: finished_at)
-    |> Repo.update!()
+    persist_terminal_run.(run, :failed, %{
+      finished_at: finished_at,
+      exit_code: exit_code,
+      duration_ms: 4500,
+      error_message: reason,
+      emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
+      emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
+      emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
+      emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
+      output_complete: true,
+      event_id: "seed-" <> Ecto.UUID.generate()
+    })
   end
 
   # Realistic synthetic output per action — built once, reused below.
@@ -1171,10 +1183,12 @@ if existing_runs == [] do
     {"stdout", "203.0.113.29 - - \"GET /assets/app.css\" 304 0 2ms\n"}
   ]
 
+  # Timestamp-free on purpose: the approved-story run is re-dated relative to
+  # each seed, and a hardcoded date inside the log lines would contradict it.
   caddy_reload_stdout = [
-    {"stdout", "2026/06/24 11:12:08.214 INFO using adjacent Caddyfile\n"},
-    {"stdout", "2026/06/24 11:12:08.481 INFO autosaved config\n"},
-    {"stdout", "2026/06/24 11:12:08.482 INFO serving initial configuration\n"}
+    {"stdout", "INFO using adjacent Caddyfile\n"},
+    {"stdout", "INFO autosaved config\n"},
+    {"stdout", "INFO serving initial configuration\n"}
   ]
 
   caddy_validate_failure = [
@@ -1313,14 +1327,13 @@ if existing_runs == [] do
   append_chunks.(cancelled, systemd_restart_output)
 
   cancelled =
-    persist_terminal_run.(cancelled, :cancelled, %{cancelled_at: now.()})
+    persist_terminal_run.(cancelled, :cancelled, %{
+      finished_at: cancelled_at,
+      cancelled_at: cancelled_at
+    })
 
   cancelled
-  |> Ecto.Changeset.change(
-    finished_at: cancelled_at,
-    cancelled_at: cancelled_at,
-    reason_text: "operator cancelled - rollback already completed"
-  )
+  |> Ecto.Changeset.change(reason_text: "operator cancelled - rollback already completed")
   |> Repo.update!()
 
   IO.puts(
@@ -1332,8 +1345,16 @@ if existing_runs == [] do
   # -- Pending approvals (so dashboard "Needs attention" lights up) ---
   #
   # Mix of human-initiated + agent-initiated requests so the approvals
-  # page shows both shapes. Priya files the routine one; Claude (the
-  # MCP agent) asks for a high-risk restart and gets held.
+  # page shows both shapes. Claude (the MCP agent) asks for the caddy
+  # reload — the same recurring action the approved story below already
+  # ran, so the /security screencast frames read as one continuous loop —
+  # and Priya files the high-risk restart herself.
+
+  # The decider for the approved/denied stories below. Their audit rows are
+  # seeded through the same `Audit.Events` builders the real approve/deny
+  # flow uses, so the demo audit shows the complete trail
+  # (awaiting -> decided -> terminal), not just the hold.
+  jordan_subject = Subject.for_user(jordan, account, jordan_membership)
 
   pending1_at = mins_ago.(6)
 
@@ -1342,8 +1363,10 @@ if existing_runs == [] do
       runner_id: edge.id,
       action_id: "caddy.reload_config",
       args: %{"file" => "/etc/caddy/Caddyfile"},
-      reason: "apply checked-in Caddyfile after certificate renewal",
-      requested_by_id: priya.id,
+      reason: "Maya via Claude: apply the checked-in Caddyfile after certificate renewal",
+      requested_by_id: user.id,
+      source: "mcp",
+      api_key_id: agent_key.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
@@ -1354,13 +1377,13 @@ if existing_runs == [] do
   {:ok, req1} =
     Approvals.create_request(
       pending1,
-      priya.id,
+      user.id,
       "Config was validated in CI; needs an admin approval before the edge reload."
     )
 
   backdate_request.(req1, pending1_at)
+  backdate_dispatch_audit.(pending1, pending1_at)
 
-  # Agent-initiated pending — note source: "mcp", api_key_id set.
   pending2_at = mins_ago.(22)
 
   pending2 =
@@ -1368,10 +1391,8 @@ if existing_runs == [] do
       runner_id: api.id,
       action_id: "systemd.unit_restart",
       args: %{"unit" => "checkout-api.service"},
-      reason: "Maya via Claude: restart checkout-api after deploy smoke test",
-      requested_by_id: user.id,
-      source: "mcp",
-      api_key_id: agent_key.id,
+      reason: "restart checkout-api after deploy smoke test",
+      requested_by_id: priya.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
@@ -1382,15 +1403,23 @@ if existing_runs == [] do
   {:ok, req2} =
     Approvals.create_request(
       pending2,
-      user.id,
-      "Agent proposed a restart after the smoke test. Hold for the deploy captain."
+      priya.id,
+      "Smoke test is green - needs the deploy captain's sign-off before the restart."
     )
 
   backdate_request.(req2, pending2_at)
+  backdate_dispatch_audit.(pending2, pending2_at)
 
-  # An already-approved one (just to show history in the approvals
-  # list filter when an operator clicks "Approved").
-  approved_at = hours_ago.(26)
+  # The approved-and-executed story: requested by the agent, approved by
+  # Jordan, run to success minutes later. Its decision + terminal audit rows
+  # are stamped newer than every other terminal event (4-5m vs 8m+), so the
+  # audit timeline keeps the whole loop at its top no matter how long after
+  # seeding a capture runs. The /security screencast frames this request, its
+  # run, and its trail.
+  approved_at = mins_ago.(12)
+  approved_decided_at = mins_ago.(5)
+  approved_finished_at = mins_ago.(4)
+  approved_decision_reason = "validated config, active connections drained, deploy window open"
 
   approved_run =
     insert_run.(%{
@@ -1412,38 +1441,51 @@ if existing_runs == [] do
     Approvals.create_request(approved_run, user.id, "reload after config validation")
 
   approved_req = backdate_request.(approved_req, approved_at)
+  backdate_dispatch_audit.(approved_run, approved_at)
 
   # Manually mark approved (don't actually dispatch) + backdate the
   # decision so it doesn't pollute "pending" lists.
-  approved_req
-  |> Ecto.Changeset.change(
-    status: :approved,
-    decided_by_id: jordan.id,
-    decided_at: hours_ago.(25),
-    decision_reason: "validated config, active connections drained, deploy window open"
-  )
-  |> Repo.update!()
+  approved_req =
+    approved_req
+    |> Ecto.Changeset.change(
+      status: :approved,
+      decided_by_id: jordan.id,
+      decided_at: approved_decided_at,
+      decision_reason: approved_decision_reason
+    )
+    |> Repo.update!()
+
+  Audit.Events.approval_approved(jordan_subject, approved_req, approved_decision_reason, nil, nil)
+  |> Ecto.Changeset.change(occurred_at: approved_decided_at)
+  |> Repo.insert!()
 
   append_chunks.(approved_run, caddy_reload_stdout)
 
+  approved_run =
+    approved_run
+    |> Ecto.Changeset.change(
+      status: :success,
+      sent_at: DateTime.add(approved_finished_at, -2, :second),
+      started_at: DateTime.add(approved_finished_at, -2, :second),
+      finished_at: approved_finished_at,
+      exit_code: 0,
+      duration_ms: 1820,
+      emitted_stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
+      emitted_stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
+      emitted_stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
+      emitted_stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr"),
+      output_complete: true
+    )
+    |> Repo.update!()
+
   approved_run
-  |> Ecto.Changeset.change(
-    status: :success,
-    sent_at: DateTime.add(hours_ago.(24), -2, :second),
-    started_at: DateTime.add(hours_ago.(24), -2, :second),
-    finished_at: hours_ago.(24),
-    exit_code: 0,
-    duration_ms: 1820,
-    emitted_stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
-    emitted_stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
-    emitted_stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
-    emitted_stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr"),
-    output_complete: true
-  )
-  |> Repo.update!()
+  |> Audit.run_event_changeset()
+  |> Ecto.Changeset.change(occurred_at: approved_finished_at)
+  |> Repo.insert!()
 
   # A denied one too.
   denied_at = days_ago.(3)
+  denied_decision_reason = "Wait for the DBA-approved change window."
 
   denied_run =
     insert_run.(%{
@@ -1469,24 +1511,36 @@ if existing_runs == [] do
     )
 
   denied_req = backdate_request.(denied_req, denied_at)
+  backdate_dispatch_audit.(denied_run, denied_at)
 
-  denied_req
-  |> Ecto.Changeset.change(
-    status: :denied,
-    decided_by_id: jordan.id,
-    decided_at: days_ago.(3),
-    decision_reason: "Wait for the DBA-approved change window."
-  )
-  |> Repo.update!()
+  denied_req =
+    denied_req
+    |> Ecto.Changeset.change(
+      status: :denied,
+      decided_by_id: jordan.id,
+      decided_at: denied_at,
+      decision_reason: denied_decision_reason
+    )
+    |> Repo.update!()
+
+  Audit.Events.approval_denied(jordan_subject, denied_req, denied_decision_reason)
+  |> Ecto.Changeset.change(occurred_at: denied_at)
+  |> Repo.insert!()
+
+  denied_run =
+    denied_run
+    |> Ecto.Changeset.change(
+      status: :cancelled,
+      finished_at: denied_at,
+      cancelled_at: denied_at,
+      reason_text: "approval denied: " <> denied_decision_reason
+    )
+    |> Repo.update!()
 
   denied_run
-  |> Ecto.Changeset.change(
-    status: :cancelled,
-    finished_at: denied_at,
-    cancelled_at: denied_at,
-    reason_text: "approval denied: Wait for the DBA-approved change window."
-  )
-  |> Repo.update!()
+  |> Audit.run_event_changeset()
+  |> Ecto.Changeset.change(occurred_at: denied_at)
+  |> Repo.insert!()
 
   IO.puts(
     IO.ANSI.cyan() <>

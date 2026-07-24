@@ -21,6 +21,9 @@ type DocsConfig struct {
 	Email   string
 	Temp    string
 	Static  string
+	// Only limits the run to the named shots (all when empty) — fast iteration
+	// on one capture without rewriting every committed image.
+	Only []string
 }
 
 // shot is one docs screenshot: navigate Path, run any Clicks (reveal flows),
@@ -57,8 +60,21 @@ func clickText(label string) string {
 	return fmt.Sprintf(`(()=>{const b=[...document.querySelectorAll('button,a,[phx-click]')].find(x=>x.textContent.trim()===%q);if(b){b.click();return true}return false})()`, label)
 }
 
+// clickRowLink clicks the first link matching a CSS selector whose row (or the
+// link itself) contains the given text — list order is presentation, content is
+// the contract (e.g. "the pending caddy.reload_config row", wherever it sorts).
+func clickRowLink(selector, contains string) string {
+	return fmt.Sprintf(`(()=>{const b=[...document.querySelectorAll(%q)].find(a=>((a.closest('li,tr')||a).textContent||'').includes(%q));if(b){b.click();return true}return false})()`, selector, contains)
+}
+
 // clickFirstEditLink opens a runbook's editor from the runbooks list.
 const clickFirstEditLink = `(()=>{const a=document.querySelector('a[href*="/edit"]');if(a){a.click();return true}return false})()`
+
+// collapseAuditFilters folds the audit facet drawer (it arrives expanded when
+// the URL carries a filter). Self-verifying: reports success only once
+// aria-expanded flips, so a click against the dead pre-connect render (which
+// does nothing) is retried instead of trusted.
+const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-click="toggle_filters"]');if(!b)return false;if(b.getAttribute('aria-expanded')==='false')return true;b.click();return false})()`
 
 // clickSSOConnection opens an SSO connection's detail page from the team page.
 const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`
@@ -85,6 +101,25 @@ var docsShots = []shot{
 	// what a runbook IS, not two list rows.
 	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	// The /security "approval loop" cast — four uniform frames of ONE seeded
+	// story (caddy.reload_config on edge-fra-01, requested by Maya via Claude,
+	// approved by Jordan; seeds.exs pins the timings so the audit trail reads
+	// causally). #shell-canvas is the console page without the nav rail;
+	// TopCSS keeps every frame the same 1280x860 box so the cast can crossfade
+	// without reflow. Capture preconditions: a FRESH `./run reset --seed`
+	// (seeded pending approvals expire 24h after seeding) and a live
+	// edge-fra-01 runner adopted by this portal — run the dev runner image
+	// with EMISAR_URL pointed at this workspace and the fixed dev enrollment
+	// key (seed with EMISAR_DEV_FIXED_ENROLLMENT_KEY set) — so the Decide rail
+	// shows no runner-offline notice. Newest #pending row = the agent's caddy
+	// reload; newest #decided row = the same action approved.
+	{Name: "loop-approval-pending", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#pending a[href*="/approvals/"]`, "caddy.reload_config")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/approval-pending.webp"},
+	{Name: "loop-approval-approved", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#decided a[href*="/approvals/"]`, "caddy.reload_config")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/approval-approved.webp"},
+	{Name: "loop-run-success", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#decided a[href*="/approvals/"]`, "caddy.reload_config"), clickText("View run")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/run-success.webp"},
+	// The Run + Approval groups together are the loop's trail; the folded
+	// drawer still narrates them ("Filters — Type: …"), so the narrowing stays
+	// visible while the frame is the timeline itself.
+	{Name: "loop-audit-trail", Path: "/app/demo/audit?event_type[]=group:Run&event_type[]=group:Approval", Clicks: []string{collapseAuditFilters}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
 }
 
 func (s shot) width() int {
@@ -92,6 +127,27 @@ func (s shot) width() int {
 		return defaultWidth
 	}
 	return s.Width
+}
+
+// selectShots resolves the --only names against docsShots; an unknown name is
+// an error (a typo silently capturing nothing would read as success).
+func selectShots(only []string) ([]shot, error) {
+	if len(only) == 0 {
+		return docsShots, nil
+	}
+	byName := map[string]shot{}
+	for _, s := range docsShots {
+		byName[s.Name] = s
+	}
+	selected := make([]shot, 0, len(only))
+	for _, name := range only {
+		s, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown docs shot %q (see docsShots in tools/internal/browser/docs.go)", name)
+		}
+		selected = append(selected, s)
+	}
+	return selected, nil
 }
 
 var rgbPattern = regexp.MustCompile(`\d+`)
@@ -110,22 +166,31 @@ func rgbHex(value string) string {
 }
 
 func captureDocElement(session *Session, config DocsConfig, s shot) (string, error) {
-	if err := session.MarkAnchor(s.Anchor, "data-shot"); err != nil {
-		return "", fmt.Errorf("%s: %w", s.Name, err)
-	}
 	const selector = `[data-shot="1"]`
-	// A long list (the member roster) makes the anchor far taller than the shot
-	// needs — and past a point the element screenshot clips its top. Hide the rows
-	// past Rows so the anchor shrinks to its header + the first Rows rows before
-	// it settles and is shot; the tail simply doesn't render.
-	if s.Rows > 0 && s.RowSelector != "" {
-		hide := fmt.Sprintf(`(function(){const rows=document.querySelectorAll(%q);for(let i=%d;i<rows.length;i++)rows[i].style.display='none';return true})()`, s.RowSelector, s.Rows)
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(hide, nil)); err != nil {
+	// Mark + settle, twice if needed: when a reveal click's LiveView navigation
+	// lands AFTER the first mark, the marked node detaches (the layout re-renders)
+	// and the settle loop can never see it again — re-marking finds the live node.
+	settled := false
+	for attempt := 0; attempt < 2 && !settled; attempt++ {
+		if err := session.MarkAnchor(s.Anchor, "data-shot"); err != nil {
+			return "", fmt.Errorf("%s: %w", s.Name, err)
+		}
+		// A long list (the member roster) makes the anchor far taller than the shot
+		// needs — and past a point the element screenshot clips its top. Hide the rows
+		// past Rows so the anchor shrinks to its header + the first Rows rows before
+		// it settles and is shot; the tail simply doesn't render.
+		if s.Rows > 0 && s.RowSelector != "" {
+			hide := fmt.Sprintf(`(function(){const rows=document.querySelectorAll(%q);for(let i=%d;i<rows.length;i++)rows[i].style.display='none';return true})()`, s.RowSelector, s.Rows)
+			if err := chromedp.Run(session.Context, chromedp.Evaluate(hide, nil)); err != nil {
+				return "", err
+			}
+		}
+		switch err := session.Ready(10*time.Second, selector); {
+		case err == nil:
+			settled = true
+		case attempt == 1:
 			return "", err
 		}
-	}
-	if err := session.Ready(10*time.Second, selector); err != nil {
-		return "", err
 	}
 	path := filepath.Join(config.Temp, s.Name+".png")
 	if err := session.ElementScreenshot(selector, path, 2); err != nil {
@@ -149,15 +214,24 @@ func imageCommand(tool string, args ...string) ([]byte, error) {
 	return exec.Command(tool, args...).CombinedOutput()
 }
 
+// clickByScript retries while the target is missing: a prior click's LiveView
+// navigation may still be in flight (Ready can't observe it), so the element
+// this click wants often exists only a beat later.
 func clickByScript(session *Session, script, label string) error {
-	var clicked bool
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &clicked)); err != nil {
-		return err
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var clicked bool
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &clicked)); err != nil {
+			return err
+		}
+		if clicked {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s was not found", label)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	if !clicked {
-		return fmt.Errorf("%s was not found", label)
-	}
-	return nil
 }
 
 // captureShot sets the shot's viewport, navigates, runs its reveal clicks, and
@@ -195,7 +269,18 @@ func processShot(config DocsConfig, s shot, color string, out io.Writer) error {
 	width := strings.TrimSpace(string(widthOutput))
 	args := []string{png}
 	if s.TopCSS != 0 {
-		args = append(args, "-crop", fmt.Sprintf("%sx%d+0+0", width, s.TopCSS*2), "+repage")
+		// Crop to the top TopCSS CSS pixels AND pad a shorter capture out to that
+		// exact height, so every TopCSS shot in a set (the loop cast frames) has
+		// identical dimensions regardless of each page's natural height. The crop
+		// height derives from the captured width (not an assumed device scale):
+		// the element renders at width()-CSS wide whatever the effective pixel
+		// density, so width_px * TopCSS / width() is scale-independent.
+		pixels, atoiErr := strconv.Atoi(width)
+		if atoiErr != nil {
+			return fmt.Errorf("identify %s: unexpected width %q", png, width)
+		}
+		box := fmt.Sprintf("%dx%d", pixels, pixels*s.TopCSS/s.width())
+		args = append(args, "-crop", box+"+0+0", "+repage", "-background", color, "-extent", box)
 	}
 	args = append(args, "-resize", "1600x>", "-bordercolor", color, "-border", "40", "-quality", "82", destination)
 	if output, commandErr := imageCommand("convert", args...); commandErr != nil {
@@ -233,10 +318,15 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		}
 	}
 
+	shots, err := selectShots(config.Only)
+	if err != nil {
+		return err
+	}
+
 	// Capture each shot independently: one bad anchor skips its shot, never the run.
 	colors := map[string]string{}
 	var failed []string
-	for _, s := range docsShots {
+	for _, s := range shots {
 		color, captureErr := captureShot(session, config, s)
 		if captureErr != nil {
 			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, captureErr))
@@ -247,7 +337,7 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", s.Name, s.width(), color)
 	}
 
-	for _, s := range docsShots {
+	for _, s := range shots {
 		color, ok := colors[s.Name]
 		if !ok {
 			continue

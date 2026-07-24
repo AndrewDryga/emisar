@@ -1596,8 +1596,10 @@ defmodule EmisarWeb.CoreComponents do
         </aside>
       </div>
 
-      <%!-- The whole console — sidebar AND work column — is one black plane. --%>
-      <div class="flex min-w-0 flex-1 flex-col bg-black">
+      <%!-- The whole console — sidebar AND work column — is one black plane.
+           The id is the capture anchor for full-workspace docs shots
+           (tools/internal/browser/docs.go): the page without the nav rail. --%>
+      <div id="shell-canvas" class="flex min-w-0 flex-1 flex-col bg-black">
         <%!-- Portal-wide nudge: a signed-in user whose email isn't
              confirmed yet. Shown on every page until they verify; the
              "Resend" button is handled by the global `:email_confirmation`
