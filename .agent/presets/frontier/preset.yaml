@@ -12,7 +12,7 @@
 # models at max effort, failing over to each other on a rate limit. Fable 5 (the
 # long-horizon agentic frontier) with GPT-5.6 Sol as the cross-vendor twin.
 lead:
-  agent: [claude:claude-fable-5/xhigh, codex:gpt-5.6-sol/xhigh]
+  agent: [claude:claude-fable-5/xhigh]
   prompt: roles/lead.md
 
 roles:
@@ -20,7 +20,7 @@ roles:
     # READ-ONLY deep-reasoning peer via coop-consult. Terra at xhigh: near-frontier
     # thinking without burning the Sol/Fable quota the lead and signoff run on.
     mode: consult
-    agent: codex:gpt-5.6-terra/xhigh
+    agent:  codex:gpt-5.6-sol/xhigh
     # emisar is a security product — the thinker's docket leans hard on the
     # trust-boundary work: anything ingesting runner / LLM / operator input.
     when: [architecture, debugging, security, code-review, before-commit]
@@ -31,7 +31,7 @@ roles:
     # a third vendor's blind spots, for one-way doors: committed DB migrations,
     # wire/protocol formats, pack manifest semantics, billing/entitlements.
     mode: consult
-    agent: grok:grok-4.5/high
+    agent: codex:gpt-5.6-sol/xhigh
     when: [plan-review, tradeoffs, one-way-doors, security]
     prompt: roles/critic.md
 
@@ -39,7 +39,7 @@ roles:
     # WRITE-CAPABLE worker via coop-delegate: it may edit the worktree but never
     # commits — the lead reviews the diff, runs the touched project's gate, commits.
     mode: delegate
-    agent: codex:gpt-5.6-luna/xhigh
+    agent: [codex:gpt-5.6-luna/xhigh, claude:opus/xhigh]
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
     commit: never
     concurrent: never
