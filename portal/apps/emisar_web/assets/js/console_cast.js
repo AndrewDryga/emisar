@@ -112,6 +112,37 @@ function setupCast(root) {
 
   const spotsOf = (frame) => Array.from(frame.querySelectorAll("[data-cast-spot]"))
 
+  // Camera work: bring a beat into view when it plays below (or above) the
+  // fold — the output spotlight lives at the frame's bottom edge, well past a
+  // laptop viewport. Only steer while the cast itself is on screen, so a
+  // reader who scrolled away is never yanked back.
+  const castOnScreen = () => {
+    const box = root.getBoundingClientRect()
+    return box.bottom > 0 && box.top < window.innerHeight
+  }
+
+  const scrollSpotIntoView = (spot) => {
+    if (!castOnScreen()) return
+    const box = spot.getBoundingClientRect()
+    if (box.top >= 24 && box.bottom <= window.innerHeight - 24) return
+    spot.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: box.top > window.innerHeight / 2 ? "center" : "nearest"
+    })
+  }
+
+  const scrollPointIntoView = (point) => {
+    if (!castOnScreen()) return
+    const stageBox = stage.getBoundingClientRect()
+    const box = imageBox()
+    const yView = stageBox.top + box.top + (point.y / 100) * box.height
+    if (yView >= 40 && yView <= window.innerHeight - 40) return
+    window.scrollBy({
+      top: yView - window.innerHeight / 2,
+      behavior: reduceMotion ? "auto" : "smooth"
+    })
+  }
+
   // Position + reveal one spotlight (padded around its target rect); the
   // label pins above or below whichever edge has room, and drops on phones
   // where a pill would cover the ~340px frame it annotates.
@@ -134,6 +165,7 @@ function setupCast(root) {
       label.style.marginBottom = above ? "8px" : "0"
     }
     spot.hidden = false
+    scrollSpotIntoView(spot)
     later(reduceMotion ? 0 : SPOT_IN_MS, () => spot.classList.remove("opacity-0"))
   }
 
@@ -219,6 +251,7 @@ function setupCast(root) {
       cursor.hidden = false
       cursor.style.transition = `left ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms`
       cursor.classList.remove("opacity-0")
+      scrollPointIntoView(click)
       placeAt(cursor, click)
       later(TRAVEL_MS + 60, () => {
         clickRipple(click)

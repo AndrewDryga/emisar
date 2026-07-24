@@ -268,7 +268,10 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	}
 	printTargets(session, manager.Out, "run")
 
-	if err := session.Navigate("/app/demo/audit?event_type[]=group:Run&event_type[]=group:Approval"); err != nil {
+	// Frame 5 is the REAL destination of the cursor's "View activity" click on
+	// the run page: the audit log pre-filtered to this dispatch's request-id
+	// trace — the filter state in the frame is exactly what the click produces.
+	if err := clickByScript(session, clickText("View activity"), "View activity"); err != nil {
 		return nil, err
 	}
 	if err := clickByScript(session, collapseAuditFilters, "audit filter collapse"); err != nil {

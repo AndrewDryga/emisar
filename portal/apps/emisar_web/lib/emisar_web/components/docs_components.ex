@@ -522,6 +522,8 @@ defmodule EmisarWeb.DocsComponents do
     attr :note, :string
     attr :spot2, :string
     attr :note2, :string
+    attr :spot3, :string
+    attr :note3, :string
   end
 
   def console_cast(assigns) do
@@ -585,7 +587,13 @@ defmodule EmisarWeb.DocsComponents do
                  the (overflow-clipped) frame; the label pins to the hole's
                  edge. --%>
             <span
-              :for={{spot, note} <- [{frame[:spot], frame[:note]}, {frame[:spot2], frame[:note2]}]}
+              :for={
+                {spot, note} <- [
+                  {frame[:spot], frame[:note]},
+                  {frame[:spot2], frame[:note2]},
+                  {frame[:spot3], frame[:note3]}
+                ]
+              }
               :if={spot}
               data-cast-spot
               data-spot={spot}
