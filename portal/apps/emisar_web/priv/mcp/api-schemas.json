@@ -204,7 +204,7 @@
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
-        "cursor": {"type": "string", "maxLength": 4096, "description": "Opaque output-tail cursor. Do not construct or edit this; pass only the value from a prior response's `next`. Present it to stream a run's output forward from where you left off."}
+        "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque output-tail cursor. Do not construct or edit this; pass only the value from a prior response's `next`. Present it to stream a run's output forward from where you left off."}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
@@ -224,7 +224,7 @@
               "additionalProperties": false,
               "properties": {
                 "run_id": {"$ref": "#/$defs/run_id"},
-                "cursor": {"type": "string", "maxLength": 4096},
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 4096},
                 "timeout": {"enum": ["0", "60s"]}
               }
             }
