@@ -373,12 +373,11 @@ func (a *App) validateAdminCallback(ctx context.Context, temp string) error {
 	mock := `#!/bin/sh
 [ "$1" = exec ] || exit 2
 shift
-while [ "${1-}" = --env ]; do export "$2"; shift 2; done
 [ "$1" = emisar ] && [ "$2" = /app/bin/emisar ] && [ "$3" = rpc ]
-[ "$EMISAR_ADMIN_ACTION_ID" = emisar.admin.account.show ]
-[ "$EMISAR_ADMIN_ARG_COUNT" = 1 ]
-[ "$EMISAR_ADMIN_ARG_1" = "account=demo=west" ]
 case "$4" in *"Emisar.Admin.execute(action_id, args)"*) ;; *) exit 3 ;; esac
+case "$4" in *'System.fetch_env!'*|*'System.get_env('*|*'--env'*) exit 4 ;; esac
+case "$4" in *'Base.decode64!("ZW1pc2FyLmFkbWluLmFjY291bnQuc2hvdw==")'*) ;; *) exit 5 ;; esac
+case "$4" in *'Enum.map(["YWNjb3VudD1kZW1vPXdlc3Q="], &Base.decode64!/1)'*) ;; *) exit 6 ;; esac
 if [ "${MOCK_RPC_ERROR:-0}" = 1 ]; then
   printf '__EMISAR_ADMIN_ERROR__{"ok":false,"error":"not_found"}\n'
 else

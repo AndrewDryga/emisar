@@ -7,19 +7,21 @@ shift
 
 [ "$#" -le 3 ] || { echo "too many admin action arguments" >&2; exit 2; }
 
-arg_count=$#
-arg_1=${1-}
-arg_2=${2-}
-arg_3=${3-}
-expression='action_id = System.fetch_env!("EMISAR_ADMIN_ACTION_ID"); count = String.to_integer(System.fetch_env!("EMISAR_ADMIN_ARG_COUNT")); args = [System.get_env("EMISAR_ADMIN_ARG_1"), System.get_env("EMISAR_ADMIN_ARG_2"), System.get_env("EMISAR_ADMIN_ARG_3")] |> Enum.take(count); case Emisar.Admin.execute(action_id, args) do {:ok, result} -> IO.puts("__EMISAR_ADMIN_OK__" <> Jason.encode!(%{ok: true, result: result})); {:error, reason} -> IO.puts("__EMISAR_ADMIN_ERROR__" <> Jason.encode!(%{ok: false, error: inspect(reason, limit: 20, printable_limit: 1000)})) end'
+encode() {
+  printf '%s' "$1" | base64 | tr -d '\n'
+}
 
-if ! output=$(docker exec \
-  --env "EMISAR_ADMIN_ACTION_ID=$action_id" \
-  --env "EMISAR_ADMIN_ARG_COUNT=$arg_count" \
-  --env "EMISAR_ADMIN_ARG_1=$arg_1" \
-  --env "EMISAR_ADMIN_ARG_2=$arg_2" \
-  --env "EMISAR_ADMIN_ARG_3=$arg_3" \
-  emisar /app/bin/emisar rpc "$expression"); then
+encoded_action_id=$(encode "$action_id")
+encoded_args=
+separator=
+for arg in "$@"; do
+  encoded_args="${encoded_args}${separator}\"$(encode "$arg")\""
+  separator=", "
+done
+
+expression="action_id = Base.decode64!(\"$encoded_action_id\"); args = Enum.map([$encoded_args], &Base.decode64!/1); case Emisar.Admin.execute(action_id, args) do {:ok, result} -> IO.puts(\"__EMISAR_ADMIN_OK__\" <> Jason.encode!(%{ok: true, result: result})); {:error, reason} -> IO.puts(\"__EMISAR_ADMIN_ERROR__\" <> Jason.encode!(%{ok: false, error: inspect(reason, limit: 20, printable_limit: 1000)})) end"
+
+if ! output=$(docker exec emisar /app/bin/emisar rpc "$expression"); then
   echo "portal release RPC failed" >&2
   exit 1
 fi
