@@ -208,7 +208,7 @@
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
-        {"required": ["runbook_execution_id"], "not": {"required": ["run_id"]}}
+        {"required": ["runbook_execution_id"], "not": {"anyOf": [{"required": ["run_id"]}, {"required": ["cursor"]}]}}
       ]
     },
     "run_tail": {

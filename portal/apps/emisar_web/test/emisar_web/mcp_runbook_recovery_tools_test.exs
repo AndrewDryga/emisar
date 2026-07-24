@@ -54,6 +54,20 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert call(conn, "list_runbooks", %{"limit" => 10})["runbooks"] == []
   end
 
+  test "wait_for_run rejects a cursor paired with a runbook_execution_id", %{conn: conn} do
+    # The output cursor identifies exactly one run; pairing it with an execution
+    # id is a client error, not a silently-ignored argument.
+    rejected =
+      call(conn, "wait_for_run", %{
+        "runbook_execution_id" => Ecto.UUID.generate(),
+        "cursor" => "irrelevant",
+        "timeout" => "0"
+      })
+
+    assert rejected["error"]["message"] ==
+             "Tool arguments do not match the published input schema."
+  end
+
   test "transaction-time runbook contract failures do not expose hidden reasons" do
     for reason <- [
           :action_contract_changed,
