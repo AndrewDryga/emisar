@@ -5,11 +5,23 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+#
+# `./run` exports PGPORT from the workspace's assigned Postgres port. A bare
+# `mix test` in a Coop box gets none, and nothing listens on the conventional
+# port there, so read the service URL Coop injects into every box process
+# before falling back.
+db_port =
+  cond do
+    port = System.get_env("PGPORT") -> String.to_integer(port)
+    url = System.get_env("COOP_SERVICE_DB_URL") -> URI.parse(url).port
+    true -> 5432
+  end
+
 config :emisar, Emisar.Repo,
   username: "postgres",
   password: "postgres",
   hostname: System.get_env("PGHOST", "localhost"),
-  port: String.to_integer(System.get_env("PGPORT", "5432")),
+  port: db_port,
   database: "emisar_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
