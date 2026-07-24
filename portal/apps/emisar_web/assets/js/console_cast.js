@@ -9,24 +9,28 @@
 // Progressive enhancement: the server renders the full storyboard — every
 // frame with its step label and caption — so no-JS visitors and crawlers get
 // the whole story stacked. Here we collapse the storyboard into one stacked
-// stage and PLAY the take once it scrolls into view. Each frame's beat:
-// its spotlight dims everything except the one element that matters (with a
-// short label pinned to it), then the spotlight lifts, the overlay cursor
+// stage and PLAY the take once it scrolls into view. Each frame's beat: its
+// spotlights play in sequence (each dims everything except the one element
+// that matters, with a short label pinned to it), then the overlay cursor
 // travels to the frame's declared click point, a ripple fires, and the next
 // frame crossfades in — the transitions read as the real interaction that
 // produced the captures (which they were: the frames come from a live driven
 // session, tools/internal/browser/docs.go captureLoopTake). A tab click
-// takes manual control (frame + its spotlight, no autoplay); Replay runs the
-// take again. Honors prefers-reduced-motion: no autoplay, no cursor, instant
-// swaps, tabs still work, spotlights still shown.
+// takes manual control (the frame + its first spotlight, no autoplay);
+// Replay runs the take again. Honors prefers-reduced-motion: no autoplay, no
+// cursor, instant swaps, tabs still work, spotlights still shown.
 
-// The rhythm: spotlight in → read → spotlight out → travel → click → swap.
+// The rhythm per spotlight: in → read → out; then travel → click → swap.
 const SPOT_IN_MS = 450
-const SPOT_HOLD_MS = 2100
+const SPOT_HOLD_MS = 2400
 const SPOT_OUT_MS = 350
 const TRAVEL_MS = 550
 const CLICK_MS = 420
 const PLAIN_DWELL_MS = 1800
+// Breathing room between the spotlighted element and the ring, as percentages
+// of the frame — a hole that hugs the content reads cramped.
+const SPOT_PAD_X = 0.7
+const SPOT_PAD_Y = 1.0
 
 export function initConsoleCasts() {
   document.querySelectorAll("[data-console-cast]").forEach(setupCast)
@@ -106,41 +110,45 @@ function setupCast(root) {
     el.style.top = box.top + (point.y / 100) * box.height + "px"
   }
 
-  const spotOf = (frame) => frame.querySelector("[data-cast-spot]")
+  const spotsOf = (frame) => Array.from(frame.querySelectorAll("[data-cast-spot]"))
 
-  const showSpot = (frame) => {
-    const spot = spotOf(frame)
-    if (!spot) return
+  // Position + reveal one spotlight (padded around its target rect); the
+  // label pins above or below whichever edge has room, and drops on phones
+  // where a pill would cover the ~340px frame it annotates.
+  const revealSpot = (spot) => {
     const rect = parseRect(spot.dataset.spot)
     if (!rect) return
-    spot.style.left = rect.x + "%"
-    spot.style.top = rect.y + "%"
-    spot.style.width = rect.w + "%"
-    spot.style.height = rect.h + "%"
+    const x = rect.x - SPOT_PAD_X
+    const y = rect.y - SPOT_PAD_Y
+    spot.style.left = x + "%"
+    spot.style.top = y + "%"
+    spot.style.width = rect.w + 2 * SPOT_PAD_X + "%"
+    spot.style.height = rect.h + 2 * SPOT_PAD_Y + "%"
     const label = spot.querySelector("[data-cast-spot-label]")
     if (label) {
-      // Pin the label to whichever edge has room; drop it on phones, where a
-      // pill would cover the ~340px frame it annotates (captions carry it).
       label.hidden = imageBox().width < 480
-      label.style.top = rect.y > 16 ? "auto" : "100%"
-      label.style.bottom = rect.y > 16 ? "100%" : "auto"
-      label.style.marginTop = rect.y > 16 ? "0" : "8px"
-      label.style.marginBottom = rect.y > 16 ? "8px" : "0"
+      const above = y > 14
+      label.style.top = above ? "auto" : "100%"
+      label.style.bottom = above ? "100%" : "auto"
+      label.style.marginTop = above ? "0" : "8px"
+      label.style.marginBottom = above ? "8px" : "0"
     }
     spot.hidden = false
     later(reduceMotion ? 0 : SPOT_IN_MS, () => spot.classList.remove("opacity-0"))
   }
 
   const hideSpots = (instant) => {
-    frames.forEach((frame) => {
-      const spot = spotOf(frame)
-      if (!spot) return
-      spot.classList.add("opacity-0")
-      if (instant) spot.hidden = true
-    })
+    frames.forEach((frame) =>
+      spotsOf(frame).forEach((spot) => {
+        spot.classList.add("opacity-0")
+        if (instant) spot.hidden = true
+      })
+    )
   }
 
-  const show = (index) => {
+  // Swap to a frame without any spotlight (the autoplay/manual paths choose
+  // how to light it afterwards).
+  const showFrame = (index) => {
     active = index
     hideSpots(true)
     frames.forEach((frame, i) => {
@@ -149,7 +157,6 @@ function setupCast(root) {
       frame.setAttribute("aria-hidden", String(i !== index))
     })
     steps.forEach((step, i) => step.setAttribute("aria-selected", String(i === index)))
-    showSpot(frames[index])
   }
 
   const hideCursor = () => {
@@ -171,15 +178,42 @@ function setupCast(root) {
     })
   }
 
-  // One transition: lift the spotlight, travel the cursor to the frame's
-  // click point, click, then crossfade to the next frame and queue onward.
-  const advance = () => {
-    if (active >= frames.length - 1) return
-    const click = parsePoint(frames[active].dataset.click)
-    const go = () => {
+  // Play a frame's spotlights in sequence, then hand off.
+  const playSpots = (frame, done) => {
+    const spots = spotsOf(frame)
+    if (!spots.length) {
+      later(PLAIN_DWELL_MS, done)
+      return
+    }
+    let i = 0
+    const next = () => {
+      if (i >= spots.length) {
+        done()
+        return
+      }
+      const spot = spots[i++]
+      revealSpot(spot)
+      later(SPOT_IN_MS + SPOT_HOLD_MS, () => {
+        spot.classList.add("opacity-0")
+        later(SPOT_OUT_MS, next)
+      })
+    }
+    next()
+  }
+
+  // The autoplay loop: light the current frame, then travel + click into the
+  // next one. The take rests on its last frame — the evidence is the closing
+  // beat, replayable from the footer.
+  const run = () => {
+    playSpots(frames[active], () => {
+      if (active >= frames.length - 1) {
+        later(600, hideCursor)
+        return
+      }
+      const click = parsePoint(frames[active].dataset.click)
       if (!click || !cursor) {
-        show(active + 1)
-        queue()
+        showFrame(active + 1)
+        run()
         return
       }
       cursor.hidden = false
@@ -189,35 +223,25 @@ function setupCast(root) {
       later(TRAVEL_MS + 60, () => {
         clickRipple(click)
         later(CLICK_MS - 60, () => {
-          show(active + 1)
-          queue()
+          showFrame(active + 1)
+          run()
         })
       })
-    }
-    if (spotOf(frames[active])) {
-      hideSpots(false)
-      later(SPOT_OUT_MS, go)
-    } else {
-      go()
-    }
+    })
   }
 
-  const queue = () => {
-    if (reduceMotion) return
-    if (active >= frames.length - 1) {
-      // The take rests on its last frame — the evidence is the closing beat.
-      later(SPOT_IN_MS + SPOT_HOLD_MS, hideCursor)
-      return
-    }
-    const dwell = spotOf(frames[active]) ? SPOT_IN_MS + SPOT_HOLD_MS : PLAIN_DWELL_MS
-    later(dwell, advance)
+  // Manual view of a frame: the frame plus its first spotlight, held.
+  const showManual = (index) => {
+    showFrame(index)
+    const first = spotsOf(frames[index])[0]
+    if (first) revealSpot(first)
   }
 
   steps.forEach((step, i) =>
     step.addEventListener("click", () => {
       stop()
       hideCursor()
-      show(i)
+      showManual(i)
     })
   )
   if (replay)
@@ -228,11 +252,15 @@ function setupCast(root) {
         cursor.style.transition = "none"
         placeAt(cursor, {x: 55, y: 82})
       }
-      show(0)
-      queue()
+      showFrame(0)
+      if (reduceMotion) {
+        showManual(0)
+      } else {
+        run()
+      }
     })
 
-  show(0)
+  showManual(0)
   if (reduceMotion) return
 
   if (cursor) {
@@ -244,7 +272,8 @@ function setupCast(root) {
   const start = () => {
     if (started) return
     started = true
-    queue()
+    hideSpots(true)
+    run()
   }
   if (!("IntersectionObserver" in window)) {
     start()

@@ -117,7 +117,7 @@ var docsShots = []shot{
 // transition, and audit row is the actual product doing the actual thing.
 //
 // #shell-canvas is the console page without the nav rail; TopCSS keeps every
-// frame the same 1280x860 box so the cast can crossfade without reflow.
+// frame the same 1280x1100 box so the cast can crossfade without reflow.
 //
 // Preconditions (the take verifies and SKIPs loudly otherwise):
 //   - a fresh `./run reset --seed` with EMISAR_DEV_FIXED_ENROLLMENT_KEY set,
@@ -131,18 +131,18 @@ var docsShots = []shot{
 //     fresh /var/lib/emisar re-enrolls); a restarted container presents its
 //     old token, gets a 401 from the fresh DB, and exits.
 var loopFrames = []shot{
-	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
-	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
-	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
-	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
+	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
+	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
+	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
+	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
 	// The Run + Approval groups together are the loop's trail; the folded
 	// drawer still narrates them ("Filters — Type: …"), so the narrowing
 	// stays visible while the frame is the timeline itself.
-	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
 	// The closing beat: the take clicks the loop's own "Run succeeded" row and
 	// photographs the audit event detail — the forensic close-up (actor,
 	// target, request id, payload) one click deep.
-	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
+	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
 }
 
 // The note Jordan types during the take — it becomes the decision_reason on
@@ -157,7 +157,7 @@ const loopDecisionNote = "validated config, active connections drained, deploy w
 // proportional, so this holds whatever viewport the capture browser really
 // used (chromedp's emulation override is not reliably honored).
 const loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
-const frameH=c.width*860/1280;
+const frameH=c.width*1100/1280;
 const point=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
 return {x:Math.round((b.x+b.width/2-c.x)/c.width*1000)/10,y:Math.round((b.y+b.height/2-c.y)/frameH*1000)/10}};
 const rect=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
@@ -165,7 +165,13 @@ return {x:Math.round((b.x-c.x)/c.width*1000)/10,y:Math.round((b.y-c.y)/frameH*10
 const q=(sel)=>document.querySelector(sel);
 const byText=(t)=>[...document.querySelectorAll('a,button')].find(x=>x.textContent.trim()===t);
 const rowByText=(t)=>[...document.querySelectorAll('#audit-events li')].find(x=>x.textContent.includes(t));
-return JSON.stringify({note:point(q('#approval-decision-form textarea[name="reason"]')),note_rect:rect(q('#approval-decision-form textarea[name="reason"]')),approve:point(q('#approval-decision-form button[value="approve"]')),view_run:point(byText('View run')),view_activity:point(byText('View activity')),command_rect:rect(q('#shell-canvas [id^="approval-command-"]')),audit_row:point(rowByText('Run succeeded')),audit_row_rect:rect(rowByText('Run succeeded')),payload_rect:rect(q('#audit-payload-json'))})})()`
+const leaf=(t)=>[...document.querySelectorAll('#shell-canvas *')].find(e=>e.children.length===0&&e.textContent.trim()===t);
+const leafLike=(t)=>[...document.querySelectorAll('#shell-canvas *')].find(e=>e.children.length===0&&e.textContent.includes(t));
+const upTo=(el,n)=>{while(el&&n-->0)el=el.parentElement;return el};
+const unionRect=(a,b)=>{if(!a)return b?rect(b):null;if(!b)return rect(a);const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+const x1=Math.min(ar.x,br.x),y1=Math.min(ar.y,br.y),x2=Math.max(ar.x+ar.width,br.x+br.width),y2=Math.max(ar.y+ar.height,br.y+br.height);
+return {x:Math.round((x1-c.x)/c.width*1000)/10,y:Math.round((y1-c.y)/frameH*1000)/10,w:Math.round((x2-x1)/c.width*1000)/10,h:Math.round((y2-y1)/frameH*1000)/10}};
+return JSON.stringify({note:point(q('#approval-decision-form textarea[name="reason"]')),note_rect:rect(q('#approval-decision-form textarea[name="reason"]')),approve:point(q('#approval-decision-form button[value="approve"]')),view_run:point(byText('View run')),view_activity:point(byText('View activity')),command_rect:rect(q('#shell-canvas [id^="approval-command-"]')),action_rect:rect(leaf('Action')&&leaf('Action').parentElement),why_rect:rect(leaf('Why')&&leaf('Why').parentElement),output_rect:rect(leaf('Output')&&upTo(leaf('Output'),2)),auth_rect:unionRect(leafLike('Actor')&&upTo(leafLike('Actor'),2),leafLike('Target')&&upTo(leafLike('Target'),2)),audit_row:point(rowByText('Run succeeded')),audit_row_rect:rect(rowByText('Run succeeded')),payload_rect:rect(q('#audit-payload-json'))})})()`
 
 func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (map[string]string, error) {
 	// An isolated session (own profile) so signing in as Jordan never touches

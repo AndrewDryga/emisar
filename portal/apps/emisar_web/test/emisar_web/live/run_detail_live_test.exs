@@ -72,13 +72,43 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    # Eyebrow + the reason (the WHY) + the audit trail (matched rules / version).
+    # Eyebrow + the reason (the WHY) with the version riding the same line —
+    # a lone "Policy v4" row below read as a second, unexplained fact.
     assert html =~ "Policy"
     assert html =~ "Default for high-risk actions"
-    assert html =~ "v4"
+    assert html =~ ~r/·\s*v4/
     # The verdict word is NOT restated as a chip — the run's status badge is the
     # single source of the outcome.
     refute html =~ "Requires approval"
+  end
+
+  test "an approved run's Why cluster names the human release — who, when, why",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    run =
+      run_with(account, %{
+        status: "success",
+        requires_approval: true,
+        policy_decision: "require_approval",
+        policy_reason: "High-risk config reload requires an admin approval"
+      })
+
+    approver = Fixtures.Users.create_user(full_name: "Jordan Approver")
+
+    Fixtures.Approvals.create_request(
+      run_id: run.id,
+      account_id: account.id,
+      status: :approved,
+      decided_by_id: approver.id,
+      decision_reason: "window open, config validated"
+    )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Approval"
+    assert html =~ "Approved by Jordan Approver"
+    assert html =~ "window open, config validated"
   end
 
   test "the Why cluster renders the optional evidence/expected chain, only when present",

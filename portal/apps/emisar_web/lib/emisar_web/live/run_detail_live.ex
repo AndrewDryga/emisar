@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Runners, Runs}
+  alias Emisar.{Approvals, Runners, Runs, Users}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
   alias EmisarWeb.RunnerPresence
@@ -59,6 +59,7 @@ defmodule EmisarWeb.RunDetailLive do
           end
 
         approval_request = lookup_approval(subject, run)
+        approval_decider = if connected?(socket), do: approval_decider(approval_request)
 
         {:ok,
          socket
@@ -66,6 +67,7 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:run, run)
          |> assign(:action_args, visible_action_args(run))
          |> assign(:approval_request, approval_request)
+         |> assign(:approval_decider, approval_decider)
          |> assign(:runner_connection, runner_connection(run))
          # Whether any output was persisted — gates the output panel for an
          # errored run so "result never arrived" doesn't render an empty terminal.
@@ -85,6 +87,24 @@ defmodule EmisarWeb.RunDetailLive do
     end
   end
 
+  # The decider behind an approved run's "Approval" row — the human the record
+  # answers "who let this run" with.
+  defp approval_decider(%Approvals.Request{decided_by_id: id}) when is_binary(id) do
+    case Users.fetch_user_by_id(id) do
+      {:ok, user} -> user
+      _ -> nil
+    end
+  end
+
+  defp approval_decider(_), do: nil
+
+  defp decider_label(%Users.User{full_name: name}, _id) when is_binary(name) and name != "",
+    do: name
+
+  defp decider_label(%Users.User{email: email}, _id), do: email
+  defp decider_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
+  defp decider_label(_, _), do: "—"
+
   def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
     # The broadcast carries a preload-less run; keep the associations loaded at
     # mount (:runner, :api_key, :requested_by) so "Dispatched by" and the runner
@@ -102,7 +122,8 @@ defmodule EmisarWeb.RunDetailLive do
      socket
      |> assign(:run, run)
      |> assign(:action_args, visible_action_args(run))
-     |> assign(:approval_request, approval_request)}
+     |> assign(:approval_request, approval_request)
+     |> assign(:approval_decider, approval_decider(approval_request))}
   end
 
   # A live-appending stream never evicts on its own, so a chatty run streaming
@@ -478,28 +499,46 @@ defmodule EmisarWeb.RunDetailLive do
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Policy
               </dt>
+              <%!-- The version rides the policy line itself — a lone "Policy v1"
+                   row below read as a second, unexplained fact. --%>
               <dd
                 :if={@run.policy_reason && @run.policy_reason != ""}
                 class="mt-1 text-sm leading-relaxed text-zinc-200"
               >
                 {@run.policy_reason}
+                <span :if={is_integer(@run.policy_version)} class="text-xs text-zinc-400">·
+                v{@run.policy_version}</span>
               </dd>
               <dd
-                :if={
-                  matched_rules_label(@run.matched_rules) != "—" or
-                    is_integer(@run.policy_version)
-                }
-                class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400"
+                :if={matched_rules_label(@run.matched_rules) != "—"}
+                class="mt-1.5 text-xs text-zinc-400"
               >
-                <span :if={matched_rules_label(@run.matched_rules) != "—"}>
-                  Matched
-                  <span class="font-mono text-zinc-400">
-                    {matched_rules_label(@run.matched_rules)}
-                  </span>
+                Matched
+                <span class="font-mono text-zinc-400">
+                  {matched_rules_label(@run.matched_rules)}
                 </span>
-                <span :if={is_integer(@run.policy_version)}>
-                  Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
-                </span>
+              </dd>
+            </div>
+            <%!-- The human release behind an approved run — who, when, and the
+                 note they logged. The record's answer to "who let this run". --%>
+            <div :if={@approval_request && @approval_request.status == :approved}>
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                Approval
+              </dt>
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
+                Approved by {decider_label(@approval_decider, @approval_request.decided_by_id)}
+                <span :if={@approval_request.decided_at} class="text-zinc-400">·
+                <.local_time
+                  value={@approval_request.decided_at}
+                  mode={:forensic}
+                  class="tabular-nums"
+                /></span>
+              </dd>
+              <dd
+                :if={@approval_request.decision_reason && @approval_request.decision_reason != ""}
+                class="mt-1 text-sm leading-relaxed text-zinc-300"
+              >
+                “{@approval_request.decision_reason}”
               </dd>
             </div>
           </dl>

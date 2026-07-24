@@ -169,56 +169,60 @@
       <.console_cast id="approval-loop-cast" class="mx-auto mt-16 max-w-5xl">
         <:frame
           src="/images/screenshots/loop/approval-pending.webp"
-          alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the exact command, the reason, the policy that held it, and Approve and send / Deny controls."
+          alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the action's high risk, the exact command, the reason, the policy that held it, and Approve and send / Deny controls."
           label="Held"
           caption="Policy holds the agent's request for a human — the exact command, the reason, and the risk on one screen."
-          click="80,57.2"
-          spot="3.2,43.7,55.2,7.1"
-          note="the exact command"
+          click="80,44.7"
+          spot="14.5,11.9,21.7,4.9"
+          note="Actions are governed by policy based on risk level"
+          spot2="3.2,34.1,55.2,5.6"
+          note2="You see the exact command that will be executed"
         />
         <:frame
           src="/images/screenshots/loop/approval-note.webp"
           alt="The same approval with the decision note typed into the Decide panel: “validated config, active connections drained, deploy window open”."
           label="Decide"
           caption="Jordan reviews and writes the note the record will keep."
-          click="80,76.7"
-          spot="63.1,50.2,33.7,14.2"
-          note="logged with the decision"
+          click="80,59.9"
+          spot="3.2,52.3,55.2,16"
+          note="AI agents must provide a reason — evidence and expected outcome are optional"
         />
         <:frame
           src="/images/screenshots/loop/approval-approved.webp"
           alt="The request after the click: approved by Jordan Lee, with the note preserved as the decision reason."
           label="Approved"
           caption="Approved — decider, time, and reason on the record. The gate releases the run."
-          click="80.3,7.9"
-          spot="3,36.5,49,13.5"
-          note="on the record"
+          click="80.3,6.1"
+          spot="3,28.5,49,10.6"
+          note="Approval reason is recorded"
         />
         <:frame
           src="/images/screenshots/loop/run-success.webp"
-          alt="The run detail for the approved action: success on edge-fra-01 with exit code 0 in 513 milliseconds, dispatched by Maya Chen via Claude Code, with the arguments and the executed command marked secrets redacted."
+          alt="The run detail for the approved action: success on edge-fra-01 with exit code 0 in 511 milliseconds, the approval decision inline, the executed command marked secrets redacted, and the captured output."
           label="Executed"
           caption="Only now does the runner execute: exit 0, output scrubbed on the runner before it left the host."
-          click="91.3,7.9"
-          spot="3.1,81.7,93.8,14.5"
-          note="recorded byte-for-byte"
+          click="91.3,6.1"
+          spot="3.2,90.3,93.7,9.4"
+          note="Recorded byte-for-byte"
         />
         <:frame
           src="/images/screenshots/loop/audit-trail.webp"
           alt="The audit log filtered to run and approval events, led by the loop's own rows seconds apart: Run succeeded, Approval granted by Jordan Lee, and Run awaiting approval for caddy.reload_config on edge-fra-01."
           label="Recorded"
           caption="Seconds later the audit has the whole trail. Every row opens."
-          click="50,46.7"
-          spot="3.2,42,93.7,9.3"
-          note="the run we just watched"
+          click="50,36.5"
+          spot="3.2,32.9,93.7,7.3"
+          note="The run is audit logged"
         />
         <:frame
           src="/images/screenshots/loop/audit-event.webp"
           alt="The audit event detail for Run succeeded: when, event id, request id, actor Maya Chen, target runner edge-fra-01 with a link to the run, and the full JSON payload including the executed command and exit code 0."
           label="Evidence"
           caption="The evidence one click deep — actor, target, request id, payload — exportable to your SIEM."
-          spot="3.2,66.8,93.7,29.5"
-          note="the full payload"
+          spot="3.2,29,93.7,11.5"
+          note="Authentication context"
+          spot2="3.2,56.7,93.7,18.4"
+          note2="The full payload"
         />
       </.console_cast>
     </div>

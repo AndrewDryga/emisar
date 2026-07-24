@@ -499,7 +499,7 @@ defmodule EmisarWeb.DocsComponents do
   and Replay stay manual. Honors prefers-reduced-motion: no autoplay, no
   cursor, instant swaps.
 
-  Each `:frame` is one real capture — `src`/`alt` for the image (1600x1075,
+  Each `:frame` is one real capture — `src`/`alt` for the image (1600x1375,
   from `./run capture docs loop-*`), `label` for its step tab, `caption` for
   the line under the image. `click` is where the cursor clicks to leave this
   frame ("x,y" percentages of the image, from the capture take's printed
@@ -520,6 +520,8 @@ defmodule EmisarWeb.DocsComponents do
     attr :click, :string
     attr :spot, :string
     attr :note, :string
+    attr :spot2, :string
+    attr :note2, :string
   end
 
   def console_cast(assigns) do
@@ -578,23 +580,25 @@ defmodule EmisarWeb.DocsComponents do
               loading="lazy"
               class="w-full"
             />
-            <%!-- The spotlight: a transparent hole whose oversized shadow dims
-                 everything else in the (overflow-clipped) frame; the label
-                 pins to the hole's edge. --%>
+            <%!-- The spotlights (a frame may play up to two in sequence): a
+                 transparent hole whose oversized shadow dims everything else in
+                 the (overflow-clipped) frame; the label pins to the hole's
+                 edge. --%>
             <span
-              :if={frame[:spot]}
+              :for={{spot, note} <- [{frame[:spot], frame[:note]}, {frame[:spot2], frame[:note2]}]}
+              :if={spot}
               data-cast-spot
-              data-spot={frame[:spot]}
+              data-spot={spot}
               hidden
               aria-hidden="true"
               class="pointer-events-none absolute z-10 rounded-md ring-1 ring-brand-400/70 opacity-0 shadow-[0_0_0_9999px_rgba(9,9,11,0.62)] transition-opacity duration-500"
             >
               <span
-                :if={frame[:note]}
+                :if={note}
                 data-cast-spot-label
-                class="absolute left-0 whitespace-nowrap rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium text-brand-300 shadow-lg shadow-black/40"
+                class="absolute left-0 w-max max-w-md rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium leading-relaxed text-brand-300 shadow-lg shadow-black/40"
               >
-                {frame.note}
+                {note}
               </span>
             </span>
           </div>

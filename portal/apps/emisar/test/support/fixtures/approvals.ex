@@ -31,7 +31,14 @@ defmodule Emisar.Fixtures.Approvals do
 
     case attrs[:status] do
       status when is_atom(status) and not is_nil(status) ->
-        request |> change(status: status, decided_at: DateTime.utc_now()) |> Repo.update!()
+        request
+        |> change(
+          status: status,
+          decided_at: attrs[:decided_at] || DateTime.utc_now(),
+          decided_by_id: attrs[:decided_by_id],
+          decision_reason: attrs[:decision_reason]
+        )
+        |> Repo.update!()
 
       nil ->
         request
