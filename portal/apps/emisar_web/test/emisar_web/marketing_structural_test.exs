@@ -82,25 +82,20 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # Home → [Docs →] page breadcrumb from its path.
   @breadcrumb_routes @indexable_routes -- ~w(/ /pricing)
 
-  # MarketingController GET routes that are NOT indexable HTML pages (feeds), so
-  # they're excluded from the @indexable_routes parity guard below.
-  @non_indexable_marketing ~w(/changelog.xml)
-
   describe "route coverage parity (no marketing page drifts out of the battery)" do
     # The structural battery only protects pages listed in @indexable_routes, and
     # that list is hand-synced with the router — so a page added to the router
     # without being added here would silently escape every check (exactly how
     # /dpa, /trust, /how-it-works, /docs/mcp-reference, /guides slipped through
     # until Phase-6 discovery). This guard fails the moment it happens again.
+    # The router derivation (and its feed exclusions) lives in
+    # EmisarWeb.MarketingRoutes so this guard and MarketingTest's can't drift.
     test "every static marketing page is in @indexable_routes" do
-      router_pages =
-        EmisarWeb.Router.__routes__()
-        |> Enum.filter(&(&1.verb == :get and &1.plug == EmisarWeb.MarketingController))
-        |> Enum.map(& &1.path)
-        |> Enum.reject(&(String.contains?(&1, ":") or &1 in @non_indexable_marketing))
-        |> MapSet.new()
-
-      missing = MapSet.difference(router_pages, MapSet.new(@indexable_routes))
+      missing =
+        MapSet.difference(
+          EmisarWeb.MarketingRoutes.static_html_paths(),
+          MapSet.new(@indexable_routes)
+        )
 
       assert MapSet.size(missing) == 0,
              "marketing pages live in the router but are missing from @indexable_routes — add " <>

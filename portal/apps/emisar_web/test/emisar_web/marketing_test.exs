@@ -65,6 +65,25 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  describe "route coverage parity (no marketing page skips the battery)" do
+    # @routes is hand-maintained, so a page added to the router without being
+    # added here skips the render-200 + CSP-nonce + indexability battery
+    # silently — exactly how 9 docs pages (host-install, kubernetes, nomad,
+    # autoscaling-fleets, limits, runs, keys, runner-cli, billing) drifted out
+    # of it until the 2026-07-23 ship review. The router derivation is shared
+    # with MarketingStructuralTest's guard (EmisarWeb.MarketingRoutes) so the
+    # two can't disagree about what the public surface is.
+    test "every static marketing page is in @routes" do
+      missing =
+        MapSet.difference(EmisarWeb.MarketingRoutes.static_html_paths(), MapSet.new(@routes))
+
+      assert MapSet.size(missing) == 0,
+             "marketing pages live in the router but are missing from @routes — add them so " <>
+               "the render + CSP + indexability battery covers them: " <>
+               inspect(Enum.sort(MapSet.to_list(missing)))
+    end
+  end
+
   describe "indexable + CSP on every server-rendered marketing page" do
     # @routes is the full public marketing surface; every one is server-
     # rendered through the :browser pipeline and deliberately skips the
