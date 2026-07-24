@@ -410,7 +410,12 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp not_cancelled(_topic), do: :ok
 
-  defp run_token(run), do: {run.status, run.updated_at}
+  # The wait wakes on a status transition or new output. `progress_event_count`
+  # increments on every accepted chunk (`ActionRun.Changeset.record_progress/2`),
+  # so it provably changes when output arrives — unlike `updated_at`, which is an
+  # incidental side effect. The `wait_for_run tail wakes on a new output chunk`
+  # test guards this: a chunk must move the token.
+  defp run_token(run), do: {run.status, run.progress_event_count}
   defp terminal_execution?(status), do: status not in ~w(pending running pending_approval)
 
   defp error(code, message) do
