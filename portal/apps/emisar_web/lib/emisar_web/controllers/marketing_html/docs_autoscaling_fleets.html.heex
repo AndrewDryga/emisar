@@ -16,7 +16,7 @@
       <.docs_header current="autoscaling-fleets">
         <:dek>
           An autoscaling group boots and terminates hosts on its own — a GCP managed instance
-          group, an AWS Auto Scaling group, an Azure scale set. To put a runner on each one, bake a
+          group, an AWS Auto Scaling group, an Azure Scale Set. To put a runner on each one, bake a
           single <strong>reusable</strong>
           enrollment key into the launch template and let every instance install and enroll itself
           on boot: no per-host key, no manual approval, no click. This page covers the key, the
@@ -66,8 +66,9 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Max uses.</strong>
-            Cap the total number of runners the key can ever enroll — a ceiling that survives a leak,
-            sized to the group's peak.
+            Cap the total number of runners the key can ever enroll — a ceiling that survives a leak.
+            Uses are never refunded when an instance terminates, so budget for every boot over the
+            key's life, not the group's peak size.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
