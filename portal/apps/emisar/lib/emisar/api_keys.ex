@@ -422,6 +422,13 @@ defmodule Emisar.ApiKeys do
   def subscribe_account_api_keys(account_id),
     do: Emisar.PubSub.subscribe(account_api_keys_topic(account_id))
 
+  @doc """
+  Internal — `Emisar.OAuth.issue_code/3` announces a consent-minted backing key on
+  commit, so an already-open agents list reflows to show the new OAuth connection
+  (its own mint is inside the OAuth transaction, not an ApiKeys mutation site).
+  """
+  def broadcast_backing_key_created(%ApiKey{} = key), do: broadcast_api_key_created(key)
+
   defp account_api_keys_topic(account_id), do: "account:#{account_id}:api_keys"
 
   defp broadcast_api_key_created(%ApiKey{} = key) do
@@ -854,11 +861,27 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Internal — the OAuth cleanup sweep prunes backing keys orphaned by an abandoned
-  consent (`OAuth.delete_abandoned_backing_keys/1`). Deletes only OAuth backing
-  keys (`kind: :mcp`, non-expiring) among `ids`, so a mis-passed id can never
-  remove a real operator key; the caller supplies the ids of expired,
-  never-exchanged codes, which by construction hold no token. Returns the count.
+  Internal — the OAuth cleanup sweep's candidate lookup. Ids of OAuth backing keys
+  (`kind: :mcp`, non-expiring) that never authenticated a call (`last_used_at IS
+  NULL`) and were minted before `cutoff`. The caller (`Emisar.OAuth`, which owns
+  the tokens) drops any id that still has a token before deleting, so a reachable
+  connection is never swept. Returns a list of ids.
+  """
+  def list_stale_oauth_backing_key_ids(cutoff) do
+    ApiKey.Query.all()
+    |> ApiKey.Query.oauth_backing()
+    |> ApiKey.Query.never_used()
+    |> ApiKey.Query.inserted_before(cutoff)
+    |> ApiKey.Query.select_ids()
+    |> Repo.all()
+  end
+
+  @doc """
+  Internal — the OAuth cleanup sweep deletes stale backing keys through this.
+  Deletes only OAuth backing keys (`kind: :mcp`, non-expiring) among `ids`, so a
+  mis-passed id can never remove a real operator key; the caller supplies ids it
+  has already confirmed hold no token (unreachable, since the raw secret was
+  discarded at mint). Returns the count.
   """
   def delete_backing_keys(ids) when is_list(ids) do
     {count, _} =

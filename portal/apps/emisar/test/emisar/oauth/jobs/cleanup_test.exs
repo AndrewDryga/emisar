@@ -86,15 +86,16 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     {_user, _account, subject} = Fixtures.Subjects.owner_subject()
     issue_code!(subject)
 
-    # Consent minted a backing key; a live code means there's nothing to prune.
-    assert %ApiKey{expires_at: nil} = Repo.one(ApiKey)
+    # Consent minted a backing key with no token; freshly minted (inside the
+    # grace window) the sweep leaves it.
+    assert %ApiKey{expires_at: nil, last_used_at: nil} = Repo.one(ApiKey)
     assert :ok = Cleanup.execute([])
     assert Repo.one(ApiKey)
 
-    # Backdate the never-exchanged code past expiry → the sweep prunes its
-    # orphaned backing key, and the api_keys→codes cascade removes the code.
-    past = DateTime.add(DateTime.utc_now(), -120, :second)
-    {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
+    # Backdate it past the grace window; with no token it's unreachable → pruned,
+    # and the api_keys→codes cascade removes its spent code.
+    past = DateTime.add(DateTime.utc_now(), -2 * 3600, :second)
+    {1, _} = ApiKey.Query.all() |> Repo.update_all(set: [inserted_at: past])
 
     assert :ok = Cleanup.execute([])
     refute Repo.one(ApiKey)
@@ -145,9 +146,9 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
   """
   use Emisar.DataCase, async: false
   import ExUnit.CaptureLog
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Fixtures
   alias Emisar.OAuth
-  alias Emisar.OAuth.AuthorizationCode
   alias Emisar.OAuth.Jobs.Cleanup
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
@@ -159,7 +160,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
     :ok
   end
 
-  defp issue_expired_code! do
+  defp stale_backing_key! do
     {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
     {:ok, client} =
@@ -181,26 +182,28 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
         subject
       )
 
-    past = DateTime.add(DateTime.utc_now(), -120, :second)
-    {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
+    # Backdate the consent-minted key past the grace window; with no token it's
+    # an unreachable abandoned consent the sweep reclaims.
+    past = DateTime.add(DateTime.utc_now(), -2 * 3600, :second)
+    {1, _} = ApiKey.Query.all() |> Repo.update_all(set: [inserted_at: past])
     :ok
   end
 
   # the swept-count lines are logged ONLY when something was
   # deleted (each guarded by `if n > 0`). A no-op sweep over an empty/fresh table
   # (every daily tick when nothing aged out) stays silent rather than logging
-  # "codes_swept 0 / unused_clients_swept 0"; a sweep that prunes a code logs it.
+  # "abandoned_keys_swept 0 / codes_swept 0"; a sweep that prunes a key logs it.
   test "execute/1 logs swept counts only when rows were deleted" do
-    # Nothing to delete (no codes, no abandoned clients) → silent.
+    # Nothing to delete (no keys, no codes, no abandoned clients) → silent.
     silent = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
     refute silent =~ "oauth_cleanup.abandoned_keys_swept"
     refute silent =~ "oauth_cleanup.codes_swept"
     refute silent =~ "oauth_cleanup.unused_clients_swept"
 
-    :ok = issue_expired_code!()
+    :ok = stale_backing_key!()
 
-    # The expired, never-exchanged code's orphaned backing key is pruned (the
-    # code cascades away with it), so the abandoned-keys line is logged.
+    # A stale, unreachable backing key is reclaimed, so the abandoned-keys line
+    # is logged.
     noisy = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
     assert noisy =~ "oauth_cleanup.abandoned_keys_swept"
   end

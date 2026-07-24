@@ -704,6 +704,22 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "broadcast_backing_key_created/1" do
+    test "announces the consent-minted key on the account topic" do
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+      assert :ok = ApiKeys.broadcast_backing_key_created(key)
+
+      assert_receive {:list_changed, :api_key, "api_key.created", key_id}, 500
+      assert key_id == key.id
+    end
+  end
+
   describe "mint_quick_key/2" do
     test "mints a pre-scoped auto key, hidden until first use" do
       {_user, _account, subject} = owner_subject_pair()
@@ -1218,6 +1234,30 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.record_backing_key_usage(Repo.reload!(key))
 
       refute_receive {:list_changed, :api_key, "api_key.first_used", _}
+    end
+  end
+
+  describe "list_stale_oauth_backing_key_ids/1" do
+    test "returns non-expiring, never-used MCP keys minted before the cutoff" do
+      {user, account, subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, backing} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      # An expiring operator key is not a backing key, so it's never a candidate.
+      {:ok, _raw, _operator_key} = ApiKeys.create_key(%{name: "prod"}, subject)
+
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+      assert ApiKeys.list_stale_oauth_backing_key_ids(future) == [backing.id]
+
+      # A cutoff before it was minted means it's still in flight — excluded.
+      past = DateTime.add(DateTime.utc_now(), -3600, :second)
+      assert ApiKeys.list_stale_oauth_backing_key_ids(past) == []
+
+      # Once it records a call it's no longer "never used".
+      ApiKeys.record_backing_key_usage(backing)
+      assert ApiKeys.list_stale_oauth_backing_key_ids(future) == []
     end
   end
 

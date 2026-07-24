@@ -10,6 +10,13 @@ defmodule Emisar.OAuth.Token.Query do
   def by_refresh_hash(queryable \\ all(), hash),
     do: where(queryable, [tokens: t], t.refresh_token_hash == ^hash)
 
+  def by_api_key_ids(queryable \\ all(), api_key_ids) when is_list(api_key_ids),
+    do: where(queryable, [tokens: t], t.api_key_id in ^api_key_ids)
+
+  @doc "Selects each matched token's backing api_key id — the cleanup's live-connection guard."
+  def select_api_key_ids(queryable),
+    do: select(queryable, [tokens: t], t.api_key_id)
+
   def not_revoked(queryable \\ all()), do: where(queryable, [tokens: t], is_nil(t.revoked_at))
 
   @doc """

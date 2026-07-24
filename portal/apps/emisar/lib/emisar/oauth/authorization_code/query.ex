@@ -10,13 +10,6 @@ defmodule Emisar.OAuth.AuthorizationCode.Query do
   def expired_before(queryable \\ all(), now),
     do: where(queryable, [codes: c], c.expires_at < ^now)
 
-  def never_used(queryable \\ all()),
-    do: where(queryable, [codes: c], is_nil(c.used_at))
-
-  @doc "Selects each matched code's backing api_key id — the OAuth cleanup's abandoned-key lookup."
-  def select_api_key_ids(queryable),
-    do: select(queryable, [codes: c], c.api_key_id)
-
   # Lock the matched row FOR UPDATE so two concurrent token exchanges of the
   # same code serialize: the first burns it (sets used_at) and commits, the
   # second blocks then sees it used and is rejected. Single-use is an

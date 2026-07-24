@@ -18,6 +18,10 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def select_created_by_id(queryable),
     do: select(queryable, [api_keys: k], k.created_by_id)
 
+  @doc "Selects only the key ids — for the OAuth cleanup's stale-backing-key lookup."
+  def select_ids(queryable),
+    do: select(queryable, [api_keys: k], k.id)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [api_keys: k], k.account_id == ^account_id)
 
@@ -71,6 +75,12 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   """
   def oauth_backing(queryable \\ all()),
     do: where(queryable, [api_keys: k], k.kind == :mcp and is_nil(k.expires_at))
+
+  def never_used(queryable \\ all()),
+    do: where(queryable, [api_keys: k], is_nil(k.last_used_at))
+
+  def inserted_before(queryable \\ all(), cutoff),
+    do: where(queryable, [api_keys: k], k.inserted_at < ^cutoff)
 
   @doc """
   Auto-generated keys that no LLM has ever authenticated with — the

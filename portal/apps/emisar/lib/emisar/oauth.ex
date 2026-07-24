@@ -36,6 +36,12 @@ defmodule Emisar.OAuth do
   # one orphan row per drive-by registration.
   @unused_client_ttl_s 30 * 24 * 3_600
 
+  # A consent-minted backing key with no token is only swept once it's older than
+  # this. Comfortably exceeds the 60s code TTL so an in-flight consent (exchange
+  # still pending) is never reclaimed; past it, an expired code can no longer be
+  # exchanged, so no token will ever appear.
+  @abandoned_key_grace_s 60 * 60
+
   @supported_scopes ~w(mcp offline_access)
 
   def start_link(opts) do
@@ -147,7 +153,9 @@ defmodule Emisar.OAuth do
       end)
       # Stamp the client so it's never swept as an abandoned registration.
       |> Multi.update(:client, Client.Changeset.mark_authorized(client, DateTime.utc_now()))
-      |> Repo.commit_multi()
+      # Announce the new backing key so an open agents list reflows to show the
+      # connection the moment consent lands, not on the next 5s tick.
+      |> Repo.commit_multi(after_commit: &ApiKeys.broadcast_backing_key_created(&1.key))
       |> case do
         {:ok, _changes} -> {:ok, raw}
         {:error, reason} -> {:error, reason}
@@ -325,23 +333,37 @@ defmodule Emisar.OAuth do
 
   @doc """
   Internal — the OAuth cleanup sweep. Consent mints the backing MCP key up front
-  (`issue_code/3`), but an operator can abandon the flow before the token
-  exchange; the code then expires unused and — without this — orphans a permanent
-  "(OAuth)" agent row. Deletes the backing keys of expired, never-exchanged codes
-  (which hold NO token by construction — a token is only minted after the code is
-  burned, so `used_at IS NULL` proves the exchange never ran); the api_keys→codes
-  FK cascade removes the codes with them. Runs before the code sweep so the
-  linkage still exists. Returns the count of keys deleted.
+  (`issue_code/3`); an abandoned consent, or a lapsed connection that was never
+  used, then leaves a permanent "(OAuth)" agent row. Removes OAuth backing keys
+  that never authenticated a call and can no longer be reached: a key with no
+  token is unreachable (the raw `emk-` secret is discarded at mint, so only an
+  `emo-` token resolves it), and past the grace window no token will ever appear.
+  A key that actually ran commands keeps its row (`last_used_at` set), and a key
+  with any live token is left alone. The api_keys FK cascade clears any spent code
+  along with it. Returns the count of keys deleted.
   """
   def delete_abandoned_backing_keys(now \\ DateTime.utc_now()) do
-    api_key_ids =
-      AuthorizationCode.Query.all()
-      |> AuthorizationCode.Query.expired_before(now)
-      |> AuthorizationCode.Query.never_used()
-      |> AuthorizationCode.Query.select_api_key_ids()
-      |> Repo.all()
+    cutoff = DateTime.add(now, -@abandoned_key_grace_s, :second)
 
-    ApiKeys.delete_backing_keys(api_key_ids)
+    candidate_ids = ApiKeys.list_stale_oauth_backing_key_ids(cutoff)
+
+    ApiKeys.delete_backing_keys(reject_keys_with_tokens(candidate_ids))
+  end
+
+  # A key with any token row is still a reachable (live or refreshable)
+  # connection — deleting it would cascade-revoke that token. Tokens are
+  # OAuth-owned, so this guard lives here, not in the ApiKeys candidate query.
+  defp reject_keys_with_tokens([]), do: []
+
+  defp reject_keys_with_tokens(candidate_ids) do
+    keyed =
+      Token.Query.all()
+      |> Token.Query.by_api_key_ids(candidate_ids)
+      |> Token.Query.select_api_key_ids()
+      |> Repo.all()
+      |> MapSet.new()
+
+    Enum.reject(candidate_ids, &MapSet.member?(keyed, &1))
   end
 
   @doc """

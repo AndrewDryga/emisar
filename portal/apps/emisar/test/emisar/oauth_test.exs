@@ -139,6 +139,18 @@ defmodule Emisar.OAuthTest do
   end
 
   describe "issue_code/3 authorization gate" do
+    test "a successful consent announces the backing key on the agents topic" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
+      _code = issue!(subject, client, challenge)
+
+      # Consent commits the backing key → an open agents list reflows live.
+      assert_receive {:list_changed, :api_key, "api_key.created", _key_id}, 500
+    end
+
     test "a read-only viewer cannot consent — the OAuth flow can't mint an execute token they couldn't issue manually" do
       {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       client = register!()
@@ -822,26 +834,26 @@ defmodule Emisar.OAuthTest do
   end
 
   describe "delete_abandoned_backing_keys/1" do
-    test "prunes the orphaned backing key of an expired, never-exchanged consent" do
+    test "sweeps an abandoned consent — never exchanged, no token, past the grace window" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       _code = issue!(subject, client, challenge)
 
-      # Consent minted a backing key + code; while the code is live, nothing prunes.
-      assert %ApiKey{expires_at: nil} = Repo.one(ApiKey)
+      # Consent minted a backing key with no token; inside the grace window
+      # (an exchange could still be in flight) nothing is swept.
+      assert %ApiKey{expires_at: nil, last_used_at: nil} = Repo.one(ApiKey)
       assert 0 = OAuth.delete_abandoned_backing_keys()
 
-      # Two minutes on, the never-exchanged code has expired: its orphaned backing
-      # key (a would-be permanent "(OAuth)" agent row) is swept, and its code
-      # cascades away with it.
-      future = DateTime.add(DateTime.utc_now(), 120, :second)
+      # Past the grace window the key is unreachable (no token, raw secret was
+      # discarded at mint) → swept, and its spent code cascades away with it.
+      future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
       assert 1 = OAuth.delete_abandoned_backing_keys(future)
       refute Repo.one(ApiKey)
       refute Repo.one(AuthorizationCode)
     end
 
-    test "keeps the backing key of a completed (exchanged) consent" do
+    test "keeps a live connection — a key with a token is never swept" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
@@ -855,11 +867,61 @@ defmodule Emisar.OAuthTest do
           "code_verifier" => verifier
         })
 
-      # The code is burned (`used_at` set), so even far in the future it's never
-      # mistaken for an abandonment — its key is a real, token-backed connection.
-      future = DateTime.add(DateTime.utc_now(), 120, :second)
+      # Even far past the grace window, a key with a live token is a real
+      # connection — deleting it would cascade-revoke the token, so it's left alone.
+      future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
       assert 0 = OAuth.delete_abandoned_backing_keys(future)
       assert %ApiKey{} = Repo.one(ApiKey)
+    end
+
+    test "sweeps a lapsed connection whose token is gone and was never used" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # Simulate the grant fully lapsing: the token sweep removed the row.
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      Repo.delete!(token)
+
+      # The key never recorded a call and now has no token → an unreachable dead
+      # connection → swept.
+      future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
+      assert 1 = OAuth.delete_abandoned_backing_keys(future)
+      refute Repo.one(ApiKey)
+    end
+
+    test "keeps a key that ran a command — last_used_at set is not 'never used'" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # A real MCP call recorded use on the key, then the grant lapsed (token gone).
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      Repo.delete!(token)
+
+      # It has history (last_used_at set), so its row is kept even with no token.
+      future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
+      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert %ApiKey{last_used_at: %DateTime{}} = Repo.one(ApiKey)
     end
   end
 
