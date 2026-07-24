@@ -6,8 +6,10 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
   @beyond_window_days 40
   @window_days 30
 
-  defp offline_runner(account, days_ago) do
-    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+  defp offline_runner(account, days_ago, attrs \\ []) do
+    runner =
+      Fixtures.Runners.create_runner([account_id: account.id, connected?: false] ++ attrs)
+
     at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
     Fixtures.Runners.mark_disconnected_at(runner, at)
   end
@@ -43,6 +45,25 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     # Soft-delete: the row survives (audit/run history intact), but it's gone
     # from the not_deleted scope and stamped deleted_at.
     assert %DateTime{} = Repo.reload!(runner).deleted_at
+    assert length(retention_markers(account.id)) == 1
+  end
+
+  test "sweeps every runner group account-wide — the system tick applies no operator scope" do
+    account = Fixtures.Accounts.create_account()
+
+    Fixtures.Accounts.set_account_settings(account, %{
+      runner_inactive_retention_days: @window_days
+    })
+
+    db = offline_runner(account, @beyond_window_days, group: "db")
+    app = offline_runner(account, @beyond_window_days, group: "app")
+
+    assert :ok = InactiveRunnerRetention.execute([])
+
+    # No subject → scope_to_subject_membership is never composed, so runners in
+    # any group are removed. One rolled-up marker covers the whole sweep.
+    assert %DateTime{} = Repo.reload!(db).deleted_at
+    assert %DateTime{} = Repo.reload!(app).deleted_at
     assert length(retention_markers(account.id)) == 1
   end
 

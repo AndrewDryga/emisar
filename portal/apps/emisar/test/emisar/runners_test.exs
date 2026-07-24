@@ -1,5 +1,6 @@
 defmodule Emisar.RunnersTest do
   use Emisar.DataCase, async: true
+  alias Emisar.Accounts.RunnerAccess
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Billing
@@ -756,9 +757,12 @@ defmodule Emisar.RunnersTest do
   end
 
   # A never-touched-since runner: created offline, then durably disconnected
-  # `days_ago` days back — the exact shape the inactivity sweep targets.
-  defp offline_runner(account, days_ago) do
-    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+  # `days_ago` days back — the exact shape the inactivity sweep targets. `attrs`
+  # (e.g. `group:`) let a scope test place the runner inside/outside an ACL.
+  defp offline_runner(account, days_ago, attrs \\ []) do
+    runner =
+      Fixtures.Runners.create_runner([account_id: account.id, connected?: false] ++ attrs)
+
     at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
     Fixtures.Runners.mark_disconnected_at(runner, at)
   end
@@ -824,6 +828,25 @@ defmodule Emisar.RunnersTest do
 
       assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
       assert Repo.reload(other)
+    end
+
+    test "a runner-scope-restricted admin sweeps only in-scope inactive runners", %{
+      account: account
+    } do
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      in_scope = offline_runner(account, 40, group: "db")
+      out_of_scope = offline_runner(account, 40, group: "app")
+
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(admin, db_only)
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      # Composes scope_to_subject_membership just like delete_runner: the admin
+      # reaches only its scoped group, so the out-of-scope host survives.
+      assert {:ok, 1} = Runners.sweep_inactive_runners(admin_subject)
+      assert is_nil(Runners.peek_runner_by_id(in_scope.id))
+      assert Repo.reload(out_of_scope)
     end
   end
 

@@ -521,11 +521,12 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — the inactivity-retention sweep for one account: the daily
-  `Runners.Jobs.InactiveRunnerRetention` tick (no subject → system audit actor)
-  and `sweep_inactive_runners/1` (operator actor). Soft-deletes every runner
-  cleanly offline for `days` days — durably disconnected with a last disconnect
-  older than the cutoff — and records ONE `runner.retention_swept` audit event
-  only when something was removed. Returns `{:ok, deleted_count}`.
+  `Runners.Jobs.InactiveRunnerRetention` tick (no subject → system audit actor,
+  account-wide) and `sweep_inactive_runners/1` (operator actor, narrowed to that
+  operator's runner access). Soft-deletes every in-scope runner cleanly offline
+  for `days` days — durably disconnected with a last disconnect older than the
+  cutoff — and records ONE `runner.retention_swept` audit event only when
+  something was removed. Returns `{:ok, deleted_count}`.
 
   Conservative by construction: a currently-connected runner (a later
   `last_connected_at`), a never-connected runner, and a disabled runner (a
@@ -544,6 +545,7 @@ defmodule Emisar.Runners do
         |> Runner.Query.not_disabled()
         |> Runner.Query.disconnected()
         |> Runner.Query.last_disconnected_before(cutoff)
+        |> scope_sweep_to_subject(subject)
         |> Runner.Query.lock_for_update()
 
       {:ok, repo.all(queryable)}
@@ -576,6 +578,15 @@ defmodule Emisar.Runners do
     actor = subject || hd(runners).account_id
     repo.insert(Audit.Events.runner_retention_swept(actor, runners, days))
   end
+
+  # The manual "Clean up now" sweep is narrowed to the operator's own runner
+  # access, exactly as delete_runner is — a runner-scope-restricted admin must
+  # not delete beyond their scope. The nightly job passes no subject and stays
+  # account-wide; an owner (or any all-access member) resolves to unrestricted.
+  defp scope_sweep_to_subject(queryable, %Subject{} = subject),
+    do: scope_to_subject_membership(queryable, subject)
+
+  defp scope_sweep_to_subject(queryable, nil), do: queryable
 
   # -- Runner socket-driven connection state ---------------------------
   #
