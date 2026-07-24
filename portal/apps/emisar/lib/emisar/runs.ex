@@ -2708,27 +2708,54 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  A forward page of a run's progress chunks — up to `limit` events with `seq`
-  greater than `after_seq`, in chronological (`seq`-ASC) order. Drives the MCP
-  output tail, which reads a run's output from a cursor forward instead of the
-  `list_recent_events_for_run/3` tail snapshot. The run is fetched via
-  `fetch_run_by_id/3` first so the subject's account scope and permission gate
-  apply. Returns `{:ok, [event]}`.
+  A forward page of a run's progress chunks — events with `seq` at or after
+  `from_seq`, in chronological (`seq`-ASC) order, accumulated until their raw
+  chunk bytes reach `byte_budget` (or a per-frame event cap). Drives the MCP
+  output tail. The run is fetched via `fetch_run_by_id/3` first so the subject's
+  account scope and permission gate apply BEFORE any row is streamed; the stream
+  is consumed inside a transaction and never crosses this boundary, so the tail
+  never materializes a run's whole (up to 64 MiB) output at once. Returns
+  `{:ok, [event], more?}`, where `more?` is true when the page was cut short
+  rather than the run's output exhausted.
   """
-  def list_events_for_run_since(run_id, after_seq, limit, %Subject{} = subject)
-      when is_integer(after_seq) and is_integer(limit) do
+  def list_events_for_run_since(run_id, from_seq, byte_budget, %Subject{} = subject)
+      when is_integer(from_seq) and is_integer(byte_budget) do
     with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
-      events =
+      queryable =
         RunEvent.Query.all()
         |> RunEvent.Query.by_run_id(run_id)
         |> RunEvent.Query.by_kind(:progress)
-        |> RunEvent.Query.by_seq_after(after_seq)
-        |> RunEvent.Query.oldest_by_seq(limit)
-        |> Repo.all()
+        |> RunEvent.Query.by_seq_from(from_seq)
+        |> RunEvent.Query.ordered_by_seq()
 
-      {:ok, events}
+      {:ok, {events, more?}} =
+        Repo.transaction(fn -> collect_tail_events(queryable, byte_budget) end)
+
+      {:ok, events, more?}
     end
   end
+
+  defp collect_tail_events(queryable, byte_budget) do
+    # 64 rows/batch bounds the stream's in-flight buffer; the 2_000-event cap
+    # keeps a frame of tiny chunks from becoming thousands of DB round-trips. The
+    # first event always ships so the cursor advances even past a huge chunk.
+    queryable
+    |> Repo.stream(max_rows: 64)
+    |> Enum.reduce_while({[], 0, 0, false}, fn event, {acc, bytes, count, _more} ->
+      next_bytes = bytes + byte_size(progress_chunk(event))
+      next_count = count + 1
+
+      cond do
+        acc == [] -> {:cont, {[event], next_bytes, next_count, false}}
+        next_bytes > byte_budget or next_count > 2_000 -> {:halt, {acc, bytes, count, true}}
+        true -> {:cont, {[event | acc], next_bytes, next_count, false}}
+      end
+    end)
+    |> then(fn {acc, _bytes, _count, more?} -> {Enum.reverse(acc), more?} end)
+  end
+
+  defp progress_chunk(%RunEvent{payload: %{"chunk" => chunk}}) when is_binary(chunk), do: chunk
+  defp progress_chunk(_event), do: ""
 
   @doc """
   The most recent `limit` progress chunks before `before_seq`, in chronological

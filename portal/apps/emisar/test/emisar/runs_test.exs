@@ -4508,7 +4508,7 @@ defmodule Emisar.RunsTest do
       %{account: account, runner: runner, subject: subject}
     end
 
-    test "returns progress chunks after the cursor, chronologically", %{
+    test "returns progress chunks from the seq (inclusive), chronologically", %{
       account: account,
       runner: runner,
       subject: subject
@@ -4524,11 +4524,11 @@ defmodule Emisar.RunsTest do
           })
       end
 
-      assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}, %RunEvent{seq: 5}]} =
-               Runs.list_events_for_run_since(run.id, 2, 10, subject)
+      assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}, %RunEvent{seq: 5}], false} =
+               Runs.list_events_for_run_since(run.id, 3, 1_000, subject)
     end
 
-    test "caps the page at limit and stays forward-lossless across cursors", %{
+    test "caps at the byte budget and stays forward-lossless across the seq", %{
       account: account,
       runner: runner,
       subject: subject
@@ -4540,16 +4540,39 @@ defmodule Emisar.RunsTest do
           Runs.append_event(run, %{
             seq: seq,
             kind: "progress",
-            payload: %{"chunk" => "line#{seq}"}
+            payload: %{"chunk" => String.duplicate("a", 4)}
           })
       end
 
-      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 2}]} =
-               Runs.list_events_for_run_since(run.id, 0, 2, subject)
+      # An 8-byte budget fits two 4-byte chunks; `more?` flags the cut.
+      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 2}], true} =
+               Runs.list_events_for_run_since(run.id, 1, 8, subject)
 
-      # Continuing from the last returned seq yields the next page — nothing skipped.
-      assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}]} =
-               Runs.list_events_for_run_since(run.id, 2, 2, subject)
+      assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}], true} =
+               Runs.list_events_for_run_since(run.id, 3, 8, subject)
+
+      # The tail exhausts without repeating or skipping anything.
+      assert {:ok, [%RunEvent{seq: 5}], false} =
+               Runs.list_events_for_run_since(run.id, 5, 8, subject)
+    end
+
+    test "always returns the first event, even past the budget", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, _} =
+        Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          payload: %{"chunk" => String.duplicate("a", 10)}
+        })
+
+      # A budget smaller than the first chunk still ships it, so the cursor advances.
+      assert {:ok, [%RunEvent{seq: 1}], false} =
+               Runs.list_events_for_run_since(run.id, 1, 2, subject)
     end
 
     test "excludes non-progress events", %{account: account, runner: runner, subject: subject} do
@@ -4561,11 +4584,11 @@ defmodule Emisar.RunsTest do
       {:ok, _} =
         Runs.append_event(run, %{seq: 3, kind: "progress", payload: %{"chunk" => "more"}})
 
-      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 3}]} =
-               Runs.list_events_for_run_since(run.id, 0, 10, subject)
+      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 3}], false} =
+               Runs.list_events_for_run_since(run.id, 1, 1_000, subject)
     end
 
-    test "returns an empty page when nothing follows the cursor", %{
+    test "returns an empty page at the end of output", %{
       account: account,
       runner: runner,
       subject: subject
@@ -4573,7 +4596,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
-      assert {:ok, []} = Runs.list_events_for_run_since(run.id, 1, 10, subject)
+      assert {:ok, [], false} = Runs.list_events_for_run_since(run.id, 2, 1_000, subject)
     end
 
     test "refuses a cross-account subject", %{account: account, runner: runner} do
@@ -4581,7 +4604,7 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_events_for_run_since(run.id, 0, 10, subject_b)
+      assert {:error, :not_found} = Runs.list_events_for_run_since(run.id, 1, 1_000, subject_b)
     end
   end
 

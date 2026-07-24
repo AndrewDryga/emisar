@@ -50,8 +50,8 @@ defmodule Emisar.Runs.RunEvent.Query do
   def by_kind(queryable, kind),
     do: where(queryable, [events: e], e.kind == ^kind)
 
-  def by_seq_after(queryable \\ all(), seq),
-    do: where(queryable, [events: e], e.seq > ^seq)
+  def by_seq_from(queryable \\ all(), seq),
+    do: where(queryable, [events: e], e.seq >= ^seq)
 
   def by_seq_before(queryable \\ all(), seq),
     do: where(queryable, [events: e], e.seq < ^seq)
@@ -68,18 +68,6 @@ defmodule Emisar.Runs.RunEvent.Query do
   def recent_by_seq(queryable \\ all(), limit) when is_integer(limit) do
     queryable
     |> order_by([events: e], desc: e.seq)
-    |> limit(^limit)
-  end
-
-  @doc """
-  The oldest events first — `seq` ASC, capped at `limit`. The forward-page
-  partner to `recent_by_seq/2`: owns both the order and the limit so a caller
-  reading a run's output from a cursor forward can't get an unordered or
-  unbounded slice. Compose `by_seq_after/2` before it to start past a cursor.
-  """
-  def oldest_by_seq(queryable \\ all(), limit) when is_integer(limit) do
-    queryable
-    |> order_by([events: e], asc: e.seq)
     |> limit(^limit)
   end
 

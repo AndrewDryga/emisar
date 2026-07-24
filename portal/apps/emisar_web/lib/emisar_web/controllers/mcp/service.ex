@@ -156,11 +156,11 @@ defmodule EmisarWeb.MCP.Service do
   while the run is live or output remains undrained. Replaces the stdout/stderr
   tail preview; `scope` binds the emitted cursor to this run and credential.
   """
-  def fixed_run_tail(run, subject, after_seq, scope)
-      when is_integer(after_seq) and is_binary(scope) do
+  def fixed_run_tail(run, subject, {from_seq, offset} = position, scope)
+      when is_integer(from_seq) and is_integer(offset) and is_binary(scope) do
     structured_output = structured_output_summary(run.structured_output, 8_192)
-    {output, last_seq, more?} = tail_output_delta(run, subject, after_seq)
-    cursor = OutputCursor.encode(scope, run.id, last_seq)
+    {output, {next_seq, next_offset}, more?} = tail_output_delta(run, subject, position)
+    cursor = OutputCursor.encode(scope, run.id, next_seq, next_offset)
 
     run
     |> base_run_fields(subject)
@@ -198,39 +198,96 @@ defmodule EmisarWeb.MCP.Service do
   defp drop_nil_values(map),
     do: map |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()
 
-  @tail_read_limit 1_000
   # Encoded-output budget for one tail frame. Kept well under the 512 KiB
   # transport ceiling because the frame mirrors the payload twice (a text block
   # plus structuredContent) and re-escapes it, so the assembled frame runs to
   # roughly 2x this plus the reserved request-id headroom.
   @max_tail_output_bytes 200 * 1_024
 
-  defp tail_output_delta(run, subject, after_seq) do
-    {:ok, events} = Runs.list_events_for_run_since(run.id, after_seq, @tail_read_limit, subject)
-    {output, last_seq, frame_truncated?} = coalesce_within_budget(events, after_seq)
-    {output, last_seq, length(events) >= @tail_read_limit or frame_truncated?}
+  defp tail_output_delta(run, subject, {from_seq, offset}) do
+    {:ok, events, read_more?} =
+      Runs.list_events_for_run_since(run.id, from_seq, @max_tail_output_bytes, subject)
+
+    items = Enum.map(events, &%{seq: &1.seq, stream: event_stream(&1), text: get_chunk(&1)})
+
+    {output, {next_seq, next_offset}, frame_more?} =
+      coalesce_within_budget(items, from_seq, offset)
+
+    {output, {next_seq, next_offset}, frame_more? or read_more?}
   end
 
-  # Coalesce consecutive same-stream progress chunks into one element, in seq
-  # order, until the encoded-output budget is reached. Cost is measured on the
-  # escaped JSON, so a control-char-heavy chunk cannot overrun the frame. At
-  # least one chunk always ships, so the cursor advances and a chatty run cannot
-  # stall the tail.
-  defp coalesce_within_budget(events, after_seq) do
-    {reversed, last_seq, _bytes, truncated?} =
-      Enum.reduce_while(events, {[], after_seq, 0, false}, fn event, {acc, seq, bytes, _trunc} ->
-        stream = event_stream(event)
-        chunk = get_chunk(event)
-        next_bytes = bytes + encoded_cost(acc, stream, chunk)
+  # Coalesce consecutive same-stream chunks into one element, in seq order, until
+  # the encoded-output budget is reached. Cost is measured on the escaped JSON,
+  # so a control-char-heavy chunk cannot overrun the frame; an event larger than
+  # one frame is FRAGMENTED and its `{seq, offset}` position carried in the
+  # cursor, so the next frame resumes mid-event — output is never lost or
+  # duplicated. The first item always ships at least a fragment, so the cursor
+  # advances and a chatty (or huge-chunk) run cannot stall the tail.
+  defp coalesce_within_budget(items, from_seq, offset0) do
+    initial = {[], {from_seq, offset0}, 0, false}
 
-        if next_bytes > @max_tail_output_bytes and acc != [] do
-          {:halt, {acc, seq, bytes, true}}
-        else
-          {:cont, {prepend_output(acc, stream, chunk), event.seq, next_bytes, false}}
-        end
-      end)
+    {reversed, cursor, _bytes, more?} =
+      Enum.reduce_while(items, initial, &step_item(&1, from_seq, offset0, &2))
 
-    {Enum.reverse(reversed), last_seq, truncated?}
+    {Enum.reverse(reversed), cursor, more?}
+  end
+
+  defp step_item(item, from_seq, offset0, {acc, _cursor, bytes, _more}) do
+    start = if item.seq == from_seq, do: offset0, else: 0
+    text = binary_from(item.text, start)
+    remaining = @max_tail_output_bytes - bytes
+    cost = encoded_cost(acc, item.stream, text)
+
+    if cost <= remaining do
+      {:cont, {prepend_output(acc, item.stream, text), {item.seq + 1, 0}, bytes + cost, false}}
+    else
+      halt_fragment(acc, item, start, text, remaining, bytes)
+    end
+  end
+
+  defp halt_fragment(acc, item, start, text, remaining, bytes) do
+    case fit_prefix(acc, item.stream, text, remaining) do
+      "" ->
+        {:halt, {acc, {item.seq, start}, bytes, true}}
+
+      prefix ->
+        emitted = prepend_output(acc, item.stream, prefix)
+        {:halt, {emitted, {item.seq, start + byte_size(prefix)}, bytes, true}}
+    end
+  end
+
+  defp binary_from(text, 0), do: text
+
+  defp binary_from(text, start) when start < byte_size(text),
+    do: binary_part(text, start, byte_size(text) - start)
+
+  defp binary_from(_text, _start), do: ""
+
+  # The largest UTF-8-safe prefix of `text` whose encoded cost fits `remaining`,
+  # or "" when not even one character fits. Binary search over byte length; each
+  # probe is trimmed to a codepoint boundary before it is measured (so Jason
+  # never sees a split character) and only a non-empty prefix updates the best.
+  defp fit_prefix(acc, stream, text, remaining),
+    do: largest_fitting(acc, stream, text, remaining, 0, byte_size(text), "")
+
+  defp largest_fitting(acc, stream, text, remaining, lo, hi, best) when lo <= hi do
+    mid = div(lo + hi, 2)
+    prefix = text |> binary_part(0, mid) |> trim_to_utf8_boundary()
+
+    if encoded_cost(acc, stream, prefix) <= remaining do
+      best = if byte_size(prefix) > byte_size(best), do: prefix, else: best
+      largest_fitting(acc, stream, text, remaining, mid + 1, hi, best)
+    else
+      largest_fitting(acc, stream, text, remaining, lo, mid - 1, best)
+    end
+  end
+
+  defp largest_fitting(_acc, _stream, _text, _remaining, _lo, _hi, best), do: best
+
+  defp trim_to_utf8_boundary(binary) do
+    if String.valid?(binary),
+      do: binary,
+      else: trim_to_utf8_boundary(binary_part(binary, 0, byte_size(binary) - 1))
   end
 
   # Encoded JSON cost of adding `chunk`: the escaped text, plus one element's
@@ -394,7 +451,7 @@ defmodule EmisarWeb.MCP.Service do
     do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
 
   defp live_snapshot_next(run_id, scope),
-    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0), "60s")
+    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0, 0), "60s")
 
   # -- Wait parsing ---------------------------------------------------
 

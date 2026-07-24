@@ -952,6 +952,66 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert first_text <> tail_text(second) == String.duplicate(chunk, 40)
   end
 
+  test "wait_for_run tail fragments a single oversized event across frames losslessly", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-fragment")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("x", 250_000)
+    append_progress!(run, 1, "stdout", chunk)
+
+    first =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => seed_cursor!(conn, run),
+        "timeout" => "0"
+      })["run"]
+
+    first_text = tail_text(first)
+    # One event, larger than a frame: it is split, not dropped and not shipped whole.
+    assert byte_size(first_text) > 0
+    assert byte_size(first_text) < byte_size(chunk)
+
+    second =
+      call(conn, "wait_for_run", %{
+        "run_id" => run.id,
+        "cursor" => first["next"]["arguments"]["cursor"],
+        "timeout" => "0"
+      })["run"]
+
+    # The fragments reconstruct the event exactly — nothing lost or duplicated.
+    assert first_text <> tail_text(second) == chunk
+  end
+
+  test "an escape-heavy event never overruns the transport frame", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "tail-escapes")
+    run = create_mcp_history_run!(account, runner, key, 1)
+
+    # Control characters encode as \uXXXX — 6 bytes each — so 40 KiB of raw
+    # output is ~240 KiB encoded, and the frame mirrors the payload twice. Shipped
+    # whole this would exceed the 512 KiB transport ceiling, so the budget must
+    # measure the ESCAPED form and fragment.
+    chunk = String.duplicate("\u0001", 40_000)
+    append_progress!(run, 1, "stdout", chunk)
+    seed = seed_cursor!(conn, run)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 1})
+
+    {drained, frames} = drain_tail!(conn, run, seed, "", 0)
+
+    assert drained == chunk
+    assert frames > 1
+  end
+
   test "run summaries expose local audit failure only when it occurred", %{
     conn: conn,
     account: account,
@@ -1297,6 +1357,25 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp tail_text(run), do: Enum.map_join(run["output"], & &1["text"])
+
+  # Follow the tail's `next` to completion, asserting every frame comes back as a
+  # real run (a frame that overran the transport ceiling would return an error
+  # instead). Returns the reassembled output and the frame count.
+  defp drain_tail!(conn, run, cursor, acc, frames) when frames < 20 do
+    result =
+      call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => cursor, "timeout" => "0"})
+
+    summary = result["run"] || flunk("tail frame did not return a run: #{inspect(result)}")
+    acc = acc <> tail_text(summary)
+
+    case get_in(summary, ["next", "arguments", "cursor"]) do
+      nil -> {acc, frames + 1}
+      next_cursor -> drain_tail!(conn, run, next_cursor, acc, frames + 1)
+    end
+  end
+
+  defp drain_tail!(_conn, _run, _cursor, _acc, _frames),
+    do: flunk("output tail did not drain within 20 frames")
 
   defp create_mcp_history_run!(account, runner, key, index, overrides \\ %{}) do
     attrs =

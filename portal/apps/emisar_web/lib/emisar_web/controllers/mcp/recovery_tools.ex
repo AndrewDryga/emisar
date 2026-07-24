@@ -153,9 +153,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
     scope = Service.cursor_scope(conn)
 
-    with {:ok, after_seq} <- resolve_output_cursor(target, scope, run_id),
+    with {:ok, position} <- resolve_output_cursor(target, scope, run_id),
          {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
-      render = &render_action_run(&1, subject, after_seq, scope)
+      render = &render_action_run(&1, subject, position, scope)
 
       if timeout_ms == 0 or Runs.ActionRun.terminal?(initial.status) do
         {:ok, %{run: render.(initial)}}
@@ -168,7 +168,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
             subject,
             run_id,
             run_token(initial),
-            after_seq,
+            wake_seq(position),
             deadline,
             Cancellation.topic(conn),
             render
@@ -188,14 +188,19 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp render_action_run(run, subject, nil, scope),
     do: Service.fixed_run_summary(run, subject, tail_scope: scope)
 
-  defp render_action_run(run, subject, after_seq, scope),
-    do: Service.fixed_run_tail(run, subject, after_seq, scope)
+  defp render_action_run(run, subject, {_, _} = position, scope),
+    do: Service.fixed_run_tail(run, subject, position, scope)
+
+  # The wake watches for the NEXT event to deliver; a fragmented mid-event
+  # position drains immediately (timeout "0"), so only its seq matters here.
+  defp wake_seq(nil), do: nil
+  defp wake_seq({seq, _offset}), do: seq
 
   defp await_action_run(
          subject,
          run_id,
          initial_token,
-         after_seq,
+         wake_seq,
          deadline,
          cancellation_topic,
          render
@@ -210,7 +215,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
           {:ok, %{run: render.(current)}}
 
         true ->
-          case wait_for_change(deadline, cancellation_topic, after_seq) do
+          case wait_for_change(deadline, cancellation_topic, wake_seq) do
             :cancelled ->
               {:error, :cancelled}
 
@@ -219,7 +224,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
                 subject,
                 run_id,
                 initial_token,
-                after_seq,
+                wake_seq,
                 deadline,
                 cancellation_topic,
                 render
@@ -381,7 +386,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp page_opts(limit, nil), do: [limit: limit]
   defp page_opts(limit, cursor), do: [limit: limit, cursor: cursor]
 
-  defp wait_for_change(deadline, cancellation_topic, after_seq) do
+  defp wait_for_change(deadline, cancellation_topic, wake_seq) do
     timeout = min(max(deadline - System.monotonic_time(:millisecond), 0), @recheck_ms)
 
     receive do
@@ -391,14 +396,14 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:run_updated, _run} ->
         :changed
 
-      # In tail mode, a progress chunk past the caller's cursor is the change it
-      # is waiting for — wake now instead of at the recheck. Snapshot mode
-      # (nil cursor) still only wakes on a status transition.
-      {:run_event, %{kind: :progress, seq: seq}} when is_integer(after_seq) and seq > after_seq ->
+      # In tail mode, arrival of the next event to deliver is the change the
+      # caller is waiting for — wake now instead of at the recheck. Snapshot mode
+      # (nil wake_seq) still only wakes on a status transition.
+      {:run_event, %{kind: :progress, seq: seq}} when is_integer(wake_seq) and seq >= wake_seq ->
         :changed
 
       {:run_event, _event} ->
-        wait_for_change(deadline, cancellation_topic, after_seq)
+        wait_for_change(deadline, cancellation_topic, wake_seq)
     after
       timeout -> :recheck
     end
