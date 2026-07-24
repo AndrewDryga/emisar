@@ -1202,7 +1202,8 @@ duplicated output. A finished run whose preview omitted persisted output also
 carries a start cursor (with `timeout: "0"`), so a run's complete output stays
 retrievable after it ends — a run capped by the runner, one whose chunks were
 dropped, or one whose events aged out of retention has nothing left to serve and
-so offers no continuation.
+so offers no continuation (and when that vanishing is observed while the
+response is being assembled, the summary also marks the output incomplete).
 
 ```json
 {

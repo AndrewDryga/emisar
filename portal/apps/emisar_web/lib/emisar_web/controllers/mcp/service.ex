@@ -144,12 +144,16 @@ defmodule EmisarWeb.MCP.Service do
     output_preview = run_output_preview(run, subject, stream_cap)
     structured_output = structured_output_summary(run.structured_output, structured_output_cap)
 
+    {next, drain_vanished?} =
+      fixed_run_next(run, subject, structured_output, tail_scope, output_preview)
+
     run
     |> base_run_fields(subject)
-    |> Map.put(:next, fixed_run_next(run, subject, structured_output, tail_scope, output_preview))
+    |> Map.put(:next, next)
     |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
     |> Map.merge(stream_summary(run, output_preview, :stderr))
+    |> flag_output_gap(drain_vanished?)
     |> drop_nil_values()
   end
 
@@ -479,12 +483,12 @@ defmodule EmisarWeb.MCP.Service do
          _tail_scope,
          _preview
        ),
-       do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
+       do: {%{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}, false}
 
   defp fixed_run_next(run, subject, _structured_output, tail_scope, preview) do
     cond do
       not Runs.ActionRun.terminal?(run.status) ->
-        live_snapshot_next(run.id, tail_scope)
+        {live_snapshot_next(run.id, tail_scope), false}
 
       # A finished run whose preview left persisted output unshown is still
       # drainable — hand back a start cursor so the caller can stream the rest
@@ -493,7 +497,7 @@ defmodule EmisarWeb.MCP.Service do
         terminal_drain_next(run, subject, tail_scope)
 
       true ->
-        nil
+        {nil, false}
     end
   end
 
@@ -501,9 +505,18 @@ defmodule EmisarWeb.MCP.Service do
   # drain's cursor carries it down, decremented per delivered event, and a
   # nonzero remainder at the end of output proves retention pruned rows the
   # caller never saw — the drain then ends flagged instead of clean.
+  #
+  # The count runs AFTER the preview, so a zero count with an omission-flagged
+  # preview positively proves retention emptied the run between the two reads.
+  # Offering a drain then would sign a cursor whose empty result ends clean
+  # while this very response shows preview content — mint nothing and mark the
+  # output incomplete instead.
   defp terminal_drain_next(run, subject, scope) do
     {:ok, drainable} = Runs.count_progress_events_for_run(run.id, subject)
-    wait_next(run.id, OutputCursor.encode(scope, run.id, 0, 0, drainable), "0")
+
+    if drainable > 0,
+      do: {wait_next(run.id, OutputCursor.encode(scope, run.id, 0, 0, drainable), "0"), false},
+      else: {nil, true}
   end
 
   # A live cursor asserts no owed-event minimum (remaining 0): retention only
