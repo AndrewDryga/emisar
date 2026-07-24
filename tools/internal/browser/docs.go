@@ -117,7 +117,7 @@ var docsShots = []shot{
 // transition, and audit row is the actual product doing the actual thing.
 //
 // #shell-canvas is the console page without the nav rail; TopCSS keeps every
-// frame the same 1280x1100 box so the cast can crossfade without reflow.
+// frame the same 1280x1180 box (the player windows it to 1280x860 and pans) so the cast can crossfade without reflow.
 //
 // Preconditions (the take verifies and SKIPs loudly otherwise):
 //   - a fresh `./run reset --seed` with EMISAR_DEV_FIXED_ENROLLMENT_KEY set,
@@ -131,18 +131,18 @@ var docsShots = []shot{
 //     fresh /var/lib/emisar re-enrolls); a restarted container presents its
 //     old token, gets a 401 from the fresh DB, and exits.
 var loopFrames = []shot{
-	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
-	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
-	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
-	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
+	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
+	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
+	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
+	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
 	// The Run + Approval groups together are the loop's trail; the folded
 	// drawer still narrates them ("Filters — Type: …"), so the narrowing
 	// stays visible while the frame is the timeline itself.
-	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
 	// The closing beat: the take clicks the loop's own "Run succeeded" row and
 	// photographs the audit event detail — the forensic close-up (actor,
 	// target, request id, payload) one click deep.
-	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1100, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
+	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
 }
 
 // The note Jordan types during the take — it becomes the decision_reason on
@@ -157,7 +157,7 @@ const loopDecisionNote = "validated config, active connections drained, deploy w
 // proportional, so this holds whatever viewport the capture browser really
 // used (chromedp's emulation override is not reliably honored).
 const loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
-const frameH=c.width*1100/1280;
+const frameH=c.width*1180/1280;
 const point=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
 return {x:Math.round((b.x+b.width/2-c.x)/c.width*1000)/10,y:Math.round((b.y+b.height/2-c.y)/frameH*1000)/10}};
 const rect=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();

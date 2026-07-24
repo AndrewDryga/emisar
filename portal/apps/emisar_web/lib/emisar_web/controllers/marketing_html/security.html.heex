@@ -172,12 +172,12 @@
           alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the action's high risk, the exact command, the reason, the policy that held it, and Approve and send / Deny controls."
           label="Held"
           caption="Policy holds the agent's request for a human — the exact command, the reason, and the risk on one screen."
-          click="80.3,44.1"
-          spot="14.3,11.7,21.4,4.8"
+          click="80.3,41.1"
+          spot="14.3,10.9,21.4,4.5"
           note="Actions are governed by policy based on risk level"
-          spot2="3.1,33.6,55.9,5.5"
+          spot2="3.1,31.3,55.9,5.1"
           note2="You see the exact command that will be executed"
-          spot3="3.1,51.5,55.9,17.5"
+          spot3="3.1,48,55.9,16.3"
           note3="AI agents must provide a reason — evidence and expected outcome are optional"
         />
         <:frame
@@ -185,15 +185,15 @@
           alt="The same approval with the decision note typed into the Decide panel: “validated config, active connections drained, deploy window open”."
           label="Decide"
           caption="Jordan reviews and writes the note the record will keep."
-          click="80.3,59.1"
+          click="80.3,55.1"
         />
         <:frame
           src="/images/screenshots/loop/approval-approved.webp"
           alt="The request after the click: approved by Jordan Lee, with the note preserved as the decision reason."
           label="Approved"
           caption="Approved — decider, time, and reason on the record. The gate releases the run."
-          click="80.6,6.1"
-          spot="3.1,20.2,48,9"
+          click="80.6,5.7"
+          spot="3.1,18.8,48,8.4"
           note="Approval reason is recorded"
         />
         <:frame
@@ -201,8 +201,8 @@
           alt="The run detail for the approved action: success on edge-fra-01 with exit code 0, the approval decision inline, the executed command marked secrets redacted, and the captured output."
           label="Executed"
           caption="Only now does the runner execute: exit 0, output scrubbed on the runner before it left the host."
-          click="91.4,6.1"
-          spot="3.1,89,93.8,10"
+          click="91.4,5.7"
+          spot="3.1,82.9,93.8,10.9"
           note="Recorded byte-for-byte"
         />
         <:frame
@@ -210,8 +210,8 @@
           alt="The audit log opened from View activity, pre-filtered to this dispatch's request-id trace: Run succeeded and Run awaiting approval for caddy.reload_config on edge-fra-01."
           label="Recorded"
           caption="Seconds later the audit has the whole trail. Every row opens."
-          click="50,36"
-          spot="2.1,32.4,95.8,7.2"
+          click="50,33.6"
+          spot="2.1,30.2,95.8,6.7"
           note="The run is audit logged"
         />
         <:frame
@@ -219,9 +219,9 @@
           alt="The audit event detail for Run succeeded: when, event id, request id, actor Maya Chen, target runner edge-fra-01 with a link to the run, and the full JSON payload including the executed command and exit code 0."
           label="Evidence"
           caption="The evidence one click deep — actor, target, request id, payload — exportable to your SIEM."
-          spot="3.1,28.6,93.8,11.4"
+          spot="3.1,26.7,93.8,10.6"
           note="Authentication context"
-          spot2="3.1,55.9,93.8,18.2"
+          spot2="3.1,52.1,93.8,17"
           note2="The full payload"
         />
       </.console_cast>
