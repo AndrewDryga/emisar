@@ -20,6 +20,15 @@ cases:
   - action: typesense.debug
     expect:
       stdout_contains: ['"version"', '"state"']
+  - name: typesense.collections-invalid-api-key
+    action: typesense.collections
+    env:
+      TYPESENSE_API_KEY: packtest-canary-typesense-invalid-1a2b
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: typesense.stats
     arrange:
       - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" "$TYPESENSE_URL/health" >/dev/null']
