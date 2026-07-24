@@ -225,7 +225,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
       assert html =~ "Runbook dispatched"
 
-      # The created run streams in via {:run_updated}; its runner is offline,
+      # The created run streams in via the exact execution topic; its runner is offline,
       # so the row flags it — otherwise a stalled wave gives no "why".
       assert has_element?(lv, "[title^='Runner offline']")
 
@@ -488,7 +488,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
 
       # The engine created the run on dispatch — append an output chunk, then
-      # finish it. The terminal {:run_updated} broadcast makes the row fetch
+      # finish it. The terminal exact-execution broadcast makes the row fetch
       # and show its output tail inline, without leaving the page.
       subject = owner_subject(user, account)
       {:ok, [run], _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
@@ -710,7 +710,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "1 failed"
     end
 
-    test "a run_updated for a DIFFERENT execution is ignored", %{
+    test "an exact update for a DIFFERENT execution is ignored", %{
       conn: conn,
       user: user,
       account: account
@@ -727,8 +727,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, [run], _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
 
       # A run carrying a foreign execution id (and a DISTINCT step id so a wrongly
-      # streamed row would be a new, detectable dom_id) arrives on the account
-      # topic. The page is keyed to its OWN execution, so it must drop this one —
+      # streamed row would be a new, detectable dom_id) reaches the handler. The
+      # page is keyed to its OWN execution, so it must drop this one —
       # no `run-other_step-…` row appears.
       foreign = %{
         run
@@ -736,7 +736,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
           runbook_step_id: "other_step"
       }
 
-      send(lv.pid, {:run_updated, foreign})
+      send(lv.pid, {:runbook_execution_updated, foreign})
 
       refute render(lv) =~ "run-other_step-"
       # The original execution row is still the only run row on the page.

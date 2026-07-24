@@ -2801,7 +2801,7 @@ defmodule Emisar.Runs do
 
   # -- PubSub ----------------------------------------------------------
 
-  @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run}`)."
+  @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run_id}`)."
   def subscribe_account_runs(account_id),
     do: Emisar.PubSub.subscribe(account_runs_topic(account_id))
 
@@ -2819,13 +2819,26 @@ defmodule Emisar.Runs do
   def unsubscribe_run(account_id, run_id),
     do: Emisar.PubSub.unsubscribe(run_topic(account_id, run_id))
 
+  @doc """
+  Subscribe to full run transitions for one runbook execution
+  (`{:runbook_execution_updated, run}`). Callers must derive both ids from an
+  execution already authorized for their subject.
+  """
+  def subscribe_runbook_execution(account_id, execution_id),
+    do: Emisar.PubSub.subscribe(runbook_execution_topic(account_id, execution_id))
+
+  def unsubscribe_runbook_execution(account_id, execution_id),
+    do: Emisar.PubSub.unsubscribe(runbook_execution_topic(account_id, execution_id))
+
   defp account_runs_topic(account_id), do: "account:#{account_id}:runs"
   defp run_topic(account_id, run_id), do: "account:#{account_id}:run:#{run_id}"
 
-  # Subscribers (RunDetailLive's meta strip, RunsLive table) need
-  # `runner.name` to render — make `runner` preloaded part of the payload
-  # contract so a `:run_updated` arriving after mount can cleanly replace
-  # `@run` without re-introducing `%NotLoaded{}`.
+  defp runbook_execution_topic(account_id, execution_id),
+    do: "account:#{account_id}:runbook-execution:#{execution_id}"
+
+  # Exact subscribers need `runner.name` to render — make `runner` preloaded
+  # part of the payload contract so an update arriving after mount can cleanly
+  # replace a run without re-introducing `%NotLoaded{}`.
   @doc """
   Internal — broadcast a run cancelled via `cancel_run_in_multi/3`, from the
   caller's `commit_multi(after_commit:)`. No-op for the already-terminal /
@@ -2841,10 +2854,20 @@ defmodule Emisar.Runs do
         _ -> run
       end
 
-    payload = {:run_updated, run}
-    Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), payload)
-    Emisar.PubSub.broadcast(account_runs_topic(run.account_id), payload)
+    Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), {:run_updated, run})
+    broadcast_runbook_execution(run)
+    Emisar.PubSub.broadcast(account_runs_topic(run.account_id), {:run_updated, run.id})
   end
+
+  defp broadcast_runbook_execution(%ActionRun{runbook_execution_id: execution_id} = run)
+       when is_binary(execution_id) do
+    Emisar.PubSub.broadcast(
+      runbook_execution_topic(run.account_id, execution_id),
+      {:runbook_execution_updated, run}
+    )
+  end
+
+  defp broadcast_runbook_execution(_run), do: :ok
 
   defp broadcast_run_event(%ActionRun{} = run, %RunEvent{} = event),
     do: Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), {:run_event, event})

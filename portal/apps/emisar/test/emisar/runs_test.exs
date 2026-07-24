@@ -732,7 +732,7 @@ defmodule Emisar.RunsTest do
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert_receive {:run_updated, %ActionRun{id: id}}, 500
+      assert_receive {:run_updated, id}, 500
       assert id == run.id
     end
   end
@@ -1599,8 +1599,8 @@ defmodule Emisar.RunsTest do
       :ok = Runs.subscribe_account_runs(runner.account_id)
 
       assert :ok = Runs.after_composed_dispatches_committed(changes)
-      assert_receive {:run_updated, %ActionRun{runner_id: runner_id}}, 500
-      assert runner_id == runner.id
+      assert_receive {:run_updated, run_id}, 500
+      assert run_id == changes[{:composed_run, :post_commit_contract, 0}].id
 
       assert_receive {:cloud_to_runner, _generation,
                       %{
@@ -3172,7 +3172,7 @@ defmodule Emisar.RunsTest do
           run.request_id
         )
 
-      Emisar.Runs.subscribe_account_runs(account.id)
+      Emisar.Runs.subscribe_run(account.id, run.id)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok,
@@ -3195,9 +3195,7 @@ defmodule Emisar.RunsTest do
       assert request_id == run.request_id
       assert Runs.peek_run_by_id(run.id).status == :cancelling
 
-      # Payload contract: runner is preloaded so subscribers (e.g.
-      # RunDetailLive's meta strip) can render `runner.name` without
-      # tripping over `%Ecto.Association.NotLoaded{}`.
+      # The exact run topic carries a render-ready struct.
       assert_receive {:run_updated,
                       %ActionRun{status: :cancelling, runner: %Emisar.Runners.Runner{}}},
                      500
@@ -4694,7 +4692,7 @@ defmodule Emisar.RunsTest do
       assert :ok = Runs.subscribe_account_runs(account.id)
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert_receive {:run_updated, %ActionRun{id: id}}, 500
+      assert_receive {:run_updated, id}, 500
       assert id == run.id
     end
 
@@ -4707,6 +4705,25 @@ defmodule Emisar.RunsTest do
 
       {:ok, _run_b} = Runs.create_run(base_attrs(account_b.id, runner_b.id))
       refute_receive {:run_updated, _}, 200
+    end
+
+    test "a restricted same-account subscriber gets only an id it cannot dereference" do
+      account = Fixtures.Accounts.create_account()
+      _database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      subject = owner_subject_for(account)
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      {:ok, database_access} = Emisar.Accounts.RunnerAccess.restricted(["database"], [])
+      Fixtures.Memberships.force_runner_access(membership, database_access)
+
+      restricted_subject =
+        Fixtures.Subjects.subject_for(subject.actor, account, role: subject.role)
+
+      assert :ok = Runs.subscribe_account_runs(account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, web_runner.id))
+      assert_receive {:run_updated, run_id}, 500
+      assert run_id == run.id
+      assert {:error, :not_found} = Runs.fetch_run_by_id(run_id, restricted_subject)
     end
   end
 
@@ -4766,13 +4783,79 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "subscribe_runbook_execution/2" do
+    test "the subscriber receives full runs only for that account and execution" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      watched_execution_id = Repo.generate_id()
+      other_execution_id = Repo.generate_id()
+
+      assert :ok = Runs.subscribe_runbook_execution(account.id, watched_execution_id)
+
+      assert :ok =
+               Runs.broadcast_cancelled_run(
+                 {:cancelled, %{run | runbook_execution_id: other_execution_id}}
+               )
+
+      refute_receive {:runbook_execution_updated, _}, 100
+
+      assert :ok =
+               Runs.broadcast_cancelled_run(
+                 {:cancelled, %{run | runbook_execution_id: watched_execution_id}}
+               )
+
+      assert_receive {:runbook_execution_updated,
+                      %ActionRun{id: run_id, runner: %Emisar.Runners.Runner{}}},
+                     500
+
+      assert run_id == run.id
+    end
+
+    test "the exact execution topic is account-qualified" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
+      {:ok, run_a} = Runs.create_run(base_attrs(account_a.id, runner_a.id))
+      execution_id = Repo.generate_id()
+
+      assert :ok = Runs.subscribe_runbook_execution(account_b.id, execution_id)
+
+      assert :ok =
+               Runs.broadcast_cancelled_run(
+                 {:cancelled, %{run_a | runbook_execution_id: execution_id}}
+               )
+
+      refute_receive {:runbook_execution_updated, _}, 100
+    end
+  end
+
+  describe "unsubscribe_runbook_execution/2" do
+    test "stops delivery from the exact execution topic" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      execution_id = Repo.generate_id()
+
+      assert :ok = Runs.subscribe_runbook_execution(account.id, execution_id)
+      assert :ok = Runs.unsubscribe_runbook_execution(account.id, execution_id)
+
+      assert :ok =
+               Runs.broadcast_cancelled_run(
+                 {:cancelled, %{run | runbook_execution_id: execution_id}}
+               )
+
+      refute_receive {:runbook_execution_updated, _}, 100
+    end
+  end
+
   describe "broadcast_cancelled_run/1" do
     test "broadcasts the run for the {:cancelled, run} shape" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      Runs.subscribe_account_runs(account.id)
+      Runs.subscribe_run(account.id, run.id)
 
       assert :ok = Runs.broadcast_cancelled_run({:cancelled, run})
 

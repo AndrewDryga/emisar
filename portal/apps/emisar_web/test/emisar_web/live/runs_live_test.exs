@@ -286,7 +286,7 @@ defmodule EmisarWeb.RunsLiveTest do
         args: %{}
       })
 
-    send(lv.pid, {:run_updated, run})
+    send(lv.pid, {:run_updated, run.id})
     send(lv.pid, :reload_runs)
     assert render(lv) =~ "linux.late_run"
 

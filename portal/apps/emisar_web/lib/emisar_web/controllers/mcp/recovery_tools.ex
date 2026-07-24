@@ -255,7 +255,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       if timeout_ms == 0 or terminal_execution?(initial.payload.status) do
         {:ok, %{execution: initial.payload}}
       else
-        :ok = Runs.subscribe_account_runs(subject.account.id)
+        :ok = Runs.subscribe_runbook_execution(subject.account.id, execution_id)
         deadline = System.monotonic_time(:millisecond) + timeout_ms
 
         try do
@@ -267,7 +267,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
             Cancellation.topic(conn)
           )
         after
-          :ok = Runs.unsubscribe_account_runs(subject.account.id)
+          :ok = Runs.unsubscribe_runbook_execution(subject.account.id, execution_id)
         end
       end
     end
@@ -408,6 +408,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
         :cancelled
 
       {:run_updated, _run} ->
+        :changed
+
+      {:runbook_execution_updated, _run} ->
         :changed
 
       # In tail mode, arrival of the next event to deliver is the change the

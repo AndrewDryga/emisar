@@ -979,7 +979,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The pending-badge hooks subscribe every authenticated LV to the
       # account's approvals/packs topics and forward those broadcasts.
       # This page renders neither — it must absorb the message, not crash.
-      send(lv.pid, {:approval_updated, %{id: Ecto.UUID.generate()}})
+      send(lv.pid, {:approval_updated, Ecto.UUID.generate()})
 
       assert render(lv) =~ "LLM agents"
     end

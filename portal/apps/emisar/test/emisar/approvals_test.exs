@@ -1024,7 +1024,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert :ok = Approvals.notify_request_created(%{approval_request: request, run: run})
 
-      assert_receive {:approval_updated, %Request{id: id}}
+      assert_receive {:approval_updated, id}
       assert id == request.id
 
       emails = notified_emails()
@@ -1058,7 +1058,7 @@ defmodule Emisar.ApprovalsTest do
 
       :ok = Approvals.subscribe_account_approvals(account.id)
       assert :ok = Approvals.notify_request_created(request, run)
-      assert_receive {:approval_updated, %Request{id: id}}
+      assert_receive {:approval_updated, id}
       assert id == request.id
       assert decider.email in notified_recipients()
     end
@@ -2336,7 +2336,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert :ok = Approvals.broadcast_request_cancelled({:cancelled, request})
 
-      assert_receive {:approval_updated, %Request{id: id}}
+      assert_receive {:approval_updated, id}
       assert id == request.id
     end
 
@@ -2360,7 +2360,7 @@ defmodule Emisar.ApprovalsTest do
 
       # A decision publishes on the topic the subscriber just joined.
       assert {:ok, _} = Approvals.deny_request(request, subject, "no")
-      assert_receive {:approval_updated, %Request{id: id, status: :denied}}
+      assert_receive {:approval_updated, id}
       assert id == request.id
     end
 
@@ -2375,6 +2375,77 @@ defmodule Emisar.ApprovalsTest do
       # The decision happens on B's topic — A's subscriber must hear nothing.
       assert {:ok, _} = Approvals.deny_request(request_b, subject_b, "no")
       refute_receive {:approval_updated, _}, 100
+    end
+
+    test "a restricted same-account subscriber gets only an id it cannot dereference" do
+      account = Fixtures.Accounts.create_account()
+      database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      {_, web_run} = run_fixture(account: account, runner: web_runner)
+      {:ok, request} = Approvals.create_request(web_run, Fixtures.Users.create_user().id, "x")
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      restricted_subject =
+        account
+        |> operator_subject()
+        |> subject_with_runner_access(database_access)
+
+      assert :ok = Approvals.subscribe_account_approvals(account.id)
+      assert {:ok, _} = Approvals.deny_request(request, operator_subject(account), "no")
+      assert_receive {:approval_updated, request_id}
+      assert request_id == request.id
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(request_id, restricted_subject)
+
+      refute database_runner.id == web_runner.id
+    end
+  end
+
+  describe "subscribe_request/2" do
+    test "the exact request subscriber receives the full request only for that account and id" do
+      {account, watched_run} = run_fixture()
+      {_account, other_run} = run_fixture(account: account)
+
+      {:ok, watched} =
+        Approvals.create_request(watched_run, Fixtures.Users.create_user().id, "watched")
+
+      {:ok, other} =
+        Approvals.create_request(other_run, Fixtures.Users.create_user().id, "other")
+
+      subject = operator_subject(account)
+      assert :ok = Approvals.subscribe_request(account.id, watched.id)
+
+      assert {:ok, _} = Approvals.deny_request(other, subject, "no")
+      refute_receive {:approval_request_updated, _}, 100
+
+      assert {:ok, _} = Approvals.deny_request(watched, subject, "no")
+
+      assert_receive {:approval_request_updated, %Request{id: watched_id, status: :denied}}
+
+      assert watched_id == watched.id
+    end
+
+    test "the exact request topic is account-qualified" do
+      {account_a, run_a} = run_fixture()
+      {account_b, _run_b} = run_fixture()
+      {:ok, request_a} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, "x")
+
+      assert :ok = Approvals.subscribe_request(account_b.id, request_a.id)
+      assert {:ok, _} = Approvals.deny_request(request_a, operator_subject(account_a), "no")
+      refute_receive {:approval_request_updated, _}, 100
+    end
+  end
+
+  describe "unsubscribe_request/2" do
+    test "stops delivery from the exact request topic" do
+      {account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+
+      assert :ok = Approvals.subscribe_request(account.id, request.id)
+      assert :ok = Approvals.unsubscribe_request(account.id, request.id)
+      assert {:ok, _} = Approvals.deny_request(request, operator_subject(account), "no")
+      refute_receive {:approval_request_updated, _}, 100
     end
   end
 

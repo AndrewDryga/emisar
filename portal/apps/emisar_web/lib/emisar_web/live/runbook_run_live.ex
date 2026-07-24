@@ -47,6 +47,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:reason, "")
           |> assign(:errors, %{})
           |> assign(:execution, nil)
+          |> assign(:subscribed_execution_id, nil)
           |> assign(:run_statuses, %{})
           # run_id => run, so a presence change can re-insert the streamed
           # rows to refresh their offline markers (streams don't re-render
@@ -80,10 +81,9 @@ defmodule EmisarWeb.RunbookRunLive do
     {:ok, runners, _} = Runners.list_runners_for_account(subject)
     {:ok, runner_actions} = Catalog.list_all_actions_for_account(subject)
 
-    # Execution runs stream in over the account topic as the engine creates +
-    # transitions them (`{:run_updated, run}`); the connection feed lets a row
-    # flag its runner dropping mid-execution (why an in-flight wave stalled).
-    Runs.subscribe_account_runs(socket.assigns.current_account.id)
+    # The connection feed lets a row flag its runner dropping mid-execution
+    # (why an in-flight wave stalled). Run transitions use an exact execution
+    # topic once dispatch or rehydration has authorized that execution.
     Runners.subscribe_connections(socket.assigns.current_account.id)
 
     action_risk = Catalog.most_severe_risk_by_action(runner_actions)
@@ -202,6 +202,8 @@ defmodule EmisarWeb.RunbookRunLive do
   defp maybe_rehydrate_execution(socket, runbook) do
     case Runs.fetch_active_runbook_execution(runbook.id, socket.assigns.current_subject) do
       {:ok, %{execution_id: execution_id, runs: runs}} ->
+        socket = subscribe_execution(socket, execution_id)
+        runs = current_execution_runs(socket, execution_id, runs)
         plan = rehydrated_plan(runbook, socket.assigns.current_subject)
         # Load the tail output of any run that already settled before this
         # refresh, so its rehydrated terminal row shows the preview too.
@@ -370,20 +372,28 @@ defmodule EmisarWeb.RunbookRunLive do
              socket.assigns.current_subject
            ) do
         {:ok, execution} ->
-          # Render the whole plan as placeholder rows up front (one per
-          # step×runner the execution will run), then flip each in place to
-          # its live run as it streams in via the account-runs subscription —
-          # matched by (step_id, runner_id). The list is static; only statuses
-          # change. Reset clears a prior run's rows on a re-dispatch.
+          # Dispatch creates the first wave before returning. Subscribe to the
+          # exact execution, then read that bounded execution once so no initial
+          # transition can fall into the handoff gap. Later transitions stream.
+          socket = subscribe_execution(socket, execution.execution_id)
+          runs = current_execution_runs(socket, execution.execution_id, execution.runs)
+          execution = %{execution | runs: runs}
+
           {:noreply,
            socket
            |> assign(:execution, execution)
-           |> assign(:run_statuses, %{})
-           |> assign(:run_index, %{})
+           |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
+           |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
            |> assign(:run_outputs, %{})
            |> stream(
              :execution_runs,
-             plan_rows(execution.plan, socket.assigns.runners, execution.errors),
+             merged_execution_rows(
+               execution.plan,
+               socket.assigns.runners,
+               runs,
+               %{},
+               execution.errors
+             ),
              reset: true
            )
            |> flash_dispatch_result(execution)}
@@ -421,7 +431,7 @@ defmodule EmisarWeb.RunbookRunLive do
     )
   end
 
-  def handle_info({:run_updated, run}, socket) do
+  def handle_info({:runbook_execution_updated, run}, socket) do
     execution = socket.assigns.execution
 
     if execution && run.runbook_execution_id == execution.execution_id do
@@ -467,6 +477,41 @@ defmodule EmisarWeb.RunbookRunLive do
   # The shared badge hooks forward account-topic broadcasts to every
   # authenticated LiveView — swallow whatever this page doesn't render.
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp subscribe_execution(
+         %{assigns: %{subscribed_execution_id: execution_id}} = socket,
+         execution_id
+       ),
+       do: socket
+
+  defp subscribe_execution(socket, execution_id) do
+    account_id = socket.assigns.current_account.id
+
+    if previous_id = socket.assigns.subscribed_execution_id do
+      :ok = Runs.unsubscribe_runbook_execution(account_id, previous_id)
+    end
+
+    :ok = Runs.subscribe_runbook_execution(account_id, execution_id)
+    assign(socket, :subscribed_execution_id, execution_id)
+  end
+
+  defp current_execution_runs(socket, execution_id, fallback_runs) do
+    case Runs.list_runs_by_runbook_execution(execution_id, socket.assigns.current_subject) do
+      {:ok, runs} -> runs
+      {:error, _reason} -> attach_runners(fallback_runs, socket.assigns.runners)
+    end
+  end
+
+  defp attach_runners(runs, runners) do
+    runners_by_id = Map.new(runners, &{&1.id, &1})
+
+    Enum.map(runs, fn run ->
+      case Map.fetch(runners_by_id, run.runner_id) do
+        {:ok, runner} -> %{run | runner: runner}
+        :error -> run
+      end
+    end)
+  end
 
   # Fetch a finished run's tail output once, the first time it settles — so
   # the row can show an inline preview. In-flight runs and already-fetched
@@ -576,26 +621,22 @@ defmodule EmisarWeb.RunbookRunLive do
   # The execution table streams unified row structs (not raw runs): a
   # `:planned` placeholder per planned (step, runner), each flipped to its
   # live run by a shared dom_id. `run` is nil until the run arrives.
-  defp plan_rows(plan, runners, errors) do
-    failed = Map.new(errors, &{{&1.step_id, &1.runner_id}, &1.reason})
-    Enum.map(plan, &plan_row(&1, runners, failed))
-  end
-
   # Rehydrate rows in PLAN order: each (step, runner) slot shows its run if one
   # was dispatched (matched by the shared step_id/runner_id), else its
   # placeholder. Runs whose plan slot no longer resolves (a step's group changed
   # since dispatch) are appended in dispatch order so nothing the operator saw
   # disappears. Built as one ordered list so a single `stream(reset: true)`
   # renders it — no follow-up `stream_insert` to reshuffle the order.
-  defp merged_execution_rows(plan, runners, runs, outputs) do
+  defp merged_execution_rows(plan, runners, runs, outputs, errors \\ []) do
     by_slot = Map.new(runs, &{{&1.runbook_step_id, &1.runner_id}, &1})
     planned_slots = MapSet.new(plan, &{&1.step_id, &1.runner_id})
+    failed = Map.new(errors, &{{&1.step_id, &1.runner_id}, &1.reason})
 
     plan_part =
       Enum.map(plan, fn item ->
         case Map.fetch(by_slot, {item.step_id, item.runner_id}) do
           {:ok, run} -> live_row(run, outputs)
-          :error -> plan_row(item, runners, %{})
+          :error -> plan_row(item, runners, failed)
         end
       end)
 

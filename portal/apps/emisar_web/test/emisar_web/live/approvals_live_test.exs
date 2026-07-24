@@ -86,8 +86,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
     refute html =~ "late-arriving request"
 
-    _ = pending_request!(account, user.id, "late-arriving request")
-    send(lv.pid, {:approval_updated, nil})
+    request = pending_request!(account, user.id, "late-arriving request")
+    send(lv.pid, {:approval_updated, request.id})
 
     assert render(lv) =~ "late-arriving request"
   end

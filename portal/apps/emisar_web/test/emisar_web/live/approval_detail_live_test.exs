@@ -17,7 +17,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   defp assert_approval_broadcast(lv, request) do
     request_id = request.id
-    assert_receive {:approval_updated, %Approvals.Request{id: ^request_id}}
+    assert_receive {:approval_updated, ^request_id}
     render(lv)
   end
 
@@ -610,14 +610,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Casey Approver"
   end
 
-  test "an approval_updated broadcast for THIS request re-assigns its tally + Decisions live", %{
+  test "an exact request broadcast re-assigns its tally + Decisions live", %{
     conn: conn
   } do
-    # the detail page subscribes to the account approval feed
-    # on connect; an {:approval_updated, %{id}} for THIS request re-assigns the
-    # request + its decisions in place (no reload). A distinct operator records the
-    # first of two votes through the real context (which broadcasts), and the open
-    # page surfaces the new "1 of 2" tally + the decider without re-mounting.
+    # The detail page subscribes to the exact request topic on connect. A
+    # distinct operator records the first of two votes through the real context,
+    # and the open page surfaces the new tally + decider without re-mounting.
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner)
 

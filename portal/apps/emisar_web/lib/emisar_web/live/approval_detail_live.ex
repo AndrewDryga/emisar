@@ -31,7 +31,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       {:ok, request} ->
         if connected?(socket) do
-          Approvals.subscribe_account_approvals(account_id)
+          Approvals.subscribe_request(account_id, request.id)
           Runners.subscribe_connections(account_id)
         end
 
@@ -99,7 +99,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # decided, and whether self-approval is forbidden for them. The context still
   # re-checks both on the decision event (IL-15); these only drive the UI.
   # Deferred behind connected?/1 (like the requester/decider/risk lookups) so the
-  # dead render does no DB work — the connected pass and the {:approval_updated, …}
+  # dead render does no DB work — the connected pass and exact-request update
   # handler (always connected) load the real data.
   defp assign_decisions(socket, request) do
     if connected?(socket) do
@@ -213,7 +213,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  def handle_info({:approval_updated, %{id: id} = updated}, socket)
+  def handle_info({:approval_request_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
     {:noreply,
      socket
@@ -339,7 +339,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   # An approve/deny that didn't take: the request expired or was decided
-  # between render and this click (the live `:approval_updated` broadcast can
+  # between render and this click (the live exact-request broadcast can
   # race a fast click). Re-fetch so the panel flips to decision-history, then
   # flash the real cause instead of leaving the form interactive.
   defp decision_failed(socket, reason) do

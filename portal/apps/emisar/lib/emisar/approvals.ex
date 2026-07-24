@@ -884,16 +884,33 @@ defmodule Emisar.Approvals do
 
   # -- PubSub ----------------------------------------------------------
 
-  @doc "Subscribe the caller to the account's approval feed (`{:approval_updated, request}`)."
+  @doc "Subscribe the caller to the account's approval feed (`{:approval_updated, request_id}`)."
   def subscribe_account_approvals(account_id),
     do: Emisar.PubSub.subscribe(account_approvals_topic(account_id))
 
+  @doc """
+  Subscribe to one approval request's full updates
+  (`{:approval_request_updated, request}`). Callers must derive both ids from a
+  request already authorized for their subject.
+  """
+  def subscribe_request(account_id, request_id),
+    do: Emisar.PubSub.subscribe(request_topic(account_id, request_id))
+
+  def unsubscribe_request(account_id, request_id),
+    do: Emisar.PubSub.unsubscribe(request_topic(account_id, request_id))
+
   defp account_approvals_topic(account_id), do: "account:#{account_id}:approvals"
+  defp request_topic(account_id, request_id), do: "account:#{account_id}:approval:#{request_id}"
 
   defp broadcast_approval(%Request{} = request) do
     Emisar.PubSub.broadcast(
+      request_topic(request.account_id, request.id),
+      {:approval_request_updated, request}
+    )
+
+    Emisar.PubSub.broadcast(
       account_approvals_topic(request.account_id),
-      {:approval_updated, request}
+      {:approval_updated, request.id}
     )
   end
 
