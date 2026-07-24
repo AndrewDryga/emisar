@@ -952,6 +952,58 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert first_text <> tail_text(second) == String.duplicate(chunk, 40)
   end
 
+  test "run_action seeds a followable output cursor on its live run", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "run-action-seed")
+    :ok = Runners.subscribe_runner_transport(runner)
+
+    observe_catalog!(
+      runner,
+      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+      [action()]
+    )
+
+    trust_all!(subject)
+
+    dispatched =
+      call(
+        conn,
+        "run_action",
+        %{
+          "action_id" => "operations.health",
+          "pack_ref" => @pack_ref,
+          "runner_refs" => [runner_ref(runner)],
+          "args" => %{},
+          "reason" => "Seed the output tail",
+          "wait" => "0"
+        },
+        "op_624NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert [summary] = dispatched["runs"]
+    cursor = get_in(summary, ["next", "arguments", "cursor"])
+
+    # The dispatch response itself must carry a usable start cursor — this is the
+    # primary "dispatch then stream" path, and only an end-to-end call proves the
+    # tail scope is actually threaded through dispatch.
+    assert is_binary(cursor)
+
+    append_progress!(summary["run_id"], 1, "stdout", "seeded\n")
+
+    tailed =
+      call(conn, "wait_for_run", %{
+        "run_id" => summary["run_id"],
+        "cursor" => cursor,
+        "timeout" => "0"
+      })["run"]
+
+    assert tail_text(tailed) == "seeded\n"
+  end
+
   test "wait_for_run tail fragments a single oversized event across frames losslessly", %{
     conn: conn,
     account: account,
