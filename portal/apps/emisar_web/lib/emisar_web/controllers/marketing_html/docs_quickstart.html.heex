@@ -23,16 +23,11 @@
         </:dek>
       </.docs_header>
 
-      <.agent_skill_cta
-        class="mt-8"
-        skill="install-emisar"
-        prompt="Install the emisar runner and verify it connects. First ask me which host to install it on and how you can reach it (local shell, SSH, or something else). My enrollment key: emkey-enroll-… (I can mint one at Connect a runner in the emisar dashboard). Use the install-emisar skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/install-emisar/SKILL.md"
+      <.docs_callout
+        kind={:note}
+        icon="hero-clipboard-document-check"
+        title="Before you start, you need:"
       >
-        Or have your coding agent do it — the <code class="text-zinc-300">install-emisar</code>
-        skill walks it through this whole page: install, verify, evidence report.
-      </.agent_skill_cta>
-
-      <.docs_callout kind={:note} title="Before you start, you need:">
         <ul class="mt-3 space-y-2">
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
@@ -85,49 +80,62 @@
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        The key is single-use, so a copy in your shell history goes stale the moment it's used.
-        It's a plain, readable shell script —
-        <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
-          read it first
-        </.link>
-        if you'd rather. It:
-      </p>
-      <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>verifies the download's SHA-256;</span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            creates a dedicated <code class="font-mono">emisar</code>
-            system user and an <code class="font-mono">emisar.service</code>
-            systemd unit (<code class="font-mono">Restart=on-failure</code>);
+      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+          <span class="flex items-center gap-2">
+            <.icon name="hero-command-line" class="h-4 w-4 text-zinc-500" />
+            What does the install script do?
           </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            bakes the key and URL into <code class="font-mono">/etc/emisar/runner.env</code>;
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>);
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>starts the service, which dials out to the control plane over WSS.</span>
-        </li>
-      </ul>
+          <.icon
+            name="hero-chevron-down"
+            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+          />
+        </summary>
+        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+          <p class="text-base leading-7 text-zinc-400">
+            It's a plain, readable shell script —
+            <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
+              read it first
+            </.link>
+            if you'd rather. It:
+          </p>
+          <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>verifies the download's SHA-256;</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                creates a dedicated <code class="font-mono">emisar</code>
+                system user and an <code class="font-mono">emisar.service</code>
+                systemd unit (<code class="font-mono">Restart=on-failure</code>);
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                bakes the key and URL into <code class="font-mono">/etc/emisar/runner.env</code>;
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>);
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>starts the service, which dials out to the control plane over WSS.</span>
+            </li>
+          </ul>
+        </div>
+      </details>
 
       <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Refresh the dashboard — your host appears under <strong>Runners</strong>, online,
-        advertising its action catalog. On the host you can watch the same thing:
+        The moment the runner connects, the dashboard follows on its own — your host appears under <strong>Runners</strong>, online, advertising its action catalog. On the host you can watch
+        the same thing:
       </p>
       <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
 <span class="text-zinc-500">level=INFO msg=cloud.connected actions=89 packs=4 inflight_runs=0</span></.docs_code>
@@ -137,8 +145,7 @@
         auto-pins as trusted. (A <em>custom or edited</em>
         pack lands as <strong class="text-zinc-300">pending</strong>
         instead and waits for one click on the <strong>Packs</strong>
-        page before anything can dispatch it. That's the drift guard; you'll meet it the first time
-        you change a pack.)
+        page before anything can dispatch it. That's the drift guard.)
       </p>
 
       <.docs_h2 id="first-action">4. Run your first action</.docs_h2>
@@ -153,7 +160,7 @@
         is <code class="text-brand-300">low</code>
         risk, so the default policy runs it on the spot. A <code class="text-amber-300">high</code>-risk
         action — killing a process, restarting a service — would stop here for a human approval
-        instead: same flow, one extra click. Either way the run is now in the searchable cloud
+        instead. Either way the run is now in the searchable cloud
         audit and the runner's hash-chained journal, tagged with your reason.
       </p>
 
@@ -237,17 +244,13 @@
 
       <.docs_h2 id="workflow">6. The workflow we recommend</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar is built for the incident, not the steady state. Use it to
-        <strong class="text-zinc-200">investigate fast</strong>
-        — let the agent work down the layers through declared, audited reads — and to
-        <strong class="text-zinc-200">hot-patch</strong>
-        when you have to stop the bleed: a gated, one-approval action that buys you time. What it
+        emisar is built for the incident, not the steady state. What it
         is <em>not</em>
         is your configuration manager. Standing changes an agent makes on a live host are how you
         get drift nobody can reproduce.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        So the durable pattern — the one we'd actually recommend — pairs the agent with your
+        So the durable pattern pairs the agent with your
         infrastructure-as-code:
       </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
@@ -268,28 +271,21 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        See it end to end on a real incident:
-        <.link
+        See it end to end on a real incident: <.link
           navigate={~p"/use-cases/csi-data-loss"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          the 33-hour wipe
-        </.link>
-        — investigated through declared actions, contained behind one approval, then fixed in a
-        Terraform PR the agent wrote.
+        >the 33-hour wipe</.link>.
       </p>
 
-      <.docs_callout kind={:tip} title="What you just built.">
+      <.docs_callout kind={:tip} title="What you just set up.">
         A finite, reviewed action catalog sitting between an AI agent and your host — instead of an
         SSH key and a prayer. The model can only call what you declared, risky calls stop for a
-        human, known secrets are redacted before they leave the box, and there's a searchable audit — with
-        a tamper-evident, hash-chained journal on the host — of who ran what, and why.
+        human, known secrets are redacted before they leave the box, and there's a searchable audit of who ran what, and why.
       </.docs_callout>
 
       <.docs_callout kind={:warn} title="Runner not showing up?">
         Check <code class="font-mono text-xs">journalctl -u emisar -f</code>
-        on the host. The two usual causes are a stale enrollment key (the Connect-a-runner key is
-        single-use — mint a fresh one) and an outbound firewall blocking <code class="font-mono">emisar.dev:443</code>.
+        on the host. The two usual causes are a stale enrollment key (mint a fresh one) and an outbound firewall blocking <code class="font-mono">emisar.dev:443</code>.
       </.docs_callout>
     </.docs_layout>
   </section>

@@ -5663,8 +5663,9 @@ defmodule EmisarWeb.CoreComponents do
   "Use your coding agent" cross-sell — a paste-ready prompt that makes the
   reader's agent run this page's flow via the customer skill (`skills/` on
   GitHub). One recognizable shape on the marketing docs pages and the console
-  rails: border-only card (§8.1 — no wash), sparkles title, one caller-written
-  sentence, then the copyable prompt box and a quiet read-the-skill link.
+  rails: a collapsed-by-default disclosure (border-only, §8.1 — no wash) whose
+  sparkles summary row opens to the caller-written sentence, the copyable
+  prompt box, and a quiet read-the-skill link.
 
   `prompt` is ONE line (it soft-wraps in the box; a single-line attribute
   string survives `mix format`, where escape sequences in attrs would not) and
@@ -5675,8 +5676,8 @@ defmodule EmisarWeb.CoreComponents do
         skill="install-emisar"
         prompt="Install the emisar runner … Use the install-emisar skill: https://…/SKILL.md"
       >
-        Or have your coding agent do it — the <code>install-emisar</code>
-        skill walks it through this whole page.
+        The <code>install-emisar</code>
+        skill walks your agent through this whole page.
       </.agent_skill_cta>
   """
   attr :skill, :string, required: true, doc: "skill directory name under skills/"
@@ -5688,11 +5689,20 @@ defmodule EmisarWeb.CoreComponents do
     assigns = assign(assigns, :prompt_id, "skill-prompt-" <> assigns.skill)
 
     ~H"""
-    <div class={["flex gap-3 rounded-xl border border-zinc-800 p-5 text-sm leading-7", @class]}>
-      <.icon name="hero-sparkles" class="mt-0.5 h-5 w-5 flex-none text-brand-300" />
-      <div class="min-w-0 flex-1">
-        <strong class="text-zinc-100">Use your coding agent</strong>
-        <p class="mt-1 text-zinc-400">
+    <details class={[
+      "group overflow-hidden rounded-xl border border-zinc-800 text-sm leading-7",
+      @class
+    ]}>
+      <summary class="flex cursor-pointer items-center gap-3 px-5 py-4 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+        <.icon name="hero-sparkles" class="h-5 w-5 flex-none text-brand-300" />
+        <strong class="min-w-0 flex-1 text-zinc-100">Use your coding agent</strong>
+        <.icon
+          name="hero-chevron-down"
+          class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+        />
+      </summary>
+      <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+        <p class="text-zinc-400">
           {render_slot(@inner_block)}
         </p>
         <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
@@ -5722,7 +5732,7 @@ defmodule EmisarWeb.CoreComponents do
         </.external_link>.
         </p>
       </div>
-    </div>
+    </details>
     """
   end
 
