@@ -3,6 +3,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
   alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions}
   alias EmisarWeb.MCP.RawJSON
+  alias EmisarWeb.RunnerPresence
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -221,11 +222,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign_decisions(updated)}
   end
 
-  # A runner connected/disconnected in the account — refresh the target
-  # runner's online dot so the operator knows whether approving executes
-  # now or queues.
-  def handle_info(%{event: "presence_diff"}, socket) do
-    {:noreply, assign(socket, :runner_connection, runner_connection(socket.assigns.run))}
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    connection =
+      RunnerPresence.patch_connection(
+        socket.assigns.runner_connection,
+        runner_id(socket.assigns.run),
+        RunnerPresence.normalize(event)
+      )
+
+    {:noreply, assign(socket, :runner_connection, connection)}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -476,6 +481,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
     do: if(Runners.online?(account_id, id), do: :online, else: :offline)
 
   defp runner_connection(_), do: :unknown
+
+  defp runner_id(%{runner_id: id}), do: id
+  defp runner_id(_run), do: nil
 
   def render(assigns) do
     ~H"""

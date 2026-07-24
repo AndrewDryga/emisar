@@ -10,6 +10,8 @@ defmodule EmisarWeb.RunsLive do
   alias Emisar.{ApiKeys, Runners, Runs}
   alias EmisarWeb.LiveTable
 
+  @reload_debounce_ms 500
+
   def mount(_params, _session, socket) do
     if connected?(socket),
       do: Runs.subscribe_account_runs(socket.assigns.current_account.id)
@@ -22,7 +24,8 @@ defmodule EmisarWeb.RunsLive do
     {:ok,
      socket
      |> assign(:page_title, "Runs")
-     |> assign(:any_runners?, any_runners?)}
+     |> assign(:any_runners?, any_runners?)
+     |> assign(:reload_scheduled?, false)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -35,9 +38,11 @@ defmodule EmisarWeb.RunsLive do
   end
 
   def handle_info({:run_updated, _run}, socket) do
-    # A run in this account changed — re-run the current filter/page.
-    {:noreply, load_runs(socket, socket.assigns.filter_params)}
+    {:noreply, schedule_reload(socket)}
   end
+
+  def handle_info(:reload_runs, socket),
+    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload_runs()}
 
   # Total catch-all: the badge hooks forward EVERY account-topic broadcast
   # (runner connection, approval, pack updates) to every authenticated LV, so
@@ -55,6 +60,13 @@ defmodule EmisarWeb.RunsLive do
       |> put_runner_options(subject)
       |> resolve_dispatcher_children(params, subject)
 
+    load_runs(socket, params, filters)
+  end
+
+  # Reuse the mounted filters on a PubSub refresh. Rebuilding them materializes
+  # the complete visible runner fleet merely to reconstruct one dropdown.
+  defp load_runs(socket, params, filters) do
+    subject = socket.assigns.current_subject
     opts = LiveTable.params_to_opts(params, filters)
     run_opts = Keyword.put(opts, :preload, [:runner, :api_key, :requested_by])
 
@@ -82,6 +94,17 @@ defmodule EmisarWeb.RunsLive do
       {:error, _} ->
         load_runs(socket, %{})
     end
+  end
+
+  defp reload_runs(socket) do
+    load_runs(socket, socket.assigns.filter_params, socket.assigns.filters)
+  end
+
+  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
+
+  defp schedule_reload(socket) do
+    Process.send_after(self(), :reload_runs, @reload_debounce_ms)
+    assign(socket, :reload_scheduled?, true)
   end
 
   # The Runner filter's options are per-account, so inject the account's runners

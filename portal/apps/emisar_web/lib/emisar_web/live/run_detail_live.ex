@@ -3,6 +3,7 @@ defmodule EmisarWeb.RunDetailLive do
   alias Emisar.{Approvals, Runners, Runs}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
+  alias EmisarWeb.RunnerPresence
 
   # The output terminal shows the most-recent N chunks — the live stream caps at
   # it (stream_insert :limit) AND the initial mount load fetches exactly it — so
@@ -116,10 +117,16 @@ defmodule EmisarWeb.RunDetailLive do
      |> assign(:output_present?, true)}
   end
 
-  # The runner's live connection changed — re-derive its state so an
-  # in-flight run reflects a runner that just dropped (or reconnected).
-  def handle_info(%{event: "presence_diff"}, socket),
-    do: {:noreply, assign(socket, :runner_connection, runner_connection(socket.assigns.run))}
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    connection =
+      RunnerPresence.patch_connection(
+        socket.assigns.runner_connection,
+        socket.assigns.run.runner_id,
+        RunnerPresence.normalize(event)
+      )
+
+    {:noreply, assign(socket, :runner_connection, connection)}
+  end
 
   def handle_info(_, socket), do: {:noreply, socket}
 

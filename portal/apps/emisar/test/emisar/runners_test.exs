@@ -179,6 +179,90 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "fetch_fleet_health/1" do
+    test "counts the scoped fleet states without materializing runner rows" do
+      {account, _user, subject} = account_with_owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+
+      _online =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "online",
+          connected?: true
+        )
+
+      offline =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "offline",
+          connected?: true
+        )
+
+      :ok = Presence.untrack(self(), Presence.topic(account.id), offline.id)
+
+      _pending =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "pending",
+          connected?: false
+        )
+
+      disabled =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "disabled",
+          connected?: false
+        )
+
+      {:ok, _disabled} = Runners.disable_runner(disabled, subject)
+      _other = Fixtures.Runners.create_runner(account_id: other_account.id, connected?: true)
+
+      assert Runners.fetch_fleet_health(subject) ==
+               {:ok, %{online: 1, offline: 1, pending: 1, disabled: 1}}
+    end
+
+    test "applies restricted membership access before counting" do
+      {account, _owner, _subject} = account_with_owner_subject()
+
+      in_scope =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "visible",
+          connected?: true
+        )
+
+      _out_of_scope =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "hidden",
+          connected?: true
+        )
+
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.fetch_fleet_health(subject) ==
+               {:ok, %{online: 1, offline: 0, pending: 0, disabled: 0}}
+    end
+
+    test "rejects a subject without view permission" do
+      account = Fixtures.Accounts.create_account()
+      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Runners.fetch_fleet_health(no_view) == {:error, :unauthorized}
+    end
+  end
+
   describe "list_group_summaries/1" do
     test "returns {group, count} tuples for the account's non-deleted runners" do
       {account, _user, subject} = account_with_owner_subject()
@@ -1542,8 +1626,16 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id)
       assert Runners.any_runners?(subject)
 
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
-      # Viewers can see runners, so the nudge predicate holds for them too.
+      viewer_user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer_user.id,
+          role: "viewer"
+        )
+
+      viewer = Fixtures.Subjects.membership_subject(membership)
       assert Runners.any_runners?(viewer)
     end
   end

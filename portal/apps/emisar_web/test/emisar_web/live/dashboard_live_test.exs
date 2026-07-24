@@ -379,8 +379,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Get to your first gated run"
 
       # A runner registers elsewhere; the dashboard hears the account
-      # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
-      # rather than re-querying per message. The reload fires on the
+      # broadcast (2-tuple) or a topology-changing presence_diff and arms a
+      # debounced reload rather than re-querying per message. The reload fires on the
       # :reload_dashboard timer — inject it directly to stand in for the timer.
       # The checklist flips LIVE: step 1 reads done without a refresh.
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -388,7 +388,11 @@ defmodule EmisarWeb.DashboardLiveTest do
       send(lv.pid, :reload_dashboard)
       assert render(lv) =~ "1 runner connected"
 
-      send(lv.pid, %{event: "presence_diff"})
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+      })
+
       send(lv.pid, :reload_dashboard)
       assert render(lv) =~ "1 of 3 done"
 

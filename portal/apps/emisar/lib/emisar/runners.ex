@@ -137,6 +137,31 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc """
+  Counts the complete runner fleet visible to the subject without materializing
+  runner rows. Presence supplies current online ids; the database aggregate
+  partitions the scoped fleet into online, offline, pending, and disabled.
+  """
+  def fetch_fleet_health(%Subject{account: %{id: account_id}} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      counts =
+        Runner.Query.not_deleted()
+        |> scope_to_subject_membership(subject)
+        |> Runner.Query.fleet_health(Map.keys(connection_metas(account_id)))
+        |> Authorizer.for_subject(subject)
+        |> Repo.one()
+
+      offline = max(counts.total - counts.online - counts.pending - counts.disabled, 0)
+      {:ok, Map.put(counts, :offline, offline) |> Map.delete(:total)}
+    end
+  end
+
+  def fetch_fleet_health(%Subject{}), do: {:error, :unauthorized}
+
   # Membership access is current authorization data, not session state. Resolve
   # the active membership before every runner query so suspension, deletion, and
   # access changes immediately affect open sessions and old API keys.
@@ -849,27 +874,25 @@ defmodule Emisar.Runners do
   `view_runners`; returns `false` for a subject with no account or without the
   permission — i.e. no badge. A bare boolean, matching the sidebar count badges.
   """
-  def fleet_all_offline?(%Subject{account: %{id: account_id}} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
-      :ok ->
-        count_billable_runners(account_id) > 0 and map_size(connection_metas(account_id)) == 0
+  def fleet_all_offline?(%Subject{account: %{id: _account_id}} = subject) do
+    case fetch_fleet_health(subject) do
+      {:ok, counts} ->
+        counts.online == 0 and counts.offline + counts.pending > 0
 
-      _ ->
+      {:error, _reason} ->
         false
     end
   end
 
   def fleet_all_offline?(%Subject{}), do: false
 
-  @doc "Whether the account has ANY active runner — sequences fleet-dependent nudges."
-  def any_runners?(%Subject{account: %{id: account_id}} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
-      :ok -> count_billable_runners(account_id) > 0
-      _ -> false
+  @doc "Whether the subject can see ANY active runner — sequences fleet-dependent nudges."
+  def any_runners?(%Subject{} = subject) do
+    case fetch_fleet_health(subject) do
+      {:ok, counts} -> counts.online + counts.offline + counts.pending > 0
+      {:error, _reason} -> false
     end
   end
-
-  def any_runners?(%Subject{}), do: false
 
   @doc """
   Whether the account's whole active fleet is signed-only — there's at least one
@@ -1076,8 +1099,8 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — Runs dispatch/cancel: push an outbound envelope to the
-  runner's socket process. The topic carries the account id, so a caller
-  can only address runners inside the account it already proved.
+  runner's socket process. Callers must pass an account/runner pair already
+  authorized by their owning operation.
   """
   # Directed (single-consumer) publish — the runner's socket process is the
   # topic's only subscriber, so this is a "deliver", not a broadcast_* event.

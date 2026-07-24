@@ -451,9 +451,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     refute render(lv) =~ connected_badge
 
-    # The runner connects elsewhere; the page hears the diff and re-reads.
-    Runners.connect_runner(runner)
-    send(lv.pid, %{event: "presence_diff"})
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+    })
 
     assert render(lv) =~ connected_badge
   end

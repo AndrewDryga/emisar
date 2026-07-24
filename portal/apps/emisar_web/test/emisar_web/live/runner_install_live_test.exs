@@ -158,5 +158,30 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert render(lv) =~ "curl -sSL"
     end
+
+    test "does NOT query or redirect for heartbeat metadata updates", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
+      assert [%EnrollmentKey{} = key] = Repo.all(EnrollmentKey)
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_enrollment_key_id: key.id,
+          connected?: false
+        )
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{
+          joins: %{runner.id => %{metas: [%{action_load: 1}]}},
+          leaves: %{runner.id => %{metas: [%{action_load: 0}]}}
+        }
+      })
+
+      assert render(lv) =~ "curl -sSL"
+    end
   end
 end

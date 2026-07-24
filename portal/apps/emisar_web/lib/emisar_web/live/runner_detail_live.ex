@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runners, Runs}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
+  alias EmisarWeb.RunnerPresence
 
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -122,13 +123,9 @@ defmodule EmisarWeb.RunnerDetailLive do
     "This pack version was retired by a newer release. Update it on the runner or re-trust it on the Packs page."
   end
 
-  # A runner connected/disconnected somewhere in the account — re-fetch
-  # so the status badge and heartbeat refresh from presence.
-  def handle_info(%{event: "presence_diff"}, socket) do
-    case Runners.fetch_runner_by_id(socket.assigns.runner.id, socket.assigns.current_subject) do
-      {:ok, runner} -> {:noreply, assign(socket, :runner, runner)}
-      {:error, _} -> {:noreply, socket}
-    end
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+    {:noreply, update(socket, :runner, &RunnerPresence.patch_runner(&1, changes))}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}

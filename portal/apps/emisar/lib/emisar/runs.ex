@@ -2810,8 +2810,8 @@ defmodule Emisar.Runs do
 
   @doc """
   Subscribe to one run's live updates — `{:run_updated, run}` transitions
-  plus `{:run_event, event}` progress chunks. The topic carries the
-  account id, so a subscriber can only name runs inside its own account.
+  plus `{:run_event, event}` progress chunks. Callers must derive both ids from
+  a run already authorized for their subject.
   """
   def subscribe_run(account_id, run_id),
     do: Emisar.PubSub.subscribe(run_topic(account_id, run_id))

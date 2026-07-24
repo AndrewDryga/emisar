@@ -5,7 +5,10 @@ defmodule EmisarWeb.RunnersLive do
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
+  alias EmisarWeb.RunnerPresence
   alias EmisarWeb.UrlHelpers
+
+  @reload_debounce_ms 500
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -17,14 +20,31 @@ defmodule EmisarWeb.RunnersLive do
      |> assign(:page_title, "Runners")
      |> assign(:install_command, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
-     |> assign(:show_troubleshooting?, false)}
+     |> assign(:show_troubleshooting?, false)
+     |> assign(:reload_scheduled?, false)}
   end
 
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
   end
 
-  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, reload(socket)}
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+
+    if MapSet.size(changes.topology_ids) > 0 do
+      {:noreply, schedule_reload(socket)}
+    else
+      runners = Enum.map(socket.assigns.runners, &RunnerPresence.patch_runner(&1, changes))
+      {:noreply, assign(socket, :runners, runners)}
+    end
+  end
+
+  def handle_info(:reload_runners, socket),
+    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
 
   # The empty-state wizard's grace period elapsed with no runner — reveal its
   # troubleshooting checklist (a runner joining first re-runs load/2, which drops
@@ -126,6 +146,26 @@ defmodule EmisarWeb.RunnersLive do
   # PubSub-driven refresh — re-run the current page/filter.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
+  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
+
+  defp schedule_reload(socket) do
+    Process.send_after(self(), :reload_runners, @reload_debounce_ms)
+    assign(socket, :reload_scheduled?, true)
+  end
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign(:runners, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:show_wizard?, false)
+    |> assign(:filter_params, params)
+    |> assign(:filters, Runners.Runner.Query.filters())
+    |> assign(:groups, [])
+    |> assign(:fleet, %{online: 0, offline: 0, pending: 0, disabled: 0})
+    |> assign(:fleet_signed?, false)
+    |> assign(:load_error?, false)
+  end
+
   defp load(socket, params) do
     filters = Runners.Runner.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
@@ -135,7 +175,7 @@ defmodule EmisarWeb.RunnersLive do
     # same scoped fleet; counts must not reveal inaccessible runners.
 
     # Fleet health is counted from the complete accessible set, not the current
-    # page, because connection presence is not available to the DB aggregate.
+    # page; Presence ids are folded into the same scoped aggregate.
     fleet = load_fleet_health(socket.assigns.current_subject)
 
     # When every accessible active runner enforces signatures, surface the
@@ -208,21 +248,10 @@ defmodule EmisarWeb.RunnersLive do
   defp maybe_mint_install(socket, false), do: socket
 
   defp load_fleet_health(subject) do
-    case Runners.list_all_runners_for_account(subject) do
-      {:ok, runners} -> fleet_health(runners)
+    case Runners.fetch_fleet_health(subject) do
+      {:ok, fleet} -> fleet
       _ -> %{online: 0, offline: 0, pending: 0, disabled: 0}
     end
-  end
-
-  defp fleet_health(runners) do
-    counts = Enum.frequencies_by(runners, &Runners.connection_state/1)
-
-    %{
-      online: Map.get(counts, :online, 0),
-      offline: Map.get(counts, :offline, 0),
-      pending: Map.get(counts, :pending, 0),
-      disabled: Map.get(counts, :disabled, 0)
-    }
   end
 
   def render(assigns) do

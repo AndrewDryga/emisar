@@ -10,7 +10,7 @@ defmodule EmisarWeb.UserAuth do
   import Phoenix.Controller
   alias Emisar.{Accounts, Auth, Marketing, SSO}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.{Analytics, MarketingAttribution}
+  alias EmisarWeb.{Analytics, MarketingAttribution, RunnerPresence}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no SSO
@@ -551,15 +551,21 @@ defmodule EmisarWeb.UserAuth do
   # disconnects. The approvals hook returns `{:cont, ...}` so the host LV's own
   # `handle_info/2` (e.g. reload the approvals table) still runs; the packs hook
   # `{:halt}`s — no host LV needs that message; the fleet hook forwards
-  # `presence_diff` (the dashboard reloads on it) but `{:halt}`s its own debounce
-  # tick. The fleet recompute is debounced (the connections topic is hot).
+  # `presence_diff` so host pages can patch their visible state, but `{:halt}`s
+  # its own topology-recompute tick.
   def on_mount(:track_pending_approvals, _params, _session, socket) do
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
       subject = socket.assigns[:current_subject]
-      Emisar.Approvals.subscribe_account_approvals(account_id)
-      Emisar.Catalog.subscribe_account_packs(account_id)
-      Emisar.Runners.subscribe_connections(account_id)
+
+      if subject && Emisar.Approvals.subject_can_view_approvals?(subject),
+        do: Emisar.Approvals.subscribe_account_approvals(account_id)
+
+      if subject && Emisar.Catalog.subject_can_view_packs?(subject),
+        do: Emisar.Catalog.subscribe_account_packs(account_id)
+
+      if subject && Emisar.Runners.subject_can_view_runners?(subject),
+        do: Emisar.Runners.subscribe_connections(account_id)
 
       {:cont,
        socket
@@ -675,14 +681,18 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_packs(_msg, socket), do: {:cont, socket}
 
-  # Fleet-offline nav alert. The runner-connections topic is high-frequency (a
-  # busy fleet flaps), and this hook runs on EVERY page, so a `presence_diff`
-  # only ARMS a 500ms trailing debounce (mirrors dashboard_live) — the recompute
-  # runs at most ~2×/s per page, not once per flap. `presence_diff` is forwarded
-  # (`:cont`) so a host LV that watches it (the dashboard) still reloads; the
-  # internal `:recompute_fleet_offline` tick HALTS — no host LV expects it.
-  defp refresh_fleet_offline(%{event: "presence_diff"}, socket),
-    do: {:cont, schedule_fleet_recompute(socket)}
+  # Heartbeats update Presence metadata without changing fleet connectivity.
+  # Recompute the nav alert only for join-only or leave-only topology changes;
+  # host LiveViews still receive the diff to patch their own visible state.
+  defp refresh_fleet_offline(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+
+    if MapSet.size(changes.topology_ids) > 0 do
+      {:cont, schedule_fleet_recompute(socket)}
+    else
+      {:cont, socket}
+    end
+  end
 
   defp refresh_fleet_offline(:recompute_fleet_offline, socket) do
     subject = socket.assigns[:current_subject]

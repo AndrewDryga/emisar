@@ -1,6 +1,7 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs, SSO}
+  alias EmisarWeb.RunnerPresence
 
   @reload_debounce_ms 500
 
@@ -37,11 +38,19 @@ defmodule EmisarWeb.DashboardLive do
     Billing.subject_can_manage_billing?(subject) and not Runs.subject_can_view_runs?(subject)
   end
 
-  # A busy fleet emits many account-topic broadcasts per second, and load/1 is
-  # ~9 queries — far too heavy to run per message. Coalesce a burst into one
-  # reload via a short trailing debounce: the first message arms the timer,
-  # later ones are absorbed by the already-scheduled flag.
-  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, schedule_reload(socket)}
+  # Durable domain events and real runner joins/leaves can arrive in bursts, and
+  # load/1 is ~9 queries. Coalesce those topology changes; heartbeat metadata is
+  # ignored by the Presence handler below.
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+
+    if MapSet.size(changes.topology_ids) > 0 do
+      {:noreply, schedule_reload(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({_event, _struct}, socket), do: {:noreply, schedule_reload(socket)}
 
   def handle_info(:reload_dashboard, socket),

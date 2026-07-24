@@ -730,9 +730,16 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running", runner_connected?: false})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Runner disconnected"
+
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{run.runner_id => %{metas: [%{}]}}, leaves: %{}}
+    })
+
+    refute render(lv) =~ "Runner disconnected"
   end
 
   test "a queued run whose runner is offline explains why it's stuck", %{conn: conn} do

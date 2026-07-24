@@ -683,16 +683,12 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # The catalog changed under us — a runner advertised something new, a peer
-  # trusted/rejected/deleted a version, or the retention sweep ran (the
-  # pack-trust broadcasts the on_mount badge hook already subscribes this page
-  # to), or fleet presence shifted which runners advertise. Coalesce bursts —
-  # a reconnecting fleet fires one broadcast per runner — into a single
-  # reload a beat later.
+  # The durable catalog changed under us — a runner advertised something new, a
+  # peer trusted/rejected/deleted a version, or the retention sweep ran. The
+  # pack-trust broadcast is the source of truth; connection Presence does not
+  # change which durable runner advertisements the page renders.
   def handle_info({:pack_trust_changed, _account_id}, socket),
     do: {:noreply, queue_refresh(socket)}
-
-  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, queue_refresh(socket)}
 
   def handle_info(:refresh_packs, socket),
     do: {:noreply, socket |> assign(:refresh_queued?, false) |> load_packs()}

@@ -10,6 +10,8 @@ defmodule EmisarWeb.AuditLive do
   alias Emisar.{ApiKeys, Audit, Billing}
   alias EmisarWeb.{AuditSummary, LiveTable}
 
+  @reload_debounce_ms 500
+
   def mount(params, _session, socket) do
     # Audit log is the canonical "what just happened" surface — any
     # mutation that commits an `Audit.Event` row in the same multi gets
@@ -30,17 +32,29 @@ defmodule EmisarWeb.AuditLive do
      |> assign(
        :filters_open?,
        LiveTable.has_active_filters?(params, Audit.Event.Query.filters())
-     )}
+     )
+     |> assign(:reload_scheduled?, false)}
   end
 
   def handle_params(params, _uri, socket) do
     {:noreply, load(socket, params)}
   end
 
-  def handle_info({:audit_event, _event}, socket),
-    do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
+  def handle_info({:audit_event, _event}, socket), do: {:noreply, schedule_reload(socket)}
+
+  def handle_info(:reload_audit, socket),
+    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
+
+  defp schedule_reload(socket) do
+    Process.send_after(self(), :reload_audit, @reload_debounce_ms)
+    assign(socket, :reload_scheduled?, true)
+  end
 
   def handle_event("toggle_filters", _params, socket),
     do: {:noreply, update(socket, :filters_open?, &(!&1))}

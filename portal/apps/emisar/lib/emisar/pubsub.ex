@@ -5,10 +5,11 @@ defmodule Emisar.PubSub do
   `Approvals.subscribe_account_approvals/1`, …) — this module only knows the
   server and the raw operations they compose.
 
-  Topic convention: everything is `account:<id>:`-prefixed (including the
-  per-run and per-runner topics), so cross-account leakage is impossible by
-  construction — a subscriber can only ever name topics inside its own
-  account.
+  Account-domain topics are `account:<id>:`-prefixed, including per-run and
+  per-runner topics. The prefix partitions delivery; it is not authorization.
+  Domain subscription helpers must derive the account id from an already
+  authorized subject or resource. Session, SSO-link, Presence, and process-drain
+  topics use their own narrowly owned naming schemes.
   """
   @pubsub Emisar.PubSub.Server
 

@@ -227,7 +227,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       # The created run streams in via {:run_updated}; its runner is offline,
       # so the row flags it — otherwise a stalled wave gives no "why".
-      assert render(lv) =~ "offline"
+      assert has_element?(lv, "[title^='Runner offline']")
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+      })
+
+      refute has_element?(lv, "[title^='Runner offline']")
     end
 
     test "dispatching stays on the page and streams the execution's runs in", %{

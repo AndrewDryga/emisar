@@ -23,6 +23,7 @@ defmodule EmisarWeb.RunnerInstallLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
   alias EmisarWeb.RunnerInstall
+  alias EmisarWeb.RunnerPresence
   alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
@@ -66,13 +67,14 @@ defmodule EmisarWeb.RunnerInstallLive do
   # joining (a reconnect, another host coming up) is not this operator's install
   # and must not hijack the page. We check the joined runner's `bootstrap_enrollment_key_id`
   # against the key we minted; a leaving/flapping runner never matches (joins only).
-  def handle_info(%{event: "presence_diff", payload: %{joins: joins}}, socket)
-      when map_size(joins) > 0 do
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+    joined_ids = MapSet.to_list(changes.joined_ids)
     account = socket.assigns.current_account
 
-    if socket.assigns.install_key_id &&
+    if (joined_ids != [] and socket.assigns.install_key_id) &&
          Runners.any_runner_bootstrapped_by_key?(
-           Map.keys(joins),
+           joined_ids,
            socket.assigns.install_key_id,
            account.id
          ) do

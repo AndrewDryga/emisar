@@ -521,10 +521,19 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # so the decision panel surfaces the shared offline notice.
     request = pending_request(account, user)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Runner offline"
     assert html =~ "queues and runs once the runner reconnects"
+
+    run = Repo.get!(Runs.ActionRun, request.run_id)
+
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{run.runner_id => %{metas: [%{}]}}, leaves: %{}}
+    })
+
+    refute render(lv) =~ "Runner offline"
   end
 
   test "a nonexistent request id redirects to the approvals list with a flash", %{conn: conn} do

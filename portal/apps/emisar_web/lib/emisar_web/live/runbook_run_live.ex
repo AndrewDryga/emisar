@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunbookRunLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Policies, Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
+  alias EmisarWeb.RunnerPresence
 
   # The blast-radius assign's resting shape, so the render reads it without a
   # nil-guard: `counts` (step_index => runner count), `total`/`waves` (nil until
@@ -87,11 +88,13 @@ defmodule EmisarWeb.RunbookRunLive do
 
     action_risk = Catalog.most_severe_risk_by_action(runner_actions)
     blast_radius = build_blast_radius(runbook, subject)
+    online_runner_ids = runners |> Enum.filter(& &1.online?) |> MapSet.new(& &1.id)
 
     socket
     # Runners back the per-step target labels (runner-id selectors resolve
     # to names) — each step carries its own target, set in the editor.
     |> assign(:runners, runners)
+    |> assign(:online_runner_ids, online_runner_ids)
     |> assign(:steps, Runbooks.expand(runbook))
     # action_id → risk, so the plan can show which steps are read-only
     # (low) vs which will stop for approval before a fleet-wide dispatch.
@@ -113,6 +116,7 @@ defmodule EmisarWeb.RunbookRunLive do
   defp empty_run_form(socket) do
     socket
     |> assign(:runners, [])
+    |> assign(:online_runner_ids, MapSet.new())
     |> assign(:steps, [])
     |> assign(:action_risk, %{})
     |> assign(:blast_radius, @empty_blast)
@@ -436,16 +440,28 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  # A runner connected/disconnected — streamed rows don't re-render on a bare
-  # assign change, so re-insert the execution's runs to refresh each row's
-  # offline marker against current presence.
-  def handle_info(%{event: "presence_diff"}, socket) do
-    socket =
-      Enum.reduce(Map.values(socket.assigns.run_index), socket, fn run, socket ->
-        stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
-      end)
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    changes = RunnerPresence.normalize(event)
+    tracked_ids = tracked_runner_ids(socket)
+    affected_ids = MapSet.intersection(changes.topology_ids, tracked_ids)
 
-    {:noreply, socket}
+    if MapSet.size(affected_ids) == 0 do
+      {:noreply, socket}
+    else
+      online_ids =
+        RunnerPresence.patch_online_ids(
+          socket.assigns.online_runner_ids,
+          changes,
+          tracked_ids
+        )
+
+      socket =
+        socket
+        |> assign(:online_runner_ids, online_ids)
+        |> reinsert_affected_runs(affected_ids)
+
+      {:noreply, socket}
+    end
   end
 
   # The shared badge hooks forward account-topic broadcasts to every
@@ -471,6 +487,21 @@ defmodule EmisarWeb.RunbookRunLive do
     else
       socket
     end
+  end
+
+  defp tracked_runner_ids(socket) do
+    runner_ids = MapSet.new(socket.assigns.runners, & &1.id)
+    run_ids = MapSet.new(socket.assigns.run_index, fn {_id, run} -> run.runner_id end)
+    MapSet.union(runner_ids, run_ids)
+  end
+
+  defp reinsert_affected_runs(socket, affected_ids) do
+    socket.assigns.run_index
+    |> Map.values()
+    |> Enum.filter(&MapSet.member?(affected_ids, &1.runner_id))
+    |> Enum.reduce(socket, fn run, socket ->
+      stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
+    end)
   end
 
   defp finished_count(run_statuses),
@@ -515,22 +546,22 @@ defmodule EmisarWeb.RunbookRunLive do
 
   # An in-flight run whose runner's socket is currently gone — surfaces *why*
   # a wave stalled instead of leaving the row looking merely slow.
-  defp offline_mid_run?(%{status: status} = run)
+  defp offline_mid_run?(%{status: status} = run, online_runner_ids)
        when status in [:pending, :sent, :running, :cancelling],
-       do: not Runners.online?(run.account_id, run.runner_id)
+       do: not MapSet.member?(online_runner_ids, run.runner_id)
 
-  defp offline_mid_run?(_), do: false
+  defp offline_mid_run?(_run, _online_runner_ids), do: false
 
   # Pre-Start offline preflight: the distinct planned target runners that are
   # currently offline. Dispatch to an offline runner QUEUES (waits for reconnect)
   # rather than failing, so this is a heads-up before Start, not a hard blocker.
-  defp offline_planned_runners(plan, runners, account_id) do
+  defp offline_planned_runners(plan, runners, online_runner_ids) do
     names = Map.new(runners, &{&1.id, &1.name})
 
     plan
     |> Enum.map(& &1.runner_id)
     |> Enum.uniq()
-    |> Enum.reject(&Runners.online?(account_id, &1))
+    |> Enum.reject(&MapSet.member?(online_runner_ids, &1))
     |> Enum.map(&Map.get(names, &1, "a runner"))
   end
 
@@ -725,7 +756,7 @@ defmodule EmisarWeb.RunbookRunLive do
                     on {row.runner_name}
                   </span>
                   <span
-                    :if={row.run && offline_mid_run?(row.run)}
+                    :if={row.run && offline_mid_run?(row.run, @online_runner_ids)}
                     class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
                     title="Runner offline — this run may stall until it reconnects or times out"
                   >
@@ -774,7 +805,7 @@ defmodule EmisarWeb.RunbookRunLive do
                fail) until it reconnects — surface it before Start so a half-dark
                fleet isn't a surprise mid-run. --%>
           <% offline_targets =
-            offline_planned_runners(@blast_radius.plan, @runners, @current_account.id) %>
+            offline_planned_runners(@blast_radius.plan, @runners, @online_runner_ids) %>
           <.event_block
             :if={!@execution && offline_targets != []}
             icon="hero-signal-slash"

@@ -67,6 +67,49 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "3 active runs"
     end
 
+    test "heartbeat metadata patches the visible row without reloading inventory", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+      refute html =~ "6 active runs"
+
+      heartbeat = System.system_time(:second)
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{
+          joins: %{
+            runner.id => %{metas: [%{action_load: 6, last_heartbeat_at: heartbeat}]}
+          },
+          leaves: %{runner.id => %{metas: [%{action_load: 0, last_heartbeat_at: nil}]}}
+        }
+      })
+
+      assert render(lv) =~ "6 active runs"
+    end
+
+    test "topology bursts reload inventory on the debounce tick", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+      refute html =~ "autoscaled-runner"
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "autoscaled-runner",
+          connected?: false
+        )
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+      })
+
+      refute render(lv) =~ "autoscaled-runner"
+      send(lv.pid, :reload_runners)
+      assert render(lv) =~ "autoscaled-runner"
+    end
+
     test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

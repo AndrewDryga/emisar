@@ -708,6 +708,7 @@ defmodule EmisarWeb.AuditLiveTest do
         )
 
       send(lv.pid, {:audit_event, event})
+      send(lv.pid, :reload_audit)
       assert render(lv) =~ "freshly-committed-actor"
     end
 

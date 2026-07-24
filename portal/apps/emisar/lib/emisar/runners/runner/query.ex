@@ -139,6 +139,27 @@ defmodule Emisar.Runners.Runner.Query do
     |> order_by([runners: r], asc: r.group)
   end
 
+  @doc """
+  One-row aggregate for the four fleet states. Presence supplies the current
+  online ids; durable columns partition the remaining rows.
+  """
+  def fleet_health(queryable, online_ids) do
+    select(queryable, [runners: r], %{
+      total: count(r.id),
+      online:
+        filter(
+          count(r.id),
+          r.id in ^online_ids and is_nil(r.disabled_at)
+        ),
+      pending:
+        filter(
+          count(r.id),
+          is_nil(r.last_connected_at) and r.id not in ^online_ids and is_nil(r.disabled_at)
+        ),
+      disabled: filter(count(r.id), not is_nil(r.disabled_at))
+    })
+  end
+
   # Connection-record state from the DURABLE `last_connected_at` /
   # `last_disconnected_at` columns — NOT live Presence. Drives the fleet-wide
   # ops gauge (`Runners.connection_counts/0`); the per-account UI uses Presence
