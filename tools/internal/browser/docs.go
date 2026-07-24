@@ -3,6 +3,7 @@ package browser
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -42,7 +43,10 @@ type shot struct {
 	// and the tail falls away. RowSelector matches document-wide.
 	Rows        int
 	RowSelector string
-	Output      string
+	// NoBorder skips the 40px matte: for frames a component frames itself (the
+	// console cast), and so overlay coordinates map 1:1 onto the image.
+	NoBorder bool
+	Output   string
 }
 
 // The docs measure is ~672px, so a shot displays at ~40% of a 1680px desktop
@@ -101,25 +105,219 @@ var docsShots = []shot{
 	// what a runbook IS, not two list rows.
 	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
-	// The /security "approval loop" cast — four uniform frames of ONE seeded
-	// story (caddy.reload_config on edge-fra-01, requested by Maya via Claude,
-	// approved by Jordan; seeds.exs pins the timings so the audit trail reads
-	// causally). #shell-canvas is the console page without the nav rail;
-	// TopCSS keeps every frame the same 1280x860 box so the cast can crossfade
-	// without reflow. Capture preconditions: a FRESH `./run reset --seed`
-	// (seeded pending approvals expire 24h after seeding) and a live
-	// edge-fra-01 runner adopted by this portal — run the dev runner image
-	// with EMISAR_URL pointed at this workspace and the fixed dev enrollment
-	// key (seed with EMISAR_DEV_FIXED_ENROLLMENT_KEY set) — so the Decide rail
-	// shows no runner-offline notice. Newest #pending row = the agent's caddy
-	// reload; newest #decided row = the same action approved.
-	{Name: "loop-approval-pending", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#pending a[href*="/approvals/"]`, "caddy.reload_config")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/approval-pending.webp"},
-	{Name: "loop-approval-approved", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#decided a[href*="/approvals/"]`, "caddy.reload_config")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/approval-approved.webp"},
-	{Name: "loop-run-success", Path: "/app/demo/approvals", Clicks: []string{clickRowLink(`#decided a[href*="/approvals/"]`, "caddy.reload_config"), clickText("View run")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Output: "screenshots/loop/run-success.webp"},
+}
+
+// loopFrames are the /security approval-loop cast frames. They are NOT
+// navigate-and-crop shots: captureLoopTake drives the REAL product loop — in
+// an isolated session signed in as Jordan, it opens the seeded pending
+// caddy.reload_config request (agent-initiated, Maya via Claude), types the
+// decision note, clicks Approve and send, waits for the live edge-fra-01
+// runner to execute (the dev runner image stubs `caddy`, so the reload exits
+// 0 with believable output), and photographs each stage — so every frame,
+// transition, and audit row is the actual product doing the actual thing.
+//
+// #shell-canvas is the console page without the nav rail; TopCSS keeps every
+// frame the same 1280x860 box so the cast can crossfade without reflow.
+//
+// Preconditions (the take verifies and SKIPs loudly otherwise):
+//   - a fresh `./run reset --seed` with EMISAR_DEV_FIXED_ENROLLMENT_KEY set,
+//     then a RESTART of the dev server (seeded pending approvals expire 24h
+//     after seeding, the take consumes one per run, and a DB recreate under a
+//     running server can poison Postgrex's type cache);
+//   - a live edge-fra-01 runner adopted by this portal: the dev runner image
+//     with EMISAR_URL pointed at this workspace, the fixed dev enrollment
+//     key, and dev/runner-fixtures/bin mounts (incl. the caddy stub).
+//     RECREATE the container after a reseed (docker rm -f + docker run — a
+//     fresh /var/lib/emisar re-enrolls); a restarted container presents its
+//     old token, gets a 401 from the fresh DB, and exits.
+var loopFrames = []shot{
+	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
+	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
+	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
+	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
 	// The Run + Approval groups together are the loop's trail; the folded
-	// drawer still narrates them ("Filters — Type: …"), so the narrowing stays
-	// visible while the frame is the timeline itself.
-	{Name: "loop-audit-trail", Path: "/app/demo/audit?event_type[]=group:Run&event_type[]=group:Approval", Clicks: []string{collapseAuditFilters}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+	// drawer still narrates them ("Filters — Type: …"), so the narrowing
+	// stays visible while the frame is the timeline itself.
+	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 860, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+}
+
+// The note Jordan types during the take — it becomes the decision_reason on
+// the real request, so it must read like an operator wrote it.
+const loopDecisionNote = "validated config, active connections drained, deploy window open"
+
+// loopTargets reports the centers of the cast's cursor/annotation anchors as
+// percentages of the #shell-canvas box — paste the printed JSON into the
+// console_cast frame attrs on security.html.heex after a re-capture, so the
+// overlay cursor keeps landing on the real controls.
+const loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
+const frameH=860;
+const point=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
+return {x:Math.round((b.x+b.width/2-c.x)/c.width*1000)/10,y:Math.round((b.y+b.height/2-c.y)/frameH*1000)/10}};
+const pct=(sel)=>point(document.querySelector(sel));
+const byText=(t)=>point([...document.querySelectorAll('a,button')].find(x=>x.textContent.trim()===t));
+return JSON.stringify({note:pct('#approval-decision-form textarea[name="reason"]'),approve:pct('#approval-decision-form button[value="approve"]'),view_run:byText('View run'),view_activity:byText('View activity'),command:pct('#shell-canvas [id^="approval-command-"]')})})()`
+
+func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (map[string]string, error) {
+	// An isolated session (own profile) so signing in as Jordan never touches
+	// the shared capture profile's demo@ session.
+	session, err := manager.Session(ctx, config.BaseURL, true)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	if err := session.Viewport(1280, 2800, 2, false); err != nil {
+		return nil, err
+	}
+	if err := session.Navigate("/app/demo"); err != nil {
+		return nil, err
+	}
+	if err := session.Login("jordan@emisar.dev"); err != nil {
+		return nil, err
+	}
+	if err := session.Navigate("/app/demo/approvals"); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(session, clickRowLink(`#pending a[href*="/approvals/"]`, "caddy.reload_config"), "pending caddy.reload_config approval"); err != nil {
+		return nil, fmt.Errorf("no pending caddy.reload_config request — reseed first: %w", err)
+	}
+	// Bounce until the LiveView is connected: the decide form on the dead
+	// pre-connect render swallows input and clicks.
+	if err := session.Ready(15*time.Second, `#approval-decision-form`); err != nil {
+		return nil, err
+	}
+
+	colors := map[string]string{}
+	frame := func(name string) error {
+		s, ok := loopFrameByName(name)
+		if !ok {
+			return fmt.Errorf("unknown loop frame %q", name)
+		}
+		color, err := captureDocElement(session, config, s)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		colors[name] = color
+		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", name, s.width(), color)
+		return nil
+	}
+
+	if err := frame("loop-approval-pending"); err != nil {
+		return nil, err
+	}
+	printTargets(session, manager.Out, "approval")
+
+	if err := chromedp.Run(session.Context,
+		chromedp.SendKeys(`#approval-decision-form textarea[name="reason"]`, loopDecisionNote, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := frame("loop-approval-note"); err != nil {
+		return nil, err
+	}
+
+	// Approve for real. The decide form disappears once the request is
+	// decided, so its absence is the precise "the approve committed" signal.
+	if err := chromedp.Run(session.Context,
+		chromedp.Click(`#approval-decision-form button[value="approve"]`, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := waitGone(session, `#approval-decision-form`, 15*time.Second); err != nil {
+		return nil, fmt.Errorf("approve did not commit: %w", err)
+	}
+	// Dismiss the "Done" flash so the approved frame is the record, not the
+	// toast. The flash dismisses on click; retry until none is visible (the
+	// flash is position:fixed, so test the rect — offsetParent is always null).
+	if err := clickByScript(session, `(()=>{const vis=[...document.querySelectorAll('[data-flash]')].filter(e=>!e.hidden&&e.getBoundingClientRect().width>0);if(!vis.length)return true;vis.forEach(e=>e.click());return false})()`, "flash dismissal"); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, ""); err != nil {
+		return nil, err
+	}
+	if err := frame("loop-approval-approved"); err != nil {
+		return nil, err
+	}
+
+	// The approved run dispatches to the live runner immediately; follow it
+	// and wait for the terminal success state before shooting.
+	if err := clickByScript(session, clickText("View run"), "View run"); err != nil {
+		return nil, err
+	}
+	if err := waitText(session, "success", 30*time.Second); err != nil {
+		return nil, fmt.Errorf("approved run did not reach success — is the edge-fra-01 container (with the caddy stub) connected? %w", err)
+	}
+	if err := session.Ready(10*time.Second, ""); err != nil {
+		return nil, err
+	}
+	if err := frame("loop-run-success"); err != nil {
+		return nil, err
+	}
+	printTargets(session, manager.Out, "run")
+
+	if err := session.Navigate("/app/demo/audit?event_type[]=group:Run&event_type[]=group:Approval"); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(session, collapseAuditFilters, "audit filter collapse"); err != nil {
+		return nil, err
+	}
+	if err := frame("loop-audit-trail"); err != nil {
+		return nil, err
+	}
+	return colors, nil
+}
+
+func loopFrameByName(name string) (shot, bool) {
+	for _, s := range loopFrames {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return shot{}, false
+}
+
+func printTargets(session *Session, out io.Writer, page string) {
+	var targets string
+	if err := chromedp.Run(session.Context, chromedp.Evaluate(loopTargets, &targets)); err == nil {
+		fmt.Fprintf(out, "  loop targets (%s page): %s\n", page, targets)
+	}
+}
+
+// waitGone polls until no element matches the selector.
+func waitGone(session *Session, selector string, timeout time.Duration) error {
+	quoted, _ := json.Marshal(selector)
+	script := `(()=>!document.querySelector(` + string(quoted) + `))()`
+	deadline := time.Now().Add(timeout)
+	for {
+		var gone bool
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &gone)); err != nil {
+			return err
+		}
+		if gone {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s still present after %s", selector, timeout)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+// waitText polls until the workspace canvas contains the given text.
+func waitText(session *Session, text string, timeout time.Duration) error {
+	quoted, _ := json.Marshal(text)
+	script := `(()=>{const el=document.querySelector('#shell-canvas');return !!el && el.textContent.includes(` + string(quoted) + `)})()`
+	deadline := time.Now().Add(timeout)
+	for {
+		var found bool
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &found)); err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%q did not appear within %s", text, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (s shot) width() int {
@@ -129,25 +327,36 @@ func (s shot) width() int {
 	return s.Width
 }
 
-// selectShots resolves the --only names against docsShots; an unknown name is
-// an error (a typo silently capturing nothing would read as success).
-func selectShots(only []string) ([]shot, error) {
+// selectShots resolves the --only names; an unknown name is an error (a typo
+// silently capturing nothing would read as success). Any loop-* frame name
+// selects the WHOLE approval-loop take — its frames come from one continuous
+// interaction, so a single frame can't regenerate alone.
+func selectShots(only []string) ([]shot, bool, error) {
 	if len(only) == 0 {
-		return docsShots, nil
+		return docsShots, true, nil
 	}
 	byName := map[string]shot{}
 	for _, s := range docsShots {
 		byName[s.Name] = s
 	}
+	loopNames := map[string]bool{}
+	for _, s := range loopFrames {
+		loopNames[s.Name] = true
+	}
 	selected := make([]shot, 0, len(only))
+	runLoop := false
 	for _, name := range only {
+		if loopNames[name] {
+			runLoop = true
+			continue
+		}
 		s, ok := byName[name]
 		if !ok {
-			return nil, fmt.Errorf("unknown docs shot %q (see docsShots in tools/internal/browser/docs.go)", name)
+			return nil, false, fmt.Errorf("unknown docs shot %q (see docsShots/loopFrames in tools/internal/browser/docs.go)", name)
 		}
 		selected = append(selected, s)
 	}
-	return selected, nil
+	return selected, runLoop, nil
 }
 
 var rgbPattern = regexp.MustCompile(`\d+`)
@@ -282,7 +491,11 @@ func processShot(config DocsConfig, s shot, color string, out io.Writer) error {
 		box := fmt.Sprintf("%dx%d", pixels, pixels*s.TopCSS/s.width())
 		args = append(args, "-crop", box+"+0+0", "+repage", "-background", color, "-extent", box)
 	}
-	args = append(args, "-resize", "1600x>", "-bordercolor", color, "-border", "40", "-quality", "82", destination)
+	args = append(args, "-resize", "1600x>")
+	if !s.NoBorder {
+		args = append(args, "-bordercolor", color, "-border", "40")
+	}
+	args = append(args, "-quality", "82", destination)
 	if output, commandErr := imageCommand("convert", args...); commandErr != nil {
 		return fmt.Errorf("convert %s: %w: %s", s.Name, commandErr, bytes.TrimSpace(output))
 	}
@@ -318,7 +531,7 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		}
 	}
 
-	shots, err := selectShots(config.Only)
+	shots, runLoop, err := selectShots(config.Only)
 	if err != nil {
 		return err
 	}
@@ -337,7 +550,21 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", s.Name, s.width(), color)
 	}
 
-	for _, s := range shots {
+	processing := shots
+	if runLoop {
+		loopColors, loopErr := captureLoopTake(ctx, manager, config)
+		if loopErr != nil {
+			failed = append(failed, fmt.Sprintf("approval-loop take (%v)", loopErr))
+			fmt.Fprintf(manager.Out, "  SKIP approval-loop take: %v\n", loopErr)
+		} else {
+			for name, color := range loopColors {
+				colors[name] = color
+			}
+			processing = append(append([]shot{}, shots...), loopFrames...)
+		}
+	}
+
+	for _, s := range processing {
 		color, ok := colors[s.Name]
 		if !ok {
 			continue

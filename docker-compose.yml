@@ -277,6 +277,10 @@ services:
       - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
+      # The edge host serves the caddy demo pack; the stub makes reload/validate
+      # execute with believable output (the approval-loop screencast approves a
+      # live caddy.reload_config on this runner).
+      - ./dev/runner-fixtures/bin/caddy:/usr/local/bin/caddy:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
       - ./dev/runner-fixtures/var-log/auth.log:/var/log/auth.log:ro
       - ./dev/runner-fixtures/var-log/nginx:/var/log/nginx:ro

@@ -1032,9 +1032,31 @@ existing_runs =
   end
 
 if existing_runs == [] do
+  # A live dispatch snapshots the pack contract on the run (pack_ref +
+  # expected_pack_hash); the approve-time trust recheck compares the CURRENT
+  # catalog hash against that snapshot, so a pending run seeded without one
+  # can never be approved (the /security screencast take approves one live).
+  # Stamp from the advertised catalog row directly — the seeded advertisement
+  # carries the same baseline hash a live runner re-advertises, and the strict
+  # dispatch resolver is the APPROVER's gate, not the seeder's. A non-catalog
+  # action (nothing advertised) stays snapshot-free like a legacy run.
+  contract_attrs = fn runner_id, action_id ->
+    with {:ok, action} <- Catalog.fetch_action_for_account(action_id, runner_id, account.id),
+         true <-
+           is_binary(action.pack_id) and is_binary(action.pack_version) and
+             is_binary(action.pack_hash),
+         {:ok, pack_ref} <-
+           Catalog.MCPProjection.pack_ref(action.pack_id, action.pack_version, action.pack_hash) do
+      %{pack_ref: pack_ref, expected_pack_hash: action.pack_hash}
+    else
+      _ -> %{}
+    end
+  end
+
   insert_run = fn attrs ->
     {:ok, run} =
-      attrs
+      contract_attrs.(attrs.runner_id, attrs.action_id)
+      |> Map.merge(attrs)
       |> Map.merge(%{
         account_id: account.id,
         source: attrs[:source] || "operator",

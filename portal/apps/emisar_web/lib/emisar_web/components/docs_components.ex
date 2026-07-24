@@ -281,13 +281,18 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
-  A docs screenshot that opens fullscreen on click. Pure CSS (a hidden
-  checkbox toggles a fixed overlay via `peer-checked`) so it works on these
-  controller-rendered pages with no JS and no CSP inline. `id` is derived from
-  the filename so each figure's checkbox drives only its own overlay.
+  A captioned docs screenshot that opens fullscreen on click. The window-bar
+  `title` and the visible `caption` mark it as a figure OF the console, so a
+  screenshot can't be mistaken for the docs page's own UI. Pure CSS lightbox
+  (a hidden checkbox toggles a fixed overlay via `peer-checked`) so it works
+  on these controller-rendered pages with no JS and no CSP inline. `id` is
+  derived from the filename so each figure's checkbox drives only its own
+  overlay.
   """
   attr :src, :string, required: true
   attr :alt, :string, required: true
+  attr :title, :string, required: true, doc: "window-bar label — the console surface shown"
+  attr :caption, :string, default: nil, doc: "one visible sentence under the figure"
 
   def docs_screenshot(assigns) do
     assigns =
@@ -295,22 +300,27 @@ defmodule EmisarWeb.DocsComponents do
 
     ~H"""
     <figure class="mt-8">
-      <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
-      <label
-        for={@lb_id}
-        class="group relative block cursor-zoom-in overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30"
-      >
-        <img src={@src} alt={@alt} loading="lazy" class="w-full" />
-        <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-zinc-100 opacity-0 backdrop-blur transition group-hover:opacity-100">
-          <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
-        </span>
-      </label>
-      <label
-        for={@lb_id}
-        class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm peer-checked:flex sm:p-10"
-      >
-        <img src={@src} alt={@alt} class="max-h-full max-w-full rounded-lg shadow-2xl" />
-      </label>
+      <div class="overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
+        <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
+          <.icon name="hero-window" class="h-3.5 w-3.5" /> {@title}
+        </div>
+        <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
+        <label for={@lb_id} class="group relative block cursor-zoom-in">
+          <img src={@src} alt={@alt} loading="lazy" class="w-full" />
+          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-zinc-100 opacity-0 backdrop-blur transition group-hover:opacity-100">
+            <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
+          </span>
+        </label>
+        <label
+          for={@lb_id}
+          class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm peer-checked:flex sm:p-10"
+        >
+          <img src={@src} alt={@alt} class="max-h-full max-w-full rounded-lg shadow-2xl" />
+        </label>
+      </div>
+      <figcaption :if={@caption} class="mt-2.5 text-sm leading-6 text-zinc-500">
+        {@caption}
+      </figcaption>
     </figure>
     """
   end
@@ -479,14 +489,20 @@ defmodule EmisarWeb.DocsComponents do
   terminal_cast idea, for console pages — still no video file or player
   library). The server renders the full storyboard — every frame with its step
   label and caption — for no-JS visitors and crawlers;
-  `assets/js/console_cast.js` collapses it into a stepped player that
-  auto-advances once scrolled into view, crossfades between frames, and stays
-  manual via the step tabs and Replay. Honors prefers-reduced-motion: no
-  autoplay, instant swaps.
+  `assets/js/console_cast.js` collapses it into a stepped player that plays
+  the take once scrolled into view: an overlay cursor travels to each frame's
+  `click` point, a click ripple fires, and the next frame crossfades in — so
+  the stop-motion reads as the interaction that really produced it. Step tabs
+  and Replay stay manual. Honors prefers-reduced-motion: no autoplay, no
+  cursor, instant swaps.
 
-  Each `:frame` is one real capture — `src`/`alt` for the image (1680x1155,
+  Each `:frame` is one real capture — `src`/`alt` for the image (1600x1075,
   from `./run capture docs loop-*`), `label` for its step tab, `caption` for
-  the line under the image.
+  the line under the image. `click` is where the cursor clicks to leave this
+  frame ("x,y" percentages of the image, from the capture take's printed
+  targets); `note`/`note_at` place one short annotation over the image.
+  Annotations and the cursor are presentation for sighted motion users —
+  captions and alt text carry the story for everyone else.
   """
   attr :id, :string, required: true
   attr :class, :string, default: nil
@@ -496,6 +512,9 @@ defmodule EmisarWeb.DocsComponents do
     attr :alt, :string, required: true
     attr :label, :string, required: true
     attr :caption, :string, required: true
+    attr :click, :string
+    attr :note, :string
+    attr :note_at, :string
   end
 
   def console_cast(assigns) do
@@ -533,28 +552,74 @@ defmodule EmisarWeb.DocsComponents do
           </button>
         </span>
       </figcaption>
-      <div data-cast-stage class="space-y-10 p-4 sm:p-5">
-        <div :for={{frame, index} <- Enum.with_index(@frame)} data-cast-frame={index}>
+      <div data-cast-stage class="relative space-y-10 p-4 sm:p-5">
+        <div
+          :for={{frame, index} <- Enum.with_index(@frame)}
+          data-cast-frame={index}
+          data-click={frame[:click]}
+        >
           <p
             data-cast-frame-label
             class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-zinc-500"
           >
             Step {index + 1} · {frame.label}
           </p>
-          <img
-            src={frame.src}
-            alt={frame.alt}
-            width="1680"
-            height="1155"
-            loading="lazy"
-            class="w-full rounded-lg border border-zinc-800/80"
-          />
+          <div class="relative">
+            <img
+              src={frame.src}
+              alt={frame.alt}
+              width="1600"
+              height="1075"
+              loading="lazy"
+              class="w-full rounded-lg border border-zinc-800/80"
+            />
+            <span
+              :if={frame[:note]}
+              data-cast-note
+              data-note-at={frame[:note_at]}
+              hidden
+              aria-hidden="true"
+              class="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium text-brand-300 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-300"
+            >
+              {frame.note}
+            </span>
+          </div>
           <p class="mt-3 text-sm leading-6 text-zinc-400">{frame.caption}</p>
         </div>
+        <%!-- The shared cursor + click ripple, positioned by JS over the active
+             frame's image. Presentation only: hidden from AT, no-JS never sees
+             them, reduced-motion never enables them. --%>
+        <span
+          data-cast-cursor
+          hidden
+          aria-hidden="true"
+          class="pointer-events-none absolute z-20 opacity-0"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            class="drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+          >
+            <path
+              d="M5.5 3.2 19.2 12.6l-6.2 1.1 3.4 6.3-2.8 1.5-3.4-6.4-4.7 4.2z"
+              fill="#fafafa"
+              stroke="#18181b"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+        <span
+          data-cast-ripple
+          hidden
+          aria-hidden="true"
+          class="pointer-events-none absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brand-400/90"
+        ></span>
       </div>
       <figcaption class="flex items-center justify-between gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p class="text-[11px] text-zinc-500">
-          The demo workspace, captured as-is — no mockups.
+          The demo workspace, captured as-is — a real request, decision, run, and audit trail.
         </p>
         <button
           type="button"

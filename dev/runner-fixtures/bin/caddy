@@ -1,0 +1,36 @@
+#!/bin/bash
+# Demo-only caddy shim mounted into the dev runner containers (the same
+# pattern as the systemctl/journalctl stubs). Real hosts run the actual
+# caddy binary; this stub only exists so the caddy demo actions — most
+# importantly the approval-loop screencast's live-approved
+# caddy.reload_config — execute with realistic output inside the
+# containerised runner where no Caddy server is running.
+
+set -u
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+    reload)
+        # `caddy reload --config <file>` — the approval-loop take's action.
+        sleep 0.3
+        echo "INFO using adjacent Caddyfile"
+        sleep 0.2
+        echo "INFO autosaved config"
+        echo "INFO serving initial configuration"
+        exit 0
+        ;;
+    validate)
+        echo "Valid configuration"
+        exit 0
+        ;;
+    version)
+        echo "v2.10.2 h1:UWScY8kg9pUQFXUjEfnhECqxvSxWEc/DKyPK+lKdgIw="
+        exit 0
+        ;;
+    *)
+        echo "Demo caddy shim: unsupported command '${cmd}'. Supported: reload, validate, version." >&2
+        exit 1
+        ;;
+esac

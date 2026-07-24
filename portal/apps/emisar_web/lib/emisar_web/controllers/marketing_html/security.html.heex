@@ -144,9 +144,15 @@
   </section>
 
   <%!-- The approval loop — the trust-boundary diagram above says what the path
-       is; this section shows it happening, as an animated cast of four real
-       console captures (one seeded story: request → decision → run → audit).
-       Frames regenerate via `./run capture docs loop-*` (docs.go). --%>
+       is; this section shows it happening: five real captures from ONE driven
+       session (docs.go captureLoopTake — the pending request is opened, the
+       note typed, Approve clicked, the runner executes, the audit fills), and
+       console_cast.js replays that interaction with an overlay cursor, click
+       ripples, and annotations. `click` = where the cursor clicks to leave the
+       frame; `note`/`note_at` = the one annotation per frame; coordinates are
+       image percentages from the take's printed targets. Frames regenerate via
+       `./run capture docs loop-approval-pending` (any loop name runs the whole
+       take — see docs.go for the preconditions). --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
@@ -166,24 +172,44 @@
           alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the exact command, the reason, the policy that held it, and Approve and send / Deny controls."
           label="Held"
           caption="Policy holds the agent's request for a human — the exact command, the reason, and the risk on one screen."
+          click="80,45.1"
+          note="the exact command"
+          note_at="30.8,43"
+        />
+        <:frame
+          src="/images/screenshots/loop/approval-note.webp"
+          alt="The same approval with the decision note typed into the Decide panel: “validated config, active connections drained, deploy window open”."
+          label="Decide"
+          caption="Jordan reviews and writes the note the record will keep."
+          click="80,60.5"
+          note="logged with the decision"
+          note_at="80,41"
         />
         <:frame
           src="/images/screenshots/loop/approval-approved.webp"
-          alt="The same approval request after the decision: approved by Jordan Lee, with the note “validated config, active connections drained, deploy window open”."
+          alt="The request after the click: approved by Jordan Lee, with the note preserved as the decision reason."
           label="Approved"
-          caption="Jordan approves with a note; the decision and its why become part of the record."
+          caption="Approved — decider, time, and reason on the record. The gate releases the run."
+          click="80.3,6.2"
+          note="on the record"
+          note_at="28,46.5"
         />
         <:frame
           src="/images/screenshots/loop/run-success.webp"
-          alt="The run detail for the approved action: success on edge-fra-01 with exit code 0 in 1.8 seconds, dispatched by Maya Chen via Claude Code, with the arguments and captured output."
+          alt="The run detail for the approved action: success on edge-fra-01 with exit code 0 in 516 milliseconds, dispatched by Maya Chen via Claude Code, with the arguments and the executed command marked secrets redacted."
           label="Executed"
-          caption="Only now does the runner execute. Exit code, duration, and output — captured."
+          caption="Only now does the runner execute: exit 0, the exact command on the record."
+          click="91.3,6.2"
+          note="scrubbed on the runner"
+          note_at="90,85"
         />
         <:frame
           src="/images/screenshots/loop/audit-trail.webp"
-          alt="The audit log filtered to run and approval events: Run succeeded, Approval granted by Jordan Lee, and Run awaiting approval for caddy.reload_config on edge-fra-01, alongside the rest of the account's trail."
+          alt="The audit log filtered to run and approval events, led by the loop's own rows seconds apart: Run succeeded, Approval granted by Jordan Lee, and Run awaiting approval for caddy.reload_config on edge-fra-01."
           label="Recorded"
-          caption="The audit has the whole trail — request, decision, run — filterable and exportable to your SIEM."
+          caption="Seconds later the audit has the whole trail — filterable, exportable to your SIEM."
+          note="one row per step"
+          note_at="14,49"
         />
       </.console_cast>
     </div>

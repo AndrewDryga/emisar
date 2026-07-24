@@ -698,12 +698,13 @@ defmodule EmisarWeb.MarketingTest do
       # framing is "we implement it", never "they endorse us").
       assert html =~ "Not affiliated with or endorsed by Anthropic"
 
-      # The approval-loop cast — REAL console moments, not mocks: one action's
-      # request, decision, run, and audit trail as an animated storyboard whose
-      # no-JS render carries every frame.
+      # The approval-loop cast — REAL console moments from one live-driven
+      # take, not mocks: request, decision note, approval, run, and audit
+      # trail as an animated storyboard whose no-JS render carries every frame.
       assert html =~ "Watch one risky action cross the gate."
       assert html =~ "data-console-cast"
       assert html =~ "/images/screenshots/loop/approval-pending.webp"
+      assert html =~ "/images/screenshots/loop/approval-note.webp"
       assert html =~ "/images/screenshots/loop/approval-approved.webp"
       assert html =~ "/images/screenshots/loop/run-success.webp"
       assert html =~ "/images/screenshots/loop/audit-trail.webp"
