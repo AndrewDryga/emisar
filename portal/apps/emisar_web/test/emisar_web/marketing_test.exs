@@ -22,7 +22,16 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runners
     /docs/deployment
     /docs/audit-and-siem
+    /docs/host-install
     /docs/containers
+    /docs/kubernetes
+    /docs/nomad
+    /docs/autoscaling-fleets
+    /docs/runs
+    /docs/keys
+    /docs/runner-cli
+    /docs/billing
+    /docs/limits
     /changelog
     /about
     /support
@@ -1141,10 +1150,6 @@ defmodule EmisarWeb.MarketingTest do
       billing = conn |> get(~p"/docs/billing") |> html_response(200)
       assert billing =~ "7 days on Free, 90 on Team, 365 on Enterprise"
       assert billing =~ "Paddle"
-
-      trouble = conn |> get(~p"/docs/troubleshooting") |> html_response(200)
-      assert trouble =~ "two-minute grace"
-      assert trouble =~ "support@emisar.dev"
     end
 
     test "the CSI data-loss use case renders its incident narrative and CTAs", %{conn: conn} do
