@@ -102,11 +102,13 @@ Flags:
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
-EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_ROLE, RUNNER_ENVIRONMENT.
+EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_LABEL_<KEY>.
 
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
-RUNNER_GROUP defaults to `hostname -s`; RUNNER_ENVIRONMENT to `prod`.
+RUNNER_GROUP defaults to `hostname -s`. Each RUNNER_LABEL_<KEY>=<value>
+(e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the cloud UI
+filters on; set as many as you like.
 
 Setting EMISAR_PACKS (the env form of --packs), even to an empty string,
 makes the pack list explicit: the installer installs exactly those packs
@@ -538,17 +540,19 @@ runner:
   group: ${group}
   labels:
     # Free-form tags. The cloud UI uses these for filtering / search.
-    # Set RUNNER_ROLE / RUNNER_ENVIRONMENT at install time to bake them
-    # in, or uncomment + edit below (any string=string pair works).
+    # Set RUNNER_LABEL_<KEY>=<value> at install time to bake them in
+    # (e.g. RUNNER_LABEL_ROLE=web), or uncomment + edit below.
 EOF
-  if [ -n "${RUNNER_ROLE:-}" ]; then
-    printf '    role: %s\n' "${RUNNER_ROLE}"
-  else
+  local label_var label_key wrote_label=0
+  for label_var in "${!RUNNER_LABEL_@}"; do
+    [ -n "${!label_var}" ] || continue
+    label_key="$(printf '%s' "${label_var#RUNNER_LABEL_}" | tr '[:upper:]' '[:lower:]')"
+    [ -n "$label_key" ] || continue
+    printf '    %s: "%s"\n' "$label_key" "${!label_var}"
+    wrote_label=1
+  done
+  if [ "$wrote_label" = 0 ]; then
     printf '    # role: web\n'
-  fi
-  if [ -n "${RUNNER_ENVIRONMENT:-}" ]; then
-    printf '    environment: %s\n' "${RUNNER_ENVIRONMENT}"
-  else
     printf '    # environment: prod\n'
   fi
   cat <<EOF
