@@ -412,6 +412,28 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "api_key_id=#{key.id}"
     end
 
+    test "an OAuth backing key row hides Rotate but keeps Revoke", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _backing} =
+        ApiKeys.create_backing_key(account.id, user.id, subject.membership_id, "Claude (OAuth)")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+
+      # The OAuth connection shows on the list, with Revoke (the operator's
+      # off-switch) but NOT Rotate — a fresh emk- secret can't reach the client.
+      assert html =~ "Claude (OAuth)"
+      assert html =~ "Revoke this agent key"
+      refute html =~ "Rotate this key?"
+
+      # Non-vacuous: a normal key on the same page DOES surface Rotate, so the
+      # refute above is the OAuth row specifically hiding it.
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "manual-bot"}, subject)
+      {:ok, _lv, with_manual} = live(conn, ~p"/app/#{account}/agents")
+      assert with_manual =~ "Rotate this key?"
+    end
+
     test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

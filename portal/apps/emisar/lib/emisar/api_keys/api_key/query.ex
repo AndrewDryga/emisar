@@ -11,6 +11,9 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_id(queryable, id),
     do: where(queryable, [api_keys: k], k.id == ^id)
 
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [api_keys: k], k.id in ^ids)
+
   @doc "Selects only the creator's user id — for the approval gate's owner lookup."
   def select_created_by_id(queryable),
     do: select(queryable, [api_keys: k], k.created_by_id)
@@ -59,6 +62,15 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   """
   def by_kind(queryable \\ all(), kind) when is_atom(kind),
     do: where(queryable, [api_keys: k], k.kind == ^kind)
+
+  @doc """
+  OAuth backing keys — non-expiring MCP keys. Consent mints these with no expiry
+  (`ApiKeys.create_backing_key/4`) because OAuth owns their lifecycle, while every
+  operator-minted MCP key carries one — so `:mcp` + no `expires_at` uniquely marks
+  an OAuth-backed connection.
+  """
+  def oauth_backing(queryable \\ all()),
+    do: where(queryable, [api_keys: k], k.kind == :mcp and is_nil(k.expires_at))
 
   @doc """
   Auto-generated keys that no LLM has ever authenticated with — the

@@ -5,6 +5,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
   backdated code.
   """
   use Emisar.DataCase, async: true
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.OAuth
@@ -78,6 +79,25 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
 
     assert :ok = Cleanup.execute([])
+    refute Repo.exists?(AuthorizationCode.Query.all())
+  end
+
+  test "execute/1 prunes the orphaned backing key of an abandoned consent" do
+    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    issue_code!(subject)
+
+    # Consent minted a backing key; a live code means there's nothing to prune.
+    assert %ApiKey{expires_at: nil} = Repo.one(ApiKey)
+    assert :ok = Cleanup.execute([])
+    assert Repo.one(ApiKey)
+
+    # Backdate the never-exchanged code past expiry → the sweep prunes its
+    # orphaned backing key, and the api_keys→codes cascade removes the code.
+    past = DateTime.add(DateTime.utc_now(), -120, :second)
+    {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
+
+    assert :ok = Cleanup.execute([])
+    refute Repo.one(ApiKey)
     refute Repo.exists?(AuthorizationCode.Query.all())
   end
 
@@ -173,13 +193,15 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
   test "execute/1 logs swept counts only when rows were deleted" do
     # Nothing to delete (no codes, no abandoned clients) → silent.
     silent = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
+    refute silent =~ "oauth_cleanup.abandoned_keys_swept"
     refute silent =~ "oauth_cleanup.codes_swept"
     refute silent =~ "oauth_cleanup.unused_clients_swept"
 
     :ok = issue_expired_code!()
 
-    # An expired code → the codes line is logged.
+    # The expired, never-exchanged code's orphaned backing key is pruned (the
+    # code cascades away with it), so the abandoned-keys line is logged.
     noisy = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
-    assert noisy =~ "oauth_cleanup.codes_swept"
+    assert noisy =~ "oauth_cleanup.abandoned_keys_swept"
   end
 end

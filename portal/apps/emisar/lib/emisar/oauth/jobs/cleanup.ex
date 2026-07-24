@@ -12,10 +12,14 @@ defmodule Emisar.OAuth.Jobs.Cleanup do
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(_config) do
+    # Abandoned-consent keys FIRST: it reads the still-live codes to find the
+    # orphaned keys, and deleting them cascades those codes away.
+    abandoned = Emisar.OAuth.delete_abandoned_backing_keys()
     codes = Emisar.OAuth.delete_expired_authorization_codes()
     tokens = Emisar.OAuth.delete_expired_tokens()
     clients = Emisar.OAuth.delete_unused_clients()
 
+    if abandoned > 0, do: Logger.info("oauth_cleanup.abandoned_keys_swept", count: abandoned)
     if codes > 0, do: Logger.info("oauth_cleanup.codes_swept", count: codes)
     if tokens > 0, do: Logger.info("oauth_cleanup.tokens_swept", count: tokens)
     if clients > 0, do: Logger.info("oauth_cleanup.unused_clients_swept", count: clients)

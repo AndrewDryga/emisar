@@ -431,6 +431,19 @@ defmodule Emisar.ApiKeysTest do
       assert {:error, :revoked} = ApiKeys.rotate_api_key(key, subject)
     end
 
+    test "an OAuth backing key cannot be manually rotated" do
+      # The agents UI hides Rotate for OAuth rows; this proves a crafted event
+      # can't get through either — a fresh emk- secret can't reach the OAuth
+      # client, so a successor would only break the connection.
+      {user, account, subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, backing} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      assert {:error, :oauth_backing} = ApiKeys.rotate_api_key(backing, subject)
+    end
+
     test "a stale subject cannot rotate a key after the account is disabled" do
       {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "paused"}, subject)
@@ -1179,6 +1192,55 @@ defmodule Emisar.ApiKeysTest do
       key = Fixtures.ApiKeys.force_membership_unbound(key)
 
       refute ApiKeys.peek_api_key_by_id(key.id)
+    end
+  end
+
+  describe "record_backing_key_usage/1" do
+    test "bumps last_used_at and broadcasts first use, then re-bumps without re-broadcasting" do
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      refute key.last_used_at
+
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+
+      # First OAuth call: last_used_at is set and the list reflows off "never used".
+      assert %ApiKey{last_used_at: %DateTime{}} = ApiKeys.record_backing_key_usage(key)
+      assert %DateTime{} = Repo.reload!(key).last_used_at
+      assert_receive {:list_changed, :api_key, "api_key.first_used", key_id}, 500
+      assert key_id == key.id
+
+      # A later call re-bumps last_used_at but no longer announces a first use.
+      assert %ApiKey{last_used_at: %DateTime{}} =
+               ApiKeys.record_backing_key_usage(Repo.reload!(key))
+
+      refute_receive {:list_changed, :api_key, "api_key.first_used", _}
+    end
+  end
+
+  describe "delete_backing_keys/1" do
+    test "deletes the given OAuth backing keys but never a real operator key" do
+      {user, account, subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, backing} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      # An expiring operator key is NOT an OAuth backing key, so even with its id
+      # passed the shape guard keeps it — a mis-passed id can't nuke a real key.
+      {:ok, _raw, operator_key} = ApiKeys.create_key(%{name: "prod"}, subject)
+
+      assert 1 = ApiKeys.delete_backing_keys([backing.id, operator_key.id])
+
+      refute Repo.reload(backing)
+      assert Repo.reload(operator_key)
+    end
+
+    test "an empty id list deletes nothing" do
+      assert 0 = ApiKeys.delete_backing_keys([])
     end
   end
 

@@ -222,11 +222,8 @@ defmodule Emisar.ApiKeys do
       |> put_active_account_lock(subject.account.id)
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
-             true <- is_nil(source.revoked_at) do
+             :ok <- ensure_rotatable(source) do
           {:ok, source}
-        else
-          false -> {:error, :revoked}
-          {:error, reason} -> {:error, reason}
         end
       end)
       |> Multi.insert(:key, fn %{source: source} ->
@@ -388,6 +385,19 @@ defmodule Emisar.ApiKeys do
     is_binary(prefix) and byte_size(prefix) == @prefix_size and
       String.valid?(prefix) and String.match?(prefix, ~r/^emk-[A-Za-z0-9_-]{8}$/) and
       is_binary(hash) and byte_size(hash) == 32
+  end
+
+  # A revoked key has nothing live to rotate. An OAuth backing key can't be
+  # rotated at all: the fresh emk- secret can't reach the OAuth client (ChatGPT
+  # holds tokens bound to the OLD backing-key id), and a successor would be minted
+  # with the 30-day default expiry, breaking the "OAuth owns the lifecycle"
+  # contract. Revoke is the operator's off-switch for both — and the agents UI
+  # already hides Rotate here, so this only rejects a crafted event (IL-15).
+  defp ensure_rotatable(%ApiKey{revoked_at: revoked}) when not is_nil(revoked),
+    do: {:error, :revoked}
+
+  defp ensure_rotatable(%ApiKey{} = source) do
+    if ApiKey.oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
   end
 
   # The attribute set a successor inherits — shared by operator rotation and
@@ -817,6 +827,47 @@ defmodule Emisar.ApiKeys do
       %ApiKey{} = key -> if ApiKey.usable?(key), do: key, else: nil
       _ -> nil
     end
+  end
+
+  @doc """
+  Internal — the OAuth MCP auth boundary records a backing key's use here. The
+  OAuth resolve path (`OAuth.resolve_access_token/2`) holds the backing key's id,
+  not its raw secret, so it can't bump usage through `peek_api_key_by_secret/1`;
+  without this an OAuth connection's agent row reads "never used" forever and the
+  active-agent counts are wrong. Bumps `last_used_at` (an unconditional set —
+  last-writer-wins is exactly "last call"), and on the first call broadcasts the
+  list reflow so the row flips off "never used" live. Returns the bumped key.
+  """
+  def record_backing_key_usage(%ApiKey{last_used_at: previous_use} = key) do
+    now = DateTime.utc_now()
+
+    {_count, _} =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(key.id)
+      |> Repo.update_all(set: [last_used_at: now, updated_at: now])
+
+    # Telemetry-only judgment off the resolve-time struct: a rare concurrent
+    # double-broadcast just reflows the list twice, so no lock is warranted.
+    if is_nil(previous_use), do: broadcast_api_key_first_used(key)
+
+    %{key | last_used_at: now}
+  end
+
+  @doc """
+  Internal — the OAuth cleanup sweep prunes backing keys orphaned by an abandoned
+  consent (`OAuth.delete_abandoned_backing_keys/1`). Deletes only OAuth backing
+  keys (`kind: :mcp`, non-expiring) among `ids`, so a mis-passed id can never
+  remove a real operator key; the caller supplies the ids of expired,
+  never-exchanged codes, which by construction hold no token. Returns the count.
+  """
+  def delete_backing_keys(ids) when is_list(ids) do
+    {count, _} =
+      ApiKey.Query.all()
+      |> ApiKey.Query.by_ids(ids)
+      |> ApiKey.Query.oauth_backing()
+      |> Repo.delete_all()
+
+    count
   end
 
   @doc "Internal - locked liveness check for a delayed run authorization decision."

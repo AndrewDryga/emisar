@@ -652,6 +652,31 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(nil, @resource)
       assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token", nil)
     end
+
+    test "records the call on the backing key so the connection isn't 'never used'" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # Consent + exchange never touch last_used_at — only an actual MCP call
+      # does, via the resolve path. Direct emk- auth records this; OAuth resolves
+      # by id, so without this the agent row would read "never used" forever.
+      assert %ApiKey{last_used_at: nil} = Repo.one(ApiKey)
+
+      assert {:ok, %{api_key: %ApiKey{last_used_at: %DateTime{}}}} =
+               OAuth.resolve_access_token(tokens.access_token, @resource)
+
+      assert %ApiKey{last_used_at: %DateTime{}} = Repo.one(ApiKey)
+    end
   end
 
   describe "resolve_access_token/2 invalidation paths" do
@@ -793,6 +818,48 @@ defmodule Emisar.OAuthTest do
       Repo.update!(Ecto.Changeset.change(token, scope: "offline_access"))
 
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+    end
+  end
+
+  describe "delete_abandoned_backing_keys/1" do
+    test "prunes the orphaned backing key of an expired, never-exchanged consent" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      _code = issue!(subject, client, challenge)
+
+      # Consent minted a backing key + code; while the code is live, nothing prunes.
+      assert %ApiKey{expires_at: nil} = Repo.one(ApiKey)
+      assert 0 = OAuth.delete_abandoned_backing_keys()
+
+      # Two minutes on, the never-exchanged code has expired: its orphaned backing
+      # key (a would-be permanent "(OAuth)" agent row) is swept, and its code
+      # cascades away with it.
+      future = DateTime.add(DateTime.utc_now(), 120, :second)
+      assert 1 = OAuth.delete_abandoned_backing_keys(future)
+      refute Repo.one(ApiKey)
+      refute Repo.one(AuthorizationCode)
+    end
+
+    test "keeps the backing key of a completed (exchanged) consent" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, _tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # The code is burned (`used_at` set), so even far in the future it's never
+      # mistaken for an abandonment — its key is a real, token-backed connection.
+      future = DateTime.add(DateTime.utc_now(), 120, :second)
+      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert %ApiKey{} = Repo.one(ApiKey)
     end
   end
 

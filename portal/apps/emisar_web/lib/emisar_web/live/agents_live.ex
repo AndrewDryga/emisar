@@ -1239,10 +1239,15 @@ defmodule EmisarWeb.AgentsLive do
                   >
                     View activity
                   </.button>
+                  <%!-- OAuth backing keys hide Rotate: a fresh emk- secret can't
+                     reach the OAuth client (it holds tokens bound to the old
+                     backing-key id), so rotation would only break the connection.
+                     Revoke stays — it's the operator's off-switch. --%>
                   <.confirm_button
                     :if={
                       is_nil(key.revoked_at) and
-                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                        ApiKeys.subject_can_manage_api_keys?(@current_subject) and
+                        not ApiKeys.ApiKey.oauth_backing?(key)
                     }
                     id={"rotate-#{key.id}"}
                     title="Rotate this key?"

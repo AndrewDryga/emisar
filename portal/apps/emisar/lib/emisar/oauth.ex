@@ -311,13 +311,38 @@ defmodule Emisar.OAuth do
          true <- resource_matches?(token.resource, resource),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
          {:ok, account} <- Accounts.fetch_account_by_id(token.account_id) do
-      {:ok, %{api_key: key, account: account, token: token}}
+      # Record the call on the backing key. Direct `emk-` auth bumps this in
+      # `peek_api_key_by_secret/1`; the OAuth path resolves by id, so it must
+      # record here or the connection's agent row stays "never used" forever.
+      used_key = ApiKeys.record_backing_key_usage(key)
+      {:ok, %{api_key: used_key, account: account, token: token}}
     else
       _ -> {:error, :invalid}
     end
   end
 
   def resolve_access_token(_, _), do: {:error, :invalid}
+
+  @doc """
+  Internal — the OAuth cleanup sweep. Consent mints the backing MCP key up front
+  (`issue_code/3`), but an operator can abandon the flow before the token
+  exchange; the code then expires unused and — without this — orphans a permanent
+  "(OAuth)" agent row. Deletes the backing keys of expired, never-exchanged codes
+  (which hold NO token by construction — a token is only minted after the code is
+  burned, so `used_at IS NULL` proves the exchange never ran); the api_keys→codes
+  FK cascade removes the codes with them. Runs before the code sweep so the
+  linkage still exists. Returns the count of keys deleted.
+  """
+  def delete_abandoned_backing_keys(now \\ DateTime.utc_now()) do
+    api_key_ids =
+      AuthorizationCode.Query.all()
+      |> AuthorizationCode.Query.expired_before(now)
+      |> AuthorizationCode.Query.never_used()
+      |> AuthorizationCode.Query.select_api_key_ids()
+      |> Repo.all()
+
+    ApiKeys.delete_backing_keys(api_key_ids)
+  end
 
   @doc """
   Internal — delete authorization codes past their expiry. Codes are
