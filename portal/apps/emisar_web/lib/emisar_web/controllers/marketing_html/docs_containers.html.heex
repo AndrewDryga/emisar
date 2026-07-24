@@ -23,17 +23,7 @@
       <.docs_header current="containers">
         <:dek>
           The runner is a plain foreground process — it runs fine in a container. What changes
-          isn't whether it runs; it's what it can see. This page covers what a containerized runner
-          can reach, the two mechanics every container shape shares, and the sidecar shape. To run
-          one per node, it feeds into
-          <.link
-            navigate={~p"/docs/kubernetes"}
-            class="text-brand-400 hover:text-brand-300"
-          >Kubernetes</.link>
-          and <.link
-            navigate={~p"/docs/nomad"}
-            class="text-brand-400 hover:text-brand-300"
-          >Nomad</.link>.
+          isn't whether it runs; it's what it can see.
         </:dek>
       </.docs_header>
 
@@ -48,11 +38,10 @@
     you/emisar-runner
 <span class="text-zinc-500">$</span> docker logs -f emisar</.docs_code>
 
-      <.docs_callout kind={:note} title="Egress-only, namespace-scoped">
+      <.docs_callout kind={:note} title="Egress-only">
         Nothing listens inbound — the container dials out to
         <code class="text-zinc-300">emisar.dev</code>
-        like any other runner. The namespace it can see — its mounts, network, and PID space — is its
-        scope, so give it only what its packs need.
+        like any other runner.
       </.docs_callout>
 
       <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
@@ -67,10 +56,10 @@
         its processes, its filesystem, its network.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        That isn't a failure mode; it's a scoping decision. A sidecar that can only see one app
-        is a tightly scoped runner — the agent operating through it can't touch anything else,
-        no matter what it asks for. You just have to pick the shape that matches what you want
-        the agent to operate: one app, a node, or every node.
+        It gives you the freedom to design the runner scope that fits your specific use case.
+        A sidecar that can only see one app is a tightly scoped runner — the agent operating
+        through it can't touch anything else. You just have to pick the shape that matches
+        what you want the agent to operate: one app, a node, or every node.
       </p>
 
       <.docs_h2 id="building-blocks">The two mechanics every shape shares</.docs_h2>

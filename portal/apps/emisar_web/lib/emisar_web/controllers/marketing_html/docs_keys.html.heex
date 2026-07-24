@@ -18,9 +18,7 @@
       <.docs_header current="keys">
         <:dek>
           Every agent you connect authenticates with one API key. This page is that key's whole
-          life: what it is, why it carries no permissions of its own, how to mint, rotate, and
-          revoke it, and how the emisar-mcp bridge that carries it stays current. For picking a
-          client and pasting its config, see <.link
+          life. For picking a client and pasting its config, see <.link
             navigate={~p"/docs/connect-a-cli-client"}
             class="text-brand-400 hover:text-brand-300"
           >Connect a CLI agent</.link>.
@@ -29,6 +27,8 @@
 
       <.docs_screenshot
         src="/images/screenshots/agents.webp"
+        title="emisar console · LLM agents"
+        caption="Keys grouped by the member who owns them — status, last call, expiry, and per-agent rotate and revoke."
         alt="The LLM agents page, grouped by the person who owns each key: Jordan Lee's Claude Desktop, Gemini CLI, and Codex CLI; Maya Chen's Cursor, ChatGPT, and Claude Code. Each row shows the client, bridge version, a status dot (dormant, idle, never used, or a rose 'unsupported'), last-call and expiry, a 'swap pending' rotation in progress, and per-agent View activity, Rotate, and Revoke actions."
       />
 
@@ -55,8 +55,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Identity, not authority.</strong>
-            A key is an identity, an optional expiry, and audit attribution — nothing more. It
-            records which agent did what; on its own it grants nothing (that's the next section).
+            A key is an identity, an optional expiry, and audit attribution — nothing more.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -64,8 +63,7 @@
           <span>
             <strong class="text-zinc-200">One key per connection.</strong>
             Each connected client gets its own key, so you can see and revoke agents one at a time.
-            Cloud clients that connect over OAuth follow the same idea — a backing key minted for
-            them after you consent.
+            Cloud clients that connect over OAuth follow the same idea.
           </span>
         </li>
       </ul>
@@ -83,8 +81,7 @@
             <strong class="text-zinc-200">Which runners it can reach.</strong>
             Exactly the runners the member who minted it can reach. A member is scoped to runner
             groups on the Team page; the key inherits that scope, and emisar resolves it from that
-            member on <em>every call</em>, not once at mint time. Narrow a member's runner scope and
-            every key they've minted narrows with it in the same moment.
+            member on <em>every call</em>, not once at mint time.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -139,17 +136,6 @@
             can see the agents list but can't mint. Rotating and revoking are admin or owner.
           </span>
         </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Setup lives next door.</strong>
-            This page is the key's lifecycle; the per-client install and config — file paths and
-            the bridge command — are in <.link
-              navigate={~p"/docs/connect-a-cli-client"}
-              class="text-brand-400 hover:text-brand-300"
-            >Connect a CLI agent</.link>.
-          </span>
-        </li>
       </ul>
 
       <.docs_h2 id="rotating">Rotating a key</.docs_h2>
@@ -198,9 +184,8 @@
         is the kill switch, and it's terminal. The moment you confirm, the
         key is dead and the connected client gets a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
-        on its very next call. There's no un-revoke: to bring the agent back you connect it again,
-        which mints a fresh key. Reach for it when a key leaks, an agent misbehaves, or a connection
-        is finished. Revoking is admin or owner, and it asks you to type the agent's name first,
+        on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
+        is finished. It asks you to type the agent's name first,
         because it can't be undone.
       </p>
       <.docs_callout kind={:note} title="A key that suddenly returns 401.">

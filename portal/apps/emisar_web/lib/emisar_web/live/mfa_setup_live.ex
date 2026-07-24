@@ -75,7 +75,11 @@ defmodule EmisarWeb.MfaSetupLive do
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
         requires two-factor authentication for every member. Set it up now to continue
-        to your dashboard.
+        to your dashboard. Learn why we require it in the <.link
+          href={~p"/security"}
+          class="text-zinc-400 underline hover:text-zinc-200"
+        >
+          Security overview</.link>.
       </p>
 
       <%= cond do %>

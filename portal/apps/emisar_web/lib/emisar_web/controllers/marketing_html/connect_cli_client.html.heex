@@ -6,7 +6,8 @@
       current="connect-a-cli-client"
       toc={[
         {"api-key", "Mint an API key"},
-        {"stdio-bridge", "Set up a stdio client"}
+        {"stdio-bridge", "Set up a stdio client"},
+        {"sign-in-grants", "What the sign-in grants"}
       ]}
     >
       <.docs_header current="connect-a-cli-client">
@@ -25,28 +26,11 @@
           Cloud apps connect over OAuth with no key or bridge to manage — see <.link
             navigate={~p"/docs/connect-an-llm"}
             class="text-brand-400 hover:text-brand-300"
-          >
-            Connect a cloud LLM
-          </.link>.
+          >Connect a cloud LLM</.link>.
         </p>
       </.docs_callout>
 
-      <.agent_skill_cta
-        class="mt-6"
-        skill="connect-llm"
-        prompt="Connect this machine's coding agent to my emisar account over MCP — install the emisar-mcp bridge, register the client, and prove a run end to end. First ask me which client I use. Use the connect-llm skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/connect-llm/SKILL.md"
-      >
-        Or have your coding agent do it — the <code class="text-zinc-300">connect-llm</code>
-        skill walks it through installing the bridge, registering your client, and proving a run
-        end to end.
-      </.agent_skill_cta>
-
-      <.docs_screenshot
-        src="/images/screenshots/connect-cli-agents.webp"
-        alt="The Connect-an-agent panel with a local client (Claude Code) selected among the LOCAL / IDE clients (Cursor, Windsurf, Zed, Codex CLI, Gemini CLI, and more). Step 1 installs the emisar-mcp bridge with a one-line install-mcp.sh command — the installer adds emisar to the clients it finds and opens a browser approval, so there's no key to copy — with a collapsible 'set up manually' option that reveals a config snippet and a fresh key. Step 2 waits for the agent's first call."
-      />
-
-      <.docs_callout kind={:note} title="Before you connect">
+      <.docs_callout kind={:note} icon="hero-clipboard-document-check" title="Before you connect">
         <p>
           Point your client at an account that already has at least one runner online — otherwise the
           agent signs in fine but finds an empty catalog with nothing to call. New here? Run the
@@ -57,51 +41,45 @@
         </p>
       </.docs_callout>
 
+      <.agent_skill_cta
+        class="mt-6"
+        skill="connect-llm"
+        prompt="Connect this machine's coding agent to my emisar account over MCP — install the emisar-mcp bridge, register the client, and prove a run end to end. First ask me which client I use. Use the connect-llm skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/connect-llm/SKILL.md"
+      >
+        The <code class="text-zinc-300">connect-llm</code>
+        skill walks your agent through this whole page.
+      </.agent_skill_cta>
+
       <%!-- ============================================================ --%>
       <%!-- Mint an API key (bridge + direct MCP)                         --%>
       <%!-- ============================================================ --%>
       <section>
-        <.docs_h2 id="api-key">Mint an API key</.docs_h2>
+        <.docs_h2 id="api-key">1. Mint an API key</.docs_h2>
 
         <p class="mt-4 text-base text-zinc-400">
-          The clients below authenticate with a raw key instead of OAuth — but you rarely
-          handle the key yourself. The installer in the next section asks to add emisar to the
-          clients it finds; you approve the connection in your browser and the keys are minted
-          and written into the client configs for you. Setting up by hand instead? In the
-          dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>,
-          pick your client from the tab strip, and reveal the manual snippet —
-          it mints a key named after the client, prefilled and ready to paste.
+          You rarely mint a key by hand: the installer in step 2 mints one per client it finds, and
+          cloud apps use OAuth with no key at all (<.link
+            navigate={~p"/docs/connect-an-llm"}
+            class="text-brand-400 hover:text-brand-300"
+          >Connect a cloud LLM</.link>). To do it yourself, open <strong>LLM agents</strong>
+          in the dashboard, pick your client, and reveal its prefilled snippet — shown once.
         </p>
 
         <p class="mt-4 text-base text-zinc-400">
-          The key itself carries no permissions to tune — what it may run is your account
+          There's nothing to configure on the key: it runs under your account
           <strong>policy</strong>
-          (risky actions pause for approval), and which runners it can
-          reach is the runner scope of the member who mints it (set on the <strong>Team</strong>
-          page). To hand one agent a tighter blast radius, mint it under a member whose runner
-          scope is already narrow. A separate read-only <strong>audit-export</strong>
-          token —
-          minted on the audit page — ships the audit log to a SIEM and can never execute an
-          action. The dashboard reveals the raw key once; copy and store it.
+          and its owner's runner scope. Rotation, revocation, and scope are covered in <.link
+            navigate={~p"/docs/keys"}
+            class="text-brand-400 hover:text-brand-300"
+          >MCP keys</.link>.
         </p>
-
-        <.docs_callout kind={:note}>
-          <p>
-            The cloud connectors — <strong class="text-zinc-400">Claude.ai and ChatGPT</strong>
-            — do <strong>not</strong>
-            need an API key; they authenticate with OAuth. Mint a key for the
-            stdio bridge — or for a custom client that calls the <.link navigate={
-              ~p"/docs/mcp-reference"
-            }>MCP endpoint directly</.link>.
-          </p>
-        </.docs_callout>
       </section>
 
       <%!-- ============================================================ --%>
       <%!-- Stdio bridge                                                  --%>
       <%!-- ============================================================ --%>
       <section>
-        <.docs_h2 id="stdio-bridge">Set up a stdio client</.docs_h2>
+        <.docs_h2 id="stdio-bridge">2. Set up a stdio client</.docs_h2>
 
         <p class="mt-4 text-base text-zinc-400">
           For clients that only speak stdio MCP — Claude Desktop, Claude
@@ -131,12 +109,10 @@
           label="shell"
           copy_text="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
         ><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
-        <p class="mt-2 text-xs leading-5 text-zinc-400">
-          The installer is automated: it finds the LLM clients on the machine,
-          and once you approve the connection in your browser it mints each
-          client its own key and writes its config for you — your existing
-          comments and other servers preserved. You shouldn't need the by-hand
-          configs below; they're there for reference or an unattended setup.
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          The installer finds your LLM clients and, once you approve in the browser, mints each one a
+          key and writes its config — comments and other servers preserved. The by-hand configs below
+          are just for reference or unattended setups.
         </p>
         <.docs_verify_download
           tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
@@ -145,7 +121,10 @@
 
         <details class="group mt-8 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
           <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
-            Set up a client by hand
+            <span class="flex items-center gap-2">
+              <.icon name="hero-wrench-screwdriver" class="h-4 w-4 text-zinc-500" />
+              Set up a client by hand
+            </span>
             <.icon
               name="hero-chevron-down"
               class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
@@ -212,8 +191,7 @@
             <section>
               <h3 class="text-xl font-semibold text-zinc-50">Zed</h3>
               <p class="mt-2 text-base text-zinc-400">
-                The installer adds this for you and preserves your existing
-                comments and servers. By hand, Zed reads
+                By hand, Zed reads
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
                   ~/.config/zed/settings.json
                 </code>
@@ -346,6 +324,19 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
           </p>
         </.docs_callout>
       </section>
+
+      <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Whether the installer minted it after your browser approval or you pasted one by hand, the
+        key is bound to <em>your</em>
+        membership — the agent acts as you. Every call is attributed to you, and it reaches only the
+        runners and actions your own access already allows (<.link
+          navigate={~p"/docs/keys#no-scope"}
+          class="text-brand-400 hover:text-brand-300"
+        >how a key inherits its operator's scope</.link>). Revoke it any time from
+        <strong>LLM agents</strong>
+        in the dashboard.
+      </p>
     </.docs_layout>
   </section>
 

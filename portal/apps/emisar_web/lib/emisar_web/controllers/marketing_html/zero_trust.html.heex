@@ -67,9 +67,8 @@
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         emisar is built to pass that test the hard way. An action that isn't declared in a trusted
         pack doesn't exist for the agent to call — there is no rate limit to grind through, no
-        unusual port to find, no prompt to talk past. The capability is simply <em class="text-zinc-200">absent</em>. A compromised agent can't escalate to a command the
-        runner was never taught, because the runner refuses anything outside the contract — by
-        construction, not by friction.
+        unusual port to find, no prompt to talk past. A compromised agent can't escalate to a command the
+        runner was never taught, because the runner refuses anything outside the contract.
       </p>
     </div>
   </section>
@@ -85,6 +84,10 @@
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
           Anthropic groups controls into three tiers — Foundation, Enterprise, Advanced. Here is
           where emisar lands on the ones it owns: the boundary between the agent and your hosts.
+          The engineering detail behind each row is in <.link
+            navigate={~p"/docs/security-model"}
+            class="text-brand-300 hover:text-brand-200"
+          >the security model</.link>.
         </p>
       </div>
 
@@ -140,11 +143,6 @@
           </table>
         </div>
       </div>
-      <p class="mx-auto mt-6 max-w-5xl text-sm leading-6 text-zinc-400">
-        The tiers are Anthropic's. The point of the colors: the approval gate, JIT access, and
-        SIEM streaming are filed under <span class="text-amber-300/90">Advanced</span> — and
-        emisar ships them on the Free plan.
-      </p>
     </div>
   </section>
 
@@ -219,40 +217,14 @@
     </div>
   </section>
 
-  <%!-- Go deeper / CTA --%>
-  <section class="border-t border-zinc-900 bg-zinc-950/40 py-16 sm:py-24">
-    <div class="mx-auto max-w-5xl px-6 lg:px-8">
-      <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm">
-        <a
-          href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Read Anthropic's framework
-          <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5" />
-        </a>
-        <.link
-          navigate={~p"/security"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          emisar's security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          href={~p"/sign_up"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Start free — connect a runner <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </div>
-    </div>
-  </section>
+  <%!-- CTA — the shared marketing_cta, same close as every primary page. The
+       framework PDF stays linked in the hero and the design-test figure. --%>
+  <.marketing_cta
+    headline="Put the framework between your agent and production."
+    subcopy="Install a runner, connect your agent, and every call crosses the boundary this page mapped — least agency, an approval where it counts, and an audit trail you can hand an auditor."
+    secondary_label="Read the security model"
+    secondary_path={~p"/security"}
+  />
 
   <.marketing_footer />
 </div>

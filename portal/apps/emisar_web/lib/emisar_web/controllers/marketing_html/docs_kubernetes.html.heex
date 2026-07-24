@@ -91,7 +91,7 @@
         With the manifest above, process packs see every node process
         (<code class="font-mono">hostPID</code>), network packs see the node's real ports
         (<code class="font-mono">hostNetwork</code>), journal reads work against the mounted
-        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Two honest limits: pack binaries run from the
+        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Two limits: pack binaries run from the
         container's image, so put the tools your packs call into it; and the mounts above are
         read-only on purpose. You own the image, built from the release tarball, and every grant in
         it — narrow the mounts and drop <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>
@@ -112,7 +112,7 @@
         >
           host-install page
         </.link>). Keep those grants scoped to the exact actions you intend the node runner to
-        perform — the manifest is where the blast radius is set.
+        perform.
       </p>
     </.docs_layout>
   </section>

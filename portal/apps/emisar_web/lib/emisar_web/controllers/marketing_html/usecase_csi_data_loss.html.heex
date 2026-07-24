@@ -16,7 +16,7 @@
         and the exact emisar loop that contained it:
         <strong class="font-semibold text-zinc-200">investigate through declared actions, stop the
         bleed behind one approval, then write the durable fix to the infra repo</strong>
-        — no raw SSH, every step on the record. The honest part is the fix: the one-line setting
+        — no raw SSH, every step on the record. The twist is the fix: the one-line setting
         you'd reach for first was a no-op, and the thing that actually stopped it was a guard that
         refuses to trust the driver.
       </p>
@@ -32,7 +32,7 @@
         through emisar on the stock <code>debugging</code>, <code>docker</code>, <code>nomad</code>, <code>multipath</code>, <code>iscsi</code>,
         <code>pure</code>
         and <code>victoriametrics</code>
-        packs — all of which ship with emisar. emisar is only as capable as the actions you
+        packs. emisar is only as capable as the actions you
         declare; for this fleet, the catalog already covered every layer of the fabric.
       </p>
 
@@ -75,8 +75,7 @@
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         The agent works down the layers with declared pack actions, each scoped to
         <code>nomad-hvn03</code>
-        (or the array) and logged with a reason. No shell, no standing SSH key. Every action below
-        is a real tool in the shipped catalog.
+        (or the array) and logged with a reason. No shell, no standing SSH key.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Claude, over MCP → emisar. Each call is a declared, scoped, logged action.</span>
 
@@ -154,8 +153,6 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         Caught in the first minute, that freeze preserves the LUN for recovery. Here a human took
         an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused —
         so we accepted the 33-hour gap (game-side state was untouched; only telemetry was lost).
-        But the bleed stopped on one approval, and the audit trail shows exactly who authorized the
-        only destructive action and when.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
@@ -211,9 +208,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
         a corrupted filesystem that looks empty to <code>blkid</code>
         is refused, not formatted. A separate serial-resolved formatter handles genuinely new
         volumes: it resolves exactly one Pure namespace by serial, then refuses unless the start,
-        middle, and end of the device all read as zero. The NVMe/TCP move noted above makes an
-        empty read less likely, but it doesn't change what the driver does when a device reads
-        blank; the mkfs guard is what stops the reformat.
+        middle, and end of the device all read as zero.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
@@ -238,7 +233,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
         </li>
       </ul>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Honest note: emisar would not have stopped democratic-csi's <code>mkfs</code>
+        emisar would not have stopped democratic-csi's <code>mkfs</code>
         — that was an automated component doing its job badly, and the tidy declarative fix you'd
         reach for first was a no-op the vendor shipped. What emisar changes is everything a human
         or agent does <em>around</em>

@@ -54,7 +54,7 @@
         Reading down to the edge
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Reads run freely on emisar — each scoped to a runner and logged with its reason — so the
+        Reads run freely on emisar, so the
         agent could walk the whole edge from one surface instead of four CLIs and four sets of
         credentials.
       </p>
@@ -174,8 +174,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
         <code>linux.systemctl_restart</code>
         takes the unit by a name that can't carry shell metacharacters, and which units a runner may
         touch is a policy decision, high-risk and approval-gated by default. The memory change refuses
-        to write if the jobspec moved under it, and it edits only that one task's limit. Two real
-        changes to production, each one named, reasoned, and on the record.
+        to write if the jobspec moved under it, and it edits only that one task's limit.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
@@ -217,7 +216,7 @@ done
         drops a node's BGP advertisement so ECMP routes around it — the break-glass for a node that
         can't come back fast. It didn't come to that here; restarting Consul brought
         <code>hvn05</code>
-        back outright, and a node you've just healed isn't one you pull from rotation. But when the
+        back outright. But when the
         fix isn't a thirty-second restart, the lever is on the governed path now — not an SSH session
         and a <code>vtysh</code>
         prompt.

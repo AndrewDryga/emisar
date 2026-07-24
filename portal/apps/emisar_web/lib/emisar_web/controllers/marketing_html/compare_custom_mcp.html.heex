@@ -9,7 +9,7 @@
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         Building your own MCP server is a reasonable thing to do — and for a narrow surface, the
-        right one. This is the honest version of what changes between the afternoon you ship the
+        right one. This is what changes between the afternoon you ship the
         prototype and the quarter you spend making it safe to point an agent at production.
       </p>
 
@@ -18,9 +18,7 @@
       </h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Wiring up <code>tools/list</code>
-        and a handler that shells out is genuinely a few hours' work. If that's the whole job —
-        one team, one target that's already an API, your existing auth and audit already cover it
-        — build the adapter and move on; emisar would be overkill. The work that doesn't show up
+        and a handler that shells out is genuinely a few hours' work. The work that doesn't show up
         in the demo is everything between the model's request and a safe, attributable execution
         on a real host. That part is never <em>done</em>: every new host, pack, client, and edge
         case reopens the list, and it's your pager.
@@ -85,8 +83,7 @@
         straight into a SQL string, one slip from injection; the right declares
         <code class="text-zinc-300">pid</code>
         an integer the runner re-validates before <code class="text-zinc-300">psql</code>
-        ever sees it. That gap, plus the other 80% — redaction, approval, audit, reconnect — is
-        what emisar ships once, for every host, pack, and client you add.
+        ever sees it.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
@@ -94,8 +91,7 @@
       </h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         A capable team can build every row of this. The column on the left isn't "what custom
-        servers lack" — it's the code you write, test, and carry. The column on the right is what
-        emisar ships so you don't.
+        servers lack" — it's the code you write, test, and carry.
       </p>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
@@ -167,14 +163,14 @@
       </div>
       <p class="mt-3 text-xs leading-relaxed text-zinc-400">
         None of these are hard in isolation. They're a product because they have to hold together,
-        forever, across every host and client you add.
+        forever.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         What emisar costs you
       </h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Not buying the boring 80% isn't free either. The honest tradeoffs:
+        Not buying the boring 80% isn't free either.
       </p>
       <ul class="mt-4 space-y-3 text-sm leading-relaxed text-zinc-400">
         <li>
@@ -200,7 +196,7 @@
         </li>
         <li>
           <strong class="text-zinc-200">
-            It's another bill, and another vendor in your path.
+            It's another bill.
           </strong>
           Team is $20 per runner per month, and you're putting a young product on part of your ops
           path. We try to earn it with the on-host guarantees above — and the runner stays useful

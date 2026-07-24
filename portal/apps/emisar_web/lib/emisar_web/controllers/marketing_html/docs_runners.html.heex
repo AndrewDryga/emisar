@@ -17,17 +17,19 @@
     >
       <.docs_header current="runners">
         <:dek>
-          The quickstart gets one runner online. This page is the rest of its life: organizing a
-          fleet with groups and labels, handing packs their credentials, updating, troubleshooting,
-          and removing a host cleanly. (Installation itself is covered in the <.link
+          The
+          <.link
             navigate={~p"/docs/quickstart"}
             class="text-brand-400 hover:text-brand-300"
-          >quickstart</.link>.)
+          >quickstart</.link>
+          gets one runner online. This page is the rest of its life.
         </:dek>
       </.docs_header>
 
       <.docs_screenshot
         src="/images/screenshots/runner-fleet.webp"
+        title="emisar console · Runners"
+        caption="The fleet by group — version, hostname, heartbeat, connection status, and signed-only badges."
         alt="The Runners page: the fleet grouped by runner group — each runner's name, agent version, hostname, and last heartbeat, with a connection status (connected, offline) and a signed-only badge where dispatch signatures are required."
       />
 
@@ -73,10 +75,11 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Mint at install time.</strong>
-            <strong>Runners → Connect a runner</strong> generates the install one-liner with a
+            <strong>Runners → Connect a runner</strong>
+            generates the install one-liner with a
             fresh single-use key baked in. For fleet provisioning (cloud-init, Packer, Ansible),
-            mint one reusable key under <strong>Runners → Enrollment keys</strong> — cap it with
-            max uses or an expiry to fit the rollout — and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
+            mint one reusable key under <strong>Runners → Enrollment keys</strong>
+            and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -210,9 +213,9 @@ execution:
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Default uninstall deletes the cached runner token and generated identity. Then delete the
-        runner in the dashboard. Its run history and audit events stay — history survives the
-        host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+        Then delete the
+        runner in the dashboard. Its run history and audit events stay.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
         deletes the local
         journal, configuration, and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>

@@ -308,7 +308,7 @@ defmodule EmisarWeb.MarketingTest do
     # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
     # The headline security posture (must match the built behavior).
-    assert html =~ "issuer + subject, not email"
+    assert html =~ "subject, never by email"
   end
 
   test "SCIM docs page covers directory sync, deprovisioning, and group mapping",
@@ -944,6 +944,16 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "curl -sSL"
       assert html =~ "https://emisar.dev/install-mcp.sh"
       assert html =~ "| sudo bash"
+    end
+
+    test "the CLI-client page explains what the sign-in grants", %{conn: conn} do
+      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+
+      # The security posture of the key the bridge carries: it acts as its owner
+      # and inherits their scope — the same claim the cloud connect page makes.
+      assert html =~ "What the sign-in grants"
+      assert html =~ "the agent acts as you"
+      assert html =~ "inherits its operator"
     end
 
     test "the quickstart renders the install command pinned to the TLS endpoint", %{conn: conn} do

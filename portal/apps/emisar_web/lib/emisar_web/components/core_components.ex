@@ -4778,16 +4778,13 @@ defmodule EmisarWeb.CoreComponents do
             <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
               <li>
                 <.link
-                  href="/docs/quickstart"
+                  href={~p"/docs/host-install"}
                   target="_blank"
                   rel="noopener noreferrer"
                   class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-zinc-100">Installation guide</div>
-                    <div class="mt-0.5 text-xs text-zinc-400">
-                      Image-bake, cloud-init, manual install.
-                    </div>
+                    <div class="text-sm font-medium text-zinc-100">Full host install</div>
                   </div>
                   <.icon
                     name="hero-arrow-top-right-on-square"
@@ -4795,7 +4792,71 @@ defmodule EmisarWeb.CoreComponents do
                   />
                 </.link>
               </li>
-              <%!-- The docs row above covers image-bake/cloud-init; this is
+              <li>
+                <.link
+                  href={~p"/docs/containers"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Containers</div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/docs/kubernetes"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Kubernetes</div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/docs/nomad"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Nomad</div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/docs/autoscaling-fleets"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Autoscaling fleets</div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
+                  />
+                </.link>
+              </li>
+              <%!-- The docs rows above cover image-bake/cloud-init; this is
                    its in-product twin — those paths need a multi-use key,
                    not the one-shot key baked into the command. Routing for a
                    different journey lives HERE, off the act→wait timeline. --%>

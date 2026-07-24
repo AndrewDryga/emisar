@@ -19,9 +19,7 @@
           group, an AWS Auto Scaling group, an Azure Scale Set. To put a runner on each one, bake a
           single <strong>reusable</strong>
           enrollment key into the launch template and let every instance install and enroll itself
-          on boot: no per-host key, no manual approval, no click. This page covers the key, the
-          headless boot install, the three clouds, and the two things you handle yourself — identity
-          on disposable disks, and reaping the runners a terminated instance leaves behind.
+          on boot: no per-host key, no manual approval, no click.
         </:dek>
       </.docs_header>
 
@@ -35,21 +33,13 @@
           href={~p"/install.sh"}
           class="text-brand-400 hover:text-brand-300"
         >installer</.link>
-        on boot, unattended: it downloads the runner, trades the key for the runner's own token, and
+        on boot: it downloads the runner, trades the key for the runner's own token, and
         connects. Enrollment is <strong class="text-zinc-200">zero-touch</strong>
         — a valid key is the credential, so the runner is live the moment it registers; nobody
-        approves each new host. That's the property an autoscaler needs.
+        approves each new host.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        What a fleet runner may then do is exactly what any runner may do: reach the runners and run
-        the actions your
-        <.link
-          navigate={~p"/docs/policies-and-approvals"}
-          class="text-brand-400 hover:text-brand-300"
-        >policy</.link>
-        allows, behind the same approvals — the key is an identity, not a grant. One thing it does
-        <em>not</em>
-        carry is a group. Each instance names its own fleet tier with
+        Each instance can name its own fleet tier with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
         in the boot script (below), which is how a runbook or a runner scope later targets "the web
         fleet" instead of one host.
@@ -57,8 +47,8 @@
 
       <.docs_h2 id="key">Create a reusable enrollment key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the console, open <strong>Runners → Enrollment keys → New key</strong>. A host-connect key
-        is single-use; for a fleet, turn on <strong>Reusable</strong>
+        In the console, open <strong>Runners → Enrollment keys → New key</strong>. Turn on
+        <strong>Reusable</strong>
         so every instance can enroll with the same one. Two optional limits keep a shared key honest:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -91,7 +81,7 @@
           expiry, and what your policy lets any runner do, but still worth guarding. Scope it with an
           expiry, cap it with max-uses, and rotate by minting a new key, updating the template, and
           then <strong>Revoke</strong>-ing the old one on the same page. Revoking stops new
-          enrollments at once; runners already connected hold their own tokens and keep running.
+          enrollments at once; <b>runners already connected hold their own tokens and keep running</b>.
         </p>
       </.docs_callout>
 
@@ -121,9 +111,8 @@ curl -sSL https://emisar.dev/install.sh \
         is the pack set to install and is required alongside it (an empty value installs none, and
         you add packs later).
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
-        — plus optional <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_ROLE</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_ENVIRONMENT</code>
-        labels — tags the runner for targeting. Everything else about the installer, its flags, and
+        — plus any <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_*</code>
+        labels (e.g. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_ROLE=web</code>) — tags the runner for targeting. Everything else about the installer, its flags, and
         the config it writes is on the
         <.link
           navigate={~p"/docs/host-install"}
@@ -143,9 +132,8 @@ curl -sSL https://emisar.dev/install.sh \
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">GCP managed instance group.</strong>
-            Add it to the instance template as startup-script metadata — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</code>. Every
-            instance the group creates runs it on boot.
+            <strong class="text-zinc-200">GCP Managed Instance Group.</strong>
+            Add it to the instance template as startup-script metadata — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -154,16 +142,14 @@ curl -sSL https://emisar.dev/install.sh \
             <strong class="text-zinc-200">AWS Auto Scaling group.</strong>
             Put it in the launch template's user data (base64-encoded) — the
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">UserData</code>
-            field of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">aws ec2 create-launch-template --launch-template-data</code>. The
-            group's instances run it as they scale out.
+            field of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">aws ec2 create-launch-template --launch-template-data</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Azure Virtual Machine Scale Set.</strong>
-            Pass it as cloud-init custom data — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">az vmss create … --custom-data emisar-boot.sh</code>. Each
-            scaled instance runs it on first boot.
+            Pass it as cloud-init custom data — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">az vmss create … --custom-data emisar-boot.sh</code>.
           </span>
         </li>
       </ul>
@@ -172,8 +158,8 @@ curl -sSL https://emisar.dev/install.sh \
         command — the runner comes up, enrolls, and shows in your fleet within seconds. For faster
         boots, bake the binary into a custom image first (run the installer with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
-        during the image build, then let the boot script start and enroll) — just don't bake an
-        identity into it. Here's why.
+        during the image build, then let the boot script start and enroll) — just <b>don't bake an
+        enrollment key into it.</b>
       </p>
 
       <.docs_h2 id="identity">A new runner each boot</.docs_h2>
@@ -182,7 +168,7 @@ curl -sSL https://emisar.dev/install.sh \
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>
         the first time it starts. A disposable instance with an ephemeral disk has none, so it mints
         a fresh one and registers as a <strong class="text-zinc-200">new</strong>
-        runner every boot. That's the honest shape of an ephemeral fleet — scaling out by ten gives
+        runner every boot. That's the shape of an ephemeral fleet — scaling out by ten gives
         you ten new runners, not ten reconnects — and it's fine. Two things follow from it:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -192,9 +178,7 @@ curl -sSL https://emisar.dev/install.sh \
             <strong class="text-zinc-200">Never bake an identity into an image.</strong>
             If you install on a build host and snapshot its <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>, every
             instance launched from that image claims the same identity — and emisar rejects the
-            second one to connect as a cloned data directory. Bake the binary
-            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>), never the
-            token or the id.
+            second one to connect as a cloned data directory.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -217,13 +201,13 @@ curl -sSL https://emisar.dev/install.sh \
         each one counts against your plan's runner limit until it's gone.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Turn on retention. On the <strong>Runners</strong>
+        To solve this turn on retention. On the <strong>Runners</strong>
         page, an owner or admin sets <strong>Remove runners inactive for</strong>
         to a window; a daily sweep then deletes any runner disconnected longer than that. Connected
         and disabled runners are never touched, and a host that comes back re-enrolls as a fresh
         runner. It's off by default — pick a window comfortably longer than your longest expected
         blip (a rolling deploy, a zone outage) so a brief disconnect isn't mistaken for a dead host,
-        but short enough to keep the fleet honest.
+        but short enough that dead hosts don't linger in the fleet.
       </p>
       <.docs_callout kind={:note} title="The sweep is daily.">
         <p>

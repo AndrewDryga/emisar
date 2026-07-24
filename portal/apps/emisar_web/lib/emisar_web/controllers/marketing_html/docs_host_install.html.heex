@@ -7,7 +7,6 @@
       toc={[
         {"install", "The install command"},
         {"flags", "Flags and environment"},
-        {"what-it-does", "What the installer does"},
         {"config", "The config file"},
         {"user", "The runner's user and privileged actions"},
         {"next", "After it's connected"}
@@ -19,20 +18,60 @@
           <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
             quickstart
           </.link>
-          gets one runner online in a minute. This page is the full install: every flag, what the
-          installer actually does to the host, the service it creates, the config file it writes,
-          and the unprivileged user it runs as. For a container instead of a host, see <.link
+          gets one runner online in a minute. This page is the full install. For a container
+          instead of a host, see <.link
             navigate={~p"/docs/containers"}
             class="text-brand-400 hover:text-brand-300"
           >Containers</.link>.
         </:dek>
       </.docs_header>
 
+      <.agent_skill_cta
+        class="mt-8"
+        skill="install-emisar"
+        prompt="Install the emisar runner and verify it connects. First ask me which host to install it on and how you can reach it (local shell, SSH, or something else). My enrollment key: emkey-enroll-… (I can mint one at Connect a runner in the emisar dashboard). Use the install-emisar skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/install-emisar/SKILL.md"
+      >
+        The <code class="text-zinc-300">install-emisar</code>
+        skill walks your agent through this whole page: install, verify, evidence report.
+      </.agent_skill_cta>
+
+      <.docs_callout
+        kind={:note}
+        icon="hero-clipboard-document-check"
+        title="Before you start, you need:"
+      >
+        <ul class="mt-3 space-y-2">
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              A Linux host with <strong class="text-zinc-300">systemd</strong>
+              — a VM, a cloud instance, or bare metal. (macOS + launchd works for dev/eval;
+              containers work too — see <.link
+                navigate={~p"/docs/containers"}
+                class="text-brand-400 hover:text-brand-300"
+              >Containers &amp; Kubernetes</.link>.)
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span><code class="text-zinc-300">sudo</code> on that host.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
+              for the runner (it dials out; nothing listens on the host, so there's no inbound port
+              to open), plus <code class="text-zinc-300">api.github.com</code>
+              and <code class="text-zinc-300">github.com</code>
+              for the installer — it downloads the runner release and checksums from GitHub.
+            </span>
+          </li>
+        </ul>
+      </.docs_callout>
+
       <.docs_h2 id="install">The install command</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One command, run as root, on a Linux host with systemd. It downloads the signed binary,
-        checksum-verifies it, creates the service user and unit, writes the config, and starts the
-        runner — which enrolls with the key and connects. The
+        One command, run as root, on a Linux host with systemd. The
         <strong class="text-zinc-200">Runners → Connect a runner</strong>
         button generates this exact line with a fresh single-use key baked in.
       </p>
@@ -43,36 +82,70 @@
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
-      <p class="mt-4 text-base leading-7 text-zinc-400">
-        It's a plain, readable shell script —
-        <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">read it first</.link>
-        if you'd rather. The host needs outbound 443 to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>, and to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">github.com</code>
-        + <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api.github.com</code>
-        to fetch and verify the release — no inbound rule ever.
-      </p>
-
-      <.docs_code
-        phx-no-format
-        label="db-01"
-        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
-      ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash
-[install] install target: linux/arm64 via systemd
-[install] latest release: runner-v0.14.0
-[install] downloading emisar-0.14.0-linux-arm64.tar.gz
-[install] checksum verified  sha256:8b8b1ee514a105ec…
-[install] verified: emisar version 0.14.0
-[install] creating system user emisar
-[install] installed binary to /usr/local/bin/emisar
-install starter packs for this host (linux-core debugging systemd-deep debian)? [y/N] y
-install host-matched pack recommendations (cassandra cloud-init dell-ipmi firewall java-jvm network-tls nic)? [y/N] y
-[install] writing pre-configured config to /etc/emisar/config.yaml
-[install] writing runner.env stub to /etc/emisar/runner.env
-[install] writing /etc/systemd/system/emisar.service
-[install] starting emisar.service
-emisar connecting to wss://emisar.dev (group=db-01 packs=11 actions=228)
-level=INFO msg=cloud.connected actions=228 packs=11 inflight_runs=0 requeued_starts=0 requeued_results=0
-[install] installed emisar runner-v0.14.0</.docs_code>
+      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+          <span class="flex items-center gap-2">
+            <.icon name="hero-command-line" class="h-4 w-4 text-zinc-500" />
+            What does the install script do?
+          </span>
+          <.icon
+            name="hero-chevron-down"
+            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+          />
+        </summary>
+        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+          <p class="text-base leading-7 text-zinc-400">
+            It's a plain, readable shell script —
+            <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
+              read it first
+            </.link>
+            if you'd rather. Here's what it sets up:
+          </p>
+          <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-200">Linux + systemd (the production target).</strong>
+                Creates an unprivileged
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+                system user, drops the binary in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>, and
+                installs a hardened
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
+                unit that runs as that user with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Restart=on-failure</code>. systemd
+                is required — the installer checks for it and stops if it's missing, pointing you at
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+                for hosts you supervise yourself.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-200">macOS + launchd (dev / eval).</strong>
+                Installs the binary in
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+                and a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">LaunchDaemon</code>
+                at
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/Library/LaunchDaemons/com.emisar.runner.plist</code>
+                with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">KeepAlive</code>. Good for
+                trying packs on a laptop; production runs on Linux.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-200">Config + secrets.</strong>
+                Writes
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+                (the non-secret settings) and
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
+                (mode 0600 — the enrollment key and any pack credentials). State and logs live under
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>
+                and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar</code>.
+              </span>
+            </li>
+          </ul>
+        </div>
+      </details>
 
       <.docs_h2 id="flags">Flags and environment</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -91,8 +164,10 @@ level=INFO msg=cloud.connected actions=228 packs=11 inflight_runs=0 requeued_sta
             <%= for {name, meaning} <- [
               {"EMISAR_URL", "Your control-plane URL — baked into config.yaml (default https://emisar.dev)."},
               {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner trades for its own token on first connect."},
-              {"RUNNER_GROUP / RUNNER_ROLE / RUNNER_ENVIRONMENT", "Seed the runner's group and labels at install time."},
+              {"RUNNER_GROUP", "The cloud UI's auto-grouping key, written to runner.group. Defaults to the host's short hostname."},
+              {"RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml, e.g. RUNNER_LABEL_ROLE=web or RUNNER_LABEL_ENVIRONMENT=prod. Set as many as you like; the cloud UI filters and searches on them."},
               {"--packs LIST", "Install these packs during setup, e.g. --packs linux-core,docker."},
+              {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires EMISAR_PACKS set explicitly (even to empty)."},
               {"--version TAG", "Pin a specific release instead of latest."},
               {"--no-start", "Install everything but don't start the service yet — for image bakes."},
               {"--reset-identity", "With a new key on an existing install, drop the cached token and re-enroll as a fresh runner."},
@@ -106,51 +181,11 @@ level=INFO msg=cloud.connected actions=228 packs=11 inflight_runs=0 requeued_sta
           </tbody>
         </table>
       </div>
-
-      <.docs_h2 id="what-it-does">What the installer does</.docs_h2>
-      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Linux + systemd (the production target).</strong>
-            Creates an unprivileged
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
-            system user, drops the binary in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>, and
-            installs a hardened
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
-            unit that runs as that user with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Restart=on-failure</code>. systemd
-            is required — the installer checks for it and stops if it's missing, pointing you at
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
-            for hosts you supervise yourself.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">macOS + launchd (dev / eval).</strong>
-            Installs the binary in
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
-            and a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">LaunchDaemon</code>
-            at
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/Library/LaunchDaemons/com.emisar.runner.plist</code>
-            with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">KeepAlive</code>. Good for
-            trying packs on a laptop; production runs on Linux.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Config + secrets.</strong>
-            Writes
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
-            (the non-secret settings) and
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
-            (mode 0600 — the enrollment key and any pack credentials). State and logs live under
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar</code>.
-          </span>
-        </li>
-      </ul>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Rarer knobs — path overrides (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--bin-dir</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--etc-dir</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--data-dir</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--log-dir</code>), a custom service user (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--user</code>), and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_GITHUB_TOKEN</code>
+        for GitHub API rate limits — are listed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh --help</code>.
+      </p>
 
       <.docs_h2 id="config">The config file</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -207,9 +242,7 @@ emisar ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx</.docs_code>
         setuid drop, local admission, systemd hardening — is in the <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          security model
-        </.link>.
+        >security model</.link>.
       </p>
 
       <.docs_h2 id="next">After it's connected</.docs_h2>
@@ -222,14 +255,10 @@ emisar ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx</.docs_code>
         page. To boot ephemeral hosts from an autoscaling group with one reusable key, see <.link
           navigate={~p"/docs/autoscaling-fleets"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          autoscaling fleets
-        </.link>; to roll out across a fleet in phases, see the <.link
+        >autoscaling fleets</.link>; to roll out across a fleet in phases, see the <.link
           navigate={~p"/docs/deployment"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          production rollout
-        </.link>.
+        >production rollout</.link>.
       </p>
     </.docs_layout>
   </section>

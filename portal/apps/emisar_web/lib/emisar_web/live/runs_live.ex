@@ -191,7 +191,7 @@ defmodule EmisarWeb.RunsLive do
       <.page_intro>
         Every action dispatched across your fleet, newest first. Open a row for its arguments,
         output, and audit record — secret values are redacted in the output before it leaves the
-        host. <.doc_link href="/docs/quickstart">Quickstart</.doc_link>
+        host. <.doc_link href={~p"/docs/runs"}>Runs docs</.doc_link>
       </.page_intro>
 
       <LiveTable.live_table

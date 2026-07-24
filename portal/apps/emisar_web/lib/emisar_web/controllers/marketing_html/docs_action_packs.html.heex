@@ -43,9 +43,7 @@ actions:
   - actions/nodetool_repair.yaml</.docs_code>
       <p class="mt-3 text-base text-zinc-400">
         <code>allow_symlinks</code> defaults to <code>false</code>: the loader rejects
-        symlinked action YAMLs and scripts unless you opt in. Together with the
-        pack hash (computed from every file's bytes), this prevents a tampered
-        pack from being silently accepted.
+        symlinked action YAMLs and scripts unless you opt in.
       </p>
 
       <.docs_h2 id="action-yaml">An action YAML</.docs_h2>
@@ -85,8 +83,7 @@ output:
   max_stdout_bytes: 524288
   max_stderr_bytes: 8192
 
-# Optional. Rendered on the dispatch form so operators (and LLMs)
-# see realistic invocations before they fill the args themselves.
+# Optional.
 examples:
   - title: Search syslog for sshd auth failures
     args:

@@ -1032,6 +1032,7 @@ defmodule EmisarWeb.DashboardLive do
       >
         The next runner that tries to register will get a 402 response and fail to come
         online. Upgrade the plan to add more, or remove an unused runner first.
+        <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
         <:action>
           <.button
             variant={:secondary}
@@ -1050,7 +1051,7 @@ defmodule EmisarWeb.DashboardLive do
         class="mb-10"
       >
         Heads up — your next install will use the last slot. Upgrade now if you expect to
-        add more.
+        add more. <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
         <:action>
           <.button
             variant={:secondary}

@@ -17,17 +17,13 @@
         <:dek>
           The Runs page is where you see what your fleet actually did — every action dispatched to a
           host, newest first, with who or what asked for it, what it returned, and the policy
-          decision behind it. This page covers the list and its filters, the run lifecycle and what
-          each status means, and a single run's detail: streamed output, the exact command that
-          executed, redaction, attribution, and cancellation — plus how the runs from one dispatch
-          group together.
+          decision behind it.
         </:dek>
       </.docs_header>
 
       <.docs_h2 id="the-list">The Runs list</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Runs</strong>
-        in the sidebar lists every action dispatched across your account, newest first. Each row is
+        <strong>Runs</strong> in the sidebar. Each row is
         one invocation against one host: when it ran, the action id, the target runner, who
         dispatched it, its status, and how long it took. Rows update in place as a run moves through
         its lifecycle, so you can watch a dispatch go from queued to finished without reloading. On a
@@ -36,6 +32,8 @@
       </p>
       <.docs_screenshot
         src="/images/screenshots/runs.webp"
+        title="emisar console · Runs"
+        caption="Every dispatch with who asked for it, where it ran, and a color-coded outcome."
         alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses — awaiting approval, success, cancelled, and failed — and a per-run duration."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -88,11 +86,7 @@
 
       <.docs_h2 id="statuses">Run statuses</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A run moves through a small state machine. It starts <em>pending</em>
-        — created and queued —
-        becomes <em>sent</em>
-        when the control plane hands it to the runner, and <em>running</em>
-        once the runner acknowledges it and output starts. From there it settles on exactly one
+        A run moves through a small state machine. It starts <em>pending</em>, becomes <em>sent</em>, then <em>running</em>. From there it settles on exactly one
         terminal outcome. Policy can settle a run before it ever reaches a host: a
         <.link
           navigate={~p"/docs/policies-and-approvals"}
@@ -110,22 +104,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
-            <%= for {status, meaning} <- [
-              {"Pending", "Created and queued. Waiting to be handed to its runner — or waiting for an offline runner to reconnect."},
-              {"Pending approval", "Policy required a human approval. The run is held until an approver decides; a denial cancels it."},
-              {"Sent", "Handed to the runner over its connection, not yet acknowledged."},
-              {"Running", "The runner acknowledged the dispatch and is executing. Output is streaming."},
-              {"Cancelling", "You asked to cancel an in-flight run. Waiting for the runner to stop and report its final outcome."},
-              {"Success", "The action ran and the runner reported success. Any declared structured output validated."},
-              {"Failed", "The action ran and exited non-zero."},
-              {"Error", "The run could not complete — its runner went offline, was disabled or removed, dropped mid-run, or never acknowledged the send before the dispatch timeout. The reason is on the run."},
-              {"Timed out", "The action ran past its time limit and the runner stopped it."},
-              {"Validation failed", "The runner's structured output did not match the action's declared output schema."},
-              {"Unknown action", "The runner reported it does not have the dispatched action."},
-              {"Refused", "The runner rejected the dispatch on a pre-execution trust check — a bad, missing, or stale signature, a pack-hash mismatch, or a local admission block. Nothing executed."},
-              {"Denied", "Policy rejected the dispatch at creation. The run was never sent to a runner; the matched rule and reason are recorded."},
-              {"Cancelled", "You, or a denied approval, pulled the run back. The reason is recorded."}
-            ] do %>
+            <%= for {status, meaning} <- EmisarWeb.RunStatuses.all() do %>
               <tr>
                 <td class="px-4 py-3 align-top whitespace-nowrap font-medium text-zinc-200">
                   {status}
@@ -138,13 +117,10 @@
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Three terminal statuses look alike and mean different things — and the difference tells you
-        what to do next. <strong class="text-zinc-200">Denied</strong>
-        is the control plane's policy refusing the dispatch; the run never left the cloud, so the fix
-        is a policy change. <strong class="text-zinc-200">Refused</strong>
-        is the runner rejecting it at the door — a bad or stale signature, a pack-hash mismatch, or a
-        local admission block — so nothing executed; the fix is usually re-trusting the pack or the
-        signing setup. <strong class="text-zinc-200">Failed</strong>
-        is the action actually running and exiting non-zero — a real result to read, not a gate.
+        what to do next: for <strong class="text-zinc-200">Denied</strong> the fix is a policy
+        change, for <strong class="text-zinc-200">Refused</strong> it's usually re-trusting the
+        pack or the signing setup, and <strong class="text-zinc-200">Failed</strong> is a real
+        result to read, not a gate.
       </p>
 
       <.docs_h2 id="run-detail">A single run</.docs_h2>
@@ -200,7 +176,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The terminal renders the most recent 500 chunks. A run that streamed more shows a note that
-        earlier output was trimmed, so a clipped view never reads as the whole story. This is a
+        earlier output was trimmed. This is a
         display limit that keeps a chatty run from growing the page without bound — it caps what's on
         screen, not what the runner sent or what's recorded.
       </p>

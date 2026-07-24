@@ -20,10 +20,9 @@
           By default a runner trusts the control plane to tell it what to run. Signed dispatch
           removes that trust: with enforcement on, a runner executes an action only when it carries a
           valid Ed25519 signature produced by a customer-authorized MCP client. The control plane
-          relays that signature — it holds no private key, so it can't forge or alter the signed
-          action, immutable pack, exact arguments, reason, operation, or selected runner generations;
-          replay it on a selected runner; or
-          originate a run. The signature, not the cloud, is the authority.
+          relays that signature — it holds no private key, so it can't forge or alter a signed
+          action, replay it on a selected runner, or originate a run. The signature, not the
+          cloud, is the authority.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -65,8 +64,8 @@
         </li>
       </ol>
       <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
-        A runner trusts a CA's public key, not every operator key — so onboarding someone is one
-        signature and zero runner-config edits. The offline CA signs short-lived certificates that
+        A runner trusts a CA's public key, not every operator key. The offline CA signs
+        short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
         (a group or labels). The
         exact runner set is bound into every v4 signature with generation-bound refs shaped as
@@ -75,15 +74,12 @@
         <em>generation</em>
         even under the same name, and an old signature can't be replayed onto it.
         Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
-        matched against the runner's local identity. The CA private key stays offline and never
-        touches a runner or the portal.
+        matched against the runner's local identity.
       </.docs_callout>
 
       <.docs_h2 id="turn-on">Turn it on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One command mints a CA, an operator key, and a certificate, and prints everything to wire up
-        — the runner config block (the CA public key), the CA private key to store offline, and the
-        two env vars for your MCP client. Everything is generated offline; the private keys are
+        One command mints a CA, an operator key, and a certificate, and prints everything to wire up. Everything is generated offline; the private keys are
         printed locally and sent nowhere.
       </p>
 
@@ -214,7 +210,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       <.docs_h2 id="rotating">Rotating operators</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Rotating an operator's key never touches a single runner: certs are short-lived and the CA
-        already lives in every runner's config. Mint a fresh cert and swap the client's env vars.
+        already lives in every runner's config.
       </p>
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
@@ -238,9 +234,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
       <.docs_h2 id="revoking">Revoking</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The short cert TTL is the everyday revocation lever — a leaked leaf key is dead once its cert
-        expires, with no fleet operation at all. To kill a leaked key <em>now</em>, or to revoke a
-        compromised CA, rotate the CA. Be clear-eyed about two things:
+        Be clear-eyed about two things:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -249,8 +243,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">Short TTLs are the revocation story.</strong>
             There is no certificate revocation list yet — a leaked leaf key keeps working until its
             cert expires. Keep TTLs short (24h is a good default) so the blast radius of a leak is
-            bounded by the clock, not by a fleet push. A long TTL (for solo / break-glass) trades
-            that away — choose it deliberately.
+            bounded by the clock, not by a fleet push.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

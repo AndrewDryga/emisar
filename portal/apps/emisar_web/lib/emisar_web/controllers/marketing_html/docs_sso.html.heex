@@ -12,11 +12,7 @@
       <.docs_header current="sso">
         <:dek>
           On Team and Enterprise plans, your team signs in to emisar with your own identity
-          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC. On Enterprise, pair it
-          with
-          <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">directory sync</.link>
-          to provision people from the IdP and revoke their access automatically when they're
-          offboarded there.
+          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -53,6 +49,8 @@
 
       <.docs_screenshot
         src="/images/docs/sso/sso-add-connection.webp"
+        title="emisar console · Add connection"
+        caption="The OIDC form: register the fixed redirect URI, then paste the issuer, client ID, and secret."
         alt="The emisar Add-connection form: a Provider type dropdown and display name, then the OIDC connection section — a step-by-step setup guide with the fixed redirect URI to register (and a Copy button), and fields for the Issuer URL, Client ID, Client secret, and the identifier claim (sub by default)."
       />
 
@@ -239,14 +237,6 @@
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            Identities are bound by
-            <strong class="text-zinc-200">issuer + subject, not email</strong>
-            — so an SSO login can never claim a pre-existing account on a matching address.
-          </span>
-        </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>

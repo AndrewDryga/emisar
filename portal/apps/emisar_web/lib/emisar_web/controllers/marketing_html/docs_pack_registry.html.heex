@@ -45,8 +45,8 @@
         skill="author-pack"
         prompt="Author an emisar action pack, publish it to my own pack registry, and install it hash-pinned on a runner. Use the author-pack skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/author-pack/SKILL.md"
       >
-        Or have your coding agent do it — the <code class="text-zinc-300">author-pack</code>
-        skill walks it through authoring, publishing, and installing from your own registry.
+        The <code class="text-zinc-300">author-pack</code>
+        skill walks your agent through authoring, publishing, and installing from your own registry.
       </.agent_skill_cta>
 
       <%!-- Steps --%>
@@ -196,12 +196,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             <strong class="text-zinc-200">fails the build</strong>
             — bump the version instead. On a critical fix, republish and then
             <strong class="text-zinc-200">revoke trust on the old version</strong>
-            in each account's Packs page — that's what makes a runner refuse it at dispatch. The
-            <code>retired_below</code>
-            floor in <code>pack.yaml</code>
-            is authored metadata for your own tooling; dispatch-time retirement is enforced only for
-            packs in emisar's <em>shipped</em>
-            catalog, never a private registry's.
+            in each account's Packs page — that's what makes a runner refuse it at dispatch.
           </p>
           <.docs_code phx-no-format label="shell">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \

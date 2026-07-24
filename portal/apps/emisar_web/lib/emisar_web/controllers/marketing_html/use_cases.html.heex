@@ -14,8 +14,7 @@
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
         Give an agent eyes on production — logs, metrics, health, and config across the whole
-        fleet — and it earns its keep every day: a pre-flight check before a migration, "why is
-        checkout slow," a cert sweep before the pager finds out. And when something does break, the
+        fleet — and it earns its keep every day. And when something does break, the
         same loop holds — investigate through declared actions, stop the bleed behind one approval,
         land the durable fix. Every step on the record.
       </p>
@@ -32,10 +31,7 @@
           The work that never makes a post-mortem.
         </p>
         <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
-          The boring wins compound: questions answered in a minute, drift caught before it bites,
-          a risky migration de-risked before you commit. These are representative of an ordinary
-          Tuesday; the war stories below are real incidents, logged with the command output to
-          prove it.
+          The boring wins compound. These are representative of an ordinary Tuesday.
         </p>
       </div>
 
@@ -79,8 +75,7 @@
           And the nights it earns its keep.
         </p>
         <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
-          Real incidents, worked end to end. Same shape every time under load: read first to
-          find the cause, gate the one destructive move, leave the fix as reviewable code. Read them
+          Real incidents, worked end to end. Same shape every time under load. Read them
           in full, command output and all.
         </p>
       </div>
@@ -88,7 +83,7 @@
       <div class="mx-auto mt-12 max-w-4xl space-y-6">
         <%= for {tag, title, summary, metrics, href, featured} <- [
           {"Incident response", "The 33-hour wipe: a CSI driver reformatted a live LUN",
-           "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race — 33 hours of VictoriaMetrics data gone. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The honest part is that the obvious one-line setting was a no-op.",
+           "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race — 33 hours of VictoriaMetrics data gone. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The twist is that the obvious one-line setting was a no-op.",
            ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],
            "/use-cases/csi-data-loss", true},
           {"Ingress", "The fleet-wide 502 that no backend was causing",
@@ -147,7 +142,7 @@
 
   <.marketing_cta
     headline="Put a gated agent on your next migration — and your next incident."
-    subcopy="Install a runner, connect your LLM, and let it investigate behind policy — acting only when you approve. Free for three runners, no credit card."
+    subcopy="Install a runner, connect your LLM, and let it investigate behind policy — acting only when you approve."
     secondary_label="Read the quickstart"
     secondary_path={~p"/docs/quickstart"}
   />

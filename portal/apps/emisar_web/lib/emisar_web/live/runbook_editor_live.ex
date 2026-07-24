@@ -499,7 +499,12 @@ defmodule EmisarWeb.RunbookEditorLive do
             <%!-- ONE add affordance: the dashed composer row below the list
                (where the next step lands) — a twin title-row button
                double-stated the action. --%>
-            <.section_header title="Steps" />
+            <.section_header title="Steps">
+              <:subtitle>
+                Each step names an action, its arguments, and where it runs — policy applies to every step when the runbook runs.
+                <.doc_link href={~p"/docs/runbooks"}>Runbook docs</.doc_link>
+              </:subtitle>
+            </.section_header>
 
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
                has no metadata input to bind to, so it surfaces here above

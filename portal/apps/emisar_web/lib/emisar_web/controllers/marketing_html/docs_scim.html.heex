@@ -24,9 +24,7 @@
           yet, start with <.link
             navigate={~p"/docs/sso"}
             class="text-brand-400 hover:text-brand-300"
-          >
-            Single sign-on
-          </.link>, then enable directory sync on that connection.
+          >Single sign-on</.link>, then enable directory sync on that connection.
         </p>
       </.docs_callout>
 
@@ -51,6 +49,8 @@
 
       <.docs_screenshot
         src="/images/docs/sso/sso-directory-sync.webp"
+        title="emisar console · Directory sync (SCIM)"
+        caption="A configured connection: token rotation, the SCIM base URL, and the collapsible IdP setup guide."
         alt="The Directory sync (SCIM) panel on a configured connection: an enabled badge, Rotate token and Disable buttons, the SCIM base URL with a copy button, and a collapsible 'Point your IdP at this connection' setup guide."
       />
 
@@ -124,7 +124,8 @@
               is the same stable identifier as the connection's identifier claim (the OIDC <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>). Then a member's SSO
               login and their synced directory record resolve to one emisar identity — no
               email-matching anywhere. Okta and JumpCloud default both to the directory user id, so
-              this usually needs no change; the brand-bordered note further down covers it in full.
+              this usually needs no change. If the two sides can't be configured to share an
+              identifier, that connection can't be reconciled this way.
             </p>
           </div>
         </li>
@@ -170,17 +171,6 @@
           Google directory sync without an IdP is on our roadmap — talk to us if you need it.)
         </p>
       </.docs_callout>
-      <.docs_callout kind={:tip} title="Setup note: match the SCIM externalId to the OIDC subject">
-        <p>
-          Configure your IdP so the SCIM
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-          it sends is the same stable identifier as the OIDC
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          (the connection's identifier claim). Then a user's SSO login and their synced directory
-          record resolve to the same emisar identity — no email-matching anywhere. If the two sides
-          can't be configured to share an identifier, that connection can't be reconciled this way.
-        </p>
-      </.docs_callout>
 
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -204,14 +194,6 @@
             — it can provision and deprovision across the account. Treat it like a password, and
             rotate it from the connection's panel if it's ever exposed (your IdP loses access until
             you paste the new one).
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            Deprovisioning <strong class="text-zinc-200">suspends, never deletes</strong>
-            — to keep
-            the audit log of what the member did intact.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

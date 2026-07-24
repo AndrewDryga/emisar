@@ -6,7 +6,8 @@
       current="security-model"
       toc={[
         {"trust-boundary", "The trust boundary"},
-        {"what-its-not", "What emisar is not"}
+        {"what-its-not", "What emisar is not"},
+        {"data-residency", "Where your data lives"}
       ]}
     >
       <.docs_header current="security-model">
@@ -190,6 +191,19 @@
           drop only works because the OS already permits it.
         </li>
       </ul>
+
+      <.docs_h2 id="data-residency">Where your data lives</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The runner, its packs, and its local journal live on your hosts. emisar's control plane —
+        the dashboard, the audit log, run history, and the MCP API — is a hosted service on <strong class="text-zinc-200">Google Cloud in the United States</strong>. Data is encrypted
+        at rest with provider-managed keys and in transit with TLS, and the runner only ever dials
+        out, so nothing reaches back into your hosts. For the full posture — subprocessors, backups,
+        and how to verify a release yourself — see the
+        <.link href={~p"/security"} class="text-brand-400 hover:text-brand-300">
+          security overview
+        </.link>
+        and the <.link href={~p"/trust"} class="text-brand-400 hover:text-brand-300">trust page</.link>.
+      </p>
     </.docs_layout>
   </section>
 

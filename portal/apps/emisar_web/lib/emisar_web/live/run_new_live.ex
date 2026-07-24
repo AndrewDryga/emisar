@@ -382,6 +382,7 @@ defmodule EmisarWeb.RunNewLive do
             {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
             the portal can't dispatch to it. Run this action from an MCP client configured with the
             runner's signing key.
+            <.doc_link href={~p"/docs/signed-dispatch"}>Signed dispatch docs</.doc_link>
           </:body>
         </.event_block>
 

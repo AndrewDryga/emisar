@@ -49,7 +49,7 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "containers",
-         title: "Containers",
+         title: "Run in a container",
          path: "/docs/containers",
          icon: "hero-cube",
          desc:

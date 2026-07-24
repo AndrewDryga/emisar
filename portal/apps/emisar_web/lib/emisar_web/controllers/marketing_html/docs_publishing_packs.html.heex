@@ -43,20 +43,13 @@ installed my-pack → /etc/emisar/packs/my-pack
 my-pack — My ops pack  (v0.1.0)
   Actions:   2  (2 low)</.docs_code>
 
-      <.docs_callout kind={:note} title="A custom pack lands pending">
-        Stdlib packs auto-trust — their bytes match the catalog emisar publishes. A pack you
-        authored waits: its hash is pending until you trust it once in the dashboard
-        (<strong class="text-zinc-300">Packs → my-pack → Trust</strong>). After that its actions
-        are callable, gated by your policy.
-      </.docs_callout>
-
       <.agent_skill_cta
         class="mt-8"
         skill="author-pack"
         prompt="Write an emisar action pack for the tool I name, validate and test it, and get it trusted on my runner. Use the author-pack skill: https://raw.githubusercontent.com/AndrewDryga/emisar/main/skills/author-pack/SKILL.md"
       >
-        Or have your coding agent do it — the <code class="text-zinc-300">author-pack</code>
-        skill walks it through writing, validating, testing, and trusting a pack of your own.
+        The <code class="text-zinc-300">author-pack</code>
+        skill walks your agent through writing, validating, testing, and trusting a pack of your own.
       </.agent_skill_cta>
 
       <%!-- Steps --%>
@@ -201,7 +194,8 @@ sudo emisar pack install ./my-pack</.docs_code>
             the dashboard's <strong class="text-zinc-200">Packs</strong>
             page as <strong class="text-zinc-200">pending</strong>, with dispatch held until you
             approve it. Open <strong class="text-zinc-200">Packs</strong>, review the content hash,
-            and click <strong class="text-zinc-200">Trust</strong>. From then on, that exact
+            and click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable,
+            gated by your policy. From then on, that exact
             byte-for-byte version is the only one authorized: edit the pack and its hash changes,
             which re-marks it pending until you re-trust. That's your drift guard — trust in bytes
             you reviewed, not a publisher you hope is honest.
@@ -238,11 +232,10 @@ sudo emisar pack install ./my-pack</.docs_code>
             change. The pack is yours: its lifecycle, its hosts, its risk tiers, on your schedule.
           </p>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Distributing many packs to a large fleet? Skip the copying and
-            <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">
-              host your own pack registry
-            </.link>
-            — a static file tree runners install from by hash-pinned URL, built by the same tool that publishes ours.
+            Distributing many packs to a large fleet? Skip the copying and <.link
+              navigate={~p"/docs/pack-registry"}
+              class="text-brand-300 hover:text-brand-200"
+            >host your own pack registry</.link>.
           </p>
         </li>
       </ol>

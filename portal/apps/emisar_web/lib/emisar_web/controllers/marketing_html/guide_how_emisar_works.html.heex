@@ -6,9 +6,7 @@
 >
   <p>
     emisar is built to scratch our own itch. We like shipping fast with an AI agent, and we know
-    what that approach can do when it goes wrong. The pragmatic question was how to give an agent
-    access to production without worrying that it might hallucinate its way into dropping a database
-    or taking the site down.
+    what that approach can do when it goes wrong.
   </p>
   <p>
     Sandboxing the model did not solve this. Sandboxing constrains where a model runs; it does not
@@ -54,11 +52,6 @@
   <span class="text-sky-300">max_stdout_bytes</span>: <span class="text-amber-300">4096</span>
   <span class="text-sky-300">max_stderr_bytes</span>: <span class="text-amber-300">8192</span></.docs_code>
 
-  <p>
-    The action names the binary and its exact argument template. It declares each argument, the
-    validation pattern, a timeout, and output byte limits. So the agent can only do what an action
-    allows.
-  </p>
   <p>
     Actions are grouped into packs. A pack contains its manifest, action definitions, and any scripts
     those actions use. The version gives people a release name; the content hash identifies the exact

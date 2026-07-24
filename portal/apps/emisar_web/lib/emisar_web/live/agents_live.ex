@@ -1491,6 +1491,7 @@ defmodule EmisarWeb.AgentsLive do
                   <:body>
                     Copy the bearer token below before you leave this page; we won't show it
                     again. If you lose it, create another key.
+                    <.doc_link href={~p"/docs/keys"}>MCP key docs</.doc_link>
                   </:body>
                 </.event_block>
 

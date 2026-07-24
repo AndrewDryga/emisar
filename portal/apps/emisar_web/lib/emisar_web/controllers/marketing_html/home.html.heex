@@ -20,10 +20,8 @@
           Emisar is the last MCP server you’ll need to install: a Zero-Trust gateway connecting
           Claude, Cursor, ChatGPT, and any AI agent to your infrastructure. One server handles
           production access, debugging, alerts, and internal operations, with new capabilities
-          added as packs. Agents can inspect real production state, debug what they shipped,
-          and help resolve incidents. Safe reads run automatically; policy allows, blocks,
-          or routes risky actions for approval. No SSH keys, VPNs, remote shells, or
-          standing shell access — and every call is recorded.
+          added as packs. No SSH keys, VPNs, or standing shell access — and every call is
+          recorded.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -179,10 +177,7 @@
           </p>
           <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
             Claude, Cursor, and ChatGPT reason about your stack all day — but they can't see it
-            running. Emisar gives your agent eyes on production. It reads live logs, metrics, hosts,
-            datastores, and the network, so its plan matches what's actually running. It catches its
-            own mistakes. It works incidents beside you. And it stops for your approval only when a change is
-            actually risky.
+            running. Emisar gives your agent eyes on production.
           </p>
           <p class="mt-8 text-sm">
             <.link
@@ -233,10 +228,8 @@
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
           Every request follows the same path. Packs group <b>vetted actions</b> into a versioned
-          catalog. Each action declares what it does, validates its inputs, and carries a risk
-          tier: low, medium, high, or critical. Your policy decides which actions run, wait for
-          approval, or are denied. The runner checks the request again before execution. The portal
-          records the request, and the host writes the execution attempt to a hash-chained journal.
+          catalog. Your policy decides which actions run, wait for approval, or are denied. The
+          runner checks the request again before execution.
         </p>
       </div>
 
@@ -250,9 +243,7 @@
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Packs live in git, and each one is fingerprinted by its contents. The AI sees only the
             actions you declared — it can't ask for anything else. Change a pack and emisar stops
-            running it until an admin trusts the new version. A new surface — another datastore,
-            your alerting stack, an internal API — is one more trusted pack on the same gate, not
-            another MCP server to roll out to every client.
+            running it until an admin trusts the new version.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
@@ -423,7 +414,7 @@
           A raw SSH key gives a "creative" model full shell on prod — no gate before the action,
           no trustworthy record after. The weekend-built MCP server hardcodes one cluster,
           swallows stderr, and lives in a repo nobody dares touch. Slack slash-commands lose
-          their output to scrollback and their owners to attrition. The comparison, honestly:
+          their output to scrollback and their owners to attrition.
         </p>
       </div>
 
@@ -761,8 +752,7 @@
             Give your AI production access. You keep the last word.
           </.marketing_heading>
           <p class="mx-auto mt-6 max-w-xl text-lg text-zinc-400 leading-relaxed">
-            Three runners. Seven-day audit. No credit card. Read the quickstart and
-            run your first gated action.
+            Three runners. Seven-day audit. Sign up and run your first gated action.
           </p>
           <form
             action={~p"/sign_up"}

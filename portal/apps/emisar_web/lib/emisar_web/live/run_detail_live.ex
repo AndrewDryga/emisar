@@ -4,6 +4,7 @@ defmodule EmisarWeb.RunDetailLive do
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
   alias EmisarWeb.RunnerPresence
+  alias EmisarWeb.RunStatuses
 
   # The output terminal shows the most-recent N chunks — the live stream caps at
   # it (stream_insert :limit) AND the initial mount load fetches exactly it — so
@@ -297,7 +298,9 @@ defmodule EmisarWeb.RunDetailLive do
                timestamp spanning both columns via `wrap`. --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
             <.meta_field label="Status">
-              <.status_badge status={@run.status} />
+              <.tooltip text={RunStatuses.meaning(@run.status)} align={:left}>
+                <.status_badge status={@run.status} />
+              </.tooltip>
             </.meta_field>
             <.meta_field label="Runner">
               <.link

@@ -374,6 +374,7 @@ defmodule EmisarWeb.RunnersLive do
                   Every runner in this account verifies a client signature and refuses unsigned runs, so
                   the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
                   configured with each runner's signing key.
+                  <.doc_link href={~p"/docs/signed-dispatch"}>Signed dispatch docs</.doc_link>
                 </.callout>
                 <.version_upgrade_notice
                   id="runner-upgrade"

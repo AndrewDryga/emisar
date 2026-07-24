@@ -18,19 +18,14 @@
         <:dek>
           Every dispatch — human or LLM — passes through your account's policy before it touches a
           runner. The policy answers one question per action: run it now, stop for a human, or
-          refuse. This page covers how the decision is made, how approvals work when policy demands
-          one, and how standing grants keep repeat approvals from becoming busywork.
+          refuse.
         </:dek>
       </.docs_header>
 
-      <.docs_screenshot
-        src="/images/screenshots/policy-editor.webp"
-        alt="The Policy page in the emisar dashboard: risk-tier defaults (Low and Medium set to allow, High to require approval, Critical to deny), the per-action override list, and the approval-requirements panel."
-      />
-
       <.docs_h2 id="how-decisions">How a decision is made</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The policy has two layers, evaluated in order:
+        Every dispatch is judged by one policy, chosen by scope: a single runner or a whole group can
+        carry its own ruleset that replaces the account default. Within that policy, two layers decide, evaluated in order:
       </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-6 text-zinc-300">
         <li>
@@ -41,7 +36,7 @@
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.delete_*</code>
           → <code class="text-red-400">deny</code>. The <em>first</em>
           matching override wins;
-          order them most-specific first.
+          order them to keep most-specific first.
         </li>
         <li>
           <strong class="text-zinc-100">Risk-tier defaults.</strong>
@@ -49,16 +44,19 @@
           (<code class="text-brand-300">low</code>
           / <code class="text-zinc-300">medium</code>
           / <code class="text-amber-300">high</code>
-          / <code class="text-red-400">critical</code>) picks the decision. Risk is declared in
-          the pack and can't be changed by the caller.
+          / <code class="text-red-400">critical</code>) picks the decision.
         </li>
       </ol>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Risk tiers are declared per pack action and can't be changed by the caller or the emisar control plane.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Decisions are <code class="text-brand-300">allow</code>
         (dispatch immediately), <code class="text-amber-300">require_approval</code>
         (hold for a human), and <code class="text-red-400">deny</code>
         (refuse outright). Anything the policy can't
-        answer — no policy saved yet, an unknown tier — is a <strong class="text-zinc-200">deny</strong>: the system fails closed, never open.
+        answer — no policy saved yet, an unknown tier — is a <strong class="text-zinc-200">deny</strong>.
       </p>
 
       <.docs_callout kind={:note} title="The shipped default.">
@@ -81,11 +79,15 @@
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">critical</code>
         while gating <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">medium</code>.
       </p>
+      <.docs_screenshot
+        src="/images/screenshots/policy-editor.webp"
+        title="emisar console · Policy"
+        caption="Risk-tier defaults, the per-action override list, and approval requirements in one editor."
+        alt="The Policy page in the emisar dashboard: risk-tier defaults (Low and Medium set to allow, High to require approval, Critical to deny), the per-action override list, and the approval-requirements panel."
+      />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Beside the editor, a preview applies your live rules to that scope's actual catalog and
-        shows the decision for each action — <code class="text-brand-300">allow</code>, <code class="text-amber-300">require_approval</code>, or
-        <code class="text-red-400">deny</code>
-        — so you read the real consequence of an edit before you save it, not a guess at it.
+        shows the decision for each action so you read the real consequence of an edit before you save it, not a guess at it.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Every save bumps the policy version, writes an audit event with the exact diff (which
@@ -104,11 +106,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Resolution is <strong class="text-zinc-200">most-specific-wins</strong>: a dispatch to a
         runner is governed by that runner's ruleset if one exists, otherwise its group's ruleset,
-        otherwise the default policy. The ruleset that matches is evaluated <em>whole</em>
-        — its own
-        tier defaults and overrides decide the action. A ruleset
-        <strong class="text-zinc-200">replaces</strong>
-        the default policy for that runner or group; it doesn't layer on top, so what the editor
+        otherwise the default policy.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A ruleset <strong class="text-zinc-200">replaces</strong>
+        the default policy for that runner or group, so what the editor
         shows for a scope is exactly what runs there. Remove a ruleset and that scope falls back
         to the next-broader policy.
       </p>
@@ -177,12 +179,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Approving the same
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad job revert</code>
-        every morning is how approval fatigue starts. When you approve a request you choose a
+        for every of the 20 allocs is how approval fatigue starts. When you approve a request you choose a
         duration: <strong class="text-zinc-200">once</strong>
         (this run only), or a standing
-        grant for <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>
-        (the
-        durations your account allows).
+        grant for <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>.
         A standing grant lets matching future calls skip the queue:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -192,7 +192,6 @@
             <strong class="text-zinc-200">Scoped tight.</strong> A grant is bound to the API key
             it was issued for, the action, optionally the specific runner, and — your choice at
             approval time — either the <em>exact</em> argument fingerprint or any arguments.
-            A grant for key A never covers key B.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -209,10 +208,19 @@
 
       <.docs_h2 id="reason">The reason requirement</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every dispatch — UI or MCP — must carry a one-line <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>. It's shown to
+        Every dispatch — UI or MCP — must carry a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>. It's shown to
         approvers and stored on the run and the audit event. For LLM traffic this is the
         difference between an audit log that says "the model ran nomad job revert" and one that
         says <em>why</em> the model ran nomad job revert.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Beyond the required <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>, an MCP
+        caller may attach two optional fields:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">evidence</code>
+        — what it already observed (prior findings, the run IDs it's acting on) — and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">expected</code>, the outcome it expects to
+        confirm success. Together they turn a bare "why" into a justification chain the audit keeps:
+        what the agent saw, why it's acting, and the result it expects. Operator and runbook
+        dispatches leave both empty.
       </p>
 
       <.docs_h2 id="first-policy">A sensible first policy</.docs_h2>

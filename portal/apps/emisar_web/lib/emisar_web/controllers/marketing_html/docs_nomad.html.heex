@@ -78,9 +78,7 @@
 &#125;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Register the host volume on each client (<code class="font-mono">client &#123; host_volume "emisar-state" &#123; path = "/var/lib/emisar" &#125; &#125;</code>),
-        then <code class="font-mono">nomad job run emisar-runner.nomad.hcl</code>. Each node's
-        runner enrolls with the reusable key, trades it for its own token under <code class="font-mono">/var/lib/emisar</code>, and reconnects to the same identity after
-        any reschedule.
+        then <code class="font-mono">nomad job run emisar-runner.nomad.hcl</code>.
       </p>
 
       <.docs_h2 id="visibility">Driver and visibility</.docs_h2>

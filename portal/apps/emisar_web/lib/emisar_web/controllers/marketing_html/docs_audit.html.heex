@@ -15,13 +15,14 @@
         <:dek>
           Everything that matters leaves a record: every dispatch and its outcome, every approval
           decision, every policy edit, every credential minted or revoked, every sign-in — even
-          the failed ones. This page covers reading the trail in the dashboard, streaming it to
-          your SIEM, and how the runner-side journal complements it.
+          the failed ones.
         </:dek>
       </.docs_header>
 
       <.docs_screenshot
         src="/images/screenshots/audit-view.webp"
+        title="emisar console · Audit log"
+        caption="Every dispatched action with its actor, target runner, outcome, source IP, and time — filterable, and exportable to your SIEM."
         alt="The Audit log in the dashboard: a chronological feed of dispatched actions, each with its actor, target runner, outcome (succeeded, failed, errored), source IP, and timestamp — filterable, and exportable to a SIEM."
       />
 
@@ -39,10 +40,7 @@
         Every line is a complete JSON object — the <code class="text-zinc-300">event_type</code>, the
         <code class="text-zinc-300">actor_id</code>
         / <code class="text-zinc-300">target_id</code>
-        to correlate on, the request metadata (<code class="text-zinc-300">ip_address</code>, <code class="text-zinc-300">request_id</code>), and the full <code class="text-zinc-300">payload</code>. The response carries a forward-only
-        <code class="text-zinc-300">(occurred_at, id)</code>
-        cursor — pipe it straight to Splunk,
-        Elastic, or a file; no polling gaps.
+        to correlate on, the request metadata (<code class="text-zinc-300">ip_address</code>, <code class="text-zinc-300">request_id</code>), and the full <code class="text-zinc-300">payload</code>.
       </.docs_callout>
 
       <.docs_h2 id="recorded">What gets recorded</.docs_h2>

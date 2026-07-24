@@ -535,6 +535,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     >
       {@billing.runner_count} of {@billing.runner_limit} runners in use.
       Issuing a key doesn't reserve a slot — the runner only counts after it registers.
+      <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
       <:action>
         <.button
           variant={:secondary}

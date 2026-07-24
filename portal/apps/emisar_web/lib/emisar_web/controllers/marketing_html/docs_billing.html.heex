@@ -17,10 +17,8 @@
       <.docs_header current="billing">
         <:dek>
           Your plan sets this account's hard limits — how many runners connect, how many people you
-          can invite, how long the audit log is kept, and which features are on. This page lists the
-          plans and their limits, shows which tier unlocks what, and covers upgrades, invoices,
-          downgrades, and a failed payment. Billing runs on Paddle; you manage it from the
-          <strong class="text-zinc-200">Billing</strong>
+          can invite, how long the audit log is kept, and which features are on. Billing runs on
+          Paddle; you manage it from the <strong class="text-zinc-200">Billing</strong>
           page under Settings.
         </:dek>
       </.docs_header>
@@ -29,8 +27,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar has three plans. A new account is on Free until someone upgrades it, and the plan
         comes from your subscription — there's no separate plan switch on the account to drift out
-        of sync. Each plan sets three hard limits: how many runners can connect, how many members
-        you can invite, and how many days of audit history are kept.
+        of sync. Each plan sets three hard limits.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -109,7 +106,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Single sign-on.</strong>
-            OIDC sign-in through your identity provider, available on Team and up. See <.link
+            OIDC sign-in through your identity provider. See <.link
               navigate={~p"/docs/sso"}
               class="text-brand-400 hover:text-brand-300"
             >single sign-on &amp; SCIM</.link>.
@@ -120,8 +117,7 @@
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
             Every plan keeps the full audit trail in the console; taking the data <em>out</em>
-            — the CSV download and the streaming NDJSON API a SIEM reads — is the paid surface, on
-            Team and up. See <.link
+            — the CSV download and the streaming NDJSON API a SIEM reads — is the paid surface. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.
@@ -131,7 +127,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">SCIM directory sync.</strong>
-            Provision and deprovision members straight from your directory, on Enterprise. Enterprise
+            Provision and deprovision members straight from your directory. Enterprise
             also includes a security and procurement review, deployment planning, and rollout support,
             set up with our team.
           </span>
@@ -187,7 +183,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Anyone in the account can open the Billing page and read the plan, usage, and invoices.
         Changing the plan, updating the card, or cancelling needs the account owner or a member with
-        the billing-manager role — a finance seat that manages the subscription and nothing else.
+        the billing-manager role.
         Admins and operators see billing but can't change it. More on <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
@@ -223,7 +219,7 @@
         For everything else — your full invoice history, the payment method on file, your billing
         address and tax details — open <strong class="text-zinc-200">Manage billing</strong>. That's
         the Paddle customer portal; Paddle is emisar's merchant of record, and it owns the complete
-        ledger and your card. Updating the card there is also how you clear a failed payment.
+        ledger and your card.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Manage billing appears once your account has a Paddle customer — that is, once you've been on
@@ -250,11 +246,6 @@
       </p>
 
       <.docs_h2 id="retention">Plan changes and audit retention</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Runner and member caps apply going forward, as above — a downgrade never disconnects a runner
-        or removes a member, it just stops you adding new ones past the lower cap. Audit retention
-        works differently, and it's worth understanding before you switch.
-      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each audit event's retention horizon is fixed when the event is written, from the plan you're
         on at that moment — 7 days on Free, 90 on Team, 365 on Enterprise. A plan change only affects

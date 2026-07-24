@@ -16,13 +16,15 @@
         <:dek>
           A runbook is a saved, versioned sequence of actions — the "how we restart the cache
           tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
-          each step is a declared action with its arguments and target, every run of it is
+          every run of it is
           policy-gated and audited, and your LLM can read and run it over MCP.
         </:dek>
       </.docs_header>
 
       <.docs_screenshot
         src="/images/screenshots/runbooks.webp"
+        title="emisar console · Runbooks"
+        caption="Saved, versioned action sequences — every step policy-gated and audited when the runbook runs."
         alt="The Runbooks page: saved, versioned action sequences an operator or LLM can run, each step policy-gated and audited."
       />
 
@@ -136,8 +138,7 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Dispatch it with a reason and each group step fans out in parallel waves — one execution row
-        per node per step, with that node's output, exit code, and duration. Publish it once and the
+        Dispatch it with a reason and each group step fans out in parallel waves. Publish it once and the
         whole sweep is a single click for the on-call, or a single
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
         for an agent triaging a live alert. Swap a read for a remediation later — a

@@ -307,7 +307,7 @@ defmodule EmisarWeb.DocsComponents do
         <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
         <label for={@lb_id} class="group relative block cursor-zoom-in">
           <img src={@src} alt={@alt} loading="lazy" class="w-full" />
-          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-zinc-100 opacity-0 backdrop-blur transition group-hover:opacity-100">
+          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100">
             <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
           </span>
         </label>

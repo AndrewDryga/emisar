@@ -914,6 +914,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <p :if={@self_blocked?} class="mt-4 text-xs leading-relaxed text-zinc-400">
             You can't approve your own request — a different operator must approve it.
           </p>
+          <p class="mt-4 text-xs leading-relaxed text-zinc-400">
+            Approve runs this action once{reuse_clause(@self_blocked?, @grant_duration_options)} decision is logged.
+            <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
+          </p>
           <%!-- ONE decision form: a single note field logged with whichever
                decision is taken (two competing optional textareas doubled the
                form, and the deny box under Approve read as a note for the
@@ -1041,6 +1045,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
     </section>
     """
   end
+
+  # The middle clause of the decide-form lead line. The reuse-window offer
+  # appears only when the standing-grant menu itself does — the account allows a
+  # duration past "once" (`grant_duration_options` has more than one entry) and
+  # the operator isn't self-blocked — so the copy never names an affordance the
+  # form doesn't show.
+  defp reuse_clause(false, [_, _ | _]) do
+    " — or pick a reuse window to issue a standing grant. Either"
+  end
+
+  defp reuse_clause(_self_blocked?, _options), do: ". Your"
 
   # The overall verdict the page leads with. A still-pending request that has
   # lapsed past its expiry reads as :expired — the sweeper just hasn't
