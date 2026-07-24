@@ -1161,11 +1161,14 @@ Example after a wait times out while approval is still pending:
 }
 ```
 
-Status is the sole terminality signal. Every nonterminal full `run_summary` or
-top-level runbook execution contains `next`; every terminal one omits it. The
-continuation lives inside that object and is not duplicated at the tool-result
-level. Lightweight runs nested in a runbook step omit continuations; callers
-wait on the execution or use the individual run ID.
+`status` is the sole terminality signal. `next` is the separate "there is more to
+fetch" signal: a nonterminal `run_summary` or top-level runbook execution always
+carries one, and a terminal run carries one only when persisted output remains
+beyond its bounded preview (the drain cursor below). No `next` therefore means
+nothing further to retrieve — the caller stops on its absence, not on the status.
+The continuation lives inside that object and is not duplicated at the
+tool-result level. Lightweight runs nested in a runbook step omit continuations;
+callers wait on the execution or use the individual run ID.
 
 A terminal summary includes `local_audit_failed: true` only when the runner
 could not persist its terminal or refusal event locally. This warning does not
@@ -1191,6 +1194,15 @@ cursor, in emission order, with consecutive same-stream chunks coalesced into
 one `{stream, text}` element — and no `stdout`/`stderr` preview. `run_action`
 and a cursorless `wait_for_run` seed a start cursor onto their live-run `next`,
 so following `next` verbatim streams a run from its first byte, losslessly.
+
+Because the seeded cursor starts at the beginning, the tail re-sends bytes the
+snapshot preview already showed. The tail is the authoritative full stream:
+**replace** the preview with it rather than appending, or the overlap reads as
+duplicated output. A finished run whose preview omitted persisted output also
+carries a start cursor (with `timeout: "0"`), so a run's complete output stays
+retrievable after it ends — a run capped by the runner, one whose chunks were
+dropped, or one whose events aged out of retention has nothing left to serve and
+so offers no continuation.
 
 ```json
 {

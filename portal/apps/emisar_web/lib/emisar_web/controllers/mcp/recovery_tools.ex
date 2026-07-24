@@ -341,7 +341,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
       payload = %{
         ok: true,
-        runs: Service.fixed_run_summaries(runs, subject),
+        runs: Service.fixed_run_summaries(runs, subject, tail_scope: scope),
         next_cursor: next_cursor
       }
 

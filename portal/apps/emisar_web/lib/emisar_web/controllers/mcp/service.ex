@@ -77,7 +77,7 @@ defmodule EmisarWeb.MCP.Service do
            ),
          {:ok, runs} <- Runs.list_runs_by_mcp_operation(operation.id, subject),
          false <- runs == [] do
-      {:ok, fixed_run_summaries(runs, subject)}
+      {:ok, fixed_run_summaries(runs, subject, tail_scope: cursor_scope(conn))}
     else
       :cancelled -> {:error, :cancelled}
       true -> {:error, :operation_incomplete}
@@ -143,7 +143,7 @@ defmodule EmisarWeb.MCP.Service do
 
     run
     |> base_run_fields(subject)
-    |> Map.put(:next, fixed_run_next(run, structured_output, tail_scope))
+    |> Map.put(:next, fixed_run_next(run, structured_output, tail_scope, output_preview))
     |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
     |> Map.merge(stream_summary(run, output_preview, :stderr))
@@ -438,13 +438,23 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_wait_until(_run), do: nil
 
-  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}, _tail_scope),
+  defp fixed_run_next(%{id: run_id}, %{structured_output_omitted: true}, _tail_scope, _preview),
     do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}
 
-  defp fixed_run_next(run, _structured_output, tail_scope) do
-    if Runs.ActionRun.terminal?(run.status),
-      do: nil,
-      else: live_snapshot_next(run.id, tail_scope)
+  defp fixed_run_next(run, _structured_output, tail_scope, preview) do
+    cond do
+      not Runs.ActionRun.terminal?(run.status) ->
+        live_snapshot_next(run.id, tail_scope)
+
+      # A finished run whose preview left persisted output unshown is still
+      # drainable — hand back a start cursor so the caller can stream the rest
+      # instead of being stuck with the bounded tail preview.
+      preview.persisted_omitted and is_binary(tail_scope) ->
+        wait_next(run.id, OutputCursor.encode(tail_scope, run.id, 0, 0), "0")
+
+      true ->
+        nil
+    end
   end
 
   defp live_snapshot_next(run_id, nil),
@@ -590,7 +600,12 @@ defmodule EmisarWeb.MCP.Service do
       stderr: stderr,
       stdout_truncated: run.stdout_truncated or stdout_truncated?,
       stderr_truncated: run.stderr_truncated or stderr_truncated?,
-      output_events_truncated: output_events_truncated?
+      output_events_truncated: output_events_truncated?,
+      # The preview's OWN omission: more persisted events than the window, or a
+      # stream clipped by the byte cap. Deliberately EXCLUDES `run.*_truncated`
+      # (the RUNNER's output cap) — those bytes were never persisted, so offering
+      # to drain them would hand back a continuation with nothing behind it.
+      persisted_omitted: output_events_truncated? or stdout_truncated? or stderr_truncated?
     }
   end
 

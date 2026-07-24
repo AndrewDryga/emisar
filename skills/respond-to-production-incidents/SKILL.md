@@ -176,9 +176,12 @@ For a new incident question that no returned continuation already answers:
    - `reason`: what this check does and why it is needed now.
    - `evidence`: the concrete observations or run IDs that motivated it.
    - `expected`: the result that would support or refute the hypothesis.
-7. Follow the returned `next` with `wait_for_run` until terminal, timeout, or
-   the stated `wait_until`. Waiting observes; it does not cancel, approve, or
-   repeat work.
+7. Follow the returned `next` with `wait_for_run` until the response carries no
+   `next`, or you hit the stated `wait_until`. Absence of `next` — not terminal
+   status — means there is nothing further to retrieve: a finished run still
+   offers one while output remains beyond its preview. Follow it verbatim rather
+   than composing your own call. Waiting observes; it does not cancel, approve,
+   or repeat work.
 
 Output is incomplete evidence when it is truncated, marked incomplete, or
 absent. Use the run page or a narrower follow-up instead of guessing the

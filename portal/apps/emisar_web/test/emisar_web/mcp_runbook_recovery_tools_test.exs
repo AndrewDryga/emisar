@@ -952,6 +952,98 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert first_text <> tail_text(second) == String.duplicate(chunk, 40)
   end
 
+  test "a finished run whose preview omitted output offers a drain cursor", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "drain-finished")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    for seq <- 1..35, do: append_progress!(run, seq, "stdout", "line-#{seq}\n")
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 35})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    # Terminal, but the bounded preview could not show everything — so the
+    # summary hands back a start cursor to drain the rest immediately.
+    assert summary["next"]["arguments"]["timeout"] == "0"
+    assert is_binary(summary["next"]["arguments"]["cursor"])
+
+    {drained, _frames} =
+      drain_tail!(conn, run, summary["next"]["arguments"]["cursor"], "", 0)
+
+    assert drained == Enum.map_join(1..35, &"line-#{&1}\n")
+  end
+
+  test "a finished run whose output fit the preview offers no continuation", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "drain-complete")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    for seq <- 1..3, do: append_progress!(run, seq, "stdout", "line-#{seq}\n")
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 3})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    # Everything persisted is already in the preview: nothing left to fetch.
+    refute Map.has_key?(summary, "next")
+  end
+
+  test "a finished run whose events were pruned offers no dead continuation", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "drain-pruned")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    for seq <- 1..35, do: append_progress!(run, seq, "stdout", "line-#{seq}\n")
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 35})
+
+    # Event retention runs ahead of run retention, so a finished run's rows can be
+    # gone while its counters remain. The drain offer is derived from what the
+    # preview actually read, so a pruned run yields no continuation to nowhere.
+    Repo.delete_all(Emisar.Runs.RunEvent)
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    refute Map.has_key?(summary, "next")
+  end
+
+  test "a runner-capped finished run offers no drain when the preview showed everything", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "drain-runner-capped")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    append_progress!(run, 1, "stdout", "capped\n")
+
+    # The RUNNER hit its own output cap: the bytes beyond it were never persisted,
+    # so there is nothing to drain even though the summary reports truncation.
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{
+               "status" => "success",
+               "progress_chunks" => 1,
+               "truncated_stdout" => true
+             })
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    assert summary["truncated_stdout"]
+    refute Map.has_key?(summary, "next")
+  end
+
   test "run_action seeds a followable output cursor on its live run", %{
     conn: conn,
     account: account,

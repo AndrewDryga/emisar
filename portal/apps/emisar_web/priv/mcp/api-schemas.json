@@ -211,6 +211,27 @@
         {"required": ["runbook_execution_id"], "not": {"anyOf": [{"required": ["run_id"]}, {"required": ["cursor"]}]}}
       ]
     },
+    "next_tail": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {
+          "type": "object",
+          "properties": {
+            "tool": {"const": "wait_for_run"},
+            "arguments": {
+              "type": "object",
+              "required": ["run_id", "cursor", "timeout"],
+              "additionalProperties": false,
+              "properties": {
+                "run_id": {"$ref": "#/$defs/run_id"},
+                "cursor": {"type": "string", "maxLength": 4096},
+                "timeout": {"enum": ["0", "60s"]}
+              }
+            }
+          }
+        }
+      ]
+    },
     "run_tail": {
       "type": "object",
       "required": ["run_id", "operation_id", "action_id", "pack_ref", "runner_ref", "status", "created_at", "output"],
@@ -236,13 +257,14 @@
         "structured_output_omitted": {"const": true, "description": "A structured result exists but was omitted intact to keep this response within its output budget."},
         "approval": {"$ref": "#/$defs/approval"},
         "wait_until": {"$ref": "#/$defs/timestamp"},
-        "next": {"$ref": "#/$defs/next_wait"},
+        "next": {"$ref": "#/$defs/next_tail"},
         "run_url": {"type": "string", "format": "uri", "maxLength": 2048}
       },
       "allOf": [
         {"oneOf": [{"required": ["runbook_execution_id", "step_id"]}, {"not": {"anyOf": [{"required": ["runbook_execution_id"]}, {"required": ["step_id"]}]}}]},
         {"if": {"properties": {"status": {"const": "pending_approval"}}}, "then": {"required": ["approval", "wait_until"]}},
         {"if": {"properties": {"status": {"const": "sent"}}}, "then": {"required": ["wait_until"]}},
+        {"if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}}, "then": {"required": ["next"]}},
         {"not": {"required": ["structured_output", "structured_output_omitted"]}}
       ]
     },
@@ -574,7 +596,7 @@
           "else": {
             "if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}},
             "then": {"required": ["next"]},
-            "else": {"not": {"required": ["next"]}}
+            "else": {}
           }
         },
         {
