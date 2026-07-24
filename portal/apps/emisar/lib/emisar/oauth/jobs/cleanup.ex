@@ -1,6 +1,7 @@
 defmodule Emisar.OAuth.Jobs.Cleanup do
   @moduledoc """
-  Periodic OAuth hygiene sweep for expired codes and abandoned clients.
+  Hourly OAuth hygiene sweep: prunes expired authorization codes and tokens,
+  reclaims abandoned backing keys, and removes clients that never completed consent.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,

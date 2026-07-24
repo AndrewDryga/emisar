@@ -31,6 +31,14 @@ defmodule Emisar.OAuthTest do
     {1, _} = Client.Query.by_id(id) |> Repo.update_all(set: [inserted_at: ts])
   end
 
+  # Backdates an api_key's mint time so the abandoned-key sweep considers it at
+  # the real default `now` — backdate_registration's sibling for keys.
+  defp backdate_key(%ApiKey{id: id}, hours) do
+    ts = DateTime.add(DateTime.utc_now(), hours * 3600, :second)
+    queryable = ApiKey.Query.all() |> ApiKey.Query.by_id(id)
+    {1, _} = Repo.update_all(queryable, set: [inserted_at: ts])
+  end
+
   defp issue!(subject, client, challenge, opts \\ []) do
     {:ok, code} =
       OAuth.issue_code(
@@ -423,6 +431,29 @@ defmodule Emisar.OAuthTest do
 
       assert {:ok, _} = OAuth.exchange_code(params)
       assert {:error, :invalid_grant} = OAuth.exchange_code(params)
+    end
+
+    test "rejects an expired authorization code", %{subject: subject, client: client} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      # Push the 60s code TTL into the past under the row-hash the exchange locks
+      # on — an expired code can no longer be exchanged (check_code_live fails it
+      # closed, the same branch the abandoned-key sweep's safety proof leans on).
+      past = DateTime.add(DateTime.utc_now(), -120, :second)
+
+      {1, _} =
+        AuthorizationCode.Query.all()
+        |> AuthorizationCode.Query.by_code_hash(Emisar.Crypto.hash(code))
+        |> Repo.update_all(set: [expires_at: past])
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
     end
 
     test "rejects a mismatched redirect_uri", %{subject: subject, client: client} do
@@ -874,6 +905,33 @@ defmodule Emisar.OAuthTest do
       assert %ApiKey{} = Repo.one(ApiKey)
     end
 
+    test "keeps a key whose only token is revoked — Token.Query.all() shields it, not just live tokens" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # Revoke the token but leave its ROW in place (the token sweep hasn't run).
+      # reject_keys_with_tokens keys off Token.Query.all(), so a revoked-but-present
+      # token still shields the backing key — a future "optimize to not_revoked"
+      # would wrongly sweep it and cascade-delete the still-present token row.
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      Repo.update!(Ecto.Changeset.change(token, revoked_at: DateTime.utc_now()))
+
+      # Even well past the grace window, the surviving token row keeps the key.
+      future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
+      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert %ApiKey{} = Repo.one(ApiKey)
+    end
+
     test "sweeps a lapsed connection whose token is gone and was never used" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
@@ -922,6 +980,33 @@ defmodule Emisar.OAuthTest do
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
       assert 0 = OAuth.delete_abandoned_backing_keys(future)
       assert %ApiKey{last_used_at: %DateTime{}} = Repo.one(ApiKey)
+    end
+
+    test "never sweeps a quick-ring key — its default expiry keeps it off the backing-key filter" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _raw, quick} = Emisar.ApiKeys.mint_quick_key(subject)
+
+      # Age it two hours past the 1h grace so grace isn't what protects it: a
+      # quick key survives because it carries a default expiry, and the sweep
+      # only reclaims non-expiring (`is_nil(expires_at)`) :mcp backing keys.
+      backdate_key(quick, -2)
+
+      assert 0 = OAuth.delete_abandoned_backing_keys()
+      assert Repo.reload(quick)
+    end
+
+    test "never sweeps an audit-export token, even non-expiring and aged past the grace window" do
+      # An audit-export token is non-expiring like a backing key, so only its
+      # :audit_export kind keeps it off the sweep — the candidate filter is
+      # kind: :mcp, never merely "no expiry".
+      {_raw, export} = Fixtures.ApiKeys.create_api_key(kind: :audit_export)
+      assert export.kind == :audit_export
+      assert is_nil(export.expires_at)
+
+      backdate_key(export, -2)
+
+      assert 0 = OAuth.delete_abandoned_backing_keys()
+      assert Repo.reload(export)
     end
   end
 

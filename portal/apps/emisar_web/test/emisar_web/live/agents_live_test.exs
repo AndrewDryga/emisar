@@ -434,6 +434,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert with_manual =~ "Rotate this key?"
     end
 
+    # The agents UI hides Rotate on an OAuth backing row (covered above); a
+    # crafted `rotate` event bypassing the hidden button still can't rotate it —
+    # the context rejects an OAuth backing key (IL-15), so the LV lands the error
+    # in a flash and the key is untouched (no successor minted).
+    test "a crafted rotate event on an OAuth backing row is refused with a flash, key untouched",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, backing} =
+        ApiKeys.create_backing_key(account.id, user.id, subject.membership_id, "Claude (OAuth)")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      assert render_click(lv, "rotate", %{"id" => backing.id}) =~ "Could not rotate the key."
+
+      # No successor minted; the backing key stays the only row, un-rotated.
+      assert [only_key] = Repo.all(ApiKey)
+      assert only_key.id == backing.id
+      assert is_nil(only_key.rotated_to_id)
+      assert is_nil(only_key.revoked_at)
+    end
+
     test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

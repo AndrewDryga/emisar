@@ -878,16 +878,18 @@ defmodule Emisar.ApiKeys do
 
   @doc """
   Internal — the OAuth cleanup sweep deletes stale backing keys through this.
-  Deletes only OAuth backing keys (`kind: :mcp`, non-expiring) among `ids`, so a
-  mis-passed id can never remove a real operator key; the caller supplies ids it
-  has already confirmed hold no token (unreachable, since the raw secret was
-  discarded at mint). Returns the count.
+  Deletes only never-used OAuth backing keys (`kind: :mcp`, non-expiring,
+  `last_used_at IS NULL`) among `ids` — self-guarding, so a mis-passed id can
+  never remove a real operator key OR a backing key that has authenticated a
+  call; the caller supplies ids it has already confirmed hold no token
+  (unreachable, since the raw secret was discarded at mint). Returns the count.
   """
   def delete_backing_keys(ids) when is_list(ids) do
     {count, _} =
       ApiKey.Query.all()
       |> ApiKey.Query.by_ids(ids)
       |> ApiKey.Query.oauth_backing()
+      |> ApiKey.Query.never_used()
       |> Repo.delete_all()
 
     count
