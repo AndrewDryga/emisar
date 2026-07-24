@@ -27,6 +27,15 @@ cases:
         retry_every: 1s
     expect:
       stdout_contains: [ServerVersion, BusyWorkers]
+  - name: httpd.status-http-error
+    action: httpd.status
+    env:
+      HTTPD_STATUS_URL: http://127.0.0.1/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: httpd.error_tail
     expect:
       stdout_contains: [resuming normal operations]

@@ -26,7 +26,7 @@ path=$1
 shift
 
 if [ -n "${VM_BEARER_TOKEN:-}" ]; then
-	printf 'Authorization: Bearer %s\n' "$VM_BEARER_TOKEN" | curl -sS -G -H @- "$@" "$VM_URL$path"
+	printf 'Authorization: Bearer %s\n' "$VM_BEARER_TOKEN" | curl -fsS -G -H @- "$@" "$VM_URL$path"
 else
-	curl -sS -G "$@" "$VM_URL$path"
+	curl -fsS -G "$@" "$VM_URL$path"
 fi

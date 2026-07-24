@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${PHP_FPM_STATUS_URL:-http://127.0.0.1/fpm-status}?full\""
+      - "curl -fsS \"${PHP_FPM_STATUS_URL:-http://127.0.0.1/fpm-status}?full\""
   timeout: 15s
 output:
   parser: text

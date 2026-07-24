@@ -33,6 +33,15 @@ cases:
   - action: envoy.server_info
     expect:
       stdout_contains: [version, state]
+  - name: envoy.server-info-http-error
+    action: envoy.server_info
+    env:
+      ENVOY_ADMIN: http://envoy:9901/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: envoy.stats
     args: {filter: server}
     expect:

@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/certs\""
+      - "curl -fsS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/certs\""
   timeout: 15s
 output:
   parser: json

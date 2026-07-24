@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${PHP_OPCACHE_URL:-http://127.0.0.1/opcache-status.php}\""
+      - "curl -fsS \"${PHP_OPCACHE_URL:-http://127.0.0.1/opcache-status.php}\""
   timeout: 15s
 output:
   parser: text

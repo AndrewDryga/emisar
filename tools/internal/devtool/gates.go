@@ -230,6 +230,9 @@ func (a *App) validatePacks(ctx context.Context) error {
 		fmt.Fprintf(a.Out, "\n==> %s\n", filepath.Base(packDir))
 		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "emisar"), "pack", "validate", packDir); err != nil {
 			failures = append(failures, filepath.Base(packDir))
+		} else if err := validatePackHTTPFailures(packDir); err != nil {
+			fmt.Fprintln(a.Err, err)
+			failures = append(failures, filepath.Base(packDir))
 		}
 	}
 	if len(failures) > 0 {

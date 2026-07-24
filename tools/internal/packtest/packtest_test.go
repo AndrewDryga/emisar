@@ -364,7 +364,10 @@ func TestCompleteRiskAccountabilityRequiresSuccessOrKnownException(t *testing.T)
 	}
 	plan := Plan{
 		Services: []string{"fixture"}, Versions: testVersions(),
-		RiskAccountability: RiskAccountability{Mode: "complete"},
+		RiskAccountability: RiskAccountability{
+			Mode:       "complete",
+			Exceptions: map[string]string{"example.remove": "requires_cluster"},
+		},
 		Cases: []Case{{
 			Action: "example.restart",
 			Expect: Expectation{Status: "failure", ReasonContains: []string{"denied"}},
@@ -378,9 +381,6 @@ func TestCompleteRiskAccountabilityRequiresSuccessOrKnownException(t *testing.T)
 	plan.Cases[0].Probes = []Step{{
 		Argv: []string{"echo", "ready"}, Expect: Expectation{StdoutContains: []string{"ready"}},
 	}}
-	plan.RiskAccountability.Exceptions = map[string]string{
-		"example.remove": "requires_cluster",
-	}
 	if err := validatePlan("example", plan, actions); err != nil {
 		t.Fatalf("complete risk accountability rejected: %v", err)
 	}

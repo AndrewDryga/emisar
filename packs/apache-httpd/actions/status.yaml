@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${HTTPD_STATUS_URL:-http://127.0.0.1/server-status?auto}\""
+      - "curl -fsS \"${HTTPD_STATUS_URL:-http://127.0.0.1/server-status?auto}\""
   timeout: 15s
 output:
   parser: text

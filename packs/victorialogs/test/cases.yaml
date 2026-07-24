@@ -23,6 +23,16 @@ cases:
         retry_every: 100ms
     expect:
       stdout_contains: [harness-log-event, packtest]
+  - name: vl.query-http-error
+    action: vl.query
+    args: {query: "_time:1h *", limit: 1}
+    env:
+      VL_URL: http://victorialogs:9428/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: vl.hits
     args: {query: "_time:1h harness-log-event", step: 5m}
     arrange: *ingest_log

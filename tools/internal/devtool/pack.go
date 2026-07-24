@@ -633,6 +633,9 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "emisar"), "pack", "validate", filepath.Join(a.Root, "packs", name)); err != nil {
 			return err
 		}
+		if err := validatePackHTTPFailures(filepath.Join(a.Root, "packs", name)); err != nil {
+			return err
+		}
 		if name == "redis" || name == "cassandra" {
 			return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out)
 		}

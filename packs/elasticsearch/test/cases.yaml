@@ -42,6 +42,15 @@ cases:
   - action: es.cluster_health
     expect:
       stdout_contains: ['"cluster_name"']
+  - name: es.cluster-health-http-error
+    action: es.cluster_health
+    env:
+      ELASTIC_URL: http://elasticsearch:9200/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: es.cluster_settings
     expect:
       stdout_contains: ['"persistent"', '"transient"']

@@ -18,6 +18,15 @@ cases:
   - action: prom.build_info
     expect:
       stdout_contains: ['"status":"success"', '"version"']
+  - name: prom.build-info-http-error
+    action: prom.build_info
+    env:
+      PROM_URL: http://prometheus:9090/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: prom.flags
     expect:
       stdout_contains: ['"status":"success"', '"config.file"']

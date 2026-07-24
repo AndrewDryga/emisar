@@ -18,7 +18,7 @@ path=$2
 shift 2
 if [ -n "${ZOT_BASICAUTH:-}" ]; then
 	printf 'Authorization: Basic %s\n' "$(printf '%s' "$ZOT_BASICAUTH" | base64 | tr -d '\n')" |
-		curl -sS -X "$method" -H @- "$@" "$ZOT_URL$path"
+		curl -fsS -X "$method" -H @- "$@" "$ZOT_URL$path"
 else
-	curl -sS -X "$method" "$@" "$ZOT_URL$path"
+	curl -fsS -X "$method" "$@" "$ZOT_URL$path"
 fi

@@ -23,6 +23,15 @@ cases:
   - action: consul.agent_self
     expect:
       stdout_contains: [Config, Member]
+  - name: consul.agent-self-http-error
+    action: consul.agent_self
+    env:
+      CONSUL_HTTP_ADDR: http://consul:8500/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: consul.agent_services
     expect:
       stdout_contains: ["{}"]

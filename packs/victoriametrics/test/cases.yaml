@@ -24,6 +24,16 @@ cases:
         retry_every: 250ms
     expect:
       stdout_contains: ['"status":"success"', harness_metric, packtest]
+  - name: vm.query-instant-http-error
+    action: vm.query_instant
+    args: {query: up}
+    env:
+      VM_URL: http://victoriametrics:8428/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: vm.query_range
     args: {query: harness_metric, window: 1h, step: 1m}
     arrange: *ingest_metric

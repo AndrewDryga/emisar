@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/config_dump?include_eds=true\""
+      - "curl -fsS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/config_dump?include_eds=true\""
   timeout: 30s
 output:
   parser: json

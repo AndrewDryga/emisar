@@ -19,6 +19,15 @@ cases:
       - argv: [curl, -fsS, http://127.0.0.1/]
         expect:
           stdout_contains: [pack-test ok]
+  - name: caddy.config-dump-http-error
+    action: caddy.config_dump
+    env:
+      CADDY_ADMIN: http://127.0.0.1:2019/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
   - action: caddy.adapt_caddyfile
     expect:
       stdout_contains: ['"apps"', '"http"']

@@ -26,9 +26,9 @@ only_unhealthy=$1
 get() {
 	if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 		printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-			curl -sS $K -H @- "$TRAEFIK_URL$1"
+			curl -fsS $K -H @- "$TRAEFIK_URL$1"
 	else
-		curl -sS $K "$TRAEFIK_URL$1"
+		curl -fsS $K "$TRAEFIK_URL$1"
 	fi
 }
 
