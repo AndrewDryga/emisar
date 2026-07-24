@@ -9,23 +9,24 @@ export CLOUDSDK_CORE_PROJECT="emisar"
 #    GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 #    [ -f "${GIT_ROOT}/.shell" ] && source "${GIT_ROOT}/.shell"
 #
-if [ -z "${GIT_ROOT:-}" ]; then
-  GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-fi
+# The root is pinned in a project-scoped global because loaders often source
+# this file from inside a function whose GIT_ROOT is local — that local is
+# gone by the time the functions below run.
+EMISAR_ROOT="${GIT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 
 portal() {
-  "${GIT_ROOT}/run" ops portal "$@"
+  "${EMISAR_ROOT}/run" ops portal "$@"
 }
 
 database() {
-  "${GIT_ROOT}/run" ops database "$@"
+  "${EMISAR_ROOT}/run" ops database "$@"
 }
 
 run() {
-  "${GIT_ROOT}/run" "$@"
+  "${EMISAR_ROOT}/run" "$@"
 }
 
 # Add the Terraform command that works from any folder within the project.
 prod() {
-  terraform -chdir="${GIT_ROOT}/infra" "$@"
+  terraform -chdir="${EMISAR_ROOT}/infra" "$@"
 }
