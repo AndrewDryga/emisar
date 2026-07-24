@@ -9,16 +9,18 @@
 // Progressive enhancement: the server renders the full storyboard — every
 // frame with its step label and caption — so no-JS visitors and crawlers get
 // the whole story stacked. Here we collapse the storyboard into one stacked
-// stage and PLAY the take once it scrolls into view. Each frame's beat: its
-// spotlights play in sequence (each dims everything except the one element
-// that matters, with a short label pinned to it), then the overlay cursor
-// travels to the frame's declared click point, a ripple fires, and the next
-// frame crossfades in — the transitions read as the real interaction that
-// produced the captures (which they were: the frames come from a live driven
-// session, tools/internal/browser/docs.go captureLoopTake). A tab click
-// takes manual control (the frame + its first spotlight, no autoplay);
-// Replay runs the take again. Honors prefers-reduced-motion: no autoplay, no
-// cursor, instant swaps, tabs still work, spotlights still shown.
+// stage, clip each frame to a fixed window, and PLAY the take once it scrolls
+// into view. Each frame's beat: its spotlights play in sequence (each dims
+// everything except the one element that matters, with a short label pinned
+// to it) — when a beat sits below the window, the frame PANS inside it (the
+// console scrolling, not the reader's page) — then the overlay cursor travels
+// to the frame's declared click point, a ripple fires, and the next frame
+// crossfades in. The transitions read as the real interaction that produced
+// the captures (which they were: the frames come from a live driven session,
+// tools/internal/browser/docs.go captureLoopTake). A tab click takes manual
+// control (the frame + its first spotlight, no autoplay); Replay runs the
+// take again. Honors prefers-reduced-motion: no autoplay, no cursor, instant
+// swaps and pans, tabs still work, spotlights still shown.
 
 // The rhythm per spotlight: in → read → out; then travel → click → swap.
 const SPOT_IN_MS = 450
@@ -31,6 +33,11 @@ const PLAIN_DWELL_MS = 1800
 // of the frame — a hole that hugs the content reads cramped.
 const SPOT_PAD_X = 0.7
 const SPOT_PAD_Y = 1.0
+// The player window shows the top 860/1100 of each frame; low beats pan the
+// frame inside it. (Captures are 1280x1100 CSS; the window keeps the cast
+// compact instead of growing the box to fit every beat.)
+const WINDOW_ASPECT = "aspect-[1280/860]"
+const PAN_MS = 700
 
 export function initConsoleCasts() {
   document.querySelectorAll("[data-console-cast]").forEach(setupCast)
@@ -76,6 +83,16 @@ function setupCast(root) {
       "motion-reduce:transition-none"
     )
     frame.querySelectorAll("[data-cast-frame-label]").forEach((label) => (label.hidden = true))
+    const win = frame.querySelector("[data-cast-window]")
+    if (win) win.classList.add(WINDOW_ASPECT)
+    const pan = frame.querySelector("[data-cast-pan]")
+    if (pan)
+      pan.classList.add(
+        "transition-transform",
+        "duration-700",
+        "ease-out",
+        "motion-reduce:transition-none"
+      )
     // The stacked frames are the section's core and swap on a timer or a tab
     // click, so decode them all now — server-side lazy is only for the no-JS
     // storyboard, where each frame loads as the reader reaches it.
@@ -95,10 +112,11 @@ function setupCast(root) {
     timers = []
   }
 
-  // The active frame's image box, in stage coordinates — every frame's image
-  // shares the same geometry once stacked, so measure the first.
+  // The active frame's image box, in stage coordinates. Measured live, so a
+  // panned frame reports its translated position and overlay geometry stays
+  // true mid-take.
   const imageBox = () => {
-    const img = frames[0].querySelector("img")
+    const img = frames[active].querySelector("img")
     const stageBox = stage.getBoundingClientRect()
     const box = img.getBoundingClientRect()
     return {left: box.left - stageBox.left, top: box.top - stageBox.top, width: box.width, height: box.height}
@@ -111,36 +129,45 @@ function setupCast(root) {
   }
 
   const spotsOf = (frame) => Array.from(frame.querySelectorAll("[data-cast-spot]"))
+  const panOf = (frame) => frame.querySelector("[data-cast-pan]")
 
-  // Camera work: bring a beat into view when it plays below (or above) the
-  // fold — the output spotlight lives at the frame's bottom edge, well past a
-  // laptop viewport. Only steer while the cast itself is on screen, so a
-  // reader who scrolled away is never yanked back.
-  const castOnScreen = () => {
-    const box = root.getBoundingClientRect()
-    return box.bottom > 0 && box.top < window.innerHeight
+  // Pan the frame inside its window so the [topPct, bottomPct] band (image
+  // percentages) is visible — the console scrolling to a low beat. Returns
+  // whether the pan actually moved (callers wait for the glide before acting).
+  let panPx = 0
+
+  const setPan = (frame, target) => {
+    const pan = panOf(frame)
+    if (!pan) return false
+    if (target === panPx) return false
+    panPx = target
+    pan.style.transform = `translateY(${-target}px)`
+    return true
   }
 
-  const scrollSpotIntoView = (spot) => {
-    if (!castOnScreen()) return
-    const box = spot.getBoundingClientRect()
-    if (box.top >= 24 && box.bottom <= window.innerHeight - 24) return
-    spot.scrollIntoView({
-      behavior: reduceMotion ? "auto" : "smooth",
-      block: box.top > window.innerHeight / 2 ? "center" : "nearest"
+  const resetPans = () => {
+    panPx = 0
+    frames.forEach((frame) => {
+      const pan = panOf(frame)
+      if (pan) pan.style.transform = ""
     })
   }
 
-  const scrollPointIntoView = (point) => {
-    if (!castOnScreen()) return
-    const stageBox = stage.getBoundingClientRect()
-    const box = imageBox()
-    const yView = stageBox.top + box.top + (point.y / 100) * box.height
-    if (yView >= 40 && yView <= window.innerHeight - 40) return
-    window.scrollBy({
-      top: yView - window.innerHeight / 2,
-      behavior: reduceMotion ? "auto" : "smooth"
-    })
+  const panToBand = (frame, topPct, bottomPct) => {
+    const pan = panOf(frame)
+    const win = frame.querySelector("[data-cast-window]")
+    if (!pan || !win) return false
+    const imgH = pan.getBoundingClientRect().height
+    const winH = win.getBoundingClientRect().height
+    const maxPan = Math.max(0, imgH - winH)
+    if (maxPan === 0) return false
+    const margin = 20
+    let target = panPx
+    const bottomPx = (bottomPct / 100) * imgH
+    const topPx = (topPct / 100) * imgH
+    if (bottomPx - target > winH - margin) target = bottomPx - winH + margin
+    if (topPx - target < margin) target = topPx - margin
+    return setPan(frame, Math.min(maxPan, Math.max(0, target)))
   }
 
   // Position + reveal one spotlight (padded around its target rect); the
@@ -165,7 +192,7 @@ function setupCast(root) {
       label.style.marginBottom = above ? "8px" : "0"
     }
     spot.hidden = false
-    scrollSpotIntoView(spot)
+    panToBand(spot.closest("[data-cast-frame]"), y - 4, rect.y + rect.h + SPOT_PAD_Y + 3)
     later(reduceMotion ? 0 : SPOT_IN_MS, () => spot.classList.remove("opacity-0"))
   }
 
@@ -183,6 +210,7 @@ function setupCast(root) {
   const showFrame = (index) => {
     active = index
     hideSpots(true)
+    resetPans()
     frames.forEach((frame, i) => {
       frame.classList.toggle("opacity-0", i !== index)
       frame.classList.toggle("pointer-events-none", i !== index)
@@ -248,16 +276,18 @@ function setupCast(root) {
         run()
         return
       }
-      cursor.hidden = false
-      cursor.style.transition = `left ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms`
-      cursor.classList.remove("opacity-0")
-      scrollPointIntoView(click)
-      placeAt(cursor, click)
-      later(TRAVEL_MS + 60, () => {
-        clickRipple(click)
-        later(CLICK_MS - 60, () => {
-          showFrame(active + 1)
-          run()
+      const panned = panToBand(frames[active], click.y - 4, click.y + 4)
+      later(panned && !reduceMotion ? PAN_MS : 0, () => {
+        cursor.hidden = false
+        cursor.style.transition = `left ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${TRAVEL_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms`
+        cursor.classList.remove("opacity-0")
+        placeAt(cursor, click)
+        later(TRAVEL_MS + 60, () => {
+          clickRipple(click)
+          later(CLICK_MS - 60, () => {
+            showFrame(active + 1)
+            run()
+          })
         })
       })
     })

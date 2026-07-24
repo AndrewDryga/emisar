@@ -573,42 +573,51 @@ defmodule EmisarWeb.DocsComponents do
           >
             Step {index + 1} · {frame.label}
           </p>
-          <div class="relative overflow-hidden rounded-lg border border-zinc-800/80">
-            <img
-              src={frame.src}
-              alt={frame.alt}
-              width="1600"
-              height="1075"
-              loading="lazy"
-              class="w-full"
-            />
-            <%!-- The spotlights (a frame may play up to two in sequence): a
+          <%!-- The window clips the frame to a fixed aspect once the player
+               takes over (JS adds it); the pan layer then scrolls the page
+               INSIDE the window to reach low beats — the console scrolling,
+               not the reader's page. No-JS keeps the full storyboard frame. --%>
+          <div
+            data-cast-window
+            class="relative overflow-hidden rounded-lg border border-zinc-800/80"
+          >
+            <div data-cast-pan class="relative">
+              <img
+                src={frame.src}
+                alt={frame.alt}
+                width="1600"
+                height="1375"
+                loading="lazy"
+                class="w-full"
+              />
+              <%!-- The spotlights (a frame may play up to two in sequence): a
                  transparent hole whose oversized shadow dims everything else in
                  the (overflow-clipped) frame; the label pins to the hole's
                  edge. --%>
-            <span
-              :for={
-                {spot, note} <- [
-                  {frame[:spot], frame[:note]},
-                  {frame[:spot2], frame[:note2]},
-                  {frame[:spot3], frame[:note3]}
-                ]
-              }
-              :if={spot}
-              data-cast-spot
-              data-spot={spot}
-              hidden
-              aria-hidden="true"
-              class="pointer-events-none absolute z-10 rounded-md ring-1 ring-brand-400/70 opacity-0 shadow-[0_0_0_9999px_rgba(9,9,11,0.62)] transition-opacity duration-500"
-            >
               <span
-                :if={note}
-                data-cast-spot-label
-                class="absolute left-0 w-max max-w-md rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium leading-relaxed text-brand-300 shadow-lg shadow-black/40"
+                :for={
+                  {spot, note} <- [
+                    {frame[:spot], frame[:note]},
+                    {frame[:spot2], frame[:note2]},
+                    {frame[:spot3], frame[:note3]}
+                  ]
+                }
+                :if={spot}
+                data-cast-spot
+                data-spot={spot}
+                hidden
+                aria-hidden="true"
+                class="pointer-events-none absolute z-10 rounded-md ring-1 ring-brand-400/70 opacity-0 shadow-[0_0_0_9999px_rgba(9,9,11,0.62)] transition-opacity duration-500"
               >
-                {note}
+                <span
+                  :if={note}
+                  data-cast-spot-label
+                  class="absolute left-0 w-max max-w-md rounded-md border border-brand-500/40 bg-zinc-950/95 px-2 py-1 font-mono text-[11px] font-medium leading-relaxed text-brand-300 shadow-lg shadow-black/40"
+                >
+                  {note}
+                </span>
               </span>
-            </span>
+            </div>
           </div>
           <p class="mt-3 text-sm leading-6 text-zinc-400">{frame.caption}</p>
         </div>
