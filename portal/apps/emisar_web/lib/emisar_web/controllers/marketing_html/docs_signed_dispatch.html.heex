@@ -59,8 +59,9 @@
           <strong>The runner verifies, then runs.</strong>
           It verifies the cert against a CA it trusts, requires exactly one ref with its locally
           derived generation suffix in the signed target set, verifies the portal origin, action,
-          on-disk pack hash, exact args, reason, operation, freshness, and signature, then consumes
-          the nonce. Only then does it run.
+          exact args, reason, operation, freshness, and signature, then consumes the nonce. The
+          signature binds the immutable pack ref, not the pack bytes — the on-disk pack hash is a
+          separate trust gate the runner applies next. Only then does it run.
         </li>
       </ol>
       <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
@@ -140,9 +141,11 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
       </p>
       <.docs_code phx-no-format label="shell" copy_text="sudo systemctl restart emisar"><span class="text-zinc-500">$</span> sudo systemctl restart emisar</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then confirm it landed before you rely on it: the Runner page — and the runners list — shows the
+        Then confirm it landed before you rely on it: the Runner page shows the
         <strong class="text-zinc-200">Signed dispatch only</strong>
-        badge and the Run button is disabled, an MCP
+        badge — the runners list carries the same state as a
+        <strong class="text-zinc-200">signed-only</strong>
+        chip — and the Run button is disabled, an MCP
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>
         runs, and an operator or runbook dispatch is refused with a clear message. No badge means the
         runner is still accepting unsigned calls — recheck the config and the restart.
@@ -340,9 +343,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             Enforcement requires a data directory. Every accepted nonce is appended and synced
             before dispatch, and expired records are compacted atomically. The journal refuses new
             work rather than evicting a fresh nonce when its 100,000-entry or 16 MiB bound is reached.
-            Its persisted freshness horizon — the newest attestation timestamp it has accepted — also prevents an unsafe
+            Its header records the retention it was opened with, so raising
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
-            increase from reopening replay after old records were compacted.
+            above that recorded value is refused rather than reopening replay after old records were
+            compacted.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -431,6 +435,24 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">replayed</code>
             — this nonce was already used. The client double-sent; re-issue with a fresh dispatch.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">intent_mismatch</code>
+            — a delivered field doesn't match the signed one, or the call tried to override
+            execution limits. Timeouts and output caps are not part of the signed claim, so a signed
+            dispatch carrying them is refused outright — re-send it without the overrides.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nonce_store_unavailable</code>
+            — the runner couldn't durably record the nonce, so it refused rather than risk a replay.
+            A write failure latches for the life of the process: every dispatch is refused until the
+            runner restarts. Check the data directory for disk space and permissions.
           </span>
         </li>
       </ul>
