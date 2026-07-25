@@ -60,6 +60,11 @@ between:
     queue (a manual reopen also strands the task's lease, which gets the NEXT
     iteration's completion rejected as unleased). Never widen scope beyond the audited
     task.
+    Receipt format is parsed strictly from the END of your reply: the last non-empty
+    line must BE the single `REVIEW COMPLETE — …` line, with the `AUDIT EVIDENCE — …`
+    line(s) immediately before it — nothing after them, no summary, no sign-off. Emit
+    each of those lines exactly once in the whole reply (a restated receipt earlier, or
+    any text after the final line, voids the verdict and kills the run).
 
 signoff:
   # Signoff writes task queues only.
