@@ -21,7 +21,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     render(lv)
   end
 
-  defp pending_request(account, requested_by) do
+  defp pending_request(account, requested_by, opts \\ []) do
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,
@@ -42,7 +42,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         args: %{}
       })
 
-    {:ok, request} = Approvals.create_request(run, requested_by.id, "please approve")
+    {:ok, request} =
+      Approvals.create_request(run, requested_by.id, "please approve",
+        allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
+      )
+
     request
   end
 
@@ -334,6 +338,65 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # tracks it as @grant_duration), and the scope picker appears.
     assert changed =~ ~r/<option(?=[^>]*\bvalue="one_day")(?=[^>]*\bselected)[^>]*>/
     assert changed =~ ~s(name="scope")
+  end
+
+  test "adjusting the reuse window keeps the note, match, and cap already entered", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    form = element(lv, "form[phx-change='grant_form_changed']")
+
+    note = "Checked with the on-call DBA; replica lag is back under 1s."
+
+    render_change(form, %{"duration" => "one_day", "reason" => note})
+
+    # Widening the match and then changing the duration re-renders the whole
+    # panel. Every field the operator filled has to come back — these were
+    # uncontrolled, so a duration tweak silently cleared the note and snapped
+    # the match back to the narrow default.
+    changed =
+      render_change(form, %{
+        "duration" => "thirty_days",
+        "reason" => note,
+        "scope" => "any_args",
+        "max_uses" => "5"
+      })
+
+    assert changed =~ note
+    assert changed =~ ~r/<option(?=[^>]*\bvalue="any_args")(?=[^>]*\bselected)[^>]*>/
+    assert changed =~ ~r/<input(?=[^>]*\bname="max_uses")(?=[^>]*\bvalue="5")[^>]*>/
+  end
+
+  test "a refused self-approval keeps the note so it can be reused on Deny", %{conn: conn} do
+    # A policy that forbids self-approval refuses the requester's approve but
+    # leaves the panel live (denying your own request is fine), so the
+    # justification they typed must survive the refusal.
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user, allow_self_approval: false)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    note = "Rolling back the migration instead — see incident 4412."
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"decision" => "approve", "reason" => note})
+
+    assert html =~ "You can&#39;t approve your own request."
+    assert html =~ note
+  end
+
+  test "the decision form preserves input across a reload", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # A half-written justification is real work; the hook mirrors it into
+    # sessionStorage so a refresh doesn't discard it.
+    assert has_element?(lv, "form#approval-decision-form[phx-hook='PreserveInput']")
   end
 
   test "the free-text decision controls each have an accessible name", %{conn: conn} do

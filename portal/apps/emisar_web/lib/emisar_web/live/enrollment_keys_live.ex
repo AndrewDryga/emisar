@@ -313,6 +313,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             :if={is_nil(@new_secret)}
             for={@form}
             id="enrollment_key_form"
+            phx-hook="PreserveInput"
             phx-change="validate"
             phx-submit="create"
           >

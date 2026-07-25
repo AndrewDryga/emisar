@@ -1898,11 +1898,20 @@ defmodule EmisarWeb.AgentsLive do
         you want to give it your own name and expiry date.
       </p>
 
-      <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
+      <.simple_form
+        for={@form}
+        id="api_key_form"
+        phx-hook="PreserveInput"
+        phx-change="validate"
+        phx-submit="create"
+      >
+        <%!-- autocomplete="off": this names a KEY, not a person, but the field is
+             labeled "Name" — enough for a browser to offer the operator's own. --%>
         <.input
           field={@form[:name]}
           type="text"
           label="Name"
+          autocomplete="off"
           placeholder="e.g. Claude Desktop on laptop"
           required
         />

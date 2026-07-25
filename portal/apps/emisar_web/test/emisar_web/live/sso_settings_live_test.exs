@@ -64,6 +64,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
+      # The issuer/client config draft survives a reload (PreserveInput); the
+      # client secret is type="password", which the hook never stores.
+      assert has_element?(lv, "form#provider_form[phx-hook='PreserveInput']")
+
       lv
       |> form("#provider_form", %{
         "provider" => %{

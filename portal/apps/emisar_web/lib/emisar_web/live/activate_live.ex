@@ -98,6 +98,11 @@ defmodule EmisarWeb.ActivateLive do
   end
 
   defp lookup(socket, code) do
+    # Re-render the code that was looked up, not the one `handle_params` last saw
+    # — a near-miss should leave the operator a character to fix, not a blank box
+    # to retype from the terminal.
+    socket = assign(socket, :code_form, to_form(%{"code" => code}, as: :lookup))
+
     case ApiKeys.fetch_pending_device_grant_by_user_code(code, socket.assigns.current_subject) do
       {:ok, grant} ->
         socket |> assign(:grant, grant) |> assign(:lookup_error, nil)

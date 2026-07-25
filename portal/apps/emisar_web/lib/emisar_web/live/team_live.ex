@@ -354,7 +354,15 @@ defmodule EmisarWeb.TeamLive do
     |> tap_clear_scope_edit()
   end
 
+  # Keeps @edit_form current with what's typed, so a rejected save re-renders the
+  # operator's text instead of reverting to the stored name.
+  def handle_event("validate_edit", %{"user" => params}, socket) do
+    {:noreply, assign(socket, :edit_form, to_form(params, as: "user"))}
+  end
+
   def handle_event("save_edit", %{"membership_id" => id, "user" => params}, socket) do
+    socket = assign(socket, :edit_form, to_form(params, as: "user"))
+
     with_membership(socket, id, fn membership ->
       case Accounts.update_user_as_admin(membership, params, socket.assigns.current_subject) do
         {:ok, _user} -> {:ok, "Member updated."}
@@ -1069,6 +1077,7 @@ defmodule EmisarWeb.TeamLive do
           <.simple_form
             for={@form}
             id="invite_form"
+            phx-hook="PreserveInput"
             phx-change="validate"
             phx-submit="invite"
             class="mt-6 space-y-5"
@@ -1505,11 +1514,18 @@ defmodule EmisarWeb.TeamLive do
                     <.simple_form
                       for={@edit_form}
                       id={"edit-form-#{membership.id}"}
+                      phx-hook="PreserveInput"
+                      phx-change="validate_edit"
                       phx-submit="save_edit"
                       class="space-y-3"
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
-                      <.input field={@edit_form[:full_name]} type="text" label="Full name" />
+                      <.input
+                        field={@edit_form[:full_name]}
+                        type="text"
+                        label="Full name"
+                        autocomplete="name"
+                      />
                       <p class="text-xs text-zinc-400">
                         Only display name can be changed from here. Members
                         update their own sign-in email on their Profile page.

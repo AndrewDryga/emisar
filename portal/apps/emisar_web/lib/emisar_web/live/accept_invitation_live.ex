@@ -117,7 +117,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
           <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.user.email}</div>
         </div>
 
-        <.input field={@form[:full_name]} type="text" label="Your name" required />
+        <.input
+          field={@form[:full_name]}
+          type="text"
+          label="Your name"
+          autocomplete="name"
+          required
+        />
 
         <:actions>
           <.button phx-disable-with="Joining..." class="w-full">

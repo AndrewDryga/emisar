@@ -40,6 +40,7 @@ defmodule EmisarWeb.OnboardingLive do
           field={@form[:name]}
           type="text"
           label="What's your team or company called?"
+          autocomplete="organization"
           placeholder="Acme Corp"
           required
         />

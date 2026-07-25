@@ -1401,10 +1401,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             create an OAuth/OIDC app at your provider, then paste its client ID and secret.
           </p>
 
+          <%!-- The client secret is `type="password"`, which PreserveInput never
+               stores — a restored draft keeps the issuer/client/claim config and
+               leaves the secret to be re-pasted. --%>
           <.simple_form
             :if={@form}
             for={@form}
             id="provider_form"
+            phx-hook="PreserveInput"
             phx-change="validate"
             phx-submit="create"
           >
@@ -1458,6 +1462,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               :if={@edit_form}
               for={@edit_form}
               id={"edit-provider-#{provider.id}"}
+              phx-hook="PreserveInput"
               phx-change="validate_edit"
               phx-submit="update"
             >
@@ -1971,7 +1976,10 @@ defmodule EmisarWeb.SSOSettingsLive do
               </p>
             <% end %>
           </div>
-          <.input field={@form[:client_id]} type="text" label="Client ID" />
+          <%!-- autocomplete="off" on both halves of the OAuth client: a password
+               manager offering a saved username here would overwrite the client id
+               the operator pasted from their IdP. --%>
+          <.input field={@form[:client_id]} type="text" label="Client ID" autocomplete="off" />
           <.input
             field={@form[:client_secret]}
             type="password"

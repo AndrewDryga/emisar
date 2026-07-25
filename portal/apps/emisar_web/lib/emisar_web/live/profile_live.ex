@@ -491,6 +491,7 @@ defmodule EmisarWeb.ProfileLive do
               field={@profile_form[:full_name]}
               type="text"
               aria-label="Display name"
+              autocomplete="name"
               placeholder="Ada Lovelace"
             />
             <:actions>

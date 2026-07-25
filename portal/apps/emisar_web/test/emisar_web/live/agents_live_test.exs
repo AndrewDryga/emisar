@@ -199,6 +199,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
       assert custom =~ "Create a key by hand"
+
+      # The name/description/expiry draft survives a reload (PreserveInput).
+      assert has_element?(connect_lv, "form#api_key_form[phx-hook='PreserveInput']")
     end
 
     test "the default status filter is the baseline — no clear-× until moved off it",

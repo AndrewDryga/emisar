@@ -32,6 +32,13 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     refute html =~ ~s|name="user[password]"|
   end
 
+  test "the landing CTA's ?email= arrives pre-filled, not retyped", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/sign_up?email=founder@example.com")
+
+    assert html =~
+             ~r/<input(?=[^>]*\bname="user\[email\]")(?=[^>]*\bvalue="founder@example.com")[^>]*>/
+  end
+
   test "the account-name input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
     # The visible "Team or company name" label is wired to the input via
     # <label for>/id, so a screen reader announces it — the name-based <.input>

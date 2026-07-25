@@ -119,6 +119,9 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Dispatches actions and approves them"
       assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
       assert html =~ "New members start with no runner access"
+
+      # The invite draft survives a reload (the PreserveInput hook).
+      assert has_element?(lv, "form#invite_form[phx-hook='PreserveInput']")
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
@@ -670,6 +673,22 @@ defmodule EmisarWeb.TeamLiveTest do
           sent.subject == "You're invited to #{account.name} on emisar" and
           sent.text_body =~ "/accept_invitation/"
       end)
+    end
+
+    test "the name editor tracks typing, so a roster re-render keeps the draft", %{
+      lv: lv,
+      membership: membership
+    } do
+      render_click(lv, "start_edit", %{"membership_id" => membership.id})
+
+      assert has_element?(lv, "form#edit-form-#{membership.id}[phx-hook='PreserveInput']")
+
+      render_change(lv, "validate_edit", %{"user" => %{"full_name" => "Half-typed Na"}})
+
+      # Any team broadcast re-renders the roster from assigns; an untracked
+      # edit form would snap the input back to the stored name.
+      assert render(lv) =~
+               ~r/<input(?=[^>]*\bname="user\[full_name\]")(?=[^>]*\bvalue="Half-typed Na")[^>]*>/
     end
 
     test "accepted member rows do not offer invite resend", %{lv: lv, membership: membership} do

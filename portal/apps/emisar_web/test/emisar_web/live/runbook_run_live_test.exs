@@ -137,6 +137,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook = published_runbook_with_steps!(user, account, runner, 6)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      # The reason draft survives a reload (the PreserveInput hook).
+      assert has_element?(lv, "form#runbook-dispatch-form[phx-hook='PreserveInput']")
+
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
 
       assert html =~ "6 runs planned"

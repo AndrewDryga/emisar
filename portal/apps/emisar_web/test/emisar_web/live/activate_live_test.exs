@@ -47,6 +47,19 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert expired_html =~ "No pending request matches this code"
     end
 
+    test "a near-miss hand-typed code re-renders in the box for correction", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate")
+
+      missed = render_submit(lv, "lookup", %{"lookup" => %{"code" => "XXXX-2418"}})
+
+      assert missed =~ "No pending request matches this code"
+
+      assert missed =~
+               ~r/<input(?=[^>]*\bname="lookup\[code\]")(?=[^>]*\bvalue="XXXX-2418")[^>]*>/
+    end
+
     test "the code form looks a request up by hand, normalizing the input", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {_device_code, user_code, _grant} = open_grant()

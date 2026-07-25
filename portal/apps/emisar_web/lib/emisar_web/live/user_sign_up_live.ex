@@ -3,8 +3,10 @@ defmodule EmisarWeb.UserSignUpLive do
   alias Emisar.{Accounts, Auth, Users}
   alias EmisarWeb.RegistrationHandoff
 
-  def mount(_params, _session, socket) do
-    changeset = Users.change_user(%Emisar.Users.User{})
+  # The landing page's CTA collects a work email and GETs here with it; carry it
+  # into the form so the operator doesn't retype what they just typed.
+  def mount(params, _session, socket) do
+    changeset = Users.change_user(%Emisar.Users.User{}, Map.take(params, ["email"]))
 
     {:ok,
      socket
@@ -37,7 +39,13 @@ defmodule EmisarWeb.UserSignUpLive do
         action={~p"/sign_in/magic/start"}
         method="post"
       >
-        <.input field={@form[:full_name]} type="text" label="Your name" required />
+        <.input
+          field={@form[:full_name]}
+          type="text"
+          label="Your name"
+          autocomplete="name"
+          required
+        />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
         <%!-- Explicit id: account_name isn't a @form field (it's a standalone
              param), so it needs an id for its <label for> to associate — a screen
@@ -48,6 +56,7 @@ defmodule EmisarWeb.UserSignUpLive do
           value={@account_name}
           type="text"
           label="Team or company name"
+          autocomplete="organization"
           errors={if @account_name_error, do: [@account_name_error], else: []}
           required
         />

@@ -73,8 +73,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:runner_connection, runner_connection(run))
          |> assign(:requested_by, requested_by)
          |> assign(:decided_by, decided_by)
-         |> assign(:decision_reason, "")
          |> assign_decisions(request)
+         # Every operator-entered decision field is tracked server-side. A
+         # co-approver's broadcast, the expiry countdown, or a refused decision
+         # all re-render this panel, and LiveView only preserves the value of
+         # the input that happens to be focused — an untracked field would drop
+         # a half-written denial justification on the floor. They stay bare
+         # top-level params (not a namespaced form) because the submit buttons
+         # post `decision=approve|deny` alongside them.
+         |> assign_decision_fields(%{})
          # Tracks the duration the operator picked in the grant-reuse
          # disclosure. "once" (the default) means "no grant" — in that
          # mode the Match / Limit-to fields are irrelevant and hidden.
@@ -236,7 +243,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("grant_form_changed", params, socket) do
-    {:noreply, assign(socket, :grant_duration, params["duration"] || "once")}
+    {:noreply,
+     socket
+     |> assign(:grant_duration, params["duration"] || "once")
+     |> assign_decision_fields(params)}
   end
 
   # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
@@ -302,7 +312,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             {:noreply, socket |> assign(:request, request) |> put_flash(:info, msg)}
 
           {:error, reason} ->
-            decision_failed(socket, reason)
+            decision_failed(socket, reason, params)
         end
       end
     )
@@ -326,23 +336,36 @@ defmodule EmisarWeb.ApprovalDetailLive do
              |> put_flash(:info, "Denied.")}
 
           {:error, reason} ->
-            decision_failed(socket, reason)
+            decision_failed(socket, reason, params)
         end
       end
     )
   end
 
+  # Carries the decision form's operator-entered values back into the render, so
+  # any re-render puts them where the operator left them.
+  defp assign_decision_fields(socket, params) do
+    socket
+    |> assign(:decision_reason, params["reason"] || "")
+    |> assign(:grant_scope, params["scope"] || "exact_args")
+    |> assign(:grant_max_uses, params["max_uses"] || "")
+  end
+
   # A self-approval refusal isn't a stale-state race — leave the panel as-is
-  # (don't re-fetch), just flash the cause.
-  defp decision_failed(socket, :self_approval_forbidden) do
-    {:noreply, put_flash(socket, :error, "You can't approve your own request.")}
+  # (don't re-fetch), just flash the cause. The form stays live so they can still
+  # Deny, so the note they wrote has to come back with it.
+  defp decision_failed(socket, :self_approval_forbidden, params) do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> put_flash(:error, "You can't approve your own request.")}
   end
 
   # An approve/deny that didn't take: the request expired or was decided
   # between render and this click (the live exact-request broadcast can
   # race a fast click). Re-fetch so the panel flips to decision-history, then
   # flash the real cause instead of leaving the form interactive.
-  defp decision_failed(socket, reason) do
+  defp decision_failed(socket, reason, _params) do
     {:noreply,
      socket
      |> refetch_request()
@@ -811,7 +834,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <aside :if={verdict == :pending} class="xl:sticky xl:top-6 xl:self-start">
             <.decision_panel
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
+              decision_reason={@decision_reason}
               grant_duration={@grant_duration}
+              grant_scope={@grant_scope}
+              grant_max_uses={@grant_max_uses}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
               self_blocked?={@self_blocked?}
@@ -830,6 +856,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   attr :can_decide?, :boolean, required: true
+  # The operator's in-progress decision input, tracked server-side so a
+  # re-render restores it rather than clearing it.
+  attr :decision_reason, :string, default: ""
+  attr :grant_scope, :string, default: "exact_args"
+  attr :grant_max_uses, :string, default: ""
   # Drives the reuse-window UI: the Match / Limit-to fields only show
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
@@ -925,18 +956,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
                this call"), no grant. --%>
           <form
             id="approval-decision-form"
+            phx-hook="PreserveInput"
             phx-submit="decide"
             phx-change="grant_form_changed"
             class="mt-4 space-y-4"
           >
-            <%!-- Bare name (uncontrolled): the LV doesn't track this note, the
-                 decide handler reads whatever's posted. `aria-label` names it
+            <%!-- Bare top-level name (the submit buttons post `decision=…`
+                 beside it, so a namespaced form would collide) with the value
+                 tracked server-side, so a co-approver's broadcast or a refused
+                 decision can't wipe a half-written note. `aria-label` names it
                  for AT (the placeholder is not an accessible name); `min-h-0`
                  undoes the component's default min-height for a compact 2-row box. --%>
             <.input
               type="textarea"
               name="reason"
-              value={nil}
+              value={@decision_reason}
               rows="2"
               aria-label="Decision note"
               placeholder="Note — logged with your decision (optional)"
@@ -975,15 +1009,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
                    phx-change handler tracks duration → re-renders this
                    block. --%>
                 <div :if={@grant_duration != "once"}>
-                  <%!-- Not value-bound: the LV doesn't track scope, so it
-                       defaults to "Same arguments only" each render — the
-                       parse on approve reads whatever's posted. --%>
+                  <%!-- Value-bound like the note: picking a wider match and then
+                       adjusting the duration re-renders this field, which would
+                       silently snap the choice back to the narrow default. --%>
                   <.input
                     name="scope"
                     type="select"
                     label="Match"
                     label_variant={:eyebrow}
-                    value={nil}
+                    value={@grant_scope}
                     options={[
                       {"Same arguments only", "exact_args"},
                       {"Any arguments for this action", "any_args"}
@@ -992,13 +1026,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 </div>
                 <div :if={@grant_duration != "once"}>
                   <%!-- Explicit `id` so the eyebrow label's `for` associates;
-                       bare name (uncontrolled), the approve handler reads the
-                       posted value. --%>
+                       value-bound so a duration change doesn't clear the cap the
+                       operator just typed. --%>
                   <.input
                     type="number"
                     id="grant_max_uses"
                     name="max_uses"
-                    value={nil}
+                    value={@grant_max_uses}
                     label="Limit to (optional)"
                     label_variant={:eyebrow}
                     min="1"

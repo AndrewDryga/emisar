@@ -934,6 +934,7 @@ defmodule EmisarWeb.RunbookRunLive do
           <.section_header title="Run" />
           <form
             id="runbook-dispatch-form"
+            phx-hook="PreserveInput"
             phx-change="validate"
             phx-submit="dispatch"
             class="space-y-4"
