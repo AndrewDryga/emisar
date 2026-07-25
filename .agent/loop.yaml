@@ -27,8 +27,13 @@ between:
   # Review boxes write task queues only; the repository stays read-only.
   writes: tasks
 
-  # The FAST pair: Luna and Opus 4.8 at xhigh, failing over to each other.
-  agent: [codex:gpt-5.6-luna/xhigh, claude:claude-opus-4-8/xhigh]
+  # The FAST pair — claude first FOR NOW: the codex wrapper's "tokens used"
+  # footer races the final-message echo into the captured output, and coop's
+  # receipt parser requires the receipt to be the LAST non-empty line, so a
+  # byte-perfect verdict intermittently voids (it killed two runs, one of them
+  # discarding a legitimate security FAIL). Restore luna-first when coop anchors
+  # the parse on the receipt prefix or strips wrapper footers.
+  agent: [claude:claude-opus-4-8/xhigh, codex:gpt-5.6-luna/xhigh]
 
   # coop prepends the just-finished task's id + folder, so "the task named above" is exact.
   prompt: |
