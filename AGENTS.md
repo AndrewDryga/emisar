@@ -128,6 +128,12 @@ calls, and keep your own context lean by routing:
   you review its diff, run the touched project's gate, and commit.
 - **High-stakes decisions:** task the thinker AND the critic in parallel with the same neutral
   problem statement — never showing either the other's answer — then synthesize the best of both.
+- **Consults are FOREGROUND calls.** Run `coop-consult` synchronously and act on its answer in the
+  same turn — never launch it in the background and end your turn to "wait". In an unattended loop
+  box, ending the turn ends the box: the consult dies with it, the next iteration relaunches it from
+  scratch, and the loop stalls to its give-up cap having committed nothing (this burned five
+  iterations on one task). If a consult is too slow to wait for, proceed on your own review and say
+  so in the task log — a finished commit beats a perfect consult that never returns.
 
 Outside the preset (no `coop-consult`/`coop-delegate` on PATH), use your runtime's own subagents for
 the same split — reasoning vs mechanical — and skip peers. **Single-writer rule regardless:** advisors
