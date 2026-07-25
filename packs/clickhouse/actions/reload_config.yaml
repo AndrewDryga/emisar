@@ -2,7 +2,7 @@ schema_version: 1
 id: ch.reload_config
 title: SYSTEM RELOAD CONFIG
 kind: exec
-risk: medium
+risk: high
 description: Re-reads config.xml + users.xml without restarting.
 side_effects:
   - Config + user definitions reloaded.

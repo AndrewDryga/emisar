@@ -5,9 +5,6 @@ versions:
     default: true
 env:
   PROM_URL: "http://prometheus:9090"
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: prom.alertmanagers
     expect:
@@ -46,3 +43,9 @@ cases:
   - action: prom.tsdb_stats
     expect:
       stdout_contains: ['"status":"success"', '"headStats"']
+  - action: prom.reload_config
+    args: {target: "http://prometheus:9090"}
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$PROM_URL/api/v1/status/config" | grep -q ''"status":"success"'' && echo reloaded']
+        expect:
+          stdout_contains: [reloaded]

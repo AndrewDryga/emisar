@@ -3,7 +3,7 @@ schema_version: 1
 id: linux.systemctl_reload
 title: Reload a systemd unit's config
 kind: exec
-risk: medium
+risk: high
 
 description: >
   `systemctl reload <unit>`. The unit re-reads its config without

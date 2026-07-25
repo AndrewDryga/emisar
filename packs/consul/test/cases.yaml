@@ -100,6 +100,13 @@ cases:
       - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -q _node_maintenance && echo maintenance']
         expect:
           stdout_contains: [maintenance]
+  - action: consul.reload
+    expect:
+      stdout_contains: [Configuration reload triggered]
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/self" | grep -q Member && echo healthy']
+        expect:
+          stdout_contains: [healthy]
   - action: consul.service_maintenance
     args: {service_id: packtest-service, note: packtest-maintenance}
     arrange:

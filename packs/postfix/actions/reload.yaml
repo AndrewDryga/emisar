@@ -2,7 +2,7 @@ schema_version: 1
 id: postfix.reload
 title: postfix reload
 kind: exec
-risk: medium
+risk: high
 description: >
   Tell Postfix to re-read main.cf and master.cf. Existing deliveries
   finish on the old config; new ones use the new. No downtime.

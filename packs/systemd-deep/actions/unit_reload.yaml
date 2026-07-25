@@ -2,7 +2,7 @@ schema_version: 1
 id: systemd.unit_reload
 title: systemctl reload <unit>
 kind: exec
-risk: medium
+risk: high
 description: >
   Ask one unit to reload its config without restarting. Only works
   if the unit has ExecReload= defined. Use over `restart` whenever

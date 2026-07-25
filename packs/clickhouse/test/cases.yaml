@@ -68,3 +68,8 @@ cases:
           stdout_contains: ["0"]
         retry_for: 10s
         retry_every: 250ms
+  - action: ch.reload_config
+    probes:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT 1"']
+        expect:
+          stdout_contains: ["1"]

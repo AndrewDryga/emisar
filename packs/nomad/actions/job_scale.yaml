@@ -2,7 +2,7 @@ schema_version: 1
 id: nomad.job_scale
 title: nomad job scale <id> <group> <count>
 kind: exec
-risk: medium
+risk: high
 description: Adjusts the count for one task group.
 side_effects:
   - Scheduler creates or stops allocations to reach the target count.

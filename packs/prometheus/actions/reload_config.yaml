@@ -2,7 +2,7 @@ schema_version: 1
 id: prom.reload_config
 title: POST /-/reload
 kind: exec
-risk: medium
+risk: high
 description: >
   Trigger Prometheus to reload its config + rule files in place.
   Requires --web.enable-lifecycle. If the new config is invalid,
