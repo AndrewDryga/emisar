@@ -1865,9 +1865,9 @@ defmodule EmisarWeb.AgentsLive do
                 value={@rpc_url}
                 copy_label="Copy URL"
               />
-              <.status_note icon="hero-information-circle" tone={:neutral} title={@oauth_note.title}>
+              <.callout tone={:neutral} title={@oauth_note.title}>
                 {@oauth_note.body}
-              </.status_note>
+              </.callout>
             </div>
           </:step>
         </.steps>

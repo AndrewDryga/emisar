@@ -240,6 +240,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Copy name"
       assert html =~ "Leave OAuth credentials empty"
       assert html =~ "OAuth Client ID and OAuth Client Secret are optional"
+      # Instructional guidance renders through the callout's icon-capped spine
+      # (tone-default info icon), never the spine-less status_note.
+      assert html =~ "hero-information-circle-mini"
       assert html =~ "Steps for Claude.ai"
       assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
       assert html =~ "Read-only tools"
