@@ -3,19 +3,22 @@ name: coop-box-builds-are-isolated
 description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
-updated: 2026-07-22
+updated: 2026-07-24
 ---
 
-Four seams make every gate run green inside a coop box; break any one and you get
+Six constraints make every gate run green inside a coop box; break any one and you get
 confusing, hard-to-attribute failures:
 
-1. **One URL on both sides:** `dev/compose.yml` declares only container ports.
-   Coop assigns stable workspace-specific host ports, publishes them on loopback, and
-   mirrors the same `localhost:<port>` URLs into the box. `./run` reads those URLs as
-   `COOP_SERVICE_*` in a box and from `coop fork ls --json` on the host. Portal receives
-   the resulting `DATABASE_URL`; tests receive `PGHOST=localhost` plus the assigned
-   `PGPORT`. Service-name-only URLs such as `db:5432` split host and box configuration
-   because the host cannot resolve the Compose service name.
+1. **Direct box database, forwarded host database:** `.agent/project.yaml` gives every
+   box `PGHOST=db` and `PGPORT=5432`, so a bare `mix test` uses Compose DNS without
+   leaking box-only values into host commands. `dev/compose.yml` still declares only
+   container ports. Coop assigns stable workspace-specific host ports, publishes
+   them on loopback, and mirrors the same `localhost:<port>` URLs into the box.
+   `./run` reads those URLs as `COOP_SERVICE_*` in a box and from
+   `coop fork ls --json` on the host. Host commands use the forwarded URL; box
+   commands keep `db:5432`, including the `DATABASE_URL` supplied to Portal.
+   Routing a full test suite through the localhost sidecar forwarder can exhaust
+   database checkout timeouts, so it is for host reachability rather than box traffic.
 
 2. **Build isolation:** the repo mount shares `portal/_build` with the macOS host, but
    BEAM builds are platform-specific — a darwin-compiled NIF (LazyHTML) made 716 of 2232
@@ -43,6 +46,11 @@ confusing, hard-to-attribute failures:
    dev CA beside the system roots for Erlang. Dynamic hostname acceptance and the
    well-known admin credentials belong only to this loopback-published dev sidecar.
 
+6. **Identity is explicit:** Coop injects `COOP_BOX=1` into every box. Devtool
+   branches on that marker instead of `/.dockerenv` or a conditional port mapping.
+   `COOP_SERVE_URL_*` carries the workspace's assigned URLs for configuration even
+   when an existing host listener means the current box cannot publish them.
+
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
 and the localhost sidecar forwarders. `.agent/Dockerfile` extends it only for Emisar's
 extra OS dependencies and platform-specific cache locations. Copying the base image
@@ -51,6 +59,9 @@ setup into this repo would duplicate Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-07-24 — declared direct PostgreSQL defaults in project box policy, kept
+  them through devtool orchestration, and replaced serve-URL-based box detection
+  with Coop's stable identity marker.
 - 2026-07-22 — moved development orchestration and browser automation into the
   shared Go tools module; replaced PID records, socat, OpenSSL, jq, curl, and npm.
 - 2026-07-22 — added fail-fast serve ownership and listener checks after an

@@ -15,6 +15,9 @@ subprojects:
 box:
   dockerfile: .agent/Dockerfile
   compose: dev/compose.yml
+  env:
+    PGHOST: db
+    PGPORT: "5432"
 
 # Ports a dev server in the box listens on — coop publishes each to a stable host
 # port so you can open it in your browser (the portal already binds 0.0.0.0 in dev):

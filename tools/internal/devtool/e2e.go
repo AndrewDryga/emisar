@@ -348,7 +348,7 @@ delete from billing_subscriptions where account_id = (select id from accounts wh
 update accounts
 set paddle_customer_id = null, paddle_customer_synced_at = null
 where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
-	if err := a.run(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-qc", deleteSQL); err != nil {
+	if err := a.run(ctx, a.Root, env, "psql", "-U", "postgres", "-d", "emisar_dev", "-qc", deleteSQL); err != nil {
 		return err
 	}
 	existingCustomer, err := findPaddleCustomer(ctx, values["PADDLE_API_KEY"], "demo@emisar.dev")
@@ -357,7 +357,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 	}
 	if existingCustomer != "" {
 		relinkSQL := fmt.Sprintf("update accounts set paddle_customer_id = '%s', paddle_customer_synced_at = null where slug = 'demo';", existingCustomer)
-		if err := a.run(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-qc", relinkSQL); err != nil {
+		if err := a.run(ctx, a.Root, env, "psql", "-U", "postgres", "-d", "emisar_dev", "-qc", relinkSQL); err != nil {
 			return err
 		}
 	}
@@ -452,7 +452,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 	query := "select plan || '|' || status || '|' || entitlements::text from billing_subscriptions where account_id = (select id from accounts where slug='demo');"
 	row := ""
 	for range 45 {
-		output, queryErr := a.output(ctx, a.Root, env, "psql", "-h", "localhost", "-p", strconv.Itoa(workspace.DBPort), "-U", "postgres", "-d", "emisar_dev", "-Atc", query)
+		output, queryErr := a.output(ctx, a.Root, env, "psql", "-U", "postgres", "-d", "emisar_dev", "-Atc", query)
 		if queryErr == nil {
 			row = strings.TrimSpace(string(output))
 			if row != "" {

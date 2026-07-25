@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -26,8 +27,7 @@ type workspaceList struct {
 }
 
 func (a *App) inBox() bool {
-	_, docker := os.Stat("/.dockerenv")
-	return docker == nil && os.Getenv("COOP_SERVE_URL_4000") != ""
+	return os.Getenv("COOP_BOX") == "1"
 }
 
 func (a *App) loadWorkspace(ctx context.Context) (Workspace, error) {
@@ -79,13 +79,23 @@ func (a *App) loadWorkspace(ctx context.Context) (Workspace, error) {
 }
 
 func (a *App) workspaceEnv(workspace Workspace) map[string]string {
+	databaseHost := "localhost"
+	databasePort := strconv.Itoa(workspace.DBPort)
+	if a.inBox() {
+		if configured := os.Getenv("PGHOST"); configured != "" {
+			databaseHost = configured
+		}
+		if configured := os.Getenv("PGPORT"); configured != "" {
+			databasePort = configured
+		}
+	}
 	return map[string]string{
-		"DATABASE_URL":               fmt.Sprintf("ecto://postgres:postgres@localhost:%d/emisar_dev", workspace.DBPort),
+		"DATABASE_URL":               fmt.Sprintf("ecto://postgres:postgres@%s/emisar_dev", net.JoinHostPort(databaseHost, databasePort)),
 		"EMISAR_DEV_URL":             workspace.PortalURL,
 		"EMISAR_DEV_KEYCLOAK_ISSUER": workspace.KeycloakURL + "/realms/emisar",
 		"EMISAR_DEV_CA_BUNDLE":       a.Certs + "/ca-bundle.crt",
-		"PGHOST":                     "localhost",
-		"PGPORT":                     strconv.Itoa(workspace.DBPort),
+		"PGHOST":                     databaseHost,
+		"PGPORT":                     databasePort,
 	}
 }
 

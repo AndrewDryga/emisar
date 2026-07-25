@@ -34,6 +34,48 @@ func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
 	second.Close()
 }
 
+func TestInBoxUsesStableCoopMarker(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("COOP_BOX", "1")
+	t.Setenv("COOP_SERVE_URL_4000", "")
+	if !app.inBox() {
+		t.Fatal("COOP_BOX=1 must identify a box without a serve URL")
+	}
+}
+
+func TestInBoxRejectsServeURLWithoutMarker(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("COOP_BOX", "")
+	t.Setenv("COOP_SERVE_URL_4000", "http://localhost:4000")
+	if app.inBox() {
+		t.Fatal("a serve URL alone must not identify the host as a box")
+	}
+}
+
+func TestWorkspaceEnvUsesForwardedDatabaseOnHost(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("COOP_BOX", "")
+	t.Setenv("PGHOST", "ignored")
+	t.Setenv("PGPORT", "9999")
+	env := app.workspaceEnv(Workspace{DBPort: 31372})
+	if env["PGHOST"] != "localhost" || env["PGPORT"] != "31372" ||
+		env["DATABASE_URL"] != "ecto://postgres:postgres@localhost:31372/emisar_dev" {
+		t.Fatalf("host database environment = %#v", env)
+	}
+}
+
+func TestWorkspaceEnvUsesDirectDatabaseInBox(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("COOP_BOX", "1")
+	t.Setenv("PGHOST", "db")
+	t.Setenv("PGPORT", "5432")
+	env := app.workspaceEnv(Workspace{DBPort: 31372})
+	if env["PGHOST"] != "db" || env["PGPORT"] != "5432" ||
+		env["DATABASE_URL"] != "ecto://postgres:postgres@db:5432/emisar_dev" {
+		t.Fatalf("box database environment = %#v", env)
+	}
+}
+
 func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {

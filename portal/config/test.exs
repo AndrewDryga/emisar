@@ -6,10 +6,9 @@ import Config
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
 #
-# `./run` exports PGPORT from the workspace's assigned Postgres port. A bare
-# `mix test` in a Coop box gets none, and nothing listens on the conventional
-# port there, so read the service URL Coop injects into every box process
-# before falling back.
+# Coop project policy exports direct service values in a box. Older Coop
+# versions may only inject the service URL, so retain that compatibility path
+# before falling back to the conventional host port.
 db_port =
   cond do
     port = System.get_env("PGPORT") -> String.to_integer(port)
