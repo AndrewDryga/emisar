@@ -80,6 +80,12 @@ function writeField(el, value) {
 
 export const PreserveInput = {
   mounted() {
+    // Pinned at mount, never recomputed: hook teardown is ASYNC (it fires on the
+    // channel-leave reply), while a push_navigate pushes the new URL
+    // synchronously before that reply lands. Reading `location` in destroyed()
+    // therefore discarded the NEW path's key and left the spent draft behind, so
+    // the next visit to a create form restored the entity just created.
+    this.key = `form:${window.location.pathname}:${this.el.id}`
     // What the server rendered. Only fields that differ from it are the
     // operator's own work, so a pristine form stores nothing at all.
     this.initial = this.snapshot()
@@ -117,13 +123,6 @@ export const PreserveInput = {
     this.el.removeEventListener("input", this.onChange)
     this.el.removeEventListener("change", this.onChange)
     this.el.removeEventListener("submit", this.onSubmit)
-  },
-
-  // `sessionStorage` is per-tab; the path scopes the key to this account and
-  // entity, so drafts of two different runbooks can't be confused for each
-  // other.
-  storageKey() {
-    return `form:${window.location.pathname}:${this.el.id}`
   },
 
   fields() {
@@ -174,7 +173,7 @@ export const PreserveInput = {
     this.draft = draft
 
     try {
-      window.sessionStorage.setItem(this.storageKey(), JSON.stringify(draft))
+      window.sessionStorage.setItem(this.key, JSON.stringify(draft))
     } catch (_error) {
       // Quota exhausted or storage blocked (private mode). Losing a draft is
       // recoverable; throwing out of an input handler is not.
@@ -183,7 +182,7 @@ export const PreserveInput = {
 
   load() {
     try {
-      const stored = window.sessionStorage.getItem(this.storageKey())
+      const stored = window.sessionStorage.getItem(this.key)
       const parsed = stored && JSON.parse(stored)
       return parsed && typeof parsed === "object" ? parsed : null
     } catch (_error) {
@@ -195,7 +194,7 @@ export const PreserveInput = {
     this.draft = null
 
     try {
-      window.sessionStorage.removeItem(this.storageKey())
+      window.sessionStorage.removeItem(this.key)
     } catch (_error) {
       // See save/0.
     }
