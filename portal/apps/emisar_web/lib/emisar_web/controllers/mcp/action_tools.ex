@@ -37,10 +37,10 @@ defmodule EmisarWeb.MCP.ActionTools do
         attestation_headers
       )
 
-    handle_result(result, input, operation_id)
+    handle_result(conn, result, input, operation_id)
   end
 
-  defp handle_result(result, input, operation_id) do
+  defp handle_result(conn, result, input, operation_id) do
     case result do
       {:ok, runs} ->
         {:ok,
@@ -105,10 +105,10 @@ defmodule EmisarWeb.MCP.ActionTools do
              :pack_retired,
              :action_contract_changed
            ] ->
-        target_contract_changed(input)
+        target_contract_changed(conn, input)
 
       {:error, :unauthorized} ->
-        {:error, error("not_allowed", "This key cannot dispatch actions.")}
+        not_allowed(conn, input)
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:error,
@@ -216,11 +216,11 @@ defmodule EmisarWeb.MCP.ActionTools do
            {:ok, targets} <- exact_targets(snapshot.runners, action, input.runner_refs) do
         {:ok, targets, action}
       else
-        _ -> target_contract_changed(input)
+        _ -> target_contract_changed(conn, input)
       end
     else
       {:error, :unauthorized} ->
-        {:error, error("not_allowed", "This key cannot dispatch actions.")}
+        not_allowed(conn, input)
     end
   end
 
@@ -271,7 +271,9 @@ defmodule EmisarWeb.MCP.ActionTools do
     end
   end
 
-  defp target_contract_changed(input) do
+  defp target_contract_changed(conn, input) do
+    :ok = log_rejected(conn, input, "target_contract_changed")
+
     payload =
       error(
         "target_contract_changed",
@@ -289,6 +291,18 @@ defmodule EmisarWeb.MCP.ActionTools do
       |> put_in([:error, :next], next)
 
     {:error, payload}
+  end
+
+  defp not_allowed(conn, input) do
+    :ok = log_rejected(conn, input, "not_allowed")
+    {:error, error("not_allowed", "This key cannot dispatch actions.")}
+  end
+
+  defp log_rejected(conn, input, reason) do
+    ValidationError.log_dispatch_rejected(conn, "run_action", reason,
+      action_id: input.action_id,
+      pack_ref: input.pack_ref
+    )
   end
 
   defp require_attestation_for_enforcing(targets, nil) do

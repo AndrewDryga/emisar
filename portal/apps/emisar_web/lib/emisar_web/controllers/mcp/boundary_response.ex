@@ -10,6 +10,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
 
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
+  alias EmisarWeb.MCP.ValidationError
 
   @type option :: {:inspect_body, boolean()}
 
@@ -37,6 +38,10 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
 
   @doc false
   def rate_limited(conn, retry_after) do
+    # Fires before authentication, so client metadata beyond the tool
+    # placeholder is absent by construction — the event is a volume signal.
+    :ok = ValidationError.log_dispatch_rejected(conn, nil, "rate_limited")
+
     send_error(
       conn,
       :too_many_requests,

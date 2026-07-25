@@ -531,6 +531,49 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       refute clean_log =~ sentinel
       refute clean_log =~ raw
     end
+
+    test "a preflight-rejected dispatch logs one safe event without argument values", %{
+      conn: conn,
+      raw: raw
+    } do
+      :ok = Logger.put_application_level(:emisar_web, :info)
+      on_exit(fn -> Logger.delete_application_level(:emisar_web) end)
+
+      sentinel = "sentinel_DO_NOT_LOG_9b1d"
+      pack_ref = "linux@1.0.0/sha256:" <> String.duplicate("a", 64)
+
+      log =
+        capture_log([level: :info], fn ->
+          body =
+            conn
+            |> authorize(raw)
+            |> rpc("tools/call", %{
+              "name" => "run_action",
+              "arguments" => %{
+                "action_id" => "linux.uptime",
+                "pack_ref" => pack_ref,
+                "runner_refs" => ["node~" <> String.duplicate("a", 32)],
+                "args" => %{"value" => sentinel},
+                "reason" => sentinel,
+                "evidence" => sentinel,
+                "expected" => sentinel
+              }
+            })
+            |> json_response(200)
+
+          assert get_in(body, ["result", "structuredContent", "error", "code"]) ==
+                   "target_contract_changed"
+        end)
+
+      assert length(String.split(log, "mcp.dispatch_rejected")) == 2
+      assert log =~ "mcp_dispatch_reject_reason=target_contract_changed"
+      assert log =~ "mcp_action_id=linux.uptime"
+      assert log =~ "mcp_pack_ref=#{pack_ref}"
+      assert log =~ "mcp_tool=run_action"
+      assert log =~ ~r/mcp_call_fingerprint=[0-9a-f]{64}/
+      refute log =~ sentinel
+      refute log =~ raw
+    end
   end
 
   describe "notifications" do
