@@ -117,8 +117,10 @@ die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
 github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
+    # Header via process substitution, never argv — /proc/PID/cmdline is
+    # world-readable while each API call runs.
     curl -fsSL -H 'Accept: application/vnd.github+json' \
-      -H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}" "$@"
+      -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
   else
     # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
     # unbound under `set -u`, so keep the no-token path array-free.

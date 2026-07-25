@@ -728,12 +728,16 @@ restore_enrollment_state() {
 # -----------------------------------------------------------------------
 
 github_api() {
-  local auth_args=()
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
-    auth_args=(-H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}")
+    # Header via process substitution, never argv — /proc/PID/cmdline is
+    # world-readable while each API call runs.
+    curl -fsSL -H 'Accept: application/vnd.github+json' \
+      -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
+  else
+    # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
+    # unbound under `set -u`, so keep the no-token path array-free.
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
-  curl -fsSL -H 'Accept: application/vnd.github+json' \
-    "${auth_args[@]}" "$@"
 }
 
 resolve_latest_version() {

@@ -28,6 +28,7 @@ func Runner(root string, out io.Writer) error {
 		run  func(*harness) error
 	}{
 		{"unattended pack selection", runnerUnattendedPacks},
+		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
 		{"enrollment state transitions", runnerEnrollmentState},
 		{"binary installation rollback", runnerInstallRollback},
 		{"signal-interrupted rollback", runnerSignalRollback},

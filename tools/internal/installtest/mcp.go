@@ -25,6 +25,7 @@ func MCP(root string, out io.Writer) error {
 	}{
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
+		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},

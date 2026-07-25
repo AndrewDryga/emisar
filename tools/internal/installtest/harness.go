@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 )
@@ -374,6 +375,86 @@ func stringValue(value any) string {
 	default:
 		return fmt.Sprint(typed)
 	}
+}
+
+// githubTokenHygiene proves both installers' github_api sends the optional
+// EMISAR_GITHUB_TOKEN as an Authorization header without exposing it on any
+// argv: the HTTP handler runs while curl is still blocked on the response,
+// so /proc/*/cmdline scanned at that instant covers every live process in
+// the pipeline. The no-token path must stay header-free under `set -u`.
+func githubTokenHygiene(h *harness, script string) error {
+	const token = "emisar-installtest-github-token"
+	type probe struct {
+		authorization string
+		accept        string
+		leaks         []string
+	}
+	var mu sync.Mutex
+	probes := map[string]probe{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		probes[request.URL.Path] = probe{
+			authorization: request.Header.Get("Authorization"),
+			accept:        request.Header.Get("Accept"),
+			leaks:         argvHolders(token),
+		}
+		mu.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(response, "{}")
+	}))
+	defer server.Close()
+
+	result := h.functions(h.repoPath(script), []string{"github_api"}, `
+github_api "$SERVER_URL/authenticated" >/dev/null
+EMISAR_GITHUB_TOKEN="" github_api "$SERVER_URL/anonymous" >/dev/null
+`, map[string]string{"EMISAR_GITHUB_TOKEN": token, "SERVER_URL": server.URL})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	authenticated, ok := probes["/authenticated"]
+	if !ok {
+		return fmt.Errorf("authenticated request never reached the server")
+	}
+	if authenticated.authorization != "Bearer "+token {
+		return fmt.Errorf("Authorization = %q, expected the bearer token", authenticated.authorization)
+	}
+	if len(authenticated.leaks) > 0 {
+		return fmt.Errorf("token visible on argv of: %s", strings.Join(authenticated.leaks, ", "))
+	}
+	anonymous, ok := probes["/anonymous"]
+	if !ok {
+		return fmt.Errorf("anonymous request never reached the server")
+	}
+	if anonymous.authorization != "" {
+		return fmt.Errorf("no-token call sent Authorization = %q", anonymous.authorization)
+	}
+	for _, received := range []probe{authenticated, anonymous} {
+		if received.accept != "application/vnd.github+json" {
+			return fmt.Errorf("Accept = %q, expected the GitHub media type", received.accept)
+		}
+	}
+	return nil
+}
+
+// argvHolders lists the /proc cmdline files carrying secret. Non-Linux
+// hosts have no /proc — the glob matches nothing and the argv assertion
+// passes vacuously (header delivery is still checked).
+func argvHolders(secret string) []string {
+	matches, _ := filepath.Glob("/proc/[0-9]*/cmdline")
+	var holders []string
+	for _, path := range matches {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if bytes.Contains(data, []byte(secret)) {
+			holders = append(holders, path)
+		}
+	}
+	return holders
 }
 
 type deviceServer struct {
