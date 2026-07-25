@@ -31,8 +31,9 @@ confusing, hard-to-attribute failures:
    Phoenix's own compile alias copies a template into its `priv/` on every
    `deps.compile`, so deps under the repo mount meant every box gate wrote the
    shared checkout — the one write that kept a read-only review box from gating.
-   The portal gate self-heals an empty deps cache (`mix deps.get --check-locked`;
-   `--check-locked` so a gate can never rewrite `mix.lock`). The host keeps
+   The portal gate self-heals an empty deps cache with `mix deps.get
+   --check-locked`, which fails on a stale lock instead of rewriting `mix.lock`,
+   keeping the gate read-only toward the tree it verifies. The host keeps
    `portal/deps/` in the repo for editor navigation and deps-source reading.
 
 3. **The output-hygiene guard needs a warm dep tree:** on a cold build root the guard's
