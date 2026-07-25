@@ -14,7 +14,7 @@ args:
     default: ""
     description: Specific zone (empty = full config + all zones).
     validation:
-      pattern: "^[a-zA-Z0-9.\\-]{0,253}$"
+      pattern: "^([a-zA-Z0-9.][a-zA-Z0-9.\\-]{0,252})?$"
 execution:
   command:
     binary: /bin/sh

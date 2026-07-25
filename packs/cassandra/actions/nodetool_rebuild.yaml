@@ -15,7 +15,7 @@ args:
     default: ""
     description: Source DC name (empty = any).
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+      pattern: "^([a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   command:
     binary: /bin/sh

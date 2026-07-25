@@ -786,6 +786,48 @@ func TestDispatch_CaddyConfigPaths_ScopedToConfigRoots(t *testing.T) {
 	}
 }
 
+// five /bin/sh bare-word positionals — bind.zone_serial's `zone` (dig),
+// bind.rndc_reload's `zone` (rndc), cassandra.nodetool_rebuild's `source_dc`
+// (nodetool), py.pip_show's `package` (pip), showcase.opts_envelope's `payload`
+// (echo) — had first-char classes permitting '-', so a flag-looking value
+// reached the TARGET binary as an option (option injection at the binary, not
+// shell injection; the charsets already blocked '/' and space, so none was
+// cleanly exploitable — this closes the latent shape). Each pattern now anchors
+// its first char to a non-dash class, with the empty-allowed optionals
+// (rndc_reload zone, nodetool_rebuild source_dc) keeping their `^(...)?$`
+// branch and pip_show additionally terminating option parsing with `--`. Drive
+// the real dispatch seam: legit values (and the empty optionals) still pass;
+// the concrete flag payloads the old patterns admitted are rejected.
+func TestDispatch_ShellPositionals_NoLeadingDashOption(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	cases := []struct {
+		id, arg string
+		valid   string   // a realistic value that must keep passing
+		emptyOK bool     // optional arg whose empty branch must survive the tightening
+		flags   []string // leading-dash payloads the old first-char class admitted
+	}{
+		{"bind.zone_serial", "zone", "example.com", false, []string{"-x", "-4"}},
+		{"bind.rndc_reload", "zone", "example.com", true, []string{"-s"}},
+		{"cassandra.nodetool_rebuild", "source_dc", "us-east", true, []string{"-pw", "--dc"}},
+		{"py.pip_show", "package", "django", false, []string{"-f", "--verbose"}},
+		{"showcase.opts_envelope", "payload", "ok", false, []string{"-n", "-e"}},
+	}
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: c.valid}))
+			if c.emptyOK {
+				// The empty-allowed optional branch is the other half of the
+				// gate — the tightening must not over-reject "use the default".
+				accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: ""}))
+			}
+			for _, flag := range c.flags {
+				rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: flag}), c.arg, "pattern")
+			}
+		})
+	}
+}
+
 // docker's compose_ps/compose_logs/compose_restart each take a compose-file
 // `file` arg (`docker compose -f {{file}} …`). The old `^/[A-Za-z0-9._/-]{1,256}$`
 // pattern anchored only to `/`, so ANY absolute path passed and — with no
