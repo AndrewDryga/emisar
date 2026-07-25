@@ -661,8 +661,7 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 		module + "|gofmt|-l -s .",
 		module + "|go|mod verify",
 		module + "|go|vet ./...",
-		module + "|go|mod tidy",
-		module + "|git|diff --exit-code -- go.mod go.sum",
+		module + "|go|mod tidy -diff",
 		module + "|go|test -race -count=1 -coverprofile=coverage.out ./...",
 	}
 	got := strings.Split(strings.TrimSpace(string(data)), "\n")

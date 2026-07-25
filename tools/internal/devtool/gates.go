@@ -154,22 +154,26 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	if strings.TrimSpace(string(unformatted)) != "" {
 		return fmt.Errorf("%s Go files are not formatted:\n%s", module, unformatted)
 	}
-	for _, arguments := range [][]string{{"mod", "verify"}, {"vet", "./..."}, {"mod", "tidy"}} {
+	for _, arguments := range [][]string{{"mod", "verify"}, {"vet", "./..."}} {
 		if err := a.run(ctx, dir, nil, "go", arguments...); err != nil {
 			return err
 		}
 	}
-	moduleFiles := []string{"go.mod", "go.sum"}
+	// -diff prints what tidy would change and exits non-zero instead of writing,
+	// so a gate never mutates the tree it verifies and a read-only review box can
+	// run it. It also judges tidiness directly, rather than inferring it from a
+	// clean `git diff` that a pre-existing edit would have failed anyway.
+	if err := a.run(ctx, dir, nil, "go", "mod", "tidy", "-diff"); err != nil {
+		return fmt.Errorf("%s module files are not tidy: %w", module, err)
+	}
+	// -diff cannot create the file, so this now asserts the invariant itself: a
+	// dependency would surface above as a go.sum the diff wants to add.
 	if module == "mcp" {
-		moduleFiles = []string{"go.mod"}
 		if _, err := os.Stat(filepath.Join(dir, "go.sum")); err == nil {
-			return fmt.Errorf("mcp must remain stdlib-only; go mod tidy created go.sum")
+			return fmt.Errorf("mcp must remain stdlib-only; go.sum exists")
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-	}
-	if err := a.run(ctx, dir, nil, "git", append([]string{"diff", "--exit-code", "--"}, moduleFiles...)...); err != nil {
-		return fmt.Errorf("%s module files are not tidy: %w", module, err)
 	}
 	testArgs := []string{"test", "-race", "-count=1"}
 	if coverage != "" {
