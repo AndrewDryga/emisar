@@ -24,6 +24,13 @@ defmodule EmisarWeb.AuditLive do
     {:ok,
      socket
      |> assign(:page_title, "Audit log")
+     # One subscription read per mount, not one per rendered template branch —
+     # this page re-renders on every debounced audit broadcast, and the
+     # entitlement can't change without leaving the page.
+     |> assign(
+       :audit_export_available?,
+       Billing.audit_export_available?(socket.assigns.current_account)
+     )
      # The facet panel is collapsed by default — the trail leads the page. It
      # opens on MOUNT when the URL already carries an active facet (a shared
      # filtered link must never hide its controls); after that the flag is
@@ -324,7 +331,7 @@ defmodule EmisarWeb.AuditLive do
              trail is on every plan — taking the data OUT is paid). On a lower
              plan the control is a disabled lock button with a downward tooltip
              naming the gate; upgrading is the Billing nav item. --%>
-        <%= if Billing.audit_export_available?(@current_account) do %>
+        <%= if @audit_export_available? do %>
           <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
             Export CSV
           </.button>
@@ -334,7 +341,7 @@ defmodule EmisarWeb.AuditLive do
           </.upgrade_button>
         <% end %>
         <%= if ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
-          <%= if Billing.audit_export_available?(@current_account) do %>
+          <%= if @audit_export_available? do %>
             <.button
               variant={:secondary}
               size={:md}
