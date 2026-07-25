@@ -30,6 +30,7 @@ func Runner(root string, out io.Writer) error {
 		{"unattended pack selection", runnerUnattendedPacks},
 		{"enrollment state transitions", runnerEnrollmentState},
 		{"binary installation rollback", runnerInstallRollback},
+		{"signal-interrupted rollback", runnerSignalRollback},
 		{"installed pack repair", runnerPackRepair},
 		{"systemd activation", runnerSystemdActive},
 		{"launchd environment wrapper", runnerLaunchdWrapper},
@@ -316,6 +317,51 @@ func runnerInstallRollback(h *harness) error {
 	}
 	if before != after {
 		return fmt.Errorf("failed upgrade changed the installed binary")
+	}
+	return nil
+}
+
+// A bare signal fires the EXIT trap with $?=0, which finish_install's rc-guard
+// reads as success — do_install converts HUP/INT/TERM into 128+signum exits so
+// a Ctrl-C mid-swap still rolls back. The wiring is inline in do_install, so
+// pin the exact trap lines to the script, then reproduce them verbatim around
+// the real finish_install and self-kill.
+func runnerSignalRollback(h *harness) error {
+	installer := h.repoPath("install.sh")
+	trapLines := []string{
+		"trap 'finish_install $?' EXIT",
+		"trap 'exit 129' HUP",
+		"trap 'exit 130' INT",
+		"trap 'exit 143' TERM",
+	}
+	for _, line := range trapLines {
+		if err := containsFile(installer, line); err != nil {
+			return err
+		}
+	}
+	for _, signal := range []struct {
+		name string
+		code int
+	}{{"HUP", 129}, {"INT", 130}, {"TERM", 143}} {
+		result := h.functions(installer, []string{"finish_install"}, `
+rollback_binary() { echo "rollback ran"; }
+restore_enrollment_state() { :; }
+restore_previous_service() { :; }
+warn() { :; }
+INSTALL_TRANSACTION=1
+tmp=""
+`+strings.Join(trapLines, "\n")+`
+kill -`+signal.name+` $$
+sleep 5
+echo "signal did not interrupt"
+`, nil)
+		if code := exitCode(result.err); code != signal.code {
+			return fmt.Errorf("SIG%s exited %d, expected %d\n%s",
+				signal.name, code, signal.code, result.output)
+		}
+		if !strings.Contains(string(result.output), "rollback ran") {
+			return fmt.Errorf("SIG%s skipped the rollback:\n%s", signal.name, result.output)
+		}
 	}
 	return nil
 }

@@ -1322,7 +1322,7 @@ restore_previous_service() {
 
 finish_install() {
   local rc=$1
-  trap - EXIT
+  trap - EXIT HUP INT TERM
   set +e
   if [ "$rc" -ne 0 ] && [ "${INSTALL_TRANSACTION}" = "1" ]; then
     rollback_binary
@@ -1371,8 +1371,17 @@ do_install() {
   # function returns, by which point a `local tmp` would be out of scope
   # and `set -u` would trip on the bare reference. Default-empty in the
   # trap so an early exit before mktemp doesn't print "unbound variable".
-  tmp="$(mktemp -d -t emisar-install.XXXXXX)"
+  # sudo commonly preserves TMPDIR, and this path always runs as root: a
+  # root-owned child of a non-sticky user-owned parent is still replaceable
+  # by that user, so the download dir is pinned under /tmp.
+  tmp="$(mktemp -d /tmp/emisar-install.XXXXXX)"
+  # A bare signal fires the EXIT trap with $?=0, which finish_install's
+  # rc-guard reads as success — convert HUP/INT/TERM into the conventional
+  # 128+signum exit so a Ctrl-C mid-swap still rolls back.
   trap 'finish_install $?' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 
   local extracted
   extracted="$(download_release "${VERSION}" "${tmp}")"
