@@ -1412,8 +1412,9 @@ PY
   [ "${shape}" = "std" ] || return 1
   if command -v jq >/dev/null 2>&1; then
     local tmp_out="${file}.emisar-new.$$"
-    jq --arg cmd "${bin}" --arg url "${url}" --arg key "${key}" --arg client "${client}" \
-      '.mcpServers.emisar = {command: $cmd, env: {EMISAR_URL: $url, EMISAR_API_KEY: $key, EMISAR_CLIENT: $client}}' \
+    # Key rides the environment, not --arg: argv is world-readable /proc/PID/cmdline.
+    MCP_KEY="${key}" jq --arg cmd "${bin}" --arg url "${url}" --arg client "${client}" \
+      '.mcpServers.emisar = {command: $cmd, env: {EMISAR_URL: $url, EMISAR_API_KEY: env.MCP_KEY, EMISAR_CLIENT: $client}}' \
       "${file}" >"${tmp_out}" 2>/dev/null || status=1
     if [ "${status}" -eq 0 ]; then
       chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}" && return 0
@@ -1636,8 +1637,10 @@ await_device_approval() {
       return 1
     fi
     sleep "${DEVICE_INTERVAL}"
-    status=$(curl -sS -m 15 -H 'Content-Type: application/json' \
-      -d "{\"device_code\":\"${DEVICE_CODE}\"}" \
+    # Body via stdin so the single-use code stays off argv; the explicit printf
+    # producer (never bare -d @-) keeps curl off the script's stdin under curl|sh.
+    status=$(printf '{"device_code":"%s"}' "${DEVICE_CODE}" | curl -sS -m 15 \
+      -H 'Content-Type: application/json' --data-binary @- \
       -o "${TOKEN_RESP}" -w '%{http_code}' \
       "${EMISAR_URL}/api/mcp/device_token") || continue
     if [ "${status}" = "200" ]; then
