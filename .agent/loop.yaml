@@ -45,6 +45,13 @@ between:
       reopen with instructions to split.
     - No committed DB migration was EDITED (they are frozen; only new migrations land).
     - The commit says WHY and carries its `Coop-Task: <id>` trailer.
+    A FAIL means a defect in the work itself. An acceptance check this box cannot run
+    (root, docker, platform) is NOT a defect: first try to gather the evidence yourself
+    the way the manual demands of every agent; when the box genuinely cannot produce it
+    and the task's log states the limit plus compensating evidence (CI coverage, an
+    alternate harness), verify THAT evidence and report the residual gap in your receipt
+    — do not reopen. A reopen for a check the work box also could not run just forces a
+    verification-only rework with no commit to bind, which the completion window rejects.
     Verdict: REPORT it — never apply it. Your verdict and evidence go in your OUTPUT
     (the receipt lines coop asks for), with a failed audit's concrete gap — what to fix,
     where — stated right above the verdict line. Do not move task folders, do not edit
