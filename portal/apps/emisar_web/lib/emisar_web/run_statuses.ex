@@ -44,6 +44,9 @@ defmodule EmisarWeb.RunStatuses do
   @doc "The ordered `{label, meaning}` pairs, in /docs/runs status-table order."
   def all, do: Keyword.values(@statuses)
 
+  @doc "The operator-facing label for a run `status` atom; raises `KeyError` on an unknown status so drift is loud."
+  def label(status), do: @statuses |> Keyword.fetch!(status) |> elem(0)
+
   @doc "The one-line operator meaning for a run `status` atom; raises `KeyError` on an unknown status so drift is loud."
   def meaning(status), do: @statuses |> Keyword.fetch!(status) |> elem(1)
 end

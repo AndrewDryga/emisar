@@ -19,6 +19,24 @@ defmodule EmisarWeb.RunStatusesTest do
     end
   end
 
+  describe "label/1" do
+    test "returns the operator-facing label for a known status" do
+      assert RunStatuses.label(:failed) == "Failed"
+    end
+
+    test "every ActionRun :status enum value maps to a non-empty label" do
+      for status <- Ecto.Enum.values(Runs.ActionRun, :status) do
+        label = RunStatuses.label(status)
+        assert is_binary(label)
+        assert label != ""
+      end
+    end
+
+    test "raises KeyError on an unknown status" do
+      assert_raise KeyError, fn -> RunStatuses.label(:nonexistent) end
+    end
+  end
+
   describe "meaning/1" do
     test "returns the one-line meaning for a known status" do
       assert RunStatuses.meaning(:failed) == "The action ran and exited non-zero."

@@ -739,8 +739,51 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # The distinct terminal state + the human refusal reason both show…
     assert html =~ "refused"
     assert html =~ "refused: signature does not match the dispatched action"
+    # …titled and toned as the amber nothing-executed block, not a rose failure.
+    assert html =~ ">Refused<"
+    assert html =~ "bg-amber-300/40"
+    refute html =~ "bg-rose-400/40"
     # …and there's no empty terminal panel (a refused run produced no output).
     refute html =~ "Output"
+  end
+
+  test "a failed run's cause panel is titled by its status, never 'Error'", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Fixtures.Runs.finish(run, %{
+        "request_id" => run.request_id,
+        "status" => "failed",
+        "exit_code" => 1,
+        "error" => "process exited with code 1"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ ">Failed<"
+    assert html =~ "process exited with code 1"
+    assert html =~ "bg-rose-400/40"
+    refute html =~ ">Error<"
+  end
+
+  test "an error run's cause panel keeps the 'Error' title (the system-side status)", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Fixtures.Runs.finish(run, %{
+        "request_id" => run.request_id,
+        "status" => "error",
+        "error" => "runner disconnected, result never arrived"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ ">Error<"
+    assert html =~ "bg-rose-400/40"
   end
 
   test "the cancel button renders for an in-flight run (status compared as an atom)", %{

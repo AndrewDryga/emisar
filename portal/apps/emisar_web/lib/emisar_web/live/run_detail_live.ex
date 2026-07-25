@@ -408,12 +408,15 @@ defmodule EmisarWeb.RunDetailLive do
               </:body>
             </.event_block>
 
-            <%!-- Error — only when terminal-failed and we got a message back. --%>
+            <%!-- Terminal cause — only when we got a message back. Titled and
+               toned by the status so a failed command never reads as a system
+               "Error", and a refused (amber, nothing-executed) run doesn't wear
+               the rose failure tone its badge deliberately avoids. --%>
             <.event_block
               :if={@run.error_message}
               icon="hero-exclamation-triangle"
-              tone={:rose}
-              title="Error"
+              tone={error_block_tone(@run.status)}
+              title={RunStatuses.label(@run.status)}
             >
               <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
             </.event_block>
@@ -675,6 +678,12 @@ defmodule EmisarWeb.RunDetailLive do
       run.local_audit_failed or
       (run.status in [:sent, :running, :cancelling, :pending] and runner_connection == :offline)
   end
+
+  # The terminal-cause block matches its status badge's tone: refused is the
+  # amber nothing-executed security block; every other message-bearing terminal
+  # status is a rose did-not-happen outcome.
+  defp error_block_tone(:refused), do: :amber
+  defp error_block_tone(_status), do: :rose
 
   # Only ever called with an integer exit code — the nil case renders `<.blank>`.
   defp exit_code_class(0), do: "text-brand-300"
