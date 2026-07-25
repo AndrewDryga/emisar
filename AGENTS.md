@@ -94,7 +94,7 @@ Work the first todo task in `.agent/tasks/` (`coop tasks ls`), then the next, un
 
 1. **Claim** — `coop tasks claim <id>` (moves it `00_todo/` → `10_in_progress/`). A parallel agent skips `10_in_progress/`, so you won't both grab the same task.
 2. **Do it** — wear the hats; obey the project's `AGENTS.md`.
-3. **Gate** — run the project gate; fix until green.
+3. **Gate** — run the project gate in the foreground and read its exit; fix until green. (In a box, a backgrounded gate dies with your turn — see the orchestration rule.)
 4. **Commit** — one focused commit for the task, ending with a `Coop-Task: <id>` trailer (the id is the task's folder name). The trailer binds the commit to its task — it's how coop resumes correctly after an interruption between commit and folder-move, and reconciles the queue after a fork merge. (Never cite that commit by SHA in task notes — coop re-signs box commits on the host, which rewrites SHAs; cite the task id.)
 5. **Record** — update the task's `log.md` (*what + why*, append-only) and overwrite its `state.md` with the final snapshot, then `coop tasks done <id>` (moves it to `99_done/`), and move to the next todo task.
 
@@ -128,12 +128,13 @@ calls, and keep your own context lean by routing:
   you review its diff, run the touched project's gate, and commit.
 - **High-stakes decisions:** task the thinker AND the critic in parallel with the same neutral
   problem statement — never showing either the other's answer — then synthesize the best of both.
-- **Consults are FOREGROUND calls.** Run `coop-consult` synchronously and act on its answer in the
-  same turn — never launch it in the background and end your turn to "wait". In an unattended loop
-  box, ending the turn ends the box: the consult dies with it, the next iteration relaunches it from
-  scratch, and the loop stalls to its give-up cap having committed nothing (this burned five
-  iterations on one task). If a consult is too slow to wait for, proceed on your own review and say
-  so in the task log — a finished commit beats a perfect consult that never returns.
+- **In a box, NEVER end your turn while a background job is still running — a gate, a consult,
+  anything.** Ending the turn ends the box, and every backgrounded job dies with it: the next
+  iteration re-claims the task from scratch, and the loop stalls toward its give-up cap having
+  committed nothing (this burned five iterations on one task waiting on a consult, then another
+  iteration waiting on a backgrounded gate + consult pair). Run long jobs in the foreground and
+  read their result in the same turn. If something is too slow to wait for, proceed on your own
+  review and say so in the task log — a finished commit beats a perfect answer that never returns.
 
 Outside the preset (no `coop-consult`/`coop-delegate` on PATH), use your runtime's own subagents for
 the same split — reasoning vs mechanical — and skip peers. **Single-writer rule regardless:** advisors
