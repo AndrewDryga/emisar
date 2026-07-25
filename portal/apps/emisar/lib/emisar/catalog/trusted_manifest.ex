@@ -54,13 +54,25 @@ defmodule Emisar.Catalog.TrustedManifest do
   @doc "Build a trusted manifest from release-frozen catalog action objects."
   @spec from_catalog_actions([map()]) :: {:ok, map()} | {:error, :invalid_manifest}
   def from_catalog_actions(actions) when is_list(actions) do
-    build(actions, &catalog_descriptor/1)
+    case build(actions, &catalog_descriptor/1) do
+      {:ok, manifest} -> {:ok, manifest}
+      # Release-frozen actions have no runner to blame — a conflicting
+      # duplicate id in the baseline is a build defect, plain invalidity.
+      {:error, _reason} -> {:error, :invalid_manifest}
+    end
   end
 
   def from_catalog_actions(_actions), do: {:error, :invalid_manifest}
 
-  @doc "Build a trusted manifest from the runner rows reviewed by an operator."
-  @spec from_runner_actions([RunnerAction.t()]) :: {:ok, map()} | {:error, :invalid_manifest}
+  @doc """
+  Build a trusted manifest from the runner rows reviewed by an operator.
+
+  Conflicting advertisements for one action id surface as
+  `{:error, {:descriptor_mismatch, action_id}}` so the trust flow can name
+  the disagreeing runners instead of failing generically.
+  """
+  @spec from_runner_actions([RunnerAction.t()]) ::
+          {:ok, map()} | {:error, :invalid_manifest | {:descriptor_mismatch, String.t()}}
   def from_runner_actions(actions) when is_list(actions) do
     build(actions, &runner_descriptor/1)
   end
@@ -102,6 +114,7 @@ defmodule Emisar.Catalog.TrustedManifest do
          {:ok, _manifest} <- validate(manifest) do
       {:ok, manifest}
     else
+      {:error, {:descriptor_mismatch, action_id}} -> {:error, {:descriptor_mismatch, action_id}}
       _ -> {:error, :invalid_manifest}
     end
   end
@@ -112,7 +125,11 @@ defmodule Emisar.Catalog.TrustedManifest do
            :ok <- put_descriptor_check(descriptors, action_id, descriptor) do
         {:cont, {:ok, Map.put(descriptors, action_id, descriptor)}}
       else
-        _ -> {:halt, {:error, :invalid_manifest}}
+        {:error, {:descriptor_mismatch, action_id}} ->
+          {:halt, {:error, {:descriptor_mismatch, action_id}}}
+
+        _ ->
+          {:halt, {:error, :invalid_manifest}}
       end
     end)
   end
@@ -121,7 +138,7 @@ defmodule Emisar.Catalog.TrustedManifest do
     case Map.fetch(descriptors, action_id) do
       :error -> :ok
       {:ok, ^descriptor} -> :ok
-      {:ok, _different} -> {:error, :descriptor_mismatch}
+      {:ok, _different} -> {:error, {:descriptor_mismatch, action_id}}
     end
   end
 

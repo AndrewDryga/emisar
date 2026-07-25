@@ -288,6 +288,50 @@ defmodule EmisarWeb.PacksLiveTest do
       refute render(lv) =~ "phx-click=\"trust\""
     end
 
+    test "a fleet descriptor conflict blocks Trust and names the disagreeing runners", %{
+      conn: conn,
+      account: account
+    } do
+      runner_alpha = Fixtures.Runners.create_runner(account_id: account.id, name: "alpha-box")
+      runner_bravo = Fixtures.Runners.create_runner(account_id: account.id, name: "bravo-box")
+
+      for {runner, description} <- [{runner_alpha, "Honest."}, {runner_bravo, "Hostile."}] do
+        {:ok, _runner} =
+          Emisar.Catalog.observe_state(runner, %{
+            "hostname" => "host-1",
+            "version" => "0.1.0",
+            "labels" => %{},
+            "actions" => [
+              %{
+                "id" => "acme.deploy",
+                "pack_id" => "acme-tools",
+                "title" => "Deploy",
+                "kind" => "exec",
+                "risk" => "high",
+                "description" => description,
+                "args" => []
+              }
+            ],
+            "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          })
+      end
+
+      {:ok, [pack_version], _meta} =
+        Emisar.Catalog.list_pack_versions(
+          Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      html = render_click(lv, "trust", %{"id" => pack_version.id})
+
+      assert html =~
+               "Runners alpha-box and bravo-box disagree about what this version contains (action acme.deploy)."
+
+      assert html =~ "Trust stays blocked until they advertise identical contents."
+      # Fail-closed: the row stays pending with its Trust affordance intact.
+      assert has_element?(lv, "#trust-#{pack_version.id}")
+    end
+
     test "Reject through the typed-confirm dialog keeps the pack listed as rejected",
          %{
            conn: conn,

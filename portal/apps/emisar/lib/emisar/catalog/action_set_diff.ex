@@ -41,7 +41,7 @@ defmodule Emisar.Catalog.ActionSetDiff do
   def manifest_from_actions(actions) when is_list(actions) do
     case TrustedManifest.from_runner_actions(actions) do
       {:ok, manifest} -> manifest
-      {:error, :invalid_manifest} -> %{"schema_version" => 1, "actions" => %{}}
+      {:error, _reason} -> %{"schema_version" => 1, "actions" => %{}}
     end
   end
 

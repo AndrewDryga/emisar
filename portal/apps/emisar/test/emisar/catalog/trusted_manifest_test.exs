@@ -1,6 +1,6 @@
 defmodule Emisar.Catalog.TrustedManifestTest do
   use ExUnit.Case, async: true
-  alias Emisar.Catalog.TrustedManifest
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
 
   test "rejects manifests whose complete compact pack cannot fit one MCP item" do
     actions =
@@ -37,6 +37,47 @@ defmodule Emisar.Catalog.TrustedManifestTest do
     }
 
     assert {:ok, _manifest} = TrustedManifest.from_catalog_actions([action])
+  end
+
+  test "conflicting runner descriptors for one action id name the action in the error" do
+    base_action = %RunnerAction{
+      action_id: "custom.inspect",
+      title: "Inspect",
+      description: "Inspect state.",
+      kind: :exec,
+      risk: :low,
+      side_effects: [],
+      args_schema: %{"args" => []},
+      examples: [],
+      search_terms: []
+    }
+
+    assert {:error, {:descriptor_mismatch, "custom.inspect"}} =
+             TrustedManifest.from_runner_actions([
+               base_action,
+               %{base_action | description: "Inspect state differently."}
+             ])
+
+    # Identical duplicates are agreement, not a conflict.
+    assert {:ok, _manifest} = TrustedManifest.from_runner_actions([base_action, base_action])
+  end
+
+  test "conflicting duplicate catalog actions stay plain :invalid_manifest" do
+    action = %{
+      "id" => "test.status",
+      "title" => "Status",
+      "summary" => "Show status.",
+      "description" => "Show the current status.",
+      "kind" => "exec",
+      "risk" => "low",
+      "side_effects" => [],
+      "args" => [],
+      "examples" => [],
+      "search_terms" => []
+    }
+
+    assert {:error, :invalid_manifest} =
+             TrustedManifest.from_catalog_actions([action, %{action | "title" => "Other"}])
   end
 
   test "carries an opt-in output contract inside the trusted descriptor" do

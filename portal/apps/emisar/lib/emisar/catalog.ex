@@ -402,8 +402,11 @@ defmodule Emisar.Catalog do
   against what was trusted. Also serves a `:rejected` row — adopt the refused
   bytes, or restore a revoked row's recorded hash (the fix-admin-mistake
   path). Records who clicked and audits the adoption. Returns
-  `{:error, :not_pending}` when there's nothing to decide and
-  `{:error, :nothing_to_trust}` for a rejected row with no recorded hash.
+  `{:error, :not_pending}` when there's nothing to decide,
+  `{:error, :nothing_to_trust}` for a rejected row with no recorded hash, and
+  `{:error, {:descriptor_mismatch, action_id, runner_names}}` when the fleet's
+  advertisements for the pending hash disagree about an action — trust stays
+  blocked (fail-closed) and the UI names the disagreeing runners.
   """
   def trust_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
@@ -901,9 +904,34 @@ defmodule Emisar.Catalog do
       |> repo.all()
 
     case TrustedManifest.from_runner_actions(actions) do
-      {:ok, manifest} -> {:ok, manifest}
-      {:error, :invalid_manifest} -> {:error, :invalid_manifest}
+      {:ok, manifest} ->
+        {:ok, manifest}
+
+      {:error, {:descriptor_mismatch, action_id}} ->
+        {:error, {:descriptor_mismatch, action_id, disagreeing_runner_names(actions, action_id)}}
+
+      {:error, :invalid_manifest} ->
+        {:error, :invalid_manifest}
     end
+  end
+
+  # Which runners to name when the fleet disagrees about `action_id` at the
+  # pending hash: every runner advertising it. With no trusted baseline there
+  # is no way to tell the honest advertisement from the hostile one, so the
+  # error names them all and the operator investigates.
+  defp disagreeing_runner_names(actions, action_id) do
+    runner_ids =
+      actions
+      |> Enum.filter(&(&1.action_id == action_id))
+      |> Enum.map(& &1.runner_id)
+      |> Enum.uniq()
+
+    labels = Runners.runner_labels_for_ids(runner_ids)
+
+    runner_ids
+    |> Enum.map(&Map.get(labels, &1))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort()
   end
 
   # -- Dispatch gate ---------------------------------------------------

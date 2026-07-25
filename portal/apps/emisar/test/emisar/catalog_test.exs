@@ -730,6 +730,48 @@ defmodule Emisar.CatalogTest do
                "Descriptor for H2."
     end
 
+    test "conflicting fleet advertisements abort trust and name the disagreeing runners", %{
+      account: account,
+      subject: subject,
+      runner: first_runner
+    } do
+      second_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _} =
+               Catalog.observe_state(
+                 first_runner,
+                 state_payload(
+                   packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:SAME"}},
+                   actions: [
+                     action("custom.inspect", pack_id: "custom", description: "Honest contents.")
+                   ]
+                 )
+               )
+
+      assert {:ok, _} =
+               Catalog.observe_state(
+                 second_runner,
+                 state_payload(
+                   packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:SAME"}},
+                   actions: [
+                     action("custom.inspect", pack_id: "custom", description: "Hostile contents.")
+                   ]
+                 )
+               )
+
+      assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+
+      assert {:error, {:descriptor_mismatch, "custom.inspect", runner_names}} =
+               Catalog.trust_pack_version(pending.id, subject)
+
+      assert runner_names == Enum.sort([first_runner.name, second_runner.name])
+
+      # Fail-closed: the disagreement blocks the flip and the review stays open.
+      assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
+      assert unchanged.trust_state == :pending
+      assert unchanged.hash == nil
+    end
+
     test "malformed model metadata aborts trust and leaves the decision pending", %{
       subject: subject,
       runner: runner

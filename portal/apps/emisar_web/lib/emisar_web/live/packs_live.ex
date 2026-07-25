@@ -332,6 +332,9 @@ defmodule EmisarWeb.PacksLive do
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "Admin required to trust packs.")}
 
+      {:error, {:descriptor_mismatch, action_id, runner_names}} ->
+        {:noreply, put_flash(socket, :error, descriptor_mismatch_flash(action_id, runner_names))}
+
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not trust pack — try again.")}
     end
@@ -554,6 +557,16 @@ defmodule EmisarWeb.PacksLive do
   defp reject_flash(%Catalog.PackVersion{} = pack_version) do
     "Rejected #{pack_version.pack_id} v#{pack_version.version}. It stays listed as rejected — a runner advertising different contents will re-open the review."
   end
+
+  # The fleet disagrees about what the pending bytes contain — name the
+  # runners so the operator can find the stale or hostile one. Trust stays
+  # blocked (fail-closed) rather than letting one runner pick the manifest.
+  defp descriptor_mismatch_flash(action_id, runner_names) do
+    "Runners #{prose_names(runner_names)} disagree about what this version contains (action #{action_id}). Trust stays blocked until they advertise identical contents."
+  end
+
+  defp prose_names([first, second]), do: "#{first} and #{second}"
+  defp prose_names(names), do: Enum.join(names, ", ")
 
   defp apply_pack_retention(socket, :error),
     do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
