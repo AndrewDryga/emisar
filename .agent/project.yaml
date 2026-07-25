@@ -18,6 +18,10 @@ box:
   env:
     PGHOST: db
     PGPORT: "5432"
+    # Host and box share one Postgres, so they must not share one test database:
+    # a loop audit gating in a box would otherwise run its suite and its
+    # migrations against the one the host is using. test.exs appends this.
+    MIX_TEST_PARTITION: box
 
 # Ports a dev server in the box listens on — coop publishes each to a stable host
 # port so you can open it in your browser (the portal already binds 0.0.0.0 in dev):
