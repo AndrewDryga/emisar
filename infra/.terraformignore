@@ -1,5 +1,5 @@
-# Remote-run upload context for infra/. Keep Terraform source plus templates,
-# packs, Livebook assets, and the dependency lock; exclude local-only material.
+# Remote-run upload context for infra/. Keep Terraform source plus runtime
+# payloads, packs, and the dependency lock; exclude local-only material.
 
 # Repository and local tool state
 .git

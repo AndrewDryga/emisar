@@ -37,7 +37,7 @@ The repository keeps tooling in three ownership buckets:
 - `tools/` holds the reusable Go implementation, including browser automation.
 - `dev/*/Dockerfile` recipes build Compose and validation fixtures, never published images.
 - The root `.agent/` holds agent configuration and state, not another command surface.
-- Shell programs under `packs/`, `infra/templates/`, and container fixtures
+- Shell programs under `packs/`, `infra/runtime/`, and container fixtures
   execute with their owned runtime artifacts; they are shipped or deployed
   code, not alternative dev commands.
 

@@ -35,7 +35,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 | Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
 | Distribution | `pack_registry.tf`, `packs/` |
 | Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
-| Rendered payloads and checks | `templates/`, `livebook/`, `tests/`; run via `./run` |
+| Rendered payloads and checks | `runtime/{portal,admin-runner,livebook,mta-sts}/`, `tests/{render,database}/`; run via `./run` |
 
 ## Production controls
 
@@ -317,7 +317,7 @@ write-only generation.
 
 Production database access is IAM-only. The VM identity logs in through the
 loopback Cloud SQL Auth Proxy, then assumes the non-login `emisar_owner` role for
-migrations and application queries. `tests/verify-database-iam.sql` proves the
+migrations and application queries. `tests/database/verify-iam.sql` proves the
 login is not elevated, verifies application and pgAudit ownership, and performs
 a reversible DDL probe.
 

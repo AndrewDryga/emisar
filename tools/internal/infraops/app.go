@@ -1,5 +1,5 @@
 // Package infraops owns workstation and CI operations for the production
-// Terraform project. Deployed host scripts remain under infra/templates.
+// Terraform project. Deployed host scripts remain under infra/runtime.
 package infraops
 
 import (

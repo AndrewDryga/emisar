@@ -23,7 +23,7 @@ resource "google_storage_bucket_iam_member" "mta_sts_public_read" {
 resource "google_storage_bucket_object" "mta_sts" {
   name          = ".well-known/mta-sts.txt"
   bucket        = google_storage_bucket.mta_sts.name
-  content       = file("${path.module}/templates/mta-sts.txt")
+  content       = file("${path.module}/runtime/mta-sts/policy.txt")
   content_type  = "text/plain"
   cache_control = "no-store"
 }
@@ -35,4 +35,3 @@ resource "google_compute_backend_bucket" "mta_sts" {
 
   depends_on = [google_storage_bucket_object.mta_sts]
 }
-

@@ -23,11 +23,11 @@ locals {
   # and the per-VM migration-on-boot connection. Held as headroom so a rollout surge
   # can't exhaust max_connections (see the MIG connection-ceiling precondition).
   db_connection_reserve = 15
-  ensure_image_script = templatefile("${path.module}/templates/ensure-image.sh", {
+  ensure_image_script = templatefile("${path.module}/runtime/portal/ensure-image.sh", {
     container_image       = var.container_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
   })
-  start_script = templatefile("${path.module}/templates/start.sh", {
+  start_script = templatefile("${path.module}/runtime/portal/start.sh", {
     container_image          = var.container_image
     project_id               = var.project_id
     domain                   = var.domain
@@ -43,10 +43,10 @@ locals {
     database_pool_size       = local.portal_database_pool_size
     release_cookie_ready     = var.release_cookie_ready
   })
-  admin_runner_config = templatefile("${path.module}/templates/admin-runner-config.yaml", {
+  admin_runner_config = templatefile("${path.module}/runtime/admin-runner/config.yaml", {
     domain = var.domain
   })
-  admin_runner_start_script = templatefile("${path.module}/templates/start-admin-runner.sh", {
+  admin_runner_start_script = templatefile("${path.module}/runtime/admin-runner/start.sh", {
     project_id                = var.project_id
     runner_version            = local.admin_runner_version
     enrollment_secret_version = google_secret_manager_secret_version.admin_runner_enrollment_key.version
@@ -55,7 +55,7 @@ locals {
     for relative_path in fileset("${path.module}/packs/emisar-admin", "**") :
     "emisar-admin/${relative_path}" => filebase64("${path.module}/packs/emisar-admin/${relative_path}")
   }
-  cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
+  cloud_init = templatefile("${path.module}/runtime/portal/cloud-init.yaml", {
     container_image           = var.container_image
     cloud_sql_proxy_image     = local.cloud_sql_proxy_image
     app_port                  = local.portal_port

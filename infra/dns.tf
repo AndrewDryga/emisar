@@ -286,7 +286,7 @@ resource "google_dns_record_set" "mta_sts_txt" {
   managed_zone = google_dns_managed_zone.emisar.name
   type         = "TXT"
   ttl          = 3600
-  rrdatas      = ["\"v=STSv1; id=${substr(filesha256("${path.module}/templates/mta-sts.txt"), 0, 32)}\""]
+  rrdatas      = ["\"v=STSv1; id=${substr(filesha256("${path.module}/runtime/mta-sts/policy.txt"), 0, 32)}\""]
 }
 
 # ── CAA — restrict certificate issuance ───────────────────────────────────────

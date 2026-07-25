@@ -328,7 +328,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sourceNotebooks, err := filepath.Glob(filepath.Join(a.Infra, "livebook", "notebooks", "*.livemd"))
+	sourceNotebooks, err := filepath.Glob(filepath.Join(a.Infra, "runtime", "livebook", "notebooks", "*.livemd"))
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 			return err
 		}
 	}
-	return validateMTASTS(filepath.Join(a.Infra, "templates", "mta-sts.txt"))
+	return validateMTASTS(filepath.Join(a.Infra, "runtime", "mta-sts", "policy.txt"))
 }
 
 func (a *App) validateAdminCallback(ctx context.Context, temp string) error {

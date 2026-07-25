@@ -18,23 +18,23 @@ locals {
     }
   }
 
-  ensure_image = templatefile("${path.module}/../../templates/ensure-image.sh", {
+  ensure_image = templatefile("${path.module}/../../runtime/portal/ensure-image.sh", {
     container_image       = local.common.container_image
     cloud_sql_proxy_image = local.common.cloud_sql_proxy_image
   })
 
-  start = templatefile("${path.module}/../../templates/start.sh", merge(local.common, {
+  start = templatefile("${path.module}/../../runtime/portal/start.sh", merge(local.common, {
     release_cookie_ready = true
     runtime_secrets = merge(local.common.runtime_secrets, {
       "emisar-release-cookie" = { env_name = "RELEASE_COOKIE", version = "1" }
     })
   }))
 
-  admin_runner_config = templatefile("${path.module}/../../templates/admin-runner-config.yaml", {
+  admin_runner_config = templatefile("${path.module}/../../runtime/admin-runner/config.yaml", {
     domain = local.common.domain
   })
 
-  admin_runner_start = templatefile("${path.module}/../../templates/start-admin-runner.sh", {
+  admin_runner_start = templatefile("${path.module}/../../runtime/admin-runner/start.sh", {
     project_id                = local.common.project_id
     runner_version            = "0.14.0"
     enrollment_secret_version = "1"
@@ -45,7 +45,7 @@ locals {
     "emisar-admin/${relative_path}" => filebase64("${path.module}/../../packs/emisar-admin/${relative_path}")
   }
 
-  cloud_init = templatefile("${path.module}/../../templates/cloud-init.yaml", {
+  cloud_init = templatefile("${path.module}/../../runtime/portal/cloud-init.yaml", {
     ensure_image_script       = local.ensure_image
     start_script              = local.start
     admin_runner_config       = local.admin_runner_config
@@ -75,31 +75,31 @@ locals {
     database_connection_name      = "test-project:us-central1:emisar"
   }
 
-  livebook_ensure_images = templatefile("${path.module}/../../templates/livebook-ensure-images.sh", {
+  livebook_ensure_images = templatefile("${path.module}/../../runtime/livebook/ensure-images.sh", {
     livebook_image        = local.livebook.livebook_image
     cloud_sql_proxy_image = local.livebook.cloud_sql_proxy_image
   })
 
-  livebook_start = templatefile("${path.module}/../../templates/start-livebook.sh", {
+  livebook_start = templatefile("${path.module}/../../runtime/livebook/start.sh", {
     for key, value in local.livebook : key => value if key != "database_connection_name"
   })
 
-  livebook_cluster_nodes = templatefile("${path.module}/../../templates/livebook-cluster-nodes.sh", {
+  livebook_cluster_nodes = templatefile("${path.module}/../../runtime/livebook/cluster-nodes.sh", {
     project_id = local.livebook.project_id
   })
 
-  livebook_cloud_init = templatefile("${path.module}/../../templates/livebook-cloud-init.yaml", {
+  livebook_cloud_init = templatefile("${path.module}/../../runtime/livebook/cloud-init.yaml", {
     cloud_sql_proxy_image             = local.livebook.cloud_sql_proxy_image
     livebook_port                     = local.livebook.livebook_port
     database_connection_name          = local.livebook.database_connection_name
     livebook_ensure_images_script     = local.livebook_ensure_images
-    livebook_prepare_data_script      = file("${path.module}/../../templates/livebook-prepare-data.sh")
-    livebook_product_analytics_script = file("${path.module}/../../livebook/product_analytics.exs")
+    livebook_prepare_data_script      = file("${path.module}/../../runtime/livebook/prepare-data.sh")
+    livebook_product_analytics_script = file("${path.module}/../../runtime/livebook/product-analytics.exs")
     livebook_cluster_nodes_script     = local.livebook_cluster_nodes
     livebook_start_script             = local.livebook_start
     livebook_notebooks = {
-      for notebook in fileset("${path.module}/../../livebook/notebooks", "*.livemd") :
-      notebook => file("${path.module}/../../livebook/notebooks/${notebook}")
+      for notebook in fileset("${path.module}/../../runtime/livebook/notebooks", "*.livemd") :
+      notebook => file("${path.module}/../../runtime/livebook/notebooks/${notebook}")
     }
   })
 }
