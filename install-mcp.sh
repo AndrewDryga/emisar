@@ -148,7 +148,7 @@ confirm() {
     read -r reply <&3 || reply=""
     exec 3<&-
   else
-    return 0
+    return 1
   fi
   case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
 }
