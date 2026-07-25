@@ -193,6 +193,13 @@ func (a *App) portalGate(ctx context.Context) error {
 	} else if os.Getenv("DATABASE_URL") == "" {
 		return fmt.Errorf("CI portal gate requires DATABASE_URL")
 	}
+	// A box keeps deps outside the repo mount (MIX_DEPS_PATH), so a fresh cache
+	// must self-heal before the first compile; --check-locked refuses to rewrite
+	// mix.lock, keeping the gate read-only toward the tree it verifies. Warm,
+	// this is a sub-second no-op.
+	if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
+		return err
+	}
 	for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
 		if err := a.run(ctx, a.Portal, env, "mix", arguments...); err != nil {
 			return err

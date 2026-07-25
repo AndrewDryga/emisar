@@ -25,4 +25,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 USER node
+# Portal deps join the build output in the box cache: Phoenix's compile alias
+# writes inside deps/ on every deps.compile, and a box gate must write nothing
+# into the mounted repo. Declared after the toolchain layer so tuning it never
+# recompiles Erlang; the gate self-heals an empty cache (deps.get --check-locked).
+ENV MIX_DEPS_PATH=/home/node/.cache/mix-deps/emisar
 WORKDIR /workspace

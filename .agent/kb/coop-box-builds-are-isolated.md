@@ -27,6 +27,13 @@ confusing, hard-to-attribute failures:
    `MIX_BUILD_ROOT=/home/node/.cache/mix-build/emisar` (+ `GOMODCACHE` for persistence,
    not isolation): box artifacts live under the coop-cache volume — first box pays a
    ~2-min cold compile, every later box reuses it (warm full portal gate: ~52s).
+   Portal deps live there too (`MIX_DEPS_PATH=/home/node/.cache/mix-deps/emisar`):
+   Phoenix's own compile alias copies a template into its `priv/` on every
+   `deps.compile`, so deps under the repo mount meant every box gate wrote the
+   shared checkout — the one write that kept a read-only review box from gating.
+   The portal gate self-heals an empty deps cache (`mix deps.get --check-locked`;
+   `--check-locked` so a gate can never rewrite `mix.lock`). The host keeps
+   `portal/deps/` in the repo for editor navigation and deps-source reading.
 
 3. **The output-hygiene guard needs a warm dep tree:** on a cold build root the guard's
    first scanned step (`ecto.create`) compiles every dependency, and THIRD-PARTY compile
@@ -65,6 +72,9 @@ Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-07-24 — moved box portal deps into the box cache (`MIX_DEPS_PATH`) and made
+  the portal gate self-heal an empty cache; a box portal gate now writes zero files
+  into the mounted repo (verified by mtime sweep), closing the read-only-review gap.
 - 2026-07-24 — moved the box's Erlang trust bundle into the box cache and made the
   Go gate verify module tidiness without writing, so a read-only review box can run
   the gates it is asked to confirm.
