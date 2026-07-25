@@ -17,6 +17,10 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+func testInBox() bool {
+	return os.Getenv("COOP_BOX") == "1"
+}
+
 func TestChromeArgsKeepHostSandboxAndScopeTLSException(t *testing.T) {
 	spki := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	host := chromeArgs(Config{Profile: "/tmp/profile", SPKI: spki})
@@ -55,15 +59,15 @@ func TestEndpointAliveRejectsNonLoopbackEndpoint(t *testing.T) {
 }
 
 func TestReadyAnchorsAndTwoScaleScreenshot(t *testing.T) {
-	chrome, err := ResolveChrome()
-	if err != nil {
+	if _, err := ResolveChrome(); err != nil {
 		t.Skip(err)
 	}
+	releaseSlow := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/slow" {
 			select {
 			case <-request.Context().Done():
-			case <-time.After(30 * time.Second):
+			case <-releaseSlow:
 			}
 			return
 		}
@@ -71,11 +75,13 @@ func TestReadyAnchorsAndTwoScaleScreenshot(t *testing.T) {
 		_, _ = writer.Write([]byte(`<!doctype html><html><body><main data-phx-main><h2><span>Target</span></h2></main><script>setTimeout(()=>{document.querySelector('main').classList.add('phx-connected');const img=document.createElement('img');img.src='/slow';img.style='width:20px;height:20px';document.body.append(img)},100)</script><style>h2{width:200px;height:80px;margin:0}</style></body></html>`))
 	}))
 	defer server.Close()
-	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath(chrome), chromedp.Flag("headless", "new"))...)
-	defer cancelAllocator()
-	ctx, cancel := chromedp.NewContext(allocator)
-	defer cancel()
-	session := &Session{Context: ctx, BaseURL: server.URL}
+	defer close(releaseSlow)
+	manager := New(Config{InBox: testInBox()})
+	session, err := manager.isolatedSessionWithOptions(context.Background(), server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
 	if err := session.Viewport(800, 600, 1, false); err != nil {
 		t.Fatal(err)
 	}
@@ -137,15 +143,23 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 		t.Skip(err)
 	}
 	root := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/set" {
+			http.SetCookie(writer, &http.Cookie{Name: "auth", Value: "yes", Path: "/"})
+		}
+		_, _ = writer.Write([]byte("<!doctype html><title>fixture</title>"))
+	}))
+	t.Cleanup(server.Close)
 	config := Config{
 		State: filepath.Join(root, "state.json"), Profile: filepath.Join(root, "profile"),
 		Marker: filepath.Join(root, "profile", "marker"), Log: filepath.Join(root, "browser.log"),
 		SPKI: base64.StdEncoding.EncodeToString(make([]byte, 32)), Out: io.Discard, Err: io.Discard,
+		InBox: testInBox(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- RunDaemon(ctx, config) }()
-	defer func() {
+	t.Cleanup(func() {
 		cancel()
 		select {
 		case err := <-done:
@@ -155,7 +169,7 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Error("browser daemon did not stop")
 		}
-	}()
+	})
 	manager := New(config)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -167,13 +181,6 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/set" {
-			http.SetCookie(writer, &http.Cookie{Name: "auth", Value: "yes", Path: "/"})
-		}
-		_, _ = writer.Write([]byte("<!doctype html><title>fixture</title>"))
-	}))
-	defer server.Close()
 	persistent, err := manager.Session(context.Background(), server.URL, false)
 	if err != nil {
 		t.Fatal(err)

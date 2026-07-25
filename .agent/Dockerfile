@@ -15,12 +15,12 @@ RUN cd /home/node \
  && mix local.hex --force \
  && mix local.rebar --force
 
-# Keep UI-only packages below the toolchain layer. The Go browser driver uses
-# Debian Chromium on every box architecture; no second package manager or
-# separately downloaded browser enters the build.
+# Keep project gate and UI packages below the toolchain layer. The Go browser
+# driver uses Debian Chromium on every box architecture; no second package
+# manager or separately downloaded browser enters the build.
 USER root
 RUN apt-get update \
- && apt-get install -y --no-install-recommends chromium-headless-shell imagemagick \
+ && apt-get install -y --no-install-recommends chromium-headless-shell imagemagick shellcheck \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 

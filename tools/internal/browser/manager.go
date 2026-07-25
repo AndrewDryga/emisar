@@ -291,6 +291,15 @@ func RunDaemon(ctx context.Context, config Config) error {
 	}
 	command := exec.CommandContext(ctx, chrome, args...)
 	command.Stdout, command.Stderr = config.Out, config.Err
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Chromium forks several children. Killing only the process created by Go
+	// leaves those descendants alive in a box, so cancellation owns the group.
+	command.Cancel = func() error {
+		if err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return err
+		}
+		return nil
+	}
 	if err := command.Start(); err != nil {
 		return err
 	}
