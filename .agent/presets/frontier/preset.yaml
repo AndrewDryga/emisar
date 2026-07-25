@@ -39,7 +39,7 @@ roles:
     # WRITE-CAPABLE worker via coop-delegate: it may edit the worktree but never
     # commits — the lead reviews the diff, runs the touched project's gate, commits.
     mode: delegate
-    agent: [codex:gpt-5.6-luna/xhigh, claude:opus/xhigh]
+    agent: [claude:opus/high]
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
     commit: never
     concurrent: never
