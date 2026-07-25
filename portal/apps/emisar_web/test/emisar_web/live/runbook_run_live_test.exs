@@ -88,6 +88,38 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     runbook
   end
 
+  describe "mount authorization" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "a viewer is redirected at mount — the run page is dispatch-gated", %{
+      user: user,
+      account: account
+    } do
+      runbook = published_runbook!(user, account)
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      dest = ~p"/app/#{account}/runbooks"
+
+      # The runbook exists and is readable by the viewer, so the redirect can
+      # only come from the mount's dispatch gate — not the not-found path.
+      assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+               build_conn()
+               |> log_in_user(viewer)
+               |> live(~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      assert %{"info" => "Running a runbook needs an operator role or above."} = flash
+    end
+  end
+
   describe "dispatch + live results" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

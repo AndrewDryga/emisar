@@ -607,6 +607,41 @@ defmodule Emisar.RunbooksTest do
       assert runbook.status == :draft
     end
 
+    test "a client-supplied status 'published' is ignored — the runbook is born :draft", %{
+      account: account
+    } do
+      api_client = api_client_subject(account)
+
+      attrs = %{
+        "title" => "sneaky-publish",
+        "name" => "sneaky-publish",
+        "slug" => "sneaky-publish",
+        "status" => "published",
+        "definition" => %{"steps" => uptime_steps(1, group_target("default"))}
+      }
+
+      # create/3 never casts :status, so a draft-only key can't mint published
+      # content at the domain layer no matter what it sends.
+      assert {:ok, runbook} = Runbooks.create_runbook(attrs, api_client)
+      assert runbook.status == :draft
+    end
+
+    test "an owner passing status 'published' still gets a draft — publish is its own transition",
+         %{subject: subject} do
+      attrs = %{
+        "title" => "born-published",
+        "name" => "born-published",
+        "slug" => "born-published",
+        "status" => "published",
+        "definition" => %{"steps" => uptime_steps(1, group_target("default"))}
+      }
+
+      # Even a manage holder can't data-drive status through create_runbook —
+      # born-published goes through create_published_runbook/2 explicitly.
+      assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
+      assert runbook.status == :draft
+    end
+
     test "an owner of another account can't create against this account (cross-account)" do
       {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
@@ -724,6 +759,65 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "create_published_runbook/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "an owner mints a published v1 — the editor's publish-from-new", %{subject: subject} do
+      attrs = %{
+        "title" => "born-published",
+        "name" => "born-published",
+        "slug" => "born-published",
+        "definition" => %{"steps" => uptime_steps(1, group_target("default"))}
+      }
+
+      assert {:ok, runbook} = Runbooks.create_published_runbook(attrs, subject)
+      assert runbook.status == :published
+      assert runbook.version == 1
+    end
+
+    test "an unpublishable definition fails atomically — no draft row is left behind", %{
+      subject: subject
+    } do
+      # uptime_steps/1 without a selector has no runner target, which the
+      # publishable validations reject — at insert, so nothing persists and a
+      # corrected retry can't collide on unique(account, slug, version).
+      attrs = %{
+        "title" => "half-built",
+        "name" => "half-built",
+        "slug" => "half-built",
+        "definition" => %{"steps" => uptime_steps(1)}
+      }
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runbooks.create_published_runbook(attrs, subject)
+
+      assert "every step needs exactly one runner or group target before publishing" in errors_on(
+               changeset
+             ).definition
+
+      assert Repo.all(Runbooks.Runbook) == []
+    end
+
+    test "an api_client (draft permission, no manage) is refused", %{account: account} do
+      api_client = api_client_subject(account)
+
+      attrs = %{
+        "title" => "sneaky-publish",
+        "name" => "sneaky-publish",
+        "slug" => "sneaky-publish",
+        "definition" => %{"steps" => uptime_steps(1, group_target("default"))}
+      }
+
+      # The only born-published path is manage-gated, so a draft-only key can't
+      # mint published content at the domain layer.
+      assert {:error, :unauthorized} = Runbooks.create_published_runbook(attrs, api_client)
+      assert Repo.all(Runbooks.Runbook) == []
+    end
+  end
+
   describe "create_mcp_draft/4" do
     test "atomically creates and exactly replays one lineage-owned draft" do
       {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
@@ -800,6 +894,29 @@ defmodule Emisar.RunbooksTest do
       assert Repo.aggregate(Runbooks.Runbook, :count) == 1
       assert {:ok, fetched} = Runbooks.fetch_mcp_draft_by_operation(operation_id, subject)
       assert fetched.id == created.id
+    end
+
+    test "a client-supplied status is ignored — an MCP draft is always born :draft" do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "draft agent"}, owner_subject)
+      subject = Subject.for_api_key(key, account)
+      operation_id = "op_524NN9NMDZ1T76NARWCKM5A0D6"
+      fingerprint = String.duplicate("d", 64)
+
+      attrs = %{
+        "title" => "agent draft",
+        "name" => "agent draft",
+        "slug" => "agent-draft",
+        "status" => "published",
+        "definition" => %{"steps" => uptime_steps(1, group_target("default"))}
+      }
+
+      # Changeset.create/3 never casts :status, so even a regression in the MCP
+      # controller's attr whitelist can't let a key mint published content.
+      assert {:ok, :created, runbook} =
+               Runbooks.create_mcp_draft(attrs, operation_id, fingerprint, subject)
+
+      assert runbook.status == :draft
     end
   end
 

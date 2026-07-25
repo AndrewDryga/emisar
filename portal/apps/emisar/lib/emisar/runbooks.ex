@@ -194,6 +194,11 @@ defmodule Emisar.Runbooks do
 
   # -- Mutations -------------------------------------------------------
 
+  @doc """
+  Creates a runbook, always born `:draft` — `Runbook.Changeset.create/3` never
+  casts `:status`, so a client-supplied status is ignored. Requires manage or
+  draft permission; returns `{:ok, runbook} | {:error, changeset | :unauthorized}`.
+  """
   def create_runbook(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -201,21 +206,41 @@ defmodule Emisar.Runbooks do
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ) do
-      user_id = Subject.user_id(subject)
+      account.id
+      |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
+      |> insert_runbook(subject)
+    end
+  end
 
-      Multi.new()
-      |> Multi.insert(
-        :runbook,
-        Runbook.Changeset.create(account.id, user_id, attrs)
-      )
-      |> Multi.insert(:audit, fn %{runbook: runbook} ->
-        Audit.Events.runbook_created(subject, runbook)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
-      |> case do
-        {:ok, %{runbook: runbook}} -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
+  @doc """
+  Creates a runbook born `:published` — the editor's one-click publish-from-new.
+  Requires `manage_runbooks`; the status is decided by this named transition,
+  never cast from client attrs, so the authorizer's "publish stays closed at
+  the domain layer" holds structurally: `create_runbook/2` can only mint drafts,
+  and this is the sole born-published path.
+  """
+  def create_published_runbook(attrs, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ) do
+      account.id
+      |> Runbook.Changeset.create_published(Subject.user_id(subject), attrs)
+      |> insert_runbook(subject)
+    end
+  end
+
+  defp insert_runbook(changeset, %Subject{} = subject) do
+    Multi.new()
+    |> Multi.insert(:runbook, changeset)
+    |> Multi.insert(:audit, fn %{runbook: runbook} ->
+      Audit.Events.runbook_created(subject, runbook)
+    end)
+    |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
+    |> case do
+      {:ok, %{runbook: runbook}} -> {:ok, runbook}
+      {:error, reason} -> {:error, reason}
     end
   end
 

@@ -312,10 +312,12 @@ defmodule EmisarWeb.RunbookEditorLive do
       "slug" => slug,
       "description" => socket.assigns.description,
       "definition" => %{"steps" => Enum.map(socket.assigns.steps, &to_raw_step/1)},
+      # Consumed by new_version only — the create transitions never cast
+      # :status (a publish-from-new goes through create_published_runbook).
       "status" => if(publish?, do: "published", else: "draft")
     }
 
-    with {:ok, runbook} <- persist(socket, attrs),
+    with {:ok, runbook} <- persist(socket, attrs, publish?),
          {:ok, runbook} <- maybe_publish(runbook, publish?, socket) do
       {:noreply,
        socket
@@ -330,10 +332,16 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
-  defp persist(%{assigns: %{runbook: nil}} = socket, attrs),
+  # A publish-from-new goes through the manage-gated born-published transition
+  # so an unpublishable definition still fails atomically at insert — no orphan
+  # draft to collide the retry on unique(account, slug, version).
+  defp persist(%{assigns: %{runbook: nil}} = socket, attrs, true),
+    do: Runbooks.create_published_runbook(attrs, socket.assigns.current_subject)
+
+  defp persist(%{assigns: %{runbook: nil}} = socket, attrs, false),
     do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: %Runbooks.Runbook{} = runbook}} = socket, attrs),
+  defp persist(%{assigns: %{runbook: %Runbooks.Runbook{} = runbook}} = socket, attrs, _publish?),
     do: Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject)
 
   defp maybe_publish(%Runbooks.Runbook{} = runbook, true, socket),

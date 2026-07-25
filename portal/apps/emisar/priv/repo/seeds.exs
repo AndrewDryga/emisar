@@ -338,7 +338,7 @@ morning_runbook = Enum.find(runbooks, &(&1.slug == "morning-edge-readiness"))
 
 unless morning_runbook do
   {:ok, _rb} =
-    Runbooks.create_runbook(
+    Runbooks.create_published_runbook(
       %{
         name: "morning-edge-readiness",
         slug: "morning-edge-readiness",
@@ -346,7 +346,6 @@ unless morning_runbook do
         description:
           "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
             "host load, disk pressure, and Caddy upstream health.",
-        status: "published",
         definition: %{
           "steps" => [
             %{

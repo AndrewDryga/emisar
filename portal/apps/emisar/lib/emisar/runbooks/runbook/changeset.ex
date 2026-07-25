@@ -3,6 +3,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   alias Emisar.Runbooks.{Runbook, StepSelector}
 
   @fields ~w[id name slug title description status definition]a
+  @create_fields ~w[id name slug title description definition]a
 
   # Each step's `id` is the dispatch identity: runs are matched to plan rows
   # by `{step_id, runner_id}` and that pair is the `action_runs` unique index.
@@ -46,13 +47,39 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
 
   defp nilify_blank(value), do: value
 
+  @doc """
+  Creation never casts `:status` — the row is born `:draft` no matter what the
+  client sends. The changeset (not an upstream controller whitelist) is what
+  guarantees a client-supplied status can't mint published content; publishing
+  is its own transition (`create_published/3` at birth, or `update/2` via
+  `Runbooks.publish/2`).
+  """
   def create(account_id, user_id, attrs) do
+    attrs
+    |> new_runbook(account_id, user_id)
+    |> put_change(:status, :draft)
+    |> changeset()
+  end
+
+  @doc """
+  A runbook born `:published` — the editor's one-click publish-from-new. The
+  status is put by this transition, never cast from attrs, and the publishable-
+  definition validations run at insert, so a bad definition fails atomically
+  with no row.
+  """
+  def create_published(account_id, user_id, attrs) do
+    attrs
+    |> new_runbook(account_id, user_id)
+    |> put_change(:status, :published)
+    |> changeset()
+  end
+
+  defp new_runbook(attrs, account_id, user_id) do
     %Runbook{}
-    |> cast(attrs, @fields)
+    |> cast(attrs, @create_fields)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:version, 1)
-    |> changeset()
   end
 
   @doc """
