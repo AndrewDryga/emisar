@@ -1610,6 +1610,34 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.claim_device_grant(device_code) == {:error, :invalid_grant}
     end
 
+    test "each minted key gets an api_key.created audit row naming the approver" do
+      {user, _account, subject} = owner_subject_pair()
+      context = %RequestContext{ip_address: "203.0.113.9"}
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code", "cursor"], context)
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      assert {:ok, _client_keys} = ApiKeys.claim_device_grant(device_code)
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
+
+      keys_by_id = Map.new(Repo.all(ApiKey), &{&1.id, &1})
+      assert length(events) == 2
+
+      for event <- events do
+        key = Map.fetch!(keys_by_id, event.target_id)
+        assert event.actor_kind == "user"
+        assert event.actor_id == user.id
+        assert event.target_label == key.name
+        assert event.payload["prefix"] == key.key_prefix
+        assert event.payload["kind"] == "mcp"
+        assert event.payload["device_grant_id"] == approved.id
+        assert event.payload["requester_ip"] == "203.0.113.9"
+      end
+    end
+
     test "a pending grant polls as :authorization_pending; unknown codes as :invalid_grant" do
       {:ok, device_code, _user_code, _grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})

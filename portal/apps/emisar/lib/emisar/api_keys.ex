@@ -1100,8 +1100,10 @@ defmodule Emisar.ApiKeys do
   grant EXACTLY once: locks the row, mints one auto-generated `:mcp` key per
   requested client on behalf of the recorded approver (the approval is the
   authorization — this path has no subject by design, like magic-link
-  redemption), flips the grant to `claimed`, and returns `{:ok, client_keys}`
-  as a `client id => raw secret` map — the only time the secrets exist.
+  redemption), writes an `api_key.created` audit row per key with the
+  approver as actor, flips the grant to `claimed`, and returns
+  `{:ok, client_keys}` as a `client id => raw secret` map — the only time
+  the secrets exist.
   Every other state maps to its poll error:
   `{:error, :authorization_pending | :access_denied | :expired_token | :invalid_grant}`.
   """
@@ -1174,8 +1176,10 @@ defmodule Emisar.ApiKeys do
 
   # Deliberate per-row inserts: each key mints its own secret via a
   # `mint_quick` changeset (auto-generated, invisible until first use — the
-  # quick-mint semantics), and the whole loop aborts atomically inside the
-  # claim transaction on the first failure. N is bounded by the client list.
+  # quick-mint semantics) plus its own `api_key.created` audit row (the grant
+  # is swept within a day, so the audit trail must name the minted key), and
+  # the whole loop aborts atomically inside the claim transaction on the
+  # first failure. N is bounded by the client list.
   defp mint_grant_keys(repo, %DeviceGrant{} = grant) do
     Enum.reduce_while(grant.requested_clients, {:ok, %{}}, fn client, {:ok, acc} ->
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
@@ -1190,8 +1194,11 @@ defmodule Emisar.ApiKeys do
           %{name: DeviceGrant.client_label(client)}
         )
 
-      case repo.insert(changeset) do
-        {:ok, _key} -> {:cont, {:ok, Map.put(acc, client, raw)}}
+      with {:ok, key} <- repo.insert(changeset),
+           audit_changeset = Audit.Events.api_key_created_via_device_grant(grant, key),
+           {:ok, _event} <- repo.insert(audit_changeset) do
+        {:cont, {:ok, Map.put(acc, client, raw)}}
+      else
         {:error, changeset} -> {:halt, {:error, changeset}}
       end
     end)
@@ -1201,7 +1208,7 @@ defmodule Emisar.ApiKeys do
   Internal — the DeviceGrantCleanup job's sweep. Expires overdue pending
   grants (freeing their user codes for reuse) and hard-deletes rows older
   than a day — grants are minutes-lived operational state, not audit history
-  (approval/denial already wrote durable audit events). Returns
+  (approval/denial/claim already wrote durable audit events). Returns
   `{expired, deleted}`.
   """
   def cleanup_device_grants(now \\ DateTime.utc_now()) do

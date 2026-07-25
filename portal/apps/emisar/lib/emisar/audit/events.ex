@@ -401,6 +401,26 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # A key minted when an approved device grant is claimed — the poll has no
+  # subject (RFC 8628), so the recorded approver is the actor (the approval
+  # IS the claim-time authorization). The grant row is swept within a day;
+  # this row is the durable record of which credential the approval minted.
+  def api_key_created_via_device_grant(%ApiKeys.DeviceGrant{} = grant, %ApiKeys.ApiKey{} = key) do
+    Audit.changeset(key.account_id, "api_key.created",
+      actor_kind: "user",
+      actor_id: grant.approved_by_id,
+      target_kind: "api_key",
+      target_id: key.id,
+      target_label: key.name,
+      payload: %{
+        prefix: key.key_prefix,
+        kind: key.kind,
+        device_grant_id: grant.id,
+        requester_ip: grant.requester_ip
+      }
+    )
+  end
+
   # Grant rows are minutes-lived and swept within a day, so the label is baked
   # in at write time (the requested clients) rather than resolved by reference.
   def device_grant_approved(%Subject{} = subject, %ApiKeys.DeviceGrant{} = grant) do
