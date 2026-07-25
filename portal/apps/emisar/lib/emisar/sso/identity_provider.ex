@@ -1,8 +1,9 @@
 defmodule Emisar.SSO.IdentityProvider do
   @moduledoc """
   A per-account OIDC identity provider (relying-party connection). One live,
-  enabled provider per `(account, kind)`; an `allowed_email_domain` routes
-  sign-in to exactly one provider. `client_secret` is stored plaintext +
+  enabled provider per `(account, kind)`; an `allowed_email_domain`, if set,
+  refuses any sign-in whose IdP-verified domain doesn't match (unique per
+  enabled provider). `client_secret` is stored plaintext +
   redacted, like every emisar secret — at-rest protection is infra-level.
   """
   use Emisar, :schema

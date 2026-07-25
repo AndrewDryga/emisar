@@ -191,9 +191,7 @@
 
       <.docs_h3 id="signing-in">How members sign in</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; if you set an
-        allowed email domain, entering an address on it routes them straight to your provider. They
-        authenticate at the IdP and come back signed in.
+        On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; there they enter their team's address to reach that team's sign-in page, pick your provider, authenticate at the IdP, and come back signed in. An <strong class="text-zinc-200">allowed email domain</strong>, if set, is a guardrail on the return trip: a login whose IdP-verified domain doesn't match is refused.
       </p>
 
       <.docs_h3 id="subject-not-email">
