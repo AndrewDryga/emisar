@@ -45,9 +45,14 @@ between:
       reopen with instructions to split.
     - No committed DB migration was EDITED (they are frozen; only new migrations land).
     - The commit says WHY and carries its `Coop-Task: <id>` trailer.
-    Verdict: pass → append one line to the task's log.md ("audit: pass — <evidence>").
-    Fail → move the folder back to 10_in_progress/ and append the concrete gap (what to
-    fix, where) to log.md. Never widen scope beyond the audited task.
+    Verdict: REPORT it — never apply it. Your verdict and evidence go in your OUTPUT
+    (the receipt lines coop asks for), with a failed audit's concrete gap — what to fix,
+    where — stated right above the verdict line. Do not move task folders, do not edit
+    anything under .agent/tasks: coop applies the verdict host-side with proper leasing,
+    and its completion audit rejects the whole cycle when the review stage touches the
+    queue (a manual reopen also strands the task's lease, which gets the NEXT
+    iteration's completion rejected as unleased). Never widen scope beyond the audited
+    task.
 
 signoff:
   # Signoff writes task queues only.
