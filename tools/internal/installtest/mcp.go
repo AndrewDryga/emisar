@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -27,6 +28,7 @@ func MCP(root string, out io.Writer) error {
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"LLM client configuration", mcpClientConfiguration},
+		{"uninstall", mcpUninstall},
 	}
 	for _, check := range checks {
 		if err := check.run(h); err != nil {
@@ -400,8 +402,8 @@ var clientFunctions = []string{
 	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
 	"append_yaml_config", "own_config_file", "install_client_config",
 	"json_string_field", "json_client_key", "request_device_grant",
-	"await_device_approval", "scan_client", "out", "hdr", "ok", "dim",
-	"client_row", "open_browser", "configure_llm_clients",
+	"await_device_approval", "scan_client", "scan_llm_clients", "out", "hdr",
+	"ok", "dim", "client_row", "open_browser", "configure_llm_clients",
 }
 
 func clientOverrides(extra string) string {
@@ -637,6 +639,146 @@ curl() { printf 'unexpected network call under ASSUME_YES\n' >&2; exit 9; }
 		return err
 	}
 	return requireAbsent(filepath.Join(quietHome, ".cursor", "mcp.json"))
+}
+
+func mcpUninstall(h *harness) error {
+	home := h.path("uninstall-home")
+	bin := h.path("uninstall-bin")
+	// The bridge stores rotated-key state under Go's os.UserConfigDir
+	// (mcp/rotate.go), which ignores XDG on darwin — the fixture must live
+	// where the script's darwin branch actually looks, or the removal is
+	// only ever tested on Linux.
+	credentials := filepath.Join(home, ".config", "emisar", "credentials")
+	if runtime.GOOS == "darwin" {
+		credentials = filepath.Join(home, "Library", "Application Support", "emisar", "credentials")
+	}
+	if err := h.mkdir(bin, credentials,
+		filepath.Join(home, ".cursor"), filepath.Join(home, ".codex"),
+		filepath.Join(home, ".config", "zed"), filepath.Join(home, ".hermes"),
+		filepath.Join(home, ".config", "goose")); err != nil {
+		return err
+	}
+	files := map[string]string{
+		".cursor/mcp.json": `{
+  "mcpServers": {
+    "other": { "command": "other-mcp" },
+    "emisar": { "command": "/usr/local/bin/emisar-mcp", "env": { "EMISAR_API_KEY": "emk-cur" } }
+  }
+}
+`,
+		".cursor/mcp.json.emisar-bak": "{}\n",
+		".codex/config.toml": "[model]\nname = \"gpt\"\n\n[mcp_servers.emisar]\n" +
+			"command = \"/usr/local/bin/emisar-mcp\"\n" +
+			"env = { EMISAR_URL = \"https://emisar.dev\", EMISAR_API_KEY = \"emk-cod\", EMISAR_CLIENT = \"codex\" }\n",
+		".config/zed/settings.json": `{
+  // my editor
+  "theme": "One Dark",
+  "context_servers": {
+    "emisar": {
+      "source": "custom",
+      "command": "/usr/local/bin/emisar-mcp",
+      "env": { "EMISAR_API_KEY": "emk-zed" }
+    },
+    "other": { "source": "custom", "command": "other-mcp" },
+  },
+}
+`,
+		".hermes/config.yaml": "model: hermes-4\n\nmcp_servers:\n  emisar:\n" +
+			"    command: /usr/local/bin/emisar-mcp\n    env:\n      EMISAR_API_KEY: \"emk-her\"\n",
+		".config/goose/config.yaml": "extensions:\n  developer:\n    enabled: true\n" +
+			"  emisar:\n    name: emisar\n    cmd: /usr/local/bin/emisar-mcp\n    enabled: true\n    type: stdio\n",
+	}
+	for relative, contents := range files {
+		if err := writeFile(filepath.Join(home, filepath.FromSlash(relative)), contents, 0o600); err != nil {
+			return err
+		}
+	}
+	if err := writeFile(filepath.Join(credentials, "state.json"), "{}\n", 0o600); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(bin, "emisar-mcp"), "#!/bin/sh\n", 0o755); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(bin, ".emisar-mcp.old.123"), "stale\n", 0o644); err != nil {
+		return err
+	}
+
+	environment := map[string]string{
+		"HOME":            home,
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+	}
+	if _, err := h.successful(h.root, environment,
+		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
+		return err
+	}
+
+	for _, path := range []string{
+		filepath.Join(bin, "emisar-mcp"),
+		filepath.Join(bin, ".emisar-mcp.old.123"),
+		filepath.Join(home, ".cursor", "mcp.json.emisar-bak"),
+		credentials,
+	} {
+		if err := requireAbsent(path); err != nil {
+			return err
+		}
+	}
+
+	cursor, err := jsonFile(filepath.Join(home, ".cursor", "mcp.json"))
+	if err != nil {
+		return err
+	}
+	if err := requireNestedString(cursor, "other-mcp", "mcpServers", "other", "command"); err != nil {
+		return err
+	}
+	if _, err := nested(cursor, "mcpServers", "emisar"); err == nil {
+		return fmt.Errorf("cursor config still carries emisar")
+	}
+
+	codex := filepath.Join(home, ".codex", "config.toml")
+	if err := containsFile(codex, `name = "gpt"`); err != nil {
+		return err
+	}
+	if err := lacksFile(codex, "mcp_servers.emisar"); err != nil {
+		return err
+	}
+
+	zed := filepath.Join(home, ".config", "zed", "settings.json")
+	for _, text := range []string{"// my editor", `"theme": "One Dark"`, `"other"`} {
+		if err := containsFile(zed, text); err != nil {
+			return err
+		}
+	}
+	if err := lacksFile(zed, `"emisar"`); err != nil {
+		return err
+	}
+
+	hermes := filepath.Join(home, ".hermes", "config.yaml")
+	if err := containsFile(hermes, "model: hermes-4"); err != nil {
+		return err
+	}
+	// The emptied mcp_servers key goes too, so a later install can append again.
+	for _, text := range []string{"emisar", "mcp_servers:"} {
+		if err := lacksFile(hermes, text); err != nil {
+			return err
+		}
+	}
+
+	goose := filepath.Join(home, ".config", "goose", "config.yaml")
+	for _, text := range []string{"extensions:", "developer:"} {
+		if err := containsFile(goose, text); err != nil {
+			return err
+		}
+	}
+	if err := lacksFile(goose, "emisar"); err != nil {
+		return err
+	}
+
+	// A second run has nothing left to remove and still succeeds.
+	if _, err := h.successful(h.root, environment,
+		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
+		return err
+	}
+	return nil
 }
 
 func inspectClientConfigs(home, portal string) error {

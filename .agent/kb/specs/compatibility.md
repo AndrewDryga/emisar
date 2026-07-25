@@ -275,7 +275,10 @@ and preserves existing ones. A caller without a controlling terminal is refused
 without `--yes`. Interactive installs may leave pack selection unset to review
 host-matched recommendations.
 
-`install-mcp.sh` accepts `--version`, `--install-dir`, and `--yes`. It accepts
+`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall` (remove
+the installed binaries, the `emisar` entry and `.emisar-bak` backups in
+detected client configs, and the bridge's rotated-key state), and `--yes`.
+It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
 and `EMISAR_URL` (the portal its interactive LLM-client setup talks to and
 writes into configs; default `https://emisar.dev`). The interactive setup

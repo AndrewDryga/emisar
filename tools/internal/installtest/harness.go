@@ -85,6 +85,17 @@ func containsFile(path, text string) error {
 	return nil
 }
 
+func lacksFile(path, text string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if bytes.Contains(data, []byte(text)) {
+		return fmt.Errorf("%s still contains %q", path, text)
+	}
+	return nil
+}
+
 func exactFile(path, expected string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

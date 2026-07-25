@@ -17,6 +17,9 @@
 #   # Install to a per-user location (no sudo):
 #   curl -sSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
 #
+#   # Uninstall — binary, client-config entries, and rotated-key state:
+#   curl -sSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
+#
 # The script is idempotent. It does not register a service. After
 # installing, an interactive run scans for local LLM clients (Claude
 # Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, OpenClaw,
@@ -39,12 +42,13 @@ INSTALL_DIR="${INSTALL_DIR:-}"
 INSTALL_DIR_EXPLICIT=0
 [ -n "${INSTALL_DIR}" ] && INSTALL_DIR_EXPLICIT=1
 VERSION="${VERSION:-}"     # empty → latest mcp-v* tag
+MODE="install"             # install|uninstall
 
 usage() {
   cat <<'USAGE'
 emisar-mcp installer
 
-Usage: install-mcp.sh [--version TAG] [--install-dir DIR] [--yes]
+Usage: install-mcp.sh [--version TAG] [--install-dir DIR] [--uninstall] [--yes]
 
 Flags:
   --version TAG       Install a specific MCP release. Accepts
@@ -53,6 +57,11 @@ Flags:
   --install-dir DIR   Where to place the `emisar-mcp` binary. By default,
                       existing user-local and system installs are upgraded;
                       a fresh install uses /usr/local/bin.
+  --uninstall         Remove the emisar-mcp binary (from the conventional
+                      locations, or --install-dir), the emisar entry and
+                      .emisar-bak backups in detected LLM client configs,
+                      and the bridge's rotated-key state. Removed API keys
+                      stay valid until revoked on the portal's /app/agents.
   --yes               Skip the confirmation prompt and the interactive
                       LLM-client setup.
   --help              This message.
@@ -95,6 +104,7 @@ while [ $# -gt 0 ]; do
       INSTALL_DIR_EXPLICIT=1
       shift 2
       ;;
+    --uninstall)   MODE="uninstall"; shift;;
     --yes|-y)      ASSUME_YES=1; shift;;
     --help|-h)     usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
@@ -210,11 +220,549 @@ make_temp_dir() {
   mktemp -d "${parent%/}/emisar-mcp-install.XXXXXX"
 }
 
+# ---------------------------------------------------------------------
+# LLM client detection (shared by install + uninstall)
+# ---------------------------------------------------------------------
+
+# `"emisar"` with both quotes is precise for JSON configs: escaped text
+# inside JSON strings renders as `\"emisar\"` bytes, so prose in a big
+# stateful file (~/.claude.json) cannot false-positive.
+json_config_has_emisar() {
+  [ -e "$1" ] && grep -Fq '"emisar"' "$1" 2>/dev/null
+}
+
+toml_config_has_emisar() {
+  [ -e "$1" ] && grep -Fq 'mcp_servers.emisar' "$1" 2>/dev/null
+}
+
+yaml_config_has_emisar() {
+  [ -e "$1" ] && grep -Eq '^[[:space:]]+emisar:' "$1" 2>/dev/null
+}
+
+# A sudo run writes as root into the invoking user's home — hand the
+# file back so the client (running as the user) can read it.
+own_config_file() {
+  local file="$1" group
+  [ "$(id -u)" -eq 0 ] || return 0
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    group="$(id -g "${SUDO_USER}" 2>/dev/null)" || return 0
+    chown "${SUDO_USER}:${group}" "${file}" 2>/dev/null || true
+  fi
+}
+
+# Detection for one client: records `label|id|kind|file|state`, where state
+# is "connected" (already carries emisar — left untouched, so the portal's
+# upgrade one-liner stays quiet) or "candidate".
+scan_client() {
+  local label="$1" client_id="$2" kind="$3" config_file="$4" state="candidate"
+  case "${kind}" in
+    toml)
+      toml_config_has_emisar "${config_file}" && state="connected"
+      ;;
+    hermes|goose)
+      yaml_config_has_emisar "${config_file}" && state="connected"
+      ;;
+    *)
+      json_config_has_emisar "${config_file}" && state="connected"
+      ;;
+  esac
+  CLIENTS_FOUND=$((CLIENTS_FOUND + 1))
+  SCANNED="${SCANNED}${SCANNED:+
+}${label}|${client_id}|${kind}|${config_file}|${state}"
+}
+
+# The one list of supported clients: which are present on this machine and
+# whether each already carries emisar. Install offers the candidates;
+# uninstall cleans the connected ones.
+scan_llm_clients() {
+  local user_home="$1" desktop_dir
+  CLIENTS_FOUND=0
+  SCANNED=""
+
+  if [ -e "${user_home}/.claude.json" ] || [ -d "${user_home}/.claude" ]; then
+    scan_client "Claude Code" claude-code json "${user_home}/.claude.json"
+  fi
+  desktop_dir="${user_home}/Library/Application Support/Claude"
+  [ "${OS}" = "linux" ] && desktop_dir="${user_home}/.config/Claude"
+  if [ -d "${desktop_dir}" ]; then
+    scan_client "Claude Desktop" claude-desktop json "${desktop_dir}/claude_desktop_config.json"
+  fi
+  if [ -d "${user_home}/.cursor" ]; then
+    scan_client "Cursor" cursor json "${user_home}/.cursor/mcp.json"
+  fi
+  if [ -d "${user_home}/.gemini" ]; then
+    scan_client "Gemini CLI" gemini json "${user_home}/.gemini/settings.json"
+  fi
+  if [ -d "${user_home}/.codex" ]; then
+    scan_client "Codex CLI" codex toml "${user_home}/.codex/config.toml"
+  fi
+  if [ -d "${user_home}/.openclaw" ]; then
+    scan_client "OpenClaw" openclaw openclaw "${user_home}/.openclaw/openclaw.json"
+  fi
+  if [ -d "${user_home}/.config/opencode" ]; then
+    scan_client "OpenCode" opencode opencode "${user_home}/.config/opencode/opencode.json"
+  fi
+  if [ -d "${user_home}/.codeium/windsurf" ]; then
+    scan_client "Windsurf" windsurf json "${user_home}/.codeium/windsurf/mcp_config.json"
+  fi
+  if [ -d "${user_home}/.pi" ]; then
+    scan_client "Pi" pi json "${user_home}/.pi/agent/mcp.json"
+  fi
+  if [ -d "${user_home}/.copilot" ]; then
+    scan_client "Copilot CLI" copilot-cli copilot "${user_home}/.copilot/mcp-config.json"
+  fi
+  if [ -d "${user_home}/.config/zed" ]; then
+    scan_client "Zed" zed zed "${user_home}/.config/zed/settings.json"
+  fi
+  if [ -d "${user_home}/.hermes" ]; then
+    scan_client "Hermes" hermes hermes "${user_home}/.hermes/config.yaml"
+  fi
+  if [ -d "${user_home}/.config/goose" ]; then
+    scan_client "Goose" goose goose "${user_home}/.config/goose/config.yaml"
+  fi
+}
+
+# ---------------------------------------------------------------------
+# Uninstall
+# ---------------------------------------------------------------------
+# The reverse of the install path: drop the emisar entry from each detected
+# client config (and the install's .emisar-bak files), remove the bridge's
+# rotated-key state, then the binaries. A key removed from a config keeps
+# working until revoked in the portal, so the exit line points at /app/agents.
+
+# Reverse of merge_json_config, same python3-then-jq ladder: drop the emisar
+# member while preserving every other key — and, for a JSONC file, its
+# comments, via a textual cut since json.dump would reformat them away.
+# jq covers only the standard mcpServers shape on comment-free JSON.
+remove_json_emisar() {
+  local file="$1" shape="${2:-std}"
+  local status=0
+  if command -v python3 >/dev/null 2>&1; then
+    MCP_FILE="${file}" MCP_SHAPE="${shape}" python3 - 2>/dev/null <<'PY' || status=1
+import json, os, re, tempfile
+
+# Same scanner helpers as the merge in merge_json_config: parse+delete+dump
+# for plain JSON (all shapes), and a comment-preserving textual cut for a
+# file that actually has comments.
+
+def strip_jsonc(text):
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == '\\' and i + 1 < n:
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r',(\s*[}\]])', r'\1', ''.join(out))
+
+def has_comments(text):
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            i += 1
+            while i < n:
+                if text[i] == '\\':
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] in '/*':
+            return True
+        i += 1
+    return False
+
+def skip_ws_comments(raw, i, n):
+    while i < n:
+        c = raw[i]
+        if c in ' \t\r\n':
+            i += 1
+        elif c == '/' and i + 1 < n and raw[i + 1] == '/':
+            while i < n and raw[i] != '\n':
+                i += 1
+        elif c == '/' and i + 1 < n and raw[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (raw[i] == '*' and raw[i + 1] == '/'):
+                i += 1
+            i += 2
+        else:
+            break
+    return i
+
+def match_string(raw, i, n):
+    i += 1
+    while i < n:
+        if raw[i] == '\\':
+            i += 2
+            continue
+        if raw[i] == '"':
+            return i + 1
+        i += 1
+    return i
+
+def find_close(raw, i, n, open_ch, close_ch):
+    depth = 0
+    while i < n:
+        c = raw[i]
+        if c == '"':
+            i = match_string(raw, i, n)
+            continue
+        if c == '/' and i + 1 < n and raw[i + 1] in '/*':
+            i = skip_ws_comments(raw, i, n)
+            continue
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+def skip_value(raw, i, n):
+    i = skip_ws_comments(raw, i, n)
+    if i >= n:
+        return i
+    c = raw[i]
+    if c == '"':
+        return match_string(raw, i, n)
+    if c == '{':
+        return find_close(raw, i, n, '{', '}') + 1
+    if c == '[':
+        return find_close(raw, i, n, '[', ']') + 1
+    while i < n and raw[i] not in ',}]':
+        i += 1
+    return i
+
+def find_key_value_brace(raw, obj_brace, n, key):
+    end = find_close(raw, obj_brace, n, '{', '}')
+    if end < 0:
+        return None
+    i = obj_brace + 1
+    target = '"' + key + '"'
+    while i < end:
+        c = raw[i]
+        if c in ' \t\r\n,':
+            i += 1
+            continue
+        if c == '/' and i + 1 < n and raw[i + 1] in '/*':
+            i = skip_ws_comments(raw, i, n)
+            continue
+        if c == '"':
+            key_end = match_string(raw, i, n)
+            member = raw[i:key_end]
+            j = skip_ws_comments(raw, key_end, n)
+            if j < n and raw[j] == ':':
+                j = skip_ws_comments(raw, j + 1, n)
+                if member == target:
+                    return j if (j < n and raw[j] == '{') else -1
+                i = skip_value(raw, j, n)
+                continue
+            i = key_end
+            continue
+        i += 1
+    return None
+
+def member_span(raw, obj_brace, n, name):
+    end_obj = find_close(raw, obj_brace, n, '{', '}')
+    if end_obj < 0:
+        raise SystemExit('unterminated container object')
+    i = obj_brace + 1
+    target = '"' + name + '"'
+    prev_comma = -1
+    while i < end_obj:
+        c = raw[i]
+        if c in ' \t\r\n':
+            i += 1
+            continue
+        if c == ',':
+            prev_comma = i
+            i += 1
+            continue
+        if c == '/' and i + 1 < n and raw[i + 1] in '/*':
+            i = skip_ws_comments(raw, i, n)
+            continue
+        if c == '"':
+            key_start = i
+            key_end = match_string(raw, i, n)
+            member = raw[i:key_end]
+            j = skip_ws_comments(raw, key_end, n)
+            if j < n and raw[j] == ':':
+                value_end = skip_value(raw, j + 1, n)
+                if member == target:
+                    k = skip_ws_comments(raw, value_end, n)
+                    if k < end_obj and raw[k] == ',':
+                        return key_start, k + 1
+                    if prev_comma >= 0:
+                        return prev_comma, value_end
+                    return key_start, value_end
+                i = value_end
+                continue
+            i = key_end
+            continue
+        i += 1
+    raise SystemExit('no emisar member to remove')
+
+def widen_to_lines(raw, start, end, n):
+    # A member cut mid-file leaves its indentation and newline behind; when
+    # the span covers whole lines, cut those instead so no blank line remains.
+    ls = raw.rfind('\n', 0, start) + 1
+    if raw[ls:start].strip() == '' and end < n and raw[end] == '\n':
+        return ls, end + 1
+    return start, end
+
+def shape_container(shape):
+    if shape in ('std', 'copilot'):
+        return ['mcpServers']
+    if shape == 'openclaw':
+        return ['mcp', 'servers']
+    if shape == 'opencode':
+        return ['mcp']
+    if shape == 'zed':
+        return ['context_servers']
+    raise SystemExit('unknown shape: ' + shape)
+
+def main():
+    path = os.environ['MCP_FILE']
+    keys = shape_container(os.environ['MCP_SHAPE'])
+    with open(path) as handle:
+        raw = handle.read()
+    if has_comments(raw):
+        # Only a 1-level container is cut textually — the same limit as the
+        # merge, so anything install could write, uninstall can remove.
+        if len(keys) != 1:
+            raise SystemExit('cannot edit a commented multi-level config')
+        n = len(raw)
+        root = skip_ws_comments(raw, 0, n)
+        if root >= n or raw[root] != '{':
+            raise SystemExit('top-level JSON is not an object')
+        vb = find_key_value_brace(raw, root, n, keys[0])
+        if vb is None or vb == -1:
+            raise SystemExit('no container object: ' + keys[0])
+        start, end = member_span(raw, vb, n, 'emisar')
+        start, end = widen_to_lines(raw, start, end, n)
+        out = raw[:start] + raw[end:]
+        check = json.loads(strip_jsonc(out))
+        for k in keys:
+            check = check.get(k)
+            if not isinstance(check, dict):
+                raise SystemExit('validation failed after removal')
+        if 'emisar' in check:
+            raise SystemExit('validation failed after removal')
+    else:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise SystemExit('top-level JSON is not an object')
+        node = data
+        for k in keys:
+            node = node.get(k) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                raise SystemExit('no container object: ' + k)
+        if 'emisar' not in node:
+            raise SystemExit('no emisar member to remove')
+        del node['emisar']
+        out = json.dumps(data, indent=2) + '\n'
+    fd, tmp = tempfile.mkstemp(prefix='.emisar-mcp.', dir=os.path.dirname(path) or '.')
+    with os.fdopen(fd, 'w') as handle:
+        handle.write(out)
+    os.replace(tmp, path)
+
+main()
+PY
+    return "${status}"
+  fi
+  [ "${shape}" = "std" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    local tmp_out="${file}.emisar-new.$$"
+    jq 'del(.mcpServers.emisar)' "${file}" >"${tmp_out}" 2>/dev/null || status=1
+    if [ "${status}" -eq 0 ]; then
+      chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}" && return 0
+    fi
+    rm -f "${tmp_out}"
+    return 1
+  fi
+  return 1
+}
+
+# Reverse of append_codex_toml: drop the [mcp_servers.emisar] table — its
+# exact header through the next table header or EOF.
+remove_codex_toml_emisar() {
+  local file="$1"
+  local tmp_out="${file}.emisar-new.$$"
+  awk '
+    /^\[mcp_servers\.emisar\]$/ { skip = 1; next }
+    /^\[/ { skip = 0 }
+    { if (!skip) print }
+  ' "${file}" >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  { chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"; } || { rm -f "${tmp_out}"; return 1; }
+  ! toml_config_has_emisar "${file}"
+}
+
+# Reverse of append_yaml_config: drop the emisar entry under the client's
+# top-level key (hermes: mcp_servers, goose: extensions) — and the key
+# itself once it has no other children, so a later install can append again.
+remove_yaml_emisar() {
+  local kind="$1" file="$2"
+  local top tmp_out
+  case "${kind}" in
+    hermes) top="mcp_servers" ;;
+    goose) top="extensions" ;;
+    *) return 1 ;;
+  esac
+  tmp_out="${file}.emisar-new.$$"
+  awk -v top="${top}" '
+    {
+      if (skip) {
+        if ($0 ~ /^[ \t]*$/) next
+        match($0, /^[ \t]*/)
+        if (RLENGTH > ind) next
+        skip = 0
+      }
+      if ($0 !~ /^[ \t]/ && $0 !~ /^[ \t]*$/) in_top = ($0 ~ "^" top ":")
+      if (in_top && $0 ~ /^[ \t]+emisar:[ \t]*$/) {
+        match($0, /^[ \t]*/)
+        ind = RLENGTH
+        skip = 1
+        next
+      }
+      lines[++count] = $0
+    }
+    END {
+      for (i = 1; i <= count; i++) {
+        if (lines[i] ~ "^" top ":[ \t]*$") {
+          j = i + 1
+          while (j <= count && lines[j] ~ /^[ \t]*$/) j++
+          if (j > count || lines[j] !~ /^[ \t]/) continue
+        }
+        print lines[i]
+      }
+    }
+  ' "${file}" >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  { chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"; } || { rm -f "${tmp_out}"; return 1; }
+  ! yaml_config_has_emisar "${file}"
+}
+
+# Kind → removal, mirroring install_client_config's kind → merge mapping.
+remove_client_config() {
+  local kind="$1" config_file="$2"
+  case "${kind}" in
+    json) remove_json_emisar "${config_file}" std ;;
+    opencode|openclaw|copilot|zed)
+      # Non-standard JSON schemas need the real removal — python3 only.
+      command -v python3 >/dev/null 2>&1 || return 1
+      remove_json_emisar "${config_file}" "${kind}"
+      ;;
+    toml) remove_codex_toml_emisar "${config_file}" ;;
+    hermes|goose) remove_yaml_emisar "${kind}" "${config_file}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# The bridge's rotated-key state (mcp rotate.go, under Go's UserConfigDir).
+# Removed like the runner uninstall removes its cached token + identity.
+remove_credential_state() {
+  local user_home="$1" config_root
+  [ -n "${user_home}" ] || return 0
+  case "${OS}" in
+    darwin) config_root="${user_home}/Library/Application Support" ;;
+    *) config_root="${XDG_CONFIG_HOME:-${user_home}/.config}" ;;
+  esac
+  if [ -d "${config_root}/emisar/credentials" ]; then
+    rm -rf "${config_root}/emisar/credentials"
+    log "removed rotated-key state ${config_root}/emisar/credentials"
+  fi
+}
+
+do_uninstall() {
+  local user_home="$1" dir bin_dst label client_id kind config_file state
+
+  log "uninstall target: ${OS}/${ARCH}"
+  while IFS= read -r dir; do
+    [ -n "${dir}" ] || continue
+    if [ -e "${dir}/emisar-mcp" ]; then
+      log "  → ${dir}/emisar-mcp"
+    fi
+  done <<<"${install_dirs}"
+
+  if ! confirm "remove emisar-mcp and the emisar entry in detected LLM client configs?"; then
+    die "aborted by user"
+  fi
+
+  scan_llm_clients "${user_home}"
+  while IFS='|' read -r label client_id kind config_file state; do
+    [ -n "${client_id}" ] || continue
+    if [ "${state}" = "connected" ]; then
+      if remove_client_config "${kind}" "${config_file}"; then
+        own_config_file "${config_file}"
+        log "removed emisar from ${label}: ${config_file}"
+      else
+        warn "${label}: could not remove the emisar entry from ${config_file} — remove it by hand"
+      fi
+    fi
+    if [ -e "${config_file}.emisar-bak" ]; then
+      rm -f "${config_file}.emisar-bak" && log "removed backup ${config_file}.emisar-bak"
+    fi
+  done <<<"${SCANNED}"
+
+  remove_credential_state "${user_home}"
+
+  while IFS= read -r dir; do
+    [ -n "${dir}" ] || continue
+    bin_dst="${dir}/emisar-mcp"
+    if [ -e "${bin_dst}" ] || [ -L "${bin_dst}" ]; then
+      if rm -f -- "${bin_dst}" 2>/dev/null; then
+        log "removed ${bin_dst}"
+      else
+        warn "could not remove ${bin_dst} (re-run with sudo)"
+      fi
+    fi
+    # Leftovers from an interrupted upgrade's staging/rollback.
+    rm -f -- "${dir}/.emisar-mcp.old."* "${dir}/.emisar-mcp.new."* 2>/dev/null || true
+  done <<<"${install_dirs}"
+
+  log "uninstalled — removed keys stay valid until revoked: ${EMISAR_URL}/app/agents"
+}
+
+# ---------------------------------------------------------------------
+# Resolve targets + dispatch
+# ---------------------------------------------------------------------
+
+user_home=$(invoking_user_home)
 if [ "${INSTALL_DIR_EXPLICIT}" = "0" ]; then
-  user_home=$(invoking_user_home)
   install_dirs=$(resolve_install_dirs "${user_home}")
 else
   install_dirs="${INSTALL_DIR}"
+fi
+
+if [ "${MODE}" = "uninstall" ]; then
+  do_uninstall "${user_home}"
+  exit 0
 fi
 
 log "install target: ${OS}/${ARCH}"
@@ -583,21 +1131,6 @@ open_browser() {
   fi
 }
 
-# `"emisar"` with both quotes is precise for JSON configs: escaped text
-# inside JSON strings renders as `\"emisar\"` bytes, so prose in a big
-# stateful file (~/.claude.json) cannot false-positive.
-json_config_has_emisar() {
-  [ -e "$1" ] && grep -Fq '"emisar"' "$1" 2>/dev/null
-}
-
-toml_config_has_emisar() {
-  [ -e "$1" ] && grep -Fq 'mcp_servers.emisar' "$1" 2>/dev/null
-}
-
-yaml_config_has_emisar() {
-  [ -e "$1" ] && grep -Eq '^[[:space:]]+emisar:' "$1" 2>/dev/null
-}
-
 file_has_content() {
   [ -e "$1" ] && grep -q '[^[:space:]]' "$1" 2>/dev/null
 }
@@ -964,17 +1497,6 @@ append_yaml_config() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
-# A sudo run writes as root into the invoking user's home — hand the
-# file back so the client (running as the user) can read it.
-own_config_file() {
-  local file="$1" group
-  [ "$(id -u)" -eq 0 ] || return 0
-  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
-    group="$(id -g "${SUDO_USER}" 2>/dev/null)" || return 0
-    chown "${SUDO_USER}:${group}" "${file}" 2>/dev/null || true
-  fi
-}
-
 install_client_config() {
   local kind="$1" config_file="$2" key="$3" client_id="$4"
   local config_dir
@@ -1139,29 +1661,8 @@ await_device_approval() {
   done
 }
 
-# Detection for one client: records `label|id|kind|file|state`, where state
-# is "connected" (already carries emisar — left untouched, so the portal's
-# upgrade one-liner stays quiet) or "candidate".
-scan_client() {
-  local label="$1" client_id="$2" kind="$3" config_file="$4" state="candidate"
-  case "${kind}" in
-    toml)
-      toml_config_has_emisar "${config_file}" && state="connected"
-      ;;
-    hermes|goose)
-      yaml_config_has_emisar "${config_file}" && state="connected"
-      ;;
-    *)
-      json_config_has_emisar "${config_file}" && state="connected"
-      ;;
-  esac
-  CLIENTS_FOUND=$((CLIENTS_FOUND + 1))
-  SCANNED="${SCANNED}${SCANNED:+
-}${label}|${client_id}|${kind}|${config_file}|${state}"
-}
-
 configure_llm_clients() {
-  local user_home="$1" desktop_dir ids="" label client_id kind config_file state key
+  local user_home="$1" ids="" label client_id kind config_file state key
   CONFIGURED_CLIENTS=""
   CLIENTS_FOUND=0
   SCANNED=""
@@ -1172,47 +1673,7 @@ configure_llm_clients() {
   DEVICE_RESP="${DEVICE_RESP:-${tmp}/device-authorization.json}"
   TOKEN_RESP="${TOKEN_RESP:-${tmp}/device-token.json}"
 
-  if [ -e "${user_home}/.claude.json" ] || [ -d "${user_home}/.claude" ]; then
-    scan_client "Claude Code" claude-code json "${user_home}/.claude.json"
-  fi
-  desktop_dir="${user_home}/Library/Application Support/Claude"
-  [ "${OS}" = "linux" ] && desktop_dir="${user_home}/.config/Claude"
-  if [ -d "${desktop_dir}" ]; then
-    scan_client "Claude Desktop" claude-desktop json "${desktop_dir}/claude_desktop_config.json"
-  fi
-  if [ -d "${user_home}/.cursor" ]; then
-    scan_client "Cursor" cursor json "${user_home}/.cursor/mcp.json"
-  fi
-  if [ -d "${user_home}/.gemini" ]; then
-    scan_client "Gemini CLI" gemini json "${user_home}/.gemini/settings.json"
-  fi
-  if [ -d "${user_home}/.codex" ]; then
-    scan_client "Codex CLI" codex toml "${user_home}/.codex/config.toml"
-  fi
-  if [ -d "${user_home}/.openclaw" ]; then
-    scan_client "OpenClaw" openclaw openclaw "${user_home}/.openclaw/openclaw.json"
-  fi
-  if [ -d "${user_home}/.config/opencode" ]; then
-    scan_client "OpenCode" opencode opencode "${user_home}/.config/opencode/opencode.json"
-  fi
-  if [ -d "${user_home}/.codeium/windsurf" ]; then
-    scan_client "Windsurf" windsurf json "${user_home}/.codeium/windsurf/mcp_config.json"
-  fi
-  if [ -d "${user_home}/.pi" ]; then
-    scan_client "Pi" pi json "${user_home}/.pi/agent/mcp.json"
-  fi
-  if [ -d "${user_home}/.copilot" ]; then
-    scan_client "Copilot CLI" copilot-cli copilot "${user_home}/.copilot/mcp-config.json"
-  fi
-  if [ -d "${user_home}/.config/zed" ]; then
-    scan_client "Zed" zed zed "${user_home}/.config/zed/settings.json"
-  fi
-  if [ -d "${user_home}/.hermes" ]; then
-    scan_client "Hermes" hermes hermes "${user_home}/.hermes/config.yaml"
-  fi
-  if [ -d "${user_home}/.config/goose" ]; then
-    scan_client "Goose" goose goose "${user_home}/.config/goose/config.yaml"
-  fi
+  scan_llm_clients "${user_home}"
 
   if [ "${CLIENTS_FOUND}" -eq 0 ]; then
     out ""
@@ -1290,7 +1751,7 @@ done <<<"${installed_paths}"
 
 first_bin=${installed_paths%%$'\n'*}
 
-configure_llm_clients "$(invoking_user_home)" || \
+configure_llm_clients "${user_home}" || \
   warn "client setup did not complete — per-client snippets: ${EMISAR_URL}/app/agents/connect"
 
 # After an interactive run the aligned client lines above have already said
@@ -1311,6 +1772,4 @@ dim "Verify install:"
 dim "  ${first_bin} --help"
 out ""
 dim "Uninstall:"
-while IFS= read -r path; do
-  dim "  rm ${path}"
-done <<<"${installed_paths}"
+dim "  curl -sSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"
