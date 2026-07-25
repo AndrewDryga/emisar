@@ -24,6 +24,7 @@ func MCP(root string, out io.Writer) error {
 		run  func(*harness) error
 	}{
 		{"install directory discovery", mcpInstallDirs},
+		{"install confirmation prompt", mcpConfirmPrompt},
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
@@ -60,6 +61,30 @@ func mcpInstallDirs(h *harness) error {
 	expected := homeBin + "\n" + systemBin + "\n"
 	if string(output) != expected {
 		return fmt.Errorf("resolved directories = %q, expected %q", output, expected)
+	}
+	return nil
+}
+
+// mcpConfirmPrompt proves the install confirmation cannot default to yes:
+// with no stdin TTY and no /dev/tty there is nobody who can consent, so
+// confirm() must refuse, while --yes/ASSUME_YES still short-circuits to
+// accept for intended unattended installs. The harness runs bash in its
+// own session, so /dev/tty is unopenable here by construction.
+func mcpConfirmPrompt(h *harness) error {
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"confirm"}, `
+if confirm "install emisar-mcp?"; then
+  printf 'confirm accepted without a TTY\n' >&2
+  exit 1
+fi
+ASSUME_YES=1
+confirm "install emisar-mcp?"
+`, map[string]string{"ASSUME_YES": "0"})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		return fmt.Errorf("confirm was not silent without a TTY: %q", output)
 	}
 	return nil
 }

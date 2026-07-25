@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 )
 
 type harness struct {
@@ -243,6 +244,10 @@ func (h *harness) functions(file string, names []string, body string, env map[st
 	command := exec.Command("bash")
 	command.Dir = h.root
 	command.Env = environment(env)
+	// A session of its own, so the script has no controlling terminal:
+	// /dev/tty stays unopenable even when the smoke test runs from an
+	// interactive shell, keeping prompt-fallback paths deterministic.
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Stdin = strings.NewReader(script.String())
 	output, err := command.CombinedOutput()
 	return commandResult{output: output, err: err}
