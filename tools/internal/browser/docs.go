@@ -89,11 +89,14 @@ var docsShots = []shot{
 	{Name: "policy-editor", Path: "/app/demo/policies", Anchor: Anchor{Heading: "Default policy", Climb: "section"}, Width: docsWidth, Output: "screenshots/policy-editor.webp"},
 	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, Output: "screenshots/audit-view.webp"},
 	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#runners"}, Width: docsWidth, Output: "screenshots/runner-fleet.webp"},
-	// The full roster runs long; the teams-and-access page only needs to show the
-	// shape of a member row, so keep the header + the first 4 (the directory-synced
-	// members sort to the top) and let the tail fall off-crop.
-	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#members", Climb: "section"}, Width: docsWidth, Rows: 4, RowSelector: "#members li", Output: "screenshots/team-page.webp"},
-	{Name: "sso-add-connection", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/sso-add-connection.webp"},
+	// The team page is a desktop 3-column layout: the member roster beside the
+	// Security/SSO rail. Anchor the whole console content (#shell-canvas — the page
+	// minus the nav rail) at a desktop width and keep the top TopCSS pixels: the
+	// heading, the first roster rows, and the Security panel beside them. Anchoring
+	// the roster column alone cropped a narrow, mobile-looking strip AND clipped its
+	// header (chromedp mis-clips a tall element anchored partway down the page);
+	// #shell-canvas is top-anchored, so it captures clean like the loop frames.
+	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 820, Output: "screenshots/team-page.webp"},
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, Output: "screenshots/runs.webp"},
 	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, Output: "screenshots/agents.webp"},
 	// Connect form: click a cloud client to reveal the connector fields, then crop

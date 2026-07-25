@@ -294,6 +294,11 @@ defmodule EmisarWeb.DocsComponents do
   attr :title, :string, required: true, doc: "window-bar label — the console surface shown"
   attr :caption, :string, default: nil, doc: "one visible sentence under the figure"
 
+  attr :preview_h, :string,
+    default: nil,
+    doc:
+      "cap the inline preview height (a Tailwind max-h class) for very tall shots; the lightbox still shows it whole"
+
   def docs_screenshot(assigns) do
     assigns =
       assign(assigns, :lb_id, "lb-" <> (assigns.src |> Path.basename() |> Path.rootname()))
@@ -306,7 +311,18 @@ defmodule EmisarWeb.DocsComponents do
         </div>
         <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
         <label for={@lb_id} class="group relative block cursor-zoom-in">
-          <img src={@src} alt={@alt} loading="lazy" class="w-full" />
+          <img
+            src={@src}
+            alt={@alt}
+            loading="lazy"
+            class={["w-full", @preview_h && "#{@preview_h} object-cover object-top"]}
+          />
+          <%!-- Bottom fade only when the preview is height-cropped, so it reads as
+               "there's more — expand" rather than an abrupt cut. --%>
+          <span
+            :if={@preview_h}
+            class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/90 to-transparent"
+          ></span>
           <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100">
             <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
           </span>

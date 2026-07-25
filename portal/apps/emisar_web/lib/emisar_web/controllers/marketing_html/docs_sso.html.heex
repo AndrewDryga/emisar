@@ -24,7 +24,7 @@
         >directory sync (SCIM)</.link>.
         Both are managed from <strong class="text-zinc-200">Team → Single sign-on</strong>
         in your emisar workspace — the Team page lists your connections, and each connection's own
-        page holds its configuration. The screenshots below are those pages.
+        page holds its configuration.
       </p>
 
       <.docs_callout kind={:note} title="Where this flow stands">
@@ -33,7 +33,7 @@
           ID-token validation — is verified end to end against a live standards IdP. Vendor-specific
           certification against hosted Okta and JumpCloud tenants is in progress; until it lands,
           treat the per-vendor admin-console steps below as our best read of each provider's UI, not
-          a vendor-certified runbook. The emisar side — every step and screenshot on this page — is
+          a vendor-certified runbook. The emisar side — every step on this page — is
           exactly what you'll see.
         </p>
       </.docs_callout>
@@ -46,13 +46,6 @@
         page and walks you through the provider-side app as you pick a provider type.
         <.plan_note tier={:team} />
       </p>
-
-      <.docs_screenshot
-        src="/images/docs/sso/sso-add-connection.webp"
-        title="emisar console · Add connection"
-        caption="The OIDC form: register the fixed redirect URI, then paste the issuer, client ID, and secret."
-        alt="The emisar Add-connection form: a Provider type dropdown and display name, then the OIDC connection section — a step-by-step setup guide with the fixed redirect URI to register (and a Copy button), and fields for the Issuer URL, Client ID, Client secret, and the identifier claim (sub by default)."
-      />
 
       <ol class="mt-8 space-y-6">
         <li class="flex gap-4">

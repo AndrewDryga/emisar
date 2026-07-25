@@ -23,6 +23,7 @@
 
       <.docs_screenshot
         src="/images/screenshots/runbooks.webp"
+        preview_h="max-h-[28rem]"
         title="emisar console · Runbooks"
         caption="Saved, versioned action sequences — every step policy-gated and audited when the runbook runs."
         alt="The Runbooks page: saved, versioned action sequences an operator or LLM can run, each step policy-gated and audited."
@@ -35,13 +36,13 @@
         or a <strong class="text-zinc-200">runner group</strong>
         (a group step fans out to every
         matching runner). Because steps reference catalog actions, a runbook can never do
-        anything your packs don't already declare — it's composition, not new capability.
+        anything your packs don't already declare.
       </p>
 
       <.docs_h2 id="authoring">Authoring</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Runbooks → New</strong> in the dashboard. The editor is a form, not a YAML
-        textarea: pick an action from the catalog, fill its declared arguments, choose the
+        <strong>Runbooks → New</strong> in the dashboard. The editor is a form: pick an action
+        from the catalog, fill its declared arguments, choose the
         target, reorder steps with the arrow controls. Owners and admins author and edit;
         operators and viewers (and connected LLMs) see published runbooks read-only.
       </p>
@@ -51,7 +52,7 @@
           <span>
             <strong class="text-zinc-200">Draft → published.</strong> Drafts are editable and
             invisible to dispatch. Publishing freezes that version; every later save bumps the
-            version number, so "which revision ran during the incident" has an answer.
+            version number, so you can tell which revision ran during an incident.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -141,10 +142,9 @@
         Dispatch it with a reason and each group step fans out in parallel waves. Publish it once and the
         whole sweep is a single click for the on-call, or a single
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
-        for an agent triaging a live alert. Swap a read for a remediation later — a
+        for an agent triaging a live alert. Then an agent can do one-off remediation later — a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.unit_restart</code>
-        for a unit you found dead — and that one step stops for approval while the read-only ones
-        keep flowing.
+        for a unit it found dead that will wait for your approval by default.
       </p>
 
       <.docs_h2 id="llm">Runbooks and your LLM</.docs_h2>
@@ -162,6 +162,8 @@
         whose targets include a signature-enforcing runner — the bridge signs only direct
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
         calls, so run those runbooks from the console.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
         validates an agent's proposed plan and saves it for human review, but never publishes it.
         An agent can still use

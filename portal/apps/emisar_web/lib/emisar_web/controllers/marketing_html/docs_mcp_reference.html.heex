@@ -152,6 +152,8 @@
                 {"runner_refs", "Required", "One to sixteen distinct, explicit targets."},
                 {"args", "Required", "One JSON object validated against the trusted action schema."},
                 {"reason", "Required", "Operator-facing audit reason for this execution."},
+                {"evidence", "Optional", "What you already observed that makes the action necessary — prior findings or run ids."},
+                {"expected", "Optional", "The outcome you expect if it works — recorded for approvers and the audit log."},
                 {"wait", "Optional", "Duration string — \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\"; default and maximum 60s."}
               ] do %>
                 <tr>
