@@ -2607,6 +2607,15 @@ defmodule Emisar.SSOTest do
                )
     end
 
+    test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
+      assert {:error, :unauthorized} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{external_group_id: "grp-x", runner_access_mode: :all},
+                 viewer_in(account)
+               )
+    end
+
     test "is account scoped", %{provider: provider} do
       {_user, _other_account, other_subject} = enterprise_owner()
 
@@ -2658,6 +2667,25 @@ defmodule Emisar.SSOTest do
       assert event.payload["after"]["groups"] == ["app"]
     end
 
+    test "denies a viewer without manage_sso", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-db", runner_access_mode: :all},
+          subject
+        )
+
+      assert SSO.update_group_runner_access_mapping(
+               mapping,
+               %{runner_access_mode: :all},
+               viewer_in(account)
+             ) == {:error, :unauthorized}
+    end
+
     test "another account cannot update it", %{provider: provider, subject: subject} do
       {:ok, mapping} =
         SSO.create_group_runner_access_mapping(
@@ -2693,6 +2721,22 @@ defmodule Emisar.SSOTest do
       assert {:ok, deleted} = SSO.delete_group_runner_access_mapping(mapping, subject)
       assert deleted.deleted_at
       assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, subject)
+    end
+
+    test "denies a viewer without manage_sso", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-db", runner_access_mode: :all},
+          subject
+        )
+
+      assert SSO.delete_group_runner_access_mapping(mapping, viewer_in(account)) ==
+               {:error, :unauthorized}
     end
 
     test "another account cannot delete it", %{provider: provider, subject: subject} do
