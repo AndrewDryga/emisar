@@ -239,6 +239,22 @@ func loadCA(dir string) (*x509.Certificate, *rsa.PrivateKey, error) {
 	return cert, key, nil
 }
 
+// caBundle locates the trust store Erlang reads. Its contents are the platform's
+// system roots plus the workspace CA, so the host and a box produce different
+// correct files — sharing one path through the repo mount makes each overwrite
+// the other's roots, and leaves a read-only box unable to run anything. Box
+// artifacts belong in the box cache, the same reason MIX_BUILD_ROOT lives there.
+func (a *App) caBundle() string {
+	if !a.inBox() {
+		return filepath.Join(a.Certs, "ca-bundle.crt")
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return filepath.Join(a.Certs, "ca-bundle.crt")
+	}
+	return filepath.Join(cache, "emisar", "ca-bundle.crt")
+}
+
 func (a *App) makeCABundle(ctx context.Context) error {
 	ca, err := os.ReadFile(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {
@@ -255,7 +271,11 @@ func (a *App) makeCABundle(ctx context.Context) error {
 	}
 	system = append(system, '\n')
 	system = append(system, ca...)
-	return atomicWrite(filepath.Join(a.Certs, "ca-bundle.crt"), system, 0o644)
+	bundle := a.caBundle()
+	if err := os.MkdirAll(filepath.Dir(bundle), 0o700); err != nil {
+		return err
+	}
+	return atomicWrite(bundle, system, 0o644)
 }
 
 func (a *App) refreshServicesForCertificate(ctx context.Context) error {

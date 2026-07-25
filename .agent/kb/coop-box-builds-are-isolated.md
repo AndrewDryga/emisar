@@ -43,8 +43,13 @@ confusing, hard-to-attribute failures:
 5. **OIDC keeps one issuer:** Keycloak sees the same forwarded
    `https://localhost:<workspace-port>` Host header from the host browser and the box.
    `./run` patches one exact callback URL for that workspace and installs the ignored
-   dev CA beside the system roots for Erlang. Dynamic hostname acceptance and the
-   well-known admin credentials belong only to this loopback-published dev sidecar.
+   dev CA beside the system roots for Erlang. That trust bundle is platform-specific —
+   macOS keychain roots on the host, `/etc/ssl/certs/ca-certificates.crt` in the box —
+   so the box writes its own copy under `os.UserCacheDir()` instead of the shared
+   `dev/keycloak/certs/generated/`. One shared path had each side overwriting the
+   other's system roots, invisibly, because the appended workspace CA kept Keycloak
+   working either way. Dynamic hostname acceptance and the well-known admin
+   credentials belong only to this loopback-published dev sidecar.
 
 6. **Identity is explicit:** Coop injects `COOP_BOX=1` into every box. Devtool
    branches on that marker instead of `/.dockerenv` or a conditional port mapping.
@@ -53,12 +58,19 @@ confusing, hard-to-attribute failures:
 
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
 and the localhost sidecar forwarders. `.agent/Dockerfile` extends it only for Emisar's
-extra OS dependencies and platform-specific cache locations. Copying the base image
-setup into this repo would duplicate Coop-owned behavior and cache layers.
+gate/UI dependencies (`shellcheck`, Chromium, ImageMagick) and platform-specific
+cache locations. Copying the base image setup into this repo would duplicate
+Coop-owned behavior and cache layers.
 
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-07-24 — moved the box's Erlang trust bundle into the box cache and made the
+  Go gate verify module tidiness without writing, so a read-only review box can run
+  the gates it is asked to confirm.
+- 2026-07-24 — made the complete tooling gate runnable in a box by including
+  its ShellCheck prerequisite and making browser/certificate tests honor their
+  explicit host-versus-box fixtures.
 - 2026-07-24 — declared direct PostgreSQL defaults in project box policy, kept
   them through devtool orchestration, and replaced serve-URL-based box detection
   with Coop's stable identity marker.

@@ -8,12 +8,14 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func testApp(t *testing.T) *App {
 	t.Helper()
+	t.Setenv("COOP_BOX", "")
 	t.Setenv("COOP_SERVE_URL_4000", "")
 	root := t.TempDir()
 	app := New(root, bytes.NewBuffer(nil), &bytes.Buffer{}, &bytes.Buffer{})
@@ -120,5 +122,25 @@ func TestTLSSPKIIsOneBase64SHA256(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(spki)
 	if err != nil || len(decoded) != 32 {
 		t.Fatalf("SPKI = %q, decoded=%d, err=%v", spki, len(decoded), err)
+	}
+}
+
+func TestCABundleKeepsBoxCopyOutOfTheRepo(t *testing.T) {
+	app := testApp(t)
+	host := app.caBundle()
+	if host != filepath.Join(app.Certs, "ca-bundle.crt") {
+		t.Fatalf("host bundle = %q, want it beside the workspace CA", host)
+	}
+
+	// The box writes different system roots into the same mounted path, so the
+	// two must never resolve to one file.
+	t.Setenv("COOP_BOX", "1")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	box := app.caBundle()
+	if box == host {
+		t.Fatalf("box bundle = %q, want a path outside the repo mount", box)
+	}
+	if strings.HasPrefix(box, app.Root) {
+		t.Fatalf("box bundle = %q, want it outside the repo root %q", box, app.Root)
 	}
 }

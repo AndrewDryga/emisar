@@ -93,7 +93,7 @@ func (a *App) workspaceEnv(workspace Workspace) map[string]string {
 		"DATABASE_URL":               fmt.Sprintf("ecto://postgres:postgres@%s/emisar_dev", net.JoinHostPort(databaseHost, databasePort)),
 		"EMISAR_DEV_URL":             workspace.PortalURL,
 		"EMISAR_DEV_KEYCLOAK_ISSUER": workspace.KeycloakURL + "/realms/emisar",
-		"EMISAR_DEV_CA_BUNDLE":       a.Certs + "/ca-bundle.crt",
+		"EMISAR_DEV_CA_BUNDLE":       a.caBundle(),
 		"PGHOST":                     databaseHost,
 		"PGPORT":                     databasePort,
 	}
