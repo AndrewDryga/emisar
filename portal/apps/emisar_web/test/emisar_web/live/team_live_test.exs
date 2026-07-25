@@ -119,9 +119,6 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Dispatches actions and approves them"
       assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
       assert html =~ "New members start with no runner access"
-
-      # The invite draft survives a reload (the PreserveInput hook).
-      assert has_element?(lv, "form#invite_form[phx-hook='PreserveInput']")
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
@@ -680,8 +677,6 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       render_click(lv, "start_edit", %{"membership_id" => membership.id})
-
-      assert has_element?(lv, "form#edit-form-#{membership.id}[phx-hook='PreserveInput']")
 
       render_change(lv, "validate_edit", %{"user" => %{"full_name" => "Half-typed Na"}})
 

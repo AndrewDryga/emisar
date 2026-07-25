@@ -14,7 +14,6 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {FlashAutoClose} from "./flash.js"
-import {PreserveInput} from "./preserve_input.js"
 
 // `<time>` element formatter. The server renders a UTC fallback into
 // `textContent` (so non-JS users see something) and stamps the ISO
@@ -470,7 +469,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog, PreserveInput }
+  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog }
 })
 
 // Show progress bar on live navigation and form submits

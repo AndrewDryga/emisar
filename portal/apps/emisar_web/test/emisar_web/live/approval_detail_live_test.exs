@@ -388,17 +388,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
-  test "the decision form preserves input across a reload", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
-
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-
-    # A half-written justification is real work; the hook mirrors it into
-    # sessionStorage so a refresh doesn't discard it.
-    assert has_element?(lv, "form#approval-decision-form[phx-hook='PreserveInput']")
-  end
-
   test "the free-text decision controls each have an accessible name", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

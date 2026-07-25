@@ -108,9 +108,6 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
-    # The typed description/expiry draft survives a reload (PreserveInput).
-    assert has_element?(lv, "form#enrollment_key_form[phx-hook='PreserveInput']")
-
     too_long = String.duplicate("x", 201)
 
     html =

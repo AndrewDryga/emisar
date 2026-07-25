@@ -398,7 +398,6 @@ defmodule EmisarWeb.RunNewLive do
           <.simple_form
             for={@form}
             id="dispatch_form"
-            phx-hook="PreserveInput"
             phx-submit="dispatch"
             phx-change="validate"
           >

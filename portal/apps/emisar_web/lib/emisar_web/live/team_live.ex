@@ -1077,7 +1077,6 @@ defmodule EmisarWeb.TeamLive do
           <.simple_form
             for={@form}
             id="invite_form"
-            phx-hook="PreserveInput"
             phx-change="validate"
             phx-submit="invite"
             class="mt-6 space-y-5"
@@ -1514,7 +1513,6 @@ defmodule EmisarWeb.TeamLive do
                     <.simple_form
                       for={@edit_form}
                       id={"edit-form-#{membership.id}"}
-                      phx-hook="PreserveInput"
                       phx-change="validate_edit"
                       phx-submit="save_edit"
                       class="space-y-3"

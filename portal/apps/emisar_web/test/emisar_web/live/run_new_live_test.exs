@@ -123,9 +123,6 @@ defmodule EmisarWeb.RunNewLiveTest do
     # One input for the declared `path` arg, plus the reason textarea.
     assert has_element?(lv, "input[name=\"args[path]\"]")
     assert has_element?(lv, "textarea[name=\"reason\"]")
-
-    # Typed args + reason survive a reload (the PreserveInput draft).
-    assert has_element?(lv, "form#dispatch_form[phx-hook='PreserveInput']")
   end
 
   # Side effects render inside the About panel — amber only when the action

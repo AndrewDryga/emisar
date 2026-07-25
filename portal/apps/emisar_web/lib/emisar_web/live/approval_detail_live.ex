@@ -956,7 +956,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
                this call"), no grant. --%>
           <form
             id="approval-decision-form"
-            phx-hook="PreserveInput"
             phx-submit="decide"
             phx-change="grant_form_changed"
             class="mt-4 space-y-4"

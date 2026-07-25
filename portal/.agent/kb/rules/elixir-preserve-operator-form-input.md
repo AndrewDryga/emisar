@@ -1,31 +1,40 @@
-# Operator form input survives re-renders, rejected submits, and reloads
+# Operator form input survives re-renders and rejected submits
 
-**Rule.** Every field an operator can type into a LiveView form is **server-tracked**:
-the form's `phx-change` handler assigns the posted params back (`to_form(params)`, or a
-tracked assign per bare-named field), and every error branch of a submit handler
-re-renders the operator's values, never the stale stored ones. On top of that, console
-authoring forms whose content would hurt to lose opt into the **`PreserveInput`**
-sessionStorage hook (`phx-hook="PreserveInput"` + a stable form `id`) so a reload or
-accidental navigation restores the draft. Identity fields carry real `autocomplete`
+**Rule.** Every field an operator can type into a LiveView form is **server-tracked**: the
+form's `phx-change` handler assigns the posted params back (`to_form(params)`, or a tracked
+assign per bare-named field), and every error branch of a submit handler re-renders the
+operator's values, never the stale stored ones. Identity fields carry real `autocomplete`
 tokens (`email`, `name`, `organization`, `one-time-code`) so the browser can do its own
 half of not-retyping.
 
 ## Why
 
 LiveView's DOM patch resets **every non-focused input** to the server's rendered value —
-only the focused input is merged. So any re-render the operator didn't cause (a
-co-approver's broadcast, a 5-second poll tick, a refused decision, a conditional reveal)
-silently wipes whatever the server wasn't told about. A page refresh loses everything by
-construction: the values live in server assigns that die with the socket. An operator
-halfway through a deny justification or a runbook dispatch reason loses real work, on a
-page where re-renders are the *norm*. This shipped four separate wipe bugs in one sweep:
+only the focused input is merged (`onBeforeElUpdated`'s `isFocusedFormEl` branch). So any
+re-render the operator didn't cause by typing in that exact field (a co-approver's
+broadcast, an expiry countdown, a sibling `phx-change`, a refused decision) silently wipes
+whatever the server wasn't told about. This shipped four separate wipe bugs in one sweep:
 the approval decision panel's untracked note/match/cap, the activate page's hand-typed
 code, the team roster's name editor, and the landing CTA's email dropped on `/sign_up`.
+
+Server-tracking is also what makes LiveView's **built-in form recovery** work. On a
+reconnect (not a reload — `getFormsForRecovery` returns `{}` when `joinCount === 0`)
+LiveView replays each `phx-change` form's values to the server, so a field the change
+handler ignores is replayed and then dropped on the floor. Adding `phx-change` to a form
+that lacked one (the team name editor) fixes the reconnect case for free.
 
 ## ✅ Good — tracked fields; the failure path re-renders what was posted
 
 ```elixir
-# approval_detail_live.ex — bare-named fields, each backed by an assign
+# approval_detail_live.ex — bare-named fields, each backed by an assign (the submit
+# buttons post `decision=approve|deny` beside them, so a namespaced form would collide)
+defp assign_decision_fields(socket, params) do
+  socket
+  |> assign(:decision_reason, params["reason"] || "")
+  |> assign(:grant_scope, params["scope"] || "exact_args")
+  |> assign(:grant_max_uses, params["max_uses"] || "")
+end
+
 def handle_event("grant_form_changed", params, socket) do
   {:noreply,
    socket
@@ -43,9 +52,7 @@ end
 ```
 
 ```heex
-<form id="approval-decision-form" phx-hook="PreserveInput" phx-submit="decide" phx-change="grant_form_changed">
-  <.input type="textarea" name="reason" value={@decision_reason} ... />
-</form>
+<.input type="textarea" name="reason" value={@decision_reason} aria-label="Decision note" />
 ```
 
 ## ❌ Bad — uncontrolled fields, or an error branch that re-renders stale state
@@ -65,47 +72,32 @@ def handle_event("save_edit", %{"user" => params}, socket) do
 end
 ```
 
-## PreserveInput boundaries
+## What this does NOT cover — a full page reload
 
-- **The `skip/1` list is the security boundary** (`assets/js/preserve_input.js`): never
-  persisted — `password`/`hidden`/`file` inputs, `one-time-code` and `cc-*` autocomplete
-  fields, disabled/readonly fields, anything inside `phx-update="ignore"`, and explicit
-  `data-preserve="off"`. Extend the skip list; **never invert it into an allowlist** — a
-  new sensitive field must be excluded by default. The `autocomplete` token on a code
-  field is load-bearing here: it's what tells the hook to skip it.
-- `sessionStorage`, deliberately not `localStorage`: drafts are run arguments, deny
-  justifications, and directory config — they die with the tab.
-- Only for forms whose **field structure is fixed**. A structure-editing surface (the
-  runbook editor's step list, a policy's override rows) can't be faithfully rebuilt from
-  a name-keyed snapshot — it needs a server-side draft, not this hook.
-- The hook needs a stable form `id` (LiveView requires one for any `phx-hook` anyway);
-  the storage key is `form:<pathname>:<id>`, so the path scopes a draft to its account and
-  entity.
+A reload re-mounts from the database, so unsaved input is gone. That is accepted: we tried
+a `sessionStorage` hook (`PreserveInput`) and **removed it**, because for these forms it
+cost more than it returned. What it bought was a refresh on nine mostly-short forms; what
+it cost was 113 lines of stateful client code whose lifecycle interacted with framework
+internals in ways that produced two non-obvious bugs — a patch wiping restored values
+before the server knew about them, and `destroyed()` recomputing its storage key after
+`push_navigate` had already moved the URL, which left a completed run's args and reason to
+prefill the *next* dispatch (a stale justification headed for the audit trail). Both were
+findable only by driving the hook in a real browser, which needs test infrastructure this
+repo deliberately doesn't have.
 
-## Which forms opt in
-
-**Yes** — console forms whose fields are fixed and whose content is the operator's own
-work: dispatch (args + reason), runbook dispatch, the approval decision panel, API keys,
-enrollment keys, invites, the member name editor, SSO provider config.
-
-**No**, for three distinct reasons:
-- **Auth and identity forms** (sign in, sign up, invite acceptance, workspace creation,
-  the profile name/email edits) — the browser's own autofill covers
-  name/email/organization, so they get the `autocomplete` token instead of our stored
-  copy of the operator's PII.
-- **Sensitive entry** (MFA challenge, email step-up) — `code_input` is already
-  client-owned under `phx-update="ignore"`, and a one-time code must not outlive its
-  request.
-- **Structure-editing surfaces** — see above; a name-keyed snapshot mis-assigns.
-
-URL-driven filter bars (`LiveTable`) need neither: their state is in the query string, so
-a reload already restores them.
+**Don't reintroduce a client-side draft store for an ordinary form.** If a surface genuinely
+can't afford to lose a reload, that's a server-side draft — and it is only worth its cost
+where the authoring session is long: the runbook editor and the policies editor, whose
+operator-editable *structure* (steps added, reordered; override rows) a name-keyed client
+snapshot could never have rebuilt anyway. Weigh it honestly there too: `phx-change` fires
+per keystroke so it needs throttling, and it moves deny justifications and directory config
+into Postgres — backups, replication, DR snapshots, plus a retention sweep — a larger
+data-at-rest footprint than anything client-side, on a security product.
 
 ## How it's enforced
 
-Judgment + review + tests, not a Credo check (an AST check can't tell an uncontrolled
-input from a deliberately client-owned one). Each opted-in form's LiveView test asserts
-`phx-hook="PreserveInput"` presence; the wipe fixes carry re-render regression tests
+Judgment + review + tests, not a Credo check (an AST check can't tell an uncontrolled input
+from a deliberately client-owned one). The wipe fixes carry re-render regression tests
 (`approval_detail_live_test.exs`, `team_live_test.exs`, `activate_live_test.exs`,
 `user_sign_up_live_test.exs`). On review, sweep for: `value={nil}` or a bare-named input
 with no backing assign inside a form that has `phx-change`, and `handle_event` error

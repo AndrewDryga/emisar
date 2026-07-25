@@ -1901,7 +1901,6 @@ defmodule EmisarWeb.AgentsLive do
       <.simple_form
         for={@form}
         id="api_key_form"
-        phx-hook="PreserveInput"
         phx-change="validate"
         phx-submit="create"
       >
