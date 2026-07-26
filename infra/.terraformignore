@@ -24,10 +24,10 @@ crash.*.log
 !*.tfvars.example
 !*.tfvars.json.example
 
-# Developer documentation, checks, and operational helpers are not run by HCP.
+# Developer documentation, checks, and root operational helpers are not run by HCP.
 .tflint.hcl
 AGENTS.md
 README.md
 drills/
-scripts/
+/scripts/
 tests/

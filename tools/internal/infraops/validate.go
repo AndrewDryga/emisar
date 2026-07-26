@@ -198,6 +198,20 @@ func (a *App) validateTemplates(ctx context.Context) error {
 			return err
 		}
 	}
+	terraformIgnore, err := os.ReadFile(filepath.Join(a.Infra, ".terraformignore"))
+	if err != nil {
+		return err
+	}
+	if regexp.MustCompile(`(?m)^scripts/$`).Match(terraformIgnore) {
+		return fmt.Errorf("infra/.terraformignore must not exclude nested runtime or pack scripts")
+	}
+	if !regexp.MustCompile(`(?m)^/scripts/$`).Match(terraformIgnore) {
+		return fmt.Errorf("infra/.terraformignore must anchor the root scripts exclusion")
+	}
+	adminCallback := filepath.Join(a.Infra, "packs", "emisar-admin", "scripts", "callback.sh")
+	if _, err := os.Stat(adminCallback); err != nil {
+		return fmt.Errorf("private admin callback missing from the HCP upload input: %w", err)
+	}
 	proxyVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
 		"--cap-drop=ALL", "--security-opt=no-new-privileges", proxyImage, "--version")
 	if err != nil {
@@ -269,11 +283,18 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges "+proxyImage+" --private-ip --auto-iam-authn",
 		"Wants=emisar-cloud-sql-proxy.service",
 		"runner=/run/emisar-admin-runner/bin/emisar",
-		"BIN_DIR=/run/emisar-admin-runner/bin",
-		"http://127.0.0.1:4000/install.sh",
-		`/bin/bash "$installer"`,
 		"required_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'",
-		`--version "0.14.0"`, "--no-service", "emisar version 0.14.0",
+		"x86_64|amd64) runner_arch=amd64",
+		"aarch64|arm64) runner_arch=arm64",
+		`release_tag="runner-v0.14.0"`,
+		`release_name="emisar-0.14.0-linux-${runner_arch}"`,
+		`"${release_base}/${tarball}"`,
+		`"${release_base}/SHA256SUMS"`,
+		`actual_hash=$(sha256sum "${bundle_dir}/${tarball}"`,
+		`[ "$actual_hash" = "$expected_hash" ]`,
+		`install -m 0755 "${bundle_dir}/${release_name}/emisar" "${runner}.new"`,
+		`"$runner" pack install "$bundle_pack"`,
+		"emisar version 0.14.0",
 		"docker exec emisar /app/bin/emisar pid",
 		"test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh",
 		`"$runner" pack install "$pack"`,

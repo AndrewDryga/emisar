@@ -112,17 +112,20 @@ health-check source ranges. Public traffic terminates TLS at the load balancer.
 ## Private emisar administration
 
 Every portal VM runs a dedicated `emisar-admin` runner directly under systemd.
-Cloud-init fetches the installer embedded in the colocated portal release, then
-uses it to fetch the pinned immutable runner release, verify its published checksum, and install it under
-`/run/emisar-admin-runner/bin`; COS mounts writable persistent paths `noexec`, so
-config, identity, packs, and logs remain under `/var/lib/emisar-admin-runner`
-while the boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the unlisted
-`infra/packs/emisar-admin` pack directly from the Terraform module. The installer adds the fixed
-host operations set: `linux-core`, `debugging`, `systemd-deep`, `cloud-init`,
-`docker`, `firewall`, `nic`, `time-sync`, and `elixir-beam`. This is intentionally
-curated instead of host-detected: COS includes unused clients and shared ports
-that falsely suggest Kubernetes, Prometheus, Postgres, and Git packs. The runner
-advertises group `emisar-admin` with `purpose=emisar-admin`; local admission
+Cloud-init fetches the pinned immutable runner bundle and its published
+`SHA256SUMS` directly, verifies the selected artifact, and installs it under
+`/run/emisar-admin-runner/bin`. This avoids a boot-time GitHub API dependency;
+the release assets themselves do not consume the anonymous API quota. COS
+mounts writable persistent paths `noexec`, so config, durable dispatch state,
+packs, and logs remain under `/var/lib/emisar-admin-runner` while the
+boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the
+unlisted `infra/packs/emisar-admin` pack directly from the Terraform module. The
+bootstrap installs a fixed host operations set from the bundle when present and
+the public pack registry otherwise: `linux-core`, `debugging`, `systemd-deep`,
+`cloud-init`, `docker`, `firewall`, `nic`, `time-sync`, and `elixir-beam`. This
+is intentionally curated instead of host-detected: COS includes unused clients
+and shared ports that falsely suggest Kubernetes, Prometheus, Postgres, and Git
+packs. The runner advertises group `emisar-admin` with `purpose=emisar-admin`; local admission
 allows only the private actions and those nine packs' namespaces.
 
 Set the reusable runner enrollment credential as the sensitive HCP
