@@ -61,9 +61,16 @@ defmodule Emisar.OAuth.Client.Changeset do
   # https origin (or localhost for native/dev loopback redirects).
   defp valid_redirect_uri?(uri) when is_binary(uri) do
     case URI.parse(uri) do
-      %URI{scheme: "https"} -> true
-      %URI{scheme: "http", host: host} when host in ["localhost", "127.0.0.1", "::1"] -> true
-      _ -> false
+      %URI{scheme: "https", host: host, fragment: nil}
+      when is_binary(host) and host != "" ->
+        true
+
+      %URI{scheme: "http", host: host, fragment: nil}
+      when host in ["localhost", "127.0.0.1", "::1"] ->
+        true
+
+      _ ->
+        false
     end
   end
 
