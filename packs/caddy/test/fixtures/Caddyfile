@@ -6,7 +6,14 @@
 
 :80 {
     log {
-        output file /var/log/caddy/access.log
+        # Caddy defaults this file to 0600 owned by the root it runs as, but
+        # the harness runs actions under a non-root identity: access_log_tail
+        # needs read, and validate_config needs write (caddy provisions log
+        # writers while validating, opening this file for append). Disposable
+        # SUT container, so open it to both rather than splitting the fixture.
+        output file /var/log/caddy/access.log {
+            mode 666
+        }
     }
     respond "pack-test ok" 200
 }

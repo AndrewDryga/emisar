@@ -14,7 +14,11 @@ services:
 
   caddy:
     image: caddy:${PACKTEST_VERSION:-2.11.4}${PACKTEST_DIGEST-}
-    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    # A named volume is created root-owned 0755, but the harness runs actions
+    # under a non-root identity: tailing the log needs read, and validate_config
+    # needs open (caddy provisions log writers while validating). Open the log
+    # directory the way a deployment shares it with a log-reading service user.
+    command: sh -c 'mkdir -p /var/log/caddy && chmod 0777 /var/log/caddy && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
     volumes:
       - caddy_logs:/var/log/caddy
       - ${EMISAR_ROOT}/packs/caddy/test/fixtures/Caddyfile:/etc/caddy/Caddyfile:ro

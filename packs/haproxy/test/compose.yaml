@@ -3,6 +3,8 @@ services:
     build:
       context: ${EMISAR_ROOT}/packs/haproxy/test
       dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
     image: emisar-packtest-haproxy-tools:latest
     volumes:
       - haproxy_run:/run/haproxy
