@@ -27,6 +27,13 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
+    # The OSPF peer lives in its own network namespace, and creating one means
+    # bind-mounting it under /var/run/netns. Docker's default AppArmor profile
+    # denies that mount regardless of SYS_ADMIN, so this fixture works on a
+    # Docker Desktop VM (no AppArmor) and fails on an Ubuntu host. Scoped to
+    # this disposable SUT; the runner image it exercises is unaffected.
+    security_opt:
+      - apparmor:unconfined
     healthcheck:
       test: ["CMD-SHELL", "MIBS='' snmpbulkwalk -v2c -c packtest-canary-snmp-community-b410 -On 127.0.0.1 1.3.6.1.2.1.14.10 2>/dev/null | grep -q 192.168.99.2"]
       interval: 2s

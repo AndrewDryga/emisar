@@ -15,7 +15,11 @@ ip addr add 10.0.1.1/24 dev dum1 2>/dev/null || true
 ip link set dum0 up
 ip link set dum1 up
 
-ip netns add ns1 2>/dev/null || true
+# Not silenced like the idempotent link setup above: creating the namespace
+# bind-mounts it under /var/run/netns, which a host AppArmor profile can deny
+# even with SYS_ADMIN. Swallowing that turned a clear message into a confusing
+# "Invalid netns value" from the next command.
+ip netns add ns1
 ip link add veth-main type veth peer name veth-peer 2>/dev/null || true
 ip link set veth-peer netns ns1
 ip addr add 192.168.99.1/30 dev veth-main 2>/dev/null || true
