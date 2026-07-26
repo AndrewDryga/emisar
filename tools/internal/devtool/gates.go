@@ -41,6 +41,8 @@ const (
   tools [go-test-args...]    run all tooling tests, or pass focused go test arguments
   packs [name-pattern]       run pack behavior plans against real services
   packs <name> --case <id>   run one isolated behavior case
+  packs <name> --shard <i>/<n>
+                             run one declared shard of a slow pack's cases
   packs --names a,b          run an exact set of pack behavior plans
   install <runner|mcp>       exercise a public installer in an isolated harness
 `
@@ -123,19 +125,22 @@ func (a *App) test(ctx context.Context, args []string) error {
 					return usage("usage: ./run test packs --names pack-a,pack-b")
 				}
 			}
-			return a.packTest(ctx, "", names, "")
+			return a.packTest(ctx, "", names, "", "")
 		}
 		if len(rest) == 3 && rest[1] == "--case" && rest[0] != "" && rest[2] != "" {
-			return a.packTest(ctx, rest[0], nil, rest[2])
+			return a.packTest(ctx, rest[0], nil, rest[2], "")
+		}
+		if len(rest) == 3 && rest[1] == "--shard" && rest[0] != "" && rest[2] != "" {
+			return a.packTest(ctx, rest[0], nil, "", rest[2])
 		}
 		if len(rest) > 1 {
-			return usage("usage: ./run test packs [name-pattern] | ./run test packs <name> --case <id> | ./run test packs --names pack-a,pack-b")
+			return usage("usage: ./run test packs [name-pattern] | ./run test packs <name> --case <id> | ./run test packs <name> --shard <i>/<n> | ./run test packs --names pack-a,pack-b")
 		}
 		pattern := ""
 		if len(rest) == 1 {
 			pattern = rest[0]
 		}
-		return a.packTest(ctx, pattern, nil, "")
+		return a.packTest(ctx, pattern, nil, "", "")
 	case "install":
 		if len(rest) != 1 || rest[0] != "runner" && rest[0] != "mcp" {
 			return usage("usage: ./run test install <runner|mcp>")

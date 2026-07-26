@@ -10,6 +10,11 @@ versions:
     default: true
   - version: "4.1.8"
     digest: "@sha256:8b774810a1a6cf1c5974c4a719b84b3f9096d5d12e923c56e3f8031a942e8bf9"
+# A JVM node takes about a minute to gossip and answer cqlsh, and every case
+# pays that boot for its own SUT. Split the cases across matrix rows instead of
+# sharing a node between them.
+shards: 4
+
 secret_env: [CQLSH_PASSWORD]
 env:
   CQLSH_HOST: 127.0.0.1
