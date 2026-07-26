@@ -18,8 +18,11 @@ on:
     tags:
       - "v*.*.*"
   schedule:
-    # Offset from :00/:30 — GitHub delays top-of-hour scheduled workflows.
-    - cron: "13,43 * * * *"
+    # Every 6 hours (offset from :00 — GitHub delays top-of-hour scheduled
+    # workflows). A deploy is a manual HCP Confirm & Apply, so this is the
+    # slow safety net; trigger the reconcile immediately after an apply with
+    # the workflow_dispatch below rather than waiting for the next tick.
+    - cron: "13 */6 * * *"
   workflow_dispatch:
     inputs:
       release_tag:
