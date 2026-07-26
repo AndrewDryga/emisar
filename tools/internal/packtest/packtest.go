@@ -90,6 +90,7 @@ type Plan struct {
 	SecretEnv          []string           `yaml:"secret_env,omitempty"`
 	Env                map[string]string  `yaml:"env,omitempty"`
 	Defaults           Defaults           `yaml:"defaults,omitempty"`
+	Shards             int                `yaml:"shards,omitempty"`
 	Cases              []Case             `yaml:"cases"`
 }
 
@@ -106,6 +107,7 @@ type PlanRef struct {
 	Services    []string
 	Versions    []Version
 	Runner      Runner
+	Shards      int
 	Cases       []CaseRef
 }
 
@@ -113,6 +115,8 @@ type MatrixRow struct {
 	Pack    string `json:"pack"`
 	Version string `json:"version"`
 	Digest  string `json:"digest"`
+	Shard   int    `json:"shard"`
+	Shards  int    `json:"shards"`
 }
 
 type Config struct {
@@ -213,7 +217,7 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		}
 		plans = append(plans, PlanRef{
 			Name: name, PackVersion: packVersion, Path: path, Services: plan.Services,
-			Versions: plan.Versions, Runner: plan.Runner, Cases: cases,
+			Versions: plan.Versions, Runner: plan.Runner, Shards: plan.Shards, Cases: cases,
 		})
 	}
 	if len(plans) == 0 {
@@ -338,13 +342,33 @@ func Matrix(plans []PlanRef) []MatrixRow {
 	// push touched no packs.
 	rows := []MatrixRow{}
 	for _, plan := range plans {
+		shards := max(plan.Shards, 1)
 		for _, version := range plan.Versions {
-			rows = append(rows, MatrixRow{
-				Pack: plan.Name, Version: version.Version, Digest: version.Digest,
-			})
+			for shard := 1; shard <= shards; shard++ {
+				rows = append(rows, MatrixRow{
+					Pack: plan.Name, Version: version.Version, Digest: version.Digest,
+					Shard: shard, Shards: shards,
+				})
+			}
 		}
 	}
 	return rows
+}
+
+// SelectShard keeps the cases belonging to one shard. Every case in a plan
+// boots the same SUT, so cost tracks count and dealing round-robin balances
+// the shards without any estimate of how long a case takes.
+func SelectShard(cases []CaseRef, shard, shards int) []CaseRef {
+	if shards <= 1 {
+		return cases
+	}
+	selected := make([]CaseRef, 0, len(cases)/shards+1)
+	for i, test := range cases {
+		if i%shards == shard-1 {
+			selected = append(selected, test)
+		}
+	}
+	return selected
 }
 
 func Validate(plans []PlanRef) error {
@@ -510,6 +534,9 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	}
 	if len(plan.Cases) == 0 {
 		return fmt.Errorf("cases must contain at least one behavioral case")
+	}
+	if plan.Shards < 0 || plan.Shards > len(plan.Cases) {
+		return fmt.Errorf("shards must be between 1 and the %d declared cases", len(plan.Cases))
 	}
 	seen := make(map[string]bool, len(plan.Cases))
 	successfulActions := make(map[string]bool, len(plan.Cases))

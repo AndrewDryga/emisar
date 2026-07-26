@@ -3,9 +3,11 @@ package packtest
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -473,6 +475,64 @@ func TestMatrixPreservesPlanAndVersionOrder(t *testing.T) {
 	}
 	if got := plans[0].DefaultVersion(); got.Version != "2" {
 		t.Fatalf("DefaultVersion() = %+v", got)
+	}
+	for _, row := range rows {
+		if row.Shard != 1 || row.Shards != 1 {
+			t.Fatalf("an unsharded plan must still name shard 1 of 1: %+v", row)
+		}
+	}
+}
+
+func TestMatrixExpandsDeclaredShardsPerVersion(t *testing.T) {
+	plans := []PlanRef{{Name: "alpha", Shards: 3, Versions: []Version{
+		{Version: "2", Digest: testDigest("a"), Default: true},
+		{Version: "1", Digest: testDigest("b")},
+	}}}
+	rows := Matrix(plans)
+	if len(rows) != 6 {
+		t.Fatalf("Matrix() = %+v", rows)
+	}
+	for i, row := range rows {
+		wantVersion, wantShard := "2", i+1
+		if i >= 3 {
+			wantVersion, wantShard = "1", i-2
+		}
+		if row.Version != wantVersion || row.Shard != wantShard || row.Shards != 3 {
+			t.Fatalf("rows[%d] = %+v", i, row)
+		}
+	}
+}
+
+func TestSelectShardCoversEveryCaseExactlyOnce(t *testing.T) {
+	cases := make([]CaseRef, 10)
+	for i := range cases {
+		cases[i] = CaseRef{ID: fmt.Sprintf("case.%d", i)}
+	}
+	const shards = 3
+	seen := make(map[string]int, len(cases))
+	sizes := make([]int, 0, shards)
+	for shard := 1; shard <= shards; shard++ {
+		selected := SelectShard(cases, shard, shards)
+		sizes = append(sizes, len(selected))
+		for _, test := range selected {
+			seen[test.ID]++
+		}
+	}
+	if len(seen) != len(cases) {
+		t.Fatalf("shards covered %d of %d cases", len(seen), len(cases))
+	}
+	for id, count := range seen {
+		if count != 1 {
+			t.Fatalf("case %s ran %d times across the shards", id, count)
+		}
+	}
+	// Ten cases over three shards: nothing may be off by more than one, or a
+	// shard becomes the row everyone waits for.
+	if slices.Max(sizes)-slices.Min(sizes) > 1 {
+		t.Fatalf("shard sizes are unbalanced: %v", sizes)
+	}
+	if got := SelectShard(cases, 1, 1); len(got) != len(cases) {
+		t.Fatalf("a single shard must keep every case, got %d", len(got))
 	}
 }
 

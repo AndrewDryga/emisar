@@ -72,7 +72,7 @@ jobs:
           cache-to: type=gha,mode=min,scope=packtest-tools
 
   behavior:
-    name: ${{ matrix.pack }} ${{ matrix.version }}
+    name: ${{ matrix.pack }} ${{ matrix.version }}${{ matrix.shards > 1 && format(' shard {0}/{1}', matrix.shard, matrix.shards) || '' }}
     needs: plans
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -86,6 +86,7 @@ jobs:
       PACK: ${{ matrix.pack }}
       PACKTEST_VERSION: ${{ matrix.version }}
       PACKTEST_DIGEST: ${{ matrix.digest }}
+      SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,13 +129,13 @@ jobs:
           cache-from: type=gha,scope=packtest-tools
 
       - name: Exercise pack behavior
-        run: ./run test packs "$PACK"
+        run: ./run test packs "$PACK" --shard "$SHARD"
 
       - name: Upload failed pack report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}
+          name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}-${{ matrix.shard }}
           path: dev/test-packs/reports
           if-no-files-found: warn
           retention-days: 7

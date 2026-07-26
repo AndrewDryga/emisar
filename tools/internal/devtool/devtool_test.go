@@ -386,6 +386,45 @@ func TestPackTestNeedsSharedToolsWhenAnyPlanReachesIt(t *testing.T) {
 	}
 }
 
+func TestSelectPackTestShard(t *testing.T) {
+	plans := []packtest.PlanRef{{
+		Name:   "cassandra",
+		Shards: 2,
+		Cases: []packtest.CaseRef{
+			{ID: "cassandra.status"}, {ID: "cassandra.info"},
+			{ID: "cassandra.ring"}, {ID: "cassandra.version"},
+		},
+	}}
+	selected, err := selectPackTestShard(plans, "2/2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 1 || len(selected[0].Cases) != 2 ||
+		selected[0].Cases[0].ID != "cassandra.info" || selected[0].Cases[1].ID != "cassandra.version" {
+		t.Fatalf("selected = %+v", selected[0].Cases)
+	}
+	if unsharded, err := selectPackTestShard(plans, ""); err != nil || len(unsharded[0].Cases) != 4 {
+		t.Fatalf("no shard selector must keep every case: %+v %v", unsharded, err)
+	}
+	for _, test := range []struct{ shard, want string }{
+		{"3/2", "outside 1..2"},
+		{"0/2", "outside 1..2"},
+		{"1/3", "declares 2 shards"},
+		{"1", "<index>/<count>"},
+		{"a/2", "is not a number"},
+		{"1/b", "is not a number"},
+	} {
+		if _, err := selectPackTestShard(plans, test.shard); err == nil ||
+			!strings.Contains(err.Error(), test.want) {
+			t.Fatalf("shard %q error = %v, want %q", test.shard, err, test.want)
+		}
+	}
+	if _, err := selectPackTestShard(append(plans, plans[0]), "1/2"); err == nil ||
+		!strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("ambiguous pack error = %v", err)
+	}
+}
+
 func TestSelectPackTestCaseRequiresOneExactCase(t *testing.T) {
 	plans := []packtest.PlanRef{{
 		Name: "postgres",

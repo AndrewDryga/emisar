@@ -8,6 +8,11 @@ versions:
     default: true
   - version: v1.34.6-k3s1
     digest: "@sha256:73beaf51eaf1ab553d11aedd55ffdb5800d4e7e694f43dea6ca24aa87ff79fcb"
+# A single-node k3s server plus its probe pod takes about a minute to reach
+# Ready, and every case pays that boot for its own cluster. Split the cases
+# across matrix rows instead of sharing a cluster between them.
+shards: 5
+
 env:
   KUBECONFIG: /shared/kubeconfig.yaml
 defaults:

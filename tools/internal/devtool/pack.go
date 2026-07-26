@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,9 +75,13 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), nil, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
 }
 
-func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID string) error {
+func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string) error {
 	harness := filepath.Join(a.Root, "dev", "test-packs")
 	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
+	if err != nil {
+		return err
+	}
+	plans, err = selectPackTestShard(plans, shard)
 	if err != nil {
 		return err
 	}
@@ -243,6 +248,41 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// selectPackTestShard keeps one slice of a single pack's cases. A pack whose
+// SUT boots slowly costs its case count times that boot, so splitting it across
+// matrix rows is what shortens the row without weakening the per-case isolation
+// that makes the boot unavoidable.
+func selectPackTestShard(plans []packtest.PlanRef, shard string) ([]packtest.PlanRef, error) {
+	if shard == "" {
+		return plans, nil
+	}
+	if len(plans) != 1 {
+		return nil, fmt.Errorf("--shard requires a name that selects exactly one pack")
+	}
+	index, count, ok := strings.Cut(shard, "/")
+	if !ok {
+		return nil, fmt.Errorf("--shard takes <index>/<count>, not %q", shard)
+	}
+	selected, err := strconv.Atoi(index)
+	if err != nil {
+		return nil, fmt.Errorf("--shard index %q is not a number", index)
+	}
+	total, err := strconv.Atoi(count)
+	if err != nil {
+		return nil, fmt.Errorf("--shard count %q is not a number", count)
+	}
+	plan := plans[0]
+	declared := max(plan.Shards, 1)
+	if total != declared {
+		return nil, fmt.Errorf("pack %s declares %d shards, not %d", plan.Name, declared, total)
+	}
+	if selected < 1 || selected > total {
+		return nil, fmt.Errorf("--shard index %d is outside 1..%d", selected, total)
+	}
+	plan.Cases = packtest.SelectShard(plan.Cases, selected, total)
+	return []packtest.PlanRef{plan}, nil
 }
 
 func selectPackTestCase(plans []packtest.PlanRef, caseID string) ([]packtest.PlanRef, error) {
