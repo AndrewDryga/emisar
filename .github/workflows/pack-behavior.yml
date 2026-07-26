@@ -28,13 +28,31 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/go.mod
-          cache: true
-          cache-dependency-path: tools/go.*
+          go-version-file: runner/go.mod
+          cache: false
+
+      # setup-go's cache is keyed on go.sum alone and shared with every other
+      # Go job, so whichever saves it first decides which build flags the
+      # restored objects carry. The behavior rows want these ones.
+      - name: Cache the behavior build objects
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: packtest-go-${{ runner.os }}-${{ hashFiles('runner/go.sum', 'tools/go.sum') }}
 
       - id: discover
         name: Discover committed compatibility rows
         run: echo "matrix=$(go run ./tools/cmd/packtest --matrix --packs ./packs)" >> "$GITHUB_OUTPUT"
+
+      - name: Warm the behavior build objects
+        env:
+          GOOS: linux
+          CGO_ENABLED: "0"
+        run: |
+          go -C runner build -trimpath -o /dev/null .
+          go -C tools build -trimpath -o /dev/null ./cmd/packtest
 
       - id: tools
         name: Resolve the shared client image
@@ -78,10 +96,17 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: runner/go.mod
-          cache: true
-          cache-dependency-path: |
-            runner/go.sum
-            tools/go.sum
+          cache: false
+
+      # Read-only: plans wrote this entry with the flags packTest's preflight
+      # cross-compiles under, so the rows link rather than rebuild.
+      - name: Restore the behavior build objects
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: packtest-go-${{ runner.os }}-${{ hashFiles('runner/go.sum', 'tools/go.sum') }}
 
       # Empty for a pack that ships its own client image, which then needs
       # neither the builder nor the restore.
