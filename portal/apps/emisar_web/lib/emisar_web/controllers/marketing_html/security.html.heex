@@ -131,9 +131,9 @@
           </div>
 
           <%!-- The optional stricter line. With signed dispatch the execution-trust
-               boundary moves UP to here: everything below trusts a person's signed
-               request, not the control plane above it. Dashed and quiet so the
-               default single-boundary reading stays primary. --%>
+               boundary moves UP to here: everything below trusts the client's
+               signature on the MCP call, not the control plane above it. Dashed
+               and quiet so the default single-boundary reading stays primary. --%>
           <div class="flex items-center gap-3 px-1 py-2">
             <span class="h-px flex-1 border-t border-dashed border-brand-500/30"></span>
             <span class="flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-brand-400/80">
@@ -182,8 +182,8 @@
           The dashed line is optional and per runner: with <.link
             navigate={~p"/docs/signed-dispatch"}
             class="font-medium text-brand-400 hover:text-brand-300"
-          >signed dispatch</.link>, the runner trusts a person's signed request, not the control
-          plane above it — a compromised cloud can relay one, never forge it.
+          >signed dispatch</.link>, the runner trusts the client's signature on the MCP call, not
+          the control plane above it — a compromised cloud can relay it, never forge it.
         </p>
       </div>
     </div>
