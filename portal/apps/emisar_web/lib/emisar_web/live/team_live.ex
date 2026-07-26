@@ -294,7 +294,7 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  def handle_event("approval_access_changed", %{"id" => id} = params, socket) do
+  def handle_event("approval_access_changed", %{"_request_id" => id} = params, socket) do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
 

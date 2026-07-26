@@ -81,6 +81,23 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "the pending-request form reaches the runner access change handler", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      form = "#approve-request-#{request.id}"
+
+      lv
+      |> form(form, %{"runner_access_mode" => "restricted"})
+      |> render_change()
+
+      assert has_element?(lv, "#{form} input[name='scope[]']")
+    end
+
     test "clearing the last pending-request runner scope keeps it cleared", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
@@ -92,7 +109,7 @@ defmodule EmisarWeb.TeamLiveTest do
       form = "#approve-request-#{request.id}"
 
       render_change(lv, "approval_access_changed", %{
-        "id" => request.id,
+        "_request_id" => request.id,
         "runner_access_mode" => "restricted",
         "scope" => ["group:database"]
       })
@@ -101,7 +118,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       html =
         render_change(lv, "approval_access_changed", %{
-          "id" => request.id,
+          "_request_id" => request.id,
           "runner_access_mode" => "restricted"
         })
 
