@@ -196,7 +196,9 @@ defmodule EmisarWeb.RunnersLive do
         show_wizard? = runners == [] and meta.count == 0 and connected?(socket)
 
         socket
-        |> maybe_mint_install(show_wizard?)
+        |> maybe_mint_install(
+          show_wizard? and Runners.subject_can_install_runners?(socket.assigns.current_subject)
+        )
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
         |> assign(:show_wizard?, show_wizard?)

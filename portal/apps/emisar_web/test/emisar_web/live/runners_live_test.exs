@@ -250,6 +250,30 @@ defmodule EmisarWeb.RunnersLiveTest do
              )
     end
 
+    test "an empty-fleet viewer sees the viewer empty state without attempting an install mint",
+         %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "No runners yet."
+      assert html =~ "ask an operator"
+      refute html =~ "Loading"
+      refute html =~ "EMISAR_ENROLLMENT_KEY"
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert assigns.install_command == nil
+      assert assigns.show_wizard?
+    end
+
     # a hand-edited page cursor makes the runner list read
     # return {:error, …} with non-empty params; `load/1` retries once with clean
     # params (first page) rather than recursing forever or rendering the
