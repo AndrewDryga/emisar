@@ -17,6 +17,8 @@ cases:
     expect:
       stdout_contains: [myhostname, postfix.example.test]
   - action: postfix.check_config
+    runner_user: root
+    runner_reason: Postfix reserves the postfix command itself for the superuser.
     expect:
       exit: [0]
     probes:

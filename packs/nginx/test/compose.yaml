@@ -17,7 +17,10 @@ services:
     command:
       - /bin/sh
       - -c
-      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log && exec /docker-entrypoint.sh nginx -g 'daemon off;'
+      # nginx runs as root here and the log volume is shared with runner-tools,
+      # where the non-root runner also opens these files — so widen them once at
+      # creation rather than leaving root-owned 0644 files the runner cannot use.
+      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log && chmod 0666 /var/log/nginx/access.log /var/log/nginx/error.log && exec /docker-entrypoint.sh nginx -g 'daemon off;'
     volumes:
       - nginx_logs:/var/log/nginx
       - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
