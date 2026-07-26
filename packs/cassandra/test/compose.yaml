@@ -23,6 +23,13 @@ services:
     image: emisar-packtest-cassandra-sut:latest
     environment:
       CASSANDRA_CLUSTER_NAME: packtest
+      # The image defaults listen (and therefore broadcast) address to the
+      # container's bridge IP, which the network assigns fresh on every run, so
+      # any case asserting the node's own address could only match by accident.
+      # A single node with replication_factor 1 gossips with nobody, and
+      # runner-tools shares its network namespace, so loopback is both reachable
+      # and stable.
+      CASSANDRA_LISTEN_ADDRESS: 127.0.0.1
       MAX_HEAP_SIZE: 512M
       HEAP_NEWSIZE: 128M
     healthcheck:

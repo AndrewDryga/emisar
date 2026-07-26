@@ -81,6 +81,9 @@ cases:
   - action: cassandra.nodetool_getendpoints
     args: {keyspace: packtest, table: events, key: "1"}
     expect:
+      # The replica for a seeded key on a single node is that node, reported as
+      # its broadcast address — pinned to loopback by CASSANDRA_LISTEN_ADDRESS in
+      # compose.yaml so this asserts the answer rather than the bridge's lease.
       stdout_contains: [127.0.0.1]
   - action: cassandra.cqlsh_describe_schema
     expect:

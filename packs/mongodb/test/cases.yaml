@@ -80,6 +80,15 @@ cases:
     expect:
       stdout_contains: ['"host"', '"connections"', '"version"']
   - action: mongo.top
+    arrange:
+      # top counts operations the running server has served, and the fixture is
+      # seeded by the image's temporary init mongod, which is shut down before
+      # the real one starts. Nothing has touched the collection on this server
+      # until the case reads it.
+      - argv:
+          - /bin/sh
+          - -c
+          - mongosh "$MONGO_URI" --quiet --eval 'db.getSiblingDB("packtest").orders.find().toArray()'
     expect:
       stdout_contains: ['"totals"', packtest.orders]
   - action: mongo.wiredtiger_cache
