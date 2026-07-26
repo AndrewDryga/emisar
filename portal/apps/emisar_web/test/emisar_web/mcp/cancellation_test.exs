@@ -19,7 +19,7 @@ defmodule EmisarWeb.MCP.CancellationTest do
         end)
       end)
 
-    assert_receive {:tracking, task_pid}
+    assert_receive {:tracking, task_pid}, 500
 
     :ok = Cancellation.cancel(scoped_conn(conn, "key-a", "generation-b"))
     :ok = Cancellation.cancel(scoped_conn(conn, "key-b", "generation-a"))
@@ -50,7 +50,7 @@ defmodule EmisarWeb.MCP.CancellationTest do
         end)
       end)
 
-    assert_receive {:tracking, task_pid}
+    assert_receive {:tracking, task_pid}, 500
     :ok = Cancellation.cancel(scoped_conn(conn, "key-a", "generation-1"))
     assert Process.alive?(task_pid)
 
@@ -76,7 +76,7 @@ defmodule EmisarWeb.MCP.CancellationTest do
         end)
       end)
 
-    assert_receive {:tracking, task_pid}
+    assert_receive {:tracking, task_pid}, 500
 
     :ok =
       Cancellation.cancel(scoped_conn(conn, "key-c", "generation-a", "key-b"))

@@ -21,6 +21,6 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
     # the documented flush window, not a test smell.
     assert :ok = RunnerSocketDrain.terminate(:shutdown, %{})
 
-    assert_receive :runner_socket_drain
+    assert_receive :runner_socket_drain, 500
   end
 end

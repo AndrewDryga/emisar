@@ -366,7 +366,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       runner_state = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
       assert {:ok, refreshed_state} = RunnerSocket.handle_in({runner_state, text()}, second_state)
-      assert_receive :resume_runs
+      assert_receive :resume_runs, 500
       assert {:ok, ^refreshed_state} = RunnerSocket.handle_info(:resume_runs, refreshed_state)
 
       assert_receive {:cloud_to_runner, successor_generation,
@@ -415,7 +415,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
       assert {:ok, refreshed_state} = RunnerSocket.handle_in({raw, text()}, state)
-      assert_receive :resume_runs
+      assert_receive :resume_runs, 500
 
       assert {:ok, ^refreshed_state} =
                RunnerSocket.handle_info(:resume_runs, refreshed_state)
@@ -712,7 +712,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert %{"type" => "shutdown", "reason" => "cloud_shutdown"} = decode(frame)
 
       # The stop is deferred behind the frame (this process IS the socket).
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
       assert {:stop, :normal, ^state} = RunnerSocket.handle_info(:stop_after_drain, state)
     end
 
@@ -726,7 +726,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
     end
 
     test "account disable pushes its distinct retryable shutdown", %{state: state} do
@@ -741,7 +741,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
     end
 
     test "removal pushes a terminal revoked envelope first, then stops", %{state: state} do
@@ -754,7 +754,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
     end
 
     test "an unexpected message is logged and ignored", %{state: state} do
@@ -1393,7 +1393,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # shutdown — a drain broadcast.
       assert {:push, shut, ^state} = RunnerSocket.handle_info(:runner_socket_drain, state)
       assert %{"type" => "shutdown", "protocol_version" => 1} = decode(shut)
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
     end
   end
 

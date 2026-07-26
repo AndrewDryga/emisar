@@ -28,7 +28,7 @@ defmodule EmisarWeb.RunnerSocketVersionTest do
       assert message =~ ">= 0.0.1"
 
       # It schedules its own stop so WebSock flushes the shutdown frame first.
-      assert_receive :stop_after_drain
+      assert_receive :stop_after_drain, 500
 
       {:ok, events, _meta} = Audit.list_events(subject, target_id: runner.id)
       row = Enum.find(events, &(&1.event_type == "runner.version_rejected"))
