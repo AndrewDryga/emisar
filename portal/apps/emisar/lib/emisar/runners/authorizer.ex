@@ -60,5 +60,5 @@ defmodule Emisar.Runners.Authorizer do
     end
   end
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Runner.Query.none(queryable)
 end

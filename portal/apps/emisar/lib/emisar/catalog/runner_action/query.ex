@@ -5,6 +5,8 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def all,
     do: from(runner_actions in Emisar.Catalog.RunnerAction, as: :runner_actions)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_id(queryable, id),
     do: where(queryable, [runner_actions: a], a.id == ^id)
 

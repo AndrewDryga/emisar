@@ -5,6 +5,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def all,
     do: from(api_keys in Emisar.ApiKeys.ApiKey, as: :api_keys)
 
+  def none(queryable), do: where(queryable, false)
+
   def not_deleted(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.deleted_at))
 

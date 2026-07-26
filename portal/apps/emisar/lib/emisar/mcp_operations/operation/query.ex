@@ -4,6 +4,8 @@ defmodule Emisar.MCPOperations.Operation.Query do
   def all,
     do: from(operations in Emisar.MCPOperations.Operation, as: :mcp_operations)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_ids(queryable \\ all(), ids) when is_list(ids),
     do: where(queryable, [mcp_operations: o], o.id in ^ids)
 

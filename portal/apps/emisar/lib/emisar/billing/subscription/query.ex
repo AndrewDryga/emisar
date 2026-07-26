@@ -4,6 +4,8 @@ defmodule Emisar.Billing.Subscription.Query do
   def all,
     do: from(subscriptions in Emisar.Billing.Subscription, as: :subscriptions)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [subscriptions: s], s.account_id == ^account_id)
 

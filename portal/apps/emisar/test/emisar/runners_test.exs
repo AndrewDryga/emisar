@@ -2692,9 +2692,17 @@ defmodule Emisar.RunnersTest do
       assert ids == [runner.id]
     end
 
-    test "an account-less / actor-less subject leaves the query unscoped (fallback)" do
-      query = Runner.Query.all()
-      assert Runners.Authorizer.for_subject(query, %Subject{}) == query
+    test "an account-less / actor-less subject gets zero rows (fail-closed fallback)" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Runners.create_runner(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Runner.Query.all()
+        |> Runners.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
     end
 
     test "account-scoped runner token queries exclude deleted runners" do

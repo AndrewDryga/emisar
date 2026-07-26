@@ -66,5 +66,5 @@ defmodule Emisar.Accounts.Authorizer do
     end
   end
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Account.Query.none(queryable)
 end

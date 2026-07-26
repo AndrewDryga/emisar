@@ -31,5 +31,5 @@ defmodule Emisar.Runbooks.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Runbook.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Runbook.Query.none(queryable)
 end

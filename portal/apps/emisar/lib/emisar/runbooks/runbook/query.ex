@@ -5,6 +5,8 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def all,
     do: from(runbooks in Emisar.Runbooks.Runbook, as: :runbooks)
 
+  def none(queryable), do: where(queryable, false)
+
   def not_deleted(queryable \\ all()),
     do: where(queryable, [runbooks: r], is_nil(r.deleted_at))
 

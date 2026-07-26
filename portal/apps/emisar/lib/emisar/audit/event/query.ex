@@ -452,8 +452,8 @@ defmodule Emisar.Audit.Event.Query do
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
 
-  @doc "A query that matches no audit events, used for invalid caller-supplied ids."
-  def none(queryable), do: where(queryable, [events: e], is_nil(e.id))
+  @doc "A query that matches no audit events."
+  def none(queryable), do: where(queryable, false)
 
   @doc "Distinct `target_id`s of `kind` — options for the on-demand subject picker."
   def distinct_target_ids_of_kind(queryable \\ all(), kind) do

@@ -53,5 +53,5 @@ defmodule Emisar.Runs.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: ActionRun.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: ActionRun.Query.none(queryable)
 end

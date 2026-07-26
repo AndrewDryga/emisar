@@ -35,5 +35,5 @@ defmodule Emisar.Approvals.Authorizer do
     end
   end
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Request.Query.none(queryable)
 end

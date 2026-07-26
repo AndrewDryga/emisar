@@ -20,5 +20,5 @@ defmodule Emisar.MCPOperations.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Operation.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _subject), do: queryable
+  def for_subject(queryable, _), do: Operation.Query.none(queryable)
 end

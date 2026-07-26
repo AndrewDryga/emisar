@@ -222,6 +222,152 @@ defmodule Emisar.AuthorizationTest do
     end
   end
 
+  describe "Authorizer.for_subject/2 fail-closed fallback" do
+    # A subject matching no scoping clause must see ZERO rows, not unscoped
+    # rows — defense-in-depth for any future path that calls for_subject
+    # without the permission gate. Runners + Runs have the same coverage
+    # beside their runner-actor scoping tests.
+
+    test "ApiKeys.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.ApiKeys.ApiKey.Query.all()
+        |> Emisar.ApiKeys.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Catalog.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      action_rows =
+        Emisar.Catalog.RunnerAction.Query.all()
+        |> Emisar.Catalog.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      # The fallback's `none/1` is binding-free, so it also closes a queryable
+      # of the authorizer's OTHER schema (PackVersion via RunnerAction.Query.none).
+      pack_version_rows =
+        Emisar.Catalog.PackVersion.Query.all()
+        |> Emisar.Catalog.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert action_rows == []
+      assert pack_version_rows == []
+    end
+
+    test "Runbooks.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Runbooks.create_runbook(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Runbooks.Runbook.Query.all()
+        |> Emisar.Runbooks.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Policies.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Policies.Policy.Query.all()
+        |> Emisar.Policies.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "SSO.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.SSO.IdentityProvider.Query.all()
+        |> Emisar.SSO.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "MCPOperations.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.MCPOperations.create_operation(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.MCPOperations.Operation.Query.all()
+        |> Emisar.MCPOperations.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Audit.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, _event} = Emisar.Audit.log(account.id, "authz.probe", actor_kind: "system")
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Audit.Event.Query.all()
+        |> Emisar.Audit.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Accounts.Authorizer scopes an unmatched subject to zero rows" do
+      Fixtures.Accounts.create_account()
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Accounts.Account.Query.all()
+        |> Emisar.Accounts.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Approvals.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Approvals.create_request(account_id: account.id)
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Approvals.Request.Query.all()
+        |> Emisar.Approvals.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
+    test "Billing.Authorizer scopes an unmatched subject to zero rows" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+      bare_subject = Fixtures.Subjects.build_subject()
+
+      rows =
+        Emisar.Billing.Subscription.Query.all()
+        |> Emisar.Billing.Authorizer.for_subject(bare_subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+  end
+
   # -- helpers --------------------------------------------------------
 
   defp seed_policy_for(account) do

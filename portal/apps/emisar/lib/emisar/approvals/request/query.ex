@@ -4,6 +4,8 @@ defmodule Emisar.Approvals.Request.Query do
   def all,
     do: from(requests in Emisar.Approvals.Request, as: :requests)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_id(queryable, id),
     do: where(queryable, [requests: r], r.id == ^id)
 

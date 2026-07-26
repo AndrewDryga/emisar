@@ -34,5 +34,5 @@ defmodule Emisar.Catalog.Authorizer do
     end
   end
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: RunnerAction.Query.none(queryable)
 end

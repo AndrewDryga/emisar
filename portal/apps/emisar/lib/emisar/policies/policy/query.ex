@@ -4,6 +4,8 @@ defmodule Emisar.Policies.Policy.Query do
   def all,
     do: from(policies in Emisar.Policies.Policy, as: :policies)
 
+  def none(queryable), do: where(queryable, false)
+
   def not_deleted(queryable \\ all()),
     do: where(queryable, [policies: p], is_nil(p.deleted_at))
 

@@ -423,7 +423,7 @@ defmodule Emisar.Runbooks.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Runbook.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Runbook.Query.none(queryable)
 end
 ```
 
@@ -431,7 +431,7 @@ end
 - Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:runner` — each authorizer clauses the ones it grants, with a `_ -> []` catch-all for the rest.
 - The four **membership** roles (`:owner`/`:admin`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum`, the rank/`at_least?` hierarchy, and the team UI's role list. Never re-list them in a schema, changeset, or LiveView.
 - **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owners only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
-- `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the account-scoped clause and the `_` fallback (plus any actor-specific clause, e.g. the runner-only scoping in `Runs.Authorizer`).
+- `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the account-scoped clause (plus any actor-specific clause, e.g. the runner-only scoping in `Runs.Authorizer`), and the `_` fallback **fails closed**: it returns the schema's `Query.none(queryable)` (a binding-free `where(queryable, false)` helper), never the unscoped queryable. The fallback is unreachable for authenticated callers — every `Subject` constructor requires an account — so this is pure defense-in-depth: a future path that skips the permission gate leaks nothing. **Credo-enforced** (`Emisar.Checks.AuthorizerFallbackFailClosed`).
 - **Background/system-side reads take an explicit `account_id`, not a forged subject.** There is no `:system` god-subject. A read with no user in scope (a recurrent job, the approval fan-out, a dispatch-payload enrichment) is a named internal function that scopes via `Schema.Query.by_account_id/2` directly — e.g. `Accounts.list_account_memberships/2` and `Catalog.fetch_action_for_account/3`. This is the IL-1.4 internal-helper pattern; it's why removing `:system` couldn't reintroduce the cross-account fan-out leak.
 - `Emisar.Auth.Authorizer.permissions_for/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
 

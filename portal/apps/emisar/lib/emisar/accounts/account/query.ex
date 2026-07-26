@@ -4,6 +4,8 @@ defmodule Emisar.Accounts.Account.Query do
   def all,
     do: from(accounts in Emisar.Accounts.Account, as: :accounts)
 
+  def none(queryable), do: where(queryable, false)
+
   def not_deleted(queryable \\ all()),
     do: where(queryable, [accounts: a], is_nil(a.deleted_at))
 

@@ -42,5 +42,5 @@ defmodule Emisar.SSO.Authorizer do
     end
   end
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: IdentityProvider.Query.none(queryable)
 end

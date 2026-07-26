@@ -21,5 +21,5 @@ defmodule Emisar.Policies.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Policy.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _), do: queryable
+  def for_subject(queryable, _), do: Policy.Query.none(queryable)
 end

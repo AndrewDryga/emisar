@@ -81,6 +81,7 @@
           {Emisar.Checks.IL08ChangesetPure, []},
           {Emisar.Checks.IL12NoFloatMoney, []},
           {Emisar.Checks.AcronymModuleCase, []},
+          {Emisar.Checks.AuthorizerFallbackFailClosed, []},
           {Emisar.Checks.BroadcastEventAsData, []},
           {Emisar.Checks.ContextCryptoBoundary, []},
           {Emisar.Checks.ContextNoMapTakeDrop, []},

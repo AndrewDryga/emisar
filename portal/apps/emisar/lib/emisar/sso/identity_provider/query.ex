@@ -5,6 +5,8 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def all,
     do: from(providers in IdentityProvider, as: :providers)
 
+  def none(queryable), do: where(queryable, false)
+
   def not_deleted(queryable \\ all()),
     do: where(queryable, [providers: p], is_nil(p.deleted_at))
 
