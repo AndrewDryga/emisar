@@ -832,8 +832,11 @@ defmodule Emisar.Catalog do
   `Catalog.Jobs.PackVersionRetention` tick (no subject → system audit actor)
   and `sweep_unseen_pack_versions/1` (operator actor). Deletes every pack
   version no runner has advertised for `days` days — pin rows and their
-  advertised action rows — and records ONE `pack_retention_swept` audit
-  event only when something was removed. Returns `{:ok, deleted_count}`.
+  advertised action rows — except versions a connected runner still
+  advertises: runner_state is only re-sent on change, so a stable host's
+  `last_seen_at` goes stale while its packs are live. Records ONE
+  `pack_retention_swept` audit event only when something was removed.
+  Returns `{:ok, deleted_count}`.
   """
   def delete_unseen_pack_versions(account_id, days, subject \\ nil)
       when is_binary(account_id) and is_integer(days) and days > 0 do
@@ -841,13 +844,20 @@ defmodule Emisar.Catalog do
 
     Multi.new()
     |> Multi.run(:versions, fn repo, _changes ->
+      live_versions = live_advertised_versions(repo, account_id)
+
       queryable =
         PackVersion.Query.all()
         |> PackVersion.Query.by_account_id(account_id)
         |> PackVersion.Query.last_seen_before(cutoff)
         |> PackVersion.Query.lock_for_update()
 
-      {:ok, repo.all(queryable)}
+      versions =
+        queryable
+        |> repo.all()
+        |> Enum.reject(&MapSet.member?(live_versions, {&1.pack_id, &1.version}))
+
+      {:ok, versions}
     end)
     |> Multi.run(:actions, fn repo, %{versions: versions} ->
       {:ok, delete_advertised_actions(repo, account_id, versions)}
@@ -872,6 +882,24 @@ defmodule Emisar.Catalog do
     |> case do
       {:ok, %{deleted: deleted}} -> {:ok, deleted}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A version a connected runner still advertises is not "unseen": runners
+  # re-send runner_state on reconnect, SIGHUP, and pack changes — not on a
+  # timer — so a stable host's advertisement keeps `last_seen_at` frozen while
+  # the pack stays live. Liveness comes from the durable connection-record
+  # columns; an ungracefully dropped socket reads connected until its next
+  # reconnect, which errs toward keeping rows — the safe direction for a
+  # destructive sweep. Mirrors observe_pack/3's "unknown" version default so
+  # protection matches pin creation.
+  defp live_advertised_versions(repo, account_id) do
+    for %Runners.Runner{} = runner <-
+          Runners.list_connected_runners_for_account(account_id, repo: repo),
+        {pack_id, info} <- runner.packs,
+        is_map(info),
+        into: MapSet.new() do
+      {pack_id, info["version"] || "unknown"}
     end
   end
 

@@ -972,6 +972,34 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_connected_runners_for_account/2" do
+    setup do
+      {account, _user, _subject} = account_with_owner_subject()
+      %{account: account}
+    end
+
+    test "lists only the account's enabled, durably-connected runners", %{account: account} do
+      connected_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _pending_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      _offline_runner = offline_runner(account, 1)
+      _other_account_runner = Fixtures.Runners.create_runner()
+
+      # Disabled/deleted while their connection-record columns still read
+      # connected — the connection columns alone must not qualify them.
+      disabled_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.disable_runner(disabled_runner)
+      deleted_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.mark_deleted(deleted_runner)
+
+      connected_ids =
+        account.id
+        |> Runners.list_connected_runners_for_account()
+        |> Enum.map(& &1.id)
+
+      assert connected_ids == [connected_runner.id]
+    end
+  end
+
   describe "apply_state/2" do
     setup do
       account = Fixtures.Accounts.create_account()

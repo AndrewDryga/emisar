@@ -1615,6 +1615,9 @@ defmodule Emisar.CatalogTest do
 
       forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
       Fixtures.Catalog.backdate_pack_version_last_seen(stale, forty_days_ago)
+      # A connected runner's advertisement protects its versions — the sweep
+      # scenarios here target versions whose advertiser is durably gone.
+      Fixtures.Runners.mark_disconnected_at(runner, forty_days_ago)
 
       account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
 
@@ -1695,6 +1698,9 @@ defmodule Emisar.CatalogTest do
 
       forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
       Fixtures.Catalog.backdate_pack_version_last_seen(stale, forty_days_ago)
+      # A connected runner's advertisement protects its versions — the sweep
+      # scenarios here target versions whose advertiser is durably gone.
+      Fixtures.Runners.mark_disconnected_at(runner, forty_days_ago)
 
       %{user: user, account: account, subject: subject, stale: stale}
     end
@@ -1708,6 +1714,46 @@ defmodule Emisar.CatalogTest do
       assert audit, "expected a pack_retention_swept audit row"
       assert audit.actor_kind == "system"
       assert audit.payload["count"] == 1
+    end
+
+    test "keeps a version a connected runner still advertises, however stale its last_seen_at",
+         %{account: account, subject: subject, stale: stale} do
+      live_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          live_runner,
+          state_payload(packs: %{"live" => %{"version" => "3.0", "hash" => "sha256:LIVE"}})
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      live = Enum.find(versions, &(&1.pack_id == "live"))
+
+      # A stable connection never re-sends runner_state, so last_seen_at goes
+      # stale on a live pack — age alone must not delete its trust decision.
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(live, forty_days_ago)
+
+      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+
+      assert Repo.reload(live)
+      refute Repo.reload(stale)
+    end
+
+    test "another account's connected advertiser does not shield this account's version", %{
+      account: account,
+      stale: stale
+    } do
+      runner_b = Fixtures.Runners.create_runner()
+
+      _ =
+        Catalog.observe_state(
+          runner_b,
+          state_payload(packs: %{"stale" => %{"version" => "1.0", "hash" => "sha256:STALE"}})
+        )
+
+      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+      refute Repo.reload(stale)
     end
 
     test "leaves no audit marker when nothing was removed", %{

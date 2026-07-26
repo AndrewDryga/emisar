@@ -613,6 +613,22 @@ defmodule Emisar.Runners do
 
   defp scope_sweep_to_subject(queryable, nil), do: queryable
 
+  @doc """
+  Internal — the account's enabled, durably-connected, non-deleted runners
+  (connection-record columns, not live Presence). The pack-retention sweep
+  reads them inside its own transaction (pass `repo:`) so versions a live
+  runner still advertises are never swept as unseen.
+  """
+  def list_connected_runners_for_account(account_id, opts \\ []) when is_binary(account_id) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.connected()
+    |> Runner.Query.by_account_id(account_id)
+    |> repo.all()
+  end
+
   # -- Runner socket-driven connection state ---------------------------
   #
   # These run inside the runner WebSocket process — the auth gate is the

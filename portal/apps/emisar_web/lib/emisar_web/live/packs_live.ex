@@ -1711,7 +1711,8 @@ defmodule EmisarWeb.PacksLive do
               <p class="mt-1 text-xs leading-relaxed text-zinc-400">
                 Remove pack versions no runner has advertised for the selected period. A daily
                 sweep deletes them — trust decisions included — and a runner advertising one
-                again re-inserts it as a fresh trust decision.
+                again re-inserts it as a fresh trust decision. Versions a connected runner
+                still advertises are never removed.
               </p>
               <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
                 <form id="pack-retention-form" phx-change="set_pack_retention" class="mt-3">
@@ -1737,8 +1738,8 @@ defmodule EmisarWeb.PacksLive do
                   <:body>
                     Deletes every pack version no runner has advertised in the last {days_phrase(
                       @current_account.settings.pack_unseen_retention_days
-                    )} — trust decisions included. Runners still advertising one will
-                    re-insert it as a fresh trust decision.
+                    )} — trust decisions included. Versions a connected runner still
+                    advertises are kept.
                   </:body>
                   Clean up now
                 </.confirm_button>

@@ -1336,6 +1336,11 @@ defmodule EmisarWeb.PacksLiveTest do
     defp stale_pack_version!(account) do
       pack_version = observe_pending_pack!(account)
       forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      # The sweep keeps versions a connected runner still advertises — the
+      # stale row's sole advertiser (observe_pending_pack!'s runner) must be
+      # durably gone for it to be sweepable.
+      runner = Emisar.Repo.one(Emisar.Runners.Runner)
+      Fixtures.Runners.mark_disconnected_at(runner, forty_days_ago)
       Fixtures.Catalog.backdate_pack_version_last_seen(pack_version, forty_days_ago)
     end
 

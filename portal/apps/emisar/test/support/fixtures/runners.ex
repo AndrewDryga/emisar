@@ -120,4 +120,11 @@ defmodule Emisar.Fixtures.Runners do
     |> Runner.Changeset.disable()
     |> Repo.update!()
   end
+
+  @doc "Soft-deletes a runner (sets `deleted_at`) to rig the deleted-state setup."
+  def mark_deleted(%Runner{} = runner) do
+    runner
+    |> Runner.Changeset.delete()
+    |> Repo.update!()
+  end
 end
