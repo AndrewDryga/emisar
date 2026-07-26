@@ -22,7 +22,7 @@
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The stack</h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Five Dell PowerEdge R640s in the VA1 colo · Pure FlashArray over iSCSI multipath · Nomad
         2.0.2 · democratic-csi <code>node-manual</code>
         v1.9.5, pinned by OCI digest. VictoriaMetrics, VictoriaLogs, and Grafana each own a
@@ -39,7 +39,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         The fabric was never quiet
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The wipe was not a bolt from the blue. For the weeks before it, the iSCSI / dm-multipath
         path was a slow drip of operational pain: queue depth tuned to 128 for the FlashArray,
         multipath retry behavior corrected, persistent iSCSI sessions pinned at boot, an iSCSI
@@ -53,7 +53,7 @@
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">T+0 — the drain</h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Drain <code>nomad-hvn01</code>, reboot, restore — routine. VictoriaMetrics and
         VictoriaLogs rescheduled onto <code>nomad-hvn03</code>
         and came up green in about 30 seconds. Ingest resumed. Dull and normal.
@@ -62,7 +62,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         T+50m — 33 hours, gone
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Grafana on the last 7 days: almost everything flat, only the last
         <strong class="text-zinc-200">12 minutes</strong>
         of metrics alive. A sharp cliff where the history just ended. Same for logs. The
@@ -72,7 +72,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         1 · Investigate — through emisar, not SSH
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The agent works down the layers with declared pack actions, each scoped to
         <code>nomad-hvn03</code>
         (or the array) and logged with a reason. No shell, no standing SSH key.
@@ -114,7 +114,7 @@ docker.logs &#123;"container": "democratic-csi", "lines": 2000&#125;
 pure.volumes_space &#123;"names": "vm-data"&#125;
 <span class="text-zinc-500">→ vm-data  data_reduction 1.0:1  unique 0.01G   (40.8G at 13:00)
   # the array agrees: unique data fell off a cliff. Gone, not hidden.</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         Diagnosis: when the multipath device was re-probed on migration, every path came up
         <code>enabled</code>
         (queue-ready) but no group was promoted <code>active</code>. <code>blkid</code>
@@ -137,7 +137,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         2 · Stop the bleed — one approval
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         VictoriaMetrics is already writing fresh parts to the empty filesystem — every
         group-commit overwrites blocks that still hold the old data. The move is to halt it, and
         <code>nomad.alloc_stop</code>
@@ -149,7 +149,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
 <span class="text-amber-300">⏸ pending approval — nomad.alloc_stop is risk:high; a human approves in the portal</span>
 <span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         Caught in the first minute, that freeze preserves the LUN for recovery. Here a human took
         an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused —
         so we accepted the 33-hour gap (game-side state was untouched; only telemetry was lost).
@@ -158,7 +158,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         3 · Codify the fix — what actually stops it
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The obvious fix is one line in the driver config — and it does nothing. Source review
         during the cutover showed democratic-csi v1.9.5 never reads
         <code>node.format.disabled</code>
@@ -202,7 +202,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
 
 <span class="text-zinc-500"># Same era, for other reasons: iSCSI dm-multipath → NVMe/TCP. Rarer
 # empty-read window — but not the fix; the driver reformatted on NVMe too.</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         The guard shadows every <code>mkfs</code>
         entrypoint inside the plugin and fails loud on anything it can't prove is a blank device —
         a corrupted filesystem that looks empty to <code>blkid</code>
@@ -214,7 +214,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
         What emisar actually changed
       </h2>
-      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-300">
         <li>
           <strong class="text-zinc-100">The forensics were legible and scoped.</strong>
           Every <code>dmesg</code>, multipath, CSI-log, and array-side read was a declared action
@@ -232,7 +232,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
           command that lived for ten minutes in someone's shell history and got lost.
         </li>
       </ul>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         emisar would not have stopped democratic-csi's <code>mkfs</code>
         — that was an automated component doing its job badly, and the tidy declarative fix you'd
         reach for first was a no-op the vendor shipped. What emisar changes is everything a human

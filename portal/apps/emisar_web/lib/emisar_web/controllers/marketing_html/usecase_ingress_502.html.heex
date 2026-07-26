@@ -17,7 +17,7 @@
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The stack</h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Five bare-metal Debian nodes in one colo, each running Traefik as a Nomad
         <code>system</code>
         job bound to <code>:443</code>. Every node also raises the same anycast VIP —
@@ -33,14 +33,14 @@
    ┌───────────┬───────────┬───────────┬───────────┬───────────┐
  hvn01       hvn02       hvn03       hvn04       hvn05
  Traefik     Traefik     Traefik     Traefik     Traefik   <span class="text-zinc-500">← Nomad system job, host net :443 (one per node)</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         Everything below ran through emisar's stock <code>traefik</code>, <code>nomad</code>, <code>consul</code>,
         and <code>frr</code>
         packs. The edge was already covered; nobody had to write a tool to read it.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">It wasn't the app</h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The page blamed one service — a health check 404-ing on a URL with a doubled slash. Two
         problems with that. The doubled-slash path matches no Traefik route, so the edge returns its
         default <code>404 page not found</code>; the same backend answers 200 on its real path, and
@@ -53,7 +53,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         Reading down to the edge
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Reads run freely on emisar, so the
         agent could walk the whole edge from one surface instead of four CLIs and four sets of
         credentials.
@@ -118,17 +118,17 @@ vm.query_instant &#123;"query":
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         Three faults, stacked
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         On its own, none of these takes down a fleet. Stacked, they did.
       </p>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Traefik was capped at 1&nbsp;GiB, and under real traffic it didn't fit. The cgroup killed it
         — <code>Exit 137</code>
         — and Nomad restarted it, twenty-plus times a node. What pushed it over was one single-replica
         backend (<code>match-api</code>) pulling ~1.75k&nbsp;req/s; with a node already gone, four
         proxies were carrying five nodes' worth of load.
       </p>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The missing node was <code>hvn05</code>. An overnight reboot had dropped it to the initramfs
         on an LVM race. It came back — but a later test reboot left its Consul agent
         <code>left</code>
@@ -137,7 +137,7 @@ vm.query_instant &#123;"query":
         ran no proxy at all. Nobody caught it, because the only thing checked after the reboot was
         Nomad's server quorum.
       </p>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         The amplifier is the part worth remembering. Every node advertises the VIP whether or not its
         Traefik is up, so the firewall kept hashing connections onto nodes with nothing listening —
         <code>hvn05</code>
@@ -151,7 +151,7 @@ vm.query_instant &#123;"query":
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         Stopping the bleed — two approvals
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Two changes would stop it, and both touch production, so both waited for a human. The agent's
         job was to line them up and say why; the yes belonged to someone else. Start with the weird
         node: <code>hvn05</code>
@@ -169,7 +169,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
 <span class="text-amber-300">⏸ pending approval — nomad.task_resources_set is risk:high</span>
 <span class="text-brand-300">✓ approved · audit event recorded</span>
 <span class="text-zinc-500">→ jobspec patched at JobModifyIndex (MemoryMB 1024 → 4096) · rolling update places 4 GiB on all five</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         Neither is a shell. The Consul restart isn't a special case —
         <code>linux.systemctl_restart</code>
         takes the unit by a name that can't carry shell metacharacters, and which units a runner may
@@ -180,7 +180,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         The fix that actually holds
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Restarting Consul and raising the cap stopped the pain, but neither is the fix. A node can
         wedge again tomorrow, and a running memory change evaporates the next time the job is
         re-registered. Two of these belong in the repo; the third belongs in the load balancer's idea
@@ -203,14 +203,14 @@ while true; do
 done
 <span class="text-zinc-500"># now an OOMing, rebooting, or Consul-wedged node withdraws ITSELF
 # instead of black-holing one connection in five.</span></pre>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         And the wedge itself has a one-line cure. A Consul <em>server</em>
         should never <code>leave</code>
         on a planned reboot — leaving is what dropped <code>hvn05</code>
         out of raft to begin with. Tell it to stop, not leave (<code>leave_on_terminate = false</code>, <code>skip_leave_on_interrupt = true</code>),
         and a rebooted server rejoins on its own.
       </p>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         And about that anycast: pulling a node out of it by hand is now a single gated action.
         <code>frr.bgp_neighbor_shutdown</code>
         drops a node's BGP advertisement so ECMP routes around it — the break-glass for a node that
@@ -221,7 +221,7 @@ done
         and a <code>vtysh</code>
         prompt.
       </p>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">
+      <p class="mt-3 text-base leading-7 text-zinc-400">
         With Consul healthy and 4&nbsp;GiB rolled to every node, the probes came back boring: nothing
         refused at the VIP, every node serving, both quorums whole.
       </p>
@@ -229,13 +229,13 @@ done
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         What emisar didn't do
       </h2>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         Worth being plain about the limits. emisar didn't prevent this outage, and the page shouldn't
         pretend otherwise. The three things that caused it — a boot that lost a race with udev, a
         Consul server that left when it should have stopped, a VIP that advertises without checking —
         are design flaws, and you fix design flaws in the repo, not with a tool call.
       </p>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
+      <p class="mt-4 text-base leading-7 text-zinc-400">
         What it changed is the hour in the middle: the part where someone is staring at a fleet-wide
         502 with no failing service, hunting for the thread. Every read was one call away and on the
         record. Every change that touched production waited for a yes. Nobody held a shell on the

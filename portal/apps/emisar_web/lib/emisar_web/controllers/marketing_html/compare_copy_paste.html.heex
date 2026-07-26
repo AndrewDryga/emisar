@@ -99,7 +99,7 @@
         <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
           Nothing runs unless you run it. That matters.
         </h2>
-        <p class="mt-4 text-sm leading-7 text-zinc-400 text-pretty">
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
           You can leave out sensitive data, ignore a bad answer, and stop before
           anything changes. For occasional troubleshooting, that may be all you need.
         </p>
@@ -108,7 +108,7 @@
       <div class="mt-10 max-w-5xl divide-y divide-zinc-900 border-y border-zinc-900">
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
           <h3 class="text-sm font-semibold text-zinc-100">The model only sees what you send</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-400 text-pretty sm:mt-0">
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             If the useful line is just above the screenshot, or the hostname is cropped out, the
             model does not know. It can still sound confident.
           </p>
@@ -117,14 +117,14 @@
           <h3 class="text-sm font-semibold text-zinc-100">
             Your terminal has no context
           </h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-400 text-pretty sm:mt-0">
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             It will run the command you paste. It does not know which host you meant, what changed
             after the model answered, or why you decided to run it.
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
           <h3 class="text-sm font-semibold text-zinc-100">Review can turn into a reflex</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-400 text-pretty sm:mt-0">
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             A familiar one-line command is easy to check. A generated Bash pipeline or Python
             script may not be. After enough routine trips, it is easy to skim, paste, and press
             Enter without understanding what will run. That is the worst of both worlds: free-form
@@ -133,7 +133,7 @@
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
           <h3 class="text-sm font-semibold text-zinc-100">There is no single record</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-400 text-pretty sm:mt-0">
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             The reason is in chat, the command is in shell history, the host is in your terminal,
             and the result may be in another paste. You can piece it together, but nobody gets one
             clean record.
@@ -150,7 +150,7 @@
         <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
           The same restart, without the copy-paste loop
         </h2>
-        <p class="mt-4 text-sm leading-7 text-zinc-400 text-pretty">
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
           The model wants to restart <code>api</code> on <code>edge-sfo-03</code>.
         </p>
       </div>
@@ -267,7 +267,7 @@
           <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
             Each run keeps its own record
           </h2>
-          <p class="mt-4 text-sm leading-7 text-zinc-400 text-pretty">
+          <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
             Once the run finishes, emisar keeps the request, approval, target, and result together.
             You can search that record or send it to your SIEM. The runner keeps a local,
             hash-chained journal too.
@@ -306,7 +306,7 @@
           <h2 class="mt-2 text-xl font-semibold text-zinc-100 text-balance">
             Copy-paste may be enough
           </h2>
-          <p class="mt-4 max-w-md text-sm leading-7 text-zinc-400 text-pretty">
+          <p class="mt-4 max-w-md text-base leading-7 text-zinc-400 text-pretty">
             For a low-risk change in dev, with one operator and no audit requirement, the manual
             loop may be enough. Check what you upload and what you run.
           </p>
@@ -317,7 +317,7 @@
           <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
             When the command comes back, make it an action
           </h2>
-          <p class="mt-4 max-w-2xl text-sm leading-7 text-zinc-400 text-pretty">
+          <p class="mt-4 max-w-2xl text-base leading-7 text-zinc-400 text-pretty">
             Install a runner on the hosts you want to reach and define the action once. From then
             on, every connected model and operator uses the same reviewed command instead of
             inventing a new one.
@@ -328,7 +328,7 @@
               <.icon name="hero-arrow-path" class="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
               <div>
                 <h3 class="text-sm font-semibold text-zinc-100">Routine checks keep moving</h3>
-                <p class="mt-1 text-sm leading-6 text-zinc-400 text-pretty">
+                <p class="mt-1 text-base leading-7 text-zinc-400 text-pretty">
                   Read-only actions can return current results without stopping for approval.
                 </p>
               </div>
@@ -337,7 +337,7 @@
               <.icon name="hero-hand-raised" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <div>
                 <h3 class="text-sm font-semibold text-zinc-100">Risky changes wait for you</h3>
-                <p class="mt-1 text-sm leading-6 text-zinc-400 text-pretty">
+                <p class="mt-1 text-base leading-7 text-zinc-400 text-pretty">
                   Policy can require approval of the exact run before it changes a host.
                 </p>
               </div>
