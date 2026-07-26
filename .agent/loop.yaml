@@ -70,6 +70,9 @@ between:
     line(s) immediately before it — nothing after them, no summary, no sign-off. Emit
     each of those lines exactly once in the whole reply (a restated receipt earlier, or
     any text after the final line, voids the verdict and kills the run).
+    The `findings:` field is EITHER the literal word `none` OR the unresolved findings
+    themselves; put residual notes and caveats in the prose above the evidence lines,
+    never inside the `findings:` field.
 
 signoff:
   # Signoff writes task queues only.
