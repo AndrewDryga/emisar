@@ -46,6 +46,7 @@ defmodule EmisarWeb.MCP.ValidationError do
   @reject_reasons ~w(target_contract_changed not_allowed rate_limited)
   @action_id ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
   @pack_ref ~r|\A[a-z][a-z0-9_-]*@[0-9]+(\.[0-9]+)*/sha256:[0-9a-f]{64}\z|
+  @runbook_ref ~r/\A[a-z][a-z0-9_-]{0,79}@[1-9][0-9]*\z/
   @max_issues 8
   @max_message_chars 512
   @path_segment ~r/\A[A-Za-z_][A-Za-z0-9_-]{0,63}\z/
@@ -242,7 +243,8 @@ defmodule EmisarWeb.MCP.ValidationError do
   defp safe_identifiers(identifiers) do
     [
       mcp_action_id: safe_identifier(identifiers[:action_id], @action_id, 128),
-      mcp_pack_ref: safe_identifier(identifiers[:pack_ref], @pack_ref, 255)
+      mcp_pack_ref: safe_identifier(identifiers[:pack_ref], @pack_ref, 255),
+      mcp_runbook_ref: safe_identifier(identifiers[:runbook_ref], @runbook_ref, 96)
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end

@@ -183,12 +183,31 @@ defmodule EmisarWeb.MCP.RunbookTools do
            "A runbook cannot execute on a signed-only runner because the bridge signs only direct run_action calls."
          )}
 
+      {:error, :target_contract_changed} ->
+        target_contract_changed(conn, input)
+
       {:error, :unauthorized} ->
-        {:error, error("not_allowed", "This key cannot execute this runbook.")}
+        not_allowed(conn, input)
 
       {:error, reason} ->
         {:error, execution_failure(reason)}
     end
+  end
+
+  defp target_contract_changed(conn, input) do
+    :ok = log_rejected(conn, input, "target_contract_changed")
+    {:error, execution_failure(:target_contract_changed)}
+  end
+
+  defp not_allowed(conn, input) do
+    :ok = log_rejected(conn, input, "not_allowed")
+    {:error, error("not_allowed", "This key cannot execute this runbook.")}
+  end
+
+  defp log_rejected(conn, input, reason) do
+    ValidationError.log_dispatch_rejected(conn, "execute_runbook", reason,
+      runbook_ref: input.runbook_ref
+    )
   end
 
   @doc false

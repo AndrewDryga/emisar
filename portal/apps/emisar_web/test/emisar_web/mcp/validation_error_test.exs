@@ -76,22 +76,26 @@ defmodule EmisarWeb.MCP.ValidationErrorTest do
     test "collapses an unlisted reason and drops off-grammar identifiers", %{conn: conn} do
       # Grammar-valid but past the published byte bound — dropped all the same.
       long_pack_ref = String.duplicate("a", 200) <> "@1/sha256:" <> String.duplicate("b", 64)
+      invalid_runbook_ref = "private-runbook@1\nsecret"
 
       log =
         capture_log([level: :info], fn ->
           :ok =
             ValidationError.log_dispatch_rejected(conn, "run_action", "attacker reason",
               action_id: "Not An Action; DROP TABLE runs",
-              pack_ref: long_pack_ref
+              pack_ref: long_pack_ref,
+              runbook_ref: invalid_runbook_ref
             )
         end)
 
       assert log =~ "mcp_dispatch_reject_reason=rejected"
       refute log =~ "mcp_action_id"
       refute log =~ "mcp_pack_ref"
+      refute log =~ "mcp_runbook_ref"
       refute log =~ "attacker reason"
       refute log =~ "DROP TABLE"
       refute log =~ long_pack_ref
+      refute log =~ invalid_runbook_ref
     end
   end
 end
