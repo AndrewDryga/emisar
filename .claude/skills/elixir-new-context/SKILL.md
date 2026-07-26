@@ -40,7 +40,7 @@ The per-layer rules + module templates are **`portal/AGENTS.md` §1–§5** — 
 **Register the authorizer** in the permission union, or the new permissions
 never reach any `%Subject{}`:
 
-`lib/emisar/auth/authorizer.ex` → add `Emisar.<Context>.Authorizer` to the
+`lib/emisar/auth/permissions.ex` → add `Emisar.<Context>.Authorizer` to the
 `@authorizers` list (keep it alphabetical).
 
 ## Test skeleton (non-negotiable three paths — IL-3, §7)
