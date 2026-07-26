@@ -622,6 +622,42 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    test "an in-progress inline connect flow survives key broadcasts, ticks, and client switches",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      render_click(lv, "select_client", %{"client" => "custom"})
+
+      params = %{
+        "api_key" => %{"name" => "draft-bot", "description" => "still typing"}
+      }
+
+      lv
+      |> form("#api_key_form", params)
+      |> render_change()
+
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "other-operator-bot"}, subject)
+      key_id = key.id
+
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}, 500
+      assert render(lv) =~ "other-operator-bot"
+      assert has_element?(lv, ~s(#api_key_form input[value="draft-bot"]))
+
+      send(lv.pid, :tick)
+      assert render(lv) =~ "still typing"
+
+      render_click(lv, "select_client", %{"client" => "claude_code"})
+      send(lv.pid, :tick)
+      assert render(lv) =~ "Install the bridge"
+
+      render_click(lv, "select_client", %{"client" => "custom"})
+      assert has_element?(lv, ~s(#api_key_form input[value="draft-bot"]))
+      assert render(lv) =~ "still typing"
+    end
+
     # A custom create persists an MCP key (`kind: :mcp`), resets the form, and
     # reloads the list so the new key is visible. The one-time secret reveal is
     # covered separately below ("custom create reveals the raw secret once").

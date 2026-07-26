@@ -270,11 +270,15 @@ defmodule EmisarWeb.AgentsLive do
 
   # The connect panel embeds INLINE only while connecting IS the page's job:
   # a fleet with no live agent keys (onboarding — the runners-wizard pattern),
-  # or a one-time secret on screen (a quick mint / rotation reveal must not
-  # vanish when the reload lands). Otherwise the flow lives on its own
-  # /connect page behind the title CTA.
+  # an operator already working through a selected client, or a one-time secret
+  # on screen (a quick mint / rotation reveal must not vanish when the reload
+  # lands). Otherwise the flow lives on its own /connect page behind the title
+  # CTA.
   defp assign_connect_inline(socket, keys) do
-    inline? = active_keys(keys) == [] or socket.assigns.quick_secret != nil
+    inline? =
+      active_keys(keys) == [] or socket.assigns.selected_client != nil or
+        socket.assigns.quick_secret != nil
+
     assign(socket, :show_connect_inline?, inline?)
   end
 
