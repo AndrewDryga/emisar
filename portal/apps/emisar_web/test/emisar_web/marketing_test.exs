@@ -871,6 +871,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The MCP installer preserves a commented Zed config"
       assert html =~ "Real-agent MCP evals and symptom-language action search"
       assert html =~ "Trust-aware action discovery and clean runner re-enrollment"
+      assert html =~ "Live run output for agents and a tighter pack-argument boundary"
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"
@@ -890,6 +891,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.31.1"
       assert html =~ "v0.32.0"
       assert html =~ "v0.33.0"
+      assert html =~ "v0.34.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

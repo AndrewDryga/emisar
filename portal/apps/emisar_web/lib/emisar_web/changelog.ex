@@ -17,6 +17,51 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-26],
+      slug: "live-run-output-and-bounded-pack-arguments",
+      title: "Live run output for agents and a tighter pack-argument boundary",
+      tag: "v0.34.0",
+      summary:
+        "An agent waiting on a run now sees the output as it arrives: wait_for_run streams the run's event log through a scope-bound cursor, bounded by encoded bytes with oversized events fragmented, so a long action reports progress instead of going quiet until it finishes. Pack arguments gained a matching boundary — only finite choices and two-sided bounded numbers may render into a fixed shell program, while open-ended strings, paths, and arrays now travel as environment values or whole argv elements, and an authoring-time lint rejects a pack that breaks the rule. The documentation was rebuilt alongside both: terminal casts recorded from real CLI runs, a navigation split by the job you came to do, and pages corrected against the implementation.",
+      details: [
+        {"Security",
+         [
+           "The runner installers keep credentials off process argv. A GitHub token, an API key, and a device code used to ride the curl command line, where any local process could read them; they now travel as headers on standard input.",
+           "Five pack arguments could pass a leading dash through to the target binary as an option. Their patterns now anchor the first character to a non-dash class, and pip_show terminates option parsing explicitly.",
+           "Runbook creation never casts status, so a client-supplied \"published\" cannot mint published content; publishing at birth is its own transition gated on manage permission.",
+           "Authorizer row-scoping fallbacks fail closed with an empty query rather than an unscoped one, and a Credo check keeps them that way. The runner's trust gate now refuses a run whose registered action has lost its pack.",
+           "Bandit is patched for the WebSocket denial-of-service advisory, and OAuth registration rejects redirect URIs with no host or a fragment."
+         ]},
+        {"MCP",
+         [
+           "wait_for_run takes an output cursor and returns the next one, reading the event log forward within the caller's scope. The tail wakes on new progress rather than a row timestamp, and a finished run's trimmed output can still be paged back in.",
+           "Pre-run dispatch rejections — contract changes, refusals, rate limits — log bounded, allowlisted fields, so a rejected call is visible in operations without putting model input in the log."
+         ]},
+        {"Packs",
+         [
+           "The loader rejects open-ended substitutions in fixed shell programs at authoring time, which turns a per-pack review habit into a check that runs in the gate.",
+           "Curl-backed API actions fail on 4xx and 5xx responses instead of reporting transport success, and catalog metadata is validated against the same bounds the runner enforces.",
+           "Risk tiers are consistent across the catalog: reload is high everywhere, scale is high everywhere. Behavior plans replaced generated cases, and pack compatibility matrices run in CI."
+         ]},
+        {"Console",
+         [
+           "Operator input survives a re-render. A half-written approval note, a chosen grant scope, a cleared runner-scope draft, and a partially typed policy override are no longer lost to a co-approver's broadcast or a refused submit.",
+           "A pack-trust conflict names the runners that disagree about an action instead of failing generically, and run detail titles the terminal-cause panel by what actually happened.",
+           "Subscription reconciliation pages through its work and isolates a failing row, and inactive runners are cleaned up on a schedule."
+         ]},
+        {"Website",
+         [
+           "The security page shows the approval loop as a console recording driven by a real run, not a mockup, and the docs carry terminal casts captured the same way.",
+           "Documentation is reorganized by task: single sign-on and directory sync split apart, cloud and CLI agent connection split apart, containers separated into Kubernetes and Nomad with a host-install page, and operational limits and autoscaling fleets given their own pages.",
+           "Body text reads at 16px on a capped measure, screenshots are cropped to the feature and open fullscreen, and an llms.txt index plus a Keycloak setup guide were added."
+         ]},
+        {"Also",
+         [
+           "Repository development tooling is consolidated behind one contributor command, and durable engineering knowledge moved into a single reviewed knowledge base."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-07-20],
       slug: "trust-aware-action-discovery-and-runner-re-enrollment",
       title: "Trust-aware action discovery and clean runner re-enrollment",
