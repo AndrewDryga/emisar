@@ -70,12 +70,21 @@ func encodePrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
+// The CA key stays owner-only; the leaf key is bind mounted into Keycloak,
+// which runs as a non-root user and fails to start with AccessDeniedException
+// on a 0600 file wherever container uids are not remapped (Linux CI, and any
+// native-Docker host). It is a regenerable, workspace-scoped, localhost-only
+// development key — the CA that signs it is what stays private.
 func writeKeyPair(dir, name string, key *rsa.PrivateKey, der []byte) error {
 	keyPEM, err := encodePrivateKey(key)
 	if err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(dir, name+".key"), keyPEM, 0o600); err != nil {
+	keyMode := os.FileMode(0o600)
+	if name == "tls" {
+		keyMode = 0o644
+	}
+	if err := atomicWrite(filepath.Join(dir, name+".key"), keyPEM, keyMode); err != nil {
 		return err
 	}
 	return atomicWrite(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
@@ -200,6 +209,11 @@ func (a *App) generateCertificates(rotate bool) error {
 		if err := generateLeaf(a.Certs, ca, caKey, now); err != nil {
 			return fmt.Errorf("generating Keycloak certificate: %w", err)
 		}
+	}
+	// A leaf generated before the mode split (or restored from a cache) is
+	// still 0600, which Keycloak cannot read; correct it every run.
+	if err := os.Chmod(filepath.Join(a.Certs, "tls.key"), 0o644); err != nil {
+		return err
 	}
 	if err := atomicWrite(filepath.Join(a.Certs, "format"), []byte(certFormat), 0o600); err != nil {
 		return err

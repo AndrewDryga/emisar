@@ -17,8 +17,13 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// Chrome's zygote needs user namespaces. A coop box lacks them, and so does a
+// GitHub runner — without the container flags it aborts with "No usable
+// sandbox!" before the debugging port opens. chromeArgs deliberately keeps the
+// sandbox on for a host config, so the sandbox-less environments declare
+// themselves here rather than weakening that default.
 func testInBox() bool {
-	return os.Getenv("COOP_BOX") == "1"
+	return os.Getenv("COOP_BOX") == "1" || os.Getenv("CI") != ""
 }
 
 func TestChromeArgsKeepHostSandboxAndScopeTLSException(t *testing.T) {

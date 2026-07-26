@@ -353,11 +353,7 @@ func chromeArgs(config Config) []string {
 		"--no-default-browser-check",
 		"--ignore-certificate-errors-spki-list=" + config.SPKI,
 	}
-	// Chrome's zygote needs user namespaces, which neither a coop box nor a
-	// GitHub runner provides — without these it aborts with "No usable
-	// sandbox!" before the debugging port opens. A developer's own machine
-	// keeps the sandbox on.
-	if config.InBox || os.Getenv("CI") != "" {
+	if config.InBox {
 		args = append(args, "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu")
 	}
 	return args

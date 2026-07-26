@@ -52,7 +52,10 @@ func TestGenerateCertificatesIsValidIdempotentAndRotatable(t *testing.T) {
 	for _, file := range []struct {
 		name string
 		mode os.FileMode
-	}{{"ca.key", 0o600}, {"tls.key", 0o600}, {"format", 0o600}, {"ca.crt", 0o644}, {"tls.crt", 0o644}} {
+		// The CA key is the one that must stay private. The leaf key is bind
+		// mounted into Keycloak, which runs as a non-root user and refuses to
+		// start on a 0600 file wherever container uids are not remapped.
+	}{{"ca.key", 0o600}, {"tls.key", 0o644}, {"format", 0o600}, {"ca.crt", 0o644}, {"tls.crt", 0o644}} {
 		info, err := os.Stat(filepath.Join(app.Certs, file.name))
 		if err != nil {
 			t.Fatal(err)
