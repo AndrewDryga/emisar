@@ -47,11 +47,12 @@ func (a *App) capture(ctx context.Context, args []string) error {
 	case "docs":
 		port, _ := portFromURL(workspace.PortalURL)
 		return devbrowser.CaptureDocs(ctx, manager, devbrowser.DocsConfig{
-			BaseURL: workspace.PortalURL,
-			Email:   os.Getenv("EMAIL"),
-			Temp:    filepath.Join(a.cacheRoot(), fmt.Sprintf("docshots-%d", port)),
-			Static:  filepath.Join(a.Portal, "apps", "emisar_web", "priv", "static", "images"),
-			Only:    args[1:],
+			BaseURL:     workspace.PortalURL,
+			KeycloakURL: workspace.KeycloakURL,
+			Email:       os.Getenv("EMAIL"),
+			Temp:        filepath.Join(a.cacheRoot(), fmt.Sprintf("docshots-%d", port)),
+			Static:      filepath.Join(a.Portal, "apps", "emisar_web", "priv", "static", "images"),
+			Only:        args[1:],
 		})
 	}
 	return nil

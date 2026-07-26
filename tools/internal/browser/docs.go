@@ -18,10 +18,11 @@ import (
 )
 
 type DocsConfig struct {
-	BaseURL string
-	Email   string
-	Temp    string
-	Static  string
+	BaseURL     string
+	KeycloakURL string
+	Email       string
+	Temp        string
+	Static      string
 	// Only limits the run to the named shots (all when empty) — fast iteration
 	// on one capture without rewriting every committed image.
 	Only []string
@@ -31,8 +32,9 @@ type DocsConfig struct {
 // then crop to Anchor at viewport Width, keep only the top TopCSS CSS pixels (or
 // the header + first Rows RowSelector rows) when set, write Output.
 type shot struct {
-	Name string
-	Path string
+	Name     string
+	Path     string
+	Keycloak bool
 	// Clicks run in order after navigation to reveal a flow before the crop.
 	Clicks []string
 	Anchor Anchor
@@ -108,6 +110,18 @@ var docsShots = []shot{
 	// what a runbook IS, not two list rows.
 	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+}
+
+// keycloakShots are the customer-visible steps in Keycloak's OIDC client flow.
+// captureKeycloakGuide drives them in one isolated admin-console session so the
+// unsaved create-client form never leaves an extra client behind, while the
+// seeded emisar-portal client supplies the masked secret and assigned scopes.
+var keycloakShots = []shot{
+	{Name: "keycloak-client-general", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Width: docsWidth, Output: "docs/sso/keycloak-client-general.webp"},
+	{Name: "keycloak-client-capabilities", Keycloak: true, Anchor: Anchor{Selector: `[data-testid="capability-config-form"]`}, Width: docsWidth, Output: "docs/sso/keycloak-client-capabilities.webp"},
+	{Name: "keycloak-client-redirect", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Width: docsWidth, Output: "docs/sso/keycloak-client-redirect.webp"},
+	{Name: "keycloak-client-secret", Keycloak: true, Anchor: Anchor{Selector: `#kc-main-content-page-container section[role="tabpanel"]`}, Width: docsWidth, TopCSS: 355, Output: "docs/sso/keycloak-client-secret.webp"},
+	{Name: "keycloak-client-scopes", Keycloak: true, Anchor: Anchor{Selector: `table[aria-label="Client scopes"]`}, Width: docsWidth, Output: "docs/sso/keycloak-client-scopes.webp"},
 }
 
 // loopFrames are the /security approval-loop cast frames. They are NOT
@@ -372,10 +386,11 @@ func (s shot) width() int {
 // interaction, so a single frame can't regenerate alone.
 func selectShots(only []string) ([]shot, bool, error) {
 	if len(only) == 0 {
-		return docsShots, true, nil
+		all := append(append([]shot{}, docsShots...), keycloakShots...)
+		return all, true, nil
 	}
 	byName := map[string]shot{}
-	for _, s := range docsShots {
+	for _, s := range append(append([]shot{}, docsShots...), keycloakShots...) {
 		byName[s.Name] = s
 	}
 	loopNames := map[string]bool{}
@@ -391,11 +406,22 @@ func selectShots(only []string) ([]shot, bool, error) {
 		}
 		s, ok := byName[name]
 		if !ok {
-			return nil, false, fmt.Errorf("unknown docs shot %q (see docsShots/loopFrames in tools/internal/browser/docs.go)", name)
+			return nil, false, fmt.Errorf("unknown docs shot %q (see docsShots/keycloakShots/loopFrames in tools/internal/browser/docs.go)", name)
 		}
 		selected = append(selected, s)
 	}
 	return selected, runLoop, nil
+}
+
+func splitShots(shots []shot) (portal, keycloak []shot) {
+	for _, s := range shots {
+		if s.Keycloak {
+			keycloak = append(keycloak, s)
+		} else {
+			portal = append(portal, s)
+		}
+	}
+	return portal, keycloak
 }
 
 var rgbPattern = regexp.MustCompile(`\d+`)
@@ -502,6 +528,203 @@ func captureShot(session *Session, config DocsConfig, s shot) (string, error) {
 	return captureDocElement(session, config, s)
 }
 
+func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConfig, shots []shot) (map[string]string, error) {
+	if config.KeycloakURL == "" {
+		return nil, fmt.Errorf("Keycloak URL is required for the Keycloak documentation shots")
+	}
+	selected := make(map[string]shot, len(shots))
+	for _, s := range shots {
+		selected[s.Name] = s
+	}
+	session, err := manager.Session(ctx, config.KeycloakURL, true)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	if err := session.Viewport(docsWidth, 1600, 2, false); err != nil {
+		return nil, err
+	}
+	if err := session.Navigate("/admin/master/console/"); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.WaitVisible(`#username`, chromedp.ByQuery),
+		chromedp.SendKeys(`#username`, "admin", chromedp.ByQuery),
+		chromedp.SendKeys(`#password`, "admin", chromedp.ByQuery),
+		chromedp.Click(`#kc-login`, chromedp.ByQuery)); err != nil {
+		return nil, fmt.Errorf("signing in to the Keycloak dev admin console: %w", err)
+	}
+	if err := session.Ready(15*time.Second, `#nav-item-realms`); err != nil {
+		return nil, err
+	}
+	if err := session.Navigate("/admin/master/console/#/master/realms"); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(session, `(()=>{const link=document.querySelector('a[href="#/emisar"]');if(!link)return false;link.click();return true})()`, "emisar realm"); err != nil {
+		return nil, err
+	}
+	if err := waitSelectorText(session, `[data-testid="currentRealm"]`, "emisar", 10*time.Second); err != nil {
+		return nil, err
+	}
+	if err := session.Navigate("/admin/master/console/#/emisar/clients"); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `[data-testid="createClient"]`); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.Click(`[data-testid="createClient"]`, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `#clientId`); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.SendKeys(`#clientId`, "emisar-portal", chromedp.ByQuery),
+		chromedp.SendKeys(`#name`, "emisar", chromedp.ByQuery),
+		chromedp.Evaluate(`document.activeElement?.blur()`, nil)); err != nil {
+		return nil, err
+	}
+
+	colors := map[string]string{}
+	capture := func(name string) error {
+		s, ok := selected[name]
+		if !ok {
+			return nil
+		}
+		color, captureErr := captureDocElement(session, config, s)
+		if captureErr != nil {
+			return captureErr
+		}
+		colors[name] = color
+		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", name, s.width(), color)
+		return nil
+	}
+	if err := capture("keycloak-client-general"); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.Click(`#kc-main-content-page-container button[type="submit"]`, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `[data-testid="capability-config-form"]`); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.Click(`#kc-authentication`, chromedp.ByQuery),
+		chromedp.Click(`#kc-pkce-required-switch`, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := waitChecked(session, `#kc-authentication`, 10*time.Second); err != nil {
+		return nil, err
+	}
+	if err := waitChecked(session, `#kc-pkce-required-switch`, 10*time.Second); err != nil {
+		return nil, err
+	}
+	if err := capture("keycloak-client-capabilities"); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(
+		session,
+		clickText("Next"),
+		"Keycloak capability form Next button",
+	); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `[data-testid="redirectUris0"]`); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.SendKeys(`[data-testid="redirectUris0"]`, "https://emisar.example/sign_in/sso/callback", chromedp.ByQuery),
+		chromedp.Evaluate(`document.activeElement?.blur()`, nil)); err != nil {
+		return nil, err
+	}
+	if err := capture("keycloak-client-redirect"); err != nil {
+		return nil, err
+	}
+
+	// Leave the wizard without saving. The existing seeded client carries the
+	// same production-relevant shape and keeps the capture idempotent.
+	if err := session.Navigate("/admin/master/console/#/emisar/clients"); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(session, `(()=>{const link=[...document.querySelectorAll('a')].find((candidate)=>(candidate.textContent||'').trim()==='emisar-portal');if(!link)return false;link.click();return true})()`, "seeded emisar-portal client"); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `[data-testid="clientSettingsTab"]`); err != nil {
+		return nil, err
+	}
+	if err := clickByScript(session, clickText("Credentials"), "Credentials tab"); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `#kc-client-secret`); err != nil {
+		return nil, err
+	}
+	var secretMasked bool
+	if err := chromedp.Run(session.Context,
+		chromedp.Evaluate(`document.querySelector('#kc-client-secret')?.type === 'password'`, &secretMasked)); err != nil {
+		return nil, err
+	}
+	if !secretMasked {
+		return nil, fmt.Errorf("Keycloak client secret is not password-masked; refusing to capture")
+	}
+	if err := capture("keycloak-client-secret"); err != nil {
+		return nil, err
+	}
+	if err := chromedp.Run(session.Context,
+		chromedp.Click(`[data-testid="clientScopesTab"]`, chromedp.ByQuery)); err != nil {
+		return nil, err
+	}
+	if err := session.Ready(10*time.Second, `table[aria-label="Client scopes"]`); err != nil {
+		return nil, err
+	}
+	if err := verifyDefaultKeycloakScopes(session); err != nil {
+		return nil, err
+	}
+	if err := capture("keycloak-client-scopes"); err != nil {
+		return nil, err
+	}
+	return colors, nil
+}
+
+func waitSelectorText(session *Session, selector, text string, timeout time.Duration) error {
+	selectorJSON, _ := json.Marshal(selector)
+	textJSON, _ := json.Marshal(text)
+	script := `(()=>document.querySelector(` + string(selectorJSON) + `)?.textContent.trim()===` + string(textJSON) + `)()`
+	return waitScript(session, script, selector+" text "+text, timeout)
+}
+
+func waitChecked(session *Session, selector string, timeout time.Duration) error {
+	selectorJSON, _ := json.Marshal(selector)
+	script := `(()=>document.querySelector(` + string(selectorJSON) + `)?.checked===true)()`
+	return waitScript(session, script, selector+" checked", timeout)
+}
+
+func waitScript(session *Session, script, label string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		var ready bool
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &ready)); err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s did not become ready within %s", label, timeout)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func verifyDefaultKeycloakScopes(session *Session) error {
+	script := `(()=>['email','profile'].every((scope)=>[...document.querySelectorAll('table[aria-label="Client scopes"] tbody tr')].some((row)=>{const text=(row.textContent||'').replace(/\s+/g,' ').trim();return text.startsWith(scope+' ')&&text.includes(' Default')})))()`
+	if err := waitScript(session, script, "email and profile default client scopes", 10*time.Second); err != nil {
+		return fmt.Errorf("Keycloak client scopes: %w", err)
+	}
+	return nil
+}
+
 // processShot converts a captured PNG into the bordered, resized webp, keeping
 // only the top TopCSS CSS pixels first when set.
 func processShot(config DocsConfig, s shot, color string, out io.Writer) error {
@@ -551,42 +774,53 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 			return err
 		}
 	}
-	session, err := manager.Session(ctx, config.BaseURL, false)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	// Log in once at a default viewport; each shot sets its own width.
-	if err := session.Viewport(defaultWidth, 2800, 2, false); err != nil {
-		return err
-	}
-	if err := session.Navigate("/app/demo"); err != nil {
-		return err
-	}
-	current, _ := session.CurrentURL()
-	if !strings.Contains(current, "/app/") {
-		if err := session.Login(config.Email); err != nil {
-			return err
-		}
-	}
-
 	shots, runLoop, err := selectShots(config.Only)
 	if err != nil {
 		return err
 	}
+	portalShots, selectedKeycloakShots := splitShots(shots)
 
 	// Capture each shot independently: one bad anchor skips its shot, never the run.
 	colors := map[string]string{}
 	var failed []string
-	for _, s := range shots {
-		color, captureErr := captureShot(session, config, s)
-		if captureErr != nil {
-			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, captureErr))
-			fmt.Fprintf(manager.Out, "  SKIP %s: %v\n", s.Name, captureErr)
-			continue
+	if len(portalShots) > 0 {
+		session, sessionErr := manager.Session(ctx, config.BaseURL, false)
+		if sessionErr != nil {
+			return sessionErr
 		}
-		colors[s.Name] = color
-		fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", s.Name, s.width(), color)
+		defer session.Close()
+		// Log in once at a default viewport; each shot sets its own width.
+		if err := session.Viewport(defaultWidth, 2800, 2, false); err != nil {
+			return err
+		}
+		if err := session.Navigate("/app/demo"); err != nil {
+			return err
+		}
+		current, _ := session.CurrentURL()
+		if !strings.Contains(current, "/app/") {
+			if err := session.Login(config.Email); err != nil {
+				return err
+			}
+		}
+		for _, s := range portalShots {
+			color, captureErr := captureShot(session, config, s)
+			if captureErr != nil {
+				failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, captureErr))
+				fmt.Fprintf(manager.Out, "  SKIP %s: %v\n", s.Name, captureErr)
+				continue
+			}
+			colors[s.Name] = color
+			fmt.Fprintf(manager.Out, "  %s w=%d bg=%s\n", s.Name, s.width(), color)
+		}
+	}
+	if len(selectedKeycloakShots) > 0 {
+		keycloakColors, captureErr := captureKeycloakGuide(ctx, manager, config, selectedKeycloakShots)
+		if captureErr != nil {
+			return captureErr
+		}
+		for name, color := range keycloakColors {
+			colors[name] = color
+		}
 	}
 
 	processing := shots

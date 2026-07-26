@@ -125,6 +125,19 @@ func TestRGBHex(t *testing.T) {
 	}
 }
 
+func TestSelectShotsIncludesKeycloakGuide(t *testing.T) {
+	shots, runLoop, err := selectShots([]string{"keycloak-client-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runLoop {
+		t.Fatal("Keycloak shot selected the approval loop")
+	}
+	if len(shots) != 1 || shots[0].Name != "keycloak-client-secret" || !shots[0].Keycloak {
+		t.Fatalf("shots = %+v", shots)
+	}
+}
+
 func TestPaddleURLRequiresExactPaddleHost(t *testing.T) {
 	for _, raw := range []string{"https://checkout.paddle.com/pay", "https://paddle.com/"} {
 		if !isPaddleURL(raw) {

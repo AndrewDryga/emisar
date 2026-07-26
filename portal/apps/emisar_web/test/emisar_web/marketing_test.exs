@@ -307,6 +307,12 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "directory sync"
     # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
+    # The verified Keycloak path is exact and backed by privacy-safe captures.
+    assert html =~ "Keycloak 26.7"
+    assert html =~ "Client authentication"
+    assert html =~ "Require PKCE"
+    assert html =~ "/images/docs/sso/keycloak-client-secret.webp"
+    assert html =~ "OIDC login only"
     # The headline security posture (must match the built behavior).
     assert html =~ "subject, never by email"
   end
