@@ -82,7 +82,7 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
      paths) **+ Go house style** (slog, `%w` wraps, stdlib table-driven tests, no new deps) + any
      `.agent/kb/rules/`; then `/security-engineer` (it runs commands on hosts) + `/review-board` when
      the change warrants a multi-hat pass + the gate's vet check.
-   - **packs:** the `packs/AGENTS.md` conventions (pack-authored argv or bounded fixed-shell programs, bare binary paths, bound args,
+   - **packs:** the `packs/AGENTS.md` conventions (pack-authored argv or fixed-shell programs with data-only channels, bare binary paths, bound args,
      honest risk) + `/security-engineer` (every action is attack surface) + `./run gate packs`.
    - **then, proportional to what changed:** security (what's the abuse case?), tests (happy +
      denial + cross-account present — a write isn't done without its denial test), docs (is the

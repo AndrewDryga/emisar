@@ -27,7 +27,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "S='{{ args.server }}'; echo envi | nc -w 5 ${S%:*} ${S##*:}"
+      - "S=''\"$1\"''; echo envi | nc -w 5 ${S%:*} ${S##*:}"
+      - "emisar"
+      - "{{ args.server }}"
   timeout: 15s
 output:
   parser: text

@@ -18,7 +18,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/stats?filter={{ args.filter }}\""
+      - "curl -fsS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/stats?filter=${1}\""
+      - "emisar"
+      - "{{ args.filter }}"
   timeout: 30s
 output:
   parser: text

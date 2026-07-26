@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$GIT_REPO\" && git show {{ args.ref }}"
+      - "cd \"$GIT_REPO\" && git show \"$1\""
+      - "emisar"
+      - "{{ args.ref }}"
   timeout: 30s
 output:
   parser: text

@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "S='{{ args.server }}'; echo srvr | nc -w 5 ${S%:*} ${S##*:}"
+      - "S=''\"$1\"''; echo srvr | nc -w 5 ${S%:*} ${S##*:}"
+      - "emisar"
+      - "{{ args.server }}"
   timeout: 15s
 output:
   parser: text

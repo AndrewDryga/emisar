@@ -32,7 +32,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM crdb_internal.jobs WHERE ('{{ args.status }}' = '' OR status = '{{ args.status }}') ORDER BY created DESC LIMIT {{ args.limit }}\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM crdb_internal.jobs WHERE ('${1}' = '' OR status = '${1}') ORDER BY created DESC LIMIT {{ args.limit }}\""
+      - "emisar"
+      - "{{ args.status }}"
   timeout: 20s
 output:
   parser: text

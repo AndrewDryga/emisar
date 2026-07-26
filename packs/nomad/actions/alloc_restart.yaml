@@ -29,7 +29,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n \"{{ args.task }}\" ]; then nomad alloc restart -task {{ args.task }} {{ args.alloc_id }}; else nomad alloc restart {{ args.alloc_id }}; fi"
+      - "if [ -n \"${1}\" ]; then nomad alloc restart -task \"$1\" \"$2\"; else nomad alloc restart \"$2\"; fi"
+      - "emisar"
+      - "{{ args.task }}"
+      - "{{ args.alloc_id }}"
   timeout: 60s
 output:
   parser: text

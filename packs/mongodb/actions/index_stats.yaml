@@ -25,7 +25,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").aggregate([{$indexStats:{}}]).toArray())'"
+      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"'\"$1\"'\").getCollection(\"'\"$2\"'\").aggregate([{$indexStats:{}}]).toArray())'"
+      - "emisar"
+      - "{{ args.database }}"
+      - "{{ args.collection }}"
   timeout: 30s
 output:
   parser: json

@@ -26,7 +26,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} describe node {{ args.name }}"
+      - "kubectl ${KCTX:+--context=$KCTX} describe node \"$1\""
+      - "emisar"
+      - "{{ args.name }}"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

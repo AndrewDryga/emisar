@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-configs.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--entity-type' 'brokers' '--entity-name' '{{ args.broker_id }}'"
+      - "kafka-configs.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--entity-type' 'brokers' '--entity-name' ''\"$1\"''"
+      - "emisar"
+      - "{{ args.broker_id }}"
   timeout: 30s
 output:
   parser: text

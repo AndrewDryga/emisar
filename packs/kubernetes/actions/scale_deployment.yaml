@@ -40,7 +40,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} scale deploy/{{ args.name }} --replicas={{ args.replicas }}"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" scale deploy/\"$2\" --replicas={{ args.replicas }}"
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

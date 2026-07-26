@@ -48,7 +48,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} logs {{ args.name }} ${CONT:+-c $CONT} --previous --tail={{ args.lines }}"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" logs \"$2\" ${CONT:+-c $CONT} --previous --tail={{ args.lines }}"
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

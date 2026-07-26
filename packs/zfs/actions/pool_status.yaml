@@ -18,7 +18,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -z \"{{ args.pool }}\" ]; then zpool status -v; else zpool status -v \"{{ args.pool }}\"; fi"
+      - "if [ -z \"${1}\" ]; then zpool status -v; else zpool status -v \"${1}\"; fi"
+      - "emisar"
+      - "{{ args.pool }}"
   timeout: 30s
 output:
   parser: text

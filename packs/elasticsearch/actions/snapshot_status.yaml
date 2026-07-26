@@ -25,7 +25,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -fsS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/{{ args.repository }}/{{ args.snapshot }}/_status?pretty\""
+      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -fsS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/${1}/${2}/_status?pretty\""
+      - "emisar"
+      - "{{ args.repository }}"
+      - "{{ args.snapshot }}"
   timeout: 30s
 output:
   parser: json

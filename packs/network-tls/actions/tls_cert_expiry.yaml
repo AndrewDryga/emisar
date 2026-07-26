@@ -38,7 +38,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl s_client -connect {{ args.host }}:{{ args.port }} -servername ${SNI:-{{ args.host }}} </dev/null 2>/dev/null | openssl x509 -noout -dates -subject -issuer"
+      - "openssl s_client -connect \"$1\":{{ args.port }} -servername ${SNI:-\"$1\"} </dev/null 2>/dev/null | openssl x509 -noout -dates -subject -issuer"
+      - "emisar"
+      - "{{ args.host }}"
   timeout: 30s
   env:
     SNI: "{{ args.sni }}"

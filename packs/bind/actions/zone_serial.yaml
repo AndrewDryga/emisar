@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "dig @127.0.0.1 {{ args.zone }} SOA +short | awk '{print $3}'"
+      - "dig @127.0.0.1 \"$1\" SOA +short | awk '{print $3}'"
+      - "emisar"
+      - "{{ args.zone }}"
   timeout: 15s
 output:
   parser: text

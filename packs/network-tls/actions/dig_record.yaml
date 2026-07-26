@@ -37,7 +37,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "dig +short {{ args.type }} {{ args.name }} ${RES:+@$RES}"
+      - "dig +short {{ args.type }} \"$1\" ${RES:+@$RES}"
+      - "emisar"
+      - "{{ args.name }}"
   timeout: 15s
   env:
     RES: "{{ args.resolver }}"

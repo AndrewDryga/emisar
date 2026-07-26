@@ -24,7 +24,7 @@ args:
     description: Path to Traefik's ACME storage file.
     validation:
       pattern: "^/[A-Za-z0-9._/-]{1,256}$"
-      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are
+      # The pattern constrains lexical shape but NOT `..` (`.`/`/` are
       # literal charset members). allowed_prefixes runs the runner's
       # Clean+EvalSymlinks containment, scoping the read to Traefik's own ACME
       # storage dirs so this can't become an arbitrary-file read oracle.
@@ -37,7 +37,9 @@ execution:
     argv:
       - "-c"
       - |
-        jq -r 'to_entries[].value.Certificates[]? | "\(.domain.main) \(.certificate)"' {{ args.acme_path }} | while read -r dom cert; do exp=$(printf '%s' "$cert" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2); printf '%s\texpires %s\n' "$dom" "${exp:-<unreadable>}"; done
+        jq -r 'to_entries[].value.Certificates[]? | "\(.domain.main) \(.certificate)"' "$1" | while read -r dom cert; do exp=$(printf '%s' "$cert" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2); printf '%s\texpires %s\n' "$dom" "${exp:-<unreadable>}"; done
+      - "emisar"
+      - "{{ args.acme_path }}"
   timeout: 20s
 output:
   parser: text

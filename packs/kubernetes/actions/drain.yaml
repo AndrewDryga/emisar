@@ -28,7 +28,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} drain {{ args.name }} --ignore-daemonsets --delete-emptydir-data"
+      - "kubectl ${KCTX:+--context=$KCTX} drain \"$1\" --ignore-daemonsets --delete-emptydir-data"
+      - "emisar"
+      - "{{ args.name }}"
   timeout: 15m
   env:
     KCTX: "{{ args.context }}"

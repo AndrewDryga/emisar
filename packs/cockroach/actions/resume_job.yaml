@@ -20,7 +20,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"RESUME JOB {{ args.job_id }}\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"RESUME JOB ${1}\""
+      - "emisar"
+      - "{{ args.job_id }}"
   timeout: 15s
 output:
   parser: text

@@ -3,7 +3,7 @@ name: architecture
 description: runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
 subsystem: agent-stack
 sources: [portal, runner, mcp, packs, tools, infra, .github/workflows]
-updated: 2026-07-22
+updated: 2026-07-26
 ---
 
 # Architecture
@@ -40,8 +40,10 @@ drivers. It is not shipped to customers and is not part of the runtime system.
    renders the pack-authored argv and environment.
 5. The runner executes through `os/exec`. Most actions call a binary directly.
    Packs may use a fixed, reviewed `/bin/sh -c` program when shell features are
-   necessary; only schema-bounded values may be substituted into it. The
-   staging-only `shell` pack is the explicit arbitrary-shell break-glass path.
+   necessary. Open-ended values reach it through environment or whole
+   positional argv elements; only finite choices and two-sided bounded numbers
+   may render into program text. The staging-only `shell` pack is the explicit
+   arbitrary-shell break-glass path.
 6. Output is line-buffered, bounded, and redacted before progress leaves the
    host. The runner writes a hash-chained local JSONL event and sends the final
    result. The control plane stores the searchable fleet record.
@@ -102,4 +104,5 @@ persists only rotated API-key successors in the user's config directory.
 
 ## Changelog
 
+- 2026-07-26 - documented the authoring-time shell-program data-channel boundary
 - 2026-07-22 - moved into the knowledge base and reverified its source map

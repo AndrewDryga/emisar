@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform state show '{{ args.address }}'"
+      - "cd \"$TF_DIR\" && terraform state show ''\"$1\"''"
+      - "emisar"
+      - "{{ args.address }}"
   timeout: 60s
 output:
   parser: text

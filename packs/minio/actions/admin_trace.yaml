@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "timeout 5 mc admin trace -v \"{{ args.alias }}\" || true"
+      - "timeout 5 mc admin trace -v \"${1}\" || true"
+      - "emisar"
+      - "{{ args.alias }}"
   timeout: 15s
 output:
   parser: text

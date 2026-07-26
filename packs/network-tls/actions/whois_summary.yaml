@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "whois {{ args.domain }} | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30"
+      - "whois \"$1\" | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30"
+      - "emisar"
+      - "{{ args.domain }}"
   timeout: 30s
 output:
   parser: text

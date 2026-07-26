@@ -46,7 +46,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"KILL MUTATION WHERE database = '{{ args.database }}' AND table = '{{ args.table }}' AND mutation_id = '{{ args.mutation_id }}'\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"KILL MUTATION WHERE database = '${1}' AND table = '${2}' AND mutation_id = '${3}'\""
+      - "emisar"
+      - "{{ args.database }}"
+      - "{{ args.table }}"
+      - "{{ args.mutation_id }}"
   timeout: 30s
 
 output:

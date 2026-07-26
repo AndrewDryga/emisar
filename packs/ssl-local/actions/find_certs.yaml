@@ -27,7 +27,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "find {{ args.path }} -xdev -type f \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' \\) -print 2>/dev/null | head -500"
+      - "find \"$1\" -xdev -type f \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' \\) -print 2>/dev/null | head -500"
+      - "emisar"
+      - "{{ args.path }}"
   timeout: 60s
 output:
   parser: text

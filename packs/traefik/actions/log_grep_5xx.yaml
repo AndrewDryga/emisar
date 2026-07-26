@@ -31,9 +31,8 @@ args:
     description: Access log path.
     validation:
       pattern: "^/var/log/traefik/[A-Za-z0-9._/-]{1,128}$"
-      # The pattern blocks shell metacharacters (the value substitutes into a
-      # /bin/sh -c pipeline) but NOT `..` — `.` and `/` are literal charset
-      # members. allowed_prefixes runs the runner's Clean+EvalSymlinks
+      # The pattern constrains lexical shape but NOT `..` — `.` and `/` are
+      # literal charset members. allowed_prefixes runs the runner's Clean+EvalSymlinks
       # containment, collapsing any `../` escape to its real path and rejecting
       # anything outside the traefik log dir.
       allowed_prefixes:
@@ -43,7 +42,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -E '(\"DownstreamStatus\":5[0-9][0-9]| 5[0-9][0-9] )' {{ args.log_path }} | tail -n {{ args.lines }}"
+      - "grep -E '(\"DownstreamStatus\":5[0-9][0-9]| 5[0-9][0-9] )' \"$1\" | tail -n {{ args.lines }}"
+      - "emisar"
+      - "{{ args.log_path }}"
   timeout: 30s
 output:
   parser: text

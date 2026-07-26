@@ -27,7 +27,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n '{{ args.table }}' ]; then nodetool verify {{ args.keyspace }} {{ args.table }}; elif [ -n '{{ args.keyspace }}' ]; then nodetool verify {{ args.keyspace }}; else nodetool verify; fi"
+      - "if [ -n ''\"$1\"'' ]; then nodetool verify \"$2\" \"$1\"; elif [ -n ''\"$2\"'' ]; then nodetool verify \"$2\"; else nodetool verify; fi"
+      - "emisar"
+      - "{{ args.table }}"
+      - "{{ args.keyspace }}"
   timeout: 6h
 output:
   parser: text

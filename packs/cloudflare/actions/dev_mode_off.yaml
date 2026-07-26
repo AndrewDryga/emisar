@@ -18,7 +18,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS -XPATCH \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/settings/development_mode\" -H @- -H \"Content-Type: application/json\" -d '{\"value\":\"off\"}'"
+      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS -XPATCH \"https://api.cloudflare.com/client/v4/zones/${1}/settings/development_mode\" -H @- -H \"Content-Type: application/json\" -d '{\"value\":\"off\"}'"
+      - "emisar"
+      - "{{ args.zone_id }}"
   timeout: 30s
 output:
   parser: json

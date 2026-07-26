@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cqlsh -e 'DESCRIBE KEYSPACE {{ args.keyspace }};' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "cqlsh -e 'DESCRIBE KEYSPACE '\"$1\"';' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.keyspace }}"
   timeout: 60s
 output:
   parser: text

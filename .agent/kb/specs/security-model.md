@@ -8,8 +8,11 @@
 2. **No cloud-supplied command line.** Actions declare a literal `binary` and
    argv array, which the runner executes with `os/exec`. Most actions call a
    binary directly. A pack may declare a fixed `/bin/sh -c` program for pipes
-   or other shell features, but that program is pack-authored and every
-   substituted argument must be schema-bounded against shell metacharacters.
+   or other shell features, but that program is pack-authored. Open-ended
+   strings and paths reach it through environment variables or whole positional
+   argv elements; only finite choices and two-sided bounded numbers may be
+   substituted into the program text. The pack loader rejects other references
+   at authoring time.
    The staging-only `shell` pack is the explicit critical-risk break-glass
    exception: it accepts an operator-supplied script and is default-denied.
 3. **No request-time script files.** Script-kind actions reference a file
@@ -138,7 +141,7 @@ its actions from itself:
 
 | Threat                                   | Mitigation                                                    |
 | ---------------------------------------- | ------------------------------------------------------------- |
-| LLM constructs a malicious shell string  | It cannot choose the binary or command program; substituted values are schema-validated. The arbitrary-shell pack is staging-only, critical-risk, and default-denied. |
+| LLM constructs a malicious shell string  | It cannot choose the binary or command program; the loader rejects open-ended values in shell program text and requires data-only env/argv channels. The arbitrary-shell pack is staging-only, critical-risk, and default-denied. |
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
 | LLM tries to read /etc/shadow            | Path arg `denied_paths`; OS perms still apply.                |

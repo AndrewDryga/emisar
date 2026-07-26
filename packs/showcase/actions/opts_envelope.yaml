@@ -34,7 +34,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "sleep 1; echo {{ args.payload }}"
+      - "sleep 1; echo \"$1\""
+      - "emisar"
+      - "{{ args.payload }}"
   # Cloud opts.timeout is clamped to [timeout_min, timeout_max]. The
   # default still applies if cloud sends no opts.
   timeout: 5s

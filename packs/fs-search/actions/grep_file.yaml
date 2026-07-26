@@ -42,7 +42,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ \"{{ args.case_insensitive }}\" = \"true\" ]; then grep -i -E \"$P\" \"{{ args.path }}\" | head -2000; else grep -E \"$P\" \"{{ args.path }}\" | head -2000; fi"
+      - "if [ \"{{ args.case_insensitive }}\" = \"true\" ]; then grep -i -E \"$P\" \"${1}\" | head -2000; else grep -E \"$P\" \"${1}\" | head -2000; fi"
+      - "emisar"
+      - "{{ args.path }}"
   env:
     P: "{{ args.pattern }}"
   timeout: 2m

@@ -35,7 +35,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d {{ args.path }}/* 2>/dev/null | sort -rh | head -20"
+      - "du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d \"$1\"/* 2>/dev/null | sort -rh | head -20"
+      - "emisar"
+      - "{{ args.path }}"
   timeout: 5m
 output:
   parser: text

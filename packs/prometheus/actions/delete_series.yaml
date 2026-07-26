@@ -32,7 +32,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sSfX POST -g --data-urlencode 'match[]={{ args.matcher }}' '{{ args.target }}/api/v1/admin/tsdb/delete_series'"
+      - "curl -sSfX POST -g --data-urlencode 'match[]='\"$1\"'' ''\"$2\"'/api/v1/admin/tsdb/delete_series'"
+      - "emisar"
+      - "{{ args.matcher }}"
+      - "{{ args.target }}"
   timeout: 60s
 output:
   parser: text

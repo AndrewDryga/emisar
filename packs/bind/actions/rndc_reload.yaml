@@ -20,7 +20,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -z \"{{ args.zone }}\" ]; then rndc reload; else rndc reload \"{{ args.zone }}\"; fi"
+      - "if [ -z \"${1}\" ]; then rndc reload; else rndc reload \"${1}\"; fi"
+      - "emisar"
+      - "{{ args.zone }}"
   timeout: 30s
 output:
   parser: text

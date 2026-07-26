@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--group' '{{ args.group }}' '--members'"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--group' ''\"$1\"'' '--members'"
+      - "emisar"
+      - "{{ args.group }}"
   timeout: 60s
 output:
   parser: text

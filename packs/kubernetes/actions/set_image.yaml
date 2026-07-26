@@ -45,7 +45,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} set image deploy/{{ args.name }} {{ args.container }}={{ args.image }}"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" set image deploy/\"$2\" \"$3\"=\"$4\""
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
+      - "{{ args.container }}"
+      - "{{ args.image }}"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

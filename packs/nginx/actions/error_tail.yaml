@@ -31,9 +31,8 @@ args:
     description: Path to error log.
     validation:
       pattern: "^/var/log/nginx/[A-Za-z0-9._/-]{1,128}$"
-      # The pattern blocks shell metacharacters (the value substitutes into a
-      # /bin/sh -c pipeline) but NOT `..` — `.` and `/` are literal charset
-      # members. allowed_prefixes runs the runner's Clean+EvalSymlinks
+      # The pattern constrains lexical shape but NOT `..` — `.` and `/` are
+      # literal charset members. allowed_prefixes runs the runner's Clean+EvalSymlinks
       # containment, collapsing any `../` escape to its real path and rejecting
       # anything outside the nginx log dir.
       allowed_prefixes:
@@ -44,7 +43,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "tail -n {{ args.lines }} {{ args.log_path }}"
+      - "tail -n {{ args.lines }} \"$1\""
+      - "emisar"
+      - "{{ args.log_path }}"
   timeout: 30s
 
 output:

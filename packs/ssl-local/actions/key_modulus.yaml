@@ -27,7 +27,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl rsa -in {{ args.path }} -modulus -noout 2>/dev/null | sha256sum"
+      - "openssl rsa -in \"$1\" -modulus -noout 2>/dev/null | sha256sum"
+      - "emisar"
+      - "{{ args.path }}"
   timeout: 30s
 output:
   parser: text

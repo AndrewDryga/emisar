@@ -21,7 +21,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n '{{ args.source_dc }}' ]; then nodetool rebuild {{ args.source_dc }}; else nodetool rebuild; fi"
+      - "if [ -n ''\"$1\"'' ]; then nodetool rebuild \"$1\"; else nodetool rebuild; fi"
+      - "emisar"
+      - "{{ args.source_dc }}"
   timeout: 24h
   cancel_grace: 10m
 output:

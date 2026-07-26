@@ -27,7 +27,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "M=''; if [ -n '{{ args.meta_kv }}' ]; then for kv in $(echo '{{ args.meta_kv }}' | tr ',' ' '); do M=\"$M -meta $kv\"; done; fi; nomad job dispatch $M {{ args.job }}"
+      - "M=''; if [ -n ''\"$1\"'' ]; then for kv in $(echo ''\"$1\"'' | tr ',' ' '); do M=\"$M -meta $kv\"; done; fi; nomad job dispatch $M \"$2\""
+      - "emisar"
+      - "{{ args.meta_kv }}"
+      - "{{ args.job }}"
   timeout: 60s
 output:
   parser: text

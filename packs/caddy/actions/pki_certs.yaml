@@ -18,7 +18,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/pki/ca/{{ args.ca }}/certificates\""
+      - "curl -fsS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/pki/ca/${1}/certificates\""
+      - "emisar"
+      - "{{ args.ca }}"
   timeout: 15s
 output:
   parser: json

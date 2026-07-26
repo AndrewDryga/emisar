@@ -13,7 +13,7 @@ args:
     description: Caddyfile path.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
-      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are
+      # The pattern constrains lexical shape but NOT `..` (`.`/`/` are
       # literal charset members). allowed_prefixes runs the runner's
       # Clean+EvalSymlinks containment, scoping this to Caddy's standard config
       # roots so it can't become an arbitrary-file read oracle — adapt parses

@@ -23,7 +23,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ); aws cloudwatch get-metric-statistics --namespace '{{ args.namespace }}' --metric-name '{{ args.metric }}' --start-time $START --end-time $END --period 300 --statistics Average Maximum --output json"
+      - "END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ); aws cloudwatch get-metric-statistics --namespace ''\"$1\"'' --metric-name ''\"$2\"'' --start-time $START --end-time $END --period 300 --statistics Average Maximum --output json"
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.metric }}"
   timeout: 30s
 output:
   parser: json

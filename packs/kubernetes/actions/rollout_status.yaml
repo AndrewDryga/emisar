@@ -39,7 +39,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} rollout status {{ args.kind }}/{{ args.name }} --watch=false"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" rollout status {{ args.kind }}/\"$2\" --watch=false"
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

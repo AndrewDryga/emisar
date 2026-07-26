@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" show -- {{ args.package }}"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" show -- \"$1\""
+      - "emisar"
+      - "{{ args.package }}"
   timeout: 15s
 output:
   parser: text

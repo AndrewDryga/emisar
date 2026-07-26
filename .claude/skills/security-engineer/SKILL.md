@@ -22,8 +22,10 @@ the product failing. Lead with the abuse case.
   schema and clamps opts to `*_min`/`*_max`. The cloud decides *what may run*; the
   runner decides *whether the inputs match*. Keep both gates.
 - **No cloud/LLM-controlled shell code.** Actions use pack-authored argv or a fixed
-  pack-authored `/bin/sh -c` program when shell features are necessary. Never build
-  shell code from untrusted input; every interpolated argument must be schema-bounded.
+  pack-authored `/bin/sh -c` program when shell features are necessary. Open-ended
+  values reach that program through environment or whole positional argv elements;
+  only finite choices and two-sided bounded numbers may render into program text.
+  A regex is not a shell-isolation boundary.
 - **Cloud is the audit system of record.** Every action attempt → an audit row.
   A mutation that isn't audited is a hole.
 

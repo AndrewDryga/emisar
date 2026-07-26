@@ -28,7 +28,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT range_id, lease_holder, range_size_mb, replicas FROM [SHOW RANGES FROM TABLE {{ args.database }}.{{ args.table }} WITH DETAILS]\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT range_id, lease_holder, range_size_mb, replicas FROM [SHOW RANGES FROM TABLE ${1}.${2} WITH DETAILS]\""
+      - "emisar"
+      - "{{ args.database }}"
+      - "{{ args.table }}"
   timeout: 30s
 output:
   parser: text

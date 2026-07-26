@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-topics.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--topic' '{{ args.topic }}'"
+      - "kafka-topics.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--topic' ''\"$1\"''"
+      - "emisar"
+      - "{{ args.topic }}"
   timeout: 30s
 output:
   parser: text

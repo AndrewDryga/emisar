@@ -29,7 +29,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.force_reschedule }}' = 'true' ]; then exec nomad job eval -detach -force-reschedule -- '{{ args.job }}'; else exec nomad job eval -detach -- '{{ args.job }}'; fi"
+      - "if [ '{{ args.force_reschedule }}' = 'true' ]; then exec nomad job eval -detach -force-reschedule -- ''\"$1\"''; else exec nomad job eval -detach -- ''\"$1\"''; fi"
+      - "emisar"
+      - "{{ args.job }}"
   timeout: 30s
 output:
   parser: text

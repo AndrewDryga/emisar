@@ -30,7 +30,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "for v in tls1 tls1_1 tls1_2 tls1_3; do printf '%s: ' \"$v\"; openssl s_client -connect {{ args.host }}:{{ args.port }} -servername {{ args.host }} -$v </dev/null 2>/dev/null | grep -q 'BEGIN CERT' && echo OK || echo FAIL; done"
+      - "for v in tls1 tls1_1 tls1_2 tls1_3; do printf '%s: ' \"$v\"; openssl s_client -connect \"$1\":{{ args.port }} -servername \"$1\" -$v </dev/null 2>/dev/null | grep -q 'BEGIN CERT' && echo OK || echo FAIL; done"
+      - "emisar"
+      - "{{ args.host }}"
   env:
     OPENSSL_CONF: /dev/null
   timeout: 60s

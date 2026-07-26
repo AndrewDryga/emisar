@@ -15,7 +15,8 @@ this skill is the *order of operations*, not a copy of them.
 `runner/AGENTS.md` or `mcp/AGENTS.md`, in full. They carry the gate, the package
 layout, the security posture, and the Go house style. Don't work from memory —
 the conventions are specific (e.g. the runner never accepts cloud/LLM-controlled
-shell code; pack-authored argv and bounded fixed-shell programs are explicit).
+shell code; open-ended values enter fixed shell programs only through env or
+whole positional argv elements).
 
 ## 2. Wear the hats (root AGENTS.md creed)
 - **Security** especially for `runner/` — it executes commands on hosts. Any

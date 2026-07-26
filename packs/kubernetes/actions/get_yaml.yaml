@@ -39,7 +39,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} get {{ args.kind }}/{{ args.name }} -o yaml"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" get {{ args.kind }}/\"$2\" -o yaml"
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
   timeout: 15s
   env:
     KCTX: "{{ args.context }}"

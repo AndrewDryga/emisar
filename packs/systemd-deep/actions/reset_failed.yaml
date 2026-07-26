@@ -24,7 +24,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "systemctl reset-failed {{ args.unit }}"
+      - "systemctl reset-failed \"$1\""
+      - "emisar"
+      - "{{ args.unit }}"
   timeout: 30s
 output:
   parser: text

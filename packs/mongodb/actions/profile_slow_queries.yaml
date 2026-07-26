@@ -38,7 +38,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").system.profile.find({millis:{$gte:{{ args.min_millis }}}}).sort({ts:-1}).limit({{ args.limit }}).toArray())'"
+      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"'\"$1\"'\").system.profile.find({millis:{$gte:{{ args.min_millis }}}}).sort({ts:-1}).limit({{ args.limit }}).toArray())'"
+      - "emisar"
+      - "{{ args.database }}"
   timeout: 60s
 output:
   parser: json

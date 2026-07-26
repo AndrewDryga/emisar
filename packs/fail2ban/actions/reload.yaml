@@ -23,7 +23,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "fail2ban-client reload {{ args.jail }}"
+      - "fail2ban-client reload \"$1\""
+      - "emisar"
+      - "{{ args.jail }}"
   timeout: 30s
 output:
   parser: text

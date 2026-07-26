@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.killOp({{ args.opid }}))'"
+      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.killOp('\"$1\"'))'"
+      - "emisar"
+      - "{{ args.opid }}"
   timeout: 30s
 output:
   parser: json

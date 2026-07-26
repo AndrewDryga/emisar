@@ -22,7 +22,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL QUERY '{{ args.query_id }}'\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL QUERY '${1}'\""
+      - "emisar"
+      - "{{ args.query_id }}"
   timeout: 15s
 output:
   parser: text

@@ -36,7 +36,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -F 'SLOW REQUEST' {{ args.log_path }} | tail -n {{ args.lines }}"
+      - "grep -F 'SLOW REQUEST' \"$1\" | tail -n {{ args.lines }}"
+      - "emisar"
+      - "{{ args.log_path }}"
   timeout: 30s
 output:
   parser: text

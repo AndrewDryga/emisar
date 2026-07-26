@@ -26,7 +26,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--group' '{{ args.group }}' '--topic' '{{ args.topic }}' '--reset-offsets' '--to-earliest' '--execute'"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--group' ''\"$1\"'' '--topic' ''\"$2\"'' '--reset-offsets' '--to-earliest' '--execute'"
+      - "emisar"
+      - "{{ args.group }}"
+      - "{{ args.topic }}"
   timeout: 5m
 output:
   parser: text

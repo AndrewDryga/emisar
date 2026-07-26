@@ -21,7 +21,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$GIT_REPO\" && git blame -- {{ args.path }}"
+      - "cd \"$GIT_REPO\" && git blame -- \"$1\""
+      - "emisar"
+      - "{{ args.path }}"
   timeout: 60s
 output:
   parser: text

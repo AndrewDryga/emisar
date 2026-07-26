@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.11
+version: 0.1.12
 retired_below: 0.1.9
 description: >
   Deeper systemd state than linux-core: failed units, list-units,

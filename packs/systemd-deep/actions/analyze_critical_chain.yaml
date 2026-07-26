@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "systemd-analyze critical-chain {{ args.unit }}"
+      - "systemd-analyze critical-chain \"$1\""
+      - "emisar"
+      - "{{ args.unit }}"
   timeout: 15s
 output:
   parser: text

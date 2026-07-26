@@ -32,7 +32,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"executionStats\"))'"
+      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"'\"$1\"'\").getCollection(\"'\"$2\"'\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"executionStats\"))'"
+      - "emisar"
+      - "{{ args.database }}"
+      - "{{ args.collection }}"
   env:
     FILTER: "{{ args.filter_json }}"
   timeout: 60s

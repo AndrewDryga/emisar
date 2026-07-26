@@ -35,7 +35,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('{{ args.db_name }}').getCollection('{{ args.collection }}').dropIndex('{{ args.index_name }}')\""
+      - "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('${1}').getCollection('${2}').dropIndex('${3}')\""
+      - "emisar"
+      - "{{ args.db_name }}"
+      - "{{ args.collection }}"
+      - "{{ args.index_name }}"
   timeout: 60s
 output:
   parser: text

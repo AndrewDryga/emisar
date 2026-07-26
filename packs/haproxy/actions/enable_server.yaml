@@ -26,7 +26,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'enable server {{ args.backend }}/{{ args.server }}' | socat - \"$HAPROXY_SOCK\""
+      - "echo 'enable server '\"$1\"'/'\"$2\"'' | socat - \"$HAPROXY_SOCK\""
+      - "emisar"
+      - "{{ args.backend }}"
+      - "{{ args.server }}"
   timeout: 15s
 output:
   parser: text

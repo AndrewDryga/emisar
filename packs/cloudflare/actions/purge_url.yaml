@@ -24,7 +24,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS -XPOST \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/purge_cache\" -H @- -H \"Content-Type: application/json\" -d '{\"files\":[\"{{ args.url }}\"]}'"
+      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS -XPOST \"https://api.cloudflare.com/client/v4/zones/${1}/purge_cache\" -H @- -H \"Content-Type: application/json\" -d '{\"files\":[\"'\"$2\"'\"]}'"
+      - "emisar"
+      - "{{ args.zone_id }}"
+      - "{{ args.url }}"
   timeout: 30s
 output:
   parser: json

@@ -29,7 +29,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl s_client -connect {{ args.host }}:{{ args.port }} -servername {{ args.host }} -showcerts </dev/null 2>/dev/null"
+      - "openssl s_client -connect \"$1\":{{ args.port }} -servername \"$1\" -showcerts </dev/null 2>/dev/null"
+      - "emisar"
+      - "{{ args.host }}"
   timeout: 30s
 output:
   parser: text

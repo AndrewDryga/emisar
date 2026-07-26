@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "S='{{ args.server }}'; echo cons | nc -w 5 ${S%:*} ${S##*:}"
+      - "S=''\"$1\"''; echo cons | nc -w 5 ${S%:*} ${S##*:}"
+      - "emisar"
+      - "{{ args.server }}"
   timeout: 30s
 output:
   parser: text

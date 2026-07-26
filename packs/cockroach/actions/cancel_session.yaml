@@ -22,7 +22,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL SESSION '{{ args.session_id }}'\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL SESSION '${1}'\""
+      - "emisar"
+      - "{{ args.session_id }}"
   timeout: 15s
 output:
   parser: text

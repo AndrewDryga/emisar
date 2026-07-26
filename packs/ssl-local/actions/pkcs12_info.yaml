@@ -31,7 +31,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl pkcs12 -in {{ args.path }} -nokeys -info -passin env:PK12_PASSWORD 2>&1"
+      - "openssl pkcs12 -in \"$1\" -nokeys -info -passin env:PK12_PASSWORD 2>&1"
+      - "emisar"
+      - "{{ args.path }}"
   timeout: 30s
 output:
   parser: text

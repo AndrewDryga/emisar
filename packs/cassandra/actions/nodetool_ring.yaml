@@ -18,7 +18,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n '{{ args.keyspace }}' ]; then nodetool ring {{ args.keyspace }}; else nodetool ring; fi"
+      - "if [ -n ''\"$1\"'' ]; then nodetool ring \"$1\"; else nodetool ring; fi"
+      - "emisar"
+      - "{{ args.keyspace }}"
   timeout: 60s
 output:
   parser: text

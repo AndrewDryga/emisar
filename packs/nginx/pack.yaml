@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.9
+version: 0.2.10
 retired_below: 0.2.9
 description: >
   Operator pack for nginx — read-only status + access-log analysis,

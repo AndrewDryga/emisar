@@ -27,7 +27,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'set maxconn frontend {{ args.frontend }} {{ args.maxconn }}' | socat - \"$HAPROXY_SOCK\""
+      - "echo 'set maxconn frontend '\"$1\"' {{ args.maxconn }}' | socat - \"$HAPROXY_SOCK\""
+      - "emisar"
+      - "{{ args.frontend }}"
   timeout: 15s
 output:
   parser: text

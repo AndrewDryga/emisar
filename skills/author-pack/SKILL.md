@@ -104,8 +104,12 @@ Decide these per action, and write them down — they become the YAML:
   `argv` list is the shape; `{{ args.x }}` substitutes into fixed slots. The
   binary is a bare PATH-resolved name (`systemctl`, `psql`). When an action
   genuinely needs a pipeline, `/bin/sh` with a fixed `-c '<script>'` you
-  author is acceptable — only with every interpolated arg bounded so a
-  hostile value cannot break out of its slot.
+  author is acceptable. Pass open-ended strings, paths, and arrays through
+  `execution.env` or as whole positional elements after the program
+  (`["-c", "grep -- \"$1\" file", "emisar", "{{ args.pattern }}"]`).
+  Only finite `enum`/`allowed` choices and numbers with both `min` and `max`
+  may render into program text. An anchored regex constrains value shape; it
+  is not a shell-isolation boundary.
 - **Bound every argument.** Strings get `max_length` and an anchored
   `pattern` or an `enum`; numbers get `min`/`max`. An unbounded string is a
   DoS hole. **An anchored pattern is not path containment**: `.` and `/` are

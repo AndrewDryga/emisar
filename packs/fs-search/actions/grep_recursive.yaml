@@ -37,7 +37,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -rEnH --no-messages -m 500 --exclude-dir=.ssh --exclude-dir=ssh --exclude-dir=private --exclude-dir=sudoers.d --exclude=shadow --exclude=gshadow --exclude=shadow- --exclude=gshadow- --exclude=sudoers --exclude=kcore \"$P\" \"{{ args.path }}\""
+      - "grep -rEnH --no-messages -m 500 --exclude-dir=.ssh --exclude-dir=ssh --exclude-dir=private --exclude-dir=sudoers.d --exclude=shadow --exclude=gshadow --exclude=shadow- --exclude=gshadow- --exclude=sudoers --exclude=kcore \"$P\" \"${1}\""
+      - "emisar"
+      - "{{ args.path }}"
   env:
     P: "{{ args.pattern }}"
   timeout: 5m

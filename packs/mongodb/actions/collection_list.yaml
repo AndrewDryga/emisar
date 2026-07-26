@@ -19,7 +19,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('{{ args.database }}').getCollectionNames())\""
+      - "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('${1}').getCollectionNames())\""
+      - "emisar"
+      - "{{ args.database }}"
   timeout: 30s
 output:
   parser: json

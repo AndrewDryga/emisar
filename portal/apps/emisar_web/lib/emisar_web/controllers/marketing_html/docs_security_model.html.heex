@@ -31,8 +31,10 @@
           <strong>Pre-approved actions only.</strong>
           The runner loads action YAMLs at boot and refuses anything not in the catalog. A model
           cannot choose a binary or command program. Some reviewed actions use a fixed shell
-          pipeline, but the model controls only schema-bounded values; arbitrary shell is isolated
-          in the staging-only, critical-risk, default-denied <code>shell</code>
+          program; open-ended values reach it through environment or positional-argv data channels,
+          while only finite choices and two-sided bounded numbers may render into its text.
+          Arbitrary shell is isolated in the staging-only, critical-risk, default-denied
+          <code>shell</code>
           pack.
         </li>
         <li>

@@ -318,7 +318,7 @@ defmodule EmisarWeb.PacksTest do
                "sha256:b425f218f25b9f5006060ac206000d553e07ff3ed11d6e7f60dbea00c59f789e"
 
       assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:88b5afe792f1cadf4e797b826511c956274cc957b1afbcb066013f89b6865933"
+               "sha256:67ba82c7ded40bb82a69c62ffb24f80b02132bf6523a56af95907df0d0f2ec2f"
     end
 
     test "tarball_url/1 returns the immutable content-addressed URL for a known id" do

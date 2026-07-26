@@ -33,7 +33,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} delete pod {{ args.name }}"
+      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" delete pod \"$2\""
+      - "emisar"
+      - "{{ args.namespace }}"
+      - "{{ args.name }}"
   timeout: 5m
   env:
     KCTX: "{{ args.context }}"

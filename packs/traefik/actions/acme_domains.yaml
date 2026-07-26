@@ -19,7 +19,7 @@ args:
     description: Path to Traefik's ACME storage file. Common locations are /etc/traefik/acme.json or /letsencrypt/acme.json.
     validation:
       pattern: "^/[A-Za-z0-9._/-]{1,256}$"
-      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are
+      # The pattern constrains lexical shape but NOT `..` (`.`/`/` are
       # literal charset members). allowed_prefixes runs the runner's
       # Clean+EvalSymlinks containment, scoping the read to Traefik's own ACME
       # storage dirs so this can't become an arbitrary-file read oracle.
@@ -32,7 +32,9 @@ execution:
     argv:
       - "-c"
       - |
-        jq -r 'to_entries[].value.Certificates[]? | (([.domain.main] + (.domain.sans // [])) | join(", "))' {{ args.acme_path }}
+        jq -r 'to_entries[].value.Certificates[]? | (([.domain.main] + (.domain.sans // [])) | join(", "))' "$1"
+      - "emisar"
+      - "{{ args.acme_path }}"
   timeout: 15s
 output:
   parser: text
