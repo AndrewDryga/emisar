@@ -100,7 +100,11 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	bin := filepath.Join(harness, "bin")
 	baseCompose := filepath.Join(harness, "compose.yaml")
 	runnerImage := packTestRunnerImage(a.Root, invocationID)
+	sharedTools, sharedToolsErr := packTestNeedsSharedTools(plans)
 	preflightErr := func() error {
+		if sharedToolsErr != nil {
+			return sharedToolsErr
+		}
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
 		}
@@ -111,6 +115,9 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
 			return err
 		}
+		if !sharedTools {
+			return nil
+		}
 		composeEnv := map[string]string{
 			"EMISAR_ROOT":           a.Root,
 			"PACKTEST_RUNNER_IMAGE": runnerImage,
@@ -120,7 +127,9 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	if preflightErr != nil {
 		return errors.Join(preflightErr, writePackTestFailureReports(reports, plans, requestedVersionEnv, preflightErr))
 	}
-	defer a.removePackTestRunnerImage(runnerImage)
+	if sharedTools {
+		defer a.removePackTestRunnerImage(runnerImage)
+	}
 
 	versionEnvs := make(map[string]map[string]string, len(plans))
 	for _, plan := range plans {
@@ -403,6 +412,36 @@ type packTestComposeService struct {
 type packTestComposeBuild struct {
 	Context string            `yaml:"context"`
 	Args    map[string]string `yaml:"args"`
+}
+
+// packTestNeedsSharedTools reports whether any selected plan reaches the shared
+// client image. Building it pulls eight server images to extract one binary from
+// each, and a pack whose compose replaces runner-tools with a SUT-derived build
+// never runs a byte of it. haproxy is the exception that keeps this a question
+// rather than a rule: its Dockerfile starts FROM the shared image, named through
+// a PACKTEST_RUNNER_IMAGE build arg.
+func packTestNeedsSharedTools(plans []packtest.PlanRef) (bool, error) {
+	for _, plan := range plans {
+		data, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Path), "compose.yaml"))
+		if err != nil {
+			// preparePackTestPlan reports a missing plan compose per pack, with
+			// the name in the message. Assume the shared image is wanted so the
+			// run reaches that error rather than failing here without a pack.
+			return true, nil
+		}
+		var compose packTestComposeFile
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			return false, fmt.Errorf("parse %s compose: %w", plan.Name, err)
+		}
+		tools, declared := compose.Services["runner-tools"]
+		if !declared || tools.Build.Context == "" {
+			return true, nil
+		}
+		if _, derived := tools.Build.Args["PACKTEST_RUNNER_IMAGE"]; derived {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func packTestBuildServices(path string) ([]string, error) {

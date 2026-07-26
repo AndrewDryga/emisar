@@ -297,6 +297,73 @@ func TestPackTestRunnerImageIsInvocationSpecific(t *testing.T) {
 	}
 }
 
+func TestPackTestNeedsSharedTools(t *testing.T) {
+	tests := []struct {
+		name    string
+		compose string
+		want    bool
+	}{
+		{
+			name:    "inherits the shared service",
+			compose: "services:\n  fixture:\n    image: redis:8.8.0\n",
+			want:    true,
+		},
+		{
+			name:    "tweaks the shared service",
+			compose: "services:\n  runner-tools:\n    volumes: [data:/data]\n",
+			want:    true,
+		},
+		{
+			name: "derives from the shared image",
+			compose: "services:\n  runner-tools:\n    build:\n      context: .\n" +
+				"      args:\n        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}\n",
+			want: true,
+		},
+		{
+			name: "replaces the shared image",
+			compose: "services:\n  runner-tools:\n    build:\n      context: .\n" +
+				"      args:\n        PACKTEST_VERSION: ${PACKTEST_VERSION:-5.0.8}\n",
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(test.compose), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			plans := []packtest.PlanRef{{Name: "fixture", Path: filepath.Join(dir, "cases.yaml")}}
+			got, err := packTestNeedsSharedTools(plans)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("needs shared tools = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPackTestNeedsSharedToolsWhenAnyPlanReachesIt(t *testing.T) {
+	plan := func(compose string) packtest.PlanRef {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return packtest.PlanRef{Name: "fixture", Path: filepath.Join(dir, "cases.yaml")}
+	}
+	replaces := plan("services:\n  runner-tools:\n    build:\n      context: .\n      args:\n        PACKTEST_VERSION: x\n")
+	inherits := plan("services:\n  fixture:\n    image: redis:8.8.0\n")
+	got, err := packTestNeedsSharedTools([]packtest.PlanRef{replaces, inherits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Fatal("a selection containing an inheriting plan must build the shared image")
+	}
+}
+
 func TestSelectPackTestCaseRequiresOneExactCase(t *testing.T) {
 	plans := []packtest.PlanRef{{
 		Name: "postgres",
