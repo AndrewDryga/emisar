@@ -5,6 +5,12 @@ services:
       discovery.type: single-node
       cluster.routing.allocation.disk.threshold_enabled: "false"
       xpack.security.enabled: "false"
+      # Elasticsearch sizes its heap from visible memory, which on a CI runner
+      # means it reserves more than the box has left and gets OOM-killed
+      # (exit 137) before the first case runs. A read-only single node serving
+      # a handful of test documents needs a fraction of that; cassandra pins
+      # its heap for the same reason.
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ulimits:
       memlock: {soft: -1, hard: -1}
     healthcheck:
