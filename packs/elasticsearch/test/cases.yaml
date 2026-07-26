@@ -1,4 +1,9 @@
 services: [elasticsearch]
+risk_accountability:
+  exceptions:
+    es.close_index: requires_external_service
+    es.force_merge: requires_external_service
+    es.cache_clear: requires_external_service
 versions:
   - version: "9.4.4"
     digest: "@sha256:a3545404e436e348721786bed638042a81f2181ebe2e2636501bb43940677747"

@@ -1,4 +1,9 @@
 services: [kafka]
+risk_accountability:
+  exceptions:
+    kafka.reset_offsets_to_earliest: requires_dynamic_fixture
+    kafka.reset_offsets_to_latest: requires_dynamic_fixture
+    kafka.delete_consumer_group: requires_dynamic_fixture
 versions:
   - version: "4.1.1"
     digest: "@sha256:0bc1bb2478f45b6cea78864df86acdc11e8df2c5172477819a4d12942cbe5d40"

@@ -1,4 +1,9 @@
 services: [mongodb]
+risk_accountability:
+  exceptions:
+    mongo.drop_index: requires_dynamic_fixture
+    mongo.kill_op: requires_concurrent_session
+    mongo.compact_collection: requires_external_service
 versions:
   - version: "8.2.5"
     digest: "@sha256:60aa240412f473f672ec8b282fd5651aa156dcc7a220f81f5381ce768ccc3167"
