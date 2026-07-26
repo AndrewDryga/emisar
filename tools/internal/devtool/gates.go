@@ -285,6 +285,13 @@ func (a *App) packsGate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Same self-heal as portalGate: a dependency bump lands in mix.lock before
+	// any host fetches it, and deps.compile cannot fetch — without this the
+	// packs gate dies on the first lock bump when it runs before the portal
+	// gate (exactly how `gate all` orders them).
+	if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
+		return err
+	}
 	if err := a.warmPortalTestDependencies(ctx, env); err != nil {
 		return err
 	}
