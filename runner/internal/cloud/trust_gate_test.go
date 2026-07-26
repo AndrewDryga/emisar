@@ -75,6 +75,42 @@ func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 	}
 }
 
+// A registry snapshot that knows an action but has lost its owning pack is
+// internally inconsistent. The trust gate must refuse it rather than let that
+// inconsistency bypass the pack rehash and trusted-hash comparison.
+func TestClient_TrustGate_MissingRegisteredPackRefuses(t *testing.T) {
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	waitUntil(t, 2*time.Second, func() bool { return len(conn.sentByType(MsgRunnerState)) >= 1 })
+	action, ok := cli.opts.Engine.Registry().Action("t.echo")
+	if !ok {
+		t.Fatal("test registry has no t.echo action")
+	}
+	action.PackID = "missing"
+
+	sendRunActionWithPackContract(t, conn, "req_pack_missing", "t.echo",
+		map[string]any{"msg": "must not execute"}, "sha256:TRUSTED_HASH", "")
+	res := waitForResult(t, conn, "req_pack_missing", 3*time.Second)
+	if res["status"] != "pack_hash_mismatch" {
+		t.Fatalf("status=%v reason=%v error=%v, want pack_hash_mismatch",
+			res["status"], res["reason"], res["error"])
+	}
+	if !strings.Contains(res["error"].(string), "got pack_missing") {
+		t.Fatalf("error=%v, want missing-pack detail", res["error"])
+	}
+	if got := countMessagesForRequest(conn, MsgActionStarted, testRequestID("req_pack_missing")); got != 0 {
+		t.Fatalf("missing-pack refusal emitted %d action_started frame(s)", got)
+	}
+	requireResultEventID(t, res)
+}
+
 // A trust-gate refusal is terminal and idempotent: emitPackMismatch caches the
 // pack_hash_mismatch result in the dedup ring, so a cloud retry of the same
 // request_id replays the cached refusal without re-running the gate or

@@ -994,7 +994,8 @@ func (c *Client) passesTrustGate(ctx context.Context, s *runState, m RunActionMs
 
 	pack, ok := reg.Pack(action.PackID)
 	if !ok {
-		return reg, true
+		c.emitPackMismatch(ctx, s, m, action.PackID, m.ExpectedPackHash, "pack_missing")
+		return nil, false
 	}
 	hash, err := reg.RecomputePackHash(action.PackID)
 	if err != nil {
