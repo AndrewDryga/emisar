@@ -67,6 +67,11 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 			chromedp.Flag("no-sandbox", true),
 			chromedp.Flag("disable-dev-shm-usage", true),
 			chromedp.Flag("disable-gpu", true),
+			// A box or CI runner starts Chrome cold while the rest of the suite
+			// saturates its cores, and chromedp's 20s default for the WebSocket
+			// URL loses that race intermittently. A workstation keeps the short
+			// default so a genuinely dead Chrome still fails fast.
+			chromedp.WSURLReadTimeout(90*time.Second),
 		)
 	}
 	options = append(options, extra...)

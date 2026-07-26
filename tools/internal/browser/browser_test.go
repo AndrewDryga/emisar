@@ -189,7 +189,12 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 		}
 	})
 	manager := New(config)
-	deadline := time.Now().Add(10 * time.Second)
+	// Same cold-start race as the isolated session: a shared runner needs room.
+	startBudget := 10 * time.Second
+	if testInBox() {
+		startBudget = 90 * time.Second
+	}
+	deadline := time.Now().Add(startBudget)
 	for {
 		if _, err := manager.State(); err == nil {
 			break
