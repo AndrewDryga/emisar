@@ -26,6 +26,7 @@ defmodule EmisarWeb.RunnerScope do
   attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
   attr :submit_error_field, Phoenix.HTML.FormField, default: nil
   attr :submit_error_message, :string, default: nil
+  attr :validation_error, :string, default: nil
   attr :loading?, :boolean, default: false
   attr :load_error, :string, default: nil
   attr :class, :any, default: nil
@@ -36,16 +37,17 @@ defmodule EmisarWeb.RunnerScope do
       assigns
       |> assign(:tree, tree(assigns.runners, assigns.selected))
       |> assign(
-        :visible_submit_error,
-        visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
+        :visible_error,
+        assigns.validation_error ||
+          visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
       )
 
     ~H"""
     <div class={[scope_container_class(@variant), @class]} {@rest}>
       <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
 
-      <div :if={@visible_submit_error} class={scope_feedback_class(@variant)}>
-        <.error>{@visible_submit_error}</.error>
+      <div :if={@visible_error} class={scope_feedback_class(@variant)}>
+        <.error>{@visible_error}</.error>
       </div>
       <div :if={@loading?} class={scope_feedback_class(@variant)}>
         <.loading_state />

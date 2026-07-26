@@ -7,6 +7,7 @@ defmodule EmisarWeb.TeamLive do
   # String forms of the canonical role enum — the invite/role forms work
   # in strings (HTTP params); membership.role itself is an atom.
   @roles Enum.map(Emisar.Auth.Role.all(), &Atom.to_string/1)
+  @runner_scope_required "Choose at least one runner group or runner for selected access."
 
   def mount(_params, _session, socket) do
     if Runners.subject_can_view_runners?(socket.assigns.current_subject) do
@@ -22,11 +23,13 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:scope_editing_id, nil)
        |> assign(:scope_access_mode, "none")
        |> assign(:scope_draft, [])
+       |> assign(:scope_error, nil)
        |> assign(:runners, [])
        |> assign(:runners_by_id, %{})
        |> assign(:runner_load_error?, false)
        |> assign(:approval_access_modes, %{})
        |> assign(:approval_scope_drafts, %{})
+       |> assign(:approval_scope_errors, %{})
        # The branded sign-in link is a per-account constant to hand to members.
        |> assign(
          :sign_in_url,
@@ -89,7 +92,8 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:edit_form, to_form(params, as: "user"))
          |> assign(:scope_editing_id, nil)
          |> assign(:scope_access_mode, "none")
-         |> assign(:scope_draft, [])}
+         |> assign(:scope_draft, [])
+         |> assign(:scope_error, nil)}
     end
   end
 
@@ -115,6 +119,7 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:scope_editing_id, id)
          |> assign(:scope_access_mode, to_string(access.mode))
          |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
+         |> assign(:scope_error, nil)
          |> assign(:editing_id, nil)
          |> assign(:edit_form, nil)}
 
@@ -128,7 +133,8 @@ defmodule EmisarWeb.TeamLive do
      socket
      |> assign(:scope_editing_id, nil)
      |> assign(:scope_access_mode, "none")
-     |> assign(:scope_draft, [])}
+     |> assign(:scope_draft, [])
+     |> assign(:scope_error, nil)}
   end
 
   # Live-normalize the scope selection so the picker can disable a runner the
@@ -136,16 +142,28 @@ defmodule EmisarWeb.TeamLive do
   # now-redundant runners and re-seeds the draft the select renders from.
   def handle_event("scope_changed", params, socket) do
     mode = Map.get(params, "runner_access_mode", socket.assigns.scope_access_mode)
+    scope = List.wrap(params["scope"])
 
-    case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+    case parse_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, %Accounts.RunnerAccess{} = access} ->
         {:noreply,
          socket
          |> assign(:scope_access_mode, to_string(access.mode))
-         |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))}
+         |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
+         |> assign(:scope_error, nil)}
 
       {:error, :invalid_runner_access} ->
-        {:noreply, assign(socket, :scope_access_mode, mode)}
+        error =
+          if scope == [] and socket.assigns.scope_draft != [],
+            do: @runner_scope_required
+
+        draft = if scope == [], do: [], else: socket.assigns.scope_draft
+
+        {:noreply,
+         socket
+         |> assign(:scope_access_mode, mode)
+         |> assign(:scope_draft, draft)
+         |> assign(:scope_error, error)}
     end
   end
 
@@ -278,8 +296,9 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("approval_access_changed", %{"id" => id} = params, socket) do
     mode = params["runner_access_mode"]
+    scope = List.wrap(params["scope"])
 
-    case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+    case parse_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, access} ->
         {:noreply,
          socket
@@ -294,15 +313,38 @@ defmodule EmisarWeb.TeamLive do
              id,
              RunnerScope.to_values(access.groups, access.runner_ids)
            )
+         )
+         |> assign(
+           :approval_scope_errors,
+           Map.delete(socket.assigns.approval_scope_errors, id)
          )}
 
       {:error, :invalid_runner_access} ->
+        previous_draft = Map.get(socket.assigns.approval_scope_drafts, id, [])
+
+        errors =
+          if scope == [] and previous_draft != [] do
+            Map.put(socket.assigns.approval_scope_errors, id, @runner_scope_required)
+          else
+            Map.delete(socket.assigns.approval_scope_errors, id)
+          end
+
+        drafts =
+          if scope == [],
+            do: Map.put(socket.assigns.approval_scope_drafts, id, []),
+            else: socket.assigns.approval_scope_drafts
+
         {:noreply,
-         assign(
-           socket,
+         socket
+         |> assign(
            :approval_access_modes,
            Map.put(socket.assigns.approval_access_modes, id, mode)
-         )}
+         )
+         |> assign(
+           :approval_scope_drafts,
+           drafts
+         )
+         |> assign(:approval_scope_errors, errors)}
     end
   end
 
@@ -348,7 +390,7 @@ defmodule EmisarWeb.TeamLive do
           end
 
         {:error, :invalid_runner_access} ->
-          {:error, "Choose at least one runner group or runner for selected access."}
+          {:error, @runner_scope_required}
       end
     end)
     |> tap_clear_scope_edit()
@@ -802,6 +844,7 @@ defmodule EmisarWeb.TeamLive do
     socket
     |> assign(:approval_access_modes, modes)
     |> assign(:approval_scope_drafts, drafts)
+    |> assign(:approval_scope_errors, %{})
   end
 
   defp provider_default_runner_access(provider) do
@@ -1228,6 +1271,7 @@ defmodule EmisarWeb.TeamLive do
                   label="Selected runners"
                   runners={@runners}
                   selected={Map.get(@approval_scope_drafts, request.id, [])}
+                  validation_error={Map.get(@approval_scope_errors, request.id)}
                 />
                 <.button variant={:secondary} tone={:amber} size={:sm}>Approve</.button>
               </form>
@@ -1572,6 +1616,7 @@ defmodule EmisarWeb.TeamLive do
                           variant={:attached}
                           runners={@runners}
                           selected={@scope_draft}
+                          validation_error={@scope_error}
                         />
                       </div>
 

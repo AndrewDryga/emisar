@@ -81,6 +81,34 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "clearing the last pending-request runner scope keeps it cleared", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      form = "#approve-request-#{request.id}"
+
+      render_change(lv, "approval_access_changed", %{
+        "id" => request.id,
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:database"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='group:database']:checked")
+
+      html =
+        render_change(lv, "approval_access_changed", %{
+          "id" => request.id,
+          "runner_access_mode" => "restricted"
+        })
+
+      refute has_element?(lv, "#{form} input[value='group:database']:checked")
+      assert html =~ "Choose at least one runner group or runner for selected access."
+    end
+
     test "the connection lists in the Security panel with the sign-in link", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
@@ -551,6 +579,38 @@ defmodule EmisarWeb.TeamLiveTest do
       # "via group" and disabled (an individual tick would be redundant).
       assert html =~ ~r/checked[^>]*value="group:dba"/
       assert html =~ "via group"
+    end
+
+    test "clearing the last runner scope keeps it cleared", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      email = "scoped5-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership}} =
+        Emisar.Accounts.invite_user_to_account(
+          email,
+          "admin",
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
+        )
+
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r11", group: "dba")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "start_scope_edit", %{"membership_id" => membership.id})
+      form = "form[phx-submit='save_scopes']"
+
+      render_change(lv, "scope_changed", %{
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:dba"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='group:dba']:checked")
+
+      html = render_change(lv, "scope_changed", %{"runner_access_mode" => "restricted"})
+
+      refute has_element?(lv, "#{form} input[value='group:dba']:checked")
+      assert html =~ "Choose at least one runner group or runner for selected access."
     end
 
     test "the scope picker pre-selects the member's existing scopes", %{conn: conn} do
