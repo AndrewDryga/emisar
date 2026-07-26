@@ -34,7 +34,7 @@ controller file, read it and check:
   every `Repo.fetch`/`list`/`fetch_and_update` in a context.
 - **IL-5** — public reads/writes return tagged tuples; no bare struct/`nil`.
 - **IL-9** — authorizers expose `build(Schema, :verb)` accessors, clause all
-  roles, and the new authorizer is in `auth/authorizer.ex`'s `@authorizers`.
+  roles, and the new authorizer is in `auth/permissions.ex`'s `@authorizers`.
 - **IL-10** — no `Repo.preload/2` in a context (route via Query `preloads/0`),
   except a post-commit email helper.
 - **IL-13** — recurrent jobs derive work from durable rows, keep each tick
