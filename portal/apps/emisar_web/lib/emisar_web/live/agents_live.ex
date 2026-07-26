@@ -1671,7 +1671,7 @@ defmodule EmisarWeb.AgentsLive do
       phx-click="select_client"
       phx-value-client={@id}
       class={[
-        "rounded-lg px-3 py-1.5 text-sm font-medium transition",
+        "inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition",
         if(@selected,
           do: "bg-zinc-100 text-zinc-950",
           else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"

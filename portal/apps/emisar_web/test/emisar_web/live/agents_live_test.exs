@@ -11,20 +11,19 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "mount renders the client picker but does NOT auto-mint a key", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       assert html =~ "LLM agents"
       assert html =~ "Connect an agent"
 
-      # All client tiles are rendered.
-      assert html =~ "Claude.ai"
-      assert html =~ "ChatGPT"
-      assert html =~ "Claude Code"
-      assert html =~ "Claude Desktop"
-      assert html =~ "Cursor"
-      assert html =~ "Gemini CLI"
-      assert html =~ "Codex CLI"
-      assert html =~ "Grok CLI"
+      for id <-
+            ~w(claude_web chatgpt claude_code claude_desktop cursor windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom) do
+        selector =
+          "button.min-h-10.min-w-10[phx-click='select_client'][phx-value-client='#{id}']"
+
+        assert has_element?(lv, selector)
+      end
+
       assert html =~ ~s(href="/docs/connect-an-llm")
 
       # No key minted until a client is picked.
