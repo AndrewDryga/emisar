@@ -129,12 +129,15 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	}
 
 	versionEnvs := make(map[string]map[string]string, len(plans))
+	images := make(map[string]string, len(plans))
 	for _, plan := range plans {
 		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
 		versionEnvs[plan.Name] = versionEnv
-		if err := a.preparePackTestPlan(ctx, baseCompose, invocationID, runnerImage, plan, versionEnv); err != nil {
+		resolved, err := a.preparePackTestPlan(ctx, baseCompose, invocationID, runnerImage, plan, versionEnv)
+		if err != nil {
 			return errors.Join(err, writePackTestFailureReports(reports, []packtest.PlanRef{plan}, requestedVersionEnv, err))
 		}
+		images[plan.Name] = resolved
 	}
 
 	var queued []packTestJob
@@ -145,6 +148,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				Plan:         plan,
 				Case:         test,
 				VersionEnv:   versionEnvs[plan.Name],
+				Images:       images[plan.Name],
 			})
 		}
 	}
@@ -294,6 +298,7 @@ type packTestJob struct {
 	Plan         packtest.PlanRef
 	Case         packtest.CaseRef
 	VersionEnv   map[string]string
+	Images       string
 }
 
 type packTestCaseResult struct {
@@ -311,50 +316,58 @@ func (a *App) preparePackTestPlan(
 	runnerImage string,
 	plan packtest.PlanRef,
 	versionEnv map[string]string,
-) error {
+) (string, error) {
 	packCompose := filepath.Join(filepath.Dir(plan.Path), "compose.yaml")
 	if !isFile(packCompose) {
-		return fmt.Errorf("behavior plan has no sibling compose.yaml")
+		return "", fmt.Errorf("behavior plan has no sibling compose.yaml")
 	}
 	if len(plan.Services) == 0 {
-		return fmt.Errorf("behavior plan has no primary SUT service")
+		return "", fmt.Errorf("behavior plan has no primary SUT service")
 	}
 	defaultVersion := plan.DefaultVersion()
 	if err := validatePackTestVersionInput(packCompose, plan.Services[0], defaultVersion.Version); err != nil {
-		return err
+		return "", err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
 	env := packTestComposeEnv(a.Root, invocationID, runnerImage, plan, "build", versionEnv, plan.Runner.User)
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
 	if err != nil {
-		return err
+		return "", err
 	}
 	available := make(map[string]bool)
 	for _, service := range strings.Fields(string(output)) {
 		available[service] = true
 	}
 	if !available["runner-tools"] {
-		return fmt.Errorf("the Compose project has no runner-tools service")
+		return "", fmt.Errorf("the Compose project has no runner-tools service")
 	}
 	for _, service := range plan.Services {
 		if !available[service] {
-			return fmt.Errorf("requires unknown Compose service %s", service)
+			return "", fmt.Errorf("requires unknown Compose service %s", service)
 		}
 	}
 
 	buildServices, err := packTestBuildServices(packCompose)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(buildServices) > 0 {
 		buildArgs := append(append([]string{}, compose...), "build")
 		buildArgs = append(buildArgs, buildServices...)
 		if err := a.run(ctx, a.Root, env, "docker", buildArgs...); err != nil {
-			return fmt.Errorf("build pack services: %w", err)
+			return "", fmt.Errorf("build pack services: %w", err)
 		}
 	}
-	return nil
+
+	// Only the project name and the runner identity vary between a plan's
+	// cases, and neither reaches image resolution, so resolving here spares
+	// every case a second full parse of both Compose files.
+	images, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--images")...)
+	if err != nil {
+		return "", err
+	}
+	return string(images), nil
 }
 
 func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) error {
@@ -369,11 +382,7 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 		job.VersionEnv,
 		job.Case.RunnerUser,
 	)
-	images, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--images")...)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.Out, "Resolved images:\n%s\n", images)
+	fmt.Fprintf(a.Out, "Resolved images:\n%s\n", job.Images)
 
 	setupArgs := append(append(compose, "up", "-d", "--wait"), job.Plan.Services...)
 	setupErr := a.run(ctx, a.Root, env, "docker", setupArgs...)

@@ -18,6 +18,8 @@ services:
     healthcheck:
       test: ["CMD", "test", "-S", "/run/haproxy/admin.sock"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 20
 
 volumes:

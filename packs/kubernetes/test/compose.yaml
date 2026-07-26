@@ -16,6 +16,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "kubectl get nodes | grep -q ' Ready' && kubectl wait --for=condition=Ready pod/probe --timeout=2s >/dev/null && kubectl get crd harnesses.packtest.emisar.dev >/dev/null"]
       interval: 10s
+      start_period: 120s
+      start_interval: 1s
       retries: 30
 
   k3s-kubeconfig:
@@ -27,6 +29,8 @@ services:
     healthcheck:
       test: ["CMD", "test", "-f", "/shared/ready"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 20
 
 volumes:

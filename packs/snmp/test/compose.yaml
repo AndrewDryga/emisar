@@ -14,6 +14,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "snmpget -v2c -c packtest-canary-snmp-community-b410 -On 127.0.0.1 1.3.6.1.2.1.1.5.0 >/dev/null 2>&1"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       timeout: 3s
       retries: 30
 
@@ -37,4 +39,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "MIBS='' snmpbulkwalk -v2c -c packtest-canary-snmp-community-b410 -On 127.0.0.1 1.3.6.1.2.1.14.10 2>/dev/null | grep -q 192.168.99.2"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 30

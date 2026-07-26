@@ -26,6 +26,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "rndc status >/dev/null"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 30
 
 volumes:

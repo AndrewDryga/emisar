@@ -8,4 +8,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "echo ruok | nc -w 2 localhost 2181 | grep -q imok"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 10

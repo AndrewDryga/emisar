@@ -7,6 +7,12 @@ services:
     volumes:
       - ${EMISAR_ROOT}/packs/mongodb/test/fixtures/init.js:/docker-entrypoint-initdb.d/init.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      # Dial the routable address, never loopback. The entrypoint seeds through
+      # a temporary mongod bound to 127.0.0.1 and shuts it down before the real
+      # one starts, so a loopback ping reports healthy while a case connecting
+      # over the network still gets ECONNREFUSED.
+      test: ["CMD-SHELL", "mongosh --host \"$$(hostname -i)\" --quiet --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
+      start_period: 30s
+      start_interval: 1s
       retries: 10

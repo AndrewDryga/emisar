@@ -16,4 +16,6 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-fsSL", "http://localhost:9200/_cluster/health"]
       interval: 10s
+      start_period: 120s
+      start_interval: 1s
       retries: 20

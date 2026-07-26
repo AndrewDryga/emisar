@@ -56,6 +56,13 @@ cases:
   - action: cockroach.table_row_counts
     arrange:
       - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "CREATE TABLE IF NOT EXISTS packtest_rows (id INT PRIMARY KEY); UPSERT INTO packtest_rows VALUES (1), (2), (3); ANALYZE packtest_rows"]
+      # ANALYZE returns before the statistic it wrote is readable, and the
+      # action reads the statistic rather than the table.
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", --format=tsv, -e, "SET allow_unsafe_internals = true; SELECT table_name FROM crdb_internal.table_row_statistics WHERE table_name = 'packtest_rows'"]
+        retry_for: 30s
+        retry_every: 500ms
+        expect:
+          stdout_contains: [packtest_rows]
     expect:
       stdout_contains: [table_name, packtest_rows]
     cleanup:

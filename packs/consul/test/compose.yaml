@@ -5,4 +5,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8500/v1/agent/metrics | grep -q '\"Timestamp\"'"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 30
