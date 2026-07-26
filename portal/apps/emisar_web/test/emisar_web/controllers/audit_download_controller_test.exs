@@ -25,7 +25,8 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
           actor_label: "bob@example.com"
         )
 
-      conn = get(conn, ~p"/app/#{account}/audit/download?event_type=user.invited")
+      params = %{event_type: "user.invited", from: "2020-01-01T00:00"}
+      conn = get(conn, ~p"/app/#{account}/audit/download?#{params}")
 
       assert response_content_type(conn, :csv)
 
@@ -38,11 +39,15 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       assert body =~ "alice@example.com"
       refute body =~ "bob@example.com"
 
-      # Watch the watchers: the download itself lands in the trail.
-      exported =
+      [exported] =
         Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported"))
 
-      assert length(exported) == 1
+      assert exported.payload == %{
+               "count" => 1,
+               "event_types" => ["user.invited"],
+               "from" => "2020-01-01T00:00:00Z",
+               "limit" => nil
+             }
     end
 
     test "a free-plan account is redirected to billing, exporting nothing", %{conn: conn} do

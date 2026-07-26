@@ -1591,16 +1591,36 @@ defmodule Emisar.Audit.Events do
 
   # -- Internals -------------------------------------------------------
 
-  # The exported page's scope, for the audit reader: how many rows, the page cap,
-  # any event-type filter, and the lower-bound position (a resumed cursor, a
-  # `since` timestamp, or the beginning for a first full pull).
   defp export_payload(opts, count) do
+    case Keyword.fetch(opts, :filter) do
+      {:ok, filters} -> csv_export_payload(filters, count)
+      :error -> siem_export_payload(opts, count)
+    end
+  end
+
+  # SIEM pulls have a page cap plus a forward cursor or `since` lower bound.
+  defp siem_export_payload(opts, count) do
     %{
       count: count,
       limit: Keyword.get(opts, :limit),
       event_types: Keyword.get(opts, :event_types, []),
       from: export_position(opts)
     }
+  end
+
+  # CSV downloads walk the complete filtered LiveTable view. Preserve every
+  # applied facet, normalizing the two fields shared with the SIEM receipt.
+  defp csv_export_payload(filters, count) do
+    filters
+    |> Map.new(fn
+      {:event_type, event_types} -> {:event_types, event_types}
+      {name, %DateTime{} = datetime} -> {name, DateTime.to_iso8601(datetime)}
+      pair -> pair
+    end)
+    |> Map.put_new(:event_types, [])
+    |> Map.put_new(:from, "beginning")
+    |> Map.put(:count, count)
+    |> Map.put(:limit, nil)
   end
 
   defp export_position(opts) do
