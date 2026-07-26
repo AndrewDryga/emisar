@@ -32,7 +32,12 @@ defmodule EmisarWeb.PacksLiveTest do
           "actions" => [],
           # No library baseline for this custom pack — lands pending,
           # never auto-trusted.
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
         })
 
       {:ok, [pack_version], _meta} =
@@ -70,6 +75,8 @@ defmodule EmisarWeb.PacksLiveTest do
           group: "staging"
         )
 
+      hash = Fixtures.Catalog.pack_hash("abc123")
+
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
           "hostname" => "host-1",
@@ -86,7 +93,7 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => hash}}
         })
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -100,7 +107,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # skips the empty "trusted: (none yet)" and shows just the bytes on the runner.
       refute html =~ "(none yet)"
       assert html =~ "on the runner"
-      assert html =~ "abc123"
+      assert html =~ hash
     end
 
     test "the pending card lists the pack's actions + risk so trust isn't blind", %{
@@ -125,7 +132,12 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
         })
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -158,7 +170,12 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
         })
 
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
@@ -216,8 +233,14 @@ defmodule EmisarWeb.PacksLiveTest do
           "packs" => %{
             # A hash that does NOT match the published one — the row lands
             # pending, and the pack-level link must render anyway.
-            "caddy" => %{"version" => caddy.version, "hash" => "sha256:UNPUBLISHED"},
-            "acme-tools" => %{"version" => "9.9", "hash" => "abc123"}
+            "caddy" => %{
+              "version" => caddy.version,
+              "hash" => Fixtures.Catalog.pack_hash("UNPUBLISHED")
+            },
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
           }
         })
 
@@ -312,7 +335,12 @@ defmodule EmisarWeb.PacksLiveTest do
                 "args" => []
               }
             ],
-            "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+            "packs" => %{
+              "acme-tools" => %{
+                "version" => "9.9",
+                "hash" => Fixtures.Catalog.pack_hash("abc123")
+              }
+            }
           })
       end
 
@@ -641,7 +669,12 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => "0.1.0",
           "labels" => %{},
           "actions" => [],
-          "packs" => %{pack_id => %{"version" => "0.0.0", "hash" => "abc123"}}
+          "packs" => %{
+            pack_id => %{
+              "version" => "0.0.0",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
         })
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -873,7 +906,12 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v1"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("v1")
+            }
+          }
         })
 
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
@@ -905,7 +943,12 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v2"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("v2")
+            }
+          }
         })
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -961,8 +1004,14 @@ defmodule EmisarWeb.PacksLiveTest do
           "actions" => [],
           # Two custom packs with no library baseline — both land pending.
           "packs" => %{
-            "acme-tools" => %{"version" => "9.9", "hash" => "abc123"},
-            "acme-extras" => %{"version" => "1.0", "hash" => "def456"}
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            },
+            "acme-extras" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.pack_hash("def456")
+            }
           }
         })
 
@@ -1011,7 +1060,12 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => "0.1.0",
           "labels" => %{},
           "actions" => [],
-          "packs" => %{"account-b-pack" => %{"version" => "1.0", "hash" => "bbb111"}}
+          "packs" => %{
+            "account-b-pack" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.pack_hash("bbb111")
+            }
+          }
         })
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -1045,7 +1099,12 @@ defmodule EmisarWeb.PacksLiveTest do
               "args" => []
             }
           ],
-          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
         })
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -1141,8 +1200,14 @@ defmodule EmisarWeb.PacksLiveTest do
           "labels" => %{},
           "actions" => [],
           "packs" => %{
-            "acme-tools" => %{"version" => "9.9", "hash" => "abc123"},
-            "acme-extras" => %{"version" => "1.0", "hash" => "def456"}
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            },
+            "acme-extras" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.pack_hash("def456")
+            }
           }
         })
 
@@ -1385,8 +1450,11 @@ defmodule EmisarWeb.PacksLiveTest do
             action_payload("nginx.reload", "nginx", "low")
           ],
           "packs" => %{
-            "postgres" => %{"version" => "1.0", "hash" => "hp"},
-            "nginx" => %{"version" => "1.0", "hash" => "hn"}
+            "postgres" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.pack_hash("hp")
+            },
+            "nginx" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("hn")}
           }
         })
 

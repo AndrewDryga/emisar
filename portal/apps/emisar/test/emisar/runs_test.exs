@@ -1037,7 +1037,10 @@ defmodule Emisar.RunsTest do
                "version" => "0.1",
                "labels" => %{},
                "packs" => %{
-                 "linux-core" => %{"version" => "1.2.3", "hash" => "sha256:CLOUD_TRUSTED"}
+                 "linux-core" => %{
+                   "version" => "1.2.3",
+                   "hash" => Fixtures.Catalog.pack_hash("CLOUD_TRUSTED")
+                 }
                },
                "actions" => [
                  %{
@@ -1068,7 +1071,7 @@ defmodule Emisar.RunsTest do
                )
 
       assert_receive {:cloud_to_runner, _generation, payload}, 500
-      assert payload["expected_pack_hash"] == "sha256:CLOUD_TRUSTED"
+      assert payload["expected_pack_hash"] == Fixtures.Catalog.pack_hash("CLOUD_TRUSTED")
     end
 
     test "rejects dispatch when the action is not advertised by the runner" do
@@ -2297,7 +2300,12 @@ defmodule Emisar.RunsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"linux-core" => %{"version" => "1.2.3", "hash" => "sha256:DRIFT"}},
+          "packs" => %{
+            "linux-core" => %{
+              "version" => "1.2.3",
+              "hash" => Fixtures.Catalog.pack_hash("DRIFT")
+            }
+          },
           "actions" => [
             %{
               "id" => "linux.uptime",
@@ -3003,7 +3011,9 @@ defmodule Emisar.RunsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:TAMPERED"}},
+          "packs" => %{
+            "custom" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("TAMPERED")}
+          },
           "actions" => [
             %{
               "id" => "custom.do",
@@ -3039,9 +3049,10 @@ defmodule Emisar.RunsTest do
                )
 
       # The trusted hash is snapshotted onto the run + shipped in the envelope.
-      assert Runs.peek_run_by_id(run.id).expected_pack_hash == "sha256:NOPE"
+      refused_hash = Fixtures.Catalog.pack_hash("NOPE")
+      assert Runs.peek_run_by_id(run.id).expected_pack_hash == refused_hash
 
-      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => "sha256:NOPE"}},
+      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => ^refused_hash}},
                      500
 
       # The pack drifts to a NEW hash AND is re-trusted (trusted hash now TAMPERED).
@@ -3050,7 +3061,9 @@ defmodule Emisar.RunsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:TAMPERED"}},
+          "packs" => %{
+            "custom" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("TAMPERED")}
+          },
           "actions" => [
             %{
               "id" => "custom.do",
@@ -3083,7 +3096,9 @@ defmodule Emisar.RunsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}},
+          "packs" => %{
+            "custom" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("NOPE")}
+          },
           "actions" => [
             %{
               "id" => "custom.do",

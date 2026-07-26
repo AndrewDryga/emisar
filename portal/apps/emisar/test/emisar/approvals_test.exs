@@ -1877,7 +1877,9 @@ defmodule Emisar.ApprovalsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:DRIFT"}},
+          "packs" => %{
+            "custom" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("DRIFT")}
+          },
           "actions" => [
             %{
               "id" => "custom.do",
@@ -2194,7 +2196,9 @@ defmodule Emisar.ApprovalsTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:DRIFT"}},
+          "packs" => %{
+            "custom" => %{"version" => "1.0", "hash" => Fixtures.Catalog.pack_hash("DRIFT")}
+          },
           "actions" => [
             %{
               "id" => "custom.do",

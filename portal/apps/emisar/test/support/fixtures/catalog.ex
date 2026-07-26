@@ -4,7 +4,16 @@ defmodule Emisar.Fixtures.Catalog do
   `Fixtures.Catalog.create_action/1`.
   """
 
-  alias Emisar.{Catalog, Repo}
+  alias Emisar.{Catalog, Crypto, Repo}
+
+  @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
+
+  @doc "Returns a deterministic canonical SHA-256 pack hash for a test label."
+  def pack_hash(value) when is_binary(value) do
+    if Regex.match?(@pack_hash_format, value),
+      do: value,
+      else: "sha256:" <> Crypto.hash_hex(value)
+  end
 
   @doc """
   Inserts a catalog action row for a runner. Mirrors what
@@ -21,7 +30,7 @@ defmodule Emisar.Fixtures.Catalog do
       action_id: attrs[:action_id] || "linux.uptime",
       pack_id: attrs[:pack_id] || "linux-core",
       pack_version: attrs[:pack_version],
-      pack_hash: attrs[:pack_hash],
+      pack_hash: if(attrs[:pack_hash], do: pack_hash(attrs[:pack_hash])),
       title: attrs[:title] || "Uptime",
       kind: attrs[:kind] || "exec",
       risk: attrs[:risk] || "low",
@@ -60,7 +69,7 @@ defmodule Emisar.Fixtures.Catalog do
       account_id: account_id,
       pack_id: attrs[:pack_id] || "acme-tools",
       version: attrs[:version] || "9.9",
-      hash: attrs[:hash] || "sha256:trusted-fixture",
+      hash: pack_hash(attrs[:hash] || "trusted-fixture"),
       trust_state: :trusted,
       first_seen_at: now,
       last_seen_at: now

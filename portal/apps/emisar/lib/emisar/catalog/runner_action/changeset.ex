@@ -41,6 +41,15 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   # we accept.
   @max_action_id_length 128
   @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
+
+  # Pack metadata shares the runner's packspec boundary: bounded safe ids and
+  # versions, plus the exact content-addressed SHA-256 representation.
+  @max_pack_id_length 128
+  @pack_id_format ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*\z/
+  @max_pack_version_length 64
+  @pack_version_format ~r/\A[A-Za-z0-9][A-Za-z0-9.+-]*\z/
+  @max_pack_hash_length 71
+  @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
   @max_search_terms 16
   @max_search_term_length 80
 
@@ -61,6 +70,12 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
     |> validate_required([:account_id, :runner_id, :action_id, :title, :kind, :risk])
     |> validate_length(:action_id, max: @max_action_id_length)
     |> validate_format(:action_id, @action_id_format)
+    |> validate_length(:pack_id, max: @max_pack_id_length)
+    |> validate_format(:pack_id, @pack_id_format)
+    |> validate_length(:pack_version, max: @max_pack_version_length)
+    |> validate_format(:pack_version, @pack_version_format)
+    |> validate_length(:pack_hash, max: @max_pack_hash_length)
+    |> validate_format(:pack_hash, @pack_hash_format)
     |> validate_length(:title, max: @max_title_length)
     |> validate_length(:summary, max: @max_summary_length)
     |> validate_length(:description, max: @max_description_length)

@@ -496,7 +496,12 @@ defmodule EmisarWeb.DashboardLiveTest do
           "hostname" => "h",
           "version" => "0.1",
           "labels" => %{},
-          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:PENDING"}},
+          "packs" => %{
+            "custom" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.pack_hash("PENDING")
+            }
+          },
           "actions" => [
             %{
               "id" => "custom.do",

@@ -4,12 +4,23 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
 
   @insert_fields ~w(account_id pack_id version hash pending_hash trust_state
                     trusted_manifest first_seen_at last_seen_at)a
+  @max_pack_id_length 128
+  @pack_id_format ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*\z/
+  @max_pack_version_length 64
+  @pack_version_format ~r/\A[A-Za-z0-9][A-Za-z0-9.+-]*\z/
+  @max_pack_hash_length 71
+  @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
 
   @doc "Insert with explicit trust state (e.g. auto-pin on first sight)."
   def insert(attrs) do
     %PackVersion{}
     |> cast(attrs, @insert_fields)
     |> validate_required([:account_id, :pack_id, :version, :first_seen_at, :last_seen_at])
+    |> validate_length(:pack_id, max: @max_pack_id_length)
+    |> validate_format(:pack_id, @pack_id_format)
+    |> validate_length(:version, max: @max_pack_version_length)
+    |> validate_format(:version, @pack_version_format)
+    |> validate_hashes()
     |> unique_constraint([:account_id, :pack_id, :version])
   end
 
@@ -25,6 +36,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
       trust_state: :pending,
       last_seen_at: now
     })
+    |> validate_hashes()
   end
 
   @doc "Restore a release-frozen complete manifest on an already trusted hash."
@@ -46,6 +58,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
       trusted_manifest: trusted_manifest
     })
     |> validate_required([:hash])
+    |> validate_hashes()
   end
 
   @doc """
@@ -111,5 +124,13 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     pack_version
     |> change(trust_state: :trusted)
     |> validate_required([:hash])
+  end
+
+  defp validate_hashes(changeset) do
+    changeset
+    |> validate_length(:hash, max: @max_pack_hash_length)
+    |> validate_format(:hash, @pack_hash_format)
+    |> validate_length(:pending_hash, max: @max_pack_hash_length)
+    |> validate_format(:pending_hash, @pack_hash_format)
   end
 end

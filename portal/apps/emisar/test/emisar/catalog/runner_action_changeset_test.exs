@@ -1,6 +1,9 @@
 defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
   use ExUnit.Case, async: true
+  import Emisar.DataCase, only: [errors_on: 1]
   alias Emisar.Catalog.RunnerAction
+
+  @valid_pack_hash "sha256:" <> String.duplicate("a", 64)
 
   defp base_attrs(extra) do
     Map.merge(
@@ -8,6 +11,9 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
         account_id: Ecto.UUID.generate(),
         runner_id: Ecto.UUID.generate(),
         action_id: "linux.uptime",
+        pack_id: "linux-core",
+        pack_version: "1.0.0",
+        pack_hash: @valid_pack_hash,
         title: "Uptime",
         kind: :exec,
         risk: :low
@@ -140,6 +146,49 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       for id <- ids do
         assert RunnerAction.Changeset.upsert(base_attrs(%{action_id: id})).valid?, id
       end
+    end
+  end
+
+  describe "upsert/1 pack metadata shape" do
+    test "accepts the runner pack metadata boundaries" do
+      attrs =
+        base_attrs(%{
+          pack_id: String.duplicate("a", 128),
+          pack_version: String.duplicate("1", 64),
+          pack_hash: @valid_pack_hash
+        })
+
+      assert RunnerAction.Changeset.upsert(attrs).valid?
+    end
+
+    test "rejects pack metadata just past its length boundaries" do
+      attrs =
+        base_attrs(%{
+          pack_id: String.duplicate("a", 129),
+          pack_version: String.duplicate("1", 65),
+          pack_hash: @valid_pack_hash <> "a"
+        })
+
+      errors = attrs |> RunnerAction.Changeset.upsert() |> errors_on()
+
+      assert "should be at most 128 character(s)" in errors.pack_id
+      assert "should be at most 64 character(s)" in errors.pack_version
+      assert "should be at most 71 character(s)" in errors.pack_hash
+    end
+
+    test "rejects malformed pack ids, versions, and hashes" do
+      attrs =
+        base_attrs(%{
+          pack_id: "INVALID/PACK",
+          pack_version: "1.0/../escape",
+          pack_hash: "sha256:" <> String.duplicate("A", 64)
+        })
+
+      errors = attrs |> RunnerAction.Changeset.upsert() |> errors_on()
+
+      assert "has invalid format" in errors.pack_id
+      assert "has invalid format" in errors.pack_version
+      assert "has invalid format" in errors.pack_hash
     end
   end
 end

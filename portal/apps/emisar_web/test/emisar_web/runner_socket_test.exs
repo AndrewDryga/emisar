@@ -1120,7 +1120,12 @@ defmodule EmisarWeb.RunnerSocketTest do
       raw =
         runner_frame(%{
           "type" => "runner_state",
-          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:deadbeef"}},
+          "packs" => %{
+            "linux" => %{
+              "version" => "1.0.0",
+              "hash" => Fixtures.Catalog.pack_hash("deadbeef")
+            }
+          },
           "actions" => [
             %{"id" => "linux.df", "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
           ]
@@ -1145,7 +1150,12 @@ defmodule EmisarWeb.RunnerSocketTest do
       raw =
         runner_frame(%{
           "type" => "runner_state",
-          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:deadbeef"}},
+          "packs" => %{
+            "linux" => %{
+              "version" => "1.0.0",
+              "hash" => Fixtures.Catalog.pack_hash("deadbeef")
+            }
+          },
           "actions" => [
             %{
               "id" => "linux.typed",
@@ -1184,7 +1194,12 @@ defmodule EmisarWeb.RunnerSocketTest do
       raw =
         runner_frame(%{
           "type" => "runner_state",
-          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:abc"}},
+          "packs" => %{
+            "linux" => %{
+              "version" => "1.0.0",
+              "hash" => Fixtures.Catalog.pack_hash("abc")
+            }
+          },
           "actions" => [
             %{"id" => novel, "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
           ]

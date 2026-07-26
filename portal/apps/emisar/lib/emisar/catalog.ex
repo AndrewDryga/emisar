@@ -355,13 +355,19 @@ defmodule Emisar.Catalog do
         :ok
 
       true ->
-        {:ok, _updated} =
+        result =
           pack_version
           |> PackVersion.Changeset.mark_pending(advertised, now)
           |> Repo.update()
 
-        Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
-        :pending_changed
+        case result do
+          {:ok, _updated} ->
+            Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
+            :pending_changed
+
+          {:error, _changeset} ->
+            :ok
+        end
     end
   end
 

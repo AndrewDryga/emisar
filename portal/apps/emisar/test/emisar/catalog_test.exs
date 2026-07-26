@@ -11,10 +11,22 @@ defmodule Emisar.CatalogTest do
       "hostname" => Keyword.get(opts, :hostname, "host-1"),
       "version" => Keyword.get(opts, :version, "0.1.0"),
       "labels" => Keyword.get(opts, :labels, %{"env" => "test"}),
-      "packs" => Keyword.get(opts, :packs, %{}),
+      "packs" => opts |> Keyword.get(:packs, %{}) |> canonical_pack_hashes(),
       "actions" => Keyword.get(opts, :actions, [])
     }
   end
+
+  defp canonical_pack_hashes(packs) when is_map(packs) do
+    Map.new(packs, fn
+      {pack_id, %{"hash" => hash} = info} when is_binary(hash) ->
+        {pack_id, Map.put(info, "hash", Fixtures.Catalog.pack_hash(hash))}
+
+      entry ->
+        entry
+    end)
+  end
+
+  defp canonical_pack_hashes(packs), do: packs
 
   defp action(id, opts \\ []) do
     %{
@@ -57,6 +69,8 @@ defmodule Emisar.CatalogTest do
     test "upserts pack_versions", %{runner: runner, subject: subject} do
       # No library baseline for linux-core@1.0 (we ship 0.3.0), so this
       # lands as pending with the advertised hash sitting in pending_hash.
+      hash = Fixtures.Catalog.pack_hash("abc")
+
       payload =
         state_payload(packs: %{"linux-core" => %{"version" => "1.0", "hash" => "abc"}})
 
@@ -68,7 +82,7 @@ defmodule Emisar.CatalogTest do
                   pack_id: "linux-core",
                   version: "1.0",
                   hash: nil,
-                  pending_hash: "abc",
+                  pending_hash: ^hash,
                   trust_state: :pending
                 }
               ], _meta} = Catalog.list_pack_versions(subject)
@@ -403,7 +417,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :pending
       assert pack_version.hash == nil
-      assert pack_version.pending_hash == "sha256:custom"
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:custom")
     end
 
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
@@ -419,7 +433,31 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :pending
-      assert pack_version.pending_hash == "sha256:H1"
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:H1")
+    end
+
+    test "a malformed hash for a known pack is isolated from the rest of the state update" do
+      runner = Fixtures.Runners.create_runner()
+      account = Repo.preload(runner, :account).account
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      initial =
+        state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "first"}})
+
+      assert {:ok, _} = Catalog.observe_state(runner, initial)
+
+      malformed =
+        state_payload(
+          hostname: "updated-host",
+          packs: %{"custom" => %{"version" => "1.0", "hash" => "second"}}
+        )
+        |> put_in(["packs", "custom", "hash"], "not-a-sha256")
+
+      assert {:ok, _} = Catalog.observe_state(runner, malformed)
+      assert Repo.reload!(runner).hostname == "updated-host"
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("first")
     end
 
     test "hash change after operator-trust → pending again" do
@@ -445,8 +483,8 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :pending
-      assert pack_version.hash == "sha256:H1"
-      assert pack_version.pending_hash == "sha256:H2"
+      assert pack_version.hash == Fixtures.Catalog.pack_hash("sha256:H1")
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:H2")
     end
 
     test "concurrent first-sight from two runners → no crash, one row" do
@@ -488,7 +526,7 @@ defmodule Emisar.CatalogTest do
       # awaits operator approval. The pending_hash is the bytes both
       # racing runners advertised.
       assert pack_version.trust_state == :pending
-      assert pack_version.pending_hash == "sha256:RACE"
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:RACE")
       assert pack_version.hash == nil
     end
 
@@ -605,7 +643,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
       assert trusted.trust_state == :trusted
-      assert trusted.hash == "sha256:NEW"
+      assert trusted.hash == Fixtures.Catalog.pack_hash("sha256:NEW")
       assert trusted.pending_hash == nil
       # A non-retired version is not overridden by the trust — trust_changeset(false).
       assert trusted.retirement_overridden_at == nil
@@ -627,7 +665,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
       assert trusted.trust_state == :trusted
-      assert trusted.hash == "sha256:NEW"
+      assert trusted.hash == Fixtures.Catalog.pack_hash("sha256:NEW")
       assert trusted.pending_hash == nil
     end
 
@@ -647,7 +685,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, trusted} = Catalog.trust_pack_version(rejected.id, subject)
       assert trusted.trust_state == :trusted
-      assert trusted.hash == "sha256:NOPE"
+      assert trusted.hash == Fixtures.Catalog.pack_hash("sha256:NOPE")
       assert trusted.pending_hash == nil
     end
 
@@ -671,7 +709,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, restored} = Catalog.trust_pack_version(revoked.id, subject)
       assert restored.trust_state == :trusted
-      assert restored.hash == "sha256:GOOD"
+      assert restored.hash == Fixtures.Catalog.pack_hash("sha256:GOOD")
       assert restored.pending_hash == nil
 
       assert get_in(restored.trusted_manifest, ["actions", "custom.inspect", "description"]) ==
@@ -723,7 +761,7 @@ defmodule Emisar.CatalogTest do
                )
 
       assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
-      assert pending.pending_hash == "sha256:H2"
+      assert pending.pending_hash == Fixtures.Catalog.pack_hash("sha256:H2")
       assert {:ok, trusted} = Catalog.trust_pack_version(pending.id, subject)
 
       assert get_in(trusted.trusted_manifest, ["actions", "custom.inspect", "description"]) ==
@@ -794,7 +832,7 @@ defmodule Emisar.CatalogTest do
       assert {:error, :invalid_manifest} = Catalog.trust_pack_version(pending.id, subject)
       assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
       assert unchanged.trust_state == :pending
-      assert unchanged.pending_hash == "sha256:BAD"
+      assert unchanged.pending_hash == Fixtures.Catalog.pack_hash("sha256:BAD")
     end
 
     test "an oversized complete descriptor aborts trust", %{subject: subject, runner: runner} do
@@ -849,7 +887,7 @@ defmodule Emisar.CatalogTest do
       assert audit.actor_id == user.id
       # The pre-trust row had no trusted hash; the pending bytes are what got adopted.
       assert audit.payload["previous_hash"] == nil
-      assert audit.payload["new_hash"] == "sha256:ADOPT"
+      assert audit.payload["new_hash"] == Fixtures.Catalog.pack_hash("sha256:ADOPT")
       assert audit.payload["pack_id"] == "p"
       # A non-retired version threads retired: false through to the audit payload.
       assert audit.payload["retired"] == false
@@ -970,7 +1008,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert {:ok, after_reject} = Catalog.reject_pack_version(pack_version.id, subject)
       assert after_reject.trust_state == :trusted
-      assert after_reject.hash == "sha256:KEEP"
+      assert after_reject.hash == Fixtures.Catalog.pack_hash("sha256:KEEP")
       assert after_reject.pending_hash == nil
     end
 
@@ -993,7 +1031,7 @@ defmodule Emisar.CatalogTest do
       # refused bytes stay recorded so the decision sticks across reconnects.
       assert rejected.trust_state == :rejected
       assert rejected.hash == nil
-      assert rejected.pending_hash == "sha256:NOPE"
+      assert rejected.pending_hash == Fixtures.Catalog.pack_hash("sha256:NOPE")
       assert {:ok, [persisted], _} = Catalog.list_pack_versions(subject)
       assert persisted.id == pack_version.id
       assert persisted.trust_state == :rejected
@@ -1022,7 +1060,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [still_rejected], _} = Catalog.list_pack_versions(subject)
       assert still_rejected.trust_state == :rejected
-      assert still_rejected.pending_hash == "sha256:NOPE"
+      assert still_rejected.pending_hash == Fixtures.Catalog.pack_hash("sha256:NOPE")
     end
 
     test "a re-advertised hash flips a :rejected row back to :pending for re-review", %{
@@ -1048,7 +1086,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [reopened], _} = Catalog.list_pack_versions(subject)
       assert reopened.trust_state == :pending
-      assert reopened.pending_hash == "sha256:FRESH"
+      assert reopened.pending_hash == Fixtures.Catalog.pack_hash("sha256:FRESH")
     end
 
     # rejecting a pending pack version writes a
@@ -1079,7 +1117,7 @@ defmodule Emisar.CatalogTest do
       assert audit.actor_id == user.id
       # Never-trusted custom pack — no trusted hash, the advertised bytes were rejected.
       assert audit.payload["trusted_hash"] == nil
-      assert audit.payload["rejected_hash"] == "sha256:NOPE"
+      assert audit.payload["rejected_hash"] == Fixtures.Catalog.pack_hash("sha256:NOPE")
       assert audit.payload["pack_id"] == "p"
     end
 
@@ -1248,7 +1286,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
       assert revoked.trust_state == :rejected
-      assert revoked.hash == "sha256:OK"
+      assert revoked.hash == Fixtures.Catalog.pack_hash("sha256:OK")
       assert revoked.retirement_overridden_at == nil
       assert revoked.retirement_overridden_by_id == nil
 
@@ -1261,7 +1299,7 @@ defmodule Emisar.CatalogTest do
       assert audit.target_label == "custom@1.0"
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
-      assert audit.payload["revoked_hash"] == "sha256:OK"
+      assert audit.payload["revoked_hash"] == Fixtures.Catalog.pack_hash("sha256:OK")
     end
 
     test "a same-hash re-advertisement leaves the revoked row rejected", %{
@@ -1279,7 +1317,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [still_rejected], _} = Catalog.list_pack_versions(subject)
       assert still_rejected.trust_state == :rejected
-      assert still_rejected.hash == "sha256:OK"
+      assert still_rejected.hash == Fixtures.Catalog.pack_hash("sha256:OK")
     end
 
     test "a NEW hash re-opens the review on a revoked row", %{
@@ -1297,7 +1335,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [reopened], _} = Catalog.list_pack_versions(subject)
       assert reopened.trust_state == :pending
-      assert reopened.pending_hash == "sha256:CHANGED"
+      assert reopened.pending_hash == Fixtures.Catalog.pack_hash("sha256:CHANGED")
     end
 
     test "a pending row is refused with :not_trusted", %{subject: subject, runner: runner} do
@@ -1729,7 +1767,8 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
-      assert {:ok, "sha256:NEW"} = Catalog.check_pack_trusted(action)
+      assert Catalog.check_pack_trusted(action) ==
+               {:ok, Fixtures.Catalog.pack_hash("sha256:NEW")}
     end
 
     test "pending state → {:error, :pack_untrusted, _}" do
@@ -2090,7 +2129,7 @@ defmodule Emisar.CatalogTest do
         action_id: "missing.inspect",
         pack_id: "missing",
         pack_version: "1.0",
-        pack_hash: "sha256:missing"
+        pack_hash: "missing"
       )
 
       assert {:ok, [%RunnerAction{dispatch_block_reason: :pack_untrusted}], _meta} =

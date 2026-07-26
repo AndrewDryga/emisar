@@ -3,6 +3,82 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
   alias Emisar.Catalog.PackVersion
   alias Emisar.Catalog.PackVersion.Changeset
 
+  @valid_pack_hash "sha256:" <> String.duplicate("a", 64)
+
+  defp insert_attrs(extra) do
+    now = DateTime.utc_now()
+
+    Map.merge(
+      %{
+        account_id: Ecto.UUID.generate(),
+        pack_id: "linux-core",
+        version: "1.0.0",
+        hash: @valid_pack_hash,
+        trust_state: :trusted,
+        first_seen_at: now,
+        last_seen_at: now
+      },
+      extra
+    )
+  end
+
+  describe "insert/1" do
+    test "accepts the runner pack metadata boundaries" do
+      attrs =
+        insert_attrs(%{
+          pack_id: String.duplicate("a", 128),
+          version: String.duplicate("1", 64),
+          hash: @valid_pack_hash
+        })
+
+      assert Changeset.insert(attrs).valid?
+    end
+
+    test "rejects pack metadata just past its length boundaries" do
+      attrs =
+        insert_attrs(%{
+          pack_id: String.duplicate("a", 129),
+          version: String.duplicate("1", 65),
+          hash: @valid_pack_hash <> "a",
+          pending_hash: @valid_pack_hash <> "a"
+        })
+
+      errors = attrs |> Changeset.insert() |> errors_on()
+
+      assert "should be at most 128 character(s)" in errors.pack_id
+      assert "should be at most 64 character(s)" in errors.version
+      assert "should be at most 71 character(s)" in errors.hash
+      assert "should be at most 71 character(s)" in errors.pending_hash
+    end
+
+    test "rejects malformed pack ids, versions, and hashes" do
+      attrs =
+        insert_attrs(%{
+          pack_id: "INVALID/PACK",
+          version: "1.0/../escape",
+          hash: "sha256:" <> String.duplicate("A", 64),
+          pending_hash: "not-a-sha256"
+        })
+
+      errors = attrs |> Changeset.insert() |> errors_on()
+
+      assert "has invalid format" in errors.pack_id
+      assert "has invalid format" in errors.version
+      assert "has invalid format" in errors.hash
+      assert "has invalid format" in errors.pending_hash
+    end
+  end
+
+  describe "mark_pending/3" do
+    test "rejects a malformed runner-advertised hash" do
+      changeset =
+        Changeset.mark_pending(%PackVersion{}, "not-a-sha256", DateTime.utc_now())
+
+      refute changeset.valid?
+      assert "has invalid format" in errors_on(changeset).pending_hash
+    end
+  end
+
   describe "override_retirement/2" do
     test "stamps the override timestamp + who on a pack-version struct" do
       changeset = Changeset.override_retirement(%PackVersion{}, "user-123")
@@ -33,12 +109,12 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
         ])
 
       changeset =
-        %PackVersion{pending_hash: "sha256:NEW", trust_state: :pending}
+        %PackVersion{pending_hash: @valid_pack_hash, trust_state: :pending}
         |> Changeset.trust(manifest)
         |> Changeset.override_retirement("user-9")
 
       assert changeset.valid?
-      assert changeset.changes.hash == "sha256:NEW"
+      assert changeset.changes.hash == @valid_pack_hash
       assert changeset.changes.trust_state == :trusted
       assert changeset.changes.retirement_overridden_by_id == "user-9"
       assert %DateTime{} = changeset.changes.retirement_overridden_at
