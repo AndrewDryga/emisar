@@ -133,7 +133,7 @@ type shotCommand struct {
 }
 
 func parseShot(args []string) (shotCommand, error) {
-	command := shotCommand{options: devbrowser.ShotOptions{Width: 1440}}
+	command := shotCommand{options: devbrowser.ShotOptions{Email: os.Getenv("EMAIL"), Width: 1440}}
 	flags := flag.NewFlagSet("shot", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	shot, selector, heading, classContains, climb := "", "", "", "", ""

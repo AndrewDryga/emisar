@@ -562,6 +562,18 @@ func TestParseShotAcceptsTaskOwnedGrouping(t *testing.T) {
 	}
 }
 
+func TestParseShotUsesEmailOverride(t *testing.T) {
+	t.Setenv("EMAIL", "user@example.test")
+
+	command, err := parseShot([]string{"/app/acme/runs", "--label", "after"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.options.Email != "user@example.test" {
+		t.Fatalf("email = %q", command.options.Email)
+	}
+}
+
 func TestCaptureConsoleRequiresTaskBeforeStartingBrowser(t *testing.T) {
 	app := testApp(t)
 	err := app.capture(t.Context(), []string{"console"})
