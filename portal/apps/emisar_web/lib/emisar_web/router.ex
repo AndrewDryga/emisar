@@ -398,7 +398,8 @@ defmodule EmisarWeb.Router do
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/onboarding", OnboardingLive, :new
       # Invitation acceptance has to work whether the visitor is signed
-      # in or not: a brand-new invitee sets a password here, but a
+      # in or not: a brand-new invitee enters their name and requests a
+      # sign-in link here, but a
       # signed-in user invited to a NEW team should see the prompt too
       # (the previous shared scope silently bounced them to /app).
       live "/accept_invitation/:token", AcceptInvitationLive

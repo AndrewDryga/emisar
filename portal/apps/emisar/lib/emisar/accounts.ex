@@ -1843,9 +1843,8 @@ defmodule Emisar.Accounts do
   `Auth.disable_mfa/1` is that path). Audit-logged as
   `user.mfa_reset_by_admin`.
 
-  This is an MFA-bypass surface — clearing a factor lets that member
-  enroll a NEW one — so it is gated, hierarchy-checked, and audited
-  exactly like `force_password_reset/2`, never self-matched.
+  Clearing a factor is an MFA-bypass surface, so the operation stays
+  gated, hierarchy-checked, and audited.
   """
   def reset_member_mfa(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
@@ -1922,11 +1921,10 @@ defmodule Emisar.Accounts do
   making the teammate sign in to do it themselves.
 
   **Deliberately not allowed: email changes.** Letting an admin rewrite
-  a teammate's sign-in email would be an account-takeover-as-feature
-  (rewrite email → trigger password reset → read the link from the
-  attacker's inbox). The teammate has to change their own email via
-  Profile + current-password challenge. Same applies to password —
-  that path is `force_password_reset/2`.
+  a teammate's sign-in email would let them request a magic link at an
+  address they control. The teammate has to change their own email via
+  Profile, which verifies TOTP for MFA users or a one-time code sent to
+  their current address before committing the change.
 
   Same authorization shape as the rest of `ensure_can_modify_membership`:
   caller must be owner/admin, can't edit self via this path (use
@@ -1943,8 +1941,8 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      # Users whitelists the editable fields (full_name only — email and
-      # password are deliberately not admin-editable, see moduledoc) and
+      # Users whitelists the editable fields (full_name only — email is
+      # deliberately not admin-editable, as described above) and
       # holds the user-row lock while it writes + inserts our audit; the
       # membership guard re-reads under its own lock in the same
       # transaction so the hierarchy is judged on the CURRENT role.
@@ -2093,9 +2091,9 @@ defmodule Emisar.Accounts do
   @doc """
   Invites a user (by email) into the account with the given role.
 
-  If no user with that email exists, a placeholder user is created
-  (unconfirmed, no password) so we have something to hang the
-  membership and invitation token off of. Returns
+  If no user with that email exists, an unconfirmed placeholder user is
+  created so we have something to hang the membership and invitation
+  token off of. Returns
   `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
   or `{:error, :already_member}` if the user already belongs to the account.
 
@@ -2283,7 +2281,7 @@ defmodule Emisar.Accounts do
   `%Subject{}`) because the accept-invite page is a public route with only
   `current_user` assigned. Marks an invitation accepted without touching the
   user record — used when an already-signed-in user clicks an invite link for
-  one of their own accounts (they already have a password + confirmed_at, so we
+  one of their own accounts (they are already authenticated and confirmed, so we
   just clear the token + stamp `invitation_accepted_at`). The accepting user
   must BE the invited user (the membership's `user_id`): a signed-in *different*
   user holding the token (e.g. a forwarded link) must not be able to burn the
@@ -2316,10 +2314,10 @@ defmodule Emisar.Accounts do
   Internal — invitation-accept flow: the accept-invite page is a public route
   and the invitee has no session yet, so no `%Subject{}` exists; possession of
   the invitation token (resolved by `fetch_invitation_by_token/1`) is the
-  authorization. Accepts a membership invitation: sets the user's full_name +
-  password, clears the invitation token, marks invitation_accepted_at, and
-  confirms the user since acceptance proves they own the email. Wrapped in a
-  transaction so a half-accepted state is impossible.
+  authorization. Accepts a membership invitation: sets the user's full_name,
+  clears the invitation token, marks invitation_accepted_at, and confirms the
+  user since acceptance proves they own the email. Wrapped in a transaction so
+  a half-accepted state is impossible.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
     Multi.new()
@@ -2327,7 +2325,7 @@ defmodule Emisar.Accounts do
     # Lock + re-judge the invitation FIRST: a token burnt between the
     # page mount and this submit (a second link holder racing the first
     # acceptor) must fail :not_found here — before register_invited_user
-    # could overwrite the winner's freshly-set password.
+    # could overwrite the winner's display name.
     |> Multi.run(:membership, fn repo, _changes ->
       with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership) do
         repo.update(Membership.Changeset.accept_invitation(loaded_membership))

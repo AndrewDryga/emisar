@@ -95,7 +95,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       for _ <- 1..5, do: render_hook(lv, "verify_totp", %{"otp" => "000000"})
       html = render_hook(lv, "verify_totp", %{"otp" => "000000"})
 
-      assert html =~ "Too many attempts"
+      assert html =~ "Too many attempts. Wait a few minutes, then try again."
     end
   end
 

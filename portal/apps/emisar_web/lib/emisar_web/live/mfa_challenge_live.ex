@@ -62,7 +62,8 @@ defmodule EmisarWeb.MfaChallengeLive do
       {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
     else
       {:error, :rate_limited} ->
-        {:noreply, assign(socket, :error, "Too many attempts. Wait a minute, then try again.")}
+        {:noreply,
+         assign(socket, :error, "Too many attempts. Wait a few minutes, then try again.")}
 
       {:error, _} ->
         {:noreply, assign(socket, :error, error_message(socket.assigns.mode))}
