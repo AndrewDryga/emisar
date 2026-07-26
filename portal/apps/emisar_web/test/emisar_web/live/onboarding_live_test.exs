@@ -60,6 +60,24 @@ defmodule EmisarWeb.OnboardingLiveTest do
       refute html =~ "phx-trigger-action=\"true\""
     end
 
+    test "an unexpected transaction error keeps the typed name and reports the failure", %{
+      conn: conn
+    } do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+
+      :sys.replace_state(lv.pid, &put_in(&1.socket.assigns.current_user.id, nil))
+
+      html =
+        lv
+        |> form("#onboarding_form", %{"account" => %{"name" => "Unsaved Workspace"}})
+        |> render_submit()
+
+      assert html =~ "Couldn&#39;t create this workspace. Try again."
+      assert html =~ ~s(value="Unsaved Workspace")
+      refute html =~ "phx-trigger-action=\"true\""
+    end
+
     test "the creator becomes owner of ONLY the new account (no privilege spill)", %{conn: conn} do
       # creating a workspace makes the user its :owner and
       # nothing more: their membership set gains exactly one owner row for the new

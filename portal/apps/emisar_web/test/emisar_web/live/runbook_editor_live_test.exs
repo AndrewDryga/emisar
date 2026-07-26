@@ -372,6 +372,44 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Enum.max_by(runbooks, & &1.version).title == "Patch night v2"
     end
 
+    test "a non-changeset save failure keeps the edited title and reports the failure", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, original} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "Patch night",
+            "name" => "Patch night",
+            "slug" => "patch-night",
+            "definition" => %{
+              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+            }
+          },
+          subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{original.id}/edit")
+      render_change(lv, "meta_change", %{"title" => "Unsaved title", "slug" => "patch-night"})
+
+      other_account = Fixtures.Accounts.create_account()
+      other_subject = Fixtures.Subjects.subject_for(user, other_account)
+
+      :sys.replace_state(
+        lv.pid,
+        &put_in(&1.socket.assigns.current_subject, other_subject)
+      )
+
+      html = render_click(lv, "save", %{})
+
+      assert html =~ "Couldn&#39;t save this runbook. Try again."
+      assert html =~ ~s(value="Unsaved title")
+      assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == [original]
+    end
+
     test "a viewer is redirected at mount — the editor is manage-only", %{account: account} do
       viewer = Fixtures.Users.create_user()
 

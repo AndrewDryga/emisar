@@ -329,6 +329,9 @@ defmodule EmisarWeb.RunbookEditorLive do
       # as a concise message above the Steps list (see render/1).
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't save this runbook. Try again.")}
     end
   end
 

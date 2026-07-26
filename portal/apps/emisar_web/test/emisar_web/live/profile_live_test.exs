@@ -34,6 +34,22 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Renamed Person"
       assert Emisar.Repo.reload!(user).full_name == "Renamed Person"
     end
+
+    test "a save after the user is deleted keeps the typed name and reports the failure", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      Fixtures.Users.mark_user_as_deleted(user)
+
+      html =
+        lv
+        |> form("#profile_form", %{"profile" => %{"full_name" => "Unsaved Name"}})
+        |> render_submit()
+
+      assert html =~ "Couldn&#39;t update your profile. Try again."
+      assert html =~ ~s(value="Unsaved Name")
+    end
   end
 
   describe "email form" do

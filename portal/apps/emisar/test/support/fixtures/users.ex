@@ -38,6 +38,12 @@ defmodule Emisar.Fixtures.Users do
     user
   end
 
+  @doc "Soft-deletes a user, returning the tombstoned row."
+  def mark_user_as_deleted(%User{} = user) do
+    {:ok, deleted} = user |> User.Changeset.delete() |> Emisar.Repo.update()
+    deleted
+  end
+
   @doc """
   Enrolls TOTP MFA for `subject` via `Auth.enable_mfa` and returns its tagged result
   (`{:ok, user, recovery_codes}` / `{:error, reason}`). Generating a code with

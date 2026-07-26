@@ -112,8 +112,16 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:current_user, updated)
          |> assign_profile_form(updated)}
 
-      {:error, changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
+
+      {:error, _reason} ->
+        changeset = Users.change_user(socket.assigns.current_user, params)
+
+        {:noreply,
+         socket
+         |> assign(:profile_form, to_form(changeset, as: "profile"))
+         |> put_flash(:error, "Couldn't update your profile. Try again.")}
     end
   end
 

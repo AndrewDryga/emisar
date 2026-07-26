@@ -89,8 +89,17 @@ defmodule EmisarWeb.OnboardingLive do
       # A blank/invalid name renders inline on the name field; the slug is
       # derived from the name on submit, so surface its error on :name too —
       # otherwise a too-short name fails silently on a field with no input.
-      {:error, %Ecto.Changeset{} = changeset} ->
+      # Membership and policy changesets do not belong to this form.
+      {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
         {:noreply, assign_form(socket, surface_slug_error_on_name(changeset))}
+
+      {:error, _reason} ->
+        changeset = Accounts.change_account(%Accounts.Account{}, %{"name" => name})
+
+        {:noreply,
+         socket
+         |> assign_form(changeset)
+         |> put_flash(:error, "Couldn't create this workspace. Try again.")}
     end
   end
 
