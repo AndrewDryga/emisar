@@ -168,6 +168,7 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 - **Shared:** [browser security exceptions stay response-local](.agent/kb/rules/shared-browser-security-exceptions-stay-response-local.md) — external integration compatibility relaxations happen only after request validation, on the exact response that needs them, with fixed application-controlled targets.
 - **Shared:** [model catalogs expose only trusted pack refs](.agent/kb/rules/shared-model-catalog-trusted-only.md) — filter non-trusted exact pack refs before deriving any model-visible action, runner, runbook, issue, or continuation; mutations still recheck trust transactionally.
 - **Shared:** [reversible and terminal runner states stay distinct](.agent/kb/rules/shared-runner-lifecycle-states.md) — disable keeps the identity retryable so enable recovers without host access; delete/revoke is terminal and never inherits retry behavior.
+- **Shared:** [every blocking check lives inside the canonical gate](.agent/kb/rules/shared-checks-live-in-the-canonical-gate.md) — CI reaches a check by invoking `./run gate`, never by running the tool in its own step; a CI-only check makes a green gate a false promise and hides findings until someone pushes.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 
