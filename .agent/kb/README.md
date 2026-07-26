@@ -96,7 +96,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 - [development-keycloak-certificates](development-keycloak-certificates.md) — workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 - [oauth-sign-in-return-to](oauth-sign-in-return-to.md) — a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO preserve it through consent
 - [oauth-consent-form-action](oauth-consent-form-action.md) — ChatGPT's sandboxed OAuth document needs a consent-only HTTPS form-action source; rejected requests and every other page keep the strict self-only policy
-- [runner-enrollment-key-reset](runner-enrollment-key-reset.md) — a changed enrollment key rotates the token while preserving external identity unless the installer explicitly resets generated auth state
+- [runner-enrollment-key-rotation](runner-enrollment-key-rotation.md) — a changed enrollment key re-registers the configured id or hostname and replaces the cached token
 - [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and health reports the embedded source revision
 
 ### Specifications

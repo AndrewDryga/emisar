@@ -159,9 +159,7 @@ func (c *Config) Validate() error {
 	if c.Runner.Group == "" {
 		return fmt.Errorf("config: runner.group required")
 	}
-	// runner.id may be empty at first start; connect persists a generated one
-	// before opening the cloud connection. Operators who want a stable id can
-	// set it manually.
+	// runner.id is optional; the host's current hostname is the default identity.
 	//
 	// Mirror the pack-env posture (actionspec.validateExecutionEnv): the
 	// dynamic-linker (LD_*/DYLD_*) and shell-startup (BASH_ENV) hijack vectors

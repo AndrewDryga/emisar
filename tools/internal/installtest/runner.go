@@ -97,15 +97,14 @@ require_explicit_unattended_packs
 func runnerEnrollmentState(h *harness) error {
 	installer := h.repoPath("install.sh")
 	names := []string{
-		"validate_enrollment_key_input", "runner_auth_state_exists",
-		"prepare_enrollment_key_update", "write_enrollment_key",
-		"remove_runner_auth_state", "backup_enrollment_state",
-		"restore_enrollment_state",
+		"validate_enrollment_key_input", "prepare_enrollment_key_update",
+		"write_enrollment_key", "remove_runner_token",
+		"backup_enrollment_state", "restore_enrollment_state",
 	}
 
-	resetRoot := h.path("auth-reset")
-	etc := filepath.Join(resetRoot, "etc")
-	data := filepath.Join(resetRoot, "data")
+	updateRoot := h.path("enrollment-update")
+	etc := filepath.Join(updateRoot, "etc")
+	data := filepath.Join(updateRoot, "data")
 	if err := h.mkdir(etc, data); err != nil {
 		return err
 	}
@@ -113,118 +112,70 @@ func runnerEnrollmentState(h *harness) error {
 		"EMISAR_ENROLLMENT_KEY=emkey-enroll-AAAAAAAAAAAAAAAAAAAA\nNOMAD_TOKEN=keep-this-pack-secret\n", 0o600); err != nil {
 		return err
 	}
-	for _, name := range []string{"token", "token.json", "runner_id", "dispatches.jsonl"} {
-		if err := writeFile(filepath.Join(data, name), "", 0o600); err != nil {
+	for name, contents := range map[string]string{
+		"token":            "legacy-token\n",
+		"token.json":       "current-token\n",
+		"dispatches.jsonl": "durable-dispatch\n",
+	} {
+		if err := writeFile(filepath.Join(data, name), contents, 0o600); err != nil {
 			return err
 		}
 	}
 	result := h.functions(installer, names, `
 die() { printf '%s\n' "$*" >&2; exit 1; }
 log() { :; }
-confirm() { return 0; }
-RESET_IDENTITY=0
-RESET_RUNNER_AUTH_STATE=0
 ENROLLMENT_KEY_UPDATE=0
 prepare_enrollment_key_update
 test "$ENROLLMENT_KEY_UPDATE" = 1
-test "$RESET_RUNNER_AUTH_STATE" = 1
 write_enrollment_key
-remove_runner_auth_state
 `, map[string]string{
 		"ETC_DIR": etc, "DATA_DIR": data, "SERVICE_GROUP": "root",
 		"EMISAR_ENROLLMENT_KEY": "emkey-enroll-BBBBBBBBBBBBBBBBBBBB",
-		"ASSUME_YES":            "0",
 	})
 	if _, err := requireOutput(result); err != nil {
-		return fmt.Errorf("interactive key update: %w", err)
+		return fmt.Errorf("enrollment key update: %w", err)
 	}
 	if err := exactFile(filepath.Join(etc, "runner.env"),
 		"EMISAR_ENROLLMENT_KEY=emkey-enroll-BBBBBBBBBBBBBBBBBBBB\nNOMAD_TOKEN=keep-this-pack-secret\n"); err != nil {
 		return err
 	}
-	for _, name := range []string{"token", "token.json", "runner_id"} {
-		if err := requireAbsent(filepath.Join(data, name)); err != nil {
-			return err
-		}
-	}
-	if err := requireRegular(filepath.Join(data, "dispatches.jsonl")); err != nil {
+	if err := exactFile(filepath.Join(data, "token"), "legacy-token\n"); err != nil {
 		return err
 	}
-
-	unattendedRoot := h.path("auth-unattended")
-	etc = filepath.Join(unattendedRoot, "etc")
-	data = filepath.Join(unattendedRoot, "data")
-	if err := h.mkdir(etc, data); err != nil {
+	if err := exactFile(filepath.Join(data, "token.json"), "current-token\n"); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(etc, "runner.env"),
-		"EMISAR_ENROLLMENT_KEY=emkey-enroll-CCCCCCCCCCCCCCCCCCCC\n", 0o600); err != nil {
+	if err := exactFile(filepath.Join(data, "dispatches.jsonl"), "durable-dispatch\n"); err != nil {
 		return err
-	}
-	for _, name := range []string{"token", "runner_id"} {
-		if err := writeFile(filepath.Join(data, name), "", 0o600); err != nil {
-			return err
-		}
-	}
-	result = h.functions(installer, names, `
-die() { printf '%s\n' "$*" >&2; exit 1; }
-log() { :; }
-confirm() { printf 'unexpected identity-reset prompt\n' >&2; exit 1; }
-RESET_IDENTITY=0
-RESET_RUNNER_AUTH_STATE=0
-ENROLLMENT_KEY_UPDATE=0
-prepare_enrollment_key_update
-test "$ENROLLMENT_KEY_UPDATE" = 1
-test "$RESET_RUNNER_AUTH_STATE" = 0
-write_enrollment_key
-`, map[string]string{
-		"ETC_DIR": etc, "DATA_DIR": data, "SERVICE_GROUP": "root",
-		"EMISAR_ENROLLMENT_KEY": "emkey-enroll-DDDDDDDDDDDDDDDDDDDD",
-		"ASSUME_YES":            "1",
-	})
-	if _, err := requireOutput(result); err != nil {
-		return fmt.Errorf("non-destructive automation: %w", err)
-	}
-	for _, name := range []string{"token", "runner_id"} {
-		if err := requireRegular(filepath.Join(data, name)); err != nil {
-			return err
-		}
 	}
 
 	result = h.functions(installer, names, `
 die() { printf '%s\n' "$*" >&2; exit 1; }
 log() { :; }
-confirm() { printf 'unexpected identity-reset prompt\n' >&2; exit 1; }
-RESET_RUNNER_AUTH_STATE=0
-ENROLLMENT_KEY_UPDATE=0
-prepare_enrollment_key_update
-test "$RESET_RUNNER_AUTH_STATE" = 1
-write_enrollment_key
-remove_runner_auth_state
-`, map[string]string{
-		"ETC_DIR": etc, "DATA_DIR": data, "SERVICE_GROUP": "root",
-		"EMISAR_ENROLLMENT_KEY": "emkey-enroll-EEEEEEEEEEEEEEEEEEEE",
-		"ASSUME_YES":            "1", "RESET_IDENTITY": "1",
-	})
+remove_runner_token
+`, map[string]string{"DATA_DIR": data})
 	if _, err := requireOutput(result); err != nil {
-		return fmt.Errorf("explicit identity reset: %w", err)
+		return fmt.Errorf("token removal: %w", err)
 	}
-	for _, name := range []string{"token", "runner_id"} {
+	for _, name := range []string{"token", "token.json"} {
 		if err := requireAbsent(filepath.Join(data, name)); err != nil {
 			return err
 		}
 	}
+	if err := exactFile(filepath.Join(data, "dispatches.jsonl"), "durable-dispatch\n"); err != nil {
+		return err
+	}
 
-	failureData := h.path("auth-failure", "data")
+	failureData := h.path("token-removal-failure", "data")
 	if err := h.mkdir(filepath.Join(failureData, "token")); err != nil {
 		return err
 	}
 	result = h.functions(installer, names, `
 die() { printf '%s\n' "$*" >&2; exit 1; }
 log() { :; }
-remove_runner_auth_state
+remove_runner_token
 `, map[string]string{"DATA_DIR": failureData})
-	if err := expectFailure(result, "could not remove runner authentication state"); err != nil {
+	if err := expectFailure(result, "could not remove runner token"); err != nil {
 		return fmt.Errorf("removal failure: %w", err)
 	}
 
@@ -242,7 +193,7 @@ remove_runner_auth_state
 	if err := writeFile(filepath.Join(data, "token"), "old-token\n", 0o600); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(data, "runner_id"), "old-identity\n", 0o600); err != nil {
+	if err := writeFile(filepath.Join(data, "token.json"), "old-token-json\n", 0o600); err != nil {
 		return err
 	}
 	result = h.functions(installer, names, `
@@ -253,9 +204,8 @@ ENROLLMENT_KEY_UPDATE=1
 ENROLLMENT_STATE_BACKED_UP=0
 tmp="$BACKUP_DIR" backup_enrollment_state
 write_enrollment_key
-remove_runner_auth_state
 printf 'new-token\n' >"$DATA_DIR/token"
-printf 'new-identity\n' >"$DATA_DIR/runner_id"
+printf 'new-token-json\n' >"$DATA_DIR/token.json"
 ENROLLMENT_STATE_BACKED_UP=1 tmp="$BACKUP_DIR" restore_enrollment_state
 `, map[string]string{
 		"ETC_DIR": etc, "DATA_DIR": data, "SERVICE_GROUP": "root",
@@ -272,7 +222,7 @@ ENROLLMENT_STATE_BACKED_UP=1 tmp="$BACKUP_DIR" restore_enrollment_state
 	if err := exactFile(filepath.Join(data, "token"), "old-token\n"); err != nil {
 		return err
 	}
-	return exactFile(filepath.Join(data, "runner_id"), "old-identity\n")
+	return exactFile(filepath.Join(data, "token.json"), "old-token-json\n")
 }
 
 func runnerInstallRollback(h *harness) error {

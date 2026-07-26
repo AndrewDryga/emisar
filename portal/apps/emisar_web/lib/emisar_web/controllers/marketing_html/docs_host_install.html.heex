@@ -170,7 +170,6 @@
               {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires EMISAR_PACKS set explicitly (even to empty)."},
               {"--version TAG", "Pin a specific release instead of latest."},
               {"--no-start", "Install everything but don't start the service yet — for image bakes."},
-              {"--reset-identity", "With a new key on an existing install, drop the cached token and re-enroll as a fresh runner."},
               {"--no-service", "Binary only: skip the service user, unit, and activation. For containers and CI — see Containers."}
             ] do %>
               <tr>
@@ -199,7 +198,7 @@
   <span class="text-sky-300">labels</span>:                    <span class="text-zinc-600"># free-form, for finer targeting</span>
     <span class="text-sky-300">role</span>: <span class="text-brand-300">"frontend"</span>
     <span class="text-sky-300">region</span>: <span class="text-brand-300">"us-east-1"</span>
-  <span class="text-zinc-600"># id: "web-01"           # optional — defaults to a persisted UUID</span>
+  <span class="text-zinc-600"># id: "web-01"           # optional — defaults to the current hostname</span>
 <span class="text-sky-300">cloud</span>:
   <span class="text-sky-300">url</span>: <span class="text-brand-300">"https://emisar.dev"</span>
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>

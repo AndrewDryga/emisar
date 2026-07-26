@@ -59,10 +59,9 @@ type WebsocketDialer struct {
 	Group    string
 	Version  string
 
-	// ExternalID is the runner's durable identity: persisted across
-	// boots and presented on every register so the cloud maps reconnects
-	// back to the same runner row. Registration requires 1-255 characters
-	// without surrounding whitespace.
+	// ExternalID is the configured id or host hostname presented on every
+	// register. Registration requires 1-255 characters without surrounding
+	// whitespace.
 	ExternalID string
 
 	// HTTPClient is used for /runner/register; defaults to a 10s-timeout

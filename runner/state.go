@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -10,11 +11,6 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
-
-// State advertises signing policy, not the runner target reference. Before the
-// first connect, this fixed non-secret identity lets the verifier validate that
-// policy without creating durable runtime state.
-const statePreviewExternalID = "00000000-0000-4000-8000-000000000000"
 
 func stateCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -33,12 +29,13 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			externalID, found, err := existingExternalID(cfg.Runner.ID, cfg.Paths.DataDir)
+			hostname, err := os.Hostname()
+			if err != nil {
+				return fmt.Errorf("read hostname: %w", err)
+			}
+			externalID, err := resolveExternalID(cfg.Runner.ID, hostname)
 			if err != nil {
 				return err
-			}
-			if !found {
-				externalID = statePreviewExternalID
 			}
 			verifier, err := buildStateVerifier(cfg, externalID)
 			if err != nil {

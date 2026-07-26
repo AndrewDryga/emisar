@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -86,18 +85,11 @@ env var can be unset after the first successful connect.`,
 			// every verifier replacement.
 			defer nonceStore.Close()
 
-			// Resolve identity only after acquiring the data-directory lock, so
-			// two first boots cannot mint different ids for one installation.
-			externalID, err := rt.ensureExternalID()
-			if err != nil {
-				return fmt.Errorf("resolve runner id: %w", err)
-			}
-			verifier, err := buildVerifier(rt.cfg, externalID, nonceStore)
+			verifier, err := buildVerifier(rt.cfg, rt.externalID, nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
 
-			hostname, _ := os.Hostname()
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 			// A degraded pack is skipped, not fatal (see loadRegistry) — but it
 			// must be impossible to miss from the host: one line per pack, every
@@ -110,16 +102,16 @@ env var can be unset after the first successful connect.`,
 				URL:           rt.cfg.Cloud.URL,
 				EnrollmentKey: enrollmentKey,
 				TokenPath:     tokenPath,
-				Hostname:      hostname,
+				Hostname:      rt.hostname,
 				Group:         rt.cfg.Runner.Group,
 				Version:       Version,
-				ExternalID:    externalID,
+				ExternalID:    rt.externalID,
 				Logger:        logger,
 			}
 
 			builder := &cloud.StateBuilder{
 				Version:     Version,
-				Hostname:    hostname,
+				Hostname:    rt.hostname,
 				Group:       rt.cfg.Runner.Group,
 				Labels:      rt.cfg.Runner.Labels,
 				GetRegistry: rt.engine.Registry,
@@ -164,7 +156,7 @@ env var can be unset after the first successful connect.`,
 						changed, packErr, signingErr := reloadComponents(
 							rt.engine.Reload,
 							func() error {
-								verifier, err := reloadVerifier(externalID, nonceStore)
+								verifier, err := reloadVerifier(rt.externalID, nonceStore)
 								if err == nil {
 									client.SetVerifier(verifier)
 								}
@@ -202,7 +194,7 @@ env var can be unset after the first successful connect.`,
 
 func validateConnectDataDir(dataDir string) error {
 	if strings.TrimSpace(dataDir) == "" {
-		return fmt.Errorf("connect requires paths.data_dir for durable identity and dispatch reservations")
+		return fmt.Errorf("connect requires paths.data_dir for durable dispatch reservations")
 	}
 	return nil
 }
@@ -322,93 +314,14 @@ func reloadVerifier(externalID string, nonceStore *signing.NonceStore) (*signing
 	return buildVerifier(cfg, externalID, nonceStore)
 }
 
-// resolveExternalID returns the runner's durable identity. Precedence:
-//  1. an operator-pinned `runner.id` in config, if set;
-//  2. a UUID persisted at <data_dir>/runner_id from a previous boot;
-//  3. a freshly minted UUID, persisted for next time.
-//
-// Presenting a stable id on every register lets the cloud map reconnects
-// (and reboots) back to the same runner row instead of creating a new one.
-func resolveExternalID(configuredID, dataDir string) (string, error) {
-	id, found, err := existingExternalID(configuredID, dataDir)
-	if err != nil || found {
-		return id, err
-	}
-
-	id, err = newUUIDv4()
-	if err != nil {
-		return "", err
-	}
-
-	path := filepath.Join(dataDir, "runner_id")
-	if err := fsutil.SecureMkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return "", err
-	}
-	// Sync the file and its directory around the atomic rename. Returning an id
-	// before the directory entry is durable can mint a different logical runner
-	// after a power loss, which defeats dispatch and nonce isolation.
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("create runner identity: %w", err)
-	}
-	cleanup := func() {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		cleanup()
-		return "", fmt.Errorf("secure runner identity: %w", err)
-	}
-	if _, err := f.WriteString(id); err != nil {
-		cleanup()
-		return "", fmt.Errorf("write runner identity: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		cleanup()
-		return "", fmt.Errorf("sync runner identity: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return "", fmt.Errorf("close runner identity: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return "", fmt.Errorf("activate runner identity: %w", err)
-	}
-	if err := fsutil.SyncDirectory(filepath.Dir(path)); err != nil {
-		return "", fmt.Errorf("sync runner identity directory: %w", err)
-	}
-	return id, nil
-}
-
-func existingExternalID(configuredID, dataDir string) (string, bool, error) {
+// resolveExternalID uses the host lifecycle as the default identity boundary.
+// A reboot keeps the hostname; replacing an ephemeral host produces a new one.
+func resolveExternalID(configuredID, hostname string) (string, error) {
 	if id := strings.TrimSpace(configuredID); id != "" {
-		return id, true, nil
+		return id, nil
 	}
-
-	path := filepath.Join(dataDir, "runner_id")
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return "", false, nil
+	if hostname = strings.TrimSpace(hostname); hostname != "" {
+		return hostname, nil
 	}
-	if err != nil {
-		return "", false, fmt.Errorf("read runner identity %s: %w", path, err)
-	}
-	id := strings.TrimSpace(string(b))
-	if id == "" {
-		return "", false, fmt.Errorf("runner identity %s is empty", path)
-	}
-	return id, true, nil
-}
-
-// newUUIDv4 builds an RFC 4122 v4 UUID from crypto/rand — no external dep.
-func newUUIDv4() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+	return "", fmt.Errorf("runner hostname is empty")
 }

@@ -120,13 +120,9 @@ func TestStateCmd_DoesNotPersistRuntimeStateAndAdvertisesSigningPolicy(t *testin
 	if _, ok := st["runner_id"]; ok {
 		t.Fatalf("runner_id duplicates the authenticated socket identity: %s", out)
 	}
-	for _, path := range []string{
-		filepath.Join(dir, "data", "runner_id"),
-		filepath.Join(dir, "events.jsonl"),
-	} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("state command created runtime file %s: %v", path, err)
-		}
+	path := filepath.Join(dir, "events.jsonl")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("state command created runtime file %s: %v", path, err)
 	}
 	if st["enforce_signatures"] != true {
 		t.Fatalf("state must advertise configured signature enforcement:\n%s", out)

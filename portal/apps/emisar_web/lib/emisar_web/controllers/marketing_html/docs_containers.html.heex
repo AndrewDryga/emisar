@@ -80,16 +80,15 @@
         copy_text="curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service"
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --no-service</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Second, persist identity.</strong>
-        After the first connect, the per-runner token lands at
-        <code class="font-mono">cloud.token_path</code>
+        <strong class="text-zinc-200">Second, preserve connection state.</strong>
+        By default, the runner uses the container hostname as its identity. After the first connect,
+        the per-runner token lands at <code class="font-mono">cloud.token_path</code>
         (<code class="font-mono">/var/lib/emisar/token.json</code>
-        by default) — keep <code class="font-mono">/var/lib/emisar</code>
-        in a volume and the runner keeps the same identity across restarts. The runner id is a random
-        UUID persisted at <code class="font-mono">/var/lib/emisar/runner_id</code>
-        (so that volume already preserves it); pin <code class="font-mono">runner.id</code>
-        yourself when the volume itself isn't stable across placements, and the name stays fixed no
-        matter where the container lands:
+        by default). Keep the hostname stable and <code class="font-mono">/var/lib/emisar</code>
+        in a volume so restarts preserve the same runner and its durable dispatch state. Pin
+        <code class="font-mono">runner.id</code>
+        when the orchestrator changes hostnames across placements but the workload is still one
+        logical runner:
       </p>
       <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-brand-300">1</span>
 <span class="text-sky-300">runner</span>:

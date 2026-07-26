@@ -501,20 +501,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--reset-identity</code>
-            — with a new
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
-            on an existing host, drop the cached token and generated identity so the host re-enrolls
-            as a new runner.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--uninstall</code>
-            — stop the service and remove the binary, unit, cached token, and generated identity,
-            keeping config, data, and logs;
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+            — stop the service and remove the binary, unit, and cached token, keeping config, data,
+            and logs; <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
             with it also deletes config, data, logs, and the service user.
           </span>
         </li>

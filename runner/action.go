@@ -93,9 +93,6 @@ func actionRunCmd() *cobra.Command {
 				return err
 			}
 			defer rt.journal.Close()
-			if _, err := rt.ensureExternalID(); err != nil {
-				return err
-			}
 
 			argMap, err := parseArgFlag(argList)
 			if err != nil {

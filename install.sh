@@ -59,27 +59,22 @@ NO_START="${NO_START:-0}"
 NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
 SERVICE_STARTED=0
 MODE="install"                    # install|uninstall
-RESET_IDENTITY=0                  # explicit destructive reset during install
-RESET_RUNNER_AUTH_STATE=0         # resolved reset decision
 ENROLLMENT_KEY_UPDATE=0           # existing runner.env needs the supplied key
 
 usage() {
   cat <<'USAGE'
 emisar installer
 
-Usage: install.sh [--version TAG] [--uninstall] [--reset-identity] [--no-start] [--yes] [--packs LIST]
+Usage: install.sh [--version TAG] [--uninstall] [--no-start] [--yes] [--packs LIST]
 
 Flags:
   --version TAG      Install a specific runner release tag. Default: latest.
                      Accepts `runner-vX.Y.Z`, `vX.Y.Z`, or bare `X.Y.Z`
                      (bare/v-prefixed forms are auto-prefixed with `runner-v`).
   --uninstall        Stop the service; remove the binary, service unit,
-                     cached runner token, and generated runner identity.
+                     and cached runner token.
                      Keeps config, local evidence, and logs by default.
   --purge            With --uninstall, also delete config + data + logs.
-  --reset-identity   With a new EMISAR_ENROLLMENT_KEY on an existing install,
-                     delete the cached token + generated identity. Interactive
-                     installs ask; unattended installs require this flag.
   --no-start         Install + enable the service but don't start it.
   --no-service       Binary-only install: skip system user creation,
                      systemd/launchd unit, and service activation.
@@ -137,7 +132,6 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$(normalize_version "$2")"; shift 2;;
     --uninstall) MODE="uninstall"; shift;;
     --purge) PURGE=1; shift;;
-    --reset-identity) RESET_IDENTITY=1; shift;;
     --no-start) NO_START=1; shift;;
     --no-service) NO_SERVICE=1; shift;;
     --bin-dir) BIN_DIR="$2"; shift 2;;
@@ -222,27 +216,13 @@ validate_enrollment_key_input() {
     die "EMISAR_ENROLLMENT_KEY is not a valid emkey-enroll- credential"
 }
 
-runner_auth_state_exists() {
-  local path
-  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json" "${DATA_DIR}/runner_id"; do
-    if [ -e "${path}" ] || [ -L "${path}" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Resolve the enrollment-key update before the installer stops the service. A
-# changed key re-registers the existing external id by default; resetting that
-# id is a separate, destructive choice.
+# Resolve an enrollment-key update before the installer stops the service.
+# The runner's token fingerprint makes a changed key re-register the same
+# configured id or hostname and replace the cached token on its next connect.
 prepare_enrollment_key_update() {
   validate_enrollment_key_input
 
-  if [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
-    [ "${RESET_IDENTITY}" = "0" ] || \
-      die "--reset-identity requires EMISAR_ENROLLMENT_KEY"
-    return 0
-  fi
+  [ -n "${EMISAR_ENROLLMENT_KEY:-}" ] || return 0
 
   local env="${ETC_DIR}/runner.env" current="" line
   if [ -f "${env}" ]; then
@@ -252,30 +232,11 @@ prepare_enrollment_key_update() {
       esac
     done < "${env}"
   else
-    # Fresh installs write the supplied key when the environment file is
-    # created; there is no prior identity to choose between here.
-    [ "${RESET_IDENTITY}" = "0" ] || \
-      die "--reset-identity applies only to an existing install"
+    # Fresh installs write the supplied key when the environment file is created.
     return 0
   fi
 
-  if [ "${current}" = "${EMISAR_ENROLLMENT_KEY}" ]; then
-    [ "${RESET_IDENTITY}" = "0" ] || \
-      die "--reset-identity requires a different EMISAR_ENROLLMENT_KEY"
-    return 0
-  fi
-
-  ENROLLMENT_KEY_UPDATE=1
-  runner_auth_state_exists || return 0
-
-  if [ "${RESET_IDENTITY}" = "1" ]; then
-    RESET_RUNNER_AUTH_STATE=1
-  elif [ "${ASSUME_YES}" = "0" ] && confirm \
-    "a different enrollment key was supplied; reset this host to a new runner identity?"; then
-    RESET_RUNNER_AUTH_STATE=1
-  else
-    log "different enrollment key supplied; preserving the existing runner identity"
-  fi
+  [ "${current}" = "${EMISAR_ENROLLMENT_KEY}" ] || ENROLLMENT_KEY_UPDATE=1
 }
 
 # -----------------------------------------------------------------------
@@ -675,15 +636,14 @@ write_enrollment_key() {
   log "updated enrollment key in ${env}"
 }
 
-# Remove the bearer token before runner_id. If a reset is interrupted between
-# those operations, the next start re-registers the old identity instead of
-# presenting an old token alongside a newly generated identity.
-remove_runner_auth_state() {
+# Remove the cached bearer token. The runner derives its external identity from
+# its configured id or the current hostname, not from installer-managed state.
+remove_runner_token() {
   local path
-  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json" "${DATA_DIR}/runner_id"; do
+  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json"; do
     if [ -e "${path}" ] || [ -L "${path}" ]; then
       log "removing ${path}"
-      rm -f "${path}" || die "could not remove runner authentication state at ${path}"
+      rm -f "${path}" || die "could not remove runner token at ${path}"
     fi
   done
 }
@@ -697,7 +657,7 @@ backup_enrollment_state() {
   mkdir -m 700 "${backup}"
   cp -pP "${ETC_DIR}/runner.env" "${backup}/runner.env" || \
     die "could not back up ${ETC_DIR}/runner.env"
-  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json" "${DATA_DIR}/runner_id"; do
+  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json"; do
     if [ -f "${path}" ] || [ -L "${path}" ]; then
       cp -pP "${path}" "${backup}/$(basename "${path}")" || \
         die "could not back up runner authentication state at ${path}"
@@ -710,7 +670,7 @@ restore_enrollment_state() {
   [ "${ENROLLMENT_STATE_BACKED_UP}" = "1" ] || return 0
 
   local backup="${tmp}/enrollment-state" path name
-  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json" "${DATA_DIR}/runner_id"; do
+  for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json"; do
     name="$(basename "${path}")"
     rm -f "${path}" 2>/dev/null || true
     if [ -e "${backup}/${name}" ] || [ -L "${backup}/${name}" ]; then
@@ -720,7 +680,7 @@ restore_enrollment_state() {
   done
   cp -pP "${backup}/runner.env" "${ETC_DIR}/runner.env" || \
     warn "could not restore ${ETC_DIR}/runner.env"
-  warn "restored the previous enrollment key, token, and runner identity"
+  warn "restored the previous enrollment key and token"
 }
 
 # -----------------------------------------------------------------------
@@ -943,9 +903,6 @@ drop_config_skeleton() {
   chmod 600 "${env}"
   chown "root:${SERVICE_GROUP}" "${env}" 2>/dev/null || chown root:root "${env}"
 
-  if [ "${RESET_RUNNER_AUTH_STATE}" = "1" ]; then
-    remove_runner_auth_state
-  fi
 }
 
 STAGED_BINARY=""
@@ -1569,7 +1526,7 @@ do_uninstall() {
       ;;
   esac
 
-  remove_runner_auth_state
+  remove_runner_token
 
   if [ -f "${BIN_DIR}/emisar" ]; then
     log "removing ${BIN_DIR}/emisar"

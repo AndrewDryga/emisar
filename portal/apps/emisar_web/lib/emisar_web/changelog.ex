@@ -67,7 +67,7 @@ defmodule EmisarWeb.Changelog do
       title: "Trust-aware action discovery and clean runner re-enrollment",
       tag: "v0.33.0",
       summary:
-        "Action discovery now follows the runner's current pack trust: MCP catalog, search, exact lookup, and runbook recovery expose only complete manifests for exact versions an operator still trusts, while the console keeps an untrusted advertised action visible for diagnosis but locks Run with the reason. Dispatch rechecks the same contract, so revoking trust closes stale pages and tool calls too. Runner uninstall now removes the cached token and generated identity, and reinstalling with a different enrollment key asks whether to preserve that identity or reset it.",
+        "Action discovery now follows the runner's current pack trust: MCP catalog, search, exact lookup, and runbook recovery expose only complete manifests for exact versions an operator still trusts, while the console keeps an untrusted advertised action visible for diagnosis but locks Run with the reason. Dispatch rechecks the same contract, so revoking trust closes stale pages and tool calls too. Runner uninstall now removes the cached token while preserving local evidence, and a changed enrollment key re-registers the configured id or hostname automatically.",
       details: [
         {"Security",
          [
@@ -77,8 +77,8 @@ defmodule EmisarWeb.Changelog do
          ]},
         {"Runner",
          [
-           "Default uninstall removes the cached token, legacy token file, and generated runner identity while preserving configuration, local evidence, and logs; --purge still removes everything.",
-           "A changed enrollment key prompts whether to preserve the external runner identity or reset it. Unattended resets require an explicit --reset-identity flag, and the runner guide carries the equivalent manual recovery steps."
+           "Default uninstall removes the cached token and legacy token file while preserving configuration, local evidence, and logs; --purge still removes everything.",
+           "A changed enrollment key re-registers the configured runner id or current hostname and replaces the cached token without an identity-reset prompt."
          ]},
         {"MCP",
          [

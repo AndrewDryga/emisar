@@ -32,7 +32,7 @@ type TerminalShutdownState struct {
 }
 
 // TerminalShutdownStatePath returns the state path in the runner's existing
-// durable data directory, alongside runner_id and dispatches.jsonl.
+// durable data directory, alongside dispatches.jsonl.
 func TerminalShutdownStatePath(dataDir string) string {
 	if strings.TrimSpace(dataDir) == "" {
 		return ""

@@ -208,7 +208,7 @@ execution:
       </ul>
 
       <.docs_h2 id="removing">Removing a runner</.docs_h2>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove binary + service + cached token + generated identity</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove binary + service + cached token</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
@@ -222,23 +222,17 @@ execution:
         secrets too, so export the journal first if you keep host-side forensics.
       </p>
 
-      <.docs_h3 id="resetting-identity">Resetting identity manually</.docs_h3>
+      <.docs_h3 id="changing-enrollment-key">Changing the enrollment key</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Put a new enrollment key in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>,
-        then stop the runner before removing its token and generated identity:
-      </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl stop emisar
-<span class="text-zinc-500">$</span> sudo rm -f /var/lib/emisar/token /var/lib/emisar/token.json /var/lib/emisar/runner_id
-<span class="text-zinc-500">$</span> sudo systemctl start emisar</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        A reinstall with a different
+        Supply a different
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
-        offers the same reset. In unattended installs, add
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--reset-identity</code>
-        explicitly.
-        For custom paths, remove
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.token_path</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">paths.data_dir/runner_id</code>.
+        when reinstalling. The runner detects the changed key, re-registers its configured
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        or current hostname, and replaces the cached token on its next connection.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A replacement host with a new hostname enrolls as a new runner automatically. No
+        disk-backed identity file or identity-reset step is involved.
       </p>
     </.docs_layout>
   </section>

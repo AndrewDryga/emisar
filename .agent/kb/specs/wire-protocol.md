@@ -45,10 +45,12 @@ per-runner token, which is persisted owner-only. Every websocket upgrade then
 uses that bearer token. Revoking the key or token makes the next registration or
 upgrade fail.
 
-The runner generates and durably stores its UUID `external_id` before its first
-registration. `POST /runner/register` requires that nonblank, at-most-255-character
-value and returns `400 {"error":"invalid_external_id"}` without consuming the
-enrollment key when it is missing or invalid. Reconnects present the same value.
+The runner uses configured `runner.id`, or its current hostname by default, as
+its `external_id`. `POST /runner/register` requires that nonblank,
+at-most-255-character value and returns
+`400 {"error":"invalid_external_id"}` without consuming the enrollment key when
+it is missing or invalid. Reconnects from the same host present the same value;
+an ephemeral replacement with a new hostname enrolls as a new runner.
 MCP runner references derive their generation suffix as the first 32 lowercase
 hex characters of `sha256(external_id)`; the full external ID is never exposed
 to MCP.

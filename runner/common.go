@@ -20,23 +20,11 @@ import (
 // runtime is the live in-memory wiring of one emisar process.
 type runtime struct {
 	cfg        *config.Config
+	hostname   string
 	externalID string
 	journal    *audit.Journal
 	engine     *engine.Engine
 	admission  *admission.Policy
-}
-
-func (r *runtime) ensureExternalID() (string, error) {
-	if r.externalID != "" {
-		return r.externalID, nil
-	}
-	id, err := resolveExternalID(r.cfg.Runner.ID, r.cfg.Paths.DataDir)
-	if err != nil {
-		return "", err
-	}
-	r.externalID = id
-	r.journal.SetAgentID(id)
-	return id, nil
 }
 
 // registry returns the current pack registry from the engine. After a
@@ -119,6 +107,14 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("read hostname: %w", err)
+	}
+	externalID, err := resolveExternalID(cfg.Runner.ID, hostname)
+	if err != nil {
+		return nil, err
+	}
 
 	jsonlSink, err := audit.OpenJSONL(cfg.Events.JSONLPath, audit.JSONLOptions{
 		MaxSizeBytes: cfg.Events.MaxSizeBytes,
@@ -128,7 +124,7 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 		return nil, err
 	}
 	journal := audit.New(audit.Defaults{
-		AgentID: cfg.Runner.ID,
+		AgentID: externalID,
 		Group:   cfg.Runner.Group,
 	}, jsonlSink)
 	globalRules, err := redact.CompileAll(redact.DefaultRules(), cfg.Redaction.Rules)
@@ -160,7 +156,8 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 
 	return &runtime{
 		cfg:        cfg,
-		externalID: cfg.Runner.ID,
+		hostname:   hostname,
+		externalID: externalID,
 		journal:    journal,
 		engine:     eng,
 		admission:  admit,
