@@ -53,6 +53,13 @@ func (a *App) e2eSSO(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
+	// CreateTemp makes this 0600 owned by the invoking user, but it is bind
+	// mounted into Keycloak, which runs as a non-root user — on Linux that is
+	// an unreadable import file and the container exits during startup. It is
+	// generated non-secret realm config, so make it world-readable.
+	if err := os.Chmod(realmPath, 0o644); err != nil {
+		return err
+	}
 
 	env := map[string]string{
 		"COMPOSE_PROJECT_NAME":  fmt.Sprintf("%s-sso-%d", composeProject(a.Root), portalPort),
@@ -71,6 +78,11 @@ func (a *App) e2eSSO(ctx context.Context) error {
 	}
 	fmt.Fprintln(a.Out, "[sso-e2e] starting isolated Portal and Keycloak...")
 	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal", "keycloak"); err != nil {
+		// `--wait` reports only that a container never became healthy, so a
+		// service that exits during startup takes its reason to the grave and
+		// CI shows an unexplained exit status. Dump the same evidence the pack
+		// harness does before the deferred teardown removes the containers.
+		a.capturePackTestEvidence(ctx, []string{"compose"}, env, []string{"portal", "keycloak", "db"})
 		return err
 	}
 	if err := compose(ctx, "run", "--rm", "seeder"); err != nil {

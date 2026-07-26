@@ -315,7 +315,9 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err := os.MkdirAll(livebookScriptsDir, 0o700); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(notebooksDir, 0o700); err != nil {
+	// The Livebook container reads these as its own non-root user, so 0700
+	// (owner-only) makes the bind mount look like an empty directory.
+	if err := os.MkdirAll(notebooksDir, 0o755); err != nil {
 		return err
 	}
 	livebookScripts, err := extractWriteFiles(livebookDocument, livebookScriptsDir, true,
