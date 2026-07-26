@@ -317,7 +317,7 @@ func RunDaemon(ctx context.Context, config Config) error {
 	}
 	if endpoint == "" {
 		_ = command.Process.Kill()
-		return fmt.Errorf("Chrome did not publish DevToolsActivePort")
+		return fmt.Errorf("browser did not publish DevToolsActivePort")
 	}
 	if err := os.WriteFile(config.Marker, []byte(config.SPKI+"\n"), 0o600); err != nil {
 		_ = command.Process.Kill()

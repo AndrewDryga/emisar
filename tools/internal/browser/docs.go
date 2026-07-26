@@ -530,7 +530,7 @@ func captureShot(session *Session, config DocsConfig, s shot) (string, error) {
 
 func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConfig, shots []shot) (map[string]string, error) {
 	if config.KeycloakURL == "" {
-		return nil, fmt.Errorf("Keycloak URL is required for the Keycloak documentation shots")
+		return nil, fmt.Errorf("a Keycloak URL is required for the Keycloak documentation shots")
 	}
 	selected := make(map[string]shot, len(shots))
 	for _, s := range shots {
@@ -666,7 +666,7 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 		return nil, err
 	}
 	if !secretMasked {
-		return nil, fmt.Errorf("Keycloak client secret is not password-masked; refusing to capture")
+		return nil, fmt.Errorf("the Keycloak client secret is not password-masked; refusing to capture")
 	}
 	if err := capture("keycloak-client-secret"); err != nil {
 		return nil, err
@@ -720,7 +720,7 @@ func waitScript(session *Session, script, label string, timeout time.Duration) e
 func verifyDefaultKeycloakScopes(session *Session) error {
 	script := `(()=>['email','profile'].every((scope)=>[...document.querySelectorAll('table[aria-label="Client scopes"] tbody tr')].some((row)=>{const text=(row.textContent||'').replace(/\s+/g,' ').trim();return text.startsWith(scope+' ')&&text.includes(' Default')})))()`
 	if err := waitScript(session, script, "email and profile default client scopes", 10*time.Second); err != nil {
-		return fmt.Errorf("Keycloak client scopes: %w", err)
+		return fmt.Errorf("capture Keycloak client scopes: %w", err)
 	}
 	return nil
 }

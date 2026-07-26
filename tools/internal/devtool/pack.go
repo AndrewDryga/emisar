@@ -328,7 +328,7 @@ func (a *App) preparePackTestPlan(
 		available[service] = true
 	}
 	if !available["runner-tools"] {
-		return fmt.Errorf("Compose project has no runner-tools service")
+		return fmt.Errorf("the Compose project has no runner-tools service")
 	}
 	for _, service := range plan.Services {
 		if !available[service] {
@@ -497,7 +497,7 @@ func validatePackTestVersionInput(path, primaryService, defaultVersion string) e
 	}
 	service, ok := compose.Services[primaryService]
 	if !ok {
-		return fmt.Errorf("Compose project has no primary SUT service %s", primaryService)
+		return fmt.Errorf("the Compose project has no primary SUT service %s", primaryService)
 	}
 	versionInput := service.Image
 	digestInput := service.Image

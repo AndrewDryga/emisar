@@ -291,7 +291,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	}
 	coupledProxy := regexp.MustCompile(`(?m)^\s+(Requires|BindsTo|PartOf|Requisite|PropagatesStopTo)=.*emisar-cloud-sql-proxy`)
 	if coupledProxy.Match(renderedData) {
-		return fmt.Errorf("Portal service must not restart with the Cloud SQL Auth Proxy")
+		return fmt.Errorf("the portal service must not restart with the Cloud SQL Auth Proxy")
 	}
 
 	if err := a.validateAdminCallback(ctx, temp); err != nil {
@@ -478,7 +478,7 @@ exec "$probe"`)
 		return err
 	}
 	if strings.TrimSpace(string(probe)) != "livebook-home-exec-ok" {
-		return fmt.Errorf("Livebook home exec probe returned %q", probe)
+		return fmt.Errorf("the Livebook home exec probe returned %q", probe)
 	}
 	return nil
 }

@@ -90,7 +90,7 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 		return connection.Close()
 	})
 	if err != nil {
-		return fmt.Errorf("Postgres did not become ready at %s: %w", workspace.DatabaseURL, err)
+		return fmt.Errorf("waiting for Postgres at %s: %w", workspace.DatabaseURL, err)
 	}
 
 	client, err := a.tlsClient()
@@ -114,7 +114,7 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Keycloak did not become ready at %s: %w", workspace.KeycloakURL, err)
+		return fmt.Errorf("waiting for Keycloak at %s: %w", workspace.KeycloakURL, err)
 	}
 	return nil
 }
@@ -345,7 +345,7 @@ func (a *App) doctor(ctx context.Context) error {
 		return err
 	}
 	if !validLeaf(a.Certs, ca, time.Now()) {
-		return fmt.Errorf("Keycloak development certificate is invalid")
+		return fmt.Errorf("the Keycloak development certificate is invalid")
 	}
 	client, err := a.tlsClient()
 	if err != nil {
@@ -372,7 +372,7 @@ func (a *App) doctor(ctx context.Context) error {
 	}
 	if !a.inBox() && runtime.GOOS == "darwin" {
 		if err := a.certificateStatus(ctx); err != nil {
-			return fmt.Errorf("Keycloak TLS is valid, but the host browser does not trust its CA: %w", err)
+			return fmt.Errorf("the Keycloak TLS chain is valid, but the host browser does not trust its CA: %w", err)
 		}
 	}
 	fmt.Fprintln(a.Out, "tools, services, TLS, exact OIDC issuer, and key isolation are healthy")

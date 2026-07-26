@@ -193,7 +193,7 @@ func chooseDatabaseHost(instances []instance, requested string) (instance, error
 		return instance{}, fmt.Errorf("running Portal host not found: %s", requested)
 	}
 	if len(matched) > 1 {
-		return instance{}, fmt.Errorf("Portal host name is ambiguous across zones: %s", requested)
+		return instance{}, fmt.Errorf("the portal host name is ambiguous across zones: %s", requested)
 	}
 	return matched[0], nil
 }
@@ -259,7 +259,7 @@ func (a *App) database(ctx context.Context, args []string) error {
 		return fmt.Errorf("active gcloud account is not a user email; pass --user explicitly")
 	}
 	if _, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "application-default", "print-access-token"); err != nil {
-		return fmt.Errorf("Application Default Credentials are unavailable; run gcloud auth application-default login as %s", options.user)
+		return fmt.Errorf("no Application Default Credentials; run gcloud auth application-default login as %s", options.user)
 	}
 	users, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "users", "list",
 		"--project="+options.project, "--instance=emisar", "--filter=type=CLOUD_IAM_USER",
@@ -291,7 +291,7 @@ func (a *App) database(ctx context.Context, args []string) error {
 	}
 	connectionName := strings.TrimSpace(string(connection))
 	if connectionName == "" {
-		return fmt.Errorf("Cloud SQL instance emisar was not found in project %s", options.project)
+		return fmt.Errorf("no Cloud SQL instance emisar in project %s", options.project)
 	}
 	if options.port == 0 {
 		options.port, err = freePort(15432)
@@ -362,7 +362,7 @@ Password: none (automatic IAM authentication)
 	fmt.Fprintf(a.Err, "Opening Emisar Production in Postico 2 as %s...\n", options.user)
 	if err := a.run(ctx, a.Root, nil, "open", "-a", "Postico 2",
 		posticoURL(connectionName, options.user, options.port)); err != nil {
-		return fmt.Errorf("Postico 2 could not be opened; use --psql: %w", err)
+		return fmt.Errorf("could not open Postico 2; use --psql: %w", err)
 	}
 	fmt.Fprintln(a.Out, "Postico 2 opened. Keep this terminal open while using the database.")
 	fmt.Fprintln(a.Out, "Press Ctrl-C to stop the private tunnel.")

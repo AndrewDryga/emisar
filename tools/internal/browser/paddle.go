@@ -112,7 +112,7 @@ func evaluatePaddleBool(ctx context.Context, executionContext cdpruntime.Executi
 			return err
 		}
 		if exception != nil {
-			return fmt.Errorf("Paddle frame evaluation failed: %s", exception.Text)
+			return fmt.Errorf("evaluating the Paddle frame failed: %s", exception.Text)
 		}
 		return json.Unmarshal([]byte(result.Value), &value)
 	}))
@@ -130,7 +130,7 @@ func evaluatePaddleString(ctx context.Context, executionContext cdpruntime.Execu
 			return err
 		}
 		if exception != nil {
-			return fmt.Errorf("Paddle frame evaluation failed: %s", exception.Text)
+			return fmt.Errorf("evaluating the Paddle frame failed: %s", exception.Text)
 		}
 		return json.Unmarshal([]byte(result.Value), &value)
 	}))
@@ -245,7 +245,7 @@ func clickPaddlePay(targets *paddleTargetSet) error {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("Paddle payment button was not found")
+		return fmt.Errorf("no Paddle payment button was found")
 	}
 	return nil
 }
@@ -278,7 +278,7 @@ func waitForCompletedCheckout(session *Session) error {
 		time.Sleep(2 * time.Second)
 	}
 	current, _ := session.CurrentURL()
-	return fmt.Errorf("Paddle checkout did not return to billing without _ptxn (got %s)", current)
+	return fmt.Errorf("the Paddle checkout did not return to billing without _ptxn (got %s)", current)
 }
 
 func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) error {
@@ -373,7 +373,7 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 		time.Sleep(time.Second)
 	}
 	if !targetReady {
-		return fmt.Errorf("Paddle did not create a hosted checkout target: %v", targetError)
+		return fmt.Errorf("no hosted Paddle checkout target was created: %v", targetError)
 	}
 	logf("billing e2e: hosted checkout attached")
 	if err := fillPaddle(targets, []string{`[data-testid="authenticationEmailInput"]`, `input[name="email"]`}, config.Email, "email"); err != nil {
@@ -394,7 +394,7 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 		time.Sleep(6 * time.Second)
 	}
 	if paddlePresent(targets, `[data-testid="authenticationEmailInput"]`) {
-		return fmt.Errorf("Paddle identity step did not advance")
+		return fmt.Errorf("the Paddle identity step did not advance")
 	}
 	logf("billing e2e: identity accepted")
 	if err := consentPaddle(targets); err != nil {

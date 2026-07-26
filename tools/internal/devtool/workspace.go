@@ -38,7 +38,7 @@ func (a *App) loadWorkspace(ctx context.Context) (Workspace, error) {
 		workspace.DatabaseURL = os.Getenv("COOP_SERVICE_DB_URL")
 		workspace.KeycloakURL = os.Getenv("COOP_SERVICE_KEYCLOAK_URL")
 		if workspace.PortalURL == "" || workspace.MetricsURL == "" || workspace.DatabaseURL == "" || workspace.KeycloakURL == "" {
-			return Workspace{}, fmt.Errorf("Coop did not inject every required workspace URL")
+			return Workspace{}, fmt.Errorf("coop did not inject every required workspace URL")
 		}
 	} else {
 		data, err := a.output(ctx, a.Root, nil, "coop", "fork", "ls", "--json")
@@ -72,7 +72,7 @@ func (a *App) loadWorkspace(ctx context.Context) (Workspace, error) {
 	}
 	port, err := strconv.Atoi(database.Port())
 	if err != nil || port < 1 || port > 65535 {
-		return Workspace{}, fmt.Errorf("Postgres service URL has invalid port: %s", workspace.DatabaseURL)
+		return Workspace{}, fmt.Errorf("the Postgres service URL has an invalid port: %s", workspace.DatabaseURL)
 	}
 	workspace.DBPort = port
 	return workspace, nil

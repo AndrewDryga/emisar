@@ -119,7 +119,7 @@ func writeSSORealm(source, destination string, portalPort int) error {
 	}
 	clients, ok := realm["clients"].([]any)
 	if !ok {
-		return fmt.Errorf("Keycloak realm has no clients")
+		return fmt.Errorf("the Keycloak realm has no clients")
 	}
 	updated := false
 	for _, raw := range clients {
@@ -134,7 +134,7 @@ func writeSSORealm(source, destination string, portalPort int) error {
 		break
 	}
 	if !updated {
-		return fmt.Errorf("Keycloak realm has no emisar-portal client")
+		return fmt.Errorf("the Keycloak realm has no emisar-portal client")
 	}
 	data, err = json.MarshalIndent(realm, "", "  ")
 	if err != nil {
@@ -286,7 +286,7 @@ func patchPaddleDestination(ctx context.Context, values map[string]string, tunne
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return fmt.Errorf("Paddle notification destination: HTTP %s: %s", response.Status, body)
+		return fmt.Errorf("reading the Paddle notification destination: HTTP %s: %s", response.Status, body)
 	}
 	return nil
 }
@@ -305,7 +305,7 @@ func findPaddleCustomer(ctx context.Context, apiKey, email string) (string, erro
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return "", fmt.Errorf("Paddle customer lookup: HTTP %s: %s", response.Status, body)
+		return "", fmt.Errorf("looking up the Paddle customer: HTTP %s: %s", response.Status, body)
 	}
 	var result struct {
 		Data []struct {
@@ -319,7 +319,7 @@ func findPaddleCustomer(ctx context.Context, apiKey, email string) (string, erro
 	for _, customer := range result.Data {
 		if strings.EqualFold(customer.Email, email) {
 			if !paddleCustomerIDPattern.MatchString(customer.ID) {
-				return "", fmt.Errorf("Paddle returned an invalid customer id")
+				return "", fmt.Errorf("invalid customer id from Paddle")
 			}
 			return customer.ID, nil
 		}
@@ -337,7 +337,7 @@ func (a *App) e2eBilling(ctx context.Context) error {
 	}
 	values, err := parseEnvFile(filepath.Join(a.Portal, ".agent", "secrets", "paddle-sandbox.env"))
 	if err != nil {
-		return fmt.Errorf("Paddle sandbox credentials: %w", err)
+		return fmt.Errorf("reading Paddle sandbox credentials: %w", err)
 	}
 	if err := requireValues(values, "PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET", "PADDLE_E2E_NTFSET"); err != nil {
 		return err

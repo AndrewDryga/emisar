@@ -12,6 +12,9 @@ import (
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 )
 
+// Keep this in step with the version any workflow installs directly.
+const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
+
 const (
 	checkUsage = `usage: ./run check <target>
 
@@ -158,6 +161,13 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 		if err := a.run(ctx, dir, nil, "go", arguments...); err != nil {
 			return err
 		}
+	}
+	// staticcheck belongs to the canonical gate, not a CI-only step: as a CI-only
+	// step it let a green local gate ship a red job, which is how forty findings
+	// accumulated unseen. Pinned so a new staticcheck release cannot fail an
+	// unchanged tree; `go run` keeps it off the contributor's PATH.
+	if err := a.run(ctx, dir, nil, "go", "run", staticcheckVersion, "./..."); err != nil {
+		return fmt.Errorf("%s staticcheck findings: %w", module, err)
 	}
 	// -diff prints what tidy would change and exits non-zero instead of writing,
 	// so a gate never mutates the tree it verifies and a read-only review box can

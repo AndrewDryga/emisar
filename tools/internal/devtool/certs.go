@@ -272,7 +272,7 @@ func (a *App) caBundle() string {
 func (a *App) makeCABundle(ctx context.Context) error {
 	ca, err := os.ReadFile(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {
-		return fmt.Errorf("Keycloak CA is missing; run ./run certs")
+		return fmt.Errorf("the Keycloak CA is missing; run ./run certs")
 	}
 	var system []byte
 	if runtime.GOOS == "darwin" {
@@ -311,7 +311,7 @@ func certFingerprint(cert *x509.Certificate) string {
 func (a *App) caFingerprint() (string, error) {
 	cert, err := certificate(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {
-		return "", fmt.Errorf("Keycloak CA is missing; run ./run certs")
+		return "", fmt.Errorf("the Keycloak CA is missing; run ./run certs")
 	}
 	return certFingerprint(cert), nil
 }
@@ -319,7 +319,7 @@ func (a *App) caFingerprint() (string, error) {
 func (a *App) tlsSPKI() (string, error) {
 	cert, err := certificate(filepath.Join(a.Certs, "tls.crt"))
 	if err != nil {
-		return "", fmt.Errorf("Keycloak certificate is missing; run ./run certs on the host")
+		return "", fmt.Errorf("the Keycloak certificate is missing; run ./run certs on the host")
 	}
 	hash := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	encoded := base64.StdEncoding.EncodeToString(hash[:])

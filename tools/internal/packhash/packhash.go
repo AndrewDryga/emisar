@@ -77,7 +77,7 @@ func validator(root, configured string) (string, error) {
 	}
 	path, err := exec.LookPath("emisar")
 	if err != nil {
-		return "", fmt.Errorf("%w: build bin/emisar with go -C runner build -o ../bin/emisar .", ErrUnavailable)
+		return "", fmt.Errorf("%w: run go -C runner build -o ../bin/emisar . to build bin/emisar", ErrUnavailable)
 	}
 	return path, nil
 }

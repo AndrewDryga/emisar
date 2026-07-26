@@ -548,14 +548,14 @@ func mcpClientConfiguration(h *harness) error {
 		return fmt.Errorf("configured clients = %q, expected 10", configuredClients(string(output)))
 	}
 	if !strings.Contains(string(output), "Goose") {
-		return fmt.Errorf("Goose merge refusal was not reported:\n%s", output)
+		return fmt.Errorf("the Goose merge refusal was not reported:\n%s", output)
 	}
 	gooseAfter, err := fileSHA(goose)
 	if err != nil {
 		return err
 	}
 	if gooseBefore != gooseAfter {
-		return fmt.Errorf("Goose configuration changed despite an existing extensions key")
+		return fmt.Errorf("the Goose configuration changed despite an existing extensions key")
 	}
 	if err := inspectClientConfigs(home, server.server.URL); err != nil {
 		return err

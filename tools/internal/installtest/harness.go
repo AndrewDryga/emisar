@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -366,17 +365,6 @@ func countLines(value string) int {
 	return strings.Count(value, "\n") + 1
 }
 
-func stringValue(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
 // githubTokenHygiene proves both installers' github_api sends the optional
 // EMISAR_GITHUB_TOKEN as an Authorization header without exposing it on any
 // argv: the HTTP handler runs while curl is still blocked on the response,
@@ -419,7 +407,7 @@ EMISAR_GITHUB_TOKEN="" github_api "$SERVER_URL/anonymous" >/dev/null
 		return fmt.Errorf("authenticated request never reached the server")
 	}
 	if authenticated.authorization != "Bearer "+token {
-		return fmt.Errorf("Authorization = %q, expected the bearer token", authenticated.authorization)
+		return fmt.Errorf("authorization = %q, expected the bearer token", authenticated.authorization)
 	}
 	if len(authenticated.leaks) > 0 {
 		return fmt.Errorf("token visible on argv of: %s", strings.Join(authenticated.leaks, ", "))
@@ -433,7 +421,7 @@ EMISAR_GITHUB_TOKEN="" github_api "$SERVER_URL/anonymous" >/dev/null
 	}
 	for _, received := range []probe{authenticated, anonymous} {
 		if received.accept != "application/vnd.github+json" {
-			return fmt.Errorf("Accept = %q, expected the GitHub media type", received.accept)
+			return fmt.Errorf("accept = %q, expected the GitHub media type", received.accept)
 		}
 	}
 	return nil

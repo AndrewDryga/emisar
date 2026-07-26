@@ -523,14 +523,6 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
 
-      - name: Run staticcheck
-        # Blocking (unlike govulncheck): dead code / SA findings fail CI so
-        # the Go audit's clean reading can't silently regress. Pinned.
-        working-directory: ${{ matrix.module }}
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2026.1
-          staticcheck ./...
-
       - name: Summarize coverage
         if: always()
         working-directory: ${{ matrix.module }}

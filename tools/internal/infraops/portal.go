@@ -219,7 +219,7 @@ func (a *App) selectInstances(ctx context.Context, options portalOptions, invent
 				}
 			}
 			if !found {
-				return nil, fmt.Errorf("Portal host not found: %s", requested)
+				return nil, fmt.Errorf("portal host not found: %s", requested)
 			}
 		}
 		return selected, nil
