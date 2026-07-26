@@ -627,7 +627,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # 57 rows of mostly-idle Docker waits. The cap was low to spare Docker
+      # Hub, which reusing the shared client image relieved: a row now pulls
+      # its own SUT rather than nine images it mostly never runs.
+      max-parallel: 12
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
     env:
