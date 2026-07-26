@@ -2,6 +2,7 @@ package packtest
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -512,5 +513,20 @@ func writeExecutable(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMatrixEmptyMarshalsAsArrayNotNull(t *testing.T) {
+	// An empty selection must serialize to `[]`, never `null`: CI guards
+	// compare the output against the literal `[]`, and `null` there blocked
+	// every deploy whose push touched no packs.
+	for _, plans := range [][]PlanRef{nil, {}} {
+		encoded, err := json.Marshal(Matrix(plans))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(encoded) != "[]" {
+			t.Fatalf("Matrix(%v) marshaled to %q, want []", plans, encoded)
+		}
 	}
 }

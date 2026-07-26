@@ -331,7 +331,12 @@ func loadPackVersion(packDir string) (string, error) {
 }
 
 func Matrix(plans []PlanRef) []MatrixRow {
-	var rows []MatrixRow
+	// Non-nil so an empty matrix marshals to `[]`, never `null`: the CI
+	// change-selection output feeds `= '[]'` guards, and a `null` there makes
+	// the behavior job run on an empty matrix and the required-checks gate
+	// demand a job that had nothing to run — which blocked every deploy whose
+	// push touched no packs.
+	rows := []MatrixRow{}
 	for _, plan := range plans {
 		for _, version := range plan.Versions {
 			rows = append(rows, MatrixRow{
