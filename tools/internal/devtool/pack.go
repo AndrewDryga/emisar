@@ -99,11 +99,11 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	}
 	bin := filepath.Join(harness, "bin")
 	baseCompose := filepath.Join(harness, "compose.yaml")
-	runnerImage := packTestRunnerImage(a.Root, invocationID)
+	runnerImage, runnerImageErr := packTestRunnerImage(a.Root)
 	sharedTools, sharedToolsErr := packTestNeedsSharedTools(plans)
 	preflightErr := func() error {
-		if sharedToolsErr != nil {
-			return sharedToolsErr
+		if err := errors.Join(runnerImageErr, sharedToolsErr); err != nil {
+			return err
 		}
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
@@ -115,7 +115,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		if err := a.run(ctx, filepath.Join(a.Root, "tools"), env, "go", "build", "-trimpath", "-o", filepath.Join(bin, "packtest"), "./cmd/packtest"); err != nil {
 			return err
 		}
-		if !sharedTools {
+		if !sharedTools || a.hasImage(ctx, runnerImage) {
 			return nil
 		}
 		composeEnv := map[string]string{
@@ -127,15 +127,12 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	if preflightErr != nil {
 		return errors.Join(preflightErr, writePackTestFailureReports(reports, plans, requestedVersionEnv, preflightErr))
 	}
-	if sharedTools {
-		defer a.removePackTestRunnerImage(runnerImage)
-	}
 
 	versionEnvs := make(map[string]map[string]string, len(plans))
 	for _, plan := range plans {
 		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
 		versionEnvs[plan.Name] = versionEnv
-		if err := a.preparePackTestPlan(ctx, baseCompose, invocationID, plan, versionEnv); err != nil {
+		if err := a.preparePackTestPlan(ctx, baseCompose, invocationID, runnerImage, plan, versionEnv); err != nil {
 			return errors.Join(err, writePackTestFailureReports(reports, []packtest.PlanRef{plan}, requestedVersionEnv, err))
 		}
 	}
@@ -169,7 +166,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				writePackTestReportHeader(&output, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
 				worker := New(a.Root, nil, &output, &output)
 				started := time.Now()
-				runErr := worker.runPackTestCase(ctx, baseCompose, job)
+				runErr := worker.runPackTestCase(ctx, baseCompose, runnerImage, job)
 				duration := time.Since(started).Round(time.Millisecond)
 				fmt.Fprintf(&output, "\nCase duration: %s\n", duration)
 				if runErr != nil {
@@ -311,6 +308,7 @@ func (a *App) preparePackTestPlan(
 	ctx context.Context,
 	baseCompose string,
 	invocationID string,
+	runnerImage string,
 	plan packtest.PlanRef,
 	versionEnv map[string]string,
 ) error {
@@ -326,7 +324,7 @@ func (a *App) preparePackTestPlan(
 		return err
 	}
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
-	env := packTestComposeEnv(a.Root, invocationID, plan, "build", versionEnv, plan.Runner.User)
+	env := packTestComposeEnv(a.Root, invocationID, runnerImage, plan, "build", versionEnv, plan.Runner.User)
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
 	if err != nil {
@@ -359,12 +357,13 @@ func (a *App) preparePackTestPlan(
 	return nil
 }
 
-func (a *App) runPackTestCase(ctx context.Context, baseCompose string, job packTestJob) error {
+func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) error {
 	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
 	env := packTestComposeEnv(
 		a.Root,
 		job.InvocationID,
+		runnerImage,
 		job.Plan,
 		job.Case.ID,
 		job.VersionEnv,
@@ -466,6 +465,7 @@ func packTestBuildServices(path string) ([]string, error) {
 func packTestComposeEnv(
 	root string,
 	invocationID string,
+	runnerImage string,
 	plan packtest.PlanRef,
 	caseID string,
 	versionEnv map[string]string,
@@ -481,7 +481,7 @@ func packTestComposeEnv(
 	env := map[string]string{
 		"COMPOSE_PROJECT_NAME":  packTestComposeProject(root, invocationID, plan.Name, caseID),
 		"EMISAR_ROOT":           root,
-		"PACKTEST_RUNNER_IMAGE": packTestRunnerImage(root, invocationID),
+		"PACKTEST_RUNNER_IMAGE": runnerImage,
 		"PACKTEST_RUNNER_USER":  composeUser,
 	}
 	for key, value := range versionEnv {
@@ -616,9 +616,18 @@ func packTestInvocationID(now time.Time, pid int) string {
 	return fmt.Sprintf("%s-%d", now.UTC().Format("20060102T150405.000000000Z"), pid)
 }
 
-func packTestRunnerImage(root, invocationID string) string {
-	hash := fmt.Sprintf("%x", sha256sum(root+"\x00"+invocationID))
-	return "emisar-runner-tools:" + hash[:12]
+// packTestRunnerImage names the shared client image after the bytes that
+// produce it. The Dockerfile COPYs nothing from its build context, so those
+// bytes are the entire input: a run that already has the tag can reuse a ~2GB
+// image instead of pulling eight servers to extract one binary from each, and
+// changed content lands on a different tag rather than staling this one.
+func packTestRunnerImage(root string) (string, error) {
+	dockerfile, err := os.ReadFile(filepath.Join(root, "dev", "test-packs", "Dockerfile"))
+	if err != nil {
+		return "", err
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256(dockerfile))
+	return "emisar-runner-tools:" + hash[:12], nil
 }
 
 func packTestComposeProject(root, invocationID, pack, caseID string) string {
@@ -635,12 +644,9 @@ func packTestComposeProject(root, invocationID, pack, caseID string) string {
 	return "emisar-packtest-" + name + "-" + hash[:12]
 }
 
-func (a *App) removePackTestRunnerImage(image string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if _, err := a.output(ctx, a.Root, nil, "docker", "image", "rm", image); err != nil {
-		fmt.Fprintf(a.Err, "warning: remove pack-test image %s: %v\n", image, err)
-	}
+func (a *App) hasImage(ctx context.Context, image string) bool {
+	_, err := a.output(ctx, a.Root, nil, "docker", "image", "inspect", image)
+	return err == nil
 }
 
 func (a *App) pack(ctx context.Context, args []string) error {
@@ -648,6 +654,34 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		return usage("%s", packUsage)
 	}
 	action := args[0]
+	if action == "tools-image" {
+		if len(args) > 2 {
+			return usage("usage: ./run pack tools-image [<pack-name>]")
+		}
+		image, err := packTestRunnerImage(a.Root)
+		if err != nil {
+			return err
+		}
+		if len(args) == 2 {
+			// Named, the question is whether this pack reaches the image at
+			// all: a pack that ships its own client wants no part of it, and
+			// printing nothing is what lets CI skip restoring 2GB it will not
+			// run.
+			plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), "", args[1])
+			if err != nil {
+				return err
+			}
+			needed, err := packTestNeedsSharedTools(plans)
+			if err != nil {
+				return err
+			}
+			if !needed {
+				return nil
+			}
+		}
+		fmt.Fprintln(a.Out, image)
+		return nil
+	}
 	if action == "hashes" {
 		if len(args) > 2 || len(args) == 2 && args[1] != "--write" {
 			return usage("usage: ./run pack hashes [--write]")

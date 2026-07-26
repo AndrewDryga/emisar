@@ -560,9 +560,50 @@ jobs:
       - name: Validate packs and cross-language hashes
         run: ./run check packs
 
+  pack-tools:
+    name: Packs - Behavior client image
+    needs: changes
+    if: needs.changes.outputs.pack_behavior != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - id: tools
+        name: Resolve the shared client image
+        run: echo "image=$(./run pack tools-image)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # One writer for the whole matrix. Every behavior row restores this entry
+      # instead of pulling eight servers to extract one binary from each, and
+      # letting the rows write it back would mean dozens of concurrent uploads
+      # of the same 2GB image the first time the Dockerfile changes.
+      - name: Populate the shared client image cache
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: dev/test-packs
+          load: true
+          tags: ${{ steps.tools.outputs.image }}
+          cache-from: type=gha,scope=packtest-tools
+          cache-to: type=gha,mode=min,scope=packtest-tools
+
   pack-behavior:
     name: Packs - Behavior (${{ matrix.pack }} ${{ matrix.version }})
-    needs: changes
+    needs: [changes, pack-tools]
     if: needs.changes.outputs.pack_behavior != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -590,6 +631,25 @@ jobs:
           cache-dependency-path: |
             runner/go.sum
             tools/go.sum
+
+      # Empty for a pack that ships its own client image, which then needs
+      # neither the builder nor the restore.
+      - id: tools
+        name: Resolve the shared client image
+        run: echo "image=$(./run pack tools-image "$PACK")" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        if: steps.tools.outputs.image != ''
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Restore the shared client image
+        if: steps.tools.outputs.image != ''
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: dev/test-packs
+          load: true
+          tags: ${{ steps.tools.outputs.image }}
+          cache-from: type=gha,scope=packtest-tools
 
       - name: Exercise pack behavior
         run: ./run test packs "$PACK"
@@ -783,7 +843,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, packs, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
+    needs: [changes, portal, portal-image, mcp-listing, go, packs, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -797,6 +857,7 @@ jobs:
       GO_MODULES: ${{ needs.changes.outputs.go_modules }}
       PACKS: ${{ needs.packs.result }}
       SELECT_PACKS: ${{ needs.changes.outputs.packs }}
+      PACK_TOOLS: ${{ needs.pack-tools.result }}
       PACK_BEHAVIOR: ${{ needs.pack-behavior.result }}
       SELECT_PACK_BEHAVIOR: ${{ needs.changes.outputs.pack_behavior }}
       SIGNING_E2E: ${{ needs.signing-e2e.result }}
@@ -838,8 +899,10 @@ jobs:
           fi
           require_selected PACKS "$SELECT_PACKS"
           if [ "$SELECT_PACK_BEHAVIOR" = '[]' ]; then
+            require_selected PACK_TOOLS false
             require_selected PACK_BEHAVIOR false
           else
+            require_selected PACK_TOOLS true
             require_selected PACK_BEHAVIOR true
           fi
           require_selected SIGNING_E2E "$SELECT_SIGNING_E2E"
