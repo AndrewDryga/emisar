@@ -317,6 +317,23 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).disabled_at
   end
 
+  test "disable redirects when the runner disappears after mount", %{
+    conn: conn,
+    user: user,
+    account: account,
+    runner: runner
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    subject = Fixtures.Subjects.subject_for(user, account)
+    assert {:ok, _deleted} = Runners.delete_runner(runner, subject)
+
+    render_click(lv, "disable", %{})
+
+    flash = assert_redirect(lv, ~p"/app/#{account}/runners")
+    assert flash["error"] == "Runner is no longer available."
+  end
+
   # disabling an ONLINE runner is allowed (a soft "stop",
   # distinct from delete which requires the runner be offline first).
   test "disabling a connected runner is allowed (soft-stop)", %{conn: conn, account: account} do
@@ -417,6 +434,23 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     confirm_dialog(lv, "delete-runner", "Delete runner")
     assert_redirect(lv, ~p"/app/#{account}/runners")
     assert Emisar.Repo.reload!(runner).deleted_at
+  end
+
+  test "delete redirects when the runner disappears after mount", %{
+    conn: conn,
+    user: user,
+    account: account,
+    runner: runner
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    subject = Fixtures.Subjects.subject_for(user, account)
+    assert {:ok, _deleted} = Runners.delete_runner(runner, subject)
+
+    render_click(lv, "delete", %{})
+
+    flash = assert_redirect(lv, ~p"/app/#{account}/runners")
+    assert flash["error"] == "Runner is no longer available."
   end
 
   test "delete's typed-confirm: Confirm won't fire until the runner name matches", %{

@@ -146,10 +146,19 @@ defmodule EmisarWeb.RunnerDetailLive do
       socket,
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
       fn socket ->
-        {:ok, runner} =
-          Runners.disable_runner(socket.assigns.runner, socket.assigns.current_subject)
+        case Runners.disable_runner(socket.assigns.runner, socket.assigns.current_subject) do
+          {:ok, runner} ->
+            {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
 
-        {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
+          {:error, :not_found} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "Runner is no longer available.")
+             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Could not disable runner.")}
+        end
       end
     )
   end
@@ -183,13 +192,22 @@ defmodule EmisarWeb.RunnerDetailLive do
       socket,
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
       fn socket ->
-        {:ok, _runner} =
-          Runners.delete_runner(socket.assigns.runner, socket.assigns.current_subject)
+        case Runners.delete_runner(socket.assigns.runner, socket.assigns.current_subject) do
+          {:ok, _runner} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
+             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
 
-        {:noreply,
-         socket
-         |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
-         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
+          {:error, :not_found} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "Runner is no longer available.")
+             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Could not delete runner.")}
+        end
       end
     )
   end
