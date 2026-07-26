@@ -1,15 +1,16 @@
-# A Paddle client whose retrieve fails for one specific subscription id and
-# succeeds (active, fresh period) for the rest — lets the sweep's
-# one-bad-row-doesn't-abort-the-batch behaviour be exercised deterministically.
-# The failing id is read from app env so the module stays stateless.
-defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient do
+# A Paddle client controlled by process-scoped test config: it can crash one
+# retrieval or insert a later row while the current page is being processed.
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  alias Emisar.{Billing, Config}
 
   @impl true
   def retrieve_subscription(id) do
-    if id == Emisar.Config.get_env(:emisar, :billing_sync_test_fail_id) do
-      {:error, :paddle_unavailable}
+    if id == Config.get_env(:emisar, :billing_sync_test_crash_id) do
+      raise "sensitive Paddle payload marker"
     else
+      :ok = maybe_insert_later_subscription(id)
+
       {:ok,
        %{
          "id" => id,
@@ -37,6 +38,27 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient do
 
   @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
+
+  defp maybe_insert_later_subscription(id) do
+    case Config.get_env(:emisar, :billing_sync_test_insert) do
+      %{
+        trigger_id: ^id,
+        account_id: account_id,
+        paddle_subscription_id: paddle_subscription_id
+      } ->
+        {:ok, _subscription} =
+          Billing.upsert_subscription(account_id, %{
+            paddle_subscription_id: paddle_subscription_id,
+            plan: "team",
+            status: "past_due"
+          })
+
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
 end
 
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
@@ -48,7 +70,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
   use Emisar.DataCase, async: true
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
-  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient
+  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient
   alias Emisar.Billing.Subscription
   alias Emisar.Fixtures
   alias Emisar.Repo
@@ -80,6 +102,34 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
     assert synced.quantity == 2
     assert synced.unit_price_amount == 2_000
     assert synced.currency_code == "USD"
+  end
+
+  test "execute/1 keyset-paginates rows added after a full page", %{account: account} do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
+
+    {:ok, _subscription} =
+      Billing.upsert_subscription(account.id, %{
+        paddle_subscription_id: "sub_page_first",
+        plan: "team",
+        status: "past_due"
+      })
+
+    later_account = Fixtures.Accounts.create_account()
+
+    Emisar.Config.put_override(:emisar, :billing_sync_test_insert, %{
+      trigger_id: "sub_page_first",
+      account_id: later_account.id,
+      paddle_subscription_id: "sub_page_later"
+    })
+
+    assert :ok = SyncSubscriptions.execute(limit: 1)
+
+    later_subscription =
+      Subscription.Query.all()
+      |> Subscription.Query.by_account_id(later_account.id)
+      |> Repo.one()
+
+    assert later_subscription.status == "active"
   end
 
   test "execute/1 skips a mirror row with no vendor subscription id", %{account: account} do
@@ -155,26 +205,22 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
   stays `async: true`.
   """
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
-  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient
+  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient
   alias Emisar.Billing.Subscription
   alias Emisar.Fixtures
   alias Emisar.Repo
 
   setup do
-    Emisar.Config.put_override(:emisar, :paddle_client, PartialFailPaddleClient)
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
 
     :ok
   end
 
   @tag capture_log: true
-  test "a single retrieve failure is logged and the sweep continues to the next row" do
-    # The first subscription's retrieve errors (logged with both ids, → Sentry);
-    # the sweep does NOT abort — the second subscription is still refreshed from
-    # the vendor. execute/1 returns :ok regardless of the per-row failure.
-    import ExUnit.CaptureLog
-
+  test "a raised retrieve failure is logged safely and the sweep continues to the next row" do
     failing_account = Fixtures.Accounts.create_account()
 
     {:ok, failing} =
@@ -185,7 +231,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
         current_period_end: nil
       })
 
-    Emisar.Config.put_override(:emisar, :billing_sync_test_fail_id, "sub_fail_row")
+    Emisar.Config.put_override(:emisar, :billing_sync_test_crash_id, "sub_fail_row")
 
     ok_account = Fixtures.Accounts.create_account()
 
@@ -199,17 +245,13 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
 
     log =
       capture_log(fn ->
-        assert :ok = SyncSubscriptions.execute([])
+        assert :ok = SyncSubscriptions.execute(limit: 1)
       end)
 
-    # The failure surfaced (both ids logged for the operator / Sentry)…
-    assert log =~ "billing_sync.retrieve_failed"
+    assert log =~ "billing_sync.crashed"
     assert log =~ "sub_fail_row"
-
-    # …the failing row was left untouched (still past_due, no fresh period)…
+    refute log =~ "sensitive Paddle payload marker"
     assert %Subscription{status: "past_due", current_period_end: nil} = Repo.reload!(failing)
-
-    # …and the good row was still reconciled — the sweep did not abort early.
     assert %Subscription{status: "active"} = Repo.reload!(ok_row)
   end
 end

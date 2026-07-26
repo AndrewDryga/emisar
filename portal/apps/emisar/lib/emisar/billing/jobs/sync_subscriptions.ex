@@ -12,13 +12,47 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   alias Emisar.{Billing, Repo}
   require Logger
 
-  @impl Emisar.Jobs.Executors.GloballyUnique
-  def execute(_config) do
-    Billing.Subscription.Query.all()
-    |> Repo.all()
-    |> Enum.each(&sync/1)
+  @subscriptions_per_page 100
 
-    :ok
+  @impl Emisar.Jobs.Executors.GloballyUnique
+  def execute(config) do
+    limit = Keyword.get(config, :limit, @subscriptions_per_page)
+    sweep_page(limit, nil)
+  end
+
+  defp sweep_page(limit, after_subscription_id) do
+    subscriptions =
+      Billing.Subscription.Query.all()
+      |> after_subscription(after_subscription_id)
+      |> Billing.Subscription.Query.ordered_by_id()
+      |> Billing.Subscription.Query.limit_to(limit)
+      |> Repo.all()
+
+    Enum.each(subscriptions, &sync_safely/1)
+
+    if length(subscriptions) == limit do
+      sweep_page(limit, List.last(subscriptions).id)
+    else
+      :ok
+    end
+  end
+
+  defp after_subscription(queryable, id) when is_binary(id),
+    do: Billing.Subscription.Query.after_id(queryable, id)
+
+  defp after_subscription(queryable, _id), do: queryable
+
+  defp sync_safely(%Billing.Subscription{} = subscription) do
+    sync(subscription)
+  rescue
+    error ->
+      Logger.warning("billing_sync.crashed",
+        paddle_subscription_id: subscription.paddle_subscription_id,
+        account_id: subscription.account_id,
+        error: inspect(error.__struct__)
+      )
+
+      :ok
   end
 
   defp sync(%Billing.Subscription{paddle_subscription_id: nil}), do: :ok
