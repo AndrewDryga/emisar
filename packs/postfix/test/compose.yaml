@@ -24,6 +24,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "postfix status >/dev/null && postconf -h myhostname | grep -q postfix.example.test"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 30
 
 volumes:

@@ -23,4 +23,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmqadmin -u guest -p guest declare queue --name packtest --durable true --non-interactive >/dev/null"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 30

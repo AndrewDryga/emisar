@@ -7,6 +7,11 @@ services:
     volumes:
       - ${EMISAR_ROOT}/packs/postgres/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # Dial the routable address, never the socket. The entrypoint seeds
+      # through a temporary postmaster with listen_addresses empty, which
+      # answers on the socket while a case connecting over the network cannot.
+      test: ["CMD-SHELL", "pg_isready -h \"$$(hostname -i)\" -U postgres"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 10

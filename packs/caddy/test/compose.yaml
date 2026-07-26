@@ -25,6 +25,8 @@ services:
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 20
 
 volumes:

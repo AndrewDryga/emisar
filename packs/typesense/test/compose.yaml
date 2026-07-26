@@ -7,6 +7,8 @@ services:
     healthcheck:
       test: ["CMD", "/usr/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8108; printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3; grep -q '\"ok\":true' <&3"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 20
 
 volumes:

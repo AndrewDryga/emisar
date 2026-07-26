@@ -10,4 +10,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- 'http://localhost:9090/api/v1/query?query=up' | grep -q '\"job\":\"prometheus\"'"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 30

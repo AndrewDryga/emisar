@@ -7,4 +7,6 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 30

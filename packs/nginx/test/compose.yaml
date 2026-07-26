@@ -27,6 +27,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/nginx_status | grep -q 'Active connections'"]
       interval: 2s
+      start_period: 30s
+      start_interval: 1s
       retries: 20
 
 volumes:

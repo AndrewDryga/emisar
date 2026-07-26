@@ -45,6 +45,8 @@ services:
           CREATE TABLE IF NOT EXISTS packtest.events (id int PRIMARY KEY, value text);
           INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null && exit 1))
       interval: 10s
+      start_period: 120s
+      start_interval: 2s
       timeout: 10s
       retries: 30
     volumes:

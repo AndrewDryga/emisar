@@ -8,4 +8,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -fsSL http://localhost:9000/minio/health/live"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 10

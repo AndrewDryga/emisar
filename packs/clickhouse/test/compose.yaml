@@ -15,4 +15,6 @@ services:
       # handoff to the final server.
       test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null && sleep 2 && clickhouse-client --query 'SELECT 1' >/dev/null"]
       interval: 5s
+      start_period: 30s
+      start_interval: 1s
       retries: 10

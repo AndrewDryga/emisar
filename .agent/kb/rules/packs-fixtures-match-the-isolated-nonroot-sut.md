@@ -20,6 +20,15 @@ up itself. Three shapes to recognize:
    opens the pid file and creates its cache temp dirs). Either declare
    `runner_user: root` with a `runner_reason`, or widen exactly the paths the
    fixture owns — never both, and never by making the whole SUT privileged.
+4. **A health check dials the address the case will use.** An image that seeds
+   through `docker-entrypoint-initdb.d` runs a *temporary* daemon reachable only
+   on loopback or a unix socket, then stops it and starts the real one. A check
+   pointed at loopback passes against that temporary daemon, so `up --wait`
+   returns healthy and the case gets `ECONNREFUSED` over the network. Point the
+   check at the container's own routable address — `"$$(hostname -i)"` in
+   Compose — which only the real daemon binds. Cadence hides this: a coarse
+   `interval` polls late enough to miss the window by luck, so tightening
+   readiness is what exposes it.
 
 **Why.** The isolation hardening was the point: a case that shares a server with
 its neighbours proves nothing about the action, and a root runner hides every
@@ -54,6 +63,15 @@ environment:
   runner_reason: Postfix reserves the postfix command itself for the superuser.
 ```
 
+```yaml
+# compose.yaml — readiness proves the daemon a case can actually reach
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -h \"$$(hostname -i)\" -U postgres"]
+  interval: 5s
+  start_period: 30s
+  start_interval: 1s
+```
+
 **❌ Bad**
 
 ```yaml
@@ -68,6 +86,12 @@ environment:
     stdout_contains: [packtest.orders]
 ```
 
+```yaml
+# reports healthy against the entrypoint's temporary loopback-only daemon
+healthcheck:
+  test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+```
+
 **How it's enforced.** CI, and only CI — the pack behavior matrix on Linux is
 the authority for this class, so push the fix and read the job rather than
 trusting a local pass. `packtest` already refuses a case with no semantic
@@ -75,5 +99,6 @@ assertion, so weakening an assertion to `stdout_not_empty` is not an escape
 hatch: fix the environment instead. Sweep signal: an IP address, hostname, or
 port literal inside `expect:` that the fixture does not set; an action whose
 name implies cumulative counters (`top`, `*_stats`, profilers) with no
-`arrange:`; and a case whose command is documented as superuser-only but
-declares no `runner_user`.
+`arrange:`; a case whose command is documented as superuser-only but declares
+no `runner_user`; and a `healthcheck.test` naming `localhost`, `127.0.0.1`, or
+a bare socket on an image that seeds through `docker-entrypoint-initdb.d`.
