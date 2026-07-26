@@ -4,40 +4,40 @@
 vulnerabilities:
   - id: CVE-2023-45853
     statement: the affected MiniZip code is not installed or invoked by the portal runtime.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2025-69720
     statement: the portal is noninteractive and does not process attacker-supplied terminal data.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-41992
     statement: the running portal does not invoke gzip or decompress attacker-supplied archives.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-42496
     statement: the running portal does not execute Perl; Debian has deferred a package fix.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-42497
     statement: the running portal does not execute Perl; Debian has deferred a package fix.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-48962
     statement: the running portal does not execute Perl.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-53615
     statement: the non-root portal process does not invoke the affected util-linux command suite.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-54369
     statement: the running portal does not invoke ACL utilities or accept ACL input.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-8376
     statement: the running portal does not execute Perl.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-9538
     statement: the running portal does not execute Perl; Debian has deferred a package fix.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-13221
     statement: the non-root portal process does not execute Perl or process attacker-supplied regular expressions through Perl.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-57432
     statement: the non-root portal process does not execute Perl; Debian does not yet publish a fixed package.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
   - id: CVE-2026-57433
     statement: the non-root portal process does not execute Perl or deserialize attacker-supplied Storable data.
-    expired_at: 2026-07-26
+    expired_at: 2026-08-26
