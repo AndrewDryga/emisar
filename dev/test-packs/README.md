@@ -31,8 +31,10 @@ dev/test-packs/
 ```
 
 Every case gets its own Compose project, network, volumes, SUT lifecycle, and
-runner-tools container. The devtool builds shared and pack-specific images once,
-then runs up to four isolated cases concurrently. Arrange steps can create the
+runner-tools container. The devtool builds pack-specific images once, reuses the
+shared client image whenever its tag is already present, and skips that image
+entirely for a pack that ships its own client. It then runs up to four isolated
+cases concurrently. Arrange steps can create the
 exact prerequisite state for a case. Terminal actions can stop or destroy their
 fixture without affecting any later case.
 
@@ -188,7 +190,9 @@ dev/test-packs/reports/<invocation>/<pack>/<case>.log
 Each command prints its invocation-specific report directory. That same
 invocation identity isolates its Compose projects, so separate commands may
 exercise the same pack and case concurrently without sharing containers,
-volumes, networks, runner-tools image tags, or report files.
+volumes, networks, or report files. The shared client image is the deliberate
+exception: it is tagged by the bytes of its Dockerfile, so every run and every
+checkout reuses one build and changed content lands on a new tag.
 
 Each case report records the pack and SUT versions, image digest, execution
 identity, resolved images, action result, and durations. Failures also capture

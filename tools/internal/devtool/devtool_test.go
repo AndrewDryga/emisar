@@ -266,8 +266,9 @@ func TestPackTestComposeProjectIsInvocationAndCaseSpecific(t *testing.T) {
 
 func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
 	plan := packtest.PlanRef{Name: "postfix"}
-	nonroot := packTestComposeEnv("/tmp/repo", "run-1", plan, "read", nil, "")
-	root := packTestComposeEnv("/tmp/repo", "run-1", plan, "reload", nil, "root")
+	image := "emisar-runner-tools:abc123456789"
+	nonroot := packTestComposeEnv("/tmp/repo", "run-1", image, plan, "read", nil, "")
+	root := packTestComposeEnv("/tmp/repo", "run-1", image, plan, "reload", nil, "root")
 	if nonroot["PACKTEST_RUNNER_USER"] != "65532:65532" {
 		t.Fatalf("non-root identity = %q", nonroot["PACKTEST_RUNNER_USER"])
 	}
@@ -277,7 +278,7 @@ func TestPackTestComposeEnvUsesCaseIdentity(t *testing.T) {
 	if nonroot["COMPOSE_PROJECT_NAME"] == root["COMPOSE_PROJECT_NAME"] {
 		t.Fatal("case-specific projects collided")
 	}
-	if nonroot["PACKTEST_RUNNER_IMAGE"] != packTestRunnerImage("/tmp/repo", "run-1") {
+	if nonroot["PACKTEST_RUNNER_IMAGE"] != "emisar-runner-tools:abc123456789" {
 		t.Fatalf("runner image = %q", nonroot["PACKTEST_RUNNER_IMAGE"])
 	}
 }
@@ -289,11 +290,32 @@ func TestPackTestInvocationIDIncludesProcessAndNanoseconds(t *testing.T) {
 	}
 }
 
-func TestPackTestRunnerImageIsInvocationSpecific(t *testing.T) {
-	first := packTestRunnerImage("/tmp/repo", "run-1")
-	if first == packTestRunnerImage("/tmp/repo", "run-2") ||
-		first == packTestRunnerImage("/tmp/other", "run-1") {
-		t.Fatalf("runner image is not invocation-specific: %q", first)
+func TestPackTestRunnerImageTracksTheDockerfile(t *testing.T) {
+	write := func(dockerfile string) string {
+		t.Helper()
+		root := t.TempDir()
+		harness := filepath.Join(root, "dev", "test-packs")
+		if err := os.MkdirAll(harness, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(harness, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		image, err := packTestRunnerImage(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return image
+	}
+	original := write("FROM debian:13-slim\n")
+	if original != write("FROM debian:13-slim\n") {
+		t.Fatalf("same Dockerfile in two checkouts must share one image: %q", original)
+	}
+	if original == write("FROM debian:13-slim\nRUN apt-get update\n") {
+		t.Fatalf("changed Dockerfile must land on a new tag: %q", original)
+	}
+	if _, err := packTestRunnerImage(t.TempDir()); err == nil {
+		t.Fatal("a missing Dockerfile must be an error, not an empty tag")
 	}
 }
 
