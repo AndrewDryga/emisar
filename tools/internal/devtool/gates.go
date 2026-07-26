@@ -15,6 +15,12 @@ import (
 // Keep this in step with the version any workflow installs directly.
 const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
 
+// emisar is a security product, so an advisory fails the gate. cowlib 2.18.0 is
+// current with no upstream patch, and its affected response-header encoder is
+// reachable only from the internal Prometheus listener, which emits fixed
+// headers behind the GCP firewall. Keep the exact IDs visible until a fix lands.
+const ignoredAdvisories = "GHSA-g2wm-735q-3f56,EEF-CVE-2026-43966"
+
 const (
 	checkUsage = `usage: ./run check <target>
 
@@ -210,10 +216,21 @@ func (a *App) portalGate(ctx context.Context) error {
 	if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
 		return err
 	}
-	for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
+	for _, arguments := range [][]string{
+		{"compile", "--warnings-as-errors"},
+		{"format", "--check-formatted"},
+		{"credo"},
+		{"deps.audit", "--ignore-advisory-ids", ignoredAdvisories},
+		{"sobelow", "--root", "apps/emisar_web", "--config"},
+	} {
 		if err := a.run(ctx, a.Portal, env, "mix", arguments...); err != nil {
 			return err
 		}
+	}
+	// Captured rather than streamed: the known cycle's report is noise until the
+	// budget actually breaks.
+	if report, err := a.output(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "xref.cycles"); err != nil {
+		return fmt.Errorf("compile-cycle budget: %w\n%s", err, report)
 	}
 	return a.portalTestOutput(ctx, env)
 }

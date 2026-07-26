@@ -184,34 +184,11 @@ jobs:
       - name: Fetch locked dependencies
         run: mix deps.get --check-locked
 
-      - name: Audit dependencies
-        # emisar is a security product — fail the build on a known advisory.
-        # cowlib 2.18.0 is current and has no upstream patch. Its affected
-        # response-header encoder is used only by the internal Prometheus
-        # listener, which emits fixed headers and is blocked by the GCP
-        # firewall. Keep the exact IDs visible until an upstream fix lands.
-        run: >-
-          mix deps.audit --ignore-advisory-ids
-          GHSA-g2wm-735q-3f56,EEF-CVE-2026-43966
-
-      - name: Scan Phoenix security
-        # Static analysis of the Phoenix surface (XSS, SQLi, command
-        # injection, CSRF, insecure config). Threshold + ignores live in
-        # apps/emisar_web/.sobelow-conf.
-        run: mix sobelow --root apps/emisar_web --config
-
-      - name: Check compile-cycle budget
-        # Keep the xref budget gate without dumping the known cycle into
-        # normal CI output; print the report only when the budget breaks.
-        run: |
-          if ! output="$(cd apps/emisar && mix xref.cycles 2>&1)"; then
-            echo "$output"
-            exit 1
-          fi
-
       - name: Run the canonical Portal gate
         # Uses the CI-provided Postgres service. The same command starts
-        # workspace-isolated dependencies automatically outside CI.
+        # workspace-isolated dependencies automatically outside CI. The
+        # dependency audit, Phoenix security scan, and compile-cycle budget
+        # run inside this gate so a green local run means a green job.
         run: ../run gate portal
 
   mcp-listing:
