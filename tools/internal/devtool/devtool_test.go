@@ -115,6 +115,62 @@ func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	}
 }
 
+func TestPortalTestInvocationRoutesFocusedPaths(t *testing.T) {
+	portal := t.TempDir()
+	tests := []struct {
+		name     string
+		args     []string
+		wantDir  string
+		wantArgs []string
+	}{
+		{
+			name:     "emisar child-local path",
+			args:     []string{"test/emisar/runs_test.exs:12", "--seed", "1"},
+			wantDir:  filepath.Join(portal, "apps", "emisar"),
+			wantArgs: []string{"test", "test/emisar/runs_test.exs:12", "--seed", "1"},
+		},
+		{
+			name:     "emisar_web child-local path",
+			args:     []string{"test/emisar_web/marketing_test.exs"},
+			wantDir:  filepath.Join(portal, "apps", "emisar_web"),
+			wantArgs: []string{"test", "test/emisar_web/marketing_test.exs"},
+		},
+		{
+			name:     "umbrella-qualified path",
+			args:     []string{"apps/emisar_web/test/emisar_web/marketing_test.exs"},
+			wantDir:  filepath.Join(portal, "apps", "emisar_web"),
+			wantArgs: []string{"test", "test/emisar_web/marketing_test.exs"},
+		},
+		{
+			name:     "umbrella selector",
+			args:     []string{"--stale", "--listen-on-stdin"},
+			wantDir:  portal,
+			wantArgs: []string{"test", "--stale", "--listen-on-stdin"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir, args, err := portalTestInvocation(portal, test.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dir != test.wantDir || !slices.Equal(args, test.wantArgs) {
+				t.Fatalf("invocation = (%q, %v), want (%q, %v)", dir, args, test.wantDir, test.wantArgs)
+			}
+		})
+	}
+}
+
+func TestPortalTestInvocationRejectsMixedAppPaths(t *testing.T) {
+	_, _, err := portalTestInvocation(t.TempDir(), []string{
+		"test/emisar/runs_test.exs",
+		"test/emisar_web/marketing_test.exs",
+	})
+	if err == nil || !strings.Contains(err.Error(), "one Portal app") {
+		t.Fatalf("mixed paths error = %v", err)
+	}
+}
+
 func TestStagedCheckFormatsTheIndexNotTheWorkingTree(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{

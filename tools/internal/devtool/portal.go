@@ -170,30 +170,25 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) portalTests(ctx context.Context, env map[string]string, args []string) error {
+func portalTestInvocation(portal string, args []string) (string, []string, error) {
 	app := ""
 	for _, argument := range args {
 		candidate := ""
 		switch {
-		case strings.HasPrefix(argument, "apps/emisar/"):
+		case strings.HasPrefix(argument, "apps/emisar/"), strings.HasPrefix(argument, "test/emisar/"):
 			candidate = "emisar"
-		case strings.HasPrefix(argument, "apps/emisar_web/"):
+		case strings.HasPrefix(argument, "apps/emisar_web/"), strings.HasPrefix(argument, "test/emisar_web/"):
 			candidate = "emisar_web"
 		}
 		if candidate != "" && app != "" && candidate != app {
-			return usage("focused test paths must belong to one Portal app")
+			return "", nil, usage("focused test paths must belong to one Portal app")
 		}
 		if candidate != "" {
 			app = candidate
 		}
 	}
-	testEnv := make(map[string]string, len(env)+1)
-	for key, value := range env {
-		testEnv[key] = value
-	}
-	testEnv["MIX_ENV"] = "test"
 	if app == "" {
-		return a.run(ctx, a.Portal, testEnv, "mix", append([]string{"test"}, args...)...)
+		return portal, append([]string{"test"}, args...), nil
 	}
 	appArgs := make([]string, 0, len(args)+1)
 	appArgs = append(appArgs, "test")
@@ -201,12 +196,25 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 		if strings.HasPrefix(argument, "apps/"+app+"/") {
 			appArgs = append(appArgs, strings.TrimPrefix(argument, "apps/"+app+"/"))
 		} else if strings.HasPrefix(argument, "apps/emisar/") || strings.HasPrefix(argument, "apps/emisar_web/") {
-			return usage("focused test paths must belong to one Portal app")
+			return "", nil, usage("focused test paths must belong to one Portal app")
 		} else {
 			appArgs = append(appArgs, argument)
 		}
 	}
-	return a.run(ctx, filepath.Join(a.Portal, "apps", app), testEnv, "mix", appArgs...)
+	return filepath.Join(portal, "apps", app), appArgs, nil
+}
+
+func (a *App) portalTests(ctx context.Context, env map[string]string, args []string) error {
+	dir, testArgs, err := portalTestInvocation(a.Portal, args)
+	if err != nil {
+		return err
+	}
+	testEnv := make(map[string]string, len(env)+1)
+	for key, value := range env {
+		testEnv[key] = value
+	}
+	testEnv["MIX_ENV"] = "test"
+	return a.run(ctx, dir, testEnv, "mix", testArgs...)
 }
 
 func (a *App) agentSetupCheck(ctx context.Context, requireCoop bool) error {
