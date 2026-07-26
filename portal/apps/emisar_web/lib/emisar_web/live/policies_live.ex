@@ -131,6 +131,7 @@ defmodule EmisarWeb.PoliciesLive do
       overrides: overrides,
       approval: approval,
       approval_valid?: approval_valid?,
+      show_override_errors?: false,
       # Snapshot of the saved rules: editor_dirty?/1 compares the live edits to
       # this, so reverting a change back clears the Save button (not a one-way flag).
       baseline_rules: to_rules(defaults, overrides, approval),
@@ -153,6 +154,7 @@ defmodule EmisarWeb.PoliciesLive do
       overrides: overrides,
       approval: approval,
       approval_valid?: approval_valid?,
+      show_override_errors?: false,
       baseline_rules: to_rules(defaults, overrides, approval),
       policy: policy,
       rules_errors: stored_approval_errors(approval_valid?)
@@ -172,6 +174,7 @@ defmodule EmisarWeb.PoliciesLive do
       overrides: account.overrides,
       approval: account.approval,
       approval_valid?: true,
+      show_override_errors?: false,
       baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
       # Filled in once a target is picked (set_target); no target = no catalog.
       catalog: %{},
@@ -305,6 +308,17 @@ defmodule EmisarWeb.PoliciesLive do
     do: {:noreply, put_flash(socket, :error, "Choose a runner or group for this ruleset first.")}
 
   defp persist(socket, editor, save_fun) do
+    if Enum.any?(editor.overrides, &partial_override?/1) do
+      {:noreply,
+       update_editor(socket, editor.uid, fn editor ->
+         %{editor | show_override_errors?: true}
+       end)}
+    else
+      persist_rules(socket, editor, save_fun)
+    end
+  end
+
+  defp persist_rules(socket, editor, save_fun) do
     rules = to_rules(editor.defaults, editor.overrides, editor.approval)
 
     case save_fun.(rules, socket.assigns.current_subject) do
@@ -313,8 +327,9 @@ defmodule EmisarWeb.PoliciesLive do
          socket |> put_flash(:info, "Policy saved.") |> replace_saved(editor.uid, policy)}
 
       # The UI prevents invalid policies (constrained selects + monotonic
-      # enforcement + blank rows dropped), so this is a defensive net: show
-      # the rules-level error inline on the card it belongs to, not a flash.
+      # enforcement + partial rows blocked + untouched blank rows dropped), so
+      # this is a defensive net: show the rules-level error inline on the card
+      # it belongs to, not a flash.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          update_editor(socket, editor.uid, fn editor ->
@@ -393,8 +408,10 @@ defmodule EmisarWeb.PoliciesLive do
   defp editor_dirty?(%{policy: nil}), do: true
   defp editor_dirty?(editor), do: rules_changed?(editor)
 
-  defp rules_changed?(editor),
-    do: to_rules(editor.defaults, editor.overrides, editor.approval) != editor.baseline_rules
+  defp rules_changed?(editor) do
+    Enum.any?(editor.overrides, &partial_override?/1) or
+      to_rules(editor.defaults, editor.overrides, editor.approval) != editor.baseline_rules
+  end
 
   defp apply_policy_params(socket, editor_id, params) when is_map(params) do
     update_editor(socket, editor_id, fn editor ->
@@ -632,6 +649,11 @@ defmodule EmisarWeb.PoliciesLive do
   defp changeset_rules_errors(changeset),
     do: for({:rules, {msg, _opts}} <- changeset.errors, do: msg)
 
+  defp partial_override?(override) do
+    blank_action?(override) and
+      (not blank?(override["name"]) or override["decision"] != "allow")
+  end
+
   defp blank_action?(override), do: blank?(override["action"])
 
   defp blank?(nil), do: true
@@ -780,6 +802,7 @@ defmodule EmisarWeb.PoliciesLive do
                 overrides={@account.overrides}
                 approval={@account.approval}
                 rules_errors={@account.rules_errors}
+                show_override_errors={@account.show_override_errors?}
                 can_manage={@can_manage?}
                 save_label="Save default policy"
                 dirty={editor_dirty?(@account)}
@@ -1067,6 +1090,7 @@ defmodule EmisarWeb.PoliciesLive do
           approval={@ruleset.approval}
           approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
           rules_errors={@ruleset.rules_errors}
+          show_override_errors={@ruleset.show_override_errors?}
           can_manage={@can_manage}
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
@@ -1099,6 +1123,7 @@ defmodule EmisarWeb.PoliciesLive do
     doc: "ways this scoped gate is laxer than the account default (empty for the default itself)"
 
   attr :rules_errors, :list, required: true
+  attr :show_override_errors, :boolean, required: true
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
   attr :dirty, :boolean, default: false
@@ -1179,6 +1204,7 @@ defmodule EmisarWeb.PoliciesLive do
               override={override}
               index={idx}
               shadowed_by={Map.get(@shadowed_overrides, idx)}
+              show_error={@show_override_errors}
               can_manage={@can_manage}
             />
           </div>
@@ -1388,13 +1414,14 @@ defmodule EmisarWeb.PoliciesLive do
   attr :override, :map, required: true
   attr :index, :integer, required: true
   attr :shadowed_by, :integer, required: true
+  attr :show_error, :boolean, required: true
   attr :can_manage, :boolean, required: true
 
   # A NAKED override row — compact fields in the runbook-editor grid grammar,
   # a hairline between rows; the wash box around each row was an island.
   defp override_row(assigns) do
     ~H"""
-    <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
+    <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-start sm:gap-2 sm:space-y-0">
       <div class="sm:col-span-2">
         <.input
           name={"policy[overrides][#{@index}][name]"}
@@ -1415,6 +1442,7 @@ defmodule EmisarWeb.PoliciesLive do
           size={:compact}
           class="font-mono text-xs"
           placeholder="e.g. cassandra.repair or linux.*"
+          errors={override_action_errors(@show_error, @override)}
           disabled={!@can_manage}
         />
       </div>
@@ -1432,10 +1460,9 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
-           far edge of its cell. h-7 matches the compact text-xs input's 28px box so,
-           bottom-aligned (items-end), the icon lines up with the Decision select
-           instead of overhanging it. --%>
-      <div class="sm:col-span-1 sm:flex sm:items-end sm:justify-start">
+           far edge of its cell. pt-5 clears the eyebrow; h-7 then aligns with
+           the compact text-xs input without an Action error shifting its row. --%>
+      <div class="sm:col-span-1 sm:flex sm:items-start sm:justify-start sm:pt-5">
         <.icon_button
           :if={@can_manage}
           icon="hero-trash"
@@ -1468,6 +1495,14 @@ defmodule EmisarWeb.PoliciesLive do
     </p>
     """
   end
+
+  defp override_action_errors(true, override) do
+    if partial_override?(override),
+      do: ["Enter an action glob or remove this override."],
+      else: []
+  end
+
+  defp override_action_errors(false, _override), do: []
 
   defp decision_options,
     do: [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]

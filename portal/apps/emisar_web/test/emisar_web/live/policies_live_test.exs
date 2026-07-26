@@ -154,6 +154,77 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.rules["overrides"] == []
     end
 
+    test "a partially filled override blocks save with an inline action error", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      render_click(lv, "add_override", %{"editor" => "account"})
+
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{
+                "name" => "typed-but-incomplete",
+                "action" => "",
+                "decision" => "allow"
+              }
+            }
+          }
+        })
+        |> render_change()
+
+      refute html =~ "Enter an action glob or remove this override."
+
+      html = lv |> form("#policy-form-account") |> render_submit()
+
+      assert html =~ "typed-but-incomplete"
+      assert html =~ "Enter an action glob or remove this override."
+      refute html =~ "Policy saved."
+      assert Policies.peek_policy_for_account(account.id).rules["overrides"] == []
+
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{
+                "name" => "typed-but-incomplete",
+                "action" => "linux.*",
+                "decision" => "allow"
+              }
+            }
+          }
+        })
+        |> render_change()
+
+      refute html =~ "Enter an action glob or remove this override."
+      assert lv |> form("#policy-form-account") |> render_submit() =~ "Policy saved."
+    end
+
+    test "a changed decision also makes a blank-action override incomplete", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      render_click(lv, "add_override", %{"editor" => "account"})
+
+      lv
+      |> form("#policy-form-account", %{
+        "policy" => %{
+          "overrides" => %{
+            "0" => %{"name" => "", "action" => "", "decision" => "deny"}
+          }
+        }
+      })
+      |> render_change()
+
+      html = lv |> form("#policy-form-account") |> render_submit()
+
+      assert html =~ "Enter an action glob or remove this override."
+      refute html =~ "Policy saved."
+    end
+
     test "remove_override drops the row from the account form", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
