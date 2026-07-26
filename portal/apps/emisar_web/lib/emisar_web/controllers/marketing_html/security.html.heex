@@ -130,8 +130,16 @@
             </p>
           </div>
 
-          <div class="flex justify-center" aria-hidden="true">
-            <span class="h-4 w-px bg-gradient-to-b from-brand-500/50 to-brand-500/20"></span>
+          <%!-- The optional stricter line. With signed dispatch the execution-trust
+               boundary moves UP to here: everything below trusts a person's signed
+               request, not the control plane above it. Dashed and quiet so the
+               default single-boundary reading stays primary. --%>
+          <div class="flex items-center gap-3 px-1 py-2">
+            <span class="h-px flex-1 border-t border-dashed border-brand-500/30"></span>
+            <span class="flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-brand-400/80">
+              <.icon name="hero-key" class="h-3 w-3" /> with signed dispatch
+            </span>
+            <span class="h-px flex-1 border-t border-dashed border-brand-500/30"></span>
           </div>
 
           <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
@@ -169,6 +177,14 @@
             </p>
           </div>
         </div>
+
+        <p class="mt-6 text-center text-sm leading-6 text-zinc-500">
+          The dashed line is optional and per runner: with <.link
+            navigate={~p"/docs/signed-dispatch"}
+            class="font-medium text-brand-400 hover:text-brand-300"
+          >signed dispatch</.link>, the runner trusts a person's signed request, not the control
+          plane above it — a compromised cloud can relay one, never forge it.
+        </p>
       </div>
     </div>
   </section>
@@ -191,8 +207,8 @@
           Watch one risky action cross the gate.
         </p>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-          Claude proposes a config reload on a production edge host. Here is everything
-          that happens next.
+          Claude proposes a config reload on a production edge host. <br />
+          Here is everything that happens next.
         </p>
       </div>
 
@@ -250,7 +266,7 @@
           label="Evidence"
           caption="The evidence one click deep — actor, target, request id, payload — exportable to your SIEM."
           spot="3.1,26.7,93.8,10.6"
-          note="Authentication context"
+          note="Who acted, and on what"
           spot2="3.1,52.1,93.8,17"
           note2="The full payload"
         />
