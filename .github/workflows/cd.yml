@@ -426,9 +426,8 @@ jobs:
           configuration_version_id=$(jq -er .configuration_version_id <<< "$upload")
           echo "configuration_version_id=$configuration_version_id" >> "$GITHUB_OUTPUT"
 
-      - name: Create saved HCP Terraform plan
+      - name: Plan production and summarize the manual apply
         if: steps.current.outputs.current == 'true'
-        id: run
         env:
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
           WORKSPACE_ID: ${{ steps.image.outputs.workspace_id }}
@@ -445,41 +444,41 @@ jobs:
             --arg configuration "$CONFIGURATION_VERSION_ID" \
             --arg image "$hcl_image" \
             '{data: {type: "runs", attributes: {message: $message, "save-plan": true, variables: [{key: "container_image", value: $image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
-          run=$(curl -fsS "${auth[@]}" -X POST -d "$payload" "${api}/runs")
-          run_id=$(jq -er '.data.id' <<< "$run")
-          run_link="https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${run_id}"
-          {
-            echo "run_id=$run_id"
-            echo "run_link=$run_link"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Summarize manual apply
-        if: steps.current.outputs.current == 'true'
-        env:
-          RUN_LINK: ${{ steps.run.outputs.run_link }}
-          RUN_ID: ${{ steps.run.outputs.run_id }}
-          IMAGE: ${{ steps.image.outputs.image }}
-          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 150); do
-            run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
-              "https://app.terraform.io/api/v2/runs/${RUN_ID}")
-            status=$(jq -er '.data.attributes.status' <<< "$run")
-            case "$status" in
-              # HCP saves a reviewable plan when changes exist and finishes a
-              # no-op immediately. Both are successful terminal plan states.
-              planned_and_saved|planned_and_finished) break ;;
-              errored|canceled|discarded|force_canceled)
-                echo "::error::HCP Terraform run ended ${status}"
+          # A saved plan is provisional, so HCP discards it the moment someone
+          # confirms an apply — exactly what the summary below has always called
+          # normal. Planning again against the new state is the honest response;
+          # failing the push that happened to land during an apply is not, and
+          # that false red cost a green main here. One retry only: a second
+          # discard is a signal about the workspace, not a race.
+          for plan_attempt in 1 2; do
+            run=$(curl -fsS "${auth[@]}" -X POST -d "$payload" "${api}/runs")
+            run_id=$(jq -er '.data.id' <<< "$run")
+            RUN_LINK="https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${run_id}"
+            for attempt in $(seq 1 150); do
+              run=$(curl -fsS "${auth[@]}" "${api}/runs/${run_id}")
+              status=$(jq -er '.data.attributes.status' <<< "$run")
+              case "$status" in
+                # HCP saves a reviewable plan when changes exist and finishes a
+                # no-op immediately. Both are successful terminal plan states.
+                planned_and_saved|planned_and_finished) break ;;
+                discarded) break ;;
+                errored|canceled|force_canceled)
+                  echo "::error::HCP Terraform run ended ${status}"
+                  exit 1
+                  ;;
+              esac
+              if [ "$attempt" = 150 ]; then
+                echo "::error::HCP Terraform run did not reach planned_and_saved within 25 minutes (last: ${status})"
                 exit 1
-                ;;
-            esac
-            if [ "$attempt" = 150 ]; then
-              echo "::error::HCP Terraform run did not reach planned_and_saved within 25 minutes (last: ${status})"
+              fi
+              sleep 10
+            done
+            [ "$status" = discarded ] || break
+            if [ "$plan_attempt" = 2 ]; then
+              echo "::error::HCP Terraform discarded this commit's plan twice; review the workspace"
               exit 1
             fi
-            sleep 10
+            echo "::notice::An apply superseded this plan; planning once more against the new state"
           done
           {
             echo "### Production Terraform plan"
@@ -489,7 +488,7 @@ jobs:
             echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
             echo "- HCP status: **${status}**"
             echo "- saved plan: it does not hold the workspace lock or wait behind another plan"
-            echo "- HCP automatically discards it if another apply changes state first"
+            echo "- HCP discards it if another apply changes state first, and CD then plans once more against that new state"
             echo "- GitHub waited for the complete saved plan before reporting success"
             echo "- CD stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
             echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message and image revision match the commit you intend to deploy"
