@@ -78,10 +78,11 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # EXPERIMENT, not a conclusion: back at the pre-change width to test
-      # whether concurrency is what makes zookeeper's four-letter word flake.
-      # Restore the raise once that question has an answer.
-      max-parallel: 4
+      # Rows are mostly idle Docker waits, so the cap is about Docker Hub, not
+      # CPU: a row pulls the shared client image from cache plus its own SUT.
+      # Twelve was too wide — anonymous pulls came back "unauthorized" and timed
+      # out. Eight held. Raise this in steps and read several runs, not one.
+      max-parallel: 8
       matrix:
         include: ${{ fromJSON(needs.plans.outputs.matrix) }}
     env:
