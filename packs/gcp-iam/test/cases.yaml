@@ -1,0 +1,33 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_IAM: http://gcp-api:8080/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-iam-access-token-093f
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-iam-access-token-093f]
+cases:
+  - action: gcp.workload_identity_pools
+    args: {project: example-prod, limit: 5}
+    expect:
+      stdout_contains: [harness-pool, ACTIVE, Harness automation identities]
+  - action: gcp.wif_provider_describe
+    args:
+      project: example-prod
+      pool_id: harness-pool
+      provider_id: harness-provider
+    expect:
+      stdout_contains: [harness-provider, https://issuer.example.test, attribute.repository]
+  - action: gcp.service_account_policy
+    args:
+      project: example-prod
+      service_account: runtime@example-prod.iam.gserviceaccount.com
+    expect:
+      stdout_contains:
+        - roles/iam.workloadIdentityUser
+        - principalSet://iam.googleapis.com/projects/1001/locations/global/workloadIdentityPools/harness-pool/*

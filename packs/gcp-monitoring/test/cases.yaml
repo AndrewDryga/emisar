@@ -1,0 +1,71 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: https://gcp-api:8443/
+  CURL_CA_BUNDLE: /packs/gcp-monitoring/test/fixtures/server.crt
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-monitoring-access-token-281b
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-monitoring-access-token-281b]
+cases:
+  - action: gcp.metric_query
+    args:
+      project: example-prod
+      metric_type: compute.googleapis.com/instance/cpu/utilization
+      resource_filter: 'resource.type = "gce_instance"'
+      window_minutes: 30
+      alignment_seconds: 300
+      aligner: ALIGN_MEAN
+      page_size: 25
+      page_cursor: cursor-in
+    expect:
+      stdout_contains:
+        - compute.googleapis.com/instance/cpu/utilization
+        - harness-vm
+        - "0.42"
+  - action: gcp.metric_descriptors
+    args:
+      project: example-prod
+      type_prefix: compute.googleapis.com/
+      active_only: true
+      page_size: 10
+    expect:
+      stdout_contains:
+        - compute.googleapis.com/instance/cpu/utilization
+        - DOUBLE
+        - GAUGE
+  - action: gcp.interconnect_utilization
+    args:
+      project: example-prod
+      attachment: harness-attachment
+      region: us-central1
+      window_minutes: 60
+    expect:
+      stdout_contains:
+        - harness-attachment
+        - '"ingress_utilization_ratio":0.25'
+        - '"egress_utilization_ratio":0.5'
+  - action: gcp.alert_policies
+    args: {project: example-prod, limit: 10}
+    expect:
+      stdout_contains: [Harness CPU alert, '"enabled": true', harness-channel]
+  - name: gcp.metric-query-rejects-http-endpoint
+    action: gcp.metric_query
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: http://gcp-api:8080/
+    args:
+      project: example-prod
+      metric_type: compute.googleapis.com/instance/cpu/utilization
+      window_minutes: 30
+      alignment_seconds: 300
+      aligner: ALIGN_MEAN
+      page_size: 25
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [Monitoring API endpoint must use HTTPS]

@@ -9,9 +9,25 @@ compose_config() {
     --no-interpolate --no-env-resolution "$@"
 }
 
+compose_config_json() {
+  compose_config --no-normalize --format json
+}
+
 bounded_list() {
   local value
   value=$(compose_config "$1" | head -c "$((max_section_bytes + 1))")
+  ((${#value} <= max_section_bytes)) || {
+    printf '%s\n' "Compose config summary section exceeded 64 KiB" >&2
+    exit 1
+  }
+  printf '%s' "$value"
+}
+
+bounded_json_list() {
+  local filter=$1
+  local value
+  value=$(compose_config_json | jq -r "$filter" |
+    head -c "$((max_section_bytes + 1))")
   ((${#value} <= max_section_bytes)) || {
     printf '%s\n' "Compose config summary section exceeded 64 KiB" >&2
     exit 1
@@ -23,10 +39,12 @@ bounded_list() {
 compose_config --quiet
 
 services=$(bounded_list --services)
-images=$(bounded_list --images)
 networks=$(bounded_list --networks)
 volumes=$(bounded_list --volumes)
-profiles=$(bounded_list --profiles)
+images=$(bounded_json_list \
+  '[.services[]?.image? | select(type == "string" and length > 0)] | unique[]')
+profiles=$(bounded_json_list \
+  '[.services[]?.profiles[]? | select(type == "string" and length > 0)] | unique[]')
 
 COMPOSE_FILE=$file \
   COMPOSE_SERVICES=$services \

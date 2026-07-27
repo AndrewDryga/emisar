@@ -4,7 +4,16 @@ set -eu
 mode=$1
 project=$2
 access_token=$(gcloud auth print-access-token --quiet)
-api_base=https://monitoring.googleapis.com
+api_base=${CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING:-https://monitoring.googleapis.com}
+api_base=${api_base%/}
+
+case "$api_base" in
+  https://*) ;;
+  *)
+    printf '%s\n' "Monitoring API endpoint must use HTTPS" >&2
+    exit 2
+    ;;
+esac
 
 auth_config() {
   printf 'header = "Authorization: Bearer %s"\n' "$access_token"

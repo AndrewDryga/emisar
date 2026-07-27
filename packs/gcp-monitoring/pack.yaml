@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-monitoring
 name: Google Cloud Monitoring diagnostics
-version: 0.1.0
+version: 0.1.2
 description: >
   Read-only Google Cloud Monitoring diagnostics for bounded metric queries,
   metric descriptors, Cloud Interconnect attachment utilization, and alert
