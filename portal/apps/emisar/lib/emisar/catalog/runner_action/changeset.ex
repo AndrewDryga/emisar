@@ -89,11 +89,32 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
       max_nodes: 512
     )
     |> validate_output_schema_contract()
+    |> validate_missing_executable_requires_unavailable()
     |> unique_constraint([:runner_id, :action_id])
     |> check_constraint(:missing_executable,
       name: :missing_executable_requires_unavailable,
       message: "is only valid for an unavailable primary executable"
     )
+  end
+
+  # The same invariant as the DB check constraint, decided in Elixir. An
+  # advertisement is written with insert_all, which carries no changeset for a
+  # constraint error to land on — a violating row would abort the whole batch's
+  # statement instead of being skipped. The check constraint below stays as the
+  # storage-level backstop for any other writer.
+  defp validate_missing_executable_requires_unavailable(changeset) do
+    missing = get_field(changeset, :missing_executable)
+    available = get_field(changeset, :primary_executable_available)
+
+    if is_nil(missing) or available == false do
+      changeset
+    else
+      add_error(
+        changeset,
+        :missing_executable,
+        "is only valid for an unavailable primary executable"
+      )
+    end
   end
 
   defp validate_json_sizes(changeset) do

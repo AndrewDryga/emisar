@@ -297,6 +297,77 @@ defmodule Emisar.CatalogTest do
                {:error, {:invalid_catalog, "actions must be an array with at most 2048 entries"}}
     end
 
+    test "ingests an advertisement at the documented caps", %{runner: runner} do
+      # The prod failure was an advertisement well inside these caps dying on
+      # round trips, not on validation, so the regression has to be a real
+      # cap-sized ingest — 128 packs and 2048 actions, then a re-advertisement
+      # that must update in place rather than duplicate.
+      packs =
+        Map.new(1..128, fn n ->
+          {"pack-#{n}", %{"version" => "1.0.0", "hash" => "hash-#{n}"}}
+        end)
+
+      actions =
+        Enum.map(1..2_048, fn n ->
+          action("pack#{rem(n, 128)}.action_#{n}", pack_id: "pack-#{rem(n, 128) + 1}")
+        end)
+
+      payload = state_payload(packs: packs, actions: actions)
+
+      count_stored = fn ->
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_runner_id(runner.id)
+        |> Repo.aggregate(:count)
+      end
+
+      peek_first = fn ->
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_account_runner_and_action(
+          runner.account_id,
+          runner.id,
+          "pack1.action_1"
+        )
+        |> Repo.peek()
+      end
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      # Count the table rather than a page of it — the claim is that every
+      # advertised action landed, and the list read pages.
+      assert count_stored.() == 2_048
+      assert %RunnerAction{} = first = peek_first.()
+
+      # Re-advertising the same catalog updates in place: no duplicate rows, and
+      # first_seen_at survives while last_seen_at moves forward.
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+      assert count_stored.() == 2_048
+
+      refreshed = peek_first.()
+      assert refreshed.id == first.id
+      assert refreshed.first_seen_at == first.first_seen_at
+      assert DateTime.compare(refreshed.last_seen_at, first.last_seen_at) in [:gt, :eq]
+    end
+
+    test "a duplicate action id in one advertisement upserts once", %{
+      runner: runner,
+      subject: subject
+    } do
+      # Postgres refuses to let one ON CONFLICT statement touch a row twice, so
+      # the batch must collapse duplicates before writing.
+      payload =
+        state_payload(
+          actions: [
+            action("demo.twice", title: "first"),
+            action("demo.twice", title: "second")
+          ]
+        )
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [%RunnerAction{action_id: "demo.twice", title: "second"}], _metadata} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
     test "rejects more than 2048 actions before catalog persistence", %{
       runner: runner,
       subject: subject

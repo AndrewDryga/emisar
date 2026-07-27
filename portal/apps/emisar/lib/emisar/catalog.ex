@@ -56,6 +56,20 @@ defmodule Emisar.Catalog do
   @max_advertised_packs 128
   @max_advertised_actions 2_048
 
+  # Every column a re-advertisement may refresh — that is, all of them but the
+  # identity, `first_seen_at`, and `inserted_at`. Also the ON CONFLICT replace
+  # list, so an existing action's row is brought fully up to date.
+  @upsert_replace_fields ~w[
+    action_id pack_id pack_version pack_hash title summary kind risk description
+    side_effects args_schema output_schema examples search_terms
+    primary_executable_available missing_executable last_seen_at updated_at
+  ]a
+
+  # Postgres caps a statement at 65,535 bindings and a row here spends about
+  # twenty, so a full 2,048-action advertisement stays a few statements while
+  # each one keeps well clear of the limit.
+  @upsert_chunk_size 500
+
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -186,10 +200,7 @@ defmodule Emisar.Catalog do
             |> Enum.map(&observe_pack(runner.account_id, &1, now))
             |> Enum.any?(&(&1 == :pending_changed))
 
-          seen_ids =
-            actions
-            |> Enum.map(&observe_action(runner, &1, packs, now))
-            |> Enum.reject(&is_nil/1)
+          seen_ids = observe_actions(runner, actions, packs, now)
 
           _ = prune_missing_actions(runner.id, actions, seen_ids)
           pending_changed?
@@ -1239,6 +1250,51 @@ defmodule Emisar.Catalog do
 
   # -- Action upsert ---------------------------------------------------
 
+  # One advertisement used to cost two sequential queries per action — a peek
+  # then an insert or update — so a legal 605-action fleet ran ~1,300 round
+  # trips inside one default-timeout transaction and died at production
+  # latency, invisibly, inside the best-effort rescue. Validate every
+  # descriptor first, then write the survivors in chunked bulk upserts: the
+  # same fleet is a handful of statements.
+  #
+  # Returns the action ids that actually landed, which is what prune reads.
+  defp observe_actions(%Runners.Runner{} = runner, actions, packs, now) do
+    actions
+    |> Enum.map(&observe_action(runner, &1, packs, now))
+    |> Enum.filter(&match?(%Ecto.Changeset{valid?: true}, &1))
+    |> Enum.map(&upsert_entry(&1, now))
+    |> dedupe_by_action_id()
+    |> Enum.chunk_every(@upsert_chunk_size)
+    |> Enum.flat_map(&upsert_action_chunk/1)
+  end
+
+  # A runner may advertise the same action id twice. Postgres refuses to let one
+  # ON CONFLICT statement touch a row twice, so collapse duplicates here, last
+  # occurrence winning — which is what the per-row loop did by overwriting.
+  defp dedupe_by_action_id(entries) do
+    entries
+    |> Enum.reduce(%{}, &Map.put(&2, &1.action_id, &1))
+    |> Map.values()
+  end
+
+  defp upsert_action_chunk(entries) do
+    {_count, returned} =
+      Repo.insert_all(RunnerAction, entries,
+        on_conflict: {:replace, @upsert_replace_fields},
+        conflict_target: [:runner_id, :action_id],
+        returning: [:action_id]
+      )
+
+    Enum.map(returned, & &1.action_id)
+  end
+
+  defp upsert_entry(%Ecto.Changeset{} = changeset, now) do
+    changeset
+    |> Ecto.Changeset.apply_changes()
+    |> Map.take([:account_id, :runner_id | @upsert_replace_fields])
+    |> Map.merge(%{id: Repo.generate_id(), first_seen_at: now, inserted_at: now, updated_at: now})
+  end
+
   defp observe_action(%Runners.Runner{} = runner, descriptor, packs, now)
        when is_map(descriptor) do
     pack_id = descriptor["pack_id"]
@@ -1286,32 +1342,7 @@ defmodule Emisar.Catalog do
       last_seen_at: now
     }
 
-    existing =
-      RunnerAction.Query.all()
-      |> RunnerAction.Query.by_account_runner_and_action(
-        runner.account_id,
-        runner.id,
-        descriptor["id"]
-      )
-      |> Repo.peek()
-
-    case existing do
-      nil ->
-        changeset = RunnerAction.Changeset.upsert(attrs)
-
-        case Repo.insert(changeset) do
-          {:ok, %RunnerAction{action_id: id}} -> id
-          {:error, _} -> nil
-        end
-
-      %RunnerAction{} = row ->
-        changeset = RunnerAction.Changeset.update(row, attrs)
-
-        case Repo.update(changeset) do
-          {:ok, %RunnerAction{action_id: id}} -> id
-          {:error, _} -> nil
-        end
-    end
+    RunnerAction.Changeset.upsert(attrs)
   end
 
   # A runner can advertise a malformed (non-map) action descriptor; skip it
