@@ -746,6 +746,34 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		return usage("%s", packUsage)
 	}
 	action := args[0]
+	if action == "tools-image" {
+		if len(args) > 2 {
+			return usage("usage: ./run pack tools-image [<pack-name>]")
+		}
+		image, err := packTestRunnerImage(a.Root)
+		if err != nil {
+			return err
+		}
+		if len(args) == 2 {
+			// Named, the question is whether this pack reaches the image at
+			// all: a pack that ships its own client wants no part of it, and
+			// printing nothing is what lets CI skip restoring 2GB it will not
+			// run.
+			plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), "", args[1])
+			if err != nil {
+				return err
+			}
+			needed, err := packTestNeedsSharedTools(plans)
+			if err != nil {
+				return err
+			}
+			if !needed {
+				return nil
+			}
+		}
+		fmt.Fprintln(a.Out, image)
+		return nil
+	}
 	if action == "hashes" {
 		if len(args) > 2 || len(args) == 2 && args[1] != "--write" {
 			return usage("usage: ./run pack hashes [--write]")

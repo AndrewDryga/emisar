@@ -44,6 +44,14 @@ coop tasks done <id>
 coop tasks done <id>        # the class this touched was never judged
 ```
 
+**Judge a CI change on the constraint that actually binds.** The shared client
+image is cached in CI despite costing more wall clock than rebuilding it — the
+build pulls eight server images to extract one binary each, and the registry, not
+the clock, is what runs out. Removing the cache on a timing argument traded two
+registry round trips per row for nine and turned one occasional failure into
+three in a single run. Measure the binding constraint before optimising the
+visible one.
+
 **A shared quota is a CI-only limit too.** Docker Hub rate-limits anonymous
 pulls per address, and a runner pool shares addresses, so matrix width is bounded
 by the registry rather than by CPU. Twelve concurrent rows returned
