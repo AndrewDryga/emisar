@@ -1,0 +1,74 @@
+schema_version: 1
+id: oidc.jwt_header
+title: Decode a protected JWT header
+kind: script
+risk: low
+description: >
+  Decode and project recognized fields from a compact JWS or JWE protected
+  header. The payload and claims are never decoded, and no signature or claim
+  validation is performed.
+side_effects:
+  - Local base64url and JSON decoding only.
+  - The sensitive compact token is passed through environment, not argv, and is never emitted.
+args:
+  - name: jwt
+    type: string
+    required: true
+    sensitive: true
+    description: Compact JWS or JWE serialization.
+    validation:
+      pattern: "^(?:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]*|[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)$"
+      max_length: 16384
+execution:
+  script:
+    path: scripts/oidc.sh
+    interpreter: /bin/bash
+  argv: [jwt-header]
+  env:
+    OIDC_JWT: "{{ args.jwt }}"
+  timeout: 10s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+      - serialization
+      - segment_count
+      - alg
+      - enc
+      - kid
+      - typ
+      - cty
+      - zip
+      - crit
+      - jku
+      - x5u
+      - x5t
+      - x5t_s256
+      - present_fields
+    properties:
+      serialization: {enum: [jws, jwe]}
+      segment_count: {enum: [3, 5]}
+      alg: {type: string}
+      enc: {type: [string, "null"]}
+      kid: {type: [string, "null"]}
+      typ: {type: [string, "null"]}
+      cty: {type: [string, "null"]}
+      zip: {type: [string, "null"]}
+      crit:
+        type: [array, "null"]
+        items: {type: string}
+      jku: {type: [string, "null"]}
+      x5u: {type: [string, "null"]}
+      x5t: {type: [string, "null"]}
+      x5t_s256: {type: [string, "null"]}
+      present_fields: {type: array, items: {type: string}}
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect protected signing metadata
+    args:
+      jwt: eyJhbGciOiJSUzI1NiIsImtpZCI6ImN1cnJlbnQifQ.e30.signature

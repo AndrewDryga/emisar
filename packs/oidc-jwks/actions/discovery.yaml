@@ -1,0 +1,41 @@
+schema_version: 1
+id: oidc.discovery
+title: Fetch OIDC discovery metadata
+kind: script
+risk: low
+description: >
+  Fetch and return the public OpenID Provider Configuration for one exact
+  HTTPS issuer. Redirects are rejected and advertised URLs are not followed.
+side_effects:
+  - One unauthenticated HTTPS GET to the issuer's discovery endpoint.
+  - Writes the public response to a mode-0600 temporary file and removes it before exit.
+args:
+  - name: issuer
+    type: string
+    required: true
+    description: Exact HTTPS issuer URL without a query or fragment.
+    validation:
+      pattern: "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,=:;%@/-]*)?$"
+      max_length: 768
+execution:
+  script:
+    path: scripts/oidc.sh
+    interpreter: /bin/bash
+  argv: [discovery, "{{ args.issuer }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    required: [issuer, jwks_uri]
+    properties:
+      issuer: {type: string}
+      jwks_uri: {type: string}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect an issuer
+    args:
+      issuer: https://accounts.example.com

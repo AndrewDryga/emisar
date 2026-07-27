@@ -62,6 +62,7 @@ execution:
     - MYSQL_HOST
     - MYSQL_PWD
     - NOMAD_ADDR
+    - OIDC_CA_CERT
     - PGDATABASE
     - PGHOST
     - PGPASSWORD

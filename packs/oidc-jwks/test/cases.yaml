@@ -1,0 +1,74 @@
+services: [oidc]
+versions:
+  - version: "1.31.3"
+    digest: "@sha256:5a88c9c45479443d7be2eadc894b4ed0a9801bae03d97a5760ae13b5c2005942"
+    default: true
+env:
+  OIDC_CA_CERT: /packs/oidc-jwks/test/fixtures/server.crt
+cases:
+  - action: oidc.discovery
+    args: {issuer: https://oidc}
+    expect:
+      json:
+        /issuer: https://oidc
+        /jwks_uri: https://oidc/keys
+
+  - action: oidc.validate_discovery
+    args: {issuer: https://oidc}
+    expect:
+      json:
+        /valid: true
+        /discovery_url: https://oidc/.well-known/openid-configuration
+        /jwks_uri: https://oidc/keys
+
+  - action: oidc.jwks
+    args: {jwks_uri: https://oidc/keys}
+    expect:
+      json:
+        /keys/0/kid: current
+        /keys/1/kid: next
+
+  - action: oidc.compare_key_ids
+    args:
+      authoritative_key_ids_json: '["current","next","current"]'
+      consumer_key_ids_json: '["current","old"]'
+    expect:
+      json:
+        /relation: consumer_missing_and_extra
+        /missing_from_consumer/0: next
+        /extra_in_consumer/0: old
+        /exact_match: false
+
+  - action: oidc.jwt_header
+    args:
+      jwt: eyJhbGciOiJSUzI1NiIsImtpZCI6ImN1cnJlbnQiLCJ0eXAiOiJKV1QifQ.e30.signature
+    expect:
+      json:
+        /serialization: jws
+        /segment_count: 3
+        /alg: RS256
+        /kid: current
+
+  - name: oidc.jwks-rejects-private-material
+    action: oidc.jwks
+    args: {jwks_uri: https://oidc/private}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [contains private key material]
+
+  - name: oidc.validate-discovery-rejects-issuer-mismatch
+    action: oidc.validate_discovery
+    args: {issuer: https://oidc/wrong}
+    expect:
+      status: failure
+      exit: [5]
+      stderr_contains: [does not exactly match]
+
+  - name: oidc.jwks-rejects-redirect
+    action: oidc.jwks
+    args: {jwks_uri: https://oidc/redirect}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [non-200 response]
