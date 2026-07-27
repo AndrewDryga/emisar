@@ -1,0 +1,40 @@
+schema_version: 1
+id: docker.compose_images
+title: docker compose images
+kind: script
+risk: low
+description: >
+  List images used by containers already created for one contained Compose
+  project. This reports container image IDs and tags, not configured image
+  references for services that have never been created.
+side_effects:
+  - Parses one Compose file beneath an approved deployment root.
+  - Performs one read-only Docker daemon query.
+args:
+  - name: file
+    type: string
+    required: true
+    description: Path to docker-compose.yml.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+      allowed_prefixes:
+        - /opt
+        - /srv
+        - /var/www
+        - /data
+        - /usr/local
+execution:
+  script:
+    path: scripts/compose_images.sh
+    interpreter: /bin/bash
+  argv: ["{{ args.file }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Images used by a project
+    args:
+      file: /opt/stack/docker-compose.yml

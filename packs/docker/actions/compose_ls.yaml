@@ -1,0 +1,25 @@
+schema_version: 1
+id: docker.compose_ls
+title: docker compose ls --all
+kind: exec
+risk: low
+description: >
+  List all known Compose projects, including projects with stopped containers,
+  with their status and resolved configuration-file paths.
+side_effects:
+  - One read-only Docker daemon query.
+  - Includes stopped Compose projects.
+args: []
+execution:
+  command:
+    binary: docker
+    argv: [compose, ls, --all, --format, json]
+  timeout: 15s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Discover active and orphaned projects
+    args: {}
