@@ -1,0 +1,109 @@
+schema_version: 1
+id: gcp.metric_query
+title: Query Cloud Monitoring time series
+kind: script
+risk: low
+description: >
+  Query one metric type over a bounded recent window, optionally narrowing by
+  a Monitoring resource filter. Returns FULL time-series data and a
+  nextPageToken when another page exists.
+side_effects:
+  - One gcloud token read and one read-only Monitoring API request.
+  - page_size caps returned points because the request uses view=FULL.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: metric_type
+    type: string
+    required: true
+    description: Full metric type, such as compute.googleapis.com/instance/cpu/utilization.
+    validation:
+      pattern: "^[A-Za-z](?:[A-Za-z0-9._/-]{0,510}[A-Za-z0-9])?$"
+  - name: resource_filter
+    type: string
+    required: false
+    default: ""
+    description: Optional Monitoring filter expression appended to the fixed metric.type predicate.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 1024
+  - name: window_minutes
+    type: integer
+    required: false
+    default: 60
+    description: Recent query window in minutes.
+    validation:
+      min: 1
+      max: 1440
+  - name: alignment_seconds
+    type: integer
+    required: false
+    default: 60
+    description: Alignment period when aligner is not ALIGN_NONE.
+    validation:
+      min: 60
+      max: 3600
+  - name: aligner
+    type: string
+    required: false
+    default: ALIGN_NONE
+    description: Optional per-series aligner.
+    validation:
+      enum:
+        - ALIGN_NONE
+        - ALIGN_DELTA
+        - ALIGN_RATE
+        - ALIGN_MEAN
+        - ALIGN_MAX
+        - ALIGN_MIN
+        - ALIGN_SUM
+        - ALIGN_NEXT_OLDER
+  - name: page_size
+    type: integer
+    required: false
+    default: 500
+    description: Maximum number of FULL-view points in this page.
+    validation:
+      min: 1
+      max: 1000
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque nextPageToken from a prior result.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 2048
+execution:
+  script:
+    path: scripts/monitoring_api.sh
+    interpreter: /bin/sh
+  argv:
+    - metric-query
+    - "{{ args.project }}"
+    - "{{ args.metric_type }}"
+    - "{{ args.resource_filter }}"
+    - "{{ args.window_minutes }}"
+    - "{{ args.alignment_seconds }}"
+    - "{{ args.aligner }}"
+    - "{{ args.page_size }}"
+    - "{{ args.page_cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: VM CPU for one instance
+    args:
+      project: example-prod
+      metric_type: compute.googleapis.com/instance/cpu/utilization
+      resource_filter: 'resource.type = "gce_instance" AND resource.labels.instance_id = "1234567890"'
+      window_minutes: 60
+      alignment_seconds: 300
+      aligner: ALIGN_MEAN

@@ -1,0 +1,65 @@
+schema_version: 1
+id: gcp.interconnect_utilization
+title: Query Cloud Interconnect attachment utilization
+kind: script
+risk: low
+description: >
+  Query capacity plus received and sent byte rates for one Cloud Interconnect
+  attachment, then calculate independent ingress and egress utilization
+  ratios. The link is full duplex, so directions are never summed.
+side_effects:
+  - One gcloud token read and three read-only Monitoring API requests.
+  - Writes public metric responses to mode-0600 temporary files and removes them before exit.
+search_terms:
+  - Interconnect saturation
+  - VLAN attachment utilization
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: attachment
+    type: string
+    required: true
+    description: Cloud Interconnect attachment name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  - name: region
+    type: string
+    required: true
+    description: Attachment region.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: window_minutes
+    type: integer
+    required: false
+    default: 60
+    description: Recent query window in minutes.
+    validation:
+      min: 5
+      max: 360
+execution:
+  script:
+    path: scripts/monitoring_api.sh
+    interpreter: /bin/sh
+  argv:
+    - interconnect-utilization
+    - "{{ args.project }}"
+    - "{{ args.attachment }}"
+    - "{{ args.region }}"
+    - "{{ args.window_minutes }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Last hour for a VLAN attachment
+    args:
+      project: example-prod
+      attachment: va1-primary
+      region: us-central1
+      window_minutes: 60
