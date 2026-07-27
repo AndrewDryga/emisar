@@ -247,7 +247,50 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 			}
 		}
 	}
+	if len(failures) == 0 {
+		if limits := packTestHostBlindSpots(runtime.GOOS, a.dockerHostOS(ctx), runtime.NumCPU()); len(limits) > 0 {
+			fmt.Fprintf(a.Out, "\n%s\n", packTestVerdictNotice(limits))
+		}
+	}
 	return errors.Join(failures...)
+}
+
+// packTestHostBlindSpots names what this host's Docker cannot decide. A green
+// run here is real evidence about an action's behavior and no evidence at all
+// about the isolated, non-root SUT the Linux matrix runs: Docker Desktop's VM
+// masks uid ownership and loads no AppArmor profile, and a workstation with
+// cores to spare wins startup races a two-to-four core runner loses.
+func packTestHostBlindSpots(goos, dockerOS string, cores int) []string {
+	var limits []string
+	if strings.Contains(dockerOS, "Docker Desktop") || goos != "linux" {
+		limits = append(limits,
+			"file ownership and permission errors — the VM masks container uid ownership",
+			"anything AppArmor confines — no profile is loaded here",
+		)
+	}
+	// A GitHub runner has four cores; more than that here wins races it loses.
+	if goos != "linux" || cores > 4 {
+		limits = append(limits,
+			"startup races — a runner has fewer cores and loses races this host wins",
+		)
+	}
+	return limits
+}
+
+func packTestVerdictNotice(limits []string) string {
+	notice := "Passed here, which does not decide:\n"
+	for _, limit := range limits {
+		notice += "  - " + limit + "\n"
+	}
+	return notice + "The Linux pack behavior matrix is the authority for those. Read the job."
+}
+
+func (a *App) dockerHostOS(ctx context.Context) string {
+	output, err := a.output(ctx, a.Root, nil, "docker", "info", "--format", "{{.OperatingSystem}}")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // selectPackTestShard keeps one slice of a single pack's cases. A pack whose
