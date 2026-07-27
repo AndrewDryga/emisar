@@ -139,6 +139,11 @@ cases:
       stdout_contains: [harness-deployment, REVISION]
   - action: kubernetes.rollout_status
     args: {namespace: default, kind: deployment, name: harness-deployment}
+    # Readiness proves the node, the probe pod and the CRD; it says nothing
+    # about this deployment's replicas, so the case waits for the state it
+    # then asserts on.
+    arrange:
+      - argv: [kubectl, rollout, status, deployment/harness-deployment, --namespace, default, --timeout, 120s]
     expect:
       stdout_contains: [successfully rolled out]
   - action: kubernetes.services_list
