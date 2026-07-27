@@ -119,7 +119,9 @@ Never title a product release with a bare `vX.Y.Z`.
    prepend it to `@entries`.
 4. **Bump `portal/VERSION`** to the new `X.Y.0` (no `v`). That one file is read by
    the umbrella, both apps, the OTP release version, and the marketing footer, so
-   every version display moves in lockstep.
+   every version display moves in lockstep. **Bump the root `server.json`
+   `version` to match** — the MCP registry descriptor rides the product line and
+   `EmisarWeb.MCPRegistryTest` fails the gate when the two drift.
 5. **Roll the BUSL Change Date** in `LICENSE.md` to the release date plus three
    years. Each released version carries its own conversion promise.
 6. **Update the marketing test** newest-entry assertions.

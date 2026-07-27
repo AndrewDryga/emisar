@@ -17,6 +17,35 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-27],
+      slug: "runner-identity-by-hostname-and-proven-pack-behavior",
+      title: "Runner identity by hostname and pack behavior proven on real services",
+      tag: "v0.35.0",
+      summary:
+        "A runner now identifies itself by its hostname: a reboot reconnects the same runner, a replaced ephemeral host enrolls as a new one, and no generated identity has to survive on disk for either to work — an explicit runner.id still overrides the default. Pack retention leaves a live fleet alone the same way: a version a connected runner still advertises is never swept, so a stable fleet keeps its pins and trust decisions through quiet weeks instead of losing them until the next reconnect. Behind the catalog, every behavior case now runs against its own disposable instance of the real service it targets, readiness is proven on the network path the case dials, and each high-risk action changed by the argument-boundary sweep carries a successful behavior case or a declared machine-readable risk exception.",
+      details: [
+        {"Packs",
+         [
+           "Behavior fixtures assume nothing they did not arrange: cases run as a non-root identity in a disposable service, the state a case asserts on is created by that case, and the snmp OSPF adjacency builds its network namespace on AppArmor-confined hosts, where the default container profile denies the mount.",
+           "Readiness means the service a case will actually reach: ZooKeeper answers every four-letter word the suite uses before the first case starts, and databases that seed through a temporary boot-time daemon are probed on the routable address rather than loopback.",
+           "The behavior matrix finishes in less than half the wall-clock time: a plan's images are pulled before its first case, slow suites shard across CI rows, and a plan whose service is heavy caps how many of its cases run at once."
+         ]},
+        {"Platform",
+         [
+           "The hosted admin runner bootstraps from a version-pinned release download with retries instead of asking the GitHub API which release is current, so an anonymous rate limit cannot keep a control-plane VM from starting.",
+           "A production deploy re-plans when a manual apply has superseded its saved plan instead of failing the release."
+         ]},
+        {"Website",
+         [
+           "A clarity pass from founder review: the security page shows the signed-dispatch boundary at the point it acts, the home comparison states signed dispatch and the no-inbound-port posture in their own rows, case studies and comparisons read at the docs rhythm, and connect pages name the agent in the attribution line."
+         ]},
+        {"Also",
+         [
+           "Checks that used to run only in CI moved into the canonical gates — staticcheck into the Go gates, the Portal-only checks into the portal gate — so a green local gate and a green CI run mean the same thing."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-07-26],
       slug: "live-run-output-and-bounded-pack-arguments",
       title: "Live run output for agents and a tighter pack-argument boundary",
