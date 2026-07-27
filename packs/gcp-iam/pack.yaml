@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: gcp-iam
+name: Google Cloud IAM diagnostics
+version: 0.1.0
+description: >
+  Read-only Google Cloud IAM diagnostics for workload identity providers,
+  workload identity pools, and service-account policies. Every action names
+  the target project and global location explicitly.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud]
+
+setup:
+  summary: >
+    Drives the gcloud CLI on the runner host. Authenticate gcloud with a
+    workload identity, attached service account, service-account credential,
+    or operator configuration before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional path to a credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "For a credential file, populate a dedicated CLOUDSDK_CONFIG with `gcloud auth login --cred-file=...` or set CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
+    - "Use a read-only principal. Workload identity reads need roles/iam.workloadIdentityPoolViewer; service-account policy reads need roles/iam.serviceAccountViewer or equivalent permissions."
+    - "This is a remote-target client pack and is never host-auto-suggested merely because gcloud is installed."
+    - "All actions pass --quiet and an explicit --project, so ambient project configuration cannot redirect a request."
+  verify: gcp.workload_identity_pools
+
+actions:
+  - actions/wif_provider_describe.yaml
+  - actions/service_account_policy.yaml
+  - actions/workload_identity_pools.yaml

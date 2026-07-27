@@ -1,0 +1,60 @@
+schema_version: 1
+id: gcp.wif_provider_describe
+title: gcloud iam workload-identity-pools providers describe
+kind: exec
+risk: low
+description: >
+  Describe one global workload identity pool provider, including its issuer,
+  attribute mapping, attribute condition, and enabled or disabled state.
+side_effects:
+  - One read-only IAM API call.
+  - Returns provider configuration but no credential material.
+search_terms:
+  - Workload Identity Federation
+  - WIF provider
+  - OIDC issuer
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: pool_id
+    type: string
+    required: true
+    description: Workload identity pool ID.
+    validation:
+      pattern: "^[a-z0-9](?:[a-z0-9-]{2,30}[a-z0-9])$"
+  - name: provider_id
+    type: string
+    required: true
+    description: Workload identity provider ID.
+    validation:
+      pattern: "^[a-z0-9](?:[a-z0-9-]{2,30}[a-z0-9])$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - iam
+      - workload-identity-pools
+      - providers
+      - describe
+      - "{{ args.provider_id }}"
+      - "--workload-identity-pool={{ args.pool_id }}"
+      - --location=global
+      - "--project={{ args.project }}"
+      - --format=json
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Describe a GitHub OIDC provider
+    args:
+      project: example-prod
+      pool_id: automation-pool
+      provider_id: github-actions
