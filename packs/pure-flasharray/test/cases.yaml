@@ -1,0 +1,50 @@
+services: [pure-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
+secret_env: [PURE_API_TOKEN]
+env:
+  PURE_URL: http://pure-api:8080
+  PURE_API_TOKEN: packtest-canary-pure-api-token-52ad
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-pure-api-token-52ad]
+cases:
+  - action: pure.protection_groups
+    args: {limit: 2, page_cursor: cursor-in}
+    expect:
+      stdout_contains: [harness-pgroup, harness-target, '"more_items_remaining": true']
+  - action: pure.default_protection
+    args: {limit: 3}
+    expect:
+      stdout_contains: [harness-array, harness-default]
+  - action: pure.snapshots
+    args: {limit: 4}
+    expect:
+      stdout_contains: [harness-pgroup.123, harness-pgroup]
+  - name: pure.pgroup-members-volumes
+    action: pure.pgroup_members
+    args: {member_type: volumes, limit: 5}
+    expect:
+      stdout_contains: [harness-pgroup, harness-volume]
+  - name: pure.pgroup-members-hosts
+    action: pure.pgroup_members
+    args: {member_type: hosts, limit: 5}
+    expect:
+      stdout_contains: [harness-pgroup, harness-host]
+  - name: pure.pgroup-members-host-groups
+    action: pure.pgroup_members
+    args: {member_type: host-groups, limit: 5}
+    expect:
+      stdout_contains: [harness-pgroup, harness-host-group]
+  - name: pure.protection-groups-rejects-bad-token
+    action: pure.protection_groups
+    env:
+      PURE_API_TOKEN: packtest-canary-pure-invalid-token-b731
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["curl: (22)"]
