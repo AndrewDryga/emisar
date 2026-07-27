@@ -6,10 +6,12 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      # Every case reaches 2181 over the bridge, so readiness has to prove
-      # that path: loopback answers ruok while a bridge connection still
-      # gets closed empty, and faster readiness starts cases in that gap.
-      test: ["CMD-SHELL", "echo ruok | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q imok"]
+      # ruok answers imok before the server serves requests — that is what it
+      # documents itself as doing — so a ruok probe reports ready while every
+      # other four-letter word still gets its connection closed empty. srvr
+      # prints Mode only once the server is actually serving, over the bridge
+      # every case dials.
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q Mode"]
       interval: 5s
       start_period: 30s
       start_interval: 1s
