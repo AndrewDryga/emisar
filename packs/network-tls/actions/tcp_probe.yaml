@@ -1,0 +1,58 @@
+schema_version: 1
+id: net.tcp_probe
+title: Probe one TCP port
+kind: script
+risk: low
+description: >
+  Attempt one bounded TCP connection from the runner to a host and port. A
+  successful handshake proves TCP reachability only; it does not validate an
+  application protocol, TLS, authentication, or service health.
+side_effects:
+  - One outbound TCP connection attempt.
+  - Sends no application data and never listens.
+search_terms:
+  - connection refused
+  - port unreachable
+  - cross-host connectivity
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target hostname or IP address.
+    validation:
+      pattern: "^[A-Za-z0-9](?:[A-Za-z0-9.:-]{0,251}[A-Za-z0-9])?$"
+      max_length: 253
+  - name: port
+    type: integer
+    required: true
+    description: Target TCP port.
+    validation:
+      min: 1
+      max: 65535
+  - name: timeout
+    type: integer
+    required: false
+    default: 3
+    description: Connect timeout in seconds.
+    validation:
+      min: 1
+      max: 30
+execution:
+  script:
+    path: scripts/tcp_probe.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "{{ args.port }}"
+    - "{{ args.timeout }}"
+  timeout: 40s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Probe PostgreSQL from this runner
+    args:
+      host: database.internal
+      port: 5432
+      timeout: 3
