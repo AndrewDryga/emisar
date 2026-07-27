@@ -22,19 +22,19 @@ defmodule Emisar.Accounts.Account.Settings do
     # nil = keep forever · N = the daily Catalog sweep (and the packs page
     # "Clean up now") deletes pack versions no runner has advertised for N days.
     field :pack_unseen_retention_days, :integer
-    # nil = keep forever · N = the daily Runners sweep (and the runners page
-    # "Clean up now") soft-deletes runners cleanly offline for N days.
-    field :runner_inactive_retention_days, :integer
+    # nil = keep forever · N = the hourly Runners sweep (and the runners page
+    # "Clean up now") soft-deletes runners cleanly offline for N hours.
+    field :runner_inactive_retention_hours, :integer
   end
 
   @fields ~w[require_mfa require_sso max_grant_lifetime_seconds monthly_report_opt_out
-             pack_unseen_retention_days runner_inactive_retention_days]a
+             pack_unseen_retention_days runner_inactive_retention_hours]a
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
     |> cast(attrs, @fields)
     |> validate_number(:max_grant_lifetime_seconds, greater_than_or_equal_to: 0)
     |> validate_number(:pack_unseen_retention_days, greater_than: 0)
-    |> validate_number(:runner_inactive_retention_days, greater_than: 0)
+    |> validate_number(:runner_inactive_retention_hours, greater_than: 0)
   end
 end

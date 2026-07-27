@@ -1,13 +1,13 @@
 defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
   @moduledoc """
-  Daily sweep that soft-deletes runners cleanly offline longer than an
-  account's configured window (`settings.runner_inactive_retention_days`).
+  Hourly sweep that soft-deletes runners cleanly offline longer than an
+  account's configured window (`settings.runner_inactive_retention_hours`).
   Accounts without the setting are skipped; the per-account sweep audits
   itself only when it removed something.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
-    every: :timer.hours(24),
+    every: :timer.hours(1),
     initial_delay: :timer.minutes(10),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
@@ -47,11 +47,11 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
   end
 
   defp sweep_account(
-         %Accounts.Account{settings: %{runner_inactive_retention_days: days}} = account,
+         %Accounts.Account{settings: %{runner_inactive_retention_hours: hours}} = account,
          deleted_total
        )
-       when is_integer(days) and days > 0 do
-    case Runners.delete_inactive_runners(account.id, days) do
+       when is_integer(hours) and hours > 0 do
+    case Runners.delete_inactive_runners(account.id, hours) do
       {:ok, deleted} -> deleted_total + deleted
       {:error, _reason} -> deleted_total
     end

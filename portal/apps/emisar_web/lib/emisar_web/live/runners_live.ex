@@ -54,8 +54,8 @@ defmodule EmisarWeb.RunnersLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
-  def handle_event("set_runner_retention", %{"days" => raw}, socket) do
-    apply_runner_retention(socket, parse_retention_days(raw))
+  def handle_event("set_runner_retention", %{"hours" => raw}, socket) do
+    apply_runner_retention(socket, parse_retention_hours(raw))
   end
 
   def handle_event("cleanup_inactive_now", _params, socket) do
@@ -84,17 +84,17 @@ defmodule EmisarWeb.RunnersLive do
   defp apply_runner_retention(socket, :error),
     do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
 
-  defp apply_runner_retention(socket, {:ok, days_or_nil}) do
+  defp apply_runner_retention(socket, {:ok, hours_or_nil}) do
     case Accounts.update_account(
            socket.assigns.current_account,
-           %{settings: %{runner_inactive_retention_days: days_or_nil}},
+           %{settings: %{runner_inactive_retention_hours: hours_or_nil}},
            socket.assigns.current_subject
          ) do
       {:ok, account} ->
         {:noreply,
          socket
          |> assign(:current_account, account)
-         |> put_flash(:info, retention_set_flash(days_or_nil))}
+         |> put_flash(:info, retention_set_flash(hours_or_nil))}
 
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
@@ -104,43 +104,61 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
-  defp parse_retention_days(""), do: {:ok, nil}
+  defp parse_retention_hours(""), do: {:ok, nil}
 
-  defp parse_retention_days(raw) when is_binary(raw) do
+  defp parse_retention_hours(raw) when is_binary(raw) do
     case Integer.parse(raw) do
-      {days, ""} when days > 0 -> {:ok, days}
+      {hours, ""} when hours > 0 -> {:ok, hours}
       _ -> :error
     end
   end
 
   defp retention_set_flash(nil), do: "Automatic cleanup turned off — inactive runners are kept."
 
-  defp retention_set_flash(days),
-    do: "Automatic cleanup on — runners inactive for #{days_phrase(days)} are removed daily."
+  defp retention_set_flash(hours) do
+    period = retention_period_phrase(hours)
+    "Automatic cleanup on — runners inactive for #{period} are removed by the hourly sweep."
+  end
 
   defp cleanup_flash(1), do: "Removed 1 inactive runner."
   defp cleanup_flash(count), do: "Removed #{count} inactive runners."
 
-  defp retention_days_label(days), do: "after #{days_phrase(days)} inactive"
+  defp retention_period_label(hours), do: "after #{retention_period_phrase(hours)} inactive"
 
-  defp days_phrase(1), do: "1 day"
-  defp days_phrase(days), do: "#{days} days"
+  defp retention_period_phrase(1), do: "1 hour"
+  defp retention_period_phrase(24), do: "1 day"
 
-  defp runner_retention_options(current) do
+  defp retention_period_phrase(hours) when rem(hours, 24) == 0,
+    do: "#{div(hours, 24)} days"
+
+  defp retention_period_phrase(hours), do: "#{hours} hours"
+
+  defp runner_retention_options(current_hours) do
     [
       %{
         value: "",
         label: "Off — keep inactive runners",
-        selected: is_nil(current),
+        selected: is_nil(current_hours),
         disabled: false
       },
-      %{value: "1", label: "After 1 day inactive", selected: current == 1, disabled: false},
-      %{value: "7", label: "After 7 days inactive", selected: current == 7, disabled: false},
-      %{value: "14", label: "After 14 days inactive", selected: current == 14, disabled: false},
-      %{value: "30", label: "After 30 days inactive", selected: current == 30, disabled: false},
-      %{value: "60", label: "After 60 days inactive", selected: current == 60, disabled: false},
-      %{value: "90", label: "After 90 days inactive", selected: current == 90, disabled: false}
+      retention_option(1, "After 1 hour inactive", current_hours),
+      retention_option(6, "After 6 hours inactive", current_hours),
+      retention_option(24, "After 1 day inactive", current_hours),
+      retention_option(168, "After 7 days inactive", current_hours),
+      retention_option(336, "After 14 days inactive", current_hours),
+      retention_option(720, "After 30 days inactive", current_hours),
+      retention_option(1_440, "After 60 days inactive", current_hours),
+      retention_option(2_160, "After 90 days inactive", current_hours)
     ]
+  end
+
+  defp retention_option(hours, label, current_hours) do
+    %{
+      value: Integer.to_string(hours),
+      label: label,
+      selected: current_hours == hours,
+      disabled: false
+    }
   end
 
   # PubSub-driven refresh — re-run the current page/filter.
@@ -529,24 +547,24 @@ defmodule EmisarWeb.RunnersLive do
                 <div id="runners-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                   <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
                   <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                    Remove runners that have been disconnected for the selected period. A daily
+                    Remove runners that have been disconnected for the selected period. An hourly
                     sweep deletes them; a host that comes back online re-enrolls as a fresh
                     runner. Currently-connected and disabled runners are never touched.
                   </p>
                   <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
                     <form id="runner-retention-form" phx-change="set_runner_retention" class="mt-3">
                       <.select
-                        name="days"
+                        name="hours"
                         aria-label="Remove runners inactive for"
                         options={
                           runner_retention_options(
-                            @current_account.settings.runner_inactive_retention_days
+                            @current_account.settings.runner_inactive_retention_hours
                           )
                         }
                       />
                     </form>
                     <.confirm_button
-                      :if={@current_account.settings.runner_inactive_retention_days}
+                      :if={@current_account.settings.runner_inactive_retention_hours}
                       id="runners-cleanup-now"
                       variant={:secondary}
                       tone={:neutral}
@@ -557,8 +575,8 @@ defmodule EmisarWeb.RunnersLive do
                       on_confirm={JS.push("cleanup_inactive_now")}
                     >
                       <:body>
-                        Soft-deletes every runner inactive for more than {days_phrase(
-                          @current_account.settings.runner_inactive_retention_days
+                        Soft-deletes every runner inactive for more than {retention_period_phrase(
+                          @current_account.settings.runner_inactive_retention_hours
                         )}. A host that comes back online re-enrolls as a fresh runner; its
                         audit history is kept.
                       </:body>
@@ -566,9 +584,9 @@ defmodule EmisarWeb.RunnersLive do
                     </.confirm_button>
                   <% else %>
                     <p class="mt-2 text-[11px] text-zinc-400">
-                      Owner/admin only — currently {(@current_account.settings.runner_inactive_retention_days &&
-                                                       retention_days_label(
-                                                         @current_account.settings.runner_inactive_retention_days
+                      Owner/admin only — currently {(@current_account.settings.runner_inactive_retention_hours &&
+                                                       retention_period_label(
+                                                         @current_account.settings.runner_inactive_retention_hours
                                                        )) || "off"}.
                     </p>
                   <% end %>

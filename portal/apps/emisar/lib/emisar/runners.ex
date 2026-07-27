@@ -515,7 +515,7 @@ defmodule Emisar.Runners do
   @doc """
   Run the inactivity-retention sweep for the subject's account right now — the
   runners page "Clean up now" button. Uses the account's configured window
-  (`settings.runner_inactive_retention_days`); `{:error, :retention_disabled}`
+  (`settings.runner_inactive_retention_hours`); `{:error, :retention_disabled}`
   when automatic cleanup is off. Requires `manage_runners`. Returns
   `{:ok, deleted_count}`.
   """
@@ -525,16 +525,16 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ),
-         {:ok, days} <- fetch_inactive_retention_days(subject) do
-      delete_inactive_runners(subject.account.id, days, subject)
+         {:ok, hours} <- fetch_inactive_retention_hours(subject) do
+      delete_inactive_runners(subject.account.id, hours, subject)
     end
   end
 
   # The subject's account struct is a socket snapshot — read the setting fresh.
-  defp fetch_inactive_retention_days(%Subject{account: %{id: account_id}}) do
+  defp fetch_inactive_retention_hours(%Subject{account: %{id: account_id}}) do
     case Accounts.fetch_account_settings(account_id) do
-      {:ok, %{runner_inactive_retention_days: days}} when is_integer(days) and days > 0 ->
-        {:ok, days}
+      {:ok, %{runner_inactive_retention_hours: hours}} when is_integer(hours) and hours > 0 ->
+        {:ok, hours}
 
       {:ok, _settings} ->
         {:error, :retention_disabled}
@@ -549,7 +549,7 @@ defmodule Emisar.Runners do
   `Runners.Jobs.InactiveRunnerRetention` tick (no subject → system audit actor,
   account-wide) and `sweep_inactive_runners/1` (operator actor, narrowed to that
   operator's runner access). Soft-deletes every in-scope runner cleanly offline
-  for `days` days — durably disconnected with a last disconnect older than the
+  for `hours` hours — durably disconnected with a last disconnect older than the
   cutoff — and records ONE `runner.retention_swept` audit event only when
   something was removed. Returns `{:ok, deleted_count}`.
 
@@ -558,9 +558,9 @@ defmodule Emisar.Runners do
   deliberate reversible park) are all excluded, so the sweep only removes hosts
   that connected and have since stayed gone.
   """
-  def delete_inactive_runners(account_id, days, subject \\ nil)
-      when is_binary(account_id) and is_integer(days) and days > 0 do
-    cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
+  def delete_inactive_runners(account_id, hours, subject \\ nil)
+      when is_binary(account_id) and is_integer(hours) and hours > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -hours * 3_600, :second)
 
     Multi.new()
     |> Multi.run(:runners, fn repo, _changes ->
@@ -586,7 +586,7 @@ defmodule Emisar.Runners do
       {:ok, count}
     end)
     |> Multi.run(:audit, fn repo, %{runners: runners} ->
-      record_inactivity_sweep(repo, runners, days, subject)
+      record_inactivity_sweep(repo, runners, hours, subject)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -597,11 +597,11 @@ defmodule Emisar.Runners do
 
   # No marker when nothing was removed — scheduled housekeeping must not
   # manufacture audit noise on inactive accounts.
-  defp record_inactivity_sweep(_repo, [], _days, _subject), do: {:ok, :nothing_removed}
+  defp record_inactivity_sweep(_repo, [], _hours, _subject), do: {:ok, :nothing_removed}
 
-  defp record_inactivity_sweep(repo, runners, days, subject) do
+  defp record_inactivity_sweep(repo, runners, hours, subject) do
     actor = subject || hd(runners).account_id
-    repo.insert(Audit.Events.runner_retention_swept(actor, runners, days))
+    repo.insert(Audit.Events.runner_retention_swept(actor, runners, hours))
   end
 
   # The manual "Clean up now" sweep is narrowed to the operator's own runner

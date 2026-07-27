@@ -3,14 +3,14 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
   alias Emisar.{Audit, Fixtures, Repo}
   alias Emisar.Runners.Jobs.InactiveRunnerRetention
 
-  @beyond_window_days 40
-  @window_days 30
+  @beyond_window_hours 7
+  @window_hours 6
 
-  defp offline_runner(account, days_ago, attrs \\ []) do
+  defp offline_runner(account, hours_ago, attrs \\ []) do
     runner =
       Fixtures.Runners.create_runner([account_id: account.id, connected?: false] ++ attrs)
 
-    at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
+    at = DateTime.add(DateTime.utc_now(), -hours_ago * 3_600, :second)
     Fixtures.Runners.mark_disconnected_at(runner, at)
   end
 
@@ -21,23 +21,23 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     |> Repo.all()
   end
 
-  test "runs daily because the retention promise has day-level precision" do
+  test "runs hourly because the retention promise has hour-level precision" do
     assert %{
              id: InactiveRunnerRetention,
              start: {_executor, :start_link, [{InactiveRunnerRetention, interval, _config}]}
            } = InactiveRunnerRetention.child_spec([])
 
-    assert interval == :timer.hours(24)
+    assert interval == :timer.hours(1)
   end
 
   test "prunes runners offline past a subscribed account's window (idempotently)" do
     account = Fixtures.Accounts.create_account()
 
     Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_days: @window_days
+      runner_inactive_retention_hours: @window_hours
     })
 
-    runner = offline_runner(account, @beyond_window_days)
+    runner = offline_runner(account, @beyond_window_hours)
 
     assert :ok = InactiveRunnerRetention.execute([])
     assert :ok = InactiveRunnerRetention.execute([])
@@ -52,11 +52,11 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     account = Fixtures.Accounts.create_account()
 
     Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_days: @window_days
+      runner_inactive_retention_hours: @window_hours
     })
 
-    db = offline_runner(account, @beyond_window_days, group: "db")
-    app = offline_runner(account, @beyond_window_days, group: "app")
+    db = offline_runner(account, @beyond_window_hours, group: "db")
+    app = offline_runner(account, @beyond_window_hours, group: "app")
 
     assert :ok = InactiveRunnerRetention.execute([])
 
@@ -71,10 +71,10 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     account = Fixtures.Accounts.create_account()
 
     Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_days: @window_days
+      runner_inactive_retention_hours: @window_hours
     })
 
-    runner = offline_runner(account, 10)
+    runner = offline_runner(account, 3)
 
     assert :ok = InactiveRunnerRetention.execute([])
 
@@ -83,7 +83,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
 
   test "skips accounts without the retention setting" do
     account = Fixtures.Accounts.create_account()
-    runner = offline_runner(account, @beyond_window_days)
+    runner = offline_runner(account, @beyond_window_hours)
 
     assert :ok = InactiveRunnerRetention.execute([])
 
@@ -95,7 +95,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     account = Fixtures.Accounts.create_account()
 
     Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_days: @window_days
+      runner_inactive_retention_hours: @window_hours
     })
 
     assert :ok = InactiveRunnerRetention.execute([])

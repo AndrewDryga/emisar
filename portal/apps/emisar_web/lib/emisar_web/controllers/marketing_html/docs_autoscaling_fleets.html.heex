@@ -203,15 +203,15 @@ curl -sSL https://emisar.dev/install.sh \
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To solve this turn on retention. On the <strong>Runners</strong>
         page, an owner or admin sets <strong>Remove runners inactive for</strong>
-        to a window; a daily sweep then deletes any runner disconnected longer than that. Connected
+        to a window; an hourly sweep then deletes any runner disconnected longer than that. Connected
         and disabled runners are never touched, and a host that comes back re-enrolls as a fresh
         runner. It's off by default — pick a window comfortably longer than your longest expected
         blip (a rolling deploy, a zone outage) so a brief disconnect isn't mistaken for a dead host,
         but short enough that dead hosts don't linger in the fleet.
       </p>
-      <.docs_callout kind={:note} title="The sweep is daily.">
+      <.docs_callout kind={:note} title="The sweep is hourly.">
         <p>
-          Retention is day-granular, so a high-churn group still carries up to a day of terminated
+          A high-churn group can still carry terminated
           runners against its limit before the next sweep. If that crowds your plan, size the limit
           for the churn, or trim it sooner with <strong>Clean up now</strong>
           on the same page. A removed runner's audit history is kept either way.

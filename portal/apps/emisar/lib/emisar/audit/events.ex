@@ -788,10 +788,10 @@ defmodule Emisar.Audit.Events do
 
   @doc """
   Runner retention removed runners cleanly offline past the account's window —
-  the daily sweep (system actor) or the runners page "Clean up now" (operator
+  the hourly sweep (system actor) or the runners page "Clean up now" (operator
   actor). One event per sweep that removed anything.
   """
-  def runner_retention_swept(%Subject{account: %{id: account_id}} = subject, runners, days)
+  def runner_retention_swept(%Subject{account: %{id: account_id}} = subject, runners, hours)
       when is_list(runners) do
     Audit.changeset(
       account_id,
@@ -800,25 +800,25 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "runner_fleet",
           target_label: "Runners",
-          payload: runner_retention_payload(runners, days)
+          payload: runner_retention_payload(runners, hours)
         ]
     )
   end
 
-  def runner_retention_swept(account_id, runners, days)
+  def runner_retention_swept(account_id, runners, hours)
       when is_binary(account_id) and is_list(runners) do
     Audit.changeset(account_id, "runner.retention_swept",
       actor_kind: "system",
       target_kind: "runner_fleet",
       target_label: "Runners",
-      payload: runner_retention_payload(runners, days)
+      payload: runner_retention_payload(runners, hours)
     )
   end
 
-  defp runner_retention_payload(runners, days) do
+  defp runner_retention_payload(runners, hours) do
     %{
       count: length(runners),
-      inactive_days: days,
+      inactive_hours: hours,
       runners: runners |> Enum.take(100) |> Enum.map(& &1.name)
     }
   end

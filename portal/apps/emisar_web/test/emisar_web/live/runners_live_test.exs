@@ -374,13 +374,45 @@ defmodule EmisarWeb.RunnersLiveTest do
       html =
         lv
         |> element("#runner-retention-form")
-        |> render_change(%{"days" => "30"})
+        |> render_change(%{"hours" => "720"})
 
-      assert html =~ "Automatic cleanup on — runners inactive for 30 days are removed daily."
-      assert has_element?(lv, ~s(#runners-cleanup option[value="30"][selected]))
+      assert html =~
+               "Automatic cleanup on — runners inactive for 30 days are removed by the hourly sweep."
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value="720"][selected]))
     end
 
-    test "the 1-day window is offered and reads in the singular", %{conn: conn} do
+    test "the 1-hour and 6-hour windows are offered and read correctly", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value="1"]))
+      assert has_element?(lv, ~s(#runners-cleanup option[value="6"]))
+
+      html =
+        lv
+        |> element("#runner-retention-form")
+        |> render_change(%{"hours" => "1"})
+
+      assert html =~
+               "Automatic cleanup on — runners inactive for 1 hour are removed by the hourly sweep."
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value="1"][selected]))
+
+      html =
+        lv
+        |> element("#runner-retention-form")
+        |> render_change(%{"hours" => "6"})
+
+      assert html =~
+               "Automatic cleanup on — runners inactive for 6 hours are removed by the hourly sweep."
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value="6"][selected]))
+    end
+
+    test "the 1-day window still reads in the singular", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
@@ -389,15 +421,17 @@ defmodule EmisarWeb.RunnersLiveTest do
       html =
         lv
         |> element("#runner-retention-form")
-        |> render_change(%{"days" => "1"})
+        |> render_change(%{"hours" => "24"})
 
-      assert html =~ "Automatic cleanup on — runners inactive for 1 day are removed daily."
-      assert has_element?(lv, ~s(#runners-cleanup option[value="1"][selected]))
+      assert html =~
+               "Automatic cleanup on — runners inactive for 1 day are removed by the hourly sweep."
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value="24"][selected]))
     end
 
     test "Clean up now soft-deletes runners offline past the window", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
       Fixtures.Runners.create_runner(account_id: account.id, name: "live-host", connected?: true)
       _offline = offline_runner!(account, "stale-host")
 
@@ -422,7 +456,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "a viewer sees the read-only note and crafted events are denied", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
       offline = offline_runner!(account, "stale-host")
 
       viewer = Fixtures.Users.create_user()
@@ -440,7 +474,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Owner/admin only"
       refute has_element?(lv, "#runner-retention-form")
 
-      assert render_click(lv, "set_runner_retention", %{"days" => "7"}) =~
+      assert render_click(lv, "set_runner_retention", %{"hours" => "168"}) =~
                "Only owners and admins can change this setting."
 
       assert render_click(lv, "cleanup_inactive_now", %{}) =~

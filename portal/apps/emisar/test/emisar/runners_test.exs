@@ -841,13 +841,13 @@ defmodule Emisar.RunnersTest do
   end
 
   # A never-touched-since runner: created offline, then durably disconnected
-  # `days_ago` days back — the exact shape the inactivity sweep targets. `attrs`
+  # `hours_ago` hours back — the exact shape the inactivity sweep targets. `attrs`
   # (e.g. `group:`) let a scope test place the runner inside/outside an ACL.
-  defp offline_runner(account, days_ago, attrs \\ []) do
+  defp offline_runner(account, hours_ago, attrs \\ []) do
     runner =
       Fixtures.Runners.create_runner([account_id: account.id, connected?: false] ++ attrs)
 
-    at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
+    at = DateTime.add(DateTime.utc_now(), -hours_ago * 3_600, :second)
     Fixtures.Runners.mark_disconnected_at(runner, at)
   end
 
@@ -868,8 +868,8 @@ defmodule Emisar.RunnersTest do
       account: account,
       subject: subject
     } do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
-      runner = offline_runner(account, 40)
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 1})
+      runner = offline_runner(account, 2)
 
       assert {:ok, 1} = Runners.sweep_inactive_runners(subject)
       assert is_nil(Runners.peek_runner_by_id(runner.id))
@@ -877,12 +877,12 @@ defmodule Emisar.RunnersTest do
       assert [marker] = retention_markers(account.id)
       assert marker.actor_kind == "user"
       assert marker.payload["count"] == 1
-      assert marker.payload["inactive_days"] == 30
+      assert marker.payload["inactive_hours"] == 1
     end
 
     test "keeps runners offline within the window", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
-      runner = offline_runner(account, 10)
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 6})
+      runner = offline_runner(account, 3)
 
       assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
       assert Repo.reload(runner)
@@ -893,22 +893,22 @@ defmodule Emisar.RunnersTest do
       account: account,
       subject: subject
     } do
-      _runner = offline_runner(account, 40)
+      _runner = offline_runner(account, 960)
 
       assert {:error, :retention_disabled} = Runners.sweep_inactive_runners(subject)
     end
 
     test "a viewer (no manage_runners) is refused", %{account: account} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
 
       assert {:error, :unauthorized} =
                Runners.sweep_inactive_runners(viewer_subject_for(account))
     end
 
     test "only sweeps the subject's own account", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
       {other_account, _u, _s} = account_with_owner_subject()
-      other = offline_runner(other_account, 40)
+      other = offline_runner(other_account, 960)
 
       assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
       assert Repo.reload(other)
@@ -917,9 +917,9 @@ defmodule Emisar.RunnersTest do
     test "a runner-scope-restricted admin sweeps only in-scope inactive runners", %{
       account: account
     } do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_days: 30})
-      in_scope = offline_runner(account, 40, group: "db")
-      out_of_scope = offline_runner(account, 40, group: "app")
+      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      in_scope = offline_runner(account, 960, group: "db")
+      out_of_scope = offline_runner(account, 960, group: "app")
 
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, db_only} = RunnerAccess.restricted(["db"], [])
@@ -945,29 +945,29 @@ defmodule Emisar.RunnersTest do
     } do
       # Reconnected: a later last_connected_at means it is not durably
       # disconnected, so an old last_disconnected_at must not sweep it.
-      runner = offline_runner(account, 40)
+      runner = offline_runner(account, 960)
       {:ok, _reconnected} = Runners.connect_runner(runner)
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
       assert Repo.reload(runner)
     end
 
     test "skips a never-connected (pending) runner", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
       assert Repo.reload(runner)
     end
 
     test "skips a disabled runner offline past the cutoff", %{account: account} do
-      runner = account |> offline_runner(40) |> Fixtures.Runners.disable_runner()
+      runner = account |> offline_runner(960) |> Fixtures.Runners.disable_runner()
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
       assert Repo.reload(runner)
     end
 
     test "returns 0 and writes no marker when nothing matches", %{account: account} do
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 30)
+      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
       assert retention_markers(account.id) == []
     end
   end
