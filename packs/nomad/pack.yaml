@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.2.4
+version: 0.2.5
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
   horizontally + vertically, dispatch, revert, promote, stop + start again,
@@ -12,7 +12,8 @@ description: >
   resource read + set, allocation introspection + health checks + filesystem
   ls/stat (metadata only, never file contents) + fixed in-container Redis
   probes (ping/info via alloc exec, no freeform command) + restart + signal +
-  stop, job-spec-declared actions (run a command the job author defined),
+  stop, bounded job health snapshots, job-spec-declared actions (run a command
+  the job author defined),
   native service discovery (no Consul) — the high-use reads take optional
   namespace/region for cross-namespace incident debugging — node fleet
   management (drain, eligibility, purge), node pools, evaluation + deployment
@@ -28,6 +29,7 @@ requires:
     - linux
   binaries:
     - nomad
+    - jq
 
 # `emisar pack suggest` detection — default process names / ports.
 detect:
@@ -67,7 +69,7 @@ setup:
   notes:
     - "Any NOMAD_* env you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth/TLS)."
     - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, alloc-exec for job_action_run, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
-    - "The job_resources, task_resources_set, job_list_by_meta, and alloc_list_by_meta actions also require jq on the runner host (they project the API JSON locally)."
+    - "API aggregation and projection actions use jq on the runner host; it is a declared pack requirement."
     - "The API-read actions use `nomad operator api` (Nomad CLI 1.4+). Newer verbs degrade with a plain CLI error on older clusters: node pools need Nomad 1.6+, job-declared actions 1.7+, job_start 1.9+."
   verify: nomad.agent_info
 
@@ -107,6 +109,7 @@ actions:
   - actions/job_action_run.yaml
   - actions/job_revert.yaml
   - actions/job_resources.yaml
+  - actions/job_health_snapshot.yaml
   - actions/job_scale.yaml
   - actions/task_resources_set.yaml
   - actions/job_promote.yaml
