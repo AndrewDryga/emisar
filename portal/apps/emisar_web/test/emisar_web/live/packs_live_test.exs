@@ -1141,6 +1141,47 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
+    test "invalid pack contents explain why retrying trust cannot work", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.invalid",
+              "pack_id" => "acme-tools",
+              "title" => String.duplicate("t", 161),
+              "kind" => "exec",
+              "risk" => "low",
+              "description" => "Inspect state.",
+              "args" => []
+            }
+          ],
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("invalid")
+            }
+          }
+        })
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      {:ok, [pack_version], _meta} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      html = render_click(lv, "trust", %{"id" => pack_version.id})
+
+      assert html =~
+               "Pack contents are invalid — fix the pack and have the runner advertise it again."
+    end
+
     test "a viewer's crafted trust event is denied", %{account: account} do
       # (crafted form) — same `manage_catalog` gate, laxest role.
       pack_version = observe_pending_pack!(account)

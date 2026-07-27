@@ -335,6 +335,14 @@ defmodule EmisarWeb.PacksLive do
       {:error, {:descriptor_mismatch, action_id, runner_names}} ->
         {:noreply, put_flash(socket, :error, descriptor_mismatch_flash(action_id, runner_names))}
 
+      {:error, :invalid_manifest} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Pack contents are invalid — fix the pack and have the runner advertise it again."
+         )}
+
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not trust pack — try again.")}
     end

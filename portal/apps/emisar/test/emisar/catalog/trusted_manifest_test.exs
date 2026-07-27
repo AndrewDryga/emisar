@@ -62,6 +62,37 @@ defmodule Emisar.Catalog.TrustedManifestTest do
     assert {:ok, _manifest} = TrustedManifest.from_runner_actions([base_action, base_action])
   end
 
+  test "the action cap counts distinct ids, not identical observations from replacement runners" do
+    actions =
+      for index <- 1..30 do
+        %RunnerAction{
+          action_id: "custom.action_#{index}",
+          title: "Action #{index}",
+          description: "Inspect state.",
+          kind: :exec,
+          risk: :low,
+          side_effects: [],
+          args_schema: %{"args" => []},
+          examples: [],
+          search_terms: []
+        }
+      end
+
+    observations = actions |> List.duplicate(3) |> List.flatten()
+
+    assert {:ok, %{"actions" => trusted_actions}} =
+             TrustedManifest.from_runner_actions(observations)
+
+    assert map_size(trusted_actions) == 30
+
+    overflow =
+      for index <- 1..81 do
+        %{hd(actions) | action_id: "custom.overflow_#{index}"}
+      end
+
+    assert {:error, :invalid_manifest} = TrustedManifest.from_runner_actions(overflow)
+  end
+
   test "conflicting duplicate catalog actions stay plain :invalid_manifest" do
     action = %{
       "id" => "test.status",

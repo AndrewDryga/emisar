@@ -108,8 +108,7 @@ defmodule Emisar.Catalog.TrustedManifest do
   def descriptor_fields, do: @descriptor_fields
 
   defp build(actions, descriptor_fun) do
-    with true <- length(actions) <= @max_actions,
-         {:ok, descriptors} <- build_descriptors(actions, descriptor_fun),
+    with {:ok, descriptors} <- build_descriptors(actions, descriptor_fun),
          manifest = %{"schema_version" => @schema_version, "actions" => descriptors},
          {:ok, _manifest} <- validate(manifest) do
       {:ok, manifest}
