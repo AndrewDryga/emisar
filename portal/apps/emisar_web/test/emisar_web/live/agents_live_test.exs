@@ -193,11 +193,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, ~s(select[name="status"] option[value="live"]), "Live")
       refute html =~ ">Active</option>"
 
-      # Part a — the custom-key form's purpose copy appears once the operator
-      # opens the "custom" tab (on the CONNECT page).
+      # Part a — the custom-key form appears as a numbered create step once the
+      # operator opens the "custom" tab (on the CONNECT page).
       {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
-      custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
-      assert custom =~ "Create a key by hand"
+      render_click(connect_lv, "select_client", %{"client" => "custom"})
+      assert has_element?(connect_lv, "#custom-key-create-step", "Create a key")
+      assert has_element?(connect_lv, "#api_key_form")
     end
 
     test "the default status filter is the baseline — no clear-× until moved off it",
@@ -657,9 +658,21 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert render(lv) =~ "still typing"
     end
 
-    # A custom create persists an MCP key (`kind: :mcp`), resets the form, and
-    # reloads the list so the new key is visible. The one-time secret reveal is
-    # covered separately below ("custom create reveals the raw secret once").
+    test "custom flow begins with a complete create step", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      assert has_element?(lv, "#custom-key-create-step", "Create a key")
+      assert has_element?(lv, "#api_key_form")
+      refute has_element?(lv, "#custom-key-save-step")
+      refute has_element?(lv, "#agent-connect-step")
+    end
+
+    # A custom create persists an MCP key (`kind: :mcp`) and reloads the list so
+    # the new key is visible. The completed create state is covered separately
+    # below ("custom create reveals the raw secret once").
     test "custom create persists an MCP key and reloads the list", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
@@ -679,11 +692,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert key.kind == :mcp
       assert is_nil(key.auto_generated_at)
 
-      # It's a visible (non-auto) key → shows in the default live list, and the
-      # form reset (the name field is blank again).
+      # It's a visible (non-auto) key → shows in the default live list.
       assert html =~ "my-custom-bot"
       assert {:ok, [_], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
-      refute html =~ ~s(value="my-custom-bot")
     end
 
     # a `datetime-local` expiry on the custom-create form
@@ -710,9 +721,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
     end
 
-    # The custom tab shows the one-time `@quick_secret` reveal after a create,
-    # the same as the per-client tabs: "New key minted" + the emk- secret in the
-    # DOM, copyable before the operator leaves the page.
+    # A completed custom create replaces the form with a numbered save step,
+    # then advances to the connect step. The raw secret stays copyable before
+    # the operator leaves the page.
     test "custom create reveals the raw secret once", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
@@ -726,6 +737,11 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert html =~ "New key minted"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
+      assert has_element?(lv, "#custom-key-save-step", "Save your key")
+      assert has_element?(lv, "#custom-secret")
+      refute has_element?(lv, "#custom-key-create-step")
+      refute has_element?(lv, "#api_key_form")
+      assert has_element?(lv, "#agent-connect-step", "Connect your agent")
     end
 
     test "rotating a key from its row mints a successor and reveals the new secret",

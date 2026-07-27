@@ -1485,30 +1485,40 @@ defmodule EmisarWeb.AgentsLive do
                480px of reserved dead space buried the agents list. --%>
             <span></span>
           <% @selected_client == "custom" -> %>
-            <div class="mt-10 space-y-6">
+            <div id="custom-key-flow" class="mt-10">
               <%= if @quick_secret do %>
-                <%!-- NEUTRAL, not amber — the copy-now caution is a permanent
-                     property of a fresh mint, not an exceptional state (the
-                     install-wizard grammar); amber stays reserved for a state
-                     that needs the operator's attention. --%>
-                <.event_block icon="hero-key" tone={:neutral} title="New key minted — it's live now">
-                  <:body>
-                    Copy the bearer token below before you leave this page; we won't show it
-                    again. If you lose it, create another key.
-                    <.doc_link href={~p"/docs/keys"}>MCP key docs</.doc_link>
-                  </:body>
-                </.event_block>
+                <section id="custom-key-save-step" class="space-y-6">
+                  <.step_header step={1} title="Save your key" />
+                  <%!-- NEUTRAL, not amber — the copy-now caution is a permanent
+                       property of a fresh mint, not an exceptional state (the
+                       install-wizard grammar); amber stays reserved for a state
+                       that needs the operator's attention. --%>
+                  <.event_block
+                    icon="hero-key"
+                    tone={:neutral}
+                    title="New key minted — it's live now"
+                  >
+                    <:body>
+                      Copy the bearer token below before you leave this page; we won't show it
+                      again. If you lose it, create another key.
+                      <.doc_link href={~p"/docs/keys"}>MCP key docs</.doc_link>
+                    </:body>
+                  </.event_block>
 
-                <.code_panel
-                  id="custom-secret"
-                  label="API key (bearer token)"
-                  copy
-                  copy_label="Copy key"
-                  code={@quick_secret}
-                />
+                  <.code_panel
+                    id="custom-secret"
+                    label="API key (bearer token)"
+                    copy
+                    copy_label="Copy key"
+                    code={@quick_secret}
+                  />
+                </section>
+              <% else %>
+                <section id="custom-key-create-step" class="space-y-6">
+                  <.step_header step={1} title="Create a key" />
+                  <.custom_key_panel form={@form} />
+                </section>
               <% end %>
-
-              <.custom_key_panel form={@form} />
             </div>
           <% @config && @config.kind == :remote -> %>
             <div class="mt-10 space-y-8">
@@ -1596,7 +1606,11 @@ defmodule EmisarWeb.AgentsLive do
              the quiet dot-led wait line (wait-room grammar) — and the brand
              connected block takes over on the first call (instant via the
              broadcast, tick as the fallback). --%>
-        <section :if={@quick_key_id || local_client?(@selected_client)} class="mt-8">
+        <section
+          :if={@quick_key_id || local_client?(@selected_client)}
+          id="agent-connect-step"
+          class="mt-8"
+        >
           <.step_header step={2} title="Connect your agent">
             <:subtitle>
               start {client_label(@selected_client)} — its first call lands it here
@@ -1898,8 +1912,8 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <div class="space-y-5">
       <p class="text-sm leading-relaxed text-zinc-400">
-        Create a key by hand — for an agent that isn't one of the presets above, or when
-        you want to give it your own name and expiry date.
+        Use a custom key for an agent that isn't one of the presets above, or when you
+        want to set its name and expiry date.
       </p>
 
       <.simple_form
