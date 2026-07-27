@@ -44,6 +44,13 @@ coop tasks done <id>
 coop tasks done <id>        # the class this touched was never judged
 ```
 
+**One green run is one sample.** A suite this shape is flaky until shown
+otherwise, so a single green CI run is evidence, not proof. Re-run the job that
+failed before merging on its recovery — zookeeper went green, then failed a
+re-run of the same commit, then failed again on a third fix. Three readiness
+fixes each moved its failure to a different case before the honest answer turned
+out to be that the pack keeps its slower readiness.
+
 **How it's enforced.** `./run test packs` ends a passing run by naming what this
 host could not decide — file ownership, AppArmor, startup races — and pointing
 at the Linux matrix. It reports the limits rather than failing, because

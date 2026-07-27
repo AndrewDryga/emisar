@@ -12,7 +12,12 @@ services:
       # prints Mode only once the server is actually serving, over the bridge
       # every case dials.
       test: ["CMD-SHELL", "echo srvr | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q Mode"]
+      # This pack opts out of fast readiness, deliberately. A four-letter word
+      # against a freshly-serving node intermittently comes back empty — three
+      # runs failed one random case each (ruok, conf, wchs) while srvr answered
+      # in the same run, so readiness is not the lever and a stronger probe did
+      # not help. The interval that was green for months starts cases about ten
+      # seconds in, which is the margin this pack needs. Eight seconds on one
+      # job is not worth a flaky matrix; do not "optimize" this back.
       interval: 5s
-      start_period: 30s
-      start_interval: 1s
       retries: 10
