@@ -2,14 +2,15 @@ schema_version: 1
 
 id: pure-flasharray
 name: Pure Storage FlashArray (Purity//FA REST)
-version: 0.1.5
+version: 0.1.6
 description: >
   Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
   2.x: array identity / capacity / performance, alerts, controller and
-  hardware / drive health, volumes and per-volume space, the host -> volume
-  -> LUN connection map, host and target-port identities, per-controller
-  network interface state, and replication / array-connection status. Drives
-  a remote array via curl; every call is a GET.
+  hardware / drive health, volumes and per-volume space, protection groups,
+  snapshots and membership, the host -> volume -> LUN connection map, host
+  and target-port identities, per-controller network interface state, and
+  replication / array-connection status. Drives a remote array via curl;
+  every call is a GET.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -18,6 +19,7 @@ requires:
     - linux
   binaries:
     - curl
+    - jq
 
 # No detect block: the array is reached remotely over HTTPS, so there is no
 # local signal on the runner host to suggest this pack on.
@@ -66,3 +68,7 @@ actions:
   - actions/ports.yaml
   - actions/network_interfaces.yaml
   - actions/array_connections.yaml
+  - actions/protection_groups.yaml
+  - actions/default_protection.yaml
+  - actions/snapshots.yaml
+  - actions/pgroup_members.yaml

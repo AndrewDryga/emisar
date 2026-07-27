@@ -1,0 +1,46 @@
+schema_version: 1
+id: pure.protection_groups
+title: List FlashArray protection groups
+kind: script
+risk: low
+description: >
+  List protection groups and their snapshot, replication, and retention
+  configuration. Results are bounded to one page and include the API cursor
+  when another page is available.
+side_effects:
+  - One read-only HTTP GET to /protection-groups.
+  - Read-only - never creates, modifies, destroys, or eradicates a group.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum protection groups in this page.
+    validation:
+      min: 1
+      max: 1000
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation_token from a prior result.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 2048
+execution:
+  script:
+    path: scripts/purelist.sh
+    interpreter: /bin/sh
+  argv:
+    - protection-groups
+    - "{{ args.limit }}"
+    - "{{ args.page_cursor }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: First page of protection groups
+    args: {}
