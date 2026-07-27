@@ -443,6 +443,13 @@ func (a *App) preparePackTestPlan(
 		}
 	}
 
+	// Pull once, here, rather than letting the first wave of cases race a pull
+	// while their SUTs start. That wave was taking three times as long as the
+	// rest and starving servers that boot on a timer.
+	if err := a.run(ctx, a.Root, env, "docker", append(append([]string{}, compose...), "pull", "--quiet", "--policy", "missing")...); err != nil {
+		return "", fmt.Errorf("pull pack images: %w", err)
+	}
+
 	// Only the project name and the runner identity vary between a plan's
 	// cases, and neither reaches image resolution, so resolving here spares
 	// every case a second full parse of both Compose files.
