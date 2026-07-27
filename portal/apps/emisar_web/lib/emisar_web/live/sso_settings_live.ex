@@ -2283,7 +2283,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp scim_location_hint(:jumpcloud) do
-    "on the same JumpCloud app — add a \"Custom SCIM\" identity-management config, set the Base URL to the value above and paste the `ems-` token as the Token Key (Bearer)"
+    "on a JumpCloud application's Provisioning tab — with OIDC login JumpCloud documents a SEPARATE connector for provisioning, so this is usually its own app. Set the Base URL to the value above and paste the `ems-` token as the Token, then Test Connection → Activate (their form discards the config if you press Save instead)"
+  end
+
+  # Keycloak has no outbound SCIM: its own SCIM support (26.6+) makes Keycloak a
+  # SCIM *server* others provision INTO, which is the opposite direction. Saying
+  # "look in your provider's SCIM settings" sends an admin hunting for a screen
+  # that doesn't exist, so name the gap and the way around it.
+  defp scim_location_hint(:keycloak) do
+    "through a SCIM connector — Keycloak provisions no users outbound (its own SCIM API is an inbound one, for managing Keycloak's own users), so a third-party Keycloak extension or an IdP in front of it has to push the lifecycle here. Without one, members are provisioned on first sign-in and never deprovisioned"
   end
 
   defp scim_location_hint(:google_workspace) do

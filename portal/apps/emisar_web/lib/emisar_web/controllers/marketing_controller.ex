@@ -88,7 +88,7 @@ defmodule EmisarWeb.MarketingController do
      "Author versioned runbooks in a form editor, target runners or groups per step, dispatch with per-step policy gating and halt-on-failure — and let your LLM read and run them over MCP."},
     {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
      "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
-    {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on",
+    {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on (SSO)",
      "OIDC single sign-on for emisar on Team and Enterprise — sign in with Google Workspace, Okta, Keycloak, or any compliant provider; identities are bound by issuer + subject, never email."},
     {"/docs/scim", :docs_scim, :docs_scim, "Directory sync (SCIM)",
      "SCIM 2.0 directory sync for emisar on Enterprise — provision people from Okta, Entra, or JumpCloud, map groups to roles, and revoke access automatically when they're offboarded in your IdP."},

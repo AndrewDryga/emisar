@@ -85,6 +85,12 @@ const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-c
 // clickSSOConnection opens an SSO connection's detail page from the team page.
 const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`
 
+// openIdPGuide unfolds the connection's "Point your IdP at this connection"
+// disclosure. It is a <details>, not a button, so clickText can't reach it —
+// set `open` directly. The guide IS the setup instruction the docs page is
+// teaching, so a shot of it collapsed shows the reader nothing.
+const openIdPGuide = `(()=>{const s=[...document.querySelectorAll('summary')].find(x=>x.textContent.trim()==='Point your IdP at this connection');if(s&&s.parentElement){s.parentElement.open=true;return true}return false})()`
+
 // docsShots — one entry per docs screenshot, each cropped to the one feature
 // its page teaches, at docsWidth unless the content genuinely needs more room.
 var docsShots = []shot{
@@ -109,7 +115,12 @@ var docsShots = []shot{
 	// Runbook editor: open a seeded runbook and crop to its ordered, gated steps —
 	// what a runbook IS, not two list rows.
 	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
-	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	// The two halves of group→role sync: the mappings an admin authors, and the
+	// synced roster they land on. Both are seeded directory state (seeds.exs maps
+	// two of three IdP groups, deliberately leaving one unmapped).
+	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Group → role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
+	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
 
 // keycloakShots are the customer-visible steps in Keycloak's OIDC client flow.
@@ -635,7 +646,7 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 		return nil, err
 	}
 	if err := chromedp.Run(session.Context,
-		chromedp.SendKeys(`[data-testid="redirectUris0"]`, "https://emisar.example/sign_in/sso/callback", chromedp.ByQuery),
+		chromedp.SendKeys(`[data-testid="redirectUris0"]`, "https://emisar.dev/sign_in/sso/callback", chromedp.ByQuery),
 		chromedp.Evaluate(`document.activeElement?.blur()`, nil)); err != nil {
 		return nil, err
 	}

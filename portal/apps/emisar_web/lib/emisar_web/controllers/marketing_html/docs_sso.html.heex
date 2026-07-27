@@ -6,6 +6,7 @@
       current="sso"
       toc={[
         {"sso-login", "Setting up SSO login"},
+        {"okta", "Okta setup"},
         {"keycloak", "Keycloak setup"},
         {"security-notes", "Security notes"}
       ]}
@@ -31,8 +32,8 @@
       <.docs_callout kind={:note} title="Where this flow stands">
         <p>
           emisar's OIDC authorization-code and just-in-time provisioning flow is verified end to
-          end against Keycloak 26.7. Hosted Okta and JumpCloud tenant certification is still in
-          progress.
+          end against Keycloak 26.7, and the Okta steps below were walked on a live Okta org —
+          every screenshot is that console. JumpCloud tenant certification is still in progress.
         </p>
       </.docs_callout>
 
@@ -187,6 +188,119 @@
         </li>
       </ol>
 
+      <.docs_h2 id="okta">Okta setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Create one OIDC web app in Okta, then connect it to emisar. You need an Okta administrator
+        and an emisar owner or admin. Keep
+        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
+        open so you can copy emisar's callback URL.
+      </p>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create an OIDC web application.</p>
+            <p class="mt-1.5">
+              In the Okta Admin Console go to <strong class="text-zinc-200">Applications → Applications → Create App Integration</strong>. Choose
+              <strong class="text-zinc-200">OIDC - OpenID Connect</strong>
+              as the sign-in method, then <strong class="text-zinc-200">Web Application</strong>
+              as the application type — that's the confidential client emisar needs, because it
+              authenticates with a client secret.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-oidc-create.webp"
+              title="Okta Admin Console · Create a new app integration"
+              caption="Pick OIDC, and the Application type choices appear below it — emisar is a Web Application."
+              alt="Okta's Create a new app integration dialog with OIDC - OpenID Connect selected among the sign-in methods, which reveals an Application type section below where Web Application is selected rather than Single-Page or Native Application."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Register emisar's callback as the only redirect.
+            </p>
+            <p class="mt-1.5">
+              Name the app, then paste emisar's callback into
+              <strong class="text-zinc-200">Sign-in redirect URIs</strong>
+              — it's
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+              on your emisar host, and emisar shows it with a copy button on the Add provider page.
+              Make it the only entry and leave
+              <strong class="text-zinc-200">Allow wildcard *</strong>
+              off; a wildcard redirect is an open-redirect risk. Leave
+              <strong class="text-zinc-200">Authorization Code</strong>
+              ticked. For assignment,
+              <strong class="text-zinc-200">Skip group assignment for now</strong>
+              is the right default — emisar decides who gets what through its own group&nbsp;→&nbsp;role
+              mapping.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-oidc-settings.webp"
+              title="Okta Admin Console · New Web App Integration"
+              caption="One sign-in redirect URI, wildcard off, Authorization Code. Clear the sign-out box — emisar doesn't use it."
+              alt="Okta's New Web App Integration form: app integration name emisar, Authorization Code ticked under Core grants, https://emisar.dev/sign_in/sso/callback as the only sign-in redirect URI, the allow-wildcard box unchecked, and an empty sign-out redirect URI field."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Copy the client credentials.</p>
+            <p class="mt-1.5">
+              Saving lands you on the app's General tab with its
+              <strong class="text-zinc-200">Client ID</strong>
+              and <strong class="text-zinc-200">Client secret</strong>. You need both, plus your <strong class="text-zinc-200">issuer</strong>.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-oidc-credentials.webp"
+              title="Okta Admin Console · Client Credentials"
+              caption="Keep Client authentication on Client secret — emisar is a confidential client and replays that secret to your IdP."
+              alt="The Okta app's General tab showing Client Credentials: the Client ID with a copy button, Client authentication set to Client secret rather than public key, PKCE unchecked, and a masked client secret with its creation date and Active status."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            4
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
+            <p class="mt-1.5">
+              Back in emisar, pick the <strong class="text-zinc-200">Okta</strong>
+              provider type and paste the client ID and secret. For the issuer, use your
+              <strong class="text-zinc-200">org</strong>
+              authorization server — that's your Okta org URL itself
+              (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://your-org.okta.com</code>,
+              no <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/oauth2/…</code>
+              path). Leave
+              the identifier claim at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <.docs_callout kind={:warn} title="Use the org authorization server, not a custom one.">
+        <p>
+          A <strong class="text-zinc-200">custom</strong>
+          authorization server lets an Okta admin rewrite the subject claim, and its tokens can carry
+          an email as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          instead of the Okta user id. The org server keeps
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          equal to the Okta user id — which is exactly what
+          <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">directory sync</.link>
+          provisions on, so login and provisioning converge on one identity instead of creating two.
+        </p>
+      </.docs_callout>
+
       <.docs_h2 id="keycloak">Keycloak setup</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Create one confidential Keycloak client, then connect it to emisar. You need Keycloak
@@ -266,7 +380,7 @@
               src="/images/docs/sso/keycloak-client-redirect.webp"
               title="Keycloak Admin Console · Login settings"
               caption="The screenshot uses a reserved example host; paste the callback from your emisar form verbatim."
-              alt="Keycloak's Login settings step with https://emisar.example/sign_in/sso/callback entered as the sole Valid redirect URI and no wildcard."
+              alt="Keycloak's Login settings step with https://emisar.dev/sign_in/sso/callback entered as the sole Valid redirect URI and no wildcard."
             />
           </div>
         </li>

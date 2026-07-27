@@ -6,6 +6,7 @@
       current="scim"
       toc={[
         {"enable", "Enabling directory sync"},
+        {"okta", "Okta setup"},
         {"group-role", "Group → role mapping"},
         {"security-notes", "Security notes"}
       ]}
@@ -32,7 +33,8 @@
         <p>
           emisar speaks standards-based SCIM 2.0, and the full provision / update / deactivate /
           reactivate lifecycle plus group&nbsp;→&nbsp;role recompute is verified end to end against
-          a live standards IdP.
+          a live standards IdP. The Okta setup below is verified against a real Okta org — every
+          screenshot is that console, and provisioning a user through it lands them in emisar.
         </p>
       </.docs_callout>
 
@@ -47,8 +49,8 @@
       <.docs_screenshot
         src="/images/docs/sso/sso-directory-sync.webp"
         title="emisar console · Directory sync (SCIM)"
-        caption="A configured connection: token rotation, the SCIM base URL, and the collapsible IdP setup guide."
-        alt="The Directory sync (SCIM) panel on a configured connection: an enabled badge, Rotate token and Disable buttons, the SCIM base URL with a copy button, and a collapsible 'Point your IdP at this connection' setup guide."
+        caption="A configured connection: the SCIM base URL to copy, token rotation, and the three steps for pointing your IdP at it."
+        alt="The Directory sync (SCIM) panel on a configured connection: an enabled badge, Rotate token and Disable buttons, the SCIM base URL with a copy button, and the expanded 'Point your IdP at this connection' guide — enable SCIM provisioning at your provider, set that base URL as the connector's endpoint and paste the bearer token as its API token, and map the SCIM externalId to the same value the OIDC sub claim carries."
       />
 
       <ol class="mt-8 space-y-6">
@@ -101,9 +103,11 @@
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
               header. Enable Create / Update / Deactivate. The connection's
               <strong class="text-zinc-200">"Point your IdP at this connection"</strong>
-              guide names the per-provider specifics — for Okta, SCIM lives in a <em>separate</em>
-              app (the OIDC login app can't do SCIM); for JumpCloud it's a Custom SCIM config on the
-              same app.
+              guide names the per-provider specifics. Expect provisioning to live in its
+              <em>own</em>
+              app: Okta's OIDC login app can't do SCIM at all, JumpCloud documents a separate
+              connector alongside an OIDC login app, and an Entra app registration can't provision
+              either.
             </p>
           </div>
         </li>
@@ -118,11 +122,42 @@
             <p class="mt-1.5">
               Configure your IdP so the SCIM
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              is the same stable identifier as the connection's identifier claim (the OIDC <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>). Then a member's SSO
-              login and their synced directory record resolve to one emisar identity — no
-              email-matching anywhere. Okta and JumpCloud default both to the directory user id, so
-              this usually needs no change. If the two sides can't be configured to share an
-              identifier, that connection can't be reconciled this way.
+              carries the same stable identifier as the connection's identifier claim. Then a
+              member's SSO login and their synced directory record resolve to one emisar identity —
+              no email-matching anywhere. If the two sides can't be made to share an identifier,
+              that connection can't be reconciled this way.
+            </p>
+            <ul class="mt-2 space-y-2">
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-500">—</span>
+                <span>
+                  <strong class="text-zinc-200">Okta</strong>
+                  usually lines up untouched: it populates
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+                  with the Okta user id, and ID tokens from its <em>org</em>
+                  authorization server carry that same value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Okta documents
+                  that in examples rather than as a guarantee, and a custom authorization server
+                  lets an admin rewrite the subject claim.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-500">—</span>
+                <span>
+                  <strong class="text-zinc-200">Entra</strong>
+                  needs both sides changed: remap
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+                  from its default
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
+                  to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>, and set
+                  this connection's identifier claim to
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+                  — Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+                  is per-application, so the login app and the provisioning app would disagree.
+                </span>
+              </li>
+            </ul>
+            <p class="mt-2">
+              Whatever the provider, check both values against one real user before you roll out.
             </p>
           </div>
         </li>
@@ -155,6 +190,14 @@
           </span>
         </li>
       </ul>
+
+      <.docs_screenshot
+        src="/images/docs/sso/scim-synced-users.webp"
+        title="emisar console · Synced users"
+        caption="Once your IdP is connected, provisioned members appear here with the directory id they came from and the role their groups earned them."
+        alt="The Synced users list on a connection: four members provisioned over SCIM, each with a SCIM badge, the directory externalId they were provisioned under, when they last synced, a locked role chip showing the role their group mapping earned them, and a Suspend action."
+      />
+
       <.docs_callout kind={:warn} title="Using Google Workspace?">
         <p>
           Google Workspace is a first-class OIDC <em>login</em>
@@ -169,6 +212,142 @@
         </p>
       </.docs_callout>
 
+      <.docs_h2 id="okta">Okta setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The exact path, verified against a live Okta org. You need an Okta administrator and an
+        emisar owner or admin, with the connection's
+        <strong class="text-zinc-200">SCIM base URL</strong>
+        and <strong class="text-zinc-200">bearer token</strong>
+        from the steps above to hand.
+      </p>
+
+      <.docs_callout kind={:note} title="SCIM lives in its own Okta app">
+        <p>
+          Okta doesn't allow SCIM provisioning on an OIDC integration — so your sign-in app and your
+          provisioning app are two separate integrations. That's Okta's documented position, not an
+          emisar limitation. The provisioning app's own sign-on never has to work; it exists only to
+          carry the SCIM config.
+        </p>
+      </.docs_callout>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Add the SCIM 2.0 Header Auth app.</p>
+            <p class="mt-1.5">
+              In the Okta Admin Console go to
+              <strong class="text-zinc-200">Applications → Applications → Browse App Catalog</strong>
+              and search for <strong class="text-zinc-200">SCIM 2.0</strong>. Pick
+              <strong class="text-zinc-200">SCIM 2.0 Test App (Header Auth)</strong>
+              — Header Auth is the variant that sends the token the way emisar reads it — then <strong class="text-zinc-200">Add Integration</strong>. Name it something an
+              administrator will recognise later, take the defaults on the Sign-On tab, and finish.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-scim-catalog.webp"
+              title="Okta Admin Console · Browse App Integration Catalog"
+              caption="Four SCIM test apps share this name — take the 2.0 Header Auth one."
+              alt="Okta's Browse App Integration Catalog with SCIM 2.0 Test App typed into the search box, showing a typeahead list of SCIM 2.0 Test App (Basic Auth), SCIM 2.0 Test App (Header Auth), SCIM 2.0 Test App (OAuth Bearer Token), SCIM 1.1 Test App (Header Auth), and SCIM 1.1 Test App (Basic Auth)."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Point it at emisar and test the credentials.
+            </p>
+            <p class="mt-1.5">
+              On the app's <strong class="text-zinc-200">Provisioning</strong>
+              tab choose <strong class="text-zinc-200">Configure API Integration</strong>, tick <strong class="text-zinc-200">Enable API integration</strong>, and fill in the two
+              values emisar gave you: the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>, and the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
+              showed it — Okta sends it as a bare
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
+              header with no <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer</code>
+              keyword, and emisar accepts that because the
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ems-</code>
+              prefix makes it unambiguous. Then click
+              <strong class="text-zinc-200">Test API Credentials</strong>
+              before saving.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-scim-verified.webp"
+              title="Okta Admin Console · Test API Credentials"
+              caption="Okta calls emisar directly with the bearer, so a pass here means the credential and URL are both right."
+              alt="Okta's SCIM API integration form after a successful test: a green banner reading SCIM 2.0 Test App (Header Auth) was verified successfully, with Enable API integration ticked, the emisar SCIM base URL in the Base URL field, a masked API Token, and Import Groups enabled."
+            />
+            <p class="mt-4">
+              If it fails, it's the credential or the URL: a token that was truncated on the way
+              over, or a base URL missing its
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
+              suffix. emisar answers a bad bearer with a plain <em>"The SCIM bearer token is missing,
+              malformed, or not authorized"</em>, which Okta shows you verbatim — rotate the token in
+              emisar and paste the fresh one.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Turn on the lifecycle operations.</p>
+            <p class="mt-1.5">
+              Still under <strong class="text-zinc-200">Provisioning</strong>, open
+              <strong class="text-zinc-200">To App</strong>
+              → <strong class="text-zinc-200">Edit</strong>
+              and enable <strong class="text-zinc-200">Create Users</strong>, <strong class="text-zinc-200">Update User Attributes</strong>, and <strong class="text-zinc-200">Deactivate Users</strong>. Deactivate is the one that
+              makes offboarding automatic, and it covers reactivation too. Leave
+              <strong class="text-zinc-200">Sync Password</strong>
+              off — emisar has no passwords to sync.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-scim-to-app.webp"
+              title="Okta Admin Console · Provisioning to App"
+              caption="Without these three, the integration authenticates but never pushes anything."
+              alt="Okta's Provisioning to App settings in edit mode, listing Create Users, Update User Attributes, Deactivate Users and Sync Password, each with an Enable checkbox."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            4
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Assign people, then push groups.</p>
+            <p class="mt-1.5">
+              Assignment is what actually provisions someone:
+              <strong class="text-zinc-200">Assignments → Assign → Assign to People</strong>
+              (or to a group). Each assigned person appears in emisar under
+              <strong class="text-zinc-200">Synced users</strong>
+              at the connection's default role. To drive roles from directory groups, use the
+              app's own <strong class="text-zinc-200">Push Groups</strong>
+              tab — that's a separate tab, not part of the To App settings — and then map those
+              groups to roles in emisar, below.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <.docs_callout kind={:note} title="Okta lines up on identity by default.">
+        <p>
+          Okta sends the Okta user id as the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>, and ID tokens from
+          its <em>org</em>
+          authorization server carry the same value as
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          — so sign-in and directory sync converge on one emisar identity without extra mapping. Two
+          things break that: a <strong class="text-zinc-200">custom</strong>
+          authorization server, whose subject claim an admin can rewrite, and access tokens, whose
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          is often an email. Use the org authorization server, and check one real user before you
+          roll out.
+        </p>
+      </.docs_callout>
+
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
@@ -180,6 +359,13 @@
         sync</strong>
         — it stays a deliberate human assignment.
       </p>
+
+      <.docs_screenshot
+        src="/images/docs/sso/scim-group-role-mapping.webp"
+        title="emisar console · Group → role mapping"
+        caption="Each mapping names a directory group by its externalId and the role its members land at. A synced group you don't map leaves its members at the connection's default role."
+        alt="The Group to role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
+      />
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
