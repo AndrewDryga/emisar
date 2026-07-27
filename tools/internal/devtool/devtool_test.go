@@ -319,6 +319,32 @@ func TestPackTestRunnerImageTracksTheDockerfile(t *testing.T) {
 	}
 }
 
+func TestPackTestHostBlindSpots(t *testing.T) {
+	tests := []struct {
+		name     string
+		goos     string
+		dockerOS string
+		cores    int
+		want     int
+	}{
+		{name: "workstation", goos: "darwin", dockerOS: "Docker Desktop", cores: 12, want: 3},
+		{name: "Docker Desktop on Linux", goos: "linux", dockerOS: "Docker Desktop", cores: 4, want: 2},
+		{name: "roomy Linux host", goos: "linux", dockerOS: "Ubuntu 24.04.4 LTS", cores: 32, want: 1},
+		{name: "CI runner", goos: "linux", dockerOS: "Ubuntu 24.04.4 LTS", cores: 4, want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := packTestHostBlindSpots(test.goos, test.dockerOS, test.cores); len(got) != test.want {
+				t.Fatalf("blind spots = %v, want %d", got, test.want)
+			}
+		})
+	}
+	if notice := packTestVerdictNotice([]string{"file ownership"}); !strings.Contains(notice, "authority") ||
+		!strings.Contains(notice, "file ownership") {
+		t.Fatalf("notice must name the limit and the authority: %q", notice)
+	}
+}
+
 func TestPackTestNeedsSharedTools(t *testing.T) {
 	tests := []struct {
 		name    string

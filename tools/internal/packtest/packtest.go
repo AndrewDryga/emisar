@@ -91,6 +91,7 @@ type Plan struct {
 	Env                map[string]string  `yaml:"env,omitempty"`
 	Defaults           Defaults           `yaml:"defaults,omitempty"`
 	Shards             int                `yaml:"shards,omitempty"`
+	Workers            int                `yaml:"workers,omitempty"`
 	Cases              []Case             `yaml:"cases"`
 }
 
@@ -108,6 +109,7 @@ type PlanRef struct {
 	Versions    []Version
 	Runner      Runner
 	Shards      int
+	Workers     int
 	Cases       []CaseRef
 }
 
@@ -217,7 +219,7 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		}
 		plans = append(plans, PlanRef{
 			Name: name, PackVersion: packVersion, Path: path, Services: plan.Services,
-			Versions: plan.Versions, Runner: plan.Runner, Shards: plan.Shards, Cases: cases,
+			Versions: plan.Versions, Runner: plan.Runner, Shards: plan.Shards, Workers: plan.Workers, Cases: cases,
 		})
 	}
 	if len(plans) == 0 {
@@ -332,6 +334,22 @@ func loadPackVersion(packDir string) (string, error) {
 		return "", fmt.Errorf("pack.yaml has no version")
 	}
 	return manifest.Version, nil
+}
+
+// packTestMaxWorkers caps how many cases run at once. A plan may ask for fewer
+// when one SUT is heavy enough that four of them starve each other.
+const packTestMaxWorkers = 4
+
+// Workers reports how many of a selection's cases may run at once, which is the
+// smallest any selected plan is willing to tolerate.
+func Workers(plans []PlanRef) int {
+	workers := packTestMaxWorkers
+	for _, plan := range plans {
+		if plan.Workers > 0 && plan.Workers < workers {
+			workers = plan.Workers
+		}
+	}
+	return workers
 }
 
 func Matrix(plans []PlanRef) []MatrixRow {
@@ -537,6 +555,9 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	}
 	if plan.Shards < 0 || plan.Shards > len(plan.Cases) {
 		return fmt.Errorf("shards must be between 1 and the %d declared cases", len(plan.Cases))
+	}
+	if plan.Workers < 0 || plan.Workers > packTestMaxWorkers {
+		return fmt.Errorf("workers must be between 1 and %d", packTestMaxWorkers)
 	}
 	seen := make(map[string]bool, len(plan.Cases))
 	successfulActions := make(map[string]bool, len(plan.Cases))

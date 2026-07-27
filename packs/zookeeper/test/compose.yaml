@@ -6,11 +6,11 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      # Every case reaches 2181 over the bridge, so readiness has to prove
-      # that path: loopback answers ruok while a bridge connection still
-      # gets closed empty, and faster readiness starts cases in that gap.
-      test: ["CMD-SHELL", "echo ruok | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q imok"]
+      # Readiness has to prove what the cases actually do. A four-letter word
+      # against a recently-started node gets its connection closed empty, one
+      # command at a time and not always the same one, so proving ruok proves
+      # nothing about conf. Require every command the cases use to answer,
+      # over the bridge they dial.
+      test: ["CMD-SHELL", "for c in conf cons envi mntr ruok srvr stat wchs; do echo $$c | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q . || exit 1; done"]
       interval: 5s
-      start_period: 30s
-      start_interval: 1s
       retries: 10

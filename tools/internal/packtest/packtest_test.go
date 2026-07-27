@@ -590,3 +590,16 @@ func TestMatrixEmptyMarshalsAsArrayNotNull(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkersTakesTheSmallestPlanCap(t *testing.T) {
+	if got := Workers([]PlanRef{{Name: "redis"}}); got != 4 {
+		t.Fatalf("undeclared plans run at the cap, got %d", got)
+	}
+	plans := []PlanRef{{Name: "redis"}, {Name: "kubernetes", Workers: 2}}
+	if got := Workers(plans); got != 2 {
+		t.Fatalf("a selection runs at its most restrictive plan, got %d", got)
+	}
+	if got := Workers([]PlanRef{{Name: "k", Workers: 9}}); got != 4 {
+		t.Fatalf("a plan cannot raise the cap, got %d", got)
+	}
+}

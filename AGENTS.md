@@ -83,6 +83,7 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 A task moves to `99_done/` (via `coop tasks done`) only when **all** of these hold:
 
 - the project gate ran **green** (exact command in the project `AGENTS.md`),
+- **for a change to `packs/*/test/`, `.github/workflows/`, or `dev/test-packs/`, the CI job ran green too** — a workstation cannot judge those (uid ownership, AppArmor, startup races, runner toolchain), so the local gate is a false pass there. Push for the verdict, read the job, and fold any fix into the commit it repairs rather than trailing it ([rule](.agent/kb/rules/shared-ci-decides-what-a-workstation-cannot.md)),
 - the change is **committed** — one focused commit per task, carrying its `Coop-Task: <id>` trailer,
 - the task's own `log.md` says *why* (decisions, dead ends — the audit and the next agent read it), and its `state.md` reflects the finished state.
 
@@ -170,6 +171,7 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 - **Shared:** [browser security exceptions stay response-local](.agent/kb/rules/shared-browser-security-exceptions-stay-response-local.md) — external integration compatibility relaxations happen only after request validation, on the exact response that needs them, with fixed application-controlled targets.
 - **Shared:** [model catalogs expose only trusted pack refs](.agent/kb/rules/shared-model-catalog-trusted-only.md) — filter non-trusted exact pack refs before deriving any model-visible action, runner, runbook, issue, or continuation; mutations still recheck trust transactionally.
 - **Shared:** [reversible and terminal runner states stay distinct](.agent/kb/rules/shared-runner-lifecycle-states.md) — disable keeps the identity retryable so enable recovers without host access; delete/revoke is terminal and never inherits retry behavior.
+- **Shared:** [CI decides what a workstation cannot](.agent/kb/rules/shared-ci-decides-what-a-workstation-cannot.md) — pack fixtures, workflows, and the behavior harness are judged by the Linux matrix and only by it; a green local run there is a false pass, so read the job before marking the task done.
 - **Shared:** [every blocking check lives inside the canonical gate](.agent/kb/rules/shared-checks-live-in-the-canonical-gate.md) — CI reaches a check by invoking `./run gate`, never by running the tool in its own step; a CI-only check makes a green gate a false promise and hides findings until someone pushes.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
