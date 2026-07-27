@@ -23,6 +23,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmqadmin -u guest -p guest declare queue --name packtest --durable true --non-interactive >/dev/null"]
       interval: 5s
+      # No start_interval: this check is an Erlang client, and probing before
+      # the entrypoint has finished writing /var/lib/rabbitmq/.erlang.cookie
+      # leaves the file unreadable by the server the entrypoint then starts.
       start_period: 30s
-      start_interval: 1s
       retries: 30

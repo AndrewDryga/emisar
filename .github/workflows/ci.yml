@@ -680,6 +680,14 @@ jobs:
           tags: ${{ steps.tools.outputs.image }}
           cache-from: type=gha,scope=packtest-tools
 
+      # setup-buildx-action leaves its container-driver builder selected for the
+      # rest of the job, and that builder has its own image store. A pack whose
+      # client image starts FROM the shared one would resolve that base against
+      # the registry and fail; the daemon is where the restore just loaded it.
+      - name: Build against the daemon's image store
+        if: steps.tools.outputs.image != ''
+        run: docker buildx use default
+
       - name: Exercise pack behavior
         run: ./run test packs "$PACK" --shard "$SHARD"
 

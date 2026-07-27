@@ -29,6 +29,13 @@ up itself. Three shapes to recognize:
    Compose — which only the real daemon binds. Cadence hides this: a coarse
    `interval` polls late enough to miss the window by luck, so tightening
    readiness is what exposes it.
+5. **A probe must not out-race the entrypoint.** `start_interval` polls during
+   the start period, and a check that is itself a client of the service can
+   create state the entrypoint owns — an Erlang health check run one second in
+   writes `.erlang.cookie` before the entrypoint does, and the server it then
+   starts cannot read the file. Give a check that writes anything a probe no
+   earlier than the entrypoint's own setup: `start_period` alone still polls at
+   `interval`, which is the safe cadence for this class.
 
 **Why.** The isolation hardening was the point: a case that shares a server with
 its neighbours proves nothing about the action, and a root runner hides every
@@ -101,4 +108,5 @@ port literal inside `expect:` that the fixture does not set; an action whose
 name implies cumulative counters (`top`, `*_stats`, profilers) with no
 `arrange:`; a case whose command is documented as superuser-only but declares
 no `runner_user`; and a `healthcheck.test` naming `localhost`, `127.0.0.1`, or
-a bare socket on an image that seeds through `docker-entrypoint-initdb.d`.
+a bare socket on an image that seeds through `docker-entrypoint-initdb.d`; and
+a sub-second `start_interval` on a check that writes state rather than reads it.
