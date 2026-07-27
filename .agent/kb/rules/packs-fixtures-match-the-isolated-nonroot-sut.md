@@ -35,7 +35,13 @@ up itself. Three shapes to recognize:
    writes `.erlang.cookie` before the entrypoint does, and the server it then
    starts cannot read the file. Give a check that writes anything a probe no
    earlier than the entrypoint's own setup: `start_period` alone still polls at
-   `interval`, which is the safe cadence for this class.
+   `interval`, which is the safe cadence for this class. **Poll cost scales with
+   probe cost**, too — a check that spawns a JVM, a BEAM node, `kubectl`, or any
+   language-runtime client is re-spawned on every poll, four cases at a time, on
+   a four-core runner. k3s ran three `kubectl` calls a second through a
+   two-minute start period and its apiserver died on an IP-allocation check.
+   Thin probes (`nc`, `curl`, `redis-cli`, `pg_isready`) may poll at 1s; a probe
+   that spawns a heavyweight client polls no faster than 5s.
 
 **Why.** The isolation hardening was the point: a case that shares a server with
 its neighbours proves nothing about the action, and a root runner hides every
@@ -109,4 +115,6 @@ name implies cumulative counters (`top`, `*_stats`, profilers) with no
 `arrange:`; a case whose command is documented as superuser-only but declares
 no `runner_user`; and a `healthcheck.test` naming `localhost`, `127.0.0.1`, or
 a bare socket on an image that seeds through `docker-entrypoint-initdb.d`; and
-a sub-second `start_interval` on a check that writes state rather than reads it.
+a sub-second `start_interval` on a check that writes state rather than reads it,
+or a `start_interval` under 5s on one that spawns a heavyweight client — parse
+the Compose YAML to count those, since the commands span several lines.

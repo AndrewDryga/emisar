@@ -46,7 +46,9 @@ services:
           INSERT INTO packtest.events (id, value) VALUES (1, 'ready');" >/dev/null && exit 1))
       interval: 10s
       start_period: 120s
-      start_interval: 2s
+      # Poll cost scales with probe cost: this check spawns a heavyweight
+      # client, and four cases boot at once on a four-core runner.
+      start_interval: 5s
       timeout: 10s
       retries: 30
     volumes:

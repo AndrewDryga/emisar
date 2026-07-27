@@ -10,5 +10,7 @@ services:
       test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -ppacktest-canary-mysql-root-b813 -Nse 'SELECT COUNT(*) FROM testdb.orders' >/dev/null"]
       interval: 2s
       start_period: 30s
-      start_interval: 1s
+      # Poll cost scales with probe cost: this check spawns a heavyweight
+      # client, and four cases boot at once on a four-core runner.
+      start_interval: 5s
       retries: 30

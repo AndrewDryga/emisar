@@ -16,5 +16,7 @@ services:
       test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null && sleep 2 && clickhouse-client --query 'SELECT 1' >/dev/null"]
       interval: 5s
       start_period: 30s
-      start_interval: 1s
+      # Poll cost scales with probe cost: this check spawns a heavyweight
+      # client, and four cases boot at once on a four-core runner.
+      start_interval: 5s
       retries: 10

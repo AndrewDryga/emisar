@@ -17,7 +17,9 @@ services:
       test: ["CMD-SHELL", "kubectl get nodes | grep -q ' Ready' && kubectl wait --for=condition=Ready pod/probe --timeout=2s >/dev/null && kubectl get crd harnesses.packtest.emisar.dev >/dev/null"]
       interval: 10s
       start_period: 120s
-      start_interval: 1s
+      # Poll cost scales with probe cost: this check spawns a heavyweight
+      # client, and four cases boot at once on a four-core runner.
+      start_interval: 5s
       retries: 30
 
   k3s-kubeconfig:

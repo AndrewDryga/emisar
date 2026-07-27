@@ -14,5 +14,7 @@ services:
       test: ["CMD-SHELL", "mongosh --host \"$$(hostname -i)\" --quiet --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
       start_period: 30s
-      start_interval: 1s
+      # Poll cost scales with probe cost: this check spawns a heavyweight
+      # client, and four cases boot at once on a four-core runner.
+      start_interval: 5s
       retries: 10
