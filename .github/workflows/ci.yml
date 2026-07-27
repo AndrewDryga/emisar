@@ -627,10 +627,12 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # 57 rows of mostly-idle Docker waits. The cap was low to spare Docker
-      # Hub, which reusing the shared client image relieved: a row now pulls
-      # its own SUT rather than nine images it mostly never runs.
-      max-parallel: 12
+      # Rows are mostly idle Docker waits, so the cap is about Docker Hub, not
+      # CPU. Reusing the shared client image relieved it — a row pulls its own
+      # SUT rather than nine images it mostly never runs — but twelve was too
+      # far: anonymous pulls came back "unauthorized" and timed out twice in
+      # five runs. Eight keeps most of the wall-clock win with headroom.
+      max-parallel: 8
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
     env:

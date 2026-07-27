@@ -44,6 +44,13 @@ coop tasks done <id>
 coop tasks done <id>        # the class this touched was never judged
 ```
 
+**A shared quota is a CI-only limit too.** Docker Hub rate-limits anonymous
+pulls per address, and a runner pool shares addresses, so matrix width is bounded
+by the registry rather than by CPU. Twelve concurrent rows returned
+`unauthorized: authentication required` and a connection timeout twice in five
+runs; a workstation pulling one image at a time never sees it. Raise matrix width
+in steps and read the next few runs for registry errors before trusting it.
+
 **One green run is one sample.** A suite this shape is flaky until shown
 otherwise, so a single green CI run is evidence, not proof. Re-run the job that
 failed before merging on its recovery — zookeeper went green, then failed a
