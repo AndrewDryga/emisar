@@ -63,8 +63,6 @@ const (
   check <name>               validate one pack without changing artifacts
   hashes [--write]           verify or refresh cross-language pack hash goldens
   sync <name> --fix          rebuild the catalog from the live registry history
-  tools-image [<name>]       print the shared behavior client image tag, or
-                             nothing when the named pack ships its own client
 
 Use "./run test packs [name-pattern]" for pack-owned behavior cases and
 "./run gate packs" for the complete pack Definition of Done.

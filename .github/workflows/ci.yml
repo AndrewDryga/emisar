@@ -561,7 +561,7 @@ jobs:
         run: ./run check packs
 
   pack-tools:
-    name: Packs - Behavior client image
+    name: Packs - Behavior build cache
     needs: changes
     if: needs.changes.outputs.pack_behavior != '[]'
     runs-on: ubuntu-latest
@@ -599,25 +599,6 @@ jobs:
           go -C runner build -trimpath -o /dev/null .
           go -C tools build -trimpath -o /dev/null ./cmd/packtest
 
-      - id: tools
-        name: Resolve the shared client image
-        run: echo "image=$(./run pack tools-image)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      # One writer for the whole matrix. Every behavior row restores this entry
-      # instead of pulling eight servers to extract one binary from each, and
-      # letting the rows write it back would mean dozens of concurrent uploads
-      # of the same 2GB image the first time the Dockerfile changes.
-      - name: Populate the shared client image cache
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: dev/test-packs
-          load: true
-          tags: ${{ steps.tools.outputs.image }}
-          cache-from: type=gha,scope=packtest-tools
-          cache-to: type=gha,mode=min,scope=packtest-tools
 
   pack-behavior:
     name: Packs - Behavior (${{ matrix.pack }} ${{ matrix.version }}${{ matrix.shards > 1 && format(' shard {0}/{1}', matrix.shard, matrix.shards) || '' }})
@@ -662,33 +643,6 @@ jobs:
             ~/.cache/go-build
             ~/go/pkg/mod
           key: packtest-go-${{ runner.os }}-${{ hashFiles('runner/go.sum', 'tools/go.sum') }}
-
-      # Empty for a pack that ships its own client image, which then needs
-      # neither the builder nor the restore.
-      - id: tools
-        name: Resolve the shared client image
-        run: echo "image=$(./run pack tools-image "$PACK")" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        if: steps.tools.outputs.image != ''
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Restore the shared client image
-        if: steps.tools.outputs.image != ''
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: dev/test-packs
-          load: true
-          tags: ${{ steps.tools.outputs.image }}
-          cache-from: type=gha,scope=packtest-tools
-
-      # setup-buildx-action leaves its container-driver builder selected for the
-      # rest of the job, and that builder has its own image store. A pack whose
-      # client image starts FROM the shared one would resolve that base against
-      # the registry and fail; the daemon is where the restore just loaded it.
-      - name: Build against the daemon's image store
-        if: steps.tools.outputs.image != ''
-        run: docker buildx use default
 
       - name: Exercise pack behavior
         run: ./run test packs "$PACK" --shard "$SHARD"
