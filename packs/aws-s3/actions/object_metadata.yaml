@@ -1,12 +1,13 @@
 schema_version: 1
 id: s3.object_metadata
 title: aws s3api head-object
-kind: exec
+kind: script
 risk: low
-description: Show metadata for one object (size, content-type, storage class, etag).
+description: Show one object's system metadata and custom metadata keys without its body or custom values.
 side_effects:
   - One HeadObject call.
   - Read-only.
+  - Uses a mode-0600 temporary response file and removes it before exit.
 args:
   - name: bucket
     type: string
@@ -21,12 +22,12 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.!*'(),/\\-]{1,1000}[a-zA-Z0-9_.!*'(),/\\-]{0,24}$"
 execution:
-  command:
-    binary: aws
-    argv: ["s3api", "head-object", "--bucket", "{{ args.bucket }}", "--key", "{{ args.key }}", "--output", "json"]
+  script: {path: scripts/s3_read.sh, interpreter: /bin/sh}
+  argv: [object, "{{ args.bucket }}", "{{ args.key }}"]
   timeout: 30s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
 examples:

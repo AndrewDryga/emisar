@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: gcp-certificates
+name: Google Cloud certificate diagnostics
+version: 0.1.0
+description: >
+  Read-only diagnostics for legacy Compute SSL certificates and Certificate
+  Manager certificates, maps, entries, and DNS authorizations. Fixed
+  projections omit certificate PEM, private keys, descriptions, and labels.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud, jq]
+
+setup:
+  summary: >
+    Drives gcloud and projects certificate API responses locally before they
+    leave the runner. Authenticate gcloud before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "Legacy Compute certificate reads need roles/compute.networkViewer; Certificate Manager reads need roles/certificatemanager.viewer or equivalent permissions."
+    - "Actions use mode-0600 temporary response files so gcloud failures remain distinguishable from jq failures; files are removed before exit."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+  verify: gcp.managed_certificates
+
+actions:
+  - actions/ssl_certificates.yaml
+  - actions/ssl_certificate_describe.yaml
+  - actions/managed_certificates.yaml
+  - actions/managed_certificate_describe.yaml
+  - actions/certificate_maps.yaml
+  - actions/certificate_map_entries.yaml
+  - actions/dns_authorizations.yaml

@@ -1,0 +1,49 @@
+schema_version: 1
+
+id: gcp-networking
+name: Google Cloud networking diagnostics
+version: 0.1.0
+description: >
+  Read-only Google Cloud VPC, subnet, firewall, route, address, Cloud Router,
+  Cloud NAT, VPN, and Interconnect diagnostics. Outputs are fixed projections
+  that omit arbitrary descriptions, labels, and credential-shaped fields.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud]
+
+setup:
+  summary: >
+    Drives the gcloud CLI on the runner host with an explicitly named project.
+    Authenticate gcloud before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "The principal needs roles/compute.networkViewer or equivalent get/list permissions."
+    - "Any credential/config env must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+    - "Every action passes --quiet and an explicit --project so ambient project configuration cannot redirect a request."
+  verify: gcp.networks
+
+actions:
+  - actions/networks.yaml
+  - actions/network_describe.yaml
+  - actions/subnets.yaml
+  - actions/subnet_describe.yaml
+  - actions/firewall_rules.yaml
+  - actions/routes.yaml
+  - actions/addresses.yaml
+  - actions/routers.yaml
+  - actions/router_status.yaml
+  - actions/nat_describe.yaml
+  - actions/vpn_tunnels.yaml
+  - actions/vpn_gateway_status.yaml
+  - actions/interconnect_attachments.yaml
+  - actions/interconnect_diagnostics.yaml

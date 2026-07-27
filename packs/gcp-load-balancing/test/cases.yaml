@@ -1,0 +1,50 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: http://gcp-api:8080/compute/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-f165
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-lb-secret-c3a7]
+cases:
+  - action: gcp.backend_services
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-backend, harness-neg, X-Harness-Request]
+  - action: gcp.backend_service_describe
+    args: {project: example-prod, backend_service: harness-backend, scope: global}
+    expect:
+      stdout_contains: [harness-backend, harness-neg, X-Harness-Request]
+  - action: gcp.backend_health
+    args: {project: example-prod, backend_service: harness-backend, scope: global}
+    expect:
+      stdout_contains: [HEALTHY, 10.20.0.10]
+  - action: gcp.health_checks
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-health, /readyz]
+  - action: gcp.url_maps
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-map, /api/*, headerActionPresent]
+  - action: gcp.http_proxies
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-http, harness-map]
+  - action: gcp.https_proxies
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-https, harness-cert]
+  - action: gcp.forwarding_rules
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-forwarding-rule, 203.0.113.20]
+  - action: gcp.network_endpoint_groups
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-neg, GCE_VM_IP_PORT]

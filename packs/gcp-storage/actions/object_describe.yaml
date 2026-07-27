@@ -1,0 +1,35 @@
+schema_version: 1
+id: gcp.storage_object_describe
+title: gcloud storage objects describe
+kind: script
+risk: low
+description: Show one object's system metadata and custom metadata keys without its body or custom values.
+side_effects: ["One read-only Cloud Storage metadata API call.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: bucket
+    type: string
+    required: true
+    description: Cloud Storage bucket name.
+    validation: {pattern: "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$", max_length: 63}
+  - name: key
+    type: string
+    required: true
+    description: Literal object name; wildcard characters are rejected.
+    validation: {pattern: "^[A-Za-z0-9!_.$'()+,;=:@%/ -]+$", max_length: 1024}
+execution:
+  script: {path: scripts/storage.sh, interpreter: /bin/sh}
+  argv: [object-describe, "{{ args.project }}", "{{ args.bucket }}", "{{ args.key }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Application log object
+    args: {project: example-prod, bucket: example-prod-assets, key: logs/app.log}

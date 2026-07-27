@@ -1,0 +1,31 @@
+schema_version: 1
+id: gcp.forwarding_rules
+title: gcloud compute forwarding-rules list
+kind: script
+risk: low
+description: List bounded forwarding rules, addresses, ports, targets, and load-balancing scheme.
+side_effects: ["Read-only Compute Engine API pagination."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum forwarding rules to return.
+    validation: {min: 1, max: 500}
+execution:
+  script: {path: scripts/load_balancing.sh, interpreter: /bin/sh}
+  argv: [forwarding-rules, "{{ args.project }}", "{{ args.limit }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 16384
+examples:
+  - title: Project forwarding rules
+    args: {project: example-prod}

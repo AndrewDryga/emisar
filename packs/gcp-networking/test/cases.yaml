@@ -1,0 +1,70 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: http://gcp-api:8080/compute/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-7e1d
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-network-secret-91af]
+cases:
+  - action: gcp.networks
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-network, CUSTOM]
+  - action: gcp.network_describe
+    args: {project: example-prod, network: harness-network}
+    expect:
+      stdout_contains: [harness-network, harness-peer]
+  - action: gcp.subnets
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-subnet, 10.20.0.0/24]
+  - action: gcp.subnet_describe
+    args: {project: example-prod, subnet: harness-subnet, region: us-central1}
+    expect:
+      stdout_contains: [harness-subnet, 10.20.0.0/24]
+  - action: gcp.firewall_rules
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-https, tcp]
+  - action: gcp.routes
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-default-route, 0.0.0.0/0]
+  - action: gcp.addresses
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-address, 203.0.113.10]
+  - action: gcp.routers
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-router, "64514"]
+  - action: gcp.router_status
+    args: {project: example-prod, router: harness-router, region: us-central1}
+    expect:
+      stdout_contains: [UP, 10.30.0.0/16]
+  - action: gcp.nat_describe
+    args: {project: example-prod, nat: harness-nat, router: harness-router, region: us-central1}
+    expect:
+      stdout_contains: [harness-nat, AUTO_ONLY]
+  - action: gcp.vpn_tunnels
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-tunnel, ESTABLISHED]
+  - action: gcp.vpn_gateway_status
+    args: {project: example-prod, gateway: harness-vpn, region: us-central1}
+    expect:
+      stdout_contains: [harness-tunnel, CONNECTION_REDUNDANCY_MET]
+  - action: gcp.interconnect_attachments
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-attachment, BPS_10G]
+  - action: gcp.interconnect_diagnostics
+    args: {project: example-prod, interconnect: harness-interconnect}
+    expect:
+      stdout_contains: [harness-link, ACTIVE]

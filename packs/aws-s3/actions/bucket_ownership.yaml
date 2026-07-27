@@ -1,0 +1,26 @@
+schema_version: 1
+id: s3.bucket_ownership
+title: aws s3api get-bucket-ownership-controls
+kind: exec
+risk: low
+description: Show one bucket's object ownership controls.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: bucket
+    type: string
+    required: true
+    description: Bucket name.
+    validation: {pattern: "^[a-z0-9.\\-]{3,63}$"}
+execution:
+  command:
+    binary: aws
+    argv: [s3api, get-bucket-ownership-controls, --bucket, "{{ args.bucket }}", --output, json]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Object ownership
+    args: {bucket: my-bucket}

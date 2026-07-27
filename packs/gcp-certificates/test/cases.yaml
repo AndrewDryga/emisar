@@ -1,0 +1,43 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_CERTIFICATEMANAGER: http://gcp-api:8080/
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: http://gcp-api:8080/compute/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-1a6d
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-certificate-secret-1f4b]
+cases:
+  - action: gcp.ssl_certificates
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-legacy-cert, example.test, ACTIVE]
+  - action: gcp.ssl_certificate_describe
+    args: {project: example-prod, certificate: harness-legacy-cert, scope: global}
+    expect:
+      stdout_contains: [harness-legacy-cert, example.test, ACTIVE]
+  - action: gcp.managed_certificates
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-managed-cert, example.test, ACTIVE]
+  - action: gcp.managed_certificate_describe
+    args: {project: example-prod, certificate: harness-managed-cert}
+    expect:
+      stdout_contains: [harness-managed-cert, example.test, ACTIVE]
+  - action: gcp.certificate_maps
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-map, harness-https]
+  - action: gcp.certificate_map_entries
+    args: {project: example-prod, map: harness-map}
+    expect:
+      stdout_contains: [harness-entry, example.test, harness-managed-cert]
+  - action: gcp.dns_authorizations
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-authorization, _acme-challenge.example.test, validation.example.test]

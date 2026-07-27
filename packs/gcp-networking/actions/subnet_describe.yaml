@@ -1,0 +1,35 @@
+schema_version: 1
+id: gcp.subnet_describe
+title: gcloud compute networks subnets describe
+kind: script
+risk: low
+description: Show one regional subnet, including primary and secondary ranges.
+side_effects: ["One read-only Compute Engine API call."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: subnet
+    type: string
+    required: true
+    description: Subnet name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: region
+    type: string
+    required: true
+    description: Subnet region.
+    validation: {pattern: "^[a-z0-9][a-z0-9-]{0,62}$", max_length: 63}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [subnet-describe, "{{ args.project }}", "{{ args.subnet }}", "{{ args.region }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Application subnet
+    args: {project: example-prod, subnet: app, region: us-central1}

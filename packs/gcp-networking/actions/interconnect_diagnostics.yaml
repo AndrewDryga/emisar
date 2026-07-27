@@ -1,0 +1,30 @@
+schema_version: 1
+id: gcp.interconnect_diagnostics
+title: gcloud compute interconnects get-diagnostics
+kind: script
+risk: low
+description: Show LACP and physical-link diagnostics for one Dedicated Interconnect.
+side_effects: ["One read-only Compute Engine API call."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: interconnect
+    type: string
+    required: true
+    description: Dedicated Interconnect name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [interconnect-diagnostics, "{{ args.project }}", "{{ args.interconnect }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Dedicated Interconnect diagnostics
+    args: {project: example-prod, interconnect: primary}

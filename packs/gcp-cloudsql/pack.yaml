@@ -1,0 +1,44 @@
+schema_version: 1
+
+id: gcp-cloudsql
+name: Google Cloud SQL diagnostics
+version: 0.1.0
+description: >
+  Read-only Cloud SQL diagnostics for instances, databases, users, backups,
+  operations, and server CA certificates. Fixed projections omit passwords,
+  replication credentials, database-flag values, labels, descriptions, and
+  certificate PEM.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud, jq]
+
+setup:
+  summary: >
+    Drives gcloud and projects Cloud SQL API responses locally before they
+    leave the runner. Authenticate gcloud before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "The principal needs roles/cloudsql.viewer or equivalent read permissions."
+    - "Actions use mode-0600 temporary response files so gcloud failures remain distinguishable from jq failures; files are removed before exit."
+    - "Database query execution, log contents, auth tokens, client certificates, and credential retrieval are excluded."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+  verify: gcp.sql_instances
+
+actions:
+  - actions/instances.yaml
+  - actions/instance_describe.yaml
+  - actions/databases.yaml
+  - actions/users.yaml
+  - actions/backups.yaml
+  - actions/operations.yaml
+  - actions/operation_describe.yaml
+  - actions/server_ca_certs.yaml

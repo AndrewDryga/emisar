@@ -1,0 +1,46 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_SQL: http://gcp-api:8080/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-843c
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-sql-secret-da31]
+cases:
+  - action: gcp.sql_instances
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-sql, POSTGRES_16, db-custom-2-8192, cloudsql.iam_authentication]
+  - action: gcp.sql_instance_describe
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness-sql, 10.20.0.40, REGIONAL]
+  - action: gcp.sql_databases
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness_db, UTF8]
+  - action: gcp.sql_users
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness_user, BUILT_IN]
+  - action: gcp.sql_backups
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: ["1001", SUCCESSFUL, AUTOMATED]
+  - action: gcp.sql_operations
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness-operation, UPDATE, DONE]
+  - action: gcp.sql_operation_describe
+    args: {project: example-prod, operation: harness-operation}
+    expect:
+      stdout_contains: [harness-operation, UPDATE, DONE]
+  - action: gcp.sql_server_ca_certs
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness-server-ca, AB:CD:EF, 2027-07-27]
