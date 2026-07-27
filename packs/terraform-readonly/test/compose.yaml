@@ -1,0 +1,21 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/terraform-readonly/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-1.15.8}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-terraform-readonly-tools:latest
+
+  terraform:
+    image: hashicorp/terraform:${PACKTEST_VERSION:-1.15.8}${PACKTEST_DIGEST-}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["terraform version >/dev/null && sleep 3600"]
+    healthcheck:
+      test: ["CMD", "terraform", "version"]
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      retries: 20

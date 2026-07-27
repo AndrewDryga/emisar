@@ -1,0 +1,69 @@
+services: [terraform]
+versions:
+  - version: "1.15.8"
+    digest: "@sha256:7ae513256f7ce67879e218ae8593d6fbe216ec9e123abe6c94e4e10704857963"
+    default: true
+secret_env: []
+env:
+  TF_DIR: /packs/terraform-readonly/test/fixtures/live
+  TF_STATE_CANDIDATE_DIR: /packs/terraform-readonly/test/fixtures/candidates
+cases:
+  - action: tf.state_metadata
+    expect:
+      stdout_not_contains:
+        - packtest-canary-terraform-state-secret-8d6a
+        - packtest-canary-terraform-resource-secret-e9c4
+      json:
+        /source: live
+        /state_format_version: 4
+        /serial: 42
+        /lineage: 11111111-2222-3333-4444-555555555555
+        /resource_instance_count: 3
+
+  - action: tf.state_file_metadata
+    args: {candidate_file: older.tfstate}
+    expect:
+      stdout_not_contains: [packtest-canary-terraform-candidate-secret-0a5f]
+      json:
+        /source: candidate
+        /serial: 41
+        /resource_instance_count: 0
+
+  - name: tf.state_compare_metadata-older
+    action: tf.state_compare_metadata
+    args: {candidate_file: older.tfstate}
+    expect:
+      json:
+        /relation: candidate_older
+        /serial_delta: -1
+
+  - name: tf.state_compare_metadata-newer
+    action: tf.state_compare_metadata
+    args: {candidate_file: newer.tfstate}
+    expect:
+      json:
+        /relation: candidate_newer
+        /serial_delta: 1
+
+  - name: tf.state_compare_metadata-equal
+    action: tf.state_compare_metadata
+    args: {candidate_file: equal.tfstate}
+    expect:
+      json:
+        /relation: equal_serial
+        /serial_delta: 0
+
+  - name: tf.state_compare_metadata-lineage-mismatch
+    action: tf.state_compare_metadata
+    args: {candidate_file: mismatch.tfstate}
+    expect:
+      json:
+        /relation: lineage_mismatch
+        /serial_delta: null
+
+  - name: tf.state_file_metadata-rejects-traversal
+    action: tf.state_file_metadata
+    args: {candidate_file: ../terraform.tfstate}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

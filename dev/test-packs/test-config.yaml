@@ -75,6 +75,8 @@ execution:
     - SNMP_VERSION
     - TYPESENSE_API_KEY
     - TYPESENSE_URL
+    - TF_DIR
+    - TF_STATE_CANDIDATE_DIR
     - VAULT_ADDR
     - VAULT_TOKEN
     - VL_URL

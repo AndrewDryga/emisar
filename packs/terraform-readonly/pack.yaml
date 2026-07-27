@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform read-only ops
-version: 0.1.6
+version: 0.1.7
 description: >
   Read-only Terraform CLI actions for inspecting a workspace. NO apply,
   NO destroy, NO state mutation — those should happen in CI, not via a
@@ -15,6 +15,7 @@ requires:
     - linux
   binaries:
     - terraform
+    - jq
 
 setup:
   summary: >
@@ -29,10 +30,16 @@ setup:
         Path to an initialized working directory (already `terraform
         init`-ed, with .terraform and a backend configured).
       example: /srv/infra/prod
+    - name: TF_STATE_CANDIDATE_DIR
+      description: >
+        Optional restricted directory containing candidate .tfstate files for
+        metadata inspection and comparison.
+      example: /srv/infra/recovery
   notes:
     - "Provider and backend auth depend entirely on what the config uses: an AWS provider/backend reads AWS_* (or an EC2/role profile), GCP reads GOOGLE_APPLICATION_CREDENTIALS, and so on — allowlist whatever your config needs."
-    - "state_list, state_show, show_json and output read the backend state, so the backend credentials must be reachable; validate and version do not."
+    - "state_list, state_show, show_json, output, state_metadata, and state_compare_metadata read the backend state, so the backend credentials must be reachable; validate, version, and state_file_metadata do not."
     - "plan_no_save (risk medium) calls every provider's read APIs (quota usage) but never writes state or saves an applyable plan."
+    - "`terraform state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's Terraform CLI rather than the writer of the remote snapshot."
   verify: tf.version
 
 actions:
@@ -44,3 +51,6 @@ actions:
   - actions/output.yaml
   - actions/validate.yaml
   - actions/plan_no_save.yaml
+  - actions/state_metadata.yaml
+  - actions/state_file_metadata.yaml
+  - actions/state_compare_metadata.yaml
