@@ -91,6 +91,8 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: go run ./tools/cmd/ci select "$EVENT" "$BASE"
 
+      # CI-only by nature: the comparison needs the PR's merge-base or the
+      # push's before-SHA, which exist only in the event payload.
       - name: Enforce frozen migration history
         env:
           EVENT: ${{ github.event_name }}
@@ -212,6 +214,8 @@ jobs:
           cache: true
           cache-dependency-path: tools/go.*
 
+      # CI-only: validates the published registry contract with the registry's
+      # own publisher binary, which is fetched per run rather than vendored.
       - name: Validate registry listing
         run: |
           set -euo pipefail
@@ -276,6 +280,8 @@ jobs:
           cache-from: type=gha,scope=portal-release
           cache-to: type=gha,mode=max,scope=portal-release
 
+      # CI-only: boots the image this run built against the job's Postgres
+      # service. The gate has neither.
       - name: Smoke-test release image
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost/emisar_smoke
@@ -372,6 +378,9 @@ jobs:
 
           docker stop --time 15 "$cid" >/dev/null
 
+      # CI-only: Trivy and the SBOM/export steps below operate on the image
+      # this run built and scan against a live advisory feed. Neither the image
+      # nor the feed exists at gate time.
       - name: Install Trivy (pinned, checksum-verified)
         env:
           TRIVY_VERSION: "0.72.0"
@@ -455,23 +464,6 @@ jobs:
       - name: Install shell validator
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
-      - name: Check client module boundaries
-        # runner/ and mcp/ are CLIENT-SHIPPED modules (self-hosters build and
-        # audit them) — repo tooling lives in tools/, never there. packctl is
-        # the one sanctioned exception (pack-hash parity; runner/AGENTS.md).
-        # Extending either list is a deliberate, reviewed act.
-        if: matrix.module != 'tools'
-        run: |
-          set -euo pipefail
-          test "$(ls runner/cmd)" = "packctl" || {
-            echo "::error::runner/cmd must contain exactly packctl — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
-          test ! -d mcp/cmd || {
-            echo "::error::mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
-
-      - name: Check attestation implementation parity
-        if: matrix.module == 'runner' || matrix.module == 'mcp'
-        run: go run ./tools/cmd/ci attest-parity
-
       - name: Run canonical module gate
         run: |
           target="${{ matrix.module }}"
@@ -492,6 +484,9 @@ jobs:
           bash -n "$INSTALL_SCRIPT"
           ./run test install "${{ matrix.module }}"
 
+      # CI-only: govulncheck resolves against the live vulnerability database,
+      # so a gate that ran it would fail an unchanged tree the day an advisory
+      # lands — and would need the network on every contributor's machine.
       - name: Scan known vulnerabilities
         # govulncheck reports reachable vulnerable symbols, not merely a module
         # version. A reachable finding in client-shipped security code blocks.
@@ -855,28 +850,31 @@ jobs:
   actionlint:
     name: Actions - Validate workflows
     needs: changes
+    # A workflow-only change never selects the Go job, so this reaches
+    # actionlint the way every other check is reached: through its gate.
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
-      ACTIONLINT_VERSION: "1.7.12"
-      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      GOTOOLCHAIN: local
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Run actionlint
-        # The workflows ARE the supply chain's front door — lint them like
-        # code: expression injection, wrong event fields, invalid globs.
-        run: |
-          set -euo pipefail
-          artifact="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${artifact}"
-          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
-          tar -xzf "$artifact" actionlint
-          ./actionlint -color
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Install shell validator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Run the tooling gate
+        run: ./run gate tooling
 
   ci-gate:
     name: Required - CI

@@ -232,6 +232,13 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	if err := a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck"); err != nil {
 		return err
 	}
+	// The workflows ARE the supply chain's front door — lint them like code:
+	// expression injection, wrong event fields, invalid globs. Pinned so a new
+	// actionlint release cannot fail an unchanged tree; `go run` keeps it off
+	// the contributor's PATH, same as staticcheck.
+	if err := a.run(ctx, a.Root, nil, "go", "run", actionlintVersion, "-color"); err != nil {
+		return fmt.Errorf("workflow lint findings: %w", err)
+	}
 	if err := a.agentSetupCheck(ctx, false); err != nil {
 		return err
 	}

@@ -9,11 +9,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 )
 
 // Keep this in step with the version any workflow installs directly.
 const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
+
+// Keep this in step with the version any workflow installs directly.
+const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
 // emisar is a security product, so an advisory fails the gate. cowlib 2.18.0 is
 // current with no upstream patch, and its affected response-header encoder is
@@ -161,8 +165,41 @@ func parseCoverage(args []string) (string, error) {
 	return args[1], nil
 }
 
+// checkClientModuleBoundaries keeps repo tooling out of the modules customers
+// build and audit themselves. runner/ and mcp/ ship to self-hosters; packctl is
+// the one sanctioned binary under runner/cmd (pack-hash parity, runner/AGENTS.md).
+// Extending either list is a deliberate, reviewed act, so the gate decides it —
+// as a CI-only step it was invisible until someone pushed.
+func (a *App) checkClientModuleBoundaries(module string) error {
+	if module == "tools" {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(a.Root, "runner", "cmd"))
+	if err != nil {
+		return err
+	}
+	var commands []string
+	for _, entry := range entries {
+		commands = append(commands, entry.Name())
+	}
+	if len(commands) != 1 || commands[0] != "packctl" {
+		return fmt.Errorf(
+			"runner/cmd must contain exactly packctl, found %v — repo tooling goes in tools/ (runner/AGENTS.md)",
+			commands)
+	}
+	if _, err := os.Stat(filepath.Join(a.Root, "mcp", "cmd")); err == nil {
+		return fmt.Errorf("mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	dir := filepath.Join(a.Root, module)
+	if err := a.checkClientModuleBoundaries(module); err != nil {
+		return err
+	}
 	unformatted, err := a.output(ctx, dir, nil, "gofmt", "-l", "-s", ".")
 	if err != nil {
 		return err
@@ -196,6 +233,14 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 			return fmt.Errorf("mcp must remain stdlib-only; go.sum exists")
 		} else if !os.IsNotExist(err) {
 			return err
+		}
+	}
+	// The runner and the bridge each carry their own copy of the attestation
+	// verifier; drift between them is a security defect, so the gate decides it
+	// rather than a CI step nobody sees until a push.
+	if module == "runner" || module == "mcp" {
+		if err := ci.CheckAttestParity(a.Root); err != nil {
+			return fmt.Errorf("%s attestation parity: %w", module, err)
 		}
 	}
 	testArgs := []string{"test", "-race", "-count=1"}
