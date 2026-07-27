@@ -1,4 +1,14 @@
 services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/consul/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.0.2}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-consul-tools:latest
+
   consul:
     image: hashicorp/consul:${PACKTEST_VERSION:-2.0.2}${PACKTEST_DIGEST-}
     command: agent -dev -client=0.0.0.0

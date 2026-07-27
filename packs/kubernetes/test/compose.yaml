@@ -1,5 +1,13 @@
 services:
   runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/kubernetes/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-v1.36.2-k3s1}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-kubernetes-tools:latest
     volumes:
       - k3s_kubeconfig:/shared:ro
 

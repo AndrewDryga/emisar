@@ -1,4 +1,14 @@
 services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/mongodb/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-8.2.5}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-mongodb-tools:latest
+
   mongodb:
     image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
     environment:

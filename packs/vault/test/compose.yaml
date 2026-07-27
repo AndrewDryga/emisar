@@ -1,4 +1,14 @@
 services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/vault/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.0.3}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-vault-tools:latest
+
   vault:
     image: hashicorp/vault:${PACKTEST_VERSION:-2.0.3}${PACKTEST_DIGEST-}
     cap_add: [IPC_LOCK]
