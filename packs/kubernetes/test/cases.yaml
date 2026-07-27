@@ -13,6 +13,10 @@ versions:
 # across matrix rows instead of sharing a cluster between them.
 shards: 5
 
+# Each case boots a full k3s control plane. Four at once on a four-core runner
+# starves the apiserver and it dies on its IP-allocation check.
+workers: 2
+
 env:
   KUBECONFIG: /shared/kubeconfig.yaml
 defaults:

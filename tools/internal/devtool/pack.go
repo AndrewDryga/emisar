@@ -164,7 +164,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	}
 	close(jobs)
 
-	workerCount := min(4, len(queued))
+	workerCount := min(packtest.Workers(plans), len(queued))
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
 	for range workerCount {
