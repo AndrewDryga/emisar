@@ -1026,6 +1026,88 @@ defmodule Emisar.SSO do
     |> Repo.list(UserIdentity.Query, opts)
   end
 
+  @doc """
+  Internal — SCIM read: the provider's synced directory groups as
+  `[%{external_group_id, display, member_external_ids}]`, ordered by group id.
+  An optional `:display_name` filter answers the `displayName eq` probe Entra
+  makes before every group push; without a group read it never matches an
+  existing group and re-POSTs the whole directory each cycle.
+
+  `display` is only populated for a group an operator has MAPPED to a role — the
+  mapping row is the one place a directory group's human name is stored — so an
+  unmapped group answers on its `external_group_id`, exactly as the synced-groups
+  readout in the console shows it. A directory that filters on the human name
+  therefore matches its mapped groups; give an unmapped group a mapping (or match
+  on id) if a provider needs it found by name.
+  """
+  def scim_list_groups(%IdentityProvider{} = provider, opts \\ []) do
+    display_name = Keyword.get(opts, :display_name)
+
+    # No `%Subject{}` here — the bearer's provider-scope IS the authz — so scope
+    # by the explicit account too, as the sibling user read does.
+    counts_queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
+
+    members_queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.select_member_external_ids(provider.id)
+
+    displays_queryable =
+      GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.select_displays_for_provider(provider.id)
+
+    members = Enum.group_by(Repo.all(members_queryable), &elem(&1, 0), &elem(&1, 1))
+    displays = Map.new(Repo.all(displays_queryable))
+
+    groups =
+      Enum.map(Repo.all(counts_queryable), fn %{external_group_id: id} ->
+        %{
+          external_group_id: id,
+          display: Map.get(displays, id),
+          member_external_ids: Map.get(members, id, [])
+        }
+      end)
+
+    filter_groups_by_display(groups, display_name)
+  end
+
+  @doc """
+  Internal — SCIM read of one synced group by its externalId, so an IdP's
+  `GET /Groups/{id}` round-trips instead of 404ing on a group it just pushed.
+  `{:ok, summary} | {:error, :not_found}`.
+  """
+  def scim_fetch_group(%IdentityProvider{} = provider, external_group_id) do
+    queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
+
+    if Repo.exists?(queryable) do
+      provider
+      |> scim_list_groups()
+      |> Enum.find(&(&1.external_group_id == external_group_id))
+      |> case do
+        nil -> {:error, :not_found}
+        group -> {:ok, group}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  # A group whose display was never pushed answers on its id, which is what an
+  # IdP sees as the group's name when it suppressed displayName.
+  defp filter_groups_by_display(groups, nil), do: groups
+
+  defp filter_groups_by_display(groups, display_name) do
+    Enum.filter(groups, fn group ->
+      (group.display || group.external_group_id) == display_name
+    end)
+  end
+
   defp apply_scim_filter(queryable, {:user_name, value}),
     do: UserIdentity.Query.by_user_name(queryable, value)
 

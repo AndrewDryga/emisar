@@ -52,4 +52,26 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
       member_count: count(g.user_identity_id, :distinct)
     })
   end
+
+  def by_external_group_id(queryable \\ all(), external_group_id),
+    do: where(queryable, [group_members: g], g.external_group_id == ^external_group_id)
+
+  # Every membership link a provider has, as {external_group_id, member externalId}
+  # pairs — what a SCIM `GET /Groups` must echo back as each group's `members`.
+  # Joins the identity (its `scim_external_id` is the id the IdP knows a member
+  # by) scoped to `not_deleted/0`, so a soft-deleted identity leaves the group.
+  def select_member_external_ids(queryable \\ all(), provider_id) do
+    queryable
+    |> where([group_members: g], g.provider_id == ^provider_id)
+    |> join(:inner, [group_members: g], i in ^Emisar.SSO.UserIdentity.Query.not_deleted(),
+      on: i.id == g.user_identity_id,
+      as: :identities
+    )
+    |> where([identities: i], not is_nil(i.scim_external_id))
+    |> order_by([group_members: g, identities: i],
+      asc: g.external_group_id,
+      asc: i.scim_external_id
+    )
+    |> select([group_members: g, identities: i], {g.external_group_id, i.scim_external_id})
+  end
 end

@@ -772,7 +772,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["totalResults"] == 0
     end
 
-    test "GET /Groups stays empty even after a group was pushed (no group read)", %{
+    test "GET /Groups echoes a pushed group with its members", %{
       conn: conn,
       token: token,
       provider: provider
@@ -782,17 +782,77 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-pushed",
+          display: "Platform Engineers",
           member_external_ids: ["okta|x"]
         })
 
-      # The membership is stored, but there is no SCIM Group read — the list is
-      # still the empty stub (sync is push-only; SCIM-018 domain gap).
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
-      assert body["totalResults"] == 0
-      assert body["Resources"] == []
+
+      assert body["totalResults"] == 1
+      assert [group] = body["Resources"]
+      assert group["id"] == "grp-pushed"
+      assert group["displayName"] == "grp-pushed"
+      assert group["members"] == [%{"value" => "okta|x"}]
     end
 
-    test "GET /Groups/:id → 404 SCIM error (no group read)", %{conn: conn, token: token} do
+    test "GET /Groups answers the displayName eq probe an IdP makes before pushing", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      provision(provider, "okta|x")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-pushed",
+          display: "Platform Engineers",
+          member_external_ids: ["okta|x"]
+        })
+
+      matched =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=displayName eq \"grp-pushed\"")
+        |> json_response(200)
+
+      assert matched["totalResults"] == 1
+
+      # A miss must be an empty list, not everything — otherwise the IdP treats an
+      # unrelated group as the one it was looking for and never creates its own.
+      missed =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=displayName eq \"Nobody\"")
+        |> json_response(200)
+
+      assert missed["totalResults"] == 0
+    end
+
+    test "GET /Groups/:id round-trips a pushed group", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      provision(provider, "okta|x")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-pushed",
+          display: "Platform Engineers",
+          member_external_ids: ["okta|x"]
+        })
+
+      body = conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-pushed") |> json_response(200)
+
+      assert body["id"] == "grp-pushed"
+      assert body["displayName"] == "grp-pushed"
+      assert body["members"] == [%{"value" => "okta|x"}]
+    end
+
+    test "GET /Groups/:id → 404 for a group this provider never synced", %{
+      conn: conn,
+      token: token
+    } do
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-x") |> json_response(404)
       assert body["status"] == "404"
     end

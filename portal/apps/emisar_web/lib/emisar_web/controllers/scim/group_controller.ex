@@ -120,21 +120,43 @@ defmodule EmisarWeb.SCIM.GroupController do
     end
   end
 
-  # GET /scim/v2/Groups/:id — the domain tracks group membership but exposes no
-  # SCIM Group read, so there's no resource to return. A 404 is the honest SCIM
-  # answer (and what an IdP tolerates on a probe) — never a 500. DOMAIN GAP: a
-  # group read (display + current member externalIds) would let this echo the
-  # resource; out of Slice-2b scope (sync is push-only).
+  # GET /scim/v2/Groups/:id — echo the synced group so an IdP's read-back
+  # round-trips. The path id is the externalId the domain keys on.
   def show(conn, %{"id" => external_id}) do
-    not_found(conn, external_id)
+    provider = conn.assigns.scim_provider
+
+    case SSO.scim_fetch_group(provider, external_id) do
+      {:ok, group} -> json(conn, Resource.to_group(group, group.member_external_ids))
+      {:error, :not_found} -> not_found(conn, external_id)
+    end
   end
 
-  # GET /scim/v2/Groups — same gap: no group read, so the minimal valid SCIM
-  # ListResponse (empty) rather than a crash. IdPs probe this before pushing and
-  # tolerate an empty list.
-  def index(conn, _params) do
-    json(conn, Resource.list_response([]))
+  # GET /scim/v2/Groups — the provider's synced groups. `filter` carries the
+  # `displayName eq "..."` probe Entra makes before every push; answering it is
+  # what stops the IdP re-creating a group it already synced on every cycle.
+  # An unparseable filter lists everything rather than erroring — a broad answer
+  # still lets the IdP find its group, where a 400 fails the whole sync.
+  def index(conn, params) do
+    provider = conn.assigns.scim_provider
+    opts = display_name_filter(params)
+
+    groups =
+      provider
+      |> SSO.scim_list_groups(opts)
+      |> Enum.map(&Resource.to_group(&1, &1.member_external_ids))
+
+    json(conn, Resource.list_response(groups))
   end
+
+  # `displayName eq "Platform Engineers"` — the only Group filter IdPs send.
+  defp display_name_filter(%{"filter" => filter}) when is_binary(filter) do
+    case Regex.run(~r/^\s*displayName\s+eq\s+"(.*)"\s*$/i, filter) do
+      [_, value] -> [display_name: value]
+      _ -> []
+    end
+  end
+
+  defp display_name_filter(_params), do: []
 
   # -- PATCH parsing (RFC 7644 §3.5.2, the `members` ops) --------------
 
