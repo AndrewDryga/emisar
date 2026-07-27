@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -600,6 +601,57 @@ func TestResolvedPackTestVersionEnvUsesDeclaredDigests(t *testing.T) {
 	})
 	if env["PACKTEST_DIGEST"] != "" {
 		t.Fatalf("ad hoc override unexpectedly pinned = %#v", env)
+	}
+}
+
+func TestRetryPackTestPullSurvivesATransientRegistryFailure(t *testing.T) {
+	var log bytes.Buffer
+	attempts := 0
+	err := retryPackTestPull(context.Background(), 0, &log, func() error {
+		attempts++
+		if attempts < packTestPullAttempts {
+			return errors.New("context deadline exceeded")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("gave up on a transient failure: %v", err)
+	}
+	if attempts != packTestPullAttempts {
+		t.Fatalf("attempts = %d, want %d", attempts, packTestPullAttempts)
+	}
+	if !strings.Contains(log.String(), "retrying: context deadline exceeded") {
+		t.Fatalf("retry went unreported:\n%s", log.String())
+	}
+}
+
+func TestRetryPackTestPullReportsAPersistentFailure(t *testing.T) {
+	attempts := 0
+	err := retryPackTestPull(context.Background(), 0, io.Discard, func() error {
+		attempts++
+		return errors.New("no such image")
+	})
+	if err == nil || !strings.Contains(err.Error(), "no such image") {
+		t.Fatalf("err = %v, want the pull's own failure", err)
+	}
+	if attempts != packTestPullAttempts {
+		t.Fatalf("attempts = %d, want %d", attempts, packTestPullAttempts)
+	}
+}
+
+func TestRetryPackTestPullStopsWhenTheRunIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	err := retryPackTestPull(ctx, time.Hour, io.Discard, func() error {
+		attempts++
+		cancel()
+		return errors.New("context deadline exceeded")
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
 }
 

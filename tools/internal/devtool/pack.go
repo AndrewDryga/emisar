@@ -448,8 +448,10 @@ func (a *App) preparePackTestPlan(
 	// rest and starving servers that boot on a timer.
 	// --ignore-buildable: a pack that ships its own client or SUT image builds
 	// it, and asking a registry for it fails.
-	if err := a.run(ctx, a.Root, env, "docker", append(append([]string{}, compose...),
-		"pull", "--quiet", "--policy", "missing", "--ignore-buildable")...); err != nil {
+	pull := append(append([]string{}, compose...), "pull", "--quiet", "--policy", "missing", "--ignore-buildable")
+	if err := retryPackTestPull(ctx, packTestPullBackoff, a.Err, func() error {
+		return a.run(ctx, a.Root, env, "docker", pull...)
+	}); err != nil {
 		return "", fmt.Errorf("pull pack images: %w", err)
 	}
 
@@ -461,6 +463,35 @@ func (a *App) preparePackTestPlan(
 		return "", err
 	}
 	return string(images), nil
+}
+
+// --policy missing leaves the pull above as the only registry read a plan
+// makes, so one Docker Hub hiccup there fails the row — and on main, the
+// deploy behind it. Anonymous pulls time out often enough at this matrix
+// width to have already forced max-parallel down. A pull is a read: retrying
+// one costs seconds where rerunning the job costs the pipeline.
+const (
+	packTestPullAttempts = 3
+	packTestPullBackoff  = 3 * time.Second
+)
+
+func retryPackTestPull(ctx context.Context, backoff time.Duration, log io.Writer, pull func() error) error {
+	var err error
+	for attempt := 1; attempt <= packTestPullAttempts; attempt++ {
+		if err = pull(); err == nil {
+			return nil
+		}
+		if attempt == packTestPullAttempts {
+			break
+		}
+		fmt.Fprintf(log, "pull failed (attempt %d of %d), retrying: %v\n", attempt, packTestPullAttempts, err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff * time.Duration(attempt)):
+		}
+	}
+	return err
 }
 
 func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) error {
