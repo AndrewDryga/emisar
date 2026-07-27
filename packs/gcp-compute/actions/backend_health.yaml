@@ -1,0 +1,69 @@
+schema_version: 1
+id: gcp.backend_health
+title: gcloud compute backend-services get-health
+kind: script
+risk: low
+description: >
+  Get the current load-balancer health vote for backends attached to one
+  global or regional backend service. Returned list resources are capped at
+  500.
+side_effects:
+  - Read-only Compute Engine API requests for the service's backend groups.
+  - Returned list resources are capped at 500.
+search_terms:
+  - load balancer unhealthy
+  - backend service health
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: backend_service
+    type: string
+    required: true
+    description: Backend service name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  - name: scope
+    type: string
+    required: true
+    description: Whether the backend service is global or regional.
+    validation:
+      enum: [global, region]
+  - name: location
+    type: string
+    required: false
+    default: ""
+    description: Region when scope is region; empty when scope is global.
+    validation:
+      pattern: "^([a-z0-9][a-z0-9-]{0,62})?$"
+execution:
+  script:
+    path: scripts/compute_scope.sh
+    interpreter: /bin/sh
+  argv:
+    - backend-health
+    - "{{ args.backend_service }}"
+    - "{{ args.scope }}"
+    - "{{ args.location }}"
+    - "{{ args.project }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Check a global backend service
+    args:
+      project: example-prod
+      backend_service: api
+      scope: global
+  - title: Check a regional backend service
+    args:
+      project: example-prod
+      backend_service: api-internal
+      scope: region
+      location: us-central1

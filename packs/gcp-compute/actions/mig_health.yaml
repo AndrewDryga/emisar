@@ -1,0 +1,63 @@
+schema_version: 1
+id: gcp.mig_health
+title: gcloud compute instance-groups managed describe (health summary)
+kind: script
+risk: low
+description: >
+  Show one managed instance group's target size, stability and version state,
+  autohealing policy, update policy, and backing instance group.
+side_effects:
+  - One read-only Compute Engine API call.
+  - Returns group configuration and status only.
+search_terms:
+  - managed instance group unhealthy
+  - MIG rollout
+  - MIG stable
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: group
+    type: string
+    required: true
+    description: Managed instance group name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  - name: scope
+    type: string
+    required: true
+    description: Whether the managed instance group is zonal or regional.
+    validation:
+      enum: [zone, region]
+  - name: location
+    type: string
+    required: true
+    description: Zone or region selected by scope.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+execution:
+  script:
+    path: scripts/compute_scope.sh
+    interpreter: /bin/sh
+  argv:
+    - mig-health
+    - "{{ args.group }}"
+    - "{{ args.scope }}"
+    - "{{ args.location }}"
+    - "{{ args.project }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Show a zonal MIG health summary
+    args:
+      project: example-prod
+      group: workers
+      scope: zone
+      location: us-central1-a

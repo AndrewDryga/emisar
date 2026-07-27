@@ -256,7 +256,7 @@ func TestDeriveDetect_StripsNonSignalBinaries(t *testing.T) {
 	}{
 		{"generic helper stripped, real tool kept", []string{"curl", "nomad"}, nil, []string{"nomad"}},
 		{"remote BMC client stripped (dell-ipmi)", []string{"ipmitool"}, nil, []string{}},
-		{"remote SaaS/cluster clients stripped", []string{"gh", "kubectl", "terraform"}, nil, []string{}},
+		{"remote cloud/SaaS/cluster clients stripped", []string{"gcloud", "gh", "kubectl", "terraform"}, nil, []string{}},
 		{"remote SNMP clients stripped (snmp)", []string{"snmpget", "snmpbulkwalk"}, nil, []string{}},
 		{"local-service client kept (postgres)", []string{"psql"}, nil, []string{"psql"}},
 		{"explicit detect wins, never stripped", []string{"curl"}, []string{"ipmitool"}, []string{"ipmitool"}},

@@ -1,0 +1,77 @@
+schema_version: 1
+id: gcp.instance_serial_output
+title: gcloud compute instances get-serial-port-output
+kind: exec
+risk: low
+description: >
+  Get bounded serial-port output for one Compute Engine instance. Boot logs
+  can contain application-written sensitive data, so restrict this action by
+  policy. Use the byte offset returned by gcloud to resume a prior read.
+side_effects:
+  - One read-only Compute Engine API call.
+  - Returns guest-written serial output and may expose data the guest logged.
+search_terms:
+  - boot failure
+  - startup log
+  - VM console
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  - name: port
+    type: integer
+    required: false
+    default: 1
+    description: Serial port number.
+    validation:
+      min: 1
+      max: 4
+  - name: start
+    type: integer
+    required: false
+    default: 0
+    description: Zero-based byte offset at which to start reading.
+    validation:
+      min: 0
+      max: 9007199254740991
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - get-serial-port-output
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - "--port={{ args.port }}"
+      - "--start={{ args.start }}"
+      - --quiet
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Read the primary boot console
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01
+      port: 1
+      start: 0

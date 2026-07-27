@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: gcp-compute
+name: Google Cloud Compute diagnostics
+version: 0.1.0
+description: >
+  Read-only Google Cloud Compute diagnostics for VM instances, managed
+  instance groups, backend health, and asynchronous operations. Every action
+  names the target project explicitly and uses fixed gcloud commands.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud]
+
+setup:
+  summary: >
+    Drives the gcloud CLI on the runner host. Authenticate gcloud with a
+    workload identity, attached service account, service-account credential,
+    or operator configuration before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional path to a credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "For a credential file, populate a dedicated CLOUDSDK_CONFIG with `gcloud auth login --cred-file=...` or set CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
+    - "Use a read-only principal. The actions need Compute Viewer-equivalent permissions plus compute.instances.getSerialPortOutput for serial diagnostics."
+    - "This is a remote-target client pack and is never host-auto-suggested merely because gcloud is installed."
+    - "All actions pass --quiet and an explicit --project, so ambient project configuration cannot redirect a request."
+  verify: gcp.instance_describe
+
+actions:
+  - actions/instance_describe.yaml
+  - actions/instance_serial_output.yaml
+  - actions/mig_instances.yaml
+  - actions/mig_health.yaml
+  - actions/backend_health.yaml
+  - actions/operation_status.yaml

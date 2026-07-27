@@ -66,7 +66,7 @@ var genericBinaries = map[string]struct{}{
 // pack would otherwise be wrongly suggested on any box that happens to have
 // the CLI (dell-ipmi suggested on a GCP host with ipmitool was the bug).
 var remoteClientBinaries = map[string]struct{}{
-	"ipmitool": {}, "gh": {}, "kubectl": {},
+	"ipmitool": {}, "gh": {}, "gcloud": {}, "kubectl": {},
 	"terraform": {}, "snmpget": {}, "snmpbulkwalk": {},
 }
 
