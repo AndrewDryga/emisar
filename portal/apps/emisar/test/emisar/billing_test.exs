@@ -336,10 +336,14 @@ defmodule Emisar.BillingTest do
       assert Billing.account_plan(account) == "enterprise"
       assert Billing.directory_sync_available?(account)
 
+      # Chronological order IS the assertion (granted, then replaced), so the
+      # read must order deterministically — an unordered Repo.all returns heap
+      # order, which flips under concurrent CI.
       audits =
         Emisar.Audit.Event.Query.all()
         |> Emisar.Audit.Event.Query.by_account_id(account.id)
         |> Emisar.Audit.Event.Query.by_event_type("subscription.changed")
+        |> Emisar.Audit.Event.Query.ordered_for_export()
         |> Repo.all()
 
       assert Enum.map(audits, & &1.payload["to"]) == ["team", "enterprise"]
