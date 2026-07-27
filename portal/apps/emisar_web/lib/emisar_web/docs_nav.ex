@@ -119,7 +119,7 @@ defmodule EmisarWeb.DocsNav do
        },
        %{
          slug: "sso",
-         title: "Single sign-on",
+         title: "Single sign-on (SSO)",
          path: "/docs/sso",
          icon: "hero-identification",
          desc: "OIDC sign-in with Google Workspace, Okta, Keycloak, or any compliant provider."
