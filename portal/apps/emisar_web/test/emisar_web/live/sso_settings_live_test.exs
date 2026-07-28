@@ -534,7 +534,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  describe "group → role mapping forms gating" do
+  describe "role mapping forms gating" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       %{conn: conn, account: account}
@@ -544,8 +544,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # Group→role mappings are a SCIM feature — the create/edit forms (and the
-      # "Group → role mapping" panel) render only when `scim_enabled`. A freshly
+      # Role mappings are a SCIM feature — the create/edit forms (and the
+      # "Role mapping" panel) render only when `scim_enabled`. A freshly
       # created connection is SCIM-off (enable_scim turns it on), so it must not
       # surface them.
       provider = insert_provider(account, %{name: "No SCIM Okta"})
@@ -556,7 +556,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "No SCIM Okta"
       # …but the mapping panel + its create form don't (the section is gated on
       # scim_enabled).
-      refute html =~ "Group → role mapping"
+      refute html =~ "Role mapping"
       refute has_element?(lv, "#create-mapping-#{provider.id}")
     end
   end
@@ -810,7 +810,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  describe "group → role mapping" do
+  describe "role mapping" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       owner = Fixtures.Subjects.subject_for(user, account)

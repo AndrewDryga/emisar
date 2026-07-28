@@ -80,7 +80,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:providers, [])
       # Per-connection {users, groups} tallies for the :index health line.
       |> assign(:sync_stats, %{})
-      # Group→role mapping state: the per-provider lists + create forms, and the
+      # Role-mapping state: the per-provider lists + create forms, and the
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
       |> assign(:group_mappings, %{})
@@ -284,7 +284,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # Group→role mappings only exist for SCIM-enabled providers; load each one's
+  # Role mappings only exist for SCIM-enabled providers; load each one's
   # list + seed a fresh create form, both keyed by provider id.
   defp load_group_mappings(socket, providers) do
     scim_providers = Enum.filter(providers, & &1.scim_enabled)
@@ -436,7 +436,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     {:noreply, assign(socket, :scim_token, nil)}
   end
 
-  # -- Group → role mapping -------------------------------------------
+  # -- Role mapping -------------------------------------------
 
   def handle_event("validate_mapping", %{"provider_id" => id, "mapping" => params}, socket) do
     case find_provider(socket, id) do
@@ -1279,7 +1279,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp member_error(:not_found), do: "That member no longer exists."
 
   defp member_error(:role_managed_by_directory) do
-    "Roles for directory-synced members are set by your identity provider — use the group → role mappings."
+    "Roles for directory-synced members come from your identity provider — change them in Role mapping."
   end
 
   defp member_error(:deactivated_in_idp) do
@@ -2439,7 +2439,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Directory sync (SCIM) — a sibling island on the connection detail: header +
   # intent, the live sync-status signal, the base URL, the once-shown bearer, and
   # the IdP setup steps. The bearer is write-only (shown once on enable/rotate).
-  # Group→role is its own island card, not nested here.
+  # Role mapping is its own island card, not nested here.
   defp scim_section(assigns) do
     provider_id = assigns.provider.id
 
@@ -2607,7 +2607,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp group_mapping_section(assigns) do
     ~H"""
     <section>
-      <.section_header title="Group → role mapping" count={length(@mappings)} count_tone={:neutral}>
+      <.section_header title="Role mapping" count={length(@mappings)} count_tone={:neutral}>
         <:actions>
           <.button
             :if={not @adding_mapping}
@@ -3057,8 +3057,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         People provisioned through this connection — by directory sync, an SSO first sign-in, or an
         approved link request.
         <span :if={@scim_enabled}>
-          Suspend a member here and it holds until you lift it. Roles follow your group → role
-          mappings, and directory sync offboards a member automatically when your IdP does.
+          Suspend a member here and it holds until you lift it. Roles come from your role mappings, and directory sync offboards a member automatically when your IdP does.
         </span>
         <span :if={not @scim_enabled}>Re-role or suspend a member here.</span>
       </p>
@@ -3104,13 +3103,12 @@ defmodule EmisarWeb.SSOSettingsLive do
             <% else %>
               <%!-- On a directory-synced provider the role is the IdP's: a group→role
                  mapping (or the provider default) recomputes it on every sync, so a
-                 manual change here silently reverts. Read-only — set it via the
-                 group → role mappings above. An OIDC-only provider (no directory sync)
+                 manual change here silently reverts. Read-only — set it in Role mapping above. An OIDC-only provider (no directory sync)
                  keeps the editable select; those roles aren't recomputed. --%>
               <.tooltip
                 :if={@scim_enabled}
                 id={"role-lock-#{member.membership.id}"}
-                text="Role is managed by directory sync — set it with the group → role mappings above"
+                text="Role is managed by directory sync — set it in Role mapping above"
               >
                 <.chip icon="hero-lock-closed-mini">
                   {Emisar.Auth.Role.label(member.membership.role)}

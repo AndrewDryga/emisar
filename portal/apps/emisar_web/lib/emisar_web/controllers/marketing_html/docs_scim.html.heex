@@ -7,7 +7,7 @@
       toc={[
         {"enable", "Enabling directory sync"},
         {"providers", "Provider guides"},
-        {"group-role", "Group → role mapping"},
+        {"role-mapping", "Mapping groups to roles"},
         {"security-notes", "Security notes"}
       ]}
     >
@@ -259,7 +259,7 @@
         </li>
       </ul>
 
-      <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
+      <.docs_h2 id="role-mapping">Mapping directory groups to roles</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
         — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
@@ -273,9 +273,9 @@
 
       <.docs_screenshot
         src="/images/docs/sso/scim-group-role-mapping.webp"
-        title="emisar console · Group → role mapping"
+        title="emisar console · Role mapping"
         caption="Each mapping names a directory group by its externalId and the role its members land at. A synced group you don't map leaves its members at the connection's default role."
-        alt="The Group to role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
+        alt="The Role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
       />
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
