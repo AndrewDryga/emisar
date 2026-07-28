@@ -17,6 +17,7 @@
 // global LiveView `on_mount` hook sets on every live render.
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initConsoleCasts} from "./console_cast.js"
+import {initDocsNavScroll} from "./docs_nav_scroll.js"
 import {initDocsToc} from "./docs-toc.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initStaticFlashes} from "./flash.js"
@@ -38,6 +39,7 @@ initEmisarDemo()
 // the docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
 if (document.querySelector('nav[aria-label="Docs"]')) {
   initDocsToc()
+  initDocsNavScroll()
 } else {
   initLegalToc()
 }
