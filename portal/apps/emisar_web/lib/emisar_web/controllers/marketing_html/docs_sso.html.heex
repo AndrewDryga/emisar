@@ -326,9 +326,11 @@
 
       <.docs_callout kind={:note} title="Written from Microsoft's documented flow">
         <p>
-          Unlike the Okta and JumpCloud sections, these steps have not yet been walked on a live
-          Entra tenant — they come from Microsoft's own documentation plus emisar's Entra handling,
-          which is exercised by our test suite. Screenshots land when we certify a tenant.
+          The registration step below was performed on a live Entra tenant — that screenshot is
+          that console, and the tenant confirmed the platform requirement it calls out. The
+          remaining steps come from Microsoft's own documentation plus emisar's Entra handling,
+          which our test suite exercises; they have not yet been walked end to end the way the
+          Okta and JumpCloud sections were.
         </p>
       </.docs_callout>
 
@@ -350,6 +352,13 @@
               label="Redirect URI"
               copy_text="https://emisar.dev/sign_in/sso/callback"
             >https://emisar.dev/sign_in/sso/callback</.docs_code>
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-app-registration.webp"
+              title="Microsoft Entra admin center · Register an application"
+              caption="The platform must be set to Web — the URI beside it is ignored until it is, and the form refuses to register without it."
+              alt="Entra's Register an application form with the name emisar, Supported account types set to Single tenant only, and the Redirect URI section outlined in green: its platform dropdown reads Web and the adjacent field holds https://emisar.dev/sign_in/sso/callback."
+            />
           </div>
         </li>
         <li class="flex gap-4">

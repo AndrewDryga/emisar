@@ -295,6 +295,13 @@ func reportLicences(ctx context.Context, outDir string) error {
 // registration form with emisar's redirect URI, then the client secret. This is
 // the half that works on a free tenant — provisioning needs P1.
 func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string) error {
+	// Registering again would mint yet another duplicate — seven accumulated before
+	// the list blade's failure to render made them visible. With a client id in
+	// hand, go straight to the saved app.
+	if env["ENTRA_CLIENT_ID"] != "" {
+		fmt.Println("  app already registered — skipping the create form")
+		return openRegisteredApp(ctx, env, outDir)
+	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade"),
 		chromedp.Sleep(18*time.Second),
@@ -333,39 +340,36 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
+	return openRegisteredApp(ctx, env, outDir)
+}
+
+// openRegisteredApp captures the saved app's overview.
+func openRegisteredApp(ctx context.Context, env map[string]string, outDir string) error {
 	dismissOverlays(ctx)
 
-	// Register drops you on a blank shell often covered by an NPS survey, so reach
-	// the saved app through the list rather than trusting where it landed.
-	if err := openBlade(ctx,
-		"https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"); err != nil {
+	// Reach the saved app by its OWN blade. The App registrations LIST never
+	// renders — it comes up as a blank shell headless or headful — but a
+	// per-app blade addressed by client id does.
+	clientID := env["ENTRA_CLIENT_ID"]
+	if clientID == "" {
+		return fmt.Errorf("ENTRA_CLIENT_ID is empty — register the app first")
+	}
+	if err := openBlade(ctx, "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/"+
+		"ApplicationMenuBlade/~/Overview/appId/"+clientID); err != nil {
 		return err
 	}
 	dismissOverlays(ctx)
-	// The list blade reports "Content is busy" well past a fixed sleep, so wait for
-	// the row itself rather than guessing how long the portal needs.
-	if err := waitForText(ctx, "emisar", 90*time.Second); err != nil {
-		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
-		return fmt.Errorf("registered app never appeared: %w", err)
-	}
-	if clicked, err := clickText(ctx, "emisar"); err != nil {
-		return err
-	} else if !clicked {
-		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
+	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
+		_ = screenshot(ctx, outDir, "en-05-overview-failed")
 		_ = dumpOptions(ctx)
-		return fmt.Errorf("registered app not in the list")
+		return fmt.Errorf("app overview never rendered: %w", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
-		return err
-	}
-	dismissOverlays(ctx)
 	_ = highlight(ctx, "Application (client) ID")
 	return screenshot(ctx, outDir, "en-05-app-overview")
 }
 
 // openBlade navigates to a portal blade and RELOADS. A hash-route change alone
-// leaves this SPA on a blank shell — the App registrations list came up empty
-// that way and looked like a missing app rather than a missing page.
+// leaves this SPA on a blank shell.
 func openBlade(ctx context.Context, url string) error {
 	return chromedp.Run(ctx,
 		chromedp.Navigate(url),
