@@ -221,9 +221,27 @@ func run(env map[string]string, outDir string, headless bool) error {
 // their docs omit OIDC from the custom-SCIM bases, and our shipped copy was
 // corrected on that basis alone.
 func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir string) error {
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/#/sso/applications"),
-		chromedp.Sleep(10*time.Second)); err != nil {
+	// Hash deep-links don't route this SPA (#/sso/applications leaves you on the
+	// onboarding page), so walk the left nav: Access → SSO Applications.
+	if clicked, err := clickText(ctx, "Access"); err != nil {
+		return err
+	} else if !clicked {
+		return fmt.Errorf("no Access nav item")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+		return err
+	}
+	for _, label := range []string{"SSO Applications", "Applications"} {
+		clicked, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if clicked {
+			fmt.Printf("  clicked %q\n", label)
+			break
+		}
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 		return err
 	}
 	if err := screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
@@ -246,7 +264,62 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := screenshot(ctx, outDir, "jc-03-add-application"); err != nil {
 		return err
 	}
+
+	// Do NOT type into a "search" field here: the console's global search sits in
+	// the top bar and matches that hint first, opening a modal OVER the wizard.
+	// The wizard offers the custom integration directly.
+	picked := false
+	for _, label := range []string{"Custom Application", "custom integration", "Custom"} {
+		clicked, err := clickContaining(ctx, label)
+		if err != nil {
+			return err
+		}
+		if clicked {
+			fmt.Printf("  picked %q\n", label)
+			picked = true
+			break
+		}
+	}
+	if !picked {
+		_ = screenshot(ctx, outDir, "jc-04-no-custom-tile")
+		_ = describePage(ctx)
+		return fmt.Errorf("no custom-integration option on the wizard's first step")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
+		return err
+	}
+	if clicked, err := clickText(ctx, "Next"); err != nil {
+		return err
+	} else if clicked {
+		fmt.Println(`  clicked "Next"`)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+		return err
+	}
+	// Step 2 "Select Options" — the screen that shows whether SSO and provisioning
+	// can live on ONE app, which is the claim this certification exists to settle.
+	if err := screenshot(ctx, outDir, "jc-05-select-options"); err != nil {
+		return err
+	}
 	return describePage(ctx)
+}
+
+// clickContaining clicks the smallest visible element whose text contains the
+// label — catalog tiles bundle a description into the same clickable node.
+func clickContaining(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('a,button,li,div,span,[role=button]')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!matches.length) return false;
+  matches.sort((a, b) => a.textContent.length - b.textContent.length);
+  matches[0].scrollIntoView({block: 'center'});
+  matches[0].click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
 }
 
 // describePage dumps the visible copy and controls so a missed selector is
