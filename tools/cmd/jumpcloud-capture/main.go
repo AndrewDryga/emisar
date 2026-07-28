@@ -108,6 +108,25 @@ func clickText(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
+// clickContaining clicks the smallest visible element whose text contains the
+// label — list rows bundle status and column text alongside the name, so an
+// exact match misses them.
+func clickContaining(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('a,button,li,tr,td,div,span,[role=button]')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!matches.length) return false;
+  matches.sort((a, b) => a.textContent.length - b.textContent.length);
+  matches[0].scrollIntoView({block: 'center'});
+  matches[0].click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
+}
+
 func screenshot(ctx context.Context, outDir, name string) error {
 	var buffer []byte
 	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
@@ -225,7 +244,53 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	// onboarding page), so walk the left nav: Access → SSO Applications.
 	// The nav is intermittent (JumpCloud had an incident banner up throughout), so
 	// retry the two-step walk rather than failing the run on one missed click.
+	// Resuming against an app that already exists: go straight to it. Re-running
+	// the wizard makes a DUPLICATE app, which happened once already.
+	if env["JUMPCLOUD_APP_ID"] != "" {
+		// Only /#/applications routes; a per-app deep link lands on Home, and then
+		// a tab-name click hits the LEFT NAV item of the same name instead. Open
+		// the app from the list.
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/#/applications"),
+			chromedp.Sleep(10*time.Second)); err != nil {
+			return err
+		}
+		// The row carries status and column text alongside the label, so an exact
+		// match misses it.
+		if clicked, err := clickContaining(ctx, "emisar"); err != nil {
+			return err
+		} else if !clicked {
+			_ = screenshot(ctx, outDir, "jc-09-app-not-listed")
+			return fmt.Errorf("emisar not in the applications list")
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(9*time.Second)); err != nil {
+			return err
+		}
+		if err := screenshot(ctx, outDir, "jc-09-app-detail"); err != nil {
+			return err
+		}
+		return provisioningTabFlow(ctx, env, outDir)
+	}
+
 	reached := false
+	// URL first: the nav is a flyout whose items aren't always clickable, and it
+	// failed 3/3 on some runs. Try the SPA routes, then fall back to the menu.
+	for _, route := range []string{"/#/applications", "/#/sso", "/#/sso/applications"} {
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+route),
+			chromedp.Sleep(8*time.Second)); err != nil {
+			return err
+		}
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return err
+		}
+		if strings.Contains(body, "Configured Applications") {
+			fmt.Printf("  reached applications via %s\n", route)
+			reached = true
+			break
+		}
+	}
 	for attempt := 1; attempt <= 3 && !reached; attempt++ {
 		if _, err := clickText(ctx, "Access"); err != nil {
 			return err
@@ -366,7 +431,140 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
 		return err
 	}
+	return provisioningFlow(ctx, env, outDir)
+}
+
+// provisioningFlow wires the saved app's Provisioning tab at emisar's SCIM
+// endpoint and activates it. Activation is what makes JumpCloud actually push,
+// which is the only way to observe what it really sends as externalId — their
+// docs describe a fallback, not a guarantee.
+func provisioningFlow(ctx context.Context, env map[string]string, outDir string) error {
+	// Open the app we just created.
+	if clicked, err := clickText(ctx, "emisar"); err != nil {
+		return err
+	} else if !clicked {
+		return fmt.Errorf("saved app not listed")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+		return err
+	}
+	return provisioningTabFlow(ctx, env, outDir)
+}
+
+// provisioningTabFlow opens the app's provisioning tab and reports its fields.
+func provisioningTabFlow(ctx context.Context, env map[string]string, outDir string) error {
+	// Their own docs use both names for this tab; try each.
+	opened := false
+	for _, label := range []string{"Provisioning", "Identity Management"} {
+		clicked, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if clicked {
+			fmt.Printf("  opened %q tab\n", label)
+			opened = true
+			break
+		}
+	}
+	if !opened {
+		_ = screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
+		_ = describePage(ctx)
+		return fmt.Errorf("no Provisioning / Identity Management tab on the saved app")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-09-provisioning-tab"); err != nil {
+		return err
+	}
+
+	// SCIM API + Bearer token is emisar's shape; the alternatives are a custom
+	// import and an API-key header.
+	for _, radio := range []string{"SCIM API", "Bearer token"} {
+		picked, err := clickRadio(ctx, radio)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  radio %q: %t\n", radio, picked)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		return err
+	}
+	base := strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/") + "/scim/v2"
+	fields := [][2]string{
+		{"Base URL", base},
+		{"Token Key", env["EMISAR_SCIM_TOKEN"]},
+		// Their docs are explicit that this address must NOT already exist in the
+		// target app, or activation fails.
+		{"Test User Email", "jumpcloud-probe@northstar.example"},
+	}
+	for _, f := range fields {
+		if err := focusField(ctx, f[0]); err != nil {
+			return err
+		}
+		if err := chromedp.Run(ctx, chromedp.KeyEvent(f[1])); err != nil {
+			return err
+		}
+		fmt.Printf("  typed %s\n", f[0])
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-10-scim-filled"); err != nil {
+		return err
+	}
+	// Test Connection, then Activate. Their form DISCARDS the config if you press
+	// Save instead — documented, and worth never learning the hard way.
+	for _, label := range []string{"Test Connection", "Activate"} {
+		clicked, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  clicked %q: %t\n", label, clicked)
+		if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
+			return err
+		}
+		if err := screenshot(ctx, outDir, "jc-11-"+strings.ToLower(strings.ReplaceAll(label, " ", "-"))); err != nil {
+			return err
+		}
+	}
 	return describePage(ctx)
+}
+
+// clickRadio selects a radio by its label text.
+func clickRadio(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const radio = [...document.querySelectorAll('input[type=radio]')].filter(visible).find(el =>
+    (el.labels && [...el.labels].some(l => l.textContent.trim().startsWith(%q))));
+  if (!radio) return false;
+  radio.scrollIntoView({block: 'center'});
+  radio.click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
+}
+
+// describeFields lists the visible inputs so the provisioning form's real field
+// names drive the next step instead of a guess.
+func describeFields(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('input,textarea,select')].filter(visible).map(el =>
+    [el.tagName, el.type || '', 'name=' + (el.name || '-'), 'id=' + (el.id || '-'),
+     'ph=' + (el.placeholder || '-'),
+     'label=' + (el.labels && el.labels.length ? el.labels[0].textContent.trim().slice(0,40) : '-')
+    ].join(' ')).join('\n');
+})()`
+	var listing string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &listing)); err != nil {
+		return err
+	}
+	fmt.Println("--- visible fields ---")
+	fmt.Println(listing)
+	return nil
 }
 
 // tickInSection checks the box whose enclosing block carries the given heading —
