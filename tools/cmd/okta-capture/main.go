@@ -288,6 +288,27 @@ func clickText(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
+// waitForText polls the rendered page until `needle` shows up, so a step waits
+// on the thing it needs rather than on a guessed number of seconds. Reports
+// whether it appeared instead of erroring, leaving the caller to say what was
+// missing — a bare timeout reads as a selector bug and sends the next reader
+// hunting the wrong thing.
+func waitForText(ctx context.Context, needle string, attempts int) (bool, error) {
+	for range attempts {
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return false, err
+		}
+		if strings.Contains(body, needle) {
+			return true, nil
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
 // clickContaining clicks the SMALLEST visible element whose text contains the
 // label. Typeahead rows and cards bundle a subtitle into the same clickable
 // node ("…(Header Auth)SWA, SCIM, SAML"), so exact matching misses them;
@@ -492,7 +513,7 @@ func provisioningFlow(
 	}
 	if !configuring {
 		fmt.Println("  already configured — skipping to To App")
-		return lifecycleFlow(ctx, shoot, step, settle)
+		return lifecycleFlow(ctx, instance, shoot, step, settle)
 	}
 	if err := settle(5); err != nil {
 		return err
@@ -577,8 +598,24 @@ func provisioningFlow(
 	if err := shoot("11-provisioning-saved"); err != nil {
 		return err
 	}
-	// Saving re-renders the Integration pane; re-enter Provisioning so the
-	// Settings list (To App / To Okta / Integration) is on screen again.
+
+	return lifecycleFlow(ctx, instance, shoot, step, settle)
+}
+
+// lifecycleFlow captures Provisioning → To App, Assignments and Push Groups —
+// the settings that decide what Okta actually pushes to emisar.
+func lifecycleFlow(
+	ctx context.Context,
+	instance string,
+	shoot func(string) error,
+	step func(string) error,
+	settle func(int) error,
+) error {
+	// The two callers arrive with the Integration pane in different states — a
+	// fresh save has just re-rendered it, a re-run never left it — so the
+	// precondition belongs here rather than in each caller. Re-enter Provisioning,
+	// then WAIT for the Settings list instead of guessing at a settle: the re-run
+	// path guessed, and failed with a bare "could not find To App".
 	if err := chromedp.Run(ctx, chromedp.Navigate(instance)); err != nil {
 		return err
 	}
@@ -586,24 +623,6 @@ func provisioningFlow(
 		return err
 	}
 	if err := step("Provisioning"); err != nil {
-		return err
-	}
-
-	return lifecycleFlow(ctx, shoot, step, settle)
-}
-
-// lifecycleFlow captures Provisioning → To App, Assignments and Push Groups —
-// the settings that decide what Okta actually pushes to emisar.
-func lifecycleFlow(
-	ctx context.Context,
-	shoot func(string) error,
-	step func(string) error,
-	settle func(int) error,
-) error {
-	// Lifecycle settings live under Provisioning → To App. Saving the credentials
-	// re-renders the Integration pane, and the Settings list (To App / To Okta /
-	// Integration) paints a beat later — clicking straight away misses it.
-	if err := settle(5); err != nil {
 		return err
 	}
 	// To App / To Okta only exist once the API integration SAVED, and Okta refuses
@@ -619,6 +638,17 @@ func lifecycleFlow(
 		_ = shoot("12-provisioning-not-enabled")
 		return fmt.Errorf("provisioning never enabled — Test API Credentials must PASS first, " +
 			"which needs EMISAR_PUBLIC_URL reachable from Okta (start the tunnel)")
+	}
+	// The Settings list paints asynchronously after the tab switch, so poll for it
+	// rather than clicking into a pane that has not rendered yet.
+	shown, err := waitForText(ctx, "To App", 10)
+	if err != nil {
+		return err
+	}
+	if !shown {
+		_ = shoot("12-to-app-missing")
+		_ = reportPage(ctx)
+		return fmt.Errorf("the Settings list never rendered — To App absent after re-entering Provisioning")
 	}
 	if err := step("To App"); err != nil {
 		_ = shoot("12-to-app-missing")

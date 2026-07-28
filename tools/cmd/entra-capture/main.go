@@ -269,26 +269,6 @@ func describePage(ctx context.Context) error {
 	return nil
 }
 
-// reportLicences answers the question the founder's failed checkout left open:
-// did the P2 trial actually land? SCIM provisioning needs P1 or better, while
-// OIDC sign-in does not — so this decides which half of the Entra certification
-// can proceed today.
-func reportLicences(ctx context.Context, outDir string) error {
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_IAM/LicensesMenuBlade/~/Products"),
-		chromedp.Sleep(15*time.Second),
-	); err != nil {
-		return err
-	}
-	var body string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-		return err
-	}
-	fmt.Println("--- licences ---")
-	fmt.Println(body[:min(1200, len(body))])
-	return screenshot(ctx, outDir, "en-02-licences")
-}
-
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
 // registration form with emisar's redirect URI, then the client secret. This is
 // the half that works on a free tenant — provisioning needs P1.
@@ -493,27 +473,6 @@ func clickTextAtCentre(ctx context.Context, label string) error {
 		return err
 	}
 	return chromedp.Run(ctx, chromedp.MouseClickXY(point.X, point.Y))
-}
-
-// clickText clicks the smallest visible element whose text matches, which is how
-// the Entra admin center's command bars and links are reachable — they carry no
-// stable ids.
-func clickText(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const matches = [...document.querySelectorAll('*')]
-    .filter(el => visible(el) && (el.textContent || '').trim() === %q);
-  if (!matches.length) return false;
-  // Smallest subtree first: the deepest element with exactly this text is the
-  // label, not some ancestor panel that happens to contain only it.
-  matches.sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
-  const el = matches[0];
-  (el.closest('a,button,[role=button],[role=option],[role=combobox]') || el).click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
 }
 
 // highlight outlines the control a step tells the reader to use, so the
