@@ -316,7 +316,6 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	return describePage(ctx)
 }
 
-
 // clickInDialog clicks inside the wizard only. Document-wide matching is what
 // walked this driver out of the wizard twice: a loose label hits console chrome
 // behind the dialog, and the global search field in the top bar shadows the
@@ -348,24 +347,6 @@ func clickInDialog(ctx context.Context, label string) (bool, error) {
     if (select) { select.scrollIntoView({block: 'center'}); select.click(); return true; }
     node = node.parentElement;
   }
-  matches[0].scrollIntoView({block: 'center'});
-  matches[0].click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
-}
-
-// clickContaining clicks the smallest visible element whose text contains the
-// label — catalog tiles bundle a description into the same clickable node.
-func clickContaining(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const matches = [...document.querySelectorAll('a,button,li,div,span,[role=button]')]
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!matches.length) return false;
-  matches.sort((a, b) => a.textContent.length - b.textContent.length);
   matches[0].scrollIntoView({block: 'center'});
   matches[0].click();
   return true;
