@@ -2257,11 +2257,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp identifier_claim_hint(_),
     do: "`sub` is the OIDC standard and the only claim these providers issue for this."
 
-  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso/google-workspace"
-  defp docs_path_for_kind("okta"), do: ~p"/docs/sso/okta"
-  defp docs_path_for_kind("entra"), do: ~p"/docs/sso/entra"
-  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/sso/jumpcloud"
-  defp docs_path_for_kind("keycloak"), do: ~p"/docs/sso/keycloak"
+  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/integrations/google-workspace"
+  defp docs_path_for_kind("okta"), do: ~p"/docs/integrations/okta"
+  defp docs_path_for_kind("entra"), do: ~p"/docs/integrations/entra"
+  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/integrations/jumpcloud"
+  defp docs_path_for_kind("keycloak"), do: ~p"/docs/integrations/keycloak"
   defp docs_path_for_kind(_), do: ~p"/docs/sso#generic-oidc"
 
   defp setup_kind_label("google_workspace"), do: "Google Workspace"

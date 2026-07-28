@@ -125,47 +125,6 @@ defmodule EmisarWeb.DocsNav do
          desc: "OIDC sign-in with Google Workspace, Okta, Keycloak, or any compliant provider."
        },
        %{
-         slug: "sso-okta",
-         title: "Okta",
-         path: "/docs/sso/okta",
-         icon: "hero-identification",
-         parent: "sso",
-         desc: "Okta end to end: the OIDC web app, the separate SCIM app, and group-driven roles."
-       },
-       %{
-         slug: "sso-entra",
-         title: "Microsoft Entra",
-         path: "/docs/sso/entra",
-         icon: "hero-identification",
-         parent: "sso",
-         desc:
-           "Entra end to end: the app registration with oid, and the provisioning enterprise app."
-       },
-       %{
-         slug: "sso-jumpcloud",
-         title: "JumpCloud",
-         path: "/docs/sso/jumpcloud",
-         icon: "hero-identification",
-         parent: "sso",
-         desc: "JumpCloud end to end: one custom application for OIDC sign-in and directory push."
-       },
-       %{
-         slug: "sso-keycloak",
-         title: "Keycloak",
-         path: "/docs/sso/keycloak",
-         icon: "hero-identification",
-         parent: "sso",
-         desc: "Keycloak sign-in with PKCE, and what its missing outbound SCIM leaves you to do."
-       },
-       %{
-         slug: "sso-google-workspace",
-         title: "Google Workspace",
-         path: "/docs/sso/google-workspace",
-         icon: "hero-identification",
-         parent: "sso",
-         desc: "Google Workspace sign-in with the locked issuer, and its directory-sync gap."
-       },
-       %{
          slug: "scim",
          title: "Directory sync (SCIM)",
          path: "/docs/scim",
@@ -209,6 +168,45 @@ defmodule EmisarWeb.DocsNav do
          icon: "hero-credit-card",
          desc:
            "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
+       }
+     ]},
+    {"Integrations",
+     [
+       %{
+         slug: "integrations-okta",
+         title: "Okta",
+         path: "/docs/integrations/okta",
+         icon: "hero-identification",
+         desc: "Okta end to end: the OIDC web app, the separate SCIM app, and group-driven roles."
+       },
+       %{
+         slug: "integrations-entra",
+         title: "Microsoft Entra",
+         path: "/docs/integrations/entra",
+         icon: "hero-identification",
+         desc:
+           "Entra end to end: the app registration with oid, and the provisioning enterprise app."
+       },
+       %{
+         slug: "integrations-jumpcloud",
+         title: "JumpCloud",
+         path: "/docs/integrations/jumpcloud",
+         icon: "hero-identification",
+         desc: "JumpCloud end to end: one custom application for OIDC sign-in and directory push."
+       },
+       %{
+         slug: "integrations-keycloak",
+         title: "Keycloak",
+         path: "/docs/integrations/keycloak",
+         icon: "hero-identification",
+         desc: "Keycloak sign-in with PKCE, and what its missing outbound SCIM leaves you to do."
+       },
+       %{
+         slug: "integrations-google-workspace",
+         title: "Google Workspace",
+         path: "/docs/integrations/google-workspace",
+         icon: "hero-identification",
+         desc: "Google Workspace sign-in with the locked issuer, and its directory-sync gap."
        }
      ]},
     {"Build packs",
