@@ -19,15 +19,9 @@
         Create one confidential Keycloak client, then connect it to emisar. You need Keycloak
         realm-admin access and an emisar owner or admin. Keep
         <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open in emisar so you can copy its callback URL.
+        open in emisar so you can copy its callback URL. The screenshots are from Keycloak 26.7;
+        earlier versions arrange the same settings differently.
       </p>
-
-      <.docs_callout kind={:note} title="Verified end to end">
-        <p>
-          emisar's OIDC authorization-code and just-in-time provisioning flow is verified end to
-          end against Keycloak 26.7 — the screenshots below are that setup.
-        </p>
-      </.docs_callout>
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
       <ol class="mt-8 space-y-10">

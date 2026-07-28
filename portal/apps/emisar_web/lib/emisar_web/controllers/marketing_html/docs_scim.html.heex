@@ -29,17 +29,6 @@
         </p>
       </.docs_callout>
 
-      <.docs_callout kind={:note} title="Where this flow stands">
-        <p>
-          emisar speaks standards-based SCIM 2.0, and the full provision / update / deactivate /
-          reactivate lifecycle plus group&nbsp;→&nbsp;role recompute is verified end to end against
-          a live standards IdP. The Okta and JumpCloud walkthroughs below were each run against a
-          real tenant of that provider — Okta provisioned a user into emisar, and JumpCloud's
-          activation (which creates, renames and deletes a probe group, and provisions and removes a
-          test user) completes against it.
-        </p>
-      </.docs_callout>
-
       <.docs_h2 id="enable">Enabling directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
