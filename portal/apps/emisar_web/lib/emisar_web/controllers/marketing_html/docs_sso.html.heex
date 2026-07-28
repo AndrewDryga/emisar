@@ -302,6 +302,17 @@
         </p>
       </.docs_callout>
 
+      <p class="mt-8 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Next:</strong>
+        add
+        <.link
+          navigate={~p"/docs/scim#okta"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >directory sync</.link>
+        so roles and removals follow Okta. It rides a second Okta application — an OIDC login app
+        cannot carry SCIM.
+      </p>
+
       <.docs_h2 id="jumpcloud">JumpCloud setup</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Verified against a live JumpCloud tenant. You need a JumpCloud administrator and an emisar
@@ -315,10 +326,7 @@
           JumpCloud is the only provider here whose custom application carries sign-in
           <em>and</em>
           directory sync together. If you want both, tick them on the same wizard step — you do not
-          need a second connector. Setting up sync is covered in <.link
-            navigate={~p"/docs/scim#jumpcloud"}
-            class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-          >directory sync</.link>.
+          need a second connector.
         </p>
       </.docs_callout>
 
@@ -445,7 +453,11 @@
               On the application's <strong class="text-zinc-200">SSO</strong>
               tab, put emisar's callback in <strong class="text-zinc-200">Redirect URIs</strong>:
             </p>
-            <.docs_code>https://emisar.dev/sign_in/sso/callback</.docs_code>
+            <.docs_code
+              phx-no-format
+              label="Redirect URI"
+              copy_text="https://emisar.dev/sign_in/sso/callback"
+            >https://emisar.dev/sign_in/sso/callback</.docs_code>
             <p class="mt-4">
               Leave <strong class="text-zinc-200">Authorization Code</strong>
               as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
@@ -455,13 +467,12 @@
             </p>
             <p class="mt-4">
               Activating reveals the <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client Secret</strong>. Paste them into emisar's
-              <strong class="text-zinc-200">Add provider</strong>
-              form along with the discovery URL:
+              and <strong class="text-zinc-200">Client Secret</strong>. Those are the only two
+              values you carry back: pick <strong class="text-zinc-200">JumpCloud</strong>
+              in emisar's <strong class="text-zinc-200">Add provider</strong>
+              form and the issuer is already filled in and locked, because it is the same for every
+              JumpCloud org.
             </p>
-            <.docs_code>
-              https://oauth.id.jumpcloud.com/.well-known/openid-configuration
-            </.docs_code>
 
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
@@ -472,6 +483,15 @@
           </div>
         </li>
       </ol>
+
+      <p class="mt-8 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Next:</strong>
+        if you ticked <strong class="text-zinc-200">Export users to this app</strong>
+        back on step 3, this same application is ready to push your directory — <.link
+          navigate={~p"/docs/scim#jumpcloud"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >finish directory sync</.link>.
+      </p>
 
       <.docs_h2 id="keycloak">Keycloak setup</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -657,6 +677,15 @@
         without a second emisar TOTP prompt — your IdP enforces the MFA. Turn it off if you'd
         rather emisar still challenge. Magic-link sign-in is unaffected and is challenged for 2FA
         as usual.
+      </p>
+
+      <p class="mt-8 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Next:</strong>
+        Keycloak cannot push a directory into emisar, so members are created on first sign-in and
+        removed by hand — <.link
+          navigate={~p"/docs/scim#keycloak"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >what that leaves you to do</.link>.
       </p>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
