@@ -2786,7 +2786,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <section>
       <.section_header
-        title="Group → runner access"
+        title="Runner access mapping"
         count={length(@mappings)}
         count_tone={:neutral}
       >

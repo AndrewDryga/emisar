@@ -129,8 +129,7 @@ defmodule EmisarWeb.DocsNav do
          title: "Directory sync (SCIM)",
          path: "/docs/scim",
          icon: "hero-arrow-path",
-         desc:
-           "SCIM 2.0 provisioning and group→role mapping — offboarding in your IdP revokes access."
+         desc: "SCIM 2.0 provisioning and role mapping — offboarding in your IdP revokes access."
        },
        %{
          slug: "runners",

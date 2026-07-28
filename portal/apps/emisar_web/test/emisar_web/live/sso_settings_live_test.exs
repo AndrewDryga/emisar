@@ -913,7 +913,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert runner_id == runner.id
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Group → runner access"
+      assert html =~ "Runner access mapping"
       refute html =~ "No runners registered yet"
       render_click(lv, "add_runner_access_mapping_form", %{})
 

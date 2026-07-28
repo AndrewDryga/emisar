@@ -1470,7 +1470,7 @@ defmodule EmisarWeb.TeamLive do
                       <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
                       <%= cond do %>
                         <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed?(identity) -> %>
-                          <%!-- Synced role: the IdP owns it (a group→role mapping, or the
+                          <%!-- Synced role: the IdP owns it (a role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
                          change actually sticks — the identity provider. --%>

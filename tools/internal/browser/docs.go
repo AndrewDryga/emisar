@@ -137,7 +137,7 @@ var docsShots = []shot{
 	// two of three IdP groups, deliberately leaving one unmapped).
 	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectGoogleProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
 	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
-	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Group → role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
+	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
 
