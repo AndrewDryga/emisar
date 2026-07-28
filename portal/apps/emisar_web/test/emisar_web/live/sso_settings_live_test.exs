@@ -567,6 +567,27 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    test "the identifier claim offers oid only for Entra", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      keycloak =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "keycloak"}})
+        |> render_change()
+
+      # Keycloak never issues `oid`; offering it invites a choice that fails at the
+      # first sign-in with a missing-identifier error rather than at save time.
+      refute keycloak =~ "oid — Microsoft Entra"
+      assert keycloak =~ "sub — OIDC standard"
+
+      entra =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "entra"}})
+        |> render_change()
+
+      assert entra =~ "oid — Microsoft Entra"
+    end
+
     test "only a named provider promises screenshots", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 

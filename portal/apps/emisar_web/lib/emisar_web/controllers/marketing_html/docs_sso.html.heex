@@ -63,7 +63,7 @@
             <p class="mt-1.5">
               A confidential web application with a client secret. emisar uses standard,
               discovery-based OpenID Connect, so the named providers (Google Workspace, Okta,
-              Keycloak) are presets over one flow — there's no separate integration to wait for, and
+              Microsoft Entra, JumpCloud, Keycloak) are presets over one flow — there's no separate integration to wait for, and
               <strong class="text-zinc-200">Generic OpenID Connect</strong>
               fits anything compliant. When you pick a provider type in the form, the in-app guide
               names the exact admin-console path for it. Leave
@@ -389,8 +389,7 @@
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
             <p class="mt-1.5">
-              Entra has no preset of its own, so pick
-              <strong class="text-zinc-200">Generic OpenID Connect</strong>
+              Pick <strong class="text-zinc-200">Microsoft Entra</strong>
               as the provider type. Take <strong class="text-zinc-200">Client ID</strong>
               from the registration's <strong class="text-zinc-200">Application (client) ID</strong>, the secret from the
               step above, and build the issuer from your <strong class="text-zinc-200">Directory (tenant) ID</strong>:

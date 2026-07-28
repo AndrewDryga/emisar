@@ -9,6 +9,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   @kind_labels %{
     google_workspace: "Google Workspace",
     okta: "Okta",
+    entra: "Microsoft Entra",
     jumpcloud: "JumpCloud",
     keycloak: "Keycloak",
     openid_connect: "OpenID Connect"
@@ -2014,7 +2015,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               field={@form[:identifier_claim]}
               type="select"
               label="Identifier claim"
-              options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
+              options={identifier_claim_options(@kind)}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               The stable, provider-issued claim that identifies a user — restricted to immutable
@@ -2221,7 +2222,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # most of those readers actually want.
   # `setup_kind_label/1` reads "a generic OIDC provider", which makes a clumsy link
   # ("a generic OIDC provider setup guide"), so the generic case gets its own noun.
-  defp docs_link_label(kind) when kind in ~w[google_workspace okta jumpcloud keycloak],
+  defp docs_link_label(kind) when kind in ~w[google_workspace okta entra jumpcloud keycloak],
     do: "#{setup_kind_label(kind)} setup guide"
 
   defp docs_link_label(_), do: "OIDC setup guide"
@@ -2229,13 +2230,22 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Only the named providers have console screenshots — there is no single console
   # to photograph for "any other OIDC provider", so promising them there would be a
   # claim the reader disproves one click later.
-  defp docs_link_lead(kind) when kind in ~w[google_workspace okta jumpcloud keycloak],
+  defp docs_link_lead(kind) when kind in ~w[google_workspace okta entra jumpcloud keycloak],
     do: "Screenshots for every step:"
 
   defp docs_link_lead(_), do: "What your provider has to supply:"
 
+  # `oid` exists for exactly one provider. Offering it under Keycloak or Google
+  # invites an admin to pick a claim their IdP never issues, which fails at the
+  # first sign-in with a missing-identifier error rather than at save time.
+  defp identifier_claim_options("entra"),
+    do: [{"oid — Microsoft Entra", "oid"}, {"sub — pairwise, not recommended", "sub"}]
+
+  defp identifier_claim_options(_), do: [{"sub — OIDC standard", "sub"}]
+
   defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso#google-workspace"
   defp docs_path_for_kind("okta"), do: ~p"/docs/sso#okta"
+  defp docs_path_for_kind("entra"), do: ~p"/docs/sso#entra"
   defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/sso#jumpcloud"
   defp docs_path_for_kind("keycloak"), do: ~p"/docs/sso#keycloak"
   defp docs_path_for_kind(_), do: ~p"/docs/sso#generic-oidc"
@@ -2248,6 +2258,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp oidc_app_hint("google_workspace") do
     "in Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID (Web application)"
+  end
+
+  defp oidc_app_hint("entra") do
+    "in the Microsoft Entra admin center → App registrations → New registration, with a Web redirect URI"
   end
 
   defp oidc_app_hint("okta") do
@@ -2266,12 +2280,14 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp issuer_hint("google_workspace"), do: "https://accounts.google.com"
   defp issuer_hint("okta"), do: "https://YOUR-ORG.okta.com"
+  defp issuer_hint("entra"), do: "https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
   defp issuer_hint("jumpcloud"), do: "https://oauth.id.jumpcloud.com/"
   defp issuer_hint("keycloak"), do: "https://YOUR-HOST/realms/YOUR-REALM"
   defp issuer_hint(_), do: "your provider's OIDC issuer URL (the discovery base)"
 
   # The display-name placeholder — a plausible name for the picked provider, so
   # the example never contradicts the selected kind (no "Acme Okta" under Google).
+  defp name_placeholder("entra"), do: "Acme Entra"
   defp name_placeholder("google_workspace"), do: "Acme Google Workspace"
   defp name_placeholder("okta"), do: "Acme Okta"
   defp name_placeholder("jumpcloud"), do: "Acme JumpCloud"
@@ -2329,6 +2345,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp issuer_where_hint("google_workspace"),
     do: "Always this exact value for Google — nothing to look up."
 
+  defp issuer_where_hint("entra") do
+    "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing `/v2.0` selects Entra's v2.0 endpoint — without it you get v1.0 tokens."
+  end
+
   defp issuer_where_hint("keycloak") do
     "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
   end
@@ -2349,6 +2369,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # SCIM *server* others provision INTO, which is the opposite direction. Saying
   # "look in your provider's SCIM settings" sends an admin hunting for a screen
   # that doesn't exist, so name the gap and the way around it.
+  defp scim_location_hint(:entra) do
+    "on a separate ENTERPRISE APPLICATION, not this app registration — Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the Base URL above as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is"
+  end
+
   defp scim_location_hint(:keycloak) do
     "from a SCIM plugin on your Keycloak — Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support. Point it at the Base URL above with the `ems-` token as its bearer credential"
   end
