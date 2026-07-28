@@ -14,6 +14,7 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -326,52 +327,145 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	if clicked, err := clickText(ctx, "Register"); err != nil {
-		return err
-	} else if !clicked {
-		return fmt.Errorf("no Register button")
+	if err := clickTextAtCentre(ctx, "Register"); err != nil {
+		return fmt.Errorf("click Register: %w", err)
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
+	dismissOverlays(ctx)
+
+	// Register drops you on a blank shell often covered by an NPS survey, so reach
+	// the saved app through the list rather than trusting where it landed.
+	if err := openBlade(ctx,
+		"https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"); err != nil {
+		return err
+	}
+	dismissOverlays(ctx)
+	// The list blade reports "Content is busy" well past a fixed sleep, so wait for
+	// the row itself rather than guessing how long the portal needs.
+	if err := waitForText(ctx, "emisar", 90*time.Second); err != nil {
+		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
+		return fmt.Errorf("registered app never appeared: %w", err)
+	}
+	if clicked, err := clickText(ctx, "emisar"); err != nil {
+		return err
+	} else if !clicked {
+		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
+		_ = dumpOptions(ctx)
+		return fmt.Errorf("registered app not in the list")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
+		return err
+	}
+	dismissOverlays(ctx)
 	_ = highlight(ctx, "Application (client) ID")
 	return screenshot(ctx, outDir, "en-05-app-overview")
 }
 
-// selectPlatform opens the "Select a platform" dropdown and picks an option. It
-// is an Azure combo box, not a <select>, so the option only exists in the DOM
-// once the dropdown is open.
+// openBlade navigates to a portal blade and RELOADS. A hash-route change alone
+// leaves this SPA on a blank shell — the App registrations list came up empty
+// that way and looked like a missing app rather than a missing page.
+func openBlade(ctx context.Context, url string) error {
+	return chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Sleep(3*time.Second),
+		chromedp.Reload(),
+		chromedp.Sleep(20*time.Second),
+	)
+}
+
+// dismissOverlays closes the NPS survey and teaching callouts the portal throws
+// up unpredictably. They cover the very panel a step is trying to show, and they
+// appear on no fixed schedule, so every capture point clears them first.
+func dismissOverlays(ctx context.Context) {
+	const script = `(() => {
+  let closed = 0;
+  for (const el of document.querySelectorAll('button,[role=button],a')) {
+    const label = ((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')).toLowerCase();
+    if (/close|dismiss|not now|maybe later|no thanks/.test(label)) {
+      const box = el.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) { el.click(); closed++; }
+    }
+  }
+  return closed;
+})()`
+	var closed int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &closed)); err == nil && closed > 0 {
+		fmt.Printf("  dismissed %d overlay(s)\n", closed)
+		_ = chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+	}
+}
+
+// selectPlatform picks a Redirect URI platform. Azure's combo box listens for
+// POINTER events, so a synthetic element.click() opens nothing and the option
+// list never enters the DOM — four variants of that failed. Dispatch a real
+// mouse click at the control's centre instead.
 func selectPlatform(ctx context.Context, option string) error {
-	// Clicking the label text does nothing — the control is an Azure combo box.
-	// Open it through its role, and fall back to a native <select> if the portal
-	// renders one.
-	var opened bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const combo = [...document.querySelectorAll('[role=combobox],select,.azc-select')].filter(visible)[0];
-  if (!combo) return false;
-  combo.scrollIntoView({block: 'center'});
-  combo.click();
-  return true;
-})()`, &opened)); err != nil {
+	// Anchor on the control's OWN text. Selecting by [role=combobox] alone hits the
+	// portal's top-bar search, which is also a combobox and comes first in the DOM —
+	// the run then reported "Searching all subscriptions" instead of a platform list.
+	if err := clickTextAtCentre(ctx, "Select a platform"); err != nil {
+		return fmt.Errorf("open platform dropdown: %w", err)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
-	if !opened {
-		_ = dumpOptions(ctx)
-		return fmt.Errorf("no platform dropdown")
-	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+
+	clicked, err := clickText(ctx, option)
+	if err != nil {
 		return err
 	}
-	_ = dumpOptions(ctx)
-	if clicked, err := clickText(ctx, option); err != nil {
-		return err
-	} else if !clicked {
+	if !clicked {
 		_ = dumpOptions(ctx)
 		return fmt.Errorf("no %q option in the platform dropdown", option)
 	}
+	// clickText returning true only means SOMETHING matched the label — it does not
+	// mean the combo took the value. It reported success while the form still read
+	// "Platform is required", which silently broke every later step. Verify against
+	// the rendered form, and fail loudly when the value did not stick.
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	var body string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+		return err
+	}
+	if strings.Contains(body, "Platform is required") || strings.Contains(body, "Select a platform") {
+		return fmt.Errorf("platform %q did not stick — the form still demands one", option)
+	}
 	fmt.Printf("  platform %q selected\n", option)
-	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+	return nil
+}
+
+// clickTextAtCentre dispatches a real mouse click at the middle of the smallest
+// visible element carrying the given text. Needed wherever a widget ignores a
+// synthetic click, and precise enough not to hit a same-role element elsewhere.
+func clickTextAtCentre(ctx context.Context, label string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q);
+  if (!matches.length) return null;
+  matches.sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  const el = matches[0];
+  el.scrollIntoView({block: 'center'});
+  const r = el.getBoundingClientRect();
+  return JSON.stringify({x: r.left + r.width / 2, y: r.top + r.height / 2});
+})()`, label)
+
+	var raw string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &raw)); err != nil {
+		return err
+	}
+	if raw == "" {
+		return fmt.Errorf("nothing visible matching %q", label)
+	}
+	var point struct{ X, Y float64 }
+	if err := json.Unmarshal([]byte(raw), &point); err != nil {
+		return err
+	}
+	return chromedp.Run(ctx, chromedp.MouseClickXY(point.X, point.Y))
 }
 
 // clickText clicks the smallest visible element whose text matches, which is how
