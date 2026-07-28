@@ -772,6 +772,36 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["totalResults"] == 0
     end
 
+    test "POST /Groups with a displayName and no externalId is accepted", %{
+      conn: conn,
+      token: token
+    } do
+      # JumpCloud's Identity Management activation probe sends exactly this, and
+      # repeats it — rejecting it made activation impossible.
+      probe = %{
+        "displayName" => "group-name",
+        "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:Group"]
+      }
+
+      body = conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
+
+      assert body["displayName"] == "group-name"
+      assert body["id"] == "group-name"
+    end
+
+    test "a repeated no-externalId probe reuses the same group", %{conn: conn, token: token} do
+      probe = %{
+        "displayName" => "group-name",
+        "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:Group"]
+      }
+
+      conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
+      conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
+
+      listed = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
+      assert listed["totalResults"] == 0
+    end
+
     test "GET /Groups echoes a pushed group with its members", %{
       conn: conn,
       token: token,

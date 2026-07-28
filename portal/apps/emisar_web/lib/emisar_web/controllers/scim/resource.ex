@@ -223,10 +223,16 @@ defmodule EmisarWeb.SCIM.Resource do
     }
   end
 
+  # externalId, then the resource id, then the display name. That last fallback
+  # is what lets a directory create a group it has no id for: JumpCloud's
+  # activation probe POSTs {"displayName": ..., "schemas": [...]} and nothing
+  # else, repeatedly. SCIM lets the service provider assign the id, and keying on
+  # the display name makes those repeat probes idempotent rather than minting a
+  # group per attempt — `to_group/2` then echoes it back as the id the IdP adopts.
   defp parse_group_external_id(params) do
     case Map.get(params, "externalId") do
       id when is_binary(id) and id != "" -> id
-      _ -> string_or_nil(Map.get(params, "id"))
+      _ -> string_or_nil(Map.get(params, "id")) || string_or_nil(Map.get(params, "displayName"))
     end
   end
 
