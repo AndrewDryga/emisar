@@ -20,9 +20,15 @@ args:
     default: /var/log/typesense/typesense.log
     description: Typesense server log path.
     validation:
-      pattern: '^/[A-Za-z0-9._/-]{1,256}$'
+      pattern: '^/var/log/typesense/[A-Za-z0-9._/-]{1,128}$'
+      # Scoped to Typesense's own log dir, not all of /var/log — a service pack
+      # grants what its name implies. The pattern is lexical shape only; this
+      # prefix is what runs the runner's Clean+EvalSymlinks containment. A host
+      # that keeps its logs elsewhere symlinks the dir here: allow-rules are
+      # symlink-resolved too, so containment still holds. All of /var/log is
+      # available deliberately, under linux-core, whose name says so.
       allowed_prefixes:
-        - /var/log/
+        - /var/log/typesense
   - name: lines
     type: integer
     required: false

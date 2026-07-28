@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.11
+version: 0.2.12
 retired_below: 0.2.9
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
@@ -32,6 +32,7 @@ setup:
   notes:
     - "reload, quit_graceful, and stop_immediate signal the master process and need root (run the runner as root or via sudo)."
     - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; the `url` arg is loopback-only (127.0.0.1/localhost/[::1]) — pass a non-default port/path, not an off-host target."
+    - "The access-log actions read files under /var/log/nginx only, so the pack grants what its name implies. If your logs live elsewhere, symlink the directory (ln -s /data/logs/nginx /var/log/nginx) — the runner resolves symlinks on both the allowed prefix and the input, so containment still holds. The official container image symlinks access.log to stdout, in which case no file exists to read and the host's log collector owns it. For unrestricted /var/log access, install linux-core, whose name says so."
   verify: nginx.active_version
 
 actions:

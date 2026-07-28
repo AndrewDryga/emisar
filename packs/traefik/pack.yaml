@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.10
+version: 0.1.11
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
@@ -64,6 +64,7 @@ setup:
     - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."
     - "ACME certificate material lives only in the acme.json storage file (mode 0600), never the API. The acme_* actions read it locally; the runner user must be able to read that file."
     - "/ping and /metrics default to the :8080 traefik entrypoint but are often moved to a dedicated entrypoint — point the action's url/path at it if so."
+    - "The access-log actions read files under /var/log/traefik only, so the pack grants what its name implies. If your logs live elsewhere, symlink the directory (ln -s /data/logs/traefik /var/log/traefik) — the runner resolves symlinks on both the allowed prefix and the input, so containment still holds and root stays the authority on where logs live. If Traefik logs to stdout instead (no accessLog.filePath), no file exists to read: query whichever store collects it, e.g. the victorialogs pack. For unrestricted /var/log access, install linux-core, whose name says so."
   verify: traefik.version
 
 actions:
