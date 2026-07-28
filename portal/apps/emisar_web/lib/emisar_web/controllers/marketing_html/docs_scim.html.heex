@@ -471,6 +471,13 @@
         to close out the rest.
       </p>
 
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The connection still offers directory sync, because emisar's endpoint is ordinary SCIM 2.0
+        with a bearer token and a third-party Keycloak provisioning plugin can drive it. If you run
+        one, enable sync here and point it at the base URL and token above. That plugin is yours to
+        choose, configure, and support — we don't ship or certify one.
+      </p>
+
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role

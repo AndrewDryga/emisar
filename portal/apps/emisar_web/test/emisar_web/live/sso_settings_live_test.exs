@@ -674,26 +674,33 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert reloaded.scim_token_prefix == prefix
     end
 
-    test "a kind that cannot push SCIM hides the enable panel and says why", %{
+    test "Google Workspace hides the enable panel and says why", %{conn: conn, account: account} do
+      google = insert_provider(account, %{name: "Acme Google", kind: :google_workspace})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
+
+      assert html =~ "isn&#39;t available for Google Workspace"
+      # Kept short: the template wraps this sentence, so the rendered HTML carries
+      # a newline mid-phrase.
+      assert html =~ "has no inbound SCIM"
+      refute html =~ "enable_scim"
+    end
+
+    test "Keycloak keeps the enable panel, and its setup hint names the plugin", %{
       conn: conn,
       account: account
     } do
       keycloak = insert_provider(account, %{name: "Acme Keycloak", kind: :keycloak})
-      google = insert_provider(account, %{name: "Acme Google", kind: :google_workspace})
 
-      {:ok, _lv, keycloak_html} = live(conn, ~p"/app/#{account}/settings/sso/#{keycloak.id}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{keycloak.id}")
 
-      assert keycloak_html =~ "isn&#39;t available for Keycloak"
-      assert keycloak_html =~ "ships no outbound SCIM client"
-      refute keycloak_html =~ "enable_scim"
+      # Keycloak has no outbound SCIM of its own, but emisar's endpoint is generic
+      # enough for a third-party extension to drive — so the surface stays.
+      assert html =~ "enable_scim"
+      refute html =~ "isn&#39;t available for Keycloak"
 
-      # The two unsupported kinds fail for OPPOSITE reasons, so neither may
-      # inherit the other's sentence.
-      {:ok, _lv, google_html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
-
-      assert google_html =~ "isn&#39;t available for Google Workspace"
-      assert google_html =~ "no inbound SCIM for a custom app"
-      refute google_html =~ "ships no outbound SCIM client"
+      shown = render_click(lv, "enable_scim", %{"id" => keycloak.id})
+      assert shown =~ "ships no outbound provisioning of its own"
     end
   end
 

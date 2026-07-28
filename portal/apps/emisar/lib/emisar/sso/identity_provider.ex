@@ -59,14 +59,15 @@ defmodule Emisar.SSO.IdentityProvider do
 
   @doc """
   True when this provider kind can push SCIM directory sync to emisar's inbound
-  SCIM 2.0 endpoint. Two kinds can't, and their detail pages hide the directory-
-  sync sections rather than offer a feature that cannot connect: Google Workspace
-  has no inbound SCIM for a custom app, and Keycloak ships no outbound SCIM client
-  (its own SCIM Realm API provisions INTO Keycloak). Both provision members on
-  first sign-in instead. A Keycloak fronted by a third-party SCIM extension is
-  configured as `:openid_connect`, which keeps the sync surface.
+  SCIM 2.0 endpoint. Google Workspace has no inbound SCIM for a custom app —
+  members provision on first sign-in — so its detail page hides the directory-
+  sync sections rather than offer a feature that can't connect. Keycloak keeps
+  the surface even though it ships no outbound SCIM client itself: emisar's
+  endpoint is plain SCIM 2.0 with a bearer token, so a third-party Keycloak
+  extension can drive it, and refusing the connection would block an operator who
+  already runs one.
   """
-  def supports_scim?(kind) when kind in [:google_workspace, :keycloak], do: false
+  def supports_scim?(:google_workspace), do: false
   def supports_scim?(kind) when kind in @kinds, do: true
 
   @doc "The new-user provisioning modes (JIT auto-provision vs manual admin approval), for the config UI's select."

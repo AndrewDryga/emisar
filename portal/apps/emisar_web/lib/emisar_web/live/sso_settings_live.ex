@@ -1687,16 +1687,16 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_token={@scim_token}
             />
 
-            <%!-- This kind can't push SCIM — say so once, with the reason that
-                 actually applies to it, instead of dangling an enable panel or an
-                 Enterprise upsell for a feature that could never connect. --%>
+            <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
+                 instead of dangling an enable panel or an Enterprise upsell for a
+                 feature that could never connect. --%>
             <p
               :if={not SSO.IdentityProvider.supports_scim?(provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">Directory sync (SCIM)</span>
-              isn't available for {kind_label(provider.kind)} — {no_scim_reason(provider.kind)}.
-              Members are provisioned on their first sign-in through this connection.
+              isn't available for {kind_label(provider.kind)} — it has no inbound SCIM for a custom
+              app. Members are provisioned on their first sign-in through this connection.
             </p>
 
             <.group_mapping_section
@@ -2278,14 +2278,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Whatever URL serves its OIDC discovery document at /.well-known/openid-configuration — emisar fetches it from there."
   end
 
-  # Why a kind can't take directory sync — the two reasons are opposite
-  # directions, so one shared sentence would be wrong for one of them.
-  defp no_scim_reason(:google_workspace), do: "it has no inbound SCIM for a custom app"
-
-  defp no_scim_reason(:keycloak) do
-    "Keycloak ships no outbound SCIM client — its own SCIM API provisions users into Keycloak, not out of it"
-  end
-
   defp scim_location_hint(:okta) do
     "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, set the Base URL to the value above and paste the `ems-` token as the API token, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts"
   end
@@ -2298,6 +2290,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # SCIM *server* others provision INTO, which is the opposite direction. Saying
   # "look in your provider's SCIM settings" sends an admin hunting for a screen
   # that doesn't exist, so name the gap and the way around it.
+  defp scim_location_hint(:keycloak) do
+    "from a SCIM plugin on your Keycloak — Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support. Point it at the Base URL above with the `ems-` token as its bearer credential"
+  end
+
   defp scim_location_hint(_), do: "in your provider's SCIM / user-provisioning settings"
 
   # The directory synced within the last day — setup is done, so the "point your IdP
