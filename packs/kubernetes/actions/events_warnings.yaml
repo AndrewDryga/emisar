@@ -23,7 +23,14 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -n 60"
+      # This is the "what is wrong right now" read, so an unreachable API
+      # server reported as "no warnings" is the worst possible answer. kubectl
+      # exits non-zero there; the pipe would throw that away. Capture keeps the
+      # status and stops tail from SIGPIPE-ing kubectl on a busy cluster.
+      - |
+        events=$(kubectl ${KCTX:+--context=$KCTX} get events -A --field-selector type=Warning --sort-by=.lastTimestamp); status=$?
+        printf '%s\n' "$events" | tail -n 60
+        exit $status
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

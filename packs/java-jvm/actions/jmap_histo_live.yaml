@@ -22,7 +22,14 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "jmap -histo:live {{ args.pid }} | head -50"
+      # A histogram always exceeds 50 lines, so piping live would SIGPIPE jmap
+      # on every SUCCESSFUL run — propagating a pipe status here would fail the
+      # good case. Capture first: the status is then jmap's own, which is
+      # non-zero for a dead PID, a non-JVM process, or a denied attach.
+      - |
+        histo=$(jmap -histo:live {{ args.pid }}); status=$?
+        printf '%s\n' "$histo" | head -50
+        exit $status
   timeout: 60s
 output:
   parser: text

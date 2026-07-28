@@ -69,10 +69,18 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	if err := atomicWrite(filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json"), catalog, 0o644); err != nil {
 		return err
 	}
-	if err := a.run(ctx, filepath.Join(a.Portal, "apps", "emisar"), nil, "mix", "test", "test/emisar/catalog/pack_baseline_test.exs"); err != nil {
+	// These verification tests need the same database env the packs gate builds.
+	// Passing nil left PGPORT unset, so on a workstation whose Postgres is on a
+	// compose-assigned port the run silently blocked on :5432 until it timed out
+	// — a hang that reads as a wedged build rather than a missing service.
+	env, err := a.portalTestEnv(ctx)
+	if err != nil {
 		return err
 	}
-	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), nil, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
+	if err := a.run(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "test", "test/emisar/catalog/pack_baseline_test.exs"); err != nil {
+		return err
+	}
+	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), env, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
 }
 
 func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string) error {

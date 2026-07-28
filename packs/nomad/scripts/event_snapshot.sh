@@ -24,4 +24,22 @@ secs=$1
 topic=$2
 ns=$3
 url="/v1/event/stream?index=1${topic:+&topic=$topic}${ns:+&namespace=$ns}"
-timeout "$secs" nomad operator api "$url" | head -c 262144
+
+# The window elapsing is the NORMAL end of a bounded snapshot, so timeout's 124
+# is a success here — but nomad's own failures (unreachable agent, bad ACL
+# token, unknown namespace) are not, and piping straight into head reported
+# every one of them as an empty, successful snapshot. Capture to a file rather
+# than a variable: the feed is NDJSON that the 256 KiB cap exists to bound, and
+# a variable would hold it all before truncating.
+snapshot=$(mktemp) || exit 1
+trap 'rm -f "$snapshot"' EXIT
+
+timeout "$secs" nomad operator api "$url" > "$snapshot"
+status=$?
+
+head -c 262144 "$snapshot"
+
+case "$status" in
+	0 | 124) exit 0 ;;
+	*) exit "$status" ;;
+esac

@@ -19,7 +19,20 @@ import (
 // .agent/kb/rules/packs-pipelines-fail-on-source-errors.md, which also explains
 // why `set -o pipefail` is the wrong fix (grep exits 1 on a legitimate
 // no-match, so a clean log would become a failed action).
-var pipelineSourceExemptActions = map[string]string{}
+var pipelineSourceExemptActions = map[string]string{
+	"forensics.gdb_backtrace": "gdb -batch exits 0 even when the attach fails, so propagating its " +
+		"status enforces nothing. What keeps this honest instead: 2>&1 folds the failure text " +
+		"into stdout at the top where head keeps it, the action is risk: high and " +
+		"approval-gated, and 'The program is not being run.' is self-refuting rather than a " +
+		"false all-clear.",
+	"debugging.top_open_files": "lsof is a local enumerator whose empty answer is self-refuting — a " +
+		"live host always holds open FDs, including the runner's own. lsof also exits 1 on any " +
+		"listing failure, so propagating would invent alarms; a missing binary is covered by " +
+		"requires.binaries.",
+	"fw.conntrack_count": "already a precondition check: `conntrack -C` needs the same netlink " +
+		"privileges as -L and runs first under `set -e`, so every module/privilege failure " +
+		"aborts before the pipeline.",
+}
 
 // Commands that open a path. A pipeline led by a local enumerator (ps, lsmod,
 // ss, journalctl) has no meaningful failure to mask and is not checked here.
@@ -35,10 +48,29 @@ var pipelineFileReaders = map[string]bool{
 	"zcat": true,
 }
 
+// `pipefail` propagates a source failure and is the idiomatic answer in a bash
+// script that owns its whole pipeline. It is still the wrong reach for a log
+// grep — see the rule — because grep exits 1 on a legitimate no-match.
+// Commands whose failure means "cannot see the target" rather than "nothing to
+// report". Their own exit status is the truth, so the pipe is the only thing
+// discarding it — unlike a file reader, there is no path to test first.
+var pipelineRemoteSources = map[string]bool{
+	"gdb":                          true,
+	"jmap":                         true,
+	"kafka-broker-api-versions.sh": true,
+	"kubectl":                      true,
+	"lsof":                         true,
+	"nomad":                        true,
+	"whois":                        true,
+	"conntrack":                    true,
+}
+
 var pipelineSourceGuards = []string{
 	"[ -r", "[ -f", "[ -d", "[ -e", "[ -s",
 	"test -r", "test -f", "test -d", "test -e",
-	"exit $status", "exit $?",
+	"exit $status", "exit $?", "pipefail",
+	// A precondition probe that aborts before the pipeline runs.
+	"|| exit", "|| {",
 }
 
 type packPipelineAction struct {
@@ -48,7 +80,29 @@ type packPipelineAction struct {
 			Binary string   `yaml:"binary"`
 			Argv   []string `yaml:"argv"`
 		} `yaml:"command"`
+		Script struct {
+			Path string `yaml:"path"`
+		} `yaml:"script"`
 	} `yaml:"execution"`
+}
+
+// actionShellSource returns the shell text an action runs — the `-c` program for
+// an exec action, or the packaged script for a script action. A packaged script
+// masks a source failure exactly the same way, and is where nomad.event_snapshot
+// hid from the first pass of this check.
+func actionShellSource(packDir string, action packPipelineAction) (string, bool, error) {
+	if path := action.Execution.Script.Path; path != "" {
+		script, err := os.ReadFile(filepath.Join(packDir, filepath.Clean(path)))
+		if err != nil {
+			return "", false, err
+		}
+		return string(script), true, nil
+	}
+	if action.Execution.Command.Binary != "/bin/sh" {
+		return "", false, nil
+	}
+	program, ok := shellDashCProgram(action.Execution.Command.Argv)
+	return program, ok, nil
 }
 
 func validatePackPipelineFailures(packDir string) error {
@@ -71,14 +125,14 @@ func validatePackPipelineFailures(packDir string) error {
 		if _, exempt := pipelineSourceExemptActions[action.ID]; exempt {
 			continue
 		}
-		if action.Execution.Command.Binary != "/bin/sh" {
-			continue
+		source, ok, err := actionShellSource(packDir, action)
+		if err != nil {
+			return err
 		}
-		program, ok := shellDashCProgram(action.Execution.Command.Argv)
 		if !ok {
 			continue
 		}
-		if pipelineMasksSourceFailure(program) {
+		if pipelineMasksSourceFailure(source) {
 			failures = append(failures, action.ID)
 		}
 	}
@@ -213,7 +267,13 @@ func pipelineSourceReadsPath(segment string) bool {
 		!strings.HasPrefix(fields[0], "-") {
 		fields = fields[1:]
 	}
-	if len(fields) == 0 || !pipelineFileReaders[fields[0]] {
+	if len(fields) == 0 {
+		return false
+	}
+	if pipelineRemoteSources[fields[0]] {
+		return true
+	}
+	if !pipelineFileReaders[fields[0]] {
 		return false
 	}
 	for _, operand := range fields[1:] {

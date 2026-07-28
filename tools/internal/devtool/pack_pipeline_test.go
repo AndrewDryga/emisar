@@ -12,12 +12,12 @@ import (
 // encodeFixtureAction marshals the whole action document, so a multi-line shell
 // program round-trips as the shell it is testing instead of being spliced into
 // hand-built YAML.
-func encodeFixtureAction(t *testing.T, id string, command map[string]any) []byte {
+func encodeFixtureAction(t *testing.T, id string, execution map[string]any) []byte {
 	t.Helper()
 	encoded, err := yaml.Marshal(map[string]any{
 		"schema_version": 1,
 		"id":             id,
-		"execution":      map[string]any{"command": command},
+		"execution":      execution,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,9 +30,22 @@ func TestValidatePackPipelineFailures(t *testing.T) {
 		name       string
 		id         string
 		program    string
+		script     string
 		wantErr    bool
 		wantErrMsg string
 	}{
+		{
+			name:       "packaged script masks its source too",
+			id:         "fixture.unguarded_script",
+			script:     "#!/bin/sh\ngrep -F 'SLOW' \"$1\" | tail -n 100\n",
+			wantErr:    true,
+			wantErrMsg: "fixture.unguarded_script",
+		},
+		{
+			name:   "packaged script guarded by pipefail",
+			id:     "fixture.script_pipefail",
+			script: "#!/usr/bin/env bash\nset -euo pipefail\ndu -sh /var/lib/x/* 2>/dev/null | sort -h | tail -20\n",
+		},
 		{
 			name:    "guarded log read",
 			id:      "fixture.guarded",
@@ -109,17 +122,35 @@ func TestValidatePackPipelineFailures(t *testing.T) {
 			if err := os.MkdirAll(actionDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			command := map[string]any{
-				"binary": "curl",
-				"argv":   []string{"-fsS", "http://service"},
+			execution := map[string]any{
+				"command": map[string]any{
+					"binary": "curl",
+					"argv":   []string{"-fsS", "http://service"},
+				},
 			}
-			if test.program != "" {
-				command = map[string]any{
-					"binary": "/bin/sh",
-					"argv":   []string{"-c", test.program},
+			switch {
+			case test.script != "":
+				execution = map[string]any{
+					"script": map[string]any{"path": "scripts/action.sh"},
+				}
+				scriptDir := filepath.Join(packDir, "scripts")
+				if err := os.MkdirAll(scriptDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(
+					filepath.Join(scriptDir, "action.sh"), []byte(test.script), 0o755,
+				); err != nil {
+					t.Fatal(err)
+				}
+			case test.program != "":
+				execution = map[string]any{
+					"command": map[string]any{
+						"binary": "/bin/sh",
+						"argv":   []string{"-c", test.program},
+					},
 				}
 			}
-			action := encodeFixtureAction(t, test.id, command)
+			action := encodeFixtureAction(t, test.id, execution)
 			if err := os.WriteFile(filepath.Join(actionDir, "fixture.yaml"), action, 0o644); err != nil {
 				t.Fatal(err)
 			}

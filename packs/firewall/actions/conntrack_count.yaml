@@ -15,7 +15,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "set -e; echo 'Total:'; conntrack -C; echo; echo 'Per-state:'; conntrack -L 2>/dev/null | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
+      # `conntrack -C` needs the same netlink privileges as -L, so running it
+      # first under `set -e` is already the precondition check: a missing module
+      # or absent CAP_NET_ADMIN aborts before the pipeline. `set -e` is
+      # load-bearing — -C prints "0" to stdout even while failing.
+      # -L keeps its stderr: "N flow entries have been shown" and any failure
+      # reason are the evidence that says which of two opposite facts you have.
+      - "set -e; echo 'Total:'; conntrack -C; echo; echo 'Per-state:'; conntrack -L | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
   timeout: 30s
 output:
   parser: text

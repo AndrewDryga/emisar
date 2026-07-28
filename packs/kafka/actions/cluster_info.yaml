@@ -13,7 +13,14 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-broker-api-versions.sh --bootstrap-server \"$KAFKA_BOOTSTRAP\" | head -50"
+      # This action is the pack's setup.verify probe, so masking the exit code
+      # meant an unreachable broker verified the pack green. The CLI exits
+      # non-zero on connection refused and DNS failure; capture keeps that, and
+      # keeps multi-broker output from SIGPIPE-ing the JVM at head's cutoff.
+      - |
+        info=$(kafka-broker-api-versions.sh --bootstrap-server "$KAFKA_BOOTSTRAP"); status=$?
+        printf '%s\n' "$info" | head -50
+        exit $status
   timeout: 30s
 output:
   parser: text

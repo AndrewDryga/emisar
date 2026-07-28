@@ -1,9 +1,12 @@
 schema_version: 1
 id: nomad.node_eligibility_show
-title: Nodes with eligibility != eligible
+title: Node scheduling eligibility and drain state
 kind: exec
 risk: low
-description: List nodes that are ineligible for new allocations (drained or manually disabled).
+description: >
+  List every client node with its scheduling eligibility and drain state, so
+  you can see which are ineligible for new allocations (drained or manually
+  disabled). Emits all nodes, not only the ineligible ones. Read-only.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
@@ -11,7 +14,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "nomad node status -json | grep -E '\"Name\"|\"SchedulingEligibility\"|\"Drain\"' | head -200"
+      # grep legitimately exits 1 when a cluster has no client nodes, so only
+      # nomad's own status distinguishes "nothing to report" from "cannot reach
+      # the cluster". Capture it; the pipe would report either as success.
+      - |
+        nodes=$(nomad node status -json); status=$?
+        printf '%s\n' "$nodes" | grep -E '"Name"|"SchedulingEligibility"|"Drain"' | head -200
+        exit $status
   timeout: 30s
 output:
   parser: text

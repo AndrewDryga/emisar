@@ -8,7 +8,8 @@ risk: low
 description: >
   Aggregates `lsof` by PID and returns the top 20 PIDs holding the
   most file descriptors. Use to find FD-leak candidates before
-  EMFILE breaks something. Read-only.
+  EMFILE breaks something. Unless the runner runs as root it sees only
+  its own user's processes, so the ranking is scoped to those. Read-only.
 
 side_effects:
   - One lsof invocation.

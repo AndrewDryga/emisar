@@ -20,7 +20,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} get events -A --sort-by=.lastTimestamp | tail -50"
+      # kubectl exits non-zero on an unreachable API server or a bad context;
+      # piping into tail would discard that and report "no recent events".
+      # Capture instead of piping live so tail's early exit can never SIGPIPE
+      # kubectl. A cluster with genuinely no events still exits 0 — the
+      # truthful empty result stays a success.
+      - |
+        events=$(kubectl ${KCTX:+--context=$KCTX} get events -A --sort-by=.lastTimestamp); status=$?
+        printf '%s\n' "$events" | tail -50
+        exit $status
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

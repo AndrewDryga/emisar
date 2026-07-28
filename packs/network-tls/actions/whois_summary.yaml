@@ -19,7 +19,19 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "whois \"$1\" | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30"
+      # Empty output here reads as "domain not registered", so a transport
+      # failure must never look like one. whois exits non-zero on transport
+      # errors; the pipe discarded that. Residual this cannot fix: a rate-limit
+      # reply ("WHOIS LIMIT EXCEEDED") or an unusual ccTLD field set arrives as
+      # exit-0 text that the filter drops — hence the note on a dropped reply.
+      - |
+        raw=$(whois "$1"); status=$?
+        printf '%s\n' "$raw" | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30
+        if [ "$status" -eq 0 ] && [ -n "$raw" ] && \
+           ! printf '%s\n' "$raw" | grep -qiE 'registrar|registry|domain name|expir|name server|status'; then
+          echo "whois replied but no summary fields matched — raw reply may be a rate-limit or an unusual ccTLD format" >&2
+        fi
+        exit $status
       - "emisar"
       - "{{ args.domain }}"
   timeout: 30s

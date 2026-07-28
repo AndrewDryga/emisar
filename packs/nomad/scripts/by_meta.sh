@@ -62,4 +62,9 @@ else
 	set --
 fi
 
-nomad operator api "$@" "$path" | jq -c "$project"
+# `set -e` does not catch a failure in a non-final pipeline command, so piping
+# straight into jq meant an unreachable agent or a rejected ACL token produced
+# empty stdin, an exit-0 jq, and a successful-looking empty list. Assigning from
+# a command substitution puts nomad's own status back on the line set -e reads.
+response=$(nomad operator api "$@" "$path")
+printf '%s' "$response" | jq -c "$project"

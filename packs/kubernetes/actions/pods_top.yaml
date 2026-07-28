@@ -21,7 +21,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} top pod -A --sort-by=cpu | head -50"
+      # `kubectl top` exits non-zero when metrics-server is absent as well as
+      # when the API server is unreachable — both must fail the action rather
+      # than read as "no pods". Capture so head can't SIGPIPE kubectl.
+      - |
+        pods=$(kubectl ${KCTX:+--context=$KCTX} top pod -A --sort-by=cpu); status=$?
+        printf '%s\n' "$pods" | head -50
+        exit $status
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

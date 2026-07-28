@@ -68,23 +68,59 @@ tail -n 100 "$1" | awk '{print $1}' | sort | uniq -c | sort -nr | head -20
 
 `tail` fails on a missing log; `head` reports success and "no traffic".
 
-**Scope.** The obligation is strongest where the source reads a path — an
-operator-supplied arg, an `execution.env` path, or a hard-coded log — because a
-host that simply logs elsewhere is the common case, not an exotic one. It
-applies equally to a source that contacts a remote (`kubectl`, `nomad`, a
-cluster CLI) whose failure means "cannot see the target". Pipelines fed by a
-local always-present enumerator (`ps`, `lsmod`, `ss`, `journalctl`) are exempt:
-there is no meaningful failure to mask, and their empty output is self-evident.
+**Two source shapes, two fixes.** Guard the input when the source opens a
+*path*: `grep`'s exit code is overloaded (1 = clean no-match), so its status
+cannot be propagated blindly, and the guard is what works around that overload.
+
+A source that runs a *command* — `kubectl`, `nomad`, `jmap`, a cluster CLI — has
+no such overload: its own status is the truth and the pipe is the only thing
+discarding it. Propagate, via the capture shape above. Capture rather than a
+live pipe, for two reasons beyond the exit code: `head`'s early exit can no
+longer SIGPIPE the source (`jmap -histo:live` always exceeds `head -50`, so a
+live pipe would fail every *successful* run), and a mid-pipeline `grep`
+no-match stops mattering. Command substitution takes stdout only — leave stderr
+flowing, it is the evidence channel.
+
+"Empty output is a legitimate answer" is not a reason to skip propagation — it
+is why propagation is *correct*: the tool exits 0 on a genuinely empty result
+and non-zero when it cannot see the target, which is exactly the distinction
+being lost. Nor should a source's stderr be discarded: `conntrack -L
+2>/dev/null` hid the one line that separates "this host has no NAT entries"
+from "the runner lacks CAP_NET_ADMIN".
+
+Pipelines fed by a local always-present enumerator (`ps`, `lsmod`, `ss`,
+`journalctl`) need nothing: there is no meaningful failure to mask, and their
+empty output is self-evident.
+
+**When propagation genuinely cannot work,** record an exemption with the reason
+rather than shipping a guard that enforces nothing:
+
+- the source exits 0 on failure (`gdb -batch` returns 0 when the attach fails),
+- its non-zero is benign (`lsof` exits 1 for "no matching files"),
+- an unbounded stream makes capture impossible and `head` SIGPIPEs the source
+  by design (`conntrack -L | head -1000`) — reach for a cheap same-privilege
+  precondition probe instead,
+- a same-subsystem precondition already runs first (`conntrack -C` under
+  `set -e` needs the same netlink privileges as `-L`).
 
 **How it's enforced.** `validatePackPipelineFailures` in
 `tools/internal/devtool/pack_pipeline.go`, run per pack by both
 `./run gate packs` and `./run pack check <name>`, alongside the curl-side check
 in [the HTTP response rule](packs-http-actions-fail-on-response-errors.md). It
-flags a `/bin/sh -c` program whose first pipeline segment reads a path with no
-preceding guard. Its scan is quote-aware, because the alternation in
-`grep -E '(a|b)' "$1" | tail` is regex syntax rather than the shell pipe — the
-naive scan silently passed exactly the action this rule came from. Exemptions
-are listed by action ID in `pipelineSourceExemptActions` with a reason.
+flags a pipeline led by a path reader (`pipelineFileReaders`) or a
+target-dependent command (`pipelineRemoteSources`) with no preceding guard.
+Exemptions are listed by action ID in `pipelineSourceExemptActions` with a
+stated reason.
+
+Two things the checker learned the hard way, both worth keeping:
+
+- **Its scan is quote-aware.** The alternation in `grep -E '(a|b)' "$1" | tail`
+  is regex syntax, not the shell pipe; reading it as the pipe truncated the
+  segment before `"$1"` and silently passed the exact action this rule came
+  from. Fixture tests alone did not catch that — regressing a real action
+  through `./run pack check` did.
+- **It reads packaged scripts, not just `-c` programs.** `nomad.event_snapshot`
+  hid in a `kind: script` file through the first pass.
 
 **Sweep.** `rg -l '\| *tail |\| *head ' packs/*/actions/*.yaml`, then read each
 program's first segment: does it open a file or contact a remote, and can that

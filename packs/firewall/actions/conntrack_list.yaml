@@ -13,7 +13,14 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "conntrack -L 2>/dev/null | head -1000"
+      # head -1000 SIGPIPEs conntrack by design on any large table, so the
+      # pipeline's status is unusable here and capture would buffer an
+      # unbounded table. Probe with -C instead, which needs the same netlink
+      # privileges, so "no NAT entries" and "runner lacks CAP_NET_ADMIN" stop
+      # looking identical. -L keeps its stderr for the same reason.
+      - |
+        conntrack -C >/dev/null 2>&1 || { echo "conntrack unavailable (module not loaded or missing CAP_NET_ADMIN)" >&2; exit 1; }
+        conntrack -L | head -1000
   timeout: 60s
 output:
   parser: text
