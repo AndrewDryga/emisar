@@ -333,7 +333,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if clicked, err := clickText(ctx, "Next"); err != nil {
 		return err
 	} else if !clicked {
-		return fmt.Errorf("Next disabled after choosing SSO + Export users")
+		return fmt.Errorf("next disabled after choosing SSO + Export users")
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 		return err
