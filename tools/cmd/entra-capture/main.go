@@ -93,9 +93,6 @@ func run(env map[string]string, outDir string, headless bool) error {
 	if err := screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	if err := reportLicences(ctx, outDir); err != nil {
-		return err
-	}
 	return appRegistrationFlow(ctx, env, outDir)
 }
 
@@ -106,7 +103,7 @@ func run(env map[string]string, outDir string, headless bool) error {
 // of the screen that should now be showing, not on a field's mere presence.
 func signIn(ctx context.Context, env map[string]string, outDir string) error {
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://entra.microsoft.com/"),
+		chromedp.Navigate("https://portal.azure.com/"),
 		chromedp.WaitVisible(`input[name="loginfmt"]`, chromedp.ByQuery),
 		chromedp.SendKeys(`input[name="loginfmt"]`, env["ENTRA_ADMIN_USER"], chromedp.ByQuery),
 		chromedp.Click(`#idSIButton9`, chromedp.ByQuery),
@@ -154,9 +151,10 @@ func settle(ctx context.Context, env map[string]string) error {
 			_ = chromedp.Run(ctx, chromedp.Click(`#idBtn_Back`, chromedp.ByQuery))
 			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
 
-		case strings.Contains(body, "Microsoft Entra admin center"),
-			strings.Contains(body, "Identity"), strings.Contains(body, "Overview"):
-			fmt.Println("  admin center loaded")
+		case strings.Contains(body, "Create a resource"),
+			strings.Contains(body, "Microsoft Entra admin center"),
+			strings.Contains(body, "All resources"):
+			fmt.Println("  portal loaded")
 			return nil
 
 		default:
@@ -350,33 +348,57 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 	// Reach the saved app by its OWN blade. The App registrations LIST never
 	// renders — it comes up as a blank shell headless or headful — but a
 	// per-app blade addressed by client id does.
-	clientID := env["ENTRA_CLIENT_ID"]
-	if clientID == "" {
+	if env["ENTRA_CLIENT_ID"] == "" {
 		return fmt.Errorf("ENTRA_CLIENT_ID is empty — register the app first")
 	}
-	if err := openBlade(ctx, "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/"+
-		"ApplicationMenuBlade/~/Overview/appId/"+clientID); err != nil {
+	if err := openService(ctx, "App registrations", "Display name"); err != nil {
+		_ = screenshot(ctx, outDir, "en-05-overview-failed")
+		return err
+	}
+	if err := clickTextAtCentre(ctx, "emisar"); err != nil {
+		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
+		return fmt.Errorf("open the emisar app: %w", err)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
 		return err
 	}
 	dismissOverlays(ctx)
 	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
 		_ = screenshot(ctx, outDir, "en-05-overview-failed")
-		_ = dumpOptions(ctx)
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
 	_ = highlight(ctx, "Application (client) ID")
 	return screenshot(ctx, outDir, "en-05-app-overview")
 }
 
-// openBlade navigates to a portal blade and RELOADS. A hash-route change alone
-// leaves this SPA on a blank shell.
-func openBlade(ctx context.Context, url string) error {
-	return chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.Sleep(3*time.Second),
-		chromedp.Reload(),
-		chromedp.Sleep(20*time.Second),
-	)
+// openService reaches a portal service from the home page's Azure services tiles.
+// Deep links are useless here — a cold hash URL lands on home, and assigning
+// location.hash afterwards does not route because the portal owns its router —
+// but the home tiles are plain clickable elements that do.
+func openService(ctx context.Context, tile, expect string) error {
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate("https://portal.azure.com/"),
+		chromedp.Sleep(18*time.Second),
+	); err != nil {
+		return err
+	}
+	dismissOverlays(ctx)
+
+	// The click focuses the tile but does not always activate it — these tiles are
+	// anchors, so follow with Enter on whatever now holds focus.
+	if err := clickTextAtCentre(ctx, tile); err != nil {
+		_ = dumpOptions(ctx)
+		return fmt.Errorf("no %q tile: %w", tile, err)
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Sleep(2*time.Second),
+		chromedp.KeyEvent("\r"),
+		chromedp.Sleep(18*time.Second),
+	); err != nil {
+		return err
+	}
+	dismissOverlays(ctx)
+	return waitForText(ctx, expect, 90*time.Second)
 }
 
 // dismissOverlays closes the NPS survey and teaching callouts the portal throws
