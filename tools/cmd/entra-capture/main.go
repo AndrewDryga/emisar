@@ -412,13 +412,11 @@ func selectPlatform(ctx context.Context, option string) error {
 		return err
 	}
 
-	clicked, err := clickText(ctx, option)
-	if err != nil {
-		return err
-	}
-	if !clicked {
+	// The option needs a real mouse click too — same pointer-event handling as the
+	// combo that opens it.
+	if err := clickTextAtCentre(ctx, option); err != nil {
 		_ = dumpOptions(ctx)
-		return fmt.Errorf("no %q option in the platform dropdown", option)
+		return fmt.Errorf("pick %q: %w", option, err)
 	}
 	// clickText returning true only means SOMETHING matched the label — it does not
 	// mean the combo took the value. It reported success while the form still read
