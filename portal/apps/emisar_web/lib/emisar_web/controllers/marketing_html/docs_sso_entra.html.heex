@@ -204,12 +204,12 @@
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">Remap externalId to objectId.</p>
             <p class="mt-1.5">
-              Open
-              <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>
-              and change the attribute feeding
+              Open <strong class="text-zinc-200">Manage → Attribute mapping</strong>
+              and change the source attribute feeding
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
               from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>.
+              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>. On a tenant
+              still using Entra's older provisioning screens, the same setting lives under <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>.
             </p>
             <p class="mt-4">
               Do not skip this. Entra's default is <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, which is not guaranteed to exist, is not guaranteed to be
