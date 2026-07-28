@@ -7,6 +7,7 @@
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"okta", "Okta setup"},
+        {"entra", "Microsoft Entra setup"},
         {"jumpcloud", "JumpCloud setup"},
         {"keycloak", "Keycloak setup"},
         {"security-notes", "Security notes"}
@@ -312,6 +313,118 @@
         >directory sync</.link>
         so roles and removals follow Okta. It rides a second Okta application — an OIDC login app
         cannot carry SCIM.
+      </p>
+
+      <.docs_h2 id="entra">Microsoft Entra setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You need an Entra administrator and an emisar owner or admin. Entra splits this across two
+        objects: an <strong class="text-zinc-200">app registration</strong>
+        signs people in, and a separate
+        <strong class="text-zinc-200">enterprise application</strong>
+        provisions them. This page covers the first.
+      </p>
+
+      <.docs_callout kind={:note} title="Written from Microsoft's documented flow">
+        <p>
+          Unlike the Okta and JumpCloud sections, these steps have not yet been walked on a live
+          Entra tenant — they come from Microsoft's own documentation plus emisar's Entra handling,
+          which is exercised by our test suite. Screenshots land when we certify a tenant.
+        </p>
+      </.docs_callout>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Register the application.</p>
+            <p class="mt-1.5">
+              In the Microsoft Entra admin center go to <strong class="text-zinc-200">App registrations → New registration</strong>. Under
+              <strong class="text-zinc-200">Redirect URI</strong>
+              choose the <strong class="text-zinc-200">Web</strong>
+              platform and enter emisar's callback:
+            </p>
+            <.docs_code
+              phx-no-format
+              label="Redirect URI"
+              copy_text="https://emisar.dev/sign_in/sso/callback"
+            >https://emisar.dev/sign_in/sso/callback</.docs_code>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create a client secret.</p>
+            <p class="mt-1.5">
+              <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
+              <strong class="text-zinc-200">Value</strong>
+              column, not <strong class="text-zinc-200">Secret ID</strong>
+              — the value is shown once and is unrecoverable afterwards.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
+            <p class="mt-1.5">
+              Entra has no preset of its own, so pick
+              <strong class="text-zinc-200">Generic OpenID Connect</strong>
+              as the provider type. Take <strong class="text-zinc-200">Client ID</strong>
+              from the registration's <strong class="text-zinc-200">Application (client) ID</strong>, the secret from the
+              step above, and build the issuer from your <strong class="text-zinc-200">Directory (tenant) ID</strong>:
+            </p>
+            <.docs_code
+              phx-no-format
+              label="Issuer URL"
+              copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
+            >https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0</.docs_code>
+            <p class="mt-4">
+              The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
+              is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            4
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Set the identifier claim to oid.</p>
+            <p class="mt-1.5">
+              This is the one setting Entra needs that no other provider does. Change
+              <strong class="text-zinc-200">Identifier claim</strong>
+              from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>.
+            </p>
+            <p class="mt-4">
+              Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+              is <em>pairwise</em>
+              — Microsoft issues a different value to every application, so it identifies the person
+              only within this one registration.
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+              is the immutable object id, the same value Microsoft Graph returns as the user's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">id</code>. Directory sync keys on
+              that same object id, so choosing
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+              is what lets a person's sign-in and their provisioned record be one identity instead
+              of two.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <p class="mt-8 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Next:</strong>
+        provisioning is a second Entra object, and it carries a mapping change you have to make by
+        hand — <.link
+          navigate={~p"/docs/scim#entra"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >set up directory sync</.link>.
       </p>
 
       <.docs_h2 id="jumpcloud">JumpCloud setup</.docs_h2>

@@ -7,6 +7,7 @@
       toc={[
         {"enable", "Enabling directory sync"},
         {"okta", "Okta setup"},
+        {"entra", "Microsoft Entra setup"},
         {"jumpcloud", "JumpCloud setup"},
         {"keycloak", "Keycloak"},
         {"group-role", "Group → role mapping"},
@@ -358,6 +359,109 @@
           roll out.
         </p>
       </.docs_callout>
+
+      <.docs_h2 id="entra">Microsoft Entra setup</.docs_h2>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Directory sync attaches to a provider you have already connected, so set up
+        <.link
+          navigate={~p"/docs/sso#entra"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >Microsoft Entra single sign-on</.link>
+        first. You need the <strong class="text-zinc-200">SCIM base URL</strong>
+        and <strong class="text-zinc-200">bearer token</strong>
+        from the steps above.
+      </p>
+
+      <.docs_callout kind={:note} title="Written from Microsoft's documented flow">
+        <p>
+          These steps come from Microsoft's own provisioning documentation plus emisar's Entra
+          handling, which our test suite exercises — they have not yet been walked on a live Entra
+          tenant the way the Okta and JumpCloud sections were. Screenshots land when we certify one.
+        </p>
+      </.docs_callout>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create the enterprise application.</p>
+            <p class="mt-1.5">
+              Provisioning does not live on the app registration you made for sign-in — it needs a
+              separate object. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>, name it <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>, and choose <strong class="text-zinc-200">Integrate any other application you don't find in the gallery</strong>.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Point it at emisar.</p>
+            <p class="mt-1.5">
+              On the new application's <strong class="text-zinc-200">Provisioning</strong>
+              blade set <strong class="text-zinc-200">Provisioning Mode</strong>
+              to <strong class="text-zinc-200">Automatic</strong>, then fill in the two values emisar gave you —
+              the SCIM base URL as <strong class="text-zinc-200">Tenant URL</strong>
+              and the bearer as <strong class="text-zinc-200">Secret Token</strong>:
+            </p>
+            <.docs_code phx-no-format label="Tenant URL" copy_text="https://emisar.dev/scim/v2">https://emisar.dev/scim/v2</.docs_code>
+            <p class="mt-4">
+              Press <strong class="text-zinc-200">Test Connection</strong>. Entra probes the endpoint for a user that
+              cannot exist, using a random GUID, and expects an empty result rather than an error —
+              emisar answers that correctly, so a failure here means the URL or the token is wrong,
+              not the schema. Save.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Remap externalId to objectId.</p>
+            <p class="mt-1.5">
+              Open
+              <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>
+              and change the attribute feeding
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+              from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
+              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>.
+            </p>
+            <p class="mt-4">
+              Do not skip this. Entra's default is <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, which is not guaranteed to exist, is not guaranteed to be
+              unique, and can change — and it is not the value your sign-in connection identifies
+              people by. With <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+              on the SSO side and
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
+              here, the same person arrives as two different identities: one provisioned by the
+              directory, one created when they sign in.
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>
+              is the same immutable id the
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+              claim carries, so the two halves converge.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            4
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
+            <p class="mt-1.5">
+              Under <strong class="text-zinc-200">Users and groups</strong>, assign whoever should exist in emisar, then
+              turn <strong class="text-zinc-200">Provisioning Status</strong>
+              on. Entra syncs on its own schedule — roughly every 40 minutes — so the first members
+              appear under <strong class="text-zinc-200">Synced users</strong>
+              on the emisar connection after that cycle, not instantly. Their Entra groups become
+              mappable to roles below.
+            </p>
+          </div>
+        </li>
+      </ol>
 
       <.docs_h2 id="jumpcloud">JumpCloud setup</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
