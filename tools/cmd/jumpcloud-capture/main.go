@@ -348,6 +348,9 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 		_ = screenshot(ctx, outDir, "jc-02-nav-failed")
 		return fmt.Errorf("could not reach SSO Applications after 3 attempts")
 	}
+	if err := highlight(ctx, "Add New Application"); err != nil {
+		return err
+	}
 	if err := screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
 		return err
 	}
@@ -363,6 +366,9 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 		}
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+		return err
+	}
+	if err := highlight(ctx, "Custom Application"); err != nil {
 		return err
 	}
 	if err := screenshot(ctx, outDir, "jc-03-add-application"); err != nil {
@@ -402,6 +408,9 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	}
 	// Step 2 "Select Options" — the screen that shows whether SSO and provisioning
 	// can live on ONE app, which is the claim this certification exists to settle.
+	if err := highlightControl(ctx, "Manage Single Sign-On (SSO)"); err != nil {
+		return err
+	}
 	if err := screenshot(ctx, outDir, "jc-05-select-options"); err != nil {
 		return err
 	}
@@ -429,6 +438,9 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
+	if err := highlightControl(ctx, "Configure SSO with OIDC"); err != nil {
+		return err
+	}
 	if err := screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
 		return err
 	}
@@ -443,17 +455,19 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 		return err
 	}
-	if err := screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
-		return err
-	}
-
-	// Step 3 is general info — the wizard never asks SAML vs OIDC; that choice
-	// lives on the saved app's SSO tab, which is why the wizard alone cannot
-	// settle whether OIDC and provisioning coexist.
+	// Step 3 is general info. Fill the field BEFORE shooting: a walkthrough frame
+	// showing an empty Display Label teaches nothing, and shipping one is exactly
+	// what drew "you again did not select right options on the screenshots".
 	if err := focusField(ctx, "label"); err != nil {
 		return err
 	}
 	if err := chromedp.Run(ctx, chromedp.KeyEvent("emisar"), chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	if err := highlight(ctx, "Display Label"); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
 		return err
 	}
 	for _, label := range []string{"Next", "Save Application"} {
@@ -468,8 +482,48 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 			}
 		}
 	}
+	if err := highlight(ctx, "Enabled Features"); err != nil {
+		return err
+	}
 	if err := screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
 		return err
+	}
+	// Past Review is where the OIDC redirect URI and the client credentials live —
+	// the screen an operator cannot finish SSO without. The wizard's Review step
+	// only summarises, so a guide that stops here leaves the reader stranded.
+	if clicked, err := clickText(ctx, "Configure Application"); err != nil {
+		return err
+	} else if !clicked {
+		return fmt.Errorf("no Configure Application button on the review step")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+		return err
+	}
+	if err := describePage(ctx); err != nil {
+		return err
+	}
+	// Fill the redirect URI before shooting, for the same reason step 3 is filled:
+	// an empty field teaches nothing.
+	if err := focusField(ctx, "Redirect"); err == nil {
+		_ = chromedp.Run(ctx,
+			chromedp.KeyEvent("https://emisar.dev/sign_in/sso/callback"),
+			chromedp.Sleep(2*time.Second))
+	}
+	if err := highlight(ctx, "Redirect URIs"); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-09-oidc-config"); err != nil {
+		return err
+	}
+	if err := describeFields(ctx); err != nil {
+		return err
+	}
+
+	// Provisioning wiring needs emisar reachable from JumpCloud's servers, which a
+	// screenshot run has no tunnel for.
+	if env["EMISAR_PUBLIC_URL"] == "" {
+		fmt.Println("  EMISAR_PUBLIC_URL unset — stopping, skipping provisioning")
+		return nil
 	}
 	return provisioningFlow(ctx, env, outDir)
 }
@@ -700,4 +754,67 @@ func describePage(ctx context.Context) error {
 	fmt.Println("--- page ---")
 	fmt.Println(payload)
 	return nil
+}
+
+// highlight outlines the smallest visible element carrying the label, so a
+// screenshot shows WHERE to click rather than leaving the reader to hunt. The
+// docs are step-by-step; an unmarked full console screen is not a step.
+func highlight(ctx context.Context, label string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('a,button,li,div,span,td,label,[role=option]')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!matches.length) return false;
+  matches.sort((a, b) => a.textContent.length - b.textContent.length);
+  const target = matches[0].closest('li,tr,[role=option],a,button') || matches[0];
+  target.style.outline = '3px solid #10b981';
+  target.style.outlineOffset = '3px';
+  target.style.borderRadius = '6px';
+  target.scrollIntoView({block: 'center'});
+  return true;
+})()`, label)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		fmt.Printf("  WARN nothing matching %q to highlight\n", label)
+		return nil
+	}
+	fmt.Printf("  highlighted %q\n", label)
+	return chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond))
+}
+
+// highlightControl outlines the row holding a checkbox or radio. Those controls
+// carry no usable text of their own on this wizard, so `highlight` can't find
+// them; anchor on the nearest ancestor that also contains the section wording.
+func highlightControl(ctx context.Context, section string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  for (const box of [...document.querySelectorAll('input[type=checkbox],input[type=radio]')].filter(visible)) {
+    let node = box;
+    for (let up = 0; up < 6 && node; up++) {
+      node = node.parentElement;
+      if (!node) break;
+      if (node.textContent.includes(%q)) {
+        node.style.outline = '3px solid #10b981';
+        node.style.outlineOffset = '3px';
+        node.style.borderRadius = '6px';
+        node.scrollIntoView({block: 'center'});
+        return true;
+      }
+    }
+  }
+  return false;
+})()`, section)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		fmt.Printf("  WARN no control near %q to highlight\n", section)
+		return nil
+	}
+	fmt.Printf("  highlighted control %q\n", section)
+	return chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond))
 }

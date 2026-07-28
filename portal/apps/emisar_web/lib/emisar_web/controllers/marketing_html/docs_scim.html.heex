@@ -8,6 +8,7 @@
         {"enable", "Enabling directory sync"},
         {"okta", "Okta setup"},
         {"jumpcloud", "JumpCloud setup"},
+        {"keycloak", "Keycloak"},
         {"group-role", "Group → role mapping"},
         {"security-notes", "Security notes"}
       ]}
@@ -435,6 +436,64 @@
           </div>
         </li>
       </ol>
+
+      <.docs_h2 id="keycloak">Keycloak</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Keycloak is the one provider on this page that cannot drive directory sync on its own.
+        Its built-in SCIM support runs the other way: the
+        <strong class="text-zinc-200">SCIM Realm API</strong>
+        added in Keycloak 26.6 is an <em>inbound</em>
+        one, letting something else provision users <em>into</em>
+        Keycloak. Keycloak shipping a SCIM client that pushes users <em>out</em>
+        to an application like emisar is on the roadmap, not in a release.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        So with stock Keycloak you get single sign-on — see
+        <.link
+          navigate={~p"/docs/sso"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >the Keycloak SSO setup</.link>
+        — and members are created on first sign-in at the connection's default role. What you do
+        not get is the rest of the lifecycle: no group → role mapping, and nobody is removed from
+        emisar when they leave Keycloak.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Three ways forward, in the order most teams take them:
+      </p>
+
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">Deprovision in Keycloak and accept the lag.</strong>
+            Disabling a Keycloak user stops them signing in immediately, which is the control that
+            matters. Their emisar membership stays until someone removes it, so it still holds any
+            API keys they created — remove the member in
+            <strong class="text-zinc-200">Team</strong>
+            to close that out.
+          </span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">Put a provisioning IdP in front.</strong>
+            Where Keycloak federates to Okta, JumpCloud, or Entra, run directory sync from that
+            IdP against emisar directly and leave Keycloak to sign-in.
+          </span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">Run a third-party outbound SCIM extension.</strong>
+            Community extensions add a SCIM client to Keycloak. emisar's endpoint is plain SCIM 2.0
+            with a bearer token, so a conforming client works — point it at the base URL and token
+            from the steps above. We have not certified one, so treat it as your integration to
+            verify.
+          </span>
+        </li>
+      </ul>
 
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
