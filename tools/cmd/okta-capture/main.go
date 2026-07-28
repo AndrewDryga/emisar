@@ -556,10 +556,21 @@ func provisioningFlow(
 		return err
 	}
 
+	// The de-identification above rewrote the Base URL field for the screenshot.
+	// Saving now would persist THAT hostname, Okta would re-validate against a host
+	// with no SCIM provider behind it, and provisioning would silently stay off —
+	// which is exactly how a passing "verified successfully!" ended with
+	// "Provisioning is not enabled". Put the real tunnel back before saving.
+	if err := typeRealKeys(ctx, "scim_base_url", base); err != nil {
+		return err
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
 	if err := clickSelector(ctx, "#userMgmtSettings\\.button\\.submit"); err != nil {
 		return err
 	}
-	fmt.Println("  clicked Save")
+	fmt.Println("  clicked Save (with the real base URL restored)")
 	if err := settle(8); err != nil {
 		return err
 	}
