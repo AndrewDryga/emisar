@@ -1,0 +1,38 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_DNS: http://gcp-api:8080/dns/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-27be
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-dns-secret-b521]
+cases:
+  - action: gcp.dns_zones
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-zone, example.test., "on"]
+  - action: gcp.dns_zone_describe
+    args: {project: example-prod, zone: harness-zone}
+    expect:
+      stdout_contains: [harness-zone, example.test., ns-cloud-a1.googledomains.com.]
+  - action: gcp.dns_record_lookup
+    args: {project: example-prod, zone: harness-zone, name: api.example.test., type: A}
+    expect:
+      stdout_contains: [api.example.test., 203.0.113.30]
+  - action: gcp.dns_policies
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-policy, 10.20.0.53]
+  - action: gcp.dns_response_policies
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-response, harness-network]
+  - action: gcp.dns_response_policy_rules
+    args: {project: example-prod, response_policy: harness-response}
+    expect:
+      stdout_contains: [harness-rule, blocked.example.test., NXDOMAIN]

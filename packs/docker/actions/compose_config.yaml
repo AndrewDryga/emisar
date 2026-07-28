@@ -1,0 +1,54 @@
+schema_version: 1
+id: docker.compose_config
+title: Summarize a Docker Compose configuration
+kind: script
+risk: low
+description: >
+  Parse one contained Compose file without interpolation or environment
+  resolution, then return only service, image, network, volume, and profile
+  names. Raw YAML, environment values, secrets, labels, and build arguments are
+  never returned.
+side_effects:
+  - Parses one Compose file beneath an approved deployment root.
+  - Does not query or modify containers.
+args:
+  - name: file
+    type: string
+    required: true
+    description: Path to docker-compose.yml.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+      allowed_prefixes:
+        - /opt
+        - /srv
+        - /var/www
+        - /data
+        - /usr/local
+execution:
+  script:
+    path: scripts/compose_config.sh
+    interpreter: /bin/bash
+  argv: ["{{ args.file }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [valid, file, services, images, networks, volumes, profiles]
+    properties:
+      valid: {const: true}
+      file: {type: string}
+      services: {type: array, items: {type: string}}
+      images: {type: array, items: {type: string}}
+      networks: {type: array, items: {type: string}}
+      volumes: {type: array, items: {type: string}}
+      profiles: {type: array, items: {type: string}}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Secret-safe stack summary
+    args:
+      file: /opt/stack/docker-compose.yml

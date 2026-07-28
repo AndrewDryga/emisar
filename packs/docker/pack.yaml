@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.10
+version: 0.2.11
 retired_below: 0.2.8
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
@@ -59,6 +59,9 @@ actions:
   - actions/compose_ps.yaml
   - actions/compose_logs.yaml
   - actions/compose_restart.yaml
+  - actions/compose_ls.yaml
+  - actions/compose_config.yaml
+  - actions/compose_images.yaml
   # System & mutators
   - actions/system_df.yaml
   - actions/system_prune.yaml

@@ -1,0 +1,33 @@
+schema_version: 1
+id: rds.cluster_parameter_groups
+title: aws rds describe-db-cluster-parameter-groups
+kind: script
+risk: low
+description: List a bounded page of cluster parameter-group names, families, and ARNs without arbitrary descriptions.
+side_effects: ["Read-only API pagination.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum parameter groups to return.
+    validation: {min: 1, max: 1000}
+  - name: next_token
+    type: string
+    required: false
+    default: ""
+    sensitive: true
+    description: Opaque AWS CLI token from a previous result.
+    validation: {pattern: "^[A-Za-z0-9+/=_-]*$", max_length: 4096}
+execution:
+  script: {path: scripts/rds_read.sh, interpreter: /bin/sh}
+  argv: [cluster-parameter-groups, "{{ args.limit }}", "{{ args.next_token }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Aurora parameter groups
+    args: {}

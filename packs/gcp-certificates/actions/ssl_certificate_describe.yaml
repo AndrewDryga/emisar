@@ -1,0 +1,41 @@
+schema_version: 1
+id: gcp.ssl_certificate_describe
+title: gcloud compute ssl-certificates describe
+kind: script
+risk: low
+description: Show one legacy Compute SSL certificate's status, SANs, and expiry without PEM.
+side_effects: ["One read-only API call.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: certificate
+    type: string
+    required: true
+    description: Legacy Compute SSL certificate name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: scope
+    type: string
+    required: true
+    description: Certificate scope.
+    validation: {enum: [global, region]}
+  - name: location
+    type: string
+    required: false
+    default: ""
+    description: Region for region scope; empty for global.
+    validation: {pattern: "^([a-z0-9][a-z0-9-]{0,62})?$", max_length: 63}
+execution:
+  script: {path: scripts/certificates.sh, interpreter: /bin/sh}
+  argv: [ssl-certificate-describe, "{{ args.project }}", "{{ args.certificate }}", "{{ args.scope }}", "{{ args.location }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Global legacy certificate
+    args: {project: example-prod, certificate: app, scope: global}

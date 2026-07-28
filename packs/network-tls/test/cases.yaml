@@ -1,0 +1,18 @@
+services: [tcp]
+versions:
+  - version: "1.31.3"
+    digest: "@sha256:5a88c9c45479443d7be2eadc894b4ed0a9801bae03d97a5760ae13b5c2005942"
+    default: true
+cases:
+  - action: net.tcp_probe
+    args: {host: tcp, port: 80, timeout: 3}
+    expect:
+      stdout_contains: [reachable=true, host=tcp, port=80]
+
+  - name: net.tcp_probe-closed-port
+    action: net.tcp_probe
+    args: {host: tcp, port: 81, timeout: 3}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [reachable=false, host=tcp, port=81]

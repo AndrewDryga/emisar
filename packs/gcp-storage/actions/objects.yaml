@@ -1,0 +1,42 @@
+schema_version: 1
+id: gcp.storage_objects
+title: gcloud storage objects list
+kind: script
+risk: low
+description: List bounded object system metadata under a literal prefix without custom metadata values.
+side_effects: ["Read-only Cloud Storage API pagination.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: bucket
+    type: string
+    required: true
+    description: Cloud Storage bucket name.
+    validation: {pattern: "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$", max_length: 63}
+  - name: prefix
+    type: string
+    required: false
+    default: ""
+    description: Literal object-name prefix; wildcard characters are rejected.
+    validation: {pattern: "^[A-Za-z0-9!_.$'()+,;=:@%/ -]*$", max_length: 1024}
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum objects to return.
+    validation: {min: 1, max: 500}
+execution:
+  script: {path: scripts/storage.sh, interpreter: /bin/sh}
+  argv: [objects, "{{ args.project }}", "{{ args.bucket }}", "{{ args.prefix }}", "{{ args.limit }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Application logs
+    args: {project: example-prod, bucket: example-prod-assets, prefix: logs/}

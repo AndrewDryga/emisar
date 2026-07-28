@@ -1,0 +1,68 @@
+schema_version: 1
+id: oidc.compare_key_ids
+title: Compare authoritative and consumer key IDs
+kind: script
+risk: low
+description: >
+  Compare two bounded JSON arrays of public key IDs and report missing, extra,
+  and shared IDs. Inputs are sorted and deduplicated before comparison.
+side_effects:
+  - Local JSON parsing only.
+  - Does not perform network or filesystem I/O.
+args:
+  - name: authoritative_key_ids_json
+    type: string
+    required: true
+    description: JSON array of key IDs from the authoritative JWKS.
+    validation:
+      pattern: "^\\[[ -~]*\\]$"
+      max_length: 16384
+  - name: consumer_key_ids_json
+    type: string
+    required: true
+    description: JSON array of key IDs observed by the consumer.
+    validation:
+      pattern: "^\\[[ -~]*\\]$"
+      max_length: 16384
+execution:
+  script:
+    path: scripts/oidc.sh
+    interpreter: /bin/bash
+  argv: [compare-key-ids]
+  env:
+    OIDC_AUTHORITATIVE_KEY_IDS_JSON: "{{ args.authoritative_key_ids_json }}"
+    OIDC_CONSUMER_KEY_IDS_JSON: "{{ args.consumer_key_ids_json }}"
+  timeout: 10s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+      - authoritative_key_ids
+      - consumer_key_ids
+      - shared_key_ids
+      - missing_from_consumer
+      - extra_in_consumer
+      - exact_match
+      - consumer_covers_authoritative
+      - relation
+    properties:
+      authoritative_key_ids: {type: array, items: {type: string}}
+      consumer_key_ids: {type: array, items: {type: string}}
+      shared_key_ids: {type: array, items: {type: string}}
+      missing_from_consumer: {type: array, items: {type: string}}
+      extra_in_consumer: {type: array, items: {type: string}}
+      exact_match: {type: boolean}
+      consumer_covers_authoritative: {type: boolean}
+      relation:
+        enum: [equal, consumer_missing, consumer_extra, consumer_missing_and_extra]
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Detect a stale consumer
+    args:
+      authoritative_key_ids_json: '["current","next"]'
+      consumer_key_ids_json: '["current","old"]'

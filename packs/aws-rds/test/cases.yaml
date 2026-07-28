@@ -1,0 +1,60 @@
+services: [rds-api]
+versions:
+  - version: "2.36.8"
+    digest: "@sha256:7e1b11a3c93bc5af81f496de0662f666b2352a4a6666e8ebae904fe102b131b6"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
+env:
+  AWS_ACCESS_KEY_ID: packtest-canary-aws-rds-access-b664
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ENDPOINT_URL: "http://rds-api:8080"
+  AWS_SECRET_ACCESS_KEY: packtest-canary-aws-rds-secret-755c
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-aws-rds-secret-755c
+      - packtest-canary-aws-rds-value-918d
+cases:
+  - action: rds.list_instances
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBInstances, harness-db, postgres, db.t3.micro]
+  - action: rds.describe_instance
+    args: {instance: harness-db}
+    expect:
+      stdout_contains: [DBInstances, harness-db, postgres, PendingModifiedValueKeys]
+  - action: rds.list_clusters
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBClusters, harness-cluster, aurora-postgresql]
+  - action: rds.describe_cluster
+    args: {cluster: harness-cluster}
+    expect:
+      stdout_contains: [DBClusters, harness-cluster, PendingModifiedValueKeys]
+  - action: rds.list_snapshots
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBSnapshots, harness-snapshot, harness-db]
+  - action: rds.list_cluster_snapshots
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBClusterSnapshots, harness-cluster-snapshot, harness-cluster]
+  - action: rds.parameter_groups
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBParameterGroups, harness-parameters, postgres15]
+  - action: rds.cluster_parameter_groups
+    args: {limit: 25}
+    expect:
+      stdout_contains: [DBClusterParameterGroups, harness-cluster-parameters, aurora-postgresql15]
+  - action: rds.pending_maintenance
+    args: {limit: 25}
+    expect:
+      stdout_contains: [PendingMaintenanceActions, system-update, available]
+  - action: rds.recent_events
+    args: {duration_minutes: 120, limit: 25}
+    expect:
+      stdout_contains: [Events, harness-db, maintenance]

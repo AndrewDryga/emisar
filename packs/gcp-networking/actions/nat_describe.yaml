@@ -1,0 +1,40 @@
+schema_version: 1
+id: gcp.nat_describe
+title: gcloud compute routers nats describe
+kind: script
+risk: low
+description: Show one Cloud NAT's address allocation, subnet coverage, logging, and rules.
+side_effects: ["One read-only Compute Engine API call."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: nat
+    type: string
+    required: true
+    description: Cloud NAT name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: router
+    type: string
+    required: true
+    description: Parent Cloud Router name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: region
+    type: string
+    required: true
+    description: Router region.
+    validation: {pattern: "^[a-z0-9][a-z0-9-]{0,62}$", max_length: 63}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [nat-describe, "{{ args.project }}", "{{ args.nat }}", "{{ args.router }}", "{{ args.region }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Application egress NAT
+    args: {project: example-prod, nat: app-egress, router: edge, region: us-central1}

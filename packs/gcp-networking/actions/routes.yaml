@@ -1,0 +1,31 @@
+schema_version: 1
+id: gcp.routes
+title: gcloud compute routes list
+kind: script
+risk: low
+description: List bounded non-dynamic VPC routes and their next hops.
+side_effects: ["Read-only Compute Engine API pagination.", "Dynamic routes are reported by router_status instead."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: limit
+    type: integer
+    required: false
+    default: 200
+    description: Maximum routes to return.
+    validation: {min: 1, max: 500}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [routes, "{{ args.project }}", "{{ args.limit }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Project routes
+    args: {project: example-prod}

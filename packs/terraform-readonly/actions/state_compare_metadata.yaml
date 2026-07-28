@@ -1,0 +1,58 @@
+schema_version: 1
+id: tf.state_compare_metadata
+title: Compare live and candidate Terraform state metadata
+kind: script
+risk: low
+description: >
+  Compare live backend metadata with one restricted candidate state and report
+  an explicit lineage mismatch, older or newer candidate, or equal serial.
+  The result never recommends or performs a state mutation.
+side_effects:
+  - One read-only backend state pull and one candidate file read.
+  - Never emits state values or modifies either state.
+args:
+  - name: candidate_file
+    type: string
+    required: true
+    description: Candidate .tfstate basename under TF_STATE_CANDIDATE_DIR.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\\.tfstate$"
+      max_length: 135
+execution:
+  script:
+    path: scripts/state_metadata.sh
+    interpreter: /bin/bash
+  argv: [compare, "{{ args.candidate_file }}"]
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [live, candidate, relation, serial_delta]
+    properties:
+      live: {$ref: "#/$defs/metadata"}
+      candidate: {$ref: "#/$defs/metadata"}
+      relation:
+        enum: [lineage_mismatch, candidate_older, candidate_newer, equal_serial]
+      serial_delta: {type: [integer, "null"]}
+    $defs:
+      metadata:
+        type: object
+        additionalProperties: false
+        required: [source, state_format_version, lineage, serial, terraform_version, resource_instance_count]
+        properties:
+          source: {enum: [live, candidate]}
+          state_format_version: {const: 4}
+          lineage: {type: string}
+          serial: {type: integer, minimum: 0}
+          terraform_version: {type: string}
+          resource_instance_count: {type: integer, minimum: 0}
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Compare a failed-upload candidate
+    args:
+      candidate_file: failed-upload.tfstate

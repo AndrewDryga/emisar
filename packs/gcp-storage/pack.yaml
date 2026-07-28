@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: gcp-storage
+name: Google Cloud Storage diagnostics
+version: 0.1.0
+description: >
+  Read-only Cloud Storage diagnostics for buckets, IAM policies, bounded
+  object listings, and fixed object metadata. Object bodies, custom metadata
+  values, contexts, signed URLs, and credential operations are excluded.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud, jq]
+
+setup:
+  summary: >
+    Drives gcloud and projects Cloud Storage API responses locally before they
+    leave the runner. Authenticate gcloud before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "Bucket/object inventory can use roles/storage.bucketViewer plus roles/storage.objectViewer; bucket IAM reads additionally need storage.buckets.getIamPolicy, best supplied through an exact custom read role rather than roles/storage.admin."
+    - "Actions use mode-0600 temporary response files and remove them before exit."
+    - "Object actions return metadata only and never fetch object bodies."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+  verify: gcp.storage_buckets
+
+actions:
+  - actions/buckets.yaml
+  - actions/bucket_describe.yaml
+  - actions/bucket_policy.yaml
+  - actions/objects.yaml
+  - actions/object_describe.yaml

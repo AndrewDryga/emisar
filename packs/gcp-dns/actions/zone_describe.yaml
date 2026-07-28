@@ -1,0 +1,30 @@
+schema_version: 1
+id: gcp.dns_zone_describe
+title: gcloud dns managed-zones describe
+kind: script
+risk: low
+description: Show one managed zone's visibility, DNSSEC, nameservers, and forwarding or peering topology.
+side_effects: ["One read-only Cloud DNS API call.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: zone
+    type: string
+    required: true
+    description: Managed-zone name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+execution:
+  script: {path: scripts/dns.sh, interpreter: /bin/sh}
+  argv: [zone-describe, "{{ args.project }}", "{{ args.zone }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Application DNS zone
+    args: {project: example-prod, zone: app}

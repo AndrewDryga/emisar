@@ -1,0 +1,30 @@
+schema_version: 1
+id: gcp.sql_instance_describe
+title: gcloud sql instances describe
+kind: script
+risk: low
+description: Show one Cloud SQL instance's engine, HA, networking, backup, maintenance, and capacity summary.
+side_effects: ["One read-only Cloud SQL API call.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: instance
+    type: string
+    required: true
+    description: Cloud SQL instance ID.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,96}[a-z0-9])?$", max_length: 98}
+execution:
+  script: {path: scripts/cloudsql.sh, interpreter: /bin/sh}
+  argv: [instance-describe, "{{ args.project }}", "{{ args.instance }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Application database
+    args: {project: example-prod, instance: app-db}

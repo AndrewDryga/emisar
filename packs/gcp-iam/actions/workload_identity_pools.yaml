@@ -1,0 +1,52 @@
+schema_version: 1
+id: gcp.workload_identity_pools
+title: gcloud iam workload-identity-pools list
+kind: exec
+risk: low
+description: >
+  List global workload identity pools in one project, including state,
+  descriptions, and resource names.
+side_effects:
+  - One read-only IAM API call.
+  - Returned pools are capped by limit.
+search_terms:
+  - Workload Identity Federation
+  - WIF pools
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum pools to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - iam
+      - workload-identity-pools
+      - list
+      - --location=global
+      - "--project={{ args.project }}"
+      - "--limit={{ args.limit }}"
+      - --format=json
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 16384
+examples:
+  - title: Project workload identity pools
+    args:
+      project: example-prod
+      limit: 100

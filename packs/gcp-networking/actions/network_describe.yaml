@@ -1,0 +1,30 @@
+schema_version: 1
+id: gcp.network_describe
+title: gcloud compute networks describe
+kind: script
+risk: low
+description: Show one VPC network and its peering topology without arbitrary labels or descriptions.
+side_effects: ["One read-only Compute Engine API call."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: network
+    type: string
+    required: true
+    description: VPC network name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [network-describe, "{{ args.project }}", "{{ args.network }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Application VPC
+    args: {project: example-prod, network: app}

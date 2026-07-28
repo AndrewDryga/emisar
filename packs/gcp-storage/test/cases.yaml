@@ -1,0 +1,34 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_STORAGE: http://gcp-api:8080/storage/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-27be
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-storage-secret-e939]
+cases:
+  - action: gcp.storage_buckets
+    args: {project: example-prod}
+    expect:
+      stdout_contains: [harness-bucket, US, STANDARD, publicAccessPrevention]
+  - action: gcp.storage_bucket_describe
+    args: {project: example-prod, bucket: harness-bucket}
+    expect:
+      stdout_contains: [harness-bucket, 604800, defaultKmsKeyName]
+  - action: gcp.storage_bucket_policy
+    args: {project: example-prod, bucket: harness-bucket}
+    expect:
+      stdout_contains: [roles/storage.objectViewer, group:readers@example.test]
+  - action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 25}
+    expect:
+      stdout_contains: [logs/app.log, metadataKeys, contextKeys]
+  - action: gcp.storage_object_describe
+    args: {project: example-prod, bucket: harness-bucket, key: logs/app.log}
+    expect:
+      stdout_contains: [logs/app.log, secret, owner, trace]

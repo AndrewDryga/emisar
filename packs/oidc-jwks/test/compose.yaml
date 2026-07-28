@@ -1,0 +1,13 @@
+services:
+  oidc:
+    image: nginx:${PACKTEST_VERSION:-1.31.3}${PACKTEST_DIGEST-}
+    volumes:
+      - ${EMISAR_ROOT}/packs/oidc-jwks/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${EMISAR_ROOT}/packs/oidc-jwks/test/fixtures/server.crt:/etc/nginx/tls/server.crt:ro
+      - ${EMISAR_ROOT}/packs/oidc-jwks/test/fixtures/server.key:/etc/nginx/tls/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://127.0.0.1/health | grep -q ok"]
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      retries: 20

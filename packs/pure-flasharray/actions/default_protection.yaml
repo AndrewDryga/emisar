@@ -1,0 +1,45 @@
+schema_version: 1
+id: pure.default_protection
+title: Show FlashArray default protection
+kind: script
+risk: low
+description: >
+  Show the protection groups automatically applied to newly created volumes
+  on the local array and its pods. Results are bounded to one page.
+side_effects:
+  - One read-only HTTP GET to /container-default-protections.
+  - Read-only - never changes a container's default protection.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum containers in this page.
+    validation:
+      min: 1
+      max: 1000
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation_token from a prior result.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 2048
+execution:
+  script:
+    path: scripts/purelist.sh
+    interpreter: /bin/sh
+  argv:
+    - default-protection
+    - "{{ args.limit }}"
+    - "{{ args.page_cursor }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Local array and pod defaults
+    args: {}

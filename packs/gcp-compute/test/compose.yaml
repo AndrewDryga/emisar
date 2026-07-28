@@ -1,0 +1,22 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/gcp-compute/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-577.0.0-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-gcp-compute-tools:latest
+
+  gcp-api:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:${PACKTEST_VERSION:-577.0.0-slim}${PACKTEST_DIGEST-}
+    entrypoint: [python3, /fixture/server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/gcp-compute/test/fixtures/server.py:/fixture/server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

@@ -1,0 +1,44 @@
+schema_version: 1
+id: oidc.validate_discovery
+title: Validate OIDC discovery metadata
+kind: script
+risk: low
+description: >
+  Require an exact issuer match and an accepted HTTPS jwks_uri in one discovery
+  document. This action does not fetch the advertised JWKS.
+side_effects:
+  - One unauthenticated HTTPS GET to the issuer's discovery endpoint.
+  - Writes the public response to a mode-0600 temporary file and removes it before exit.
+args:
+  - name: issuer
+    type: string
+    required: true
+    description: Exact HTTPS issuer URL without a query or fragment.
+    validation:
+      pattern: "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,=:;%@/-]*)?$"
+      max_length: 768
+execution:
+  script:
+    path: scripts/oidc.sh
+    interpreter: /bin/bash
+  argv: [validate-discovery, "{{ args.issuer }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [valid, issuer, discovery_url, jwks_uri]
+    properties:
+      valid: {const: true}
+      issuer: {type: string}
+      discovery_url: {type: string}
+      jwks_uri: {type: string}
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Validate issuer metadata
+    args:
+      issuer: https://accounts.example.com

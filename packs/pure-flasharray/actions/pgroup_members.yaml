@@ -1,0 +1,53 @@
+schema_version: 1
+id: pure.pgroup_members
+title: List FlashArray protection-group members
+kind: script
+risk: low
+description: >
+  List volume, host, or host-group membership in protection groups. Each item
+  identifies the group and member; results are bounded to one page.
+side_effects:
+  - One read-only HTTP GET to the selected /protection-groups member endpoint.
+  - Read-only - never adds or removes a protection-group member.
+args:
+  - name: member_type
+    type: string
+    required: true
+    description: Protection-group member resource to list.
+    validation:
+      enum: [volumes, hosts, host-groups]
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum membership records in this page.
+    validation:
+      min: 1
+      max: 1000
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation_token from a prior result.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 2048
+execution:
+  script:
+    path: scripts/purelist.sh
+    interpreter: /bin/sh
+  argv:
+    - members
+    - "{{ args.limit }}"
+    - "{{ args.page_cursor }}"
+    - "{{ args.member_type }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Volume membership
+    args:
+      member_type: volumes

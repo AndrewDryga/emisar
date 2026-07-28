@@ -1,0 +1,37 @@
+schema_version: 1
+id: gcp.certificate_maps
+title: gcloud certificate-manager maps list
+kind: script
+risk: low
+description: List bounded Certificate Manager maps and attached load-balancer targets.
+side_effects: ["Read-only API pagination.", "Uses a mode-0600 temporary response file and removes it before exit."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: location
+    type: string
+    required: false
+    default: global
+    description: Certificate Manager location.
+    validation: {pattern: "^[a-z0-9][a-z0-9-]{0,62}$", max_length: 63}
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum maps to return.
+    validation: {min: 1, max: 500}
+execution:
+  script: {path: scripts/certificates.sh, interpreter: /bin/sh}
+  argv: [certificate-maps, "{{ args.project }}", "{{ args.location }}", "{{ args.limit }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Global certificate maps
+    args: {project: example-prod}

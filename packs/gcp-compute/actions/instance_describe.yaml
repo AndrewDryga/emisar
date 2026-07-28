@@ -1,0 +1,56 @@
+schema_version: 1
+id: gcp.instance_describe
+title: gcloud compute instances describe
+kind: exec
+risk: low
+description: >
+  Show one Compute Engine instance's diagnostic configuration and lifecycle
+  state. Metadata values are deliberately omitted because startup scripts and
+  custom metadata can contain credentials; only the metadata fingerprint is
+  returned.
+side_effects:
+  - One read-only Compute Engine API call.
+  - Does not return instance metadata values or serial output.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - describe
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - "--format=json(name,id,status,zone,machineType,creationTimestamp,lastStartTimestamp,lastStopTimestamp,lastSuspendedTimestamp,cpuPlatform,hostname,deletionProtection,canIpForward,networkInterfaces,disks,scheduling,serviceAccounts,tags,labels,metadata.fingerprint)"
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Describe a production VM
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01

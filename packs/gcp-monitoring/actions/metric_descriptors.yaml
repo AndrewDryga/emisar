@@ -1,0 +1,69 @@
+schema_version: 1
+id: gcp.metric_descriptors
+title: List Cloud Monitoring metric descriptors
+kind: script
+risk: low
+description: >
+  List active metric descriptors in one project, optionally restricted to a
+  metric-type prefix. Returns a nextPageToken when another page exists.
+side_effects:
+  - One gcloud token read and one read-only Monitoring API request.
+  - Result count is bounded by page_size.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: type_prefix
+    type: string
+    required: false
+    default: ""
+    description: Optional metric-type prefix.
+    validation:
+      pattern: "^([A-Za-z][A-Za-z0-9._/-]{0,255})?$"
+  - name: active_only
+    type: boolean
+    required: false
+    default: true
+    description: Exclude descriptors with no recent data.
+  - name: page_size
+    type: integer
+    required: false
+    default: 100
+    description: Maximum descriptors in this page.
+    validation:
+      min: 1
+      max: 500
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque nextPageToken from a prior result.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 2048
+execution:
+  script:
+    path: scripts/monitoring_api.sh
+    interpreter: /bin/sh
+  argv:
+    - metric-descriptors
+    - "{{ args.project }}"
+    - "{{ args.type_prefix }}"
+    - "{{ args.active_only }}"
+    - "{{ args.page_size }}"
+    - "{{ args.page_cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Interconnect metric descriptors
+    args:
+      project: example-prod
+      type_prefix: interconnect.googleapis.com/
+      active_only: true

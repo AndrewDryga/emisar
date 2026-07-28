@@ -1,10 +1,10 @@
 schema_version: 1
 id: rds.describe_cluster
 title: aws rds describe-db-clusters --db-cluster-identifier
-kind: exec
+kind: script
 risk: low
-description: Show one Aurora cluster's full details + members.
-side_effects: ["One API call.", "Read-only."]
+description: Show one Aurora or Multi-AZ cluster's members, endpoints, backup, network, and encryption state.
+side_effects: ["One read-only API call.", "Uses a mode-0600 temporary response file and removes it before exit."]
 args:
   - name: cluster
     type: string
@@ -13,12 +13,12 @@ args:
     validation:
       pattern: "^[a-zA-Z][a-zA-Z0-9\\-]{0,62}$"
 execution:
-  command:
-    binary: aws
-    argv: ["rds", "describe-db-clusters", "--db-cluster-identifier", "{{ args.cluster }}", "--output", "json"]
-  timeout: 30s
+  script: {path: scripts/rds_read.sh, interpreter: /bin/sh}
+  argv: [cluster, "{{ args.cluster }}"]
+  timeout: 60s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:

@@ -1,0 +1,39 @@
+schema_version: 1
+id: tf.state_metadata
+title: Project live Terraform state metadata
+kind: script
+risk: low
+description: >
+  Pull the current backend state and return only its format version, lineage,
+  serial, Terraform version, and resource instance count. Resource values and
+  outputs are never emitted or written to disk.
+side_effects:
+  - One read-only backend state pull.
+  - Holds at most 64 MiB of raw state in process memory before projecting metadata.
+args: []
+execution:
+  script:
+    path: scripts/state_metadata.sh
+    interpreter: /bin/bash
+  argv: [live]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, state_format_version, lineage, serial, terraform_version, resource_instance_count]
+    properties:
+      source: {const: live}
+      state_format_version: {const: 4}
+      lineage: {type: string}
+      serial: {type: integer, minimum: 0}
+      terraform_version: {type: string}
+      resource_instance_count: {type: integer, minimum: 0}
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Current backend metadata
+    args: {}

@@ -1,0 +1,31 @@
+schema_version: 1
+id: gcp.https_proxies
+title: gcloud compute target-https-proxies list
+kind: script
+risk: low
+description: List bounded HTTPS target proxies, URL maps, certificates, and TLS policy.
+side_effects: ["Read-only Compute Engine API pagination."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum HTTPS proxies to return.
+    validation: {min: 1, max: 500}
+execution:
+  script: {path: scripts/load_balancing.sh, interpreter: /bin/sh}
+  argv: [https-proxies, "{{ args.project }}", "{{ args.limit }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Project HTTPS proxies
+    args: {project: example-prod}

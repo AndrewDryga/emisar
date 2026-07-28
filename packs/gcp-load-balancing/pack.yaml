@@ -1,0 +1,45 @@
+schema_version: 1
+
+id: gcp-load-balancing
+name: Google Cloud load-balancing diagnostics
+version: 0.1.0
+description: >
+  Read-only Google Cloud load-balancer topology and health diagnostics for
+  backend services, health checks, URL maps, target proxies, forwarding rules,
+  and network endpoint groups. Fixed projections exclude IAP secrets,
+  AWS-auth keys, and custom header values.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud, jq]
+
+setup:
+  summary: >
+    Drives gcloud and locally projects API responses with jq before they leave
+    the runner. Authenticate gcloud before loading the pack.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-reader.json
+  notes:
+    - "The principal needs roles/compute.networkViewer or equivalent get/list permissions."
+    - "Complex resource projections use mode-0600 temporary files so gcloud failures remain distinguishable from jq failures; files are removed before exit."
+    - "Any credential/config env must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+  verify: gcp.backend_services
+
+actions:
+  - actions/backend_services.yaml
+  - actions/backend_service_describe.yaml
+  - actions/backend_health.yaml
+  - actions/health_checks.yaml
+  - actions/url_maps.yaml
+  - actions/http_proxies.yaml
+  - actions/https_proxies.yaml
+  - actions/forwarding_rules.yaml
+  - actions/network_endpoint_groups.yaml

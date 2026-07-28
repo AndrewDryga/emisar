@@ -57,6 +57,22 @@ cases:
   - action: nomad.operator_scheduler_get_config
     expect:
       stdout_contains: [Scheduler Algorithm]
+  - action: nomad.job_health_snapshot
+    args:
+      job: packtest-health
+      allocation_limit: 5
+      events_per_task: 3
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/health.nomad.hcl]
+    expect:
+      stdout_contains:
+        - '"id":"packtest-health"'
+        - '"desired":2'
+        - '"desired_allocations":2'
+        - '"image":"busybox:1.36"'
+        - '"deployments":[{"id":"'
+        - '"desired_total":2'
+        - '"allocations":[]'
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']

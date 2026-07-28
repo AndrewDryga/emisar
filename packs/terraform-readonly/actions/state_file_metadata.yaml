@@ -1,0 +1,47 @@
+schema_version: 1
+id: tf.state_file_metadata
+title: Project candidate Terraform state metadata
+kind: script
+risk: low
+description: >
+  Read one restricted candidate .tfstate file and return metadata only. The
+  filename must resolve beneath TF_STATE_CANDIDATE_DIR; symlink and traversal
+  escapes fail closed.
+side_effects:
+  - Reads one candidate state file capped at 64 MiB.
+  - Never emits state values or modifies the file.
+args:
+  - name: candidate_file
+    type: string
+    required: true
+    description: Candidate .tfstate basename under TF_STATE_CANDIDATE_DIR.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\\.tfstate$"
+      max_length: 135
+execution:
+  script:
+    path: scripts/state_metadata.sh
+    interpreter: /bin/bash
+  argv: [file, "{{ args.candidate_file }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, state_format_version, lineage, serial, terraform_version, resource_instance_count]
+    properties:
+      source: {const: candidate}
+      state_format_version: {const: 4}
+      lineage: {type: string}
+      serial: {type: integer, minimum: 0}
+      terraform_version: {type: string}
+      resource_instance_count: {type: integer, minimum: 0}
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Candidate metadata
+    args:
+      candidate_file: failed-upload.tfstate

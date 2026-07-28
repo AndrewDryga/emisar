@@ -2,7 +2,7 @@ schema_version: 1
 
 id: network-tls
 name: Network + TLS diagnostics
-version: 0.1.9
+version: 0.1.10
 description: >
   DNS lookups, reachability probes, TLS certificate inspection, and
   HTTP timing tests. All read-only. Use for "is X reachable?" and
@@ -17,6 +17,7 @@ requires:
     - curl
     - dig
     - mtr
+    - nc
     - openssl
     - ping
     - whois
@@ -45,3 +46,4 @@ actions:
   - actions/tls_protocol_check.yaml
   - actions/whois_summary.yaml
   - actions/ipinfo_lookup.yaml
+  - actions/tcp_probe.yaml

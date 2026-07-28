@@ -1,17 +1,19 @@
 schema_version: 1
 id: aws-rds
 name: AWS RDS operations
-version: 0.1.2
+version: 0.1.3
+retired_below: 0.1.3
 description: >
-  RDS instance + cluster inventory, parameter groups, snapshots, plus
-  narrow operator actions (reboot, create-snapshot). Auth via AWS_PROFILE.
-  Does NOT include delete-instance/delete-cluster.
+  Read-only RDS diagnostics for bounded instance, cluster, snapshot,
+  parameter-group, pending-maintenance, and recent-event inventory. Responses
+  are projected to operational fields and omit tags and arbitrary descriptions.
+  Auth via AWS_PROFILE.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
 requires:
   os: [linux]
-  binaries: [aws]
+  binaries: [aws, jq]
 
 setup:
   summary: >
@@ -33,8 +35,10 @@ setup:
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
-    - "Inventory needs rds:Describe* (read-only). The operator actions reboot_instance / create_snapshot additionally need rds:RebootDBInstance / CreateDBSnapshot."
+    - "Actions need only the corresponding rds:Describe* permissions and never mutate RDS resources."
     - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "List actions return an AWS CLI NextToken for explicit bounded pagination."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because aws is installed."
   verify: rds.list_instances
 
 actions:
@@ -43,6 +47,8 @@ actions:
   - actions/list_clusters.yaml
   - actions/describe_cluster.yaml
   - actions/list_snapshots.yaml
+  - actions/list_cluster_snapshots.yaml
   - actions/parameter_groups.yaml
-  - actions/create_snapshot.yaml
-  - actions/reboot_instance.yaml
+  - actions/cluster_parameter_groups.yaml
+  - actions/pending_maintenance.yaml
+  - actions/recent_events.yaml

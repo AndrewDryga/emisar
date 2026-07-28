@@ -1,4 +1,4 @@
-services: [localstack]
+services: [localstack, s3-api]
 versions:
   - version: "4.14.0"
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
@@ -14,6 +14,9 @@ env:
 defaults:
   expect:
     stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-aws-s3-secret-7c31
+      - packtest-canary-aws-s3-metadata-51fd
 cases:
   - action: s3.bucket_encryption
     args: {bucket: emisar-packtest-encryption}
@@ -61,6 +64,7 @@ cases:
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-versioning", --force]
   - action: s3.list_buckets
+    args: {limit: 25}
     arrange:
       - argv: [aws, s3, mb, "s3://emisar-packtest-list"]
     expect:
@@ -68,7 +72,7 @@ cases:
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-list", --force]
   - action: s3.list_objects
-    args: {bucket: emisar-packtest-objects, prefix: logs/}
+    args: {bucket: emisar-packtest-objects, prefix: logs/, limit: 25}
     arrange:
       - argv: [aws, s3, mb, "s3://emisar-packtest-objects"]
       - argv: [/bin/sh, -c, 'printf harness-object | aws s3 cp - s3://emisar-packtest-objects/logs/probe.txt']
@@ -80,8 +84,59 @@ cases:
     args: {bucket: emisar-packtest-metadata, key: probe.txt}
     arrange:
       - argv: [aws, s3, mb, "s3://emisar-packtest-metadata"]
-      - argv: [/bin/sh, -c, 'printf harness-object | aws s3 cp - s3://emisar-packtest-metadata/probe.txt --content-type text/plain']
+      - argv: [/bin/sh, -c, 'printf harness-object | aws s3 cp - s3://emisar-packtest-metadata/probe.txt --content-type text/plain --metadata secret=packtest-canary-aws-s3-metadata-51fd,owner=app']
     expect:
-      stdout_contains: [ContentLength, ContentType, text/plain]
+      stdout_contains: [ContentLength, ContentType, text/plain, MetadataKeys, secret, owner]
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-metadata", --force]
+  - action: s3.bucket_public_access
+    args: {bucket: emisar-packtest-public-access}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-public-access"]
+      - argv: [aws, s3api, put-public-access-block, --bucket, emisar-packtest-public-access, --public-access-block-configuration, "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"]
+    expect:
+      json:
+        /PublicAccessBlockConfiguration/BlockPublicPolicy: true
+        /PublicAccessBlockConfiguration/RestrictPublicBuckets: true
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-public-access", --force]
+  - action: s3.bucket_policy_status
+    args: {bucket: emisar-packtest-policy-status}
+    env:
+      AWS_ENDPOINT_URL: http://s3-api:8080
+    expect:
+      json:
+        /PolicyStatus/IsPublic: true
+  - action: s3.bucket_ownership
+    args: {bucket: emisar-packtest-ownership}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-ownership"]
+      - argv: [aws, s3api, put-bucket-ownership-controls, --bucket, emisar-packtest-ownership, --ownership-controls, '{"Rules":[{"ObjectOwnership":"BucketOwnerEnforced"}]}']
+    expect:
+      stdout_contains: [OwnershipControls, BucketOwnerEnforced]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-ownership", --force]
+  - action: s3.bucket_replication
+    args: {bucket: emisar-packtest-replication}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-replication"]
+      - argv: [aws, s3, mb, "s3://emisar-packtest-replica"]
+      - argv: [aws, s3api, put-bucket-versioning, --bucket, emisar-packtest-replication, --versioning-configuration, "Status=Enabled"]
+      - argv: [aws, s3api, put-bucket-versioning, --bucket, emisar-packtest-replica, --versioning-configuration, "Status=Enabled"]
+      - argv: [aws, s3api, put-bucket-replication, --bucket, emisar-packtest-replication, --replication-configuration, '{"Role":"arn:aws:iam::123456789012:role/replication","Rules":[{"ID":"replicate-logs","Status":"Enabled","Priority":1,"DeleteMarkerReplication":{"Status":"Disabled"},"Filter":{"Prefix":"logs/"},"Destination":{"Bucket":"arn:aws:s3:::emisar-packtest-replica"}}]}']
+    expect:
+      stdout_contains: [ReplicationConfiguration, replicate-logs, emisar-packtest-replica]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-replication", --force]
+      - argv: [aws, s3, rb, "s3://emisar-packtest-replica", --force]
+  - action: s3.bucket_logging
+    args: {bucket: emisar-packtest-logging}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-logging"]
+      - argv: [aws, s3, mb, "s3://emisar-packtest-log-target"]
+      - argv: [aws, s3api, put-bucket-logging, --bucket, emisar-packtest-logging, --bucket-logging-status, '{"LoggingEnabled":{"TargetBucket":"emisar-packtest-log-target","TargetPrefix":"access/"}}']
+    expect:
+      stdout_contains: [LoggingEnabled, emisar-packtest-log-target, access/]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-logging", --force]
+      - argv: [aws, s3, rb, "s3://emisar-packtest-log-target", --force]

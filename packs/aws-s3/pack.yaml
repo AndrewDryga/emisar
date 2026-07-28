@@ -1,18 +1,19 @@
 schema_version: 1
 id: aws-s3
 name: AWS S3 operations
-version: 0.1.3
+version: 0.1.4
+retired_below: 0.1.4
 description: >
-  Read-only S3 introspection — bucket inventory, per-bucket
-  versioning/policy/encryption/lifecycle, object listing + metadata.
-  Excludes every mutator (no put-bucket-*, no delete-*). Object-level
-  changes belong in IaC. Auth via AWS_PROFILE.
+  Read-only S3 diagnostics for bounded bucket and object inventory, access,
+  ownership, policy, logging, replication, lifecycle, encryption, versioning,
+  and fixed object metadata. Object bodies and custom metadata values are
+  excluded. Auth via AWS_PROFILE.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
 requires:
   os: [linux]
-  binaries: [aws]
+  binaries: [aws, jq]
 
 setup:
   summary: >
@@ -33,8 +34,10 @@ setup:
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
-    - "Read-only: the principal needs s3:ListAllMyBuckets, s3:ListBucket, s3:GetBucketLocation and the s3:GetBucket* / s3:GetObject permissions for the buckets you inspect."
+    - "Read-only: the principal needs s3:ListAllMyBuckets, s3:ListBucket, s3:GetBucketLocation and the exact s3:GetBucket* / s3:GetObject permissions for the buckets you inspect."
     - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "Object metadata is projected locally: custom metadata key names are returned, but their values and object bodies never leave the runner."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because aws is installed."
   verify: s3.list_buckets
 
 actions:
@@ -44,5 +47,10 @@ actions:
   - actions/bucket_policy.yaml
   - actions/bucket_lifecycle.yaml
   - actions/bucket_encryption.yaml
+  - actions/bucket_public_access.yaml
+  - actions/bucket_policy_status.yaml
+  - actions/bucket_ownership.yaml
+  - actions/bucket_replication.yaml
+  - actions/bucket_logging.yaml
   - actions/list_objects.yaml
   - actions/object_metadata.yaml

@@ -1,20 +1,34 @@
 schema_version: 1
 id: s3.list_buckets
-title: aws s3 ls
-kind: exec
+title: aws s3api list-buckets
+kind: script
 risk: low
-description: List all buckets the AWS_PROFILE has access to.
+description: List a bounded page of buckets the active AWS identity can access.
 side_effects:
   - One API call.
   - Read-only.
-args: []
+  - Uses a mode-0600 temporary response file and removes it before exit.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum buckets to return.
+    validation: {min: 1, max: 1000}
+  - name: continuation_token
+    type: string
+    required: false
+    default: ""
+    sensitive: true
+    description: Opaque service continuation token from a previous result.
+    validation: {pattern: "^[A-Za-z0-9+/=_-]*$", max_length: 4096}
 execution:
-  command:
-    binary: aws
-    argv: ["s3", "ls"]
+  script: {path: scripts/s3_read.sh, interpreter: /bin/sh}
+  argv: [buckets, "{{ args.limit }}", "{{ args.continuation_token }}"]
   timeout: 30s
 output:
-  parser: text
+  parser: json
+  parser_required: true
   max_stdout_bytes: 131072
   max_stderr_bytes: 8192
 examples:

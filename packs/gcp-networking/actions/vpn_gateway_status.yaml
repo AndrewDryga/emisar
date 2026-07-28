@@ -1,0 +1,35 @@
+schema_version: 1
+id: gcp.vpn_gateway_status
+title: gcloud compute vpn-gateways get-status
+kind: script
+risk: low
+description: Show tunnel connection state for one HA VPN gateway.
+side_effects: ["One read-only Compute Engine API call."]
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: gateway
+    type: string
+    required: true
+    description: HA VPN gateway name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: region
+    type: string
+    required: true
+    description: Gateway region.
+    validation: {pattern: "^[a-z0-9][a-z0-9-]{0,62}$", max_length: 63}
+execution:
+  script: {path: scripts/networking.sh, interpreter: /bin/sh}
+  argv: [vpn-gateway-status, "{{ args.project }}", "{{ args.gateway }}", "{{ args.region }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: HA VPN status
+    args: {project: example-prod, gateway: edge-vpn, region: us-central1}

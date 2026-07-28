@@ -1,0 +1,62 @@
+schema_version: 1
+id: fw.nft_list_chain
+title: List one nftables chain as JSON
+kind: exec
+risk: low
+description: >
+  Return native nftables JSON for one exact chain, including rule handles and
+  numeric protocol and port values.
+side_effects:
+  - One read-only netfilter query.
+  - Requires root or CAP_NET_ADMIN on most hosts.
+args:
+  - name: family
+    type: string
+    required: true
+    description: nftables address family.
+    validation:
+      enum: [ip, ip6, inet, arp, bridge, netdev]
+  - name: table
+    type: string
+    required: true
+    description: Exact nftables table name.
+    validation:
+      pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$"
+      max_length: 64
+  - name: chain
+    type: string
+    required: true
+    description: Exact nftables chain name.
+    validation:
+      pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$"
+      max_length: 64
+execution:
+  command:
+    binary: nft
+    argv:
+      - -j
+      - -n
+      - -a
+      - list
+      - chain
+      - "{{ args.family }}"
+      - "{{ args.table }}"
+      - "{{ args.chain }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    required: [nftables]
+    properties:
+      nftables: {type: array}
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect the input chain
+    args:
+      family: inet
+      table: filter
+      chain: input

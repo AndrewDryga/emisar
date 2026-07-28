@@ -1,0 +1,92 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: http://gcp-api:8080/compute/v1/
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-compute-access-token-011a
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-compute-secret-a951]
+cases:
+  - action: gcp.instance_describe
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+    expect:
+      stdout_contains: [harness-vm, RUNNING, metadata-fingerprint]
+  - action: gcp.instance_serial_output
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+      port: 1
+      start: 0
+    expect:
+      stdout_contains: [harness boot complete]
+  - name: gcp.mig-instances-zonal
+    action: gcp.mig_instances
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: zone
+      location: us-central1-a
+    expect:
+      stdout_contains: [harness-vm, RUNNING, NONE]
+  - name: gcp.mig-instances-regional
+    action: gcp.mig_instances
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: region
+      location: us-central1
+    expect:
+      stdout_contains: [harness-vm, RUNNING, NONE]
+  - name: gcp.mig-health-zonal
+    action: gcp.mig_health
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: zone
+      location: us-central1-a
+    expect:
+      stdout_contains: [harness-mig, '"isStable": true', harness-template]
+  - name: gcp.mig-health-regional
+    action: gcp.mig_health
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: region
+      location: us-central1
+    expect:
+      stdout_contains: [harness-mig, '"isStable": true', harness-template]
+  - name: gcp.operation-status-global
+    action: gcp.operation_status
+    args:
+      project: example-prod
+      operation: harness-operation
+      scope: global
+    expect:
+      stdout_contains: [harness-operation, DONE, insert]
+  - name: gcp.operation-status-regional
+    action: gcp.operation_status
+    args:
+      project: example-prod
+      operation: harness-operation
+      scope: region
+      location: us-central1
+    expect:
+      stdout_contains: [harness-operation, DONE, insert]
+  - name: gcp.operation-status-zonal
+    action: gcp.operation_status
+    args:
+      project: example-prod
+      operation: harness-operation
+      scope: zone
+      location: us-central1-a
+    expect:
+      stdout_contains: [harness-operation, DONE, insert]

@@ -1,0 +1,63 @@
+schema_version: 1
+id: fw.nft_port_rules
+title: Project nftables rules for one port
+kind: script
+risk: low
+description: >
+  Project rules with direct source or destination port expressions for one
+  numeric port. Rules that reference named sets, maps, or unsupported
+  expressions are returned separately as unresolved. This is inspection
+  evidence, not an effective allow or deny decision: chain order, jumps,
+  policies, and other predicates still apply.
+side_effects:
+  - One read-only terse nftables ruleset query.
+  - Requires root or CAP_NET_ADMIN on most hosts.
+args:
+  - name: port
+    type: integer
+    required: true
+    description: TCP, UDP, SCTP, DCCP, or generic transport port to inspect.
+    validation:
+      min: 1
+      max: 65535
+execution:
+  script:
+    path: scripts/nft_port_rules.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.port }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [port, direct_matches, unresolved]
+    properties:
+      port: {type: integer, minimum: 1, maximum: 65535}
+      direct_matches:
+        type: array
+        items: {$ref: "#/$defs/rule"}
+      unresolved:
+        type: array
+        items: {$ref: "#/$defs/rule"}
+    $defs:
+      rule:
+        type: object
+        additionalProperties: false
+        required: [family, table, chain, handle, comment, port_evaluation, expr]
+        properties:
+          family: {type: string}
+          table: {type: string}
+          chain: {type: string}
+          handle: {type: [integer, "null"]}
+          comment: {type: [string, "null"]}
+          port_evaluation: {enum: [direct_match, unresolved]}
+          expr: {type: array}
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Find direct and indirect rules involving PostgreSQL
+    args:
+      port: 5432
