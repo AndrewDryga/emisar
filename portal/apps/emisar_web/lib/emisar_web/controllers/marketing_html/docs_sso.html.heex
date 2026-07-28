@@ -326,11 +326,9 @@
 
       <.docs_callout kind={:note} title="Written from Microsoft's documented flow">
         <p>
-          The registration step below was performed on a live Entra tenant — that screenshot is
-          that console, and the tenant confirmed the platform requirement it calls out. The
-          remaining steps come from Microsoft's own documentation plus emisar's Entra handling,
-          which our test suite exercises; they have not yet been walked end to end the way the
-          Okta and JumpCloud sections were.
+          These steps were walked on a live Entra tenant — every screenshot is that console, and
+          the tenant confirmed the platform requirement step 1 calls out. Directory sync for Entra
+          is documented but not yet certified the same way; its own section says so.
         </p>
       </.docs_callout>
 
@@ -373,6 +371,13 @@
               column, not <strong class="text-zinc-200">Secret ID</strong>
               — the value is shown once and is unrecoverable afterwards.
             </p>
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-client-secret.webp"
+              title="Microsoft Entra · Certificates &amp; secrets"
+              caption="Value is masked the moment you navigate away — the Secret ID beside it is not the secret, so copy the Value while it is still shown."
+              alt="The app's Certificates and secrets blade, Client secrets tab, listing one secret named emisar SSO with an expiry date, a masked Value column, and a separate Secret ID column."
+            />
           </div>
         </li>
         <li class="flex gap-4">
@@ -397,6 +402,13 @@
               The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
               is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens.
             </p>
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-app-overview.webp"
+              title="Microsoft Entra · App registration overview"
+              caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it is the value that goes into the issuer URL."
+              alt="The emisar app registration's Overview blade with Application (client) ID outlined in green, alongside Object ID, Directory (tenant) ID, client credentials showing one secret, and one web redirect URI."
+            />
           </div>
         </li>
         <li class="flex gap-4">
