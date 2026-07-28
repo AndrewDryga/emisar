@@ -586,7 +586,12 @@ func lifecycleFlow(
 	step func(string) error,
 	settle func(int) error,
 ) error {
-	// Lifecycle settings live under Provisioning → To App.
+	// Lifecycle settings live under Provisioning → To App. Saving the credentials
+	// re-renders the Integration pane, and the Settings list (To App / To Okta /
+	// Integration) paints a beat later — clicking straight away misses it.
+	if err := settle(5); err != nil {
+		return err
+	}
 	if err := step("To App"); err != nil {
 		return err
 	}
