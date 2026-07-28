@@ -37,8 +37,11 @@ args:
   - name: log_path
     type: string
     required: false
-    default: /var/log/nginx/access.log
-    description: Path to access log.
+    description: >
+      Path to access log. Omit to use $NGINX_ACCESS_LOG, else
+      /var/log/nginx/access.log. Constrained to /var/log/nginx — a host whose
+      logs live elsewhere declares that in NGINX_ACCESS_LOG, which only the
+      host administrator can set.
     validation:
       pattern: "^/var/log/nginx/[A-Za-z0-9._/-]{1,128}$"
       # The pattern constrains lexical shape but NOT `..` — `.` and `/` are
@@ -56,10 +59,12 @@ execution:
       # The pipeline exits with head's status, so guard the log first — otherwise
       # a missing file reports success with no output, reading as "no traffic".
       - |
-        [ -r "$1" ] || { echo "access log not readable: $1" >&2; exit 1; }
-        tail -n {{ args.lines }} "$1" | awk '{print $1}' | sort | uniq -c | sort -nr | head -n {{ args.limit }}
+        log="$1"
+        [ -n "$log" ] || log="${NGINX_ACCESS_LOG:-/var/log/nginx/access.log}"
+        [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
+        tail -n {{ args.lines }} "$log" | awk '{print $1}' | sort | uniq -c | sort -nr | head -n {{ args.limit }}
       - "emisar"
-      - "{{ args.log_path }}"
+      - "{{ args.log_path? }}"
   timeout: 60s
 
 output:

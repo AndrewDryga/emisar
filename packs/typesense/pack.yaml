@@ -2,7 +2,7 @@ schema_version: 1
 
 id: typesense
 name: Typesense search
-version: 0.1.8
+version: 0.1.9
 retired_below: 0.1.3
 description: >
   Read-only diagnostics for a Typesense search node over its HTTP API:
@@ -47,11 +47,21 @@ setup:
         Admin API key; sent as X-TYPESENSE-API-KEY over curl stdin, never
         argv. Most diagnostic endpoints need the admin key — a search-only
         key cannot read stats/metrics/debug.
+    - name: TYPESENSE_LOG
+      required: false
+      default: /var/log/typesense/typesense.log
+      description: >
+        Where this host's Typesense server log lives, for slow_requests. Set it
+        when the log is outside /var/log/typesense — slow_requests' own
+        log_path argument is deliberately contained to that directory, so this
+        is how the host administrator, rather than a caller, declares a
+        non-standard location.
+      example: /data/logs/typesense/typesense.log
   notes:
     - "Any of TYPESENSE_URL / TYPESENSE_API_KEY you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Every action is a read-only GET. /health needs no key; the rest expect the admin key in TYPESENSE_API_KEY."
     - "Mutating operations are deliberately excluded: POST /config, /operations/snapshot, /operations/vote, /operations/db/compact, and /operations/cache/clear are not part of this pack."
-    - "slow_requests reads files under /var/log/typesense only, so the pack grants what its name implies. If your logs live elsewhere, symlink the directory (ln -s /data/logs/typesense /var/log/typesense) — the runner resolves symlinks on both the allowed prefix and the input, so containment still holds. For unrestricted /var/log access, install linux-core, whose name says so."
+    - "Logs outside /var/log/typesense: set TYPESENSE_LOG (and allowlist it in the runner's execution.inherit_env). slow_requests' log_path argument stays contained to /var/log/typesense because a caller supplies it; the environment is host-administrator state. For unrestricted /var/log access, install linux-core, whose name says so."
     - "Typesense has no slow-query endpoint — slow requests are written to the server log (enable with --log-slow-requests-time-ms) and read via the slow_requests action."
   verify: typesense.health
 

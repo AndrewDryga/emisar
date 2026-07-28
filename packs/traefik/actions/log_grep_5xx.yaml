@@ -29,8 +29,11 @@ args:
   - name: log_path
     type: string
     required: false
-    default: /var/log/traefik/access.log
-    description: Access log path.
+    description: >
+      Access log path. Omit to use $TRAEFIK_ACCESS_LOG, else
+      /var/log/traefik/access.log. Constrained to /var/log/traefik — a host
+      whose logs live elsewhere declares that in TRAEFIK_ACCESS_LOG, which
+      only the host administrator can set.
     validation:
       pattern: "^/var/log/traefik/[A-Za-z0-9._/-]{1,128}$"
       # The pattern constrains lexical shape but NOT `..` — `.` and `/` are
@@ -44,13 +47,19 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # Path precedence: the caller's arg (contained to /var/log/traefik) wins,
+      # else the host administrator's TRAEFIK_ACCESS_LOG, else the default.
+      # The env is deliberately NOT arg-validated — only root can set it, and
+      # anyone who can already reads the file directly.
       # The pipeline exits with tail's status, so guard the log first — otherwise
       # a missing file reports success with no output, reading as "no 5xx".
       - |
-        [ -r "$1" ] || { echo "access log not readable: $1" >&2; exit 1; }
-        grep -E '("DownstreamStatus":5[0-9][0-9]| 5[0-9][0-9] )' "$1" | tail -n {{ args.lines }}
+        log="$1"
+        [ -n "$log" ] || log="${TRAEFIK_ACCESS_LOG:-/var/log/traefik/access.log}"
+        [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
+        grep -E '("DownstreamStatus":5[0-9][0-9]| 5[0-9][0-9] )' "$log" | tail -n {{ args.lines }}
       - "emisar"
-      - "{{ args.log_path }}"
+      - "{{ args.log_path? }}"
   timeout: 30s
 output:
   parser: text

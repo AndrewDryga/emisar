@@ -27,8 +27,11 @@ args:
   - name: log_path
     type: string
     required: false
-    default: /var/log/nginx/error.log
-    description: Path to error log.
+    description: >
+      Path to error log. Omit to use $NGINX_ERROR_LOG, else
+      /var/log/nginx/error.log. Constrained to /var/log/nginx — a host whose
+      logs live elsewhere declares that in NGINX_ERROR_LOG, which only the
+      host administrator can set.
     validation:
       pattern: "^/var/log/nginx/[A-Za-z0-9._/-]{1,128}$"
       # The pattern constrains lexical shape but NOT `..` — `.` and `/` are
@@ -43,9 +46,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "tail -n {{ args.lines }} \"$1\""
+      # No pipeline here, so tail's own status already surfaces a missing file.
+      # The guard is for a consistent, named error across the log actions.
+      - |
+        log="$1"
+        [ -n "$log" ] || log="${NGINX_ERROR_LOG:-/var/log/nginx/error.log}"
+        [ -r "$log" ] || { echo "error log not readable: $log" >&2; exit 1; }
+        tail -n {{ args.lines }} "$log"
       - "emisar"
-      - "{{ args.log_path }}"
+      - "{{ args.log_path? }}"
   timeout: 30s
 
 output:

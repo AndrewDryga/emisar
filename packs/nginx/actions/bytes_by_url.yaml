@@ -32,8 +32,9 @@ execution:
       # The pipeline exits with head's status, so guard the log first — otherwise
       # a missing file reports success with no output, reading as "no traffic".
       - |
-        [ -r /var/log/nginx/access.log ] || { echo "access log not readable: /var/log/nginx/access.log" >&2; exit 1; }
-        tail -n {{ args.lines }} /var/log/nginx/access.log | awk '{bytes[$7]+=$10} END{for(u in bytes) printf "%d %s\n", bytes[u], u}' | sort -rn | head -n {{ args.limit }}
+        log="${NGINX_ACCESS_LOG:-/var/log/nginx/access.log}"
+        [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
+        tail -n {{ args.lines }} "$log" | awk '{bytes[$7]+=$10} END{for(u in bytes) printf "%d %s\n", bytes[u], u}' | sort -rn | head -n {{ args.limit }}
   timeout: 60s
 output:
   parser: text

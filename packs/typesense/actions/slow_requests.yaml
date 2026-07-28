@@ -17,8 +17,11 @@ args:
   - name: log_path
     type: string
     required: false
-    default: /var/log/typesense/typesense.log
-    description: Typesense server log path.
+    description: >
+      Typesense server log path. Omit to use $TYPESENSE_LOG, else
+      /var/log/typesense/typesense.log. Constrained to /var/log/typesense — a
+      host whose logs live elsewhere declares that in TYPESENSE_LOG, which only
+      the host administrator can set.
     validation:
       pattern: '^/var/log/typesense/[A-Za-z0-9._/-]{1,128}$'
       # Scoped to Typesense's own log dir, not all of /var/log — a service pack
@@ -45,10 +48,12 @@ execution:
       # The pipeline exits with tail's status, so guard the log first — otherwise
       # a missing file reports success with no output, reading as "nothing slow".
       - |
-        [ -r "$1" ] || { echo "server log not readable: $1" >&2; exit 1; }
-        grep -F 'SLOW REQUEST' "$1" | tail -n {{ args.lines }}
+        log="$1"
+        [ -n "$log" ] || log="${TYPESENSE_LOG:-/var/log/typesense/typesense.log}"
+        [ -r "$log" ] || { echo "server log not readable: $log" >&2; exit 1; }
+        grep -F 'SLOW REQUEST' "$log" | tail -n {{ args.lines }}
       - "emisar"
-      - "{{ args.log_path }}"
+      - "{{ args.log_path? }}"
   timeout: 30s
 output:
   parser: text
