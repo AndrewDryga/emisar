@@ -74,6 +74,41 @@ defmodule EmisarWeb.SCIM.GroupController do
       when is_list(operations) do
     provider = conn.assigns.scim_provider
 
+    case rename_op(operations) do
+      {:ok, display} ->
+        # A rename, not a membership change. SCIM's `id` is immutable and
+        # `displayName` is not, so the group keeps the id we issued and the IdP
+        # keeps addressing it by that — only the display moves. JumpCloud's
+        # activation does exactly this and treats a 400 here as a hard failure.
+        case SSO.scim_rename_group(provider, external_id, display) do
+          {:ok, summary} -> render_group(conn, :ok, summary, [])
+          {:error, reason} -> render_error(conn, reason)
+        end
+
+      :not_a_rename ->
+        patch_members(conn, provider, external_id, operations)
+    end
+  end
+
+  def update(conn, %{"Operations" => _}),
+    do: bad_request(conn, "invalidValue", "PATCH `Operations` must be a list.")
+
+  def update(conn, _params),
+    do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
+
+  # A pathless `replace` whose value map carries only displayName is a rename.
+  defp rename_op([%{"value" => %{"displayName" => display}} = op]) when is_binary(display) do
+    path = Map.get(op, "path")
+    operation = String.downcase(to_string(Map.get(op, "op", "")))
+
+    if operation == "replace" and (is_nil(path) or path == ""),
+      do: {:ok, display},
+      else: :not_a_rename
+  end
+
+  defp rename_op(_operations), do: :not_a_rename
+
+  defp patch_members(conn, provider, external_id, operations) do
     case member_ops(operations) do
       {:replace, member_external_ids} ->
         attrs = %{
@@ -100,12 +135,6 @@ defmodule EmisarWeb.SCIM.GroupController do
         unsupported_patch(conn)
     end
   end
-
-  def update(conn, %{"Operations" => _}),
-    do: bad_request(conn, "invalidValue", "PATCH `Operations` must be a list.")
-
-  def update(conn, _params),
-    do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
   # DELETE /scim/v2/Groups/:id — emptying the group's membership + recomputing
   # the affected members' roles (a group delete is "nobody is in it anymore").

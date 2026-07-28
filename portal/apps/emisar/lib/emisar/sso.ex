@@ -1180,6 +1180,20 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — SCIM group rename: move a synced group's human name without touching
+  its id. The id is what the IdP addresses the group by and stays put; the
+  display lives on the group's role mapping, so a group nobody has mapped keeps
+  answering on its id (which is what the console shows too).
+  `{:ok, group_summary}`.
+  """
+  def scim_rename_group(%IdentityProvider{} = provider, external_group_id, display) do
+    with :ok <- validate_scim_group_values(external_group_id, display, []) do
+      _ = refresh_group_display(provider, external_group_id, display)
+      {:ok, %{external_group_id: external_group_id, display: display}}
+    end
+  end
+
+  @doc """
   Internal — SCIM group patch (`PATCH /Groups` member ops): add/remove members
   of a group, then recompute the role of every affected identity. Add ids are
   resolved to the provider's identities (unknown ids ignored); remove ids
