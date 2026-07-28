@@ -193,7 +193,7 @@
               src="/images/docs/sso/entra-provisioning-credentials.webp"
               title="Microsoft Entra · New provisioning configuration"
               caption="Leave the authentication method on Bearer. Secret token takes the ems- bearer, and Test connection sits directly beneath — Entra will not let you Create until it passes."
-              alt="Entra's New provisioning configuration form for the emisar SCIM enterprise application, its Admin credentials block outlined in green: Select authentication method set to Bearer authentication, Tenant URL filled with https://emisar.dev/scim/v2, a filled but masked Secret token field, and a Test connection button above a disabled Create button."
+              alt="Entra's New provisioning configuration form for the emisar SCIM enterprise application, its Admin credentials block outlined in green: Select authentication method set to Bearer authentication, Tenant URL filled with https://emisar.dev/scim/v2, a filled but masked Secret token field, a Test connection button, and an enabled Create button below — Entra enables Create only once the test has passed."
             />
           </div>
         </li>
@@ -211,6 +211,20 @@
               to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>. On a tenant
               still using Entra's older provisioning screens, the same setting lives under <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>.
             </p>
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-attribute-mapping.webp"
+              title="Microsoft Entra · Attribute mapping"
+              caption="The row to change, among about twenty: mailNickname is what Entra sends as externalId until you say otherwise."
+              alt="The emisar SCIM application's Attribute mapping list on the Users tab, with columns for Source Attribute, Target Attribute, Mapping Type and Matching Precedence. The row mapping mailNickname to externalId is outlined in green, among rows for givenName, jobTitle, mail, manager and others."
+            />
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-externalid-objectid.webp"
+              title="Microsoft Entra · Edit Attribute Mapping"
+              caption="Change the source, not the target — externalId stays put, because it is the field emisar keys on."
+              alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
+            />
             <p class="mt-4">
               Do not skip this. Entra's default is <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, which is not guaranteed to exist, is not guaranteed to be
               unique, and can change — and it is not the value your sign-in connection identifies
