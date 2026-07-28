@@ -7,6 +7,7 @@
       toc={[
         {"enable", "Enabling directory sync"},
         {"okta", "Okta setup"},
+        {"jumpcloud", "JumpCloud setup"},
         {"group-role", "Group → role mapping"},
         {"security-notes", "Security notes"}
       ]}
@@ -33,8 +34,10 @@
         <p>
           emisar speaks standards-based SCIM 2.0, and the full provision / update / deactivate /
           reactivate lifecycle plus group&nbsp;→&nbsp;role recompute is verified end to end against
-          a live standards IdP. The Okta setup below is verified against a real Okta org — every
-          screenshot is that console, and provisioning a user through it lands them in emisar.
+          a live standards IdP. The Okta and JumpCloud walkthroughs below were each run against a
+          real tenant of that provider — Okta provisioned a user into emisar, and JumpCloud's
+          activation (which creates, renames and deletes a probe group, and provisions and removes a
+          test user) completes against it.
         </p>
       </.docs_callout>
 
@@ -347,6 +350,90 @@
           roll out.
         </p>
       </.docs_callout>
+
+      <.docs_h2 id="jumpcloud">JumpCloud setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Verified against a live JumpCloud tenant. You need a JumpCloud administrator and the
+        <strong class="text-zinc-200">SCIM base URL</strong>
+        and <strong class="text-zinc-200">bearer token</strong>
+        from the steps above.
+      </p>
+
+      <.docs_callout kind={:note} title="Provisioning rides a SAML connector">
+        <p>
+          JumpCloud's custom-app wizard offers no OIDC option — a connector that can provision is a
+          SAML one. If your people sign in to emisar through JumpCloud over OIDC, that's a second,
+          separate connector; this one exists to push the directory.
+        </p>
+      </.docs_callout>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create a custom application.</p>
+            <p class="mt-1.5">
+              <strong class="text-zinc-200">Access → SSO Applications → Add New Application</strong>, then
+              the <strong class="text-zinc-200">Custom Application</strong>
+              tile. On the options step tick both
+              <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>
+              and <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
+              — that second one is the directory push. Leave
+              <strong class="text-zinc-200">Import users</strong>
+              off: it pulls people <em>from</em>
+              emisar into JumpCloud, which is the opposite of what you want. Name it and save.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/jumpcloud-scim-options.webp"
+              title="JumpCloud · Select Options"
+              caption="Export users is the direction that matters — JumpCloud becomes the authority for the identity."
+              alt="JumpCloud's Create New Application Integration wizard on the Select Options step, offering four checkboxes: Manage Single Sign-On (SSO), Import users from this app (Provisioning), Export users to this app (Provisioning), and Add a bookmark (no SSO)."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Point its Provisioning tab at emisar.</p>
+            <p class="mt-1.5">
+              Open the saved app's <strong class="text-zinc-200">Provisioning</strong>
+              tab (JumpCloud's own docs also call it <em>Identity Management</em>). Choose
+              <strong class="text-zinc-200">SCIM API</strong>
+              and <strong class="text-zinc-200">Bearer token</strong>, then fill
+              <strong class="text-zinc-200">Base URL</strong>
+              with emisar's SCIM base URL and <strong class="text-zinc-200">Token Key</strong>
+              with the bearer. <strong class="text-zinc-200">Test User Email</strong>
+              must be an address that doesn't exist in emisar yet — JumpCloud provisions and then
+              deletes it as a live check, so an existing member would fail activation.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Test Connection, then Activate.</p>
+            <p class="mt-1.5">
+              Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation is not a formality: it
+              creates, renames and deletes a probe group, and provisions and removes the test user,
+              against your live emisar. Do <strong class="text-zinc-200">not</strong>
+              press Save instead — JumpCloud discards the configuration and you start over.
+            </p>
+            <p class="mt-4">
+              Then bind the people you want synced: the app's
+              <strong class="text-zinc-200">User Groups</strong>
+              tab decides who is in scope. Members appear under
+              <strong class="text-zinc-200">Synced users</strong>
+              on the emisar connection, and their JumpCloud groups become mappable to roles below.
+            </p>
+          </div>
+        </li>
+      </ol>
 
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

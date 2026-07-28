@@ -127,6 +127,33 @@ func clickContaining(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
+// deidentifyHost rewrites the tunnel hostname to the product host for the
+// screenshot only. The host is the one substitution our capture rule allows;
+// never use it on a status, an outcome, or any value that carries meaning.
+func deidentifyHost(ctx context.Context, from, to string) error {
+	script := fmt.Sprintf(`(() => {
+  const from = %q, to = %q;
+  let changed = 0;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  for (const el of document.querySelectorAll('input')) {
+    if (el.value && el.value.includes(from)) { setter.call(el, el.value.split(from).join(to)); changed++; }
+  }
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeValue && node.nodeValue.includes(from)) {
+      node.nodeValue = node.nodeValue.split(from).join(to); changed++;
+    }
+  }
+  return changed;
+})()`, from, to)
+	var changed int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &changed)); err != nil {
+		return err
+	}
+	fmt.Printf("  de-identified host in %d place(s)\n", changed)
+	return nil
+}
+
 func screenshot(ctx context.Context, outDir, name string) error {
 	var buffer []byte
 	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
@@ -508,6 +535,17 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		fmt.Printf("  typed %s\n", f[0])
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	// Swap the capture rig's tunnel hostname for the product one. This is
+	// de-identification (host), never an outcome — the values were really typed
+	// and the connection really tested against them.
+	docsHost := env["EMISAR_DOCS_HOST"]
+	if docsHost == "" {
+		docsHost = "emisar.dev"
+	}
+	tunnel := strings.TrimPrefix(strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/"), "https://")
+	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(docsHost, "https://")); err != nil {
 		return err
 	}
 	if err := screenshot(ctx, outDir, "jc-10-scim-filled"); err != nil {
