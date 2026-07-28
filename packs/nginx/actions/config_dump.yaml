@@ -14,7 +14,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "nginx -T 2>&1 | head -800"
+      # `nginx -T` exits non-zero on a broken config and prints the parse error.
+      # Piping straight to head would discard that status and report success —
+      # the worst possible answer from the action you run to check the config.
+      - |
+        dump=$(nginx -T 2>&1); status=$?
+        printf '%s\n' "$dump" | head -800
+        exit $status
   timeout: 15s
 output:
   parser: text

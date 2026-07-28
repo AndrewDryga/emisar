@@ -53,7 +53,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "tail -n {{ args.lines }} \"$1\" | awk '{print $1}' | sort | uniq -c | sort -nr | head -n {{ args.limit }}"
+      # The pipeline exits with head's status, so guard the log first — otherwise
+      # a missing file reports success with no output, reading as "no traffic".
+      - |
+        [ -r "$1" ] || { echo "access log not readable: $1" >&2; exit 1; }
+        tail -n {{ args.lines }} "$1" | awk '{print $1}' | sort | uniq -c | sort -nr | head -n {{ args.limit }}
       - "emisar"
       - "{{ args.log_path }}"
   timeout: 60s

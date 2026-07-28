@@ -21,7 +21,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "tail -n {{ args.lines }} \"${HTTPD_ACCESS_LOG:-/var/log/apache2/access.log}\" | awk '{print $1}' | sort | uniq -c | sort -rn | head -50"
+      # The pipeline exits with head's status, so guard the log first — otherwise
+      # a missing file reports success with no output, reading as "no traffic".
+      - |
+        log="${HTTPD_ACCESS_LOG:-/var/log/apache2/access.log}"
+        [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
+        tail -n {{ args.lines }} "$log" | awk '{print $1}' | sort | uniq -c | sort -rn | head -50
   timeout: 30s
 output:
   parser: text

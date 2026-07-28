@@ -6,7 +6,9 @@ risk: low
 description: >
   Greps the Traefik access log for 4xx responses and tails the most recent.
   Matches both the JSON format (DownstreamStatus field) and the default CLF
-  format (status code after the request line). Read-only.
+  format (status code after the request line). Needs an access log on disk,
+  which Traefik writes only when accessLog.filePath is set; when it logs to
+  stdout instead, query whichever log store collects it. Read-only.
 side_effects:
   - Reads the Traefik access log.
   - Read-only.
@@ -40,7 +42,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -E '(\"DownstreamStatus\":4[0-9][0-9]| 4[0-9][0-9] )' \"$1\" | tail -n {{ args.lines }}"
+      # The pipeline exits with tail's status, so guard the log first — otherwise
+      # a missing file reports success with no output, reading as "no 4xx".
+      - |
+        [ -r "$1" ] || { echo "access log not readable: $1" >&2; exit 1; }
+        grep -E '("DownstreamStatus":4[0-9][0-9]| 4[0-9][0-9] )' "$1" | tail -n {{ args.lines }}
       - "emisar"
       - "{{ args.log_path }}"
   timeout: 30s

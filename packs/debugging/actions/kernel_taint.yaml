@@ -22,7 +22,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo \"tainted: $(cat /proc/sys/kernel/tainted)\"; cat /usr/share/doc/linux-doc/admin-guide/tainted-kernels.rst 2>/dev/null | head -50 || echo 'flags doc not installed'"
+      # `cat … | head` always exited 0, so the `||` notice was dead code and an
+      # absent doc left the flags silently undecoded. The doc is optional, so
+      # test for it and say so — never fail the taint read itself.
+      - |
+        echo "tainted: $(cat /proc/sys/kernel/tainted)"
+        doc=/usr/share/doc/linux-doc/admin-guide/tainted-kernels.rst
+        if [ -r "$doc" ]; then head -50 "$doc"; else echo 'flags doc not installed'; fi
   timeout: 5s
 
 output:

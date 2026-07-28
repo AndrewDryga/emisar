@@ -36,7 +36,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -F 'SLOW REQUEST' \"$1\" | tail -n {{ args.lines }}"
+      # The pipeline exits with tail's status, so guard the log first — otherwise
+      # a missing file reports success with no output, reading as "nothing slow".
+      - |
+        [ -r "$1" ] || { echo "server log not readable: $1" >&2; exit 1; }
+        grep -F 'SLOW REQUEST' "$1" | tail -n {{ args.lines }}
       - "emisar"
       - "{{ args.log_path }}"
   timeout: 30s

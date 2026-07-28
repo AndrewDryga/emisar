@@ -42,7 +42,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ \"{{ args.case_insensitive }}\" = \"true\" ]; then grep -i -E \"$P\" \"${1}\" | head -2000; else grep -E \"$P\" \"${1}\" | head -2000; fi"
+      # The pipeline exits with head's status, so guard the file first — otherwise
+      # a missing file reports success with no output, reading as "no matches".
+      - |
+        [ -r "${1}" ] || { echo "file not readable: ${1}" >&2; exit 1; }
+        if [ "{{ args.case_insensitive }}" = "true" ]; then grep -i -E "$P" "${1}" | head -2000; else grep -E "$P" "${1}" | head -2000; fi
       - "emisar"
       - "{{ args.path }}"
   env:

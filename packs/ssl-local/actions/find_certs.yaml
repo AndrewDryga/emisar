@@ -27,7 +27,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "find \"$1\" -xdev -type f \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' \\) -print 2>/dev/null | head -500"
+      # 2>/dev/null suppresses per-entry permission noise, and the pipeline exits
+      # with head's status — so a nonexistent path would report success with no
+      # output, reading as "no certificates here". Guard it explicitly.
+      - |
+        [ -d "$1" ] || { echo "not a readable directory: $1" >&2; exit 1; }
+        find "$1" -xdev -type f \( -name '*.pem' -o -name '*.crt' -o -name '*.cer' \) -print 2>/dev/null | head -500
       - "emisar"
       - "{{ args.path }}"
   timeout: 60s

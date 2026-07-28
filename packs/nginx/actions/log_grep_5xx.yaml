@@ -3,7 +3,10 @@ id: nginx.log_grep_5xx
 title: Recent 5xx responses from access log
 kind: exec
 risk: low
-description: Greps the access log for 5xx status codes (assumes combined log format). Read-only.
+description: >
+  Greps the access log for 5xx status codes (assumes combined log format).
+  Needs the log on disk — the official container image symlinks it to stdout,
+  where the host's log collector owns it instead. Read-only.
 side_effects:
   - Reads /var/log/nginx/access.log.
   - Read-only.
@@ -34,7 +37,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -E ' 5[0-9][0-9] ' \"$1\" | tail -n {{ args.lines }}"
+      # The pipeline exits with tail's status, so guard the log first — otherwise
+      # a missing file reports success with no output, reading as "no 5xx".
+      - |
+        [ -r "$1" ] || { echo "access log not readable: $1" >&2; exit 1; }
+        grep -E ' 5[0-9][0-9] ' "$1" | tail -n {{ args.lines }}
       - "emisar"
       - "{{ args.log_path }}"
   timeout: 30s

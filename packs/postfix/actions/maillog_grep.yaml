@@ -17,7 +17,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -F \"$P\" /var/log/mail.log 2>/dev/null | head -2000 || grep -F \"$P\" /var/log/maillog | head -2000"
+      # `grep … | head` always exited 0, so the `||` fallback was dead code: on a
+      # host with only /var/log/maillog this returned empty success and never
+      # tried it. Pick the readable log first, then grep it once.
+      - |
+        if [ -r /var/log/mail.log ]; then log=/var/log/mail.log
+        elif [ -r /var/log/maillog ]; then log=/var/log/maillog
+        else echo "no readable mail log at /var/log/mail.log or /var/log/maillog" >&2; exit 1
+        fi
+        grep -F "$P" "$log" | head -2000
   env:
     P: "{{ args.pattern }}"
   timeout: 60s

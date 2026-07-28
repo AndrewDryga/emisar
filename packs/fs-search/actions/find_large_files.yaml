@@ -44,7 +44,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "find \"$1\" -xdev \\( -path /etc/ssh -o -path /etc/ssl/private -o -path /root/.ssh -o -path /etc/sudoers.d \\) -prune -o -type f -size +{{ args.min_mb }}M -printf '%s %p\\n' 2>/dev/null | sort -rn | head -50"
+      # 2>/dev/null suppresses per-entry permission noise, and the pipeline exits
+      # with head's status — so a nonexistent path would report success with no
+      # output, reading as "nothing large here". Guard it explicitly.
+      - |
+        [ -d "$1" ] || { echo "not a readable directory: $1" >&2; exit 1; }
+        find "$1" -xdev \( -path /etc/ssh -o -path /etc/ssl/private -o -path /root/.ssh -o -path /etc/sudoers.d \) -prune -o -type f -size +{{ args.min_mb }}M -printf '%s %p\n' 2>/dev/null | sort -rn | head -50
       - "emisar"
       - "{{ args.path }}"
   timeout: 2m

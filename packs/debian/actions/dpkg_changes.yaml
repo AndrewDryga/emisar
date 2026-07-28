@@ -34,7 +34,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "zcat -f /var/log/dpkg.log /var/log/dpkg.log.* 2>/dev/null | sort | tail -n {{ args.lines }}"
+      # 2>/dev/null covers the rotated-glob miss, and the pipeline exits with
+      # tail's status — so a host with no dpkg.log at all would report success
+      # with no output, reading as "nothing was installed recently".
+      - |
+        [ -r /var/log/dpkg.log ] || { echo "no readable dpkg log at /var/log/dpkg.log" >&2; exit 1; }
+        zcat -f /var/log/dpkg.log /var/log/dpkg.log.* 2>/dev/null | sort | tail -n {{ args.lines }}
   timeout: 15s
 
 output:

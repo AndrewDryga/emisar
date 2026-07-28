@@ -11,7 +11,14 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "V=${PY_VENV:-/opt/app/venv}; SP=$(\"$V/bin/python\" -c 'import site; print(site.getsitepackages()[0])'); du -sh \"$SP\"/* 2>/dev/null | sort -rh | head -50"
+      # An unresolved interpreter left SP empty, and `du -sh "$SP"/*` then
+      # expanded to `du -sh /*` — a whole-root traversal reported as success,
+      # because the pipeline exits with head's status either way.
+      - |
+        V=${PY_VENV:-/opt/app/venv}
+        SP=$("$V/bin/python" -c 'import site; print(site.getsitepackages()[0])') || { echo "cannot resolve site-packages via $V/bin/python" >&2; exit 1; }
+        [ -n "$SP" ] && [ -d "$SP" ] || { echo "site-packages is not a readable directory: $SP" >&2; exit 1; }
+        du -sh "$SP"/* 2>/dev/null | sort -rh | head -50
   timeout: 5m
 output:
   parser: text

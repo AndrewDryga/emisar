@@ -35,7 +35,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d \"$1\"/* 2>/dev/null | sort -rh | head -20"
+      # 2>/dev/null suppresses per-entry permission noise, and the pipeline exits
+      # with head's status — so a nonexistent path would report success with no
+      # output, reading as "empty directory". Guard it explicitly.
+      - |
+        [ -d "$1" ] || { echo "not a readable directory: $1" >&2; exit 1; }
+        du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d "$1"/* 2>/dev/null | sort -rh | head -20
       - "emisar"
       - "{{ args.path }}"
   timeout: 5m
