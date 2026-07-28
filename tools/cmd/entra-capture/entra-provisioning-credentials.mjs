@@ -115,30 +115,33 @@ if (target) {
   await btn.click().catch(e => console.log('click:', e.message.slice(0, 80)))
   await page.waitForTimeout(20000)
   await shot('pw-13-connect')
-  const f2 = page.frames().find(f => /reactblade|Provisioning/i.test(f.url())) || target
-
-  // Target the field by its LABEL. `.first()` matched the portal's top-bar search
-  // and opened an overlay across the form — the same global-search trap JumpCloud
-  // sprang. Fill before shooting, per the walkthrough rule.
-  const tenant = f2.getByLabel(/Tenant URL/i).first()
-  console.log('tenant fields:', await tenant.count())
-  await tenant.fill('https://emisar.dev/scim/v2').catch(e => console.log('fill:', e.message.slice(0, 70)))
-  await page.keyboard.press('Escape').catch(() => {})
-  await page.waitForTimeout(2500)
-
-  await f2.evaluate(() => {
-    const el = [...document.querySelectorAll('label,div,span')]
-      .find(e => /Tenant URL/i.test(e.textContent || '') && e.getElementsByTagName('*').length < 3)
-    const box = el && (el.closest('div') || el)
-    if (box) {
-      box.style.outline = '3px solid #10b981'
-      box.style.outlineOffset = '3px'
-      box.scrollIntoView({ block: 'center' })
+  // Find the frame that actually holds the form, then fill its own inputs — never
+  // page-level, which matches the portal's top-bar search first.
+  await page.waitForTimeout(4000)
+  let form = null
+  for (const f of page.frames()) {
+    const t = await f.textContent('body').catch(() => '')
+    if (/Tenant URL/i.test(t)) { form = f; console.log('form frame:', f.url().slice(0, 90)) }
+  }
+  if (form) {
+    const fields = form.locator('input')
+    const n = await fields.count()
+    console.log('inputs in form frame:', n)
+    for (let i = 0; i < n; i++) {
+      const type = await fields.nth(i).getAttribute('type')
+      console.log(' input', i, 'type=', type)
     }
-  }).catch(() => {})
-  await page.waitForTimeout(1200)
-  await shot('pw-15-credentials-filled')
-  console.log('filled ok')
+    // Tenant URL is the first non-password field on this form.
+    for (let i = 0; i < n; i++) {
+      if ((await fields.nth(i).getAttribute('type')) !== 'password') {
+        await fields.nth(i).fill('https://emisar.dev/scim/v2').catch(e => console.log('fill:', e.message.slice(0, 60)))
+        break
+      }
+    }
+    await page.waitForTimeout(2500)
+    await shot('pw-16-credentials-filled')
+    console.log('filled')
+  }
 }
 await browser.close()
 console.log('done')
