@@ -586,6 +586,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> render_change()
 
       assert entra =~ "oid — Microsoft Entra"
+      # Entra must SELECT oid, not merely offer it: its `sub` is pairwise, so a
+      # default of sub is a broken directory join the admin discovers much later.
+      assert has_element?(
+               lv,
+               "select[name='provider[identifier_claim]'] option[value=oid][selected]"
+             )
+
+      # And the guide must point at Entra's own screenshots, not the generic page.
+      assert entra =~ "/docs/sso#entra"
+      assert entra =~ "Microsoft Entra setup guide"
     end
 
     test "only a named provider promises screenshots", %{conn: conn, account: account} do

@@ -361,7 +361,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate", %{"provider" => params}, socket) do
-    params = params |> prefill_fixed_issuer() |> normalize_provider_access(socket.assigns.runners)
+    params =
+      params
+      |> prefill_fixed_issuer()
+      |> prefill_identifier_claim()
+      |> normalize_provider_access(socket.assigns.runners)
 
     changeset =
       SSO.change_provider(%SSO.IdentityProvider{}, params) |> Map.put(:action, :validate)
@@ -2019,9 +2023,9 @@ defmodule EmisarWeb.SSOSettingsLive do
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               The stable, provider-issued claim that identifies a user — restricted to immutable
-              subject identifiers (a mutable claim like email would allow account takeover). Leave
-              as <code>sub</code>
-              unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
+              subject identifiers (a mutable claim like email would allow account takeover). {identifier_claim_hint(
+                @kind
+              )}
             </p>
           </div>
         </div>
@@ -2243,6 +2247,15 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp identifier_claim_options(_), do: [{"sub — OIDC standard", "sub"}]
 
+  # Telling an Entra admin to "leave it as sub" would be advice against the one
+  # setting that provider needs changed.
+  defp identifier_claim_hint("entra") do
+    "Entra issues a different `sub` to every application, so `oid` — its immutable object id, and the value directory sync provisions on — is what keeps sign-in and the directory pointing at one person."
+  end
+
+  defp identifier_claim_hint(_),
+    do: "`sub` is the OIDC standard and the only claim these providers issue for this."
+
   defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso#google-workspace"
   defp docs_path_for_kind("okta"), do: ~p"/docs/sso#okta"
   defp docs_path_for_kind("entra"), do: ~p"/docs/sso#entra"
@@ -2252,6 +2265,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp setup_kind_label("google_workspace"), do: "Google Workspace"
   defp setup_kind_label("okta"), do: "Okta"
+  defp setup_kind_label("entra"), do: "Microsoft Entra"
   defp setup_kind_label("jumpcloud"), do: "JumpCloud"
   defp setup_kind_label("keycloak"), do: "Keycloak"
   defp setup_kind_label(_), do: "a generic OIDC provider"
@@ -2331,6 +2345,18 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp prefill_fixed_issuer(params), do: params
+
+  # Entra's `sub` is PAIRWISE — a different value per application — so `oid` is the
+  # right identifier there, and offering it while leaving `sub` selected would let
+  # an admin accept a default that costs them a broken directory join later.
+  # Switching away restores the OIDC standard, the only option other kinds have.
+  defp prefill_identifier_claim(%{"kind" => "entra"} = params),
+    do: Map.put(params, "identifier_claim", "oid")
+
+  defp prefill_identifier_claim(%{"kind" => kind} = params) when kind not in ["", nil],
+    do: Map.put(params, "identifier_claim", "sub")
+
+  defp prefill_identifier_claim(params), do: params
 
   # Where to FIND the issuer — it's an org/realm-level value, not on the app
   # page, which is the usual point of confusion.
