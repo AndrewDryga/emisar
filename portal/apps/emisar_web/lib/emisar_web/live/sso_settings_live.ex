@@ -1393,46 +1393,67 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- Adding a connection is its own view (/settings/sso/new): a bare
              sub-header over sibling field islands (Provider · OIDC · …), never
              one giant card. --%>
-        <div :if={@live_action == :new} class="max-w-3xl space-y-5">
-          <%!-- The shell title carries the job + the ONE back affordance; no
+        <%!-- The per-provider steps teach BESIDE the form rather than above it, so
+             the fields stay one uninterrupted column. The rail waits for xl: at
+             narrower widths a 20rem column would crowd a max-w-3xl form, so the
+             guide stacks back on top instead. --%>
+        <div
+          :if={@live_action == :new}
+          class="grid grid-cols-1 gap-x-12 gap-y-6 xl:grid-cols-[minmax(0,48rem)_20rem] xl:items-start"
+        >
+          <div class="order-2 space-y-5 xl:order-1">
+            <%!-- The shell title carries the job + the ONE back affordance; no
                second in-body title. --%>
-          <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
-            We'll use the issuer's OIDC discovery document. Follow the steps in each section to
-            create an OAuth/OIDC app at your provider, then paste its client ID and secret.
-          </p>
+            <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
+              We'll use the issuer's OIDC discovery document. Follow the steps in each section to
+              create an OAuth/OIDC app at your provider, then paste its client ID and secret.
+            </p>
 
-          <.simple_form
-            :if={@form}
-            for={@form}
-            id="provider_form"
-            phx-change="validate"
-            phx-submit="create"
-          >
-            <.provider_fields
-              form={@form}
-              kind_options={@kind_options}
-              role_options={@role_options}
-              provisioner_options={@provisioner_options}
-              runners={@runners}
-              runner_load_error?={@runner_load_error?}
-              guide_id="new"
+            <.simple_form
+              :if={@form}
+              for={@form}
+              id="provider_form"
+              phx-change="validate"
+              phx-submit="create"
+            >
+              <.provider_fields
+                form={@form}
+                kind_options={@kind_options}
+                role_options={@role_options}
+                provisioner_options={@provisioner_options}
+                runners={@runners}
+                runner_load_error?={@runner_load_error?}
+                guide_id="new"
+                callback_url={@callback_url}
+                inline_guide?={false}
+              />
+              <.test_result :if={@test_result} result={@test_result} />
+              <:actions>
+                <.button phx-disable-with="Saving...">Add connection</.button>
+                <%!-- The capstone: prove the issuer is reachable before saving.
+                   type="button" so it probes (phx-click) instead of submitting. --%>
+                <.button
+                  type="button"
+                  variant={:secondary}
+                  phx-click="test_connection"
+                  phx-disable-with="Testing…"
+                >
+                  Test connection
+                </.button>
+              </:actions>
+            </.simple_form>
+          </div>
+
+          <%!-- Naked rail, the install-wizard grammar: separated by air, never
+               boxed. Sticky so the steps stay in view while the operator works
+               down a long form. --%>
+          <aside class="order-1 xl:order-2 xl:sticky xl:top-6">
+            <.provider_setup_guide
+              id="new-rail"
+              kind={form_kind(@form, @kind_options)}
               callback_url={@callback_url}
             />
-            <.test_result :if={@test_result} result={@test_result} />
-            <:actions>
-              <.button phx-disable-with="Saving...">Add connection</.button>
-              <%!-- The capstone: prove the issuer is reachable before saving.
-                   type="button" so it probes (phx-click) instead of submitting. --%>
-              <.button
-                type="button"
-                variant={:secondary}
-                phx-click="test_connection"
-                phx-disable-with="Testing…"
-              >
-                Test connection
-              </.button>
-            </:actions>
-          </.simple_form>
+          </aside>
         </div>
 
         <%!-- Editing is its own view (/settings/sso/:id/edit), like /new — a bare
@@ -1880,6 +1901,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :runner_load_error?, :boolean, required: true
   attr :guide_id, :string, required: true
   attr :callback_url, :string, required: true
+  # The :new view renders the guide in its own rail, so it suppresses the inline
+  # copy rather than showing the same steps twice.
+  attr :inline_guide?, :boolean, default: true
   attr :editing?, :boolean, default: false
 
   # The connection form's fields, grouped into NAKED sibling sections (Provider ·
@@ -1937,6 +1961,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- Setup steps for the SELECTED provider — what to create at the IdP and
              what to paste back here. --%>
         <.provider_setup_guide
+          :if={@inline_guide?}
           id={@guide_id}
           kind={form_kind(@form, @kind_options)}
           callback_url={@callback_url}
@@ -2172,6 +2197,15 @@ defmodule EmisarWeb.SSOSettingsLive do
       </.steps>
       <%!-- Only providers whose OAuth app exposes a DPoP toggle get this note —
            Google and JumpCloud have no such setting, so it would only confuse. --%>
+      <%!-- Link out rather than inline more: /docs/sso has the screenshots, and a
+           rail teaches beside the task instead of duplicating it. --%>
+      <p class="mt-3 text-xs leading-relaxed text-zinc-400">
+        Screenshots for every step: <.link
+          navigate={docs_path_for_kind(@kind)}
+          target="_blank"
+          class="text-brand-400 underline underline-offset-2 hover:text-brand-300"
+        >{docs_link_label(@kind)}</.link>.
+      </p>
       <p :if={dpop_relevant?(@kind)} class="mt-3 text-xs leading-relaxed text-zinc-400">
         Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
         reads the ID token only and never presents the access token to an API, so DPoP adds no
@@ -2180,6 +2214,23 @@ defmodule EmisarWeb.SSOSettingsLive do
     </div>
     """
   end
+
+  # Deep-link to the provider's own section so the reader lands on its
+  # screenshots, not the top of the page. Entra has no preset kind of its own —
+  # it is configured as generic OIDC — so the generic kind points at the section
+  # most of those readers actually want.
+  # `setup_kind_label/1` reads "a generic OIDC provider", which makes a clumsy link
+  # ("a generic OIDC provider setup guide"), so the generic case gets its own noun.
+  defp docs_link_label(kind) when kind in ~w[google_workspace okta jumpcloud keycloak],
+    do: "#{setup_kind_label(kind)} setup guide"
+
+  defp docs_link_label(_), do: "OIDC setup guide"
+
+  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso#google-workspace"
+  defp docs_path_for_kind("okta"), do: ~p"/docs/sso#okta"
+  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/sso#jumpcloud"
+  defp docs_path_for_kind("keycloak"), do: ~p"/docs/sso#keycloak"
+  defp docs_path_for_kind(_), do: ~p"/docs/sso#generic-oidc"
 
   defp setup_kind_label("google_workspace"), do: "Google Workspace"
   defp setup_kind_label("okta"), do: "Okta"
