@@ -1805,6 +1805,136 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- scim_list_groups/2 (provider-scoped) ----------------------------
+
+  describe "scim_list_groups/2" do
+    setup do
+      scim_provider()
+    end
+
+    test "lists synced groups with mapped displays and member external ids", %{
+      provider: provider,
+      subject: subject
+    } do
+      _ = provision(provider, "okta|alice")
+      _ = provision(provider, "okta|bob")
+
+      {:ok, _mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Operations",
+          member_external_ids: ["okta|bob", "okta|alice"]
+        })
+
+      assert SSO.scim_list_groups(provider) == [
+               %{
+                 external_group_id: "grp-ops",
+                 display: "Operations",
+                 member_external_ids: ["okta|alice", "okta|bob"]
+               }
+             ]
+    end
+
+    test "filters mapped groups by display and unmapped groups by external id", %{
+      provider: provider,
+      subject: subject
+    } do
+      _ = provision(provider, "okta|member")
+
+      {:ok, _mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Operations",
+          member_external_ids: ["okta|member"]
+        })
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-unmapped",
+          display: "Unstored Name",
+          member_external_ids: ["okta|member"]
+        })
+
+      assert [%{external_group_id: "grp-ops"}] =
+               SSO.scim_list_groups(provider, display_name: "Operations")
+
+      assert [%{external_group_id: "grp-unmapped"}] =
+               SSO.scim_list_groups(provider, display_name: "grp-unmapped")
+
+      assert SSO.scim_list_groups(provider, display_name: "Unstored Name") == []
+    end
+
+    test "is provider-scoped", %{provider: provider_a} do
+      %{provider: provider_b} = scim_provider()
+      _ = provision(provider_a, "okta|only-a")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider_a, %{
+          external_id: "grp-a",
+          member_external_ids: ["okta|only-a"]
+        })
+
+      assert SSO.scim_list_groups(provider_b) == []
+    end
+  end
+
+  # -- scim_fetch_group/2 (provider-scoped) ----------------------------
+
+  describe "scim_fetch_group/2" do
+    test "returns one synced group with its member external ids" do
+      %{provider: provider} = scim_provider()
+      _ = provision(provider, "okta|member")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-fetch",
+          member_external_ids: ["okta|member"]
+        })
+
+      assert SSO.scim_fetch_group(provider, "grp-fetch") ==
+               {:ok,
+                %{
+                  external_group_id: "grp-fetch",
+                  display: nil,
+                  member_external_ids: ["okta|member"]
+                }}
+    end
+
+    test "returns :not_found for an unknown group" do
+      %{provider: provider} = scim_provider()
+
+      assert SSO.scim_fetch_group(provider, "grp-missing") == {:error, :not_found}
+    end
+
+    test "is provider-scoped" do
+      %{provider: provider_a} = scim_provider()
+      %{provider: provider_b} = scim_provider()
+      _ = provision(provider_a, "okta|only-a")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider_a, %{
+          external_id: "grp-a",
+          member_external_ids: ["okta|only-a"]
+        })
+
+      assert SSO.scim_fetch_group(provider_b, "grp-a") == {:error, :not_found}
+    end
+  end
+
   # -- scim_upsert_group/2 (provider-scoped) ---------------------------
 
   describe "scim_upsert_group/2" do
