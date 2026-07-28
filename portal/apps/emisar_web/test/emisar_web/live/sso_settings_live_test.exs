@@ -673,6 +673,28 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert reloaded.scim_enabled
       assert reloaded.scim_token_prefix == prefix
     end
+
+    test "a kind that cannot push SCIM hides the enable panel and says why", %{
+      conn: conn,
+      account: account
+    } do
+      keycloak = insert_provider(account, %{name: "Acme Keycloak", kind: :keycloak})
+      google = insert_provider(account, %{name: "Acme Google", kind: :google_workspace})
+
+      {:ok, _lv, keycloak_html} = live(conn, ~p"/app/#{account}/settings/sso/#{keycloak.id}")
+
+      assert keycloak_html =~ "isn&#39;t available for Keycloak"
+      assert keycloak_html =~ "ships no outbound SCIM client"
+      refute keycloak_html =~ "enable_scim"
+
+      # The two unsupported kinds fail for OPPOSITE reasons, so neither may
+      # inherit the other's sentence.
+      {:ok, _lv, google_html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
+
+      assert google_html =~ "isn&#39;t available for Google Workspace"
+      assert google_html =~ "no inbound SCIM for a custom app"
+      refute google_html =~ "ships no outbound SCIM client"
+    end
   end
 
   describe "synced users" do
