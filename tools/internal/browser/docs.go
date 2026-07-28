@@ -83,6 +83,18 @@ const clickFirstEditLink = `(()=>{const a=document.querySelector('a[href*="/edit
 const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-click="toggle_filters"]');if(!b)return false;if(b.getAttribute('aria-expanded')==='false')return true;b.click();return false})()`
 
 // clickSSOConnection opens an SSO connection's detail page from the team page.
+// selectEntraProvider configures the Add provider form the way /docs/sso#entra
+// tells an operator to: Entra has no preset, so the kind is Generic OpenID
+// Connect, and the identifier claim MUST be oid rather than the default sub.
+// Both selects are LiveView-backed, so dispatch a change event after setting them.
+const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};const k=set('select[name="provider[kind]"]','openid_connect');const c=set('select[name="provider[identifier_claim]"]','oid');return k&&c})()`
+
+// showProductionHost rewrites the dev server's origin to the real product host in
+// the RENDERED text only. A docs screenshot that reads localhost:43659 tells a
+// customer nothing — emisar is not a self-hosted product — and the founder has
+// flagged it before. Only the host is substituted; no value is invented.
+const showProductionHost = `(()=>{const from=location.origin,to='https://emisar.dev';const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const hits=[];while(walk.nextNode())if(walk.currentNode.nodeValue.includes(from))hits.push(walk.currentNode);hits.forEach(n=>n.nodeValue=n.nodeValue.split(from).join(to));document.querySelectorAll('[data-copy-text]').forEach(el=>el.setAttribute('data-copy-text',el.getAttribute('data-copy-text').split(from).join(to)));return true})()`
+
 const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`
 
 // openIdPGuide unfolds the connection's "Point your IdP at this connection"
@@ -119,6 +131,7 @@ var docsShots = []shot{
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
+	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Group → role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
