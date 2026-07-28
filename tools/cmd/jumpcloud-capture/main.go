@@ -419,7 +419,20 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
+	// Ticking SSO reveals a SAML/OIDC radio pair that defaults to SAML. Choosing
+	// OIDC here is the actual test: does JumpCloud still allow provisioning?
+	oidc, err := clickRadio(ctx, "Configure SSO with OIDC")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  radio \"Configure SSO with OIDC\": %t\n", oidc)
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		return err
+	}
 	if err := screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
+		return err
+	}
+	if err := describePage(ctx); err != nil {
 		return err
 	}
 	if clicked, err := clickText(ctx, "Next"); err != nil {

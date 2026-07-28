@@ -108,9 +108,8 @@
               <strong class="text-zinc-200">"Point your IdP at this connection"</strong>
               guide names the per-provider specifics. Expect provisioning to live in its
               <em>own</em>
-              app: Okta's OIDC login app can't do SCIM at all, a JumpCloud connector that provisions
-              is a SAML one (its custom-app wizard offers no OIDC at all, so OIDC login is a second
-              connector), and an Entra app registration can't provision either.
+              app: Okta's OIDC login app can't do SCIM at all, and an Entra app registration can't
+              provision either. JumpCloud is the exception — one custom application can carry both.
             </p>
           </div>
         </li>
@@ -359,11 +358,13 @@
         from the steps above.
       </p>
 
-      <.docs_callout kind={:note} title="Provisioning rides a SAML connector">
+      <.docs_callout kind={:note} title="One app can do both">
         <p>
-          JumpCloud's custom-app wizard offers no OIDC option — a connector that can provision is a
-          SAML one. If your people sign in to emisar through JumpCloud over OIDC, that's a second,
-          separate connector; this one exists to push the directory.
+          Unlike Okta and Entra, JumpCloud lets a single custom application carry sign-in and
+          provisioning together: tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>, pick <strong class="text-zinc-200">Configure SSO with OIDC</strong>, and tick
+          <strong class="text-zinc-200">Export users to this app</strong>
+          on the same step. Watch the SSO sub-choice — it defaults to <strong class="text-zinc-200">SAML</strong>, so an app you meant to be OIDC will be SAML
+          unless you change it.
         </p>
       </.docs_callout>
 
@@ -379,9 +380,9 @@
               the <strong class="text-zinc-200">Custom Application</strong>
               tile. On the options step tick both
               <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>
-              and <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-              — that second one is the directory push. Leave
-              <strong class="text-zinc-200">Import users</strong>
+              — which reveals a <strong class="text-zinc-200">SAML / OIDC</strong>
+              choice, defaulting to SAML — and <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>, which is
+              the directory push. Leave <strong class="text-zinc-200">Import users</strong>
               off: it pulls people <em>from</em>
               emisar into JumpCloud, which is the opposite of what you want. Name it and save.
             </p>
