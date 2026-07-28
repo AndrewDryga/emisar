@@ -561,6 +561,33 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
+  describe "provider setup guide" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "only a named provider promises screenshots", %{conn: conn, account: account} do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # No kind picked yet: the guide falls back to generic, and there is no single
+      # console to photograph for "any other OIDC provider".
+      assert html =~ "What your provider has to supply"
+      assert html =~ "OIDC setup guide"
+      refute html =~ "Screenshots for every step"
+
+      picked =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "okta"}})
+        |> render_change()
+
+      # Okta's section does carry console screenshots, so the promise is honest.
+      assert picked =~ "Screenshots for every step"
+      assert picked =~ "Okta setup guide"
+      assert picked =~ "/docs/sso#okta"
+    end
+  end
+
   describe "directory sync (SCIM)" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})

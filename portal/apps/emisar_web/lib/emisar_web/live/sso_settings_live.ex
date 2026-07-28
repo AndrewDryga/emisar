@@ -2200,7 +2200,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       <%!-- Link out rather than inline more: /docs/sso has the screenshots, and a
            rail teaches beside the task instead of duplicating it. --%>
       <p class="mt-3 text-xs leading-relaxed text-zinc-400">
-        Screenshots for every step: <.link
+        {docs_link_lead(@kind)} <.link
           navigate={docs_path_for_kind(@kind)}
           target="_blank"
           class="text-brand-400 underline underline-offset-2 hover:text-brand-300"
@@ -2225,6 +2225,14 @@ defmodule EmisarWeb.SSOSettingsLive do
     do: "#{setup_kind_label(kind)} setup guide"
 
   defp docs_link_label(_), do: "OIDC setup guide"
+
+  # Only the named providers have console screenshots — there is no single console
+  # to photograph for "any other OIDC provider", so promising them there would be a
+  # claim the reader disproves one click later.
+  defp docs_link_lead(kind) when kind in ~w[google_workspace okta jumpcloud keycloak],
+    do: "Screenshots for every step:"
+
+  defp docs_link_lead(_), do: "What your provider has to supply:"
 
   defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso#google-workspace"
   defp docs_path_for_kind("okta"), do: ~p"/docs/sso#okta"
