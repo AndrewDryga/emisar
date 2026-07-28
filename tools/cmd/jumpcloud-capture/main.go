@@ -223,26 +223,38 @@ func run(env map[string]string, outDir string, headless bool) error {
 func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir string) error {
 	// Hash deep-links don't route this SPA (#/sso/applications leaves you on the
 	// onboarding page), so walk the left nav: Access → SSO Applications.
-	if clicked, err := clickText(ctx, "Access"); err != nil {
-		return err
-	} else if !clicked {
-		return fmt.Errorf("no Access nav item")
-	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
-		return err
-	}
-	for _, label := range []string{"SSO Applications", "Applications"} {
-		clicked, err := clickText(ctx, label)
-		if err != nil {
+	// The nav is intermittent (JumpCloud had an incident banner up throughout), so
+	// retry the two-step walk rather than failing the run on one missed click.
+	reached := false
+	for attempt := 1; attempt <= 3 && !reached; attempt++ {
+		if _, err := clickText(ctx, "Access"); err != nil {
 			return err
 		}
-		if clicked {
-			fmt.Printf("  clicked %q\n", label)
-			break
+		if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+			return err
 		}
+		for _, label := range []string{"SSO Applications", "Applications"} {
+			clicked, err := clickText(ctx, label)
+			if err != nil {
+				return err
+			}
+			if clicked {
+				fmt.Printf("  clicked %q (attempt %d)\n", label, attempt)
+				break
+			}
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+			return err
+		}
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return err
+		}
+		reached = strings.Contains(body, "Configured Applications")
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
-		return err
+	if !reached {
+		_ = screenshot(ctx, outDir, "jc-02-nav-failed")
+		return fmt.Errorf("could not reach SSO Applications after 3 attempts")
 	}
 	if err := screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
 		return err
@@ -269,8 +281,8 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	// the top bar and matches that hint first, opening a modal OVER the wizard.
 	// The wizard offers the custom integration directly.
 	picked := false
-	for _, label := range []string{"Custom Application", "custom integration", "Custom"} {
-		clicked, err := clickContaining(ctx, label)
+	for _, label := range []string{"Custom Application", "custom integration"} {
+		clicked, err := clickInDialog(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -302,6 +314,47 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 	return describePage(ctx)
+}
+
+
+// clickInDialog clicks inside the wizard only. Document-wide matching is what
+// walked this driver out of the wizard twice: a loose label hits console chrome
+// behind the dialog, and the global search field in the top bar shadows the
+// wizard's own. Anchor on the dialog's heading and query within its container.
+func clickInDialog(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const heading = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').includes('Create New Application Integration'))
+    .sort((a, b) => a.textContent.length - b.textContent.length)[0];
+  if (!heading) return false;
+  // Climb to a container big enough to hold the whole wizard body.
+  let root = heading;
+  for (let up = 0; up < 8 && root.parentElement; up++) {
+    root = root.parentElement;
+    if (root.querySelectorAll('button,[role=button],a').length > 3) break;
+  }
+  const matches = [...root.querySelectorAll('a,button,li,div,span,[role=button]')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!matches.length) return false;
+  matches.sort((a, b) => a.textContent.length - b.textContent.length);
+  // Each catalog tile carries its OWN "Select" control; clicking the tile body
+  // only highlights it and leaves Next disabled. Walk up to the tile and press
+  // its Select, falling back to the element itself when there is none.
+  let node = matches[0];
+  for (let up = 0; up < 6 && node; up++) {
+    const select = [...node.querySelectorAll('a,button,[role=button]')]
+      .find(el => visible(el) && (el.textContent || '').trim() === 'Select');
+    if (select) { select.scrollIntoView({block: 'center'}); select.click(); return true; }
+    node = node.parentElement;
+  }
+  matches[0].scrollIntoView({block: 'center'});
+  matches[0].click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
 }
 
 // clickContaining clicks the smallest visible element whose text contains the
