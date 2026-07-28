@@ -593,8 +593,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "select[name='provider[identifier_claim]'] option[value=oid][selected]"
              )
 
-      # And the guide must point at Entra's own screenshots, not the generic page.
-      assert entra =~ "/docs/sso#entra"
+      # And the guide must point at Entra's own PAGE, not the generic section.
+      assert entra =~ "/docs/sso/entra"
       assert entra =~ "Microsoft Entra setup guide"
     end
 
@@ -615,7 +615,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # Okta's section does carry console screenshots, so the promise is honest.
       assert picked =~ "Screenshots for every step"
       assert picked =~ "Okta setup guide"
-      assert picked =~ "/docs/sso#okta"
+      assert picked =~ "/docs/sso/okta"
     end
   end
 

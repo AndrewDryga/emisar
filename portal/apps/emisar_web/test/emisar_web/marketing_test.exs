@@ -18,6 +18,11 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runbooks
     /docs/teams-and-access
     /docs/sso
+    /docs/sso/okta
+    /docs/sso/entra
+    /docs/sso/jumpcloud
+    /docs/sso/keycloak
+    /docs/sso/google-workspace
     /docs/scim
     /docs/runners
     /docs/deployment
@@ -307,14 +312,41 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "directory sync"
     # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
-    # The verified Keycloak path is exact and backed by privacy-safe captures.
-    assert html =~ "Keycloak 26.7"
-    assert html =~ "Client authentication"
-    assert html =~ "Require PKCE"
-    assert html =~ "/images/docs/sso/keycloak-client-secret.webp"
-    assert html =~ "OIDC login only"
     # The headline security posture (must match the built behavior).
     assert html =~ "subject, never by email"
+    # The per-provider consoles moved to their own guides; this page routes there.
+    for path <- ~w(okta entra jumpcloud keycloak google-workspace) do
+      assert html =~ "/docs/sso/#{path}"
+    end
+  end
+
+  test "each provider guide carries its own console walkthrough", %{conn: conn} do
+    okta = conn |> get(~p"/docs/sso/okta") |> html_response(200)
+    # Both halves live on one page now — sign-in and the directory that follows it.
+    assert okta =~ "Single sign-on"
+    assert okta =~ "Directory sync"
+    assert okta =~ "/images/docs/sso/okta-oidc-create.webp"
+    assert okta =~ "/images/docs/sso/okta-scim-verified.webp"
+
+    keycloak = conn |> get(~p"/docs/sso/keycloak") |> html_response(200)
+    # The verified Keycloak path is exact and backed by privacy-safe captures.
+    assert keycloak =~ "Keycloak 26.7"
+    assert keycloak =~ "Client authentication"
+    assert keycloak =~ "Require PKCE"
+    assert keycloak =~ "/images/docs/sso/keycloak-client-secret.webp"
+
+    entra = conn |> get(~p"/docs/sso/entra") |> html_response(200)
+    # The two settings that carry the whole Entra integration.
+    assert entra =~ "oid"
+    assert entra =~ "objectId"
+
+    jumpcloud = conn |> get(~p"/docs/sso/jumpcloud") |> html_response(200)
+    # JumpCloud is the one provider whose single app does both jobs.
+    assert jumpcloud =~ "Export users to this app"
+
+    google = conn |> get(~p"/docs/sso/google-workspace") |> html_response(200)
+    assert google =~ "Internal"
+    assert google =~ "accounts.google.com"
   end
 
   test "SCIM docs page covers directory sync, deprovisioning, and group mapping",
@@ -591,6 +623,11 @@ defmodule EmisarWeb.MarketingTest do
             /docs/runbooks
             /docs/teams-and-access
             /docs/sso
+    /docs/sso/okta
+    /docs/sso/entra
+    /docs/sso/jumpcloud
+    /docs/sso/keycloak
+    /docs/sso/google-workspace
             /docs/scim
             /docs/runners
             /docs/audit-and-siem

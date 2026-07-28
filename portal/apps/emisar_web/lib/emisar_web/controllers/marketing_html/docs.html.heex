@@ -65,19 +65,34 @@
       <div :for={{{label, pages}, group_index} <- Enum.with_index(rest_groups)} class="mt-14">
         <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">{label}</h2>
         <div class="mt-5 grid gap-x-8 gap-y-1 md:grid-cols-2">
-          <.link
-            :for={page <- pages}
-            href={page.path}
-            class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+          <%!-- A parent row carries its children as a compact link strip rather
+               than five more cards: the provider guides are a variation of one
+               page, and the grid's job is to show the shape of the docs. Listing
+               them here also keeps every page reachable from the index. --%>
+          <div
+            :for={page <- Enum.reject(pages, & &1[:parent])}
+            class="-mx-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
           >
-            <.icon name={page.icon} class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
-            <div>
-              <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
-                {page.title}
-              </span>
-              <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">{page.desc}</p>
+            <.link href={page.path} class="group flex items-start gap-3">
+              <.icon name={page.icon} class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
+              <div>
+                <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
+                  {page.title}
+                </span>
+                <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">{page.desc}</p>
+              </div>
+            </.link>
+            <% children = Enum.filter(pages, &(&1[:parent] == page.slug)) %>
+            <div :if={children != []} class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 pl-8">
+              <.link
+                :for={child <- children}
+                href={child.path}
+                class="text-[13px] text-zinc-500 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+              >
+                {child.title}
+              </.link>
             </div>
-          </.link>
+          </div>
 
           <%!-- One extra, non-DocsNav row after Reference: hosting + plans. --%>
           <.link

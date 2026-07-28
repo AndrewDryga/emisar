@@ -2234,9 +2234,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Only the named providers have console screenshots — there is no single console
   # to photograph for "any other OIDC provider", so promising them there would be a
   # claim the reader disproves one click later.
-  defp docs_link_lead(kind) when kind in ~w[google_workspace okta entra jumpcloud keycloak],
+  defp docs_link_lead(kind) when kind in ~w[okta entra jumpcloud keycloak],
     do: "Screenshots for every step:"
 
+  defp docs_link_lead("google_workspace"), do: "Step-by-step guide:"
   defp docs_link_lead(_), do: "What your provider has to supply:"
 
   # `oid` exists for exactly one provider. Offering it under Keycloak or Google
@@ -2256,11 +2257,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp identifier_claim_hint(_),
     do: "`sub` is the OIDC standard and the only claim these providers issue for this."
 
-  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso#google-workspace"
-  defp docs_path_for_kind("okta"), do: ~p"/docs/sso#okta"
-  defp docs_path_for_kind("entra"), do: ~p"/docs/sso#entra"
-  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/sso#jumpcloud"
-  defp docs_path_for_kind("keycloak"), do: ~p"/docs/sso#keycloak"
+  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/sso/google-workspace"
+  defp docs_path_for_kind("okta"), do: ~p"/docs/sso/okta"
+  defp docs_path_for_kind("entra"), do: ~p"/docs/sso/entra"
+  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/sso/jumpcloud"
+  defp docs_path_for_kind("keycloak"), do: ~p"/docs/sso/keycloak"
   defp docs_path_for_kind(_), do: ~p"/docs/sso#generic-oidc"
 
   defp setup_kind_label("google_workspace"), do: "Google Workspace"

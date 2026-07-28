@@ -34,6 +34,11 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runbooks
     /docs/teams-and-access
     /docs/sso
+    /docs/sso/okta
+    /docs/sso/entra
+    /docs/sso/jumpcloud
+    /docs/sso/keycloak
+    /docs/sso/google-workspace
     /docs/scim
     /docs/runners
     /docs/deployment

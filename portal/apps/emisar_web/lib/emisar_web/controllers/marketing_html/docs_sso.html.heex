@@ -6,11 +6,7 @@
       current="sso"
       toc={[
         {"sso-login", "Setting up SSO login"},
-        {"okta", "Okta setup"},
-        {"entra", "Microsoft Entra setup"},
-        {"jumpcloud", "JumpCloud setup"},
-        {"keycloak", "Keycloak setup"},
-        {"google-workspace", "Google Workspace setup"},
+        {"providers", "Provider guides"},
         {"generic-oidc", "Any other OIDC provider"},
         {"security-notes", "Security notes"}
       ]}
@@ -18,27 +14,27 @@
       <.docs_header current="sso">
         <:dek>
           On Team and Enterprise plans, your team signs in to emisar with your own identity
-          provider — Google Workspace, Okta, Keycloak, or any compliant OIDC.
+          provider — Google Workspace, Okta, Microsoft Entra, JumpCloud, Keycloak, or any
+          compliant OIDC.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This page sets up <strong class="text-zinc-200">SSO login</strong>
-        — signing in through your IdP. Provisioning and deprovisioning from the directory is a
-        separate piece that builds on a configured connection: <.link
+        This page explains how SSO works in emisar and sets up the connection. Provisioning and
+        deprovisioning from the directory is a separate piece that builds on it: <.link
           navigate={~p"/docs/scim"}
           class="text-brand-300 hover:text-brand-200"
         >directory sync (SCIM)</.link>.
         Both are managed from <strong class="text-zinc-200">Team → Single sign-on</strong>
-        in your emisar workspace — the Team page lists your connections, and each connection's own
-        page holds its configuration.
+        in your emisar workspace, and the
+        <a href="#providers" class="text-brand-300 hover:text-brand-200">provider guides</a>
+        below walk each console step by step.
       </p>
 
       <.docs_callout kind={:note} title="Where this flow stands">
         <p>
           emisar's OIDC authorization-code and just-in-time provisioning flow is verified end to
-          end against Keycloak 26.7. The Okta and JumpCloud steps below were walked on live
-          tenants — every screenshot is that console — and both directories were certified by
-          having the IdP provision real users into emisar over SCIM.
+          end against Keycloak 26.7, and the Okta and JumpCloud guides were certified on live
+          tenants. Each provider guide states exactly what was walked on a real console.
         </p>
       </.docs_callout>
 
@@ -193,598 +189,6 @@
         </li>
       </ol>
 
-      <.docs_h2 id="okta">Okta setup</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Create one OIDC web app in Okta, then connect it to emisar. You need an Okta administrator
-        and an emisar owner or admin. Keep
-        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open so you can copy emisar's callback URL.
-      </p>
-
-      <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Create an OIDC web application.</p>
-            <p class="mt-1.5">
-              In the Okta Admin Console go to <strong class="text-zinc-200">Applications → Applications → Create App Integration</strong>. Choose
-              <strong class="text-zinc-200">OIDC - OpenID Connect</strong>
-              as the sign-in method, then <strong class="text-zinc-200">Web Application</strong>
-              as the application type — that's the confidential client emisar needs, because it
-              authenticates with a client secret.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-create.webp"
-              title="Okta Admin Console · Create a new app integration"
-              caption="Pick OIDC, and the Application type choices appear below it — emisar is a Web Application."
-              alt="Okta's Create a new app integration dialog with OIDC - OpenID Connect selected among the sign-in methods, which reveals an Application type section below where Web Application is selected rather than Single-Page or Native Application."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Register emisar's callback as the only redirect.
-            </p>
-            <p class="mt-1.5">
-              Name the app, then paste emisar's callback into
-              <strong class="text-zinc-200">Sign-in redirect URIs</strong>
-              — it's
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-              on your emisar host, and emisar shows it with a copy button on the Add provider page.
-              Make it the only entry and leave
-              <strong class="text-zinc-200">Allow wildcard *</strong>
-              off; a wildcard redirect is an open-redirect risk. Leave
-              <strong class="text-zinc-200">Authorization Code</strong>
-              ticked. For assignment,
-              <strong class="text-zinc-200">Skip group assignment for now</strong>
-              is the right default — emisar decides who gets what through its own group&nbsp;→&nbsp;role
-              mapping.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-settings.webp"
-              title="Okta Admin Console · New Web App Integration"
-              caption="One sign-in redirect URI, wildcard off, Authorization Code. Clear the sign-out box — emisar doesn't use it."
-              alt="Okta's New Web App Integration form: app integration name emisar, Authorization Code ticked under Core grants, https://emisar.dev/sign_in/sso/callback as the only sign-in redirect URI, the allow-wildcard box unchecked, and an empty sign-out redirect URI field."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Copy the client credentials.</p>
-            <p class="mt-1.5">
-              Saving lands you on the app's General tab with its
-              <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client secret</strong>. You need both, plus your <strong class="text-zinc-200">issuer</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-credentials.webp"
-              title="Okta Admin Console · Client Credentials"
-              caption="Keep Client authentication on Client secret — emisar is a confidential client and replays that secret to your IdP."
-              alt="The Okta app's General tab showing Client Credentials: the Client ID with a copy button, Client authentication set to Client secret rather than public key, PKCE unchecked, and a masked client secret with its creation date and Active status."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
-            <p class="mt-1.5">
-              Back in emisar, pick the <strong class="text-zinc-200">Okta</strong>
-              provider type and paste the client ID and secret. For the issuer, use your
-              <strong class="text-zinc-200">org</strong>
-              authorization server — that's your Okta org URL itself
-              (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://your-org.okta.com</code>,
-              no <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/oauth2/…</code>
-              path). Leave
-              the identifier claim at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
-            </p>
-          </div>
-        </li>
-      </ol>
-
-      <.docs_callout kind={:warn} title="Use the org authorization server, not a custom one.">
-        <p>
-          A <strong class="text-zinc-200">custom</strong>
-          authorization server lets an Okta admin rewrite the subject claim, and its tokens can carry
-          an email as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          instead of the Okta user id. The org server keeps
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          equal to the Okta user id — which is exactly what
-          <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">directory sync</.link>
-          provisions on, so login and provisioning converge on one identity instead of creating two.
-        </p>
-      </.docs_callout>
-
-      <p class="mt-8 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Next:</strong>
-        add
-        <.link
-          navigate={~p"/docs/scim#okta"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >directory sync</.link>
-        so roles and removals follow Okta. It rides a second Okta application — an OIDC login app
-        cannot carry SCIM.
-      </p>
-
-      <.docs_h2 id="entra">Microsoft Entra setup</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        You need an Entra administrator and an emisar owner or admin. Entra splits this across two
-        objects: an <strong class="text-zinc-200">app registration</strong>
-        signs people in, and a separate
-        <strong class="text-zinc-200">enterprise application</strong>
-        provisions them. This page covers the first.
-      </p>
-
-      <.docs_callout kind={:note} title="Written from Microsoft's documented flow">
-        <p>
-          These steps were walked on a live Entra tenant — every screenshot is that console, and
-          the tenant confirmed the platform requirement step 1 calls out. Directory sync for Entra
-          is documented but not yet certified the same way; its own section says so.
-        </p>
-      </.docs_callout>
-
-      <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Register the application.</p>
-            <p class="mt-1.5">
-              In the Microsoft Entra admin center go to <strong class="text-zinc-200">App registrations → New registration</strong>. Under
-              <strong class="text-zinc-200">Redirect URI</strong>
-              choose the <strong class="text-zinc-200">Web</strong>
-              platform and enter emisar's callback:
-            </p>
-            <.docs_code
-              phx-no-format
-              label="Redirect URI"
-              copy_text="https://emisar.dev/sign_in/sso/callback"
-            >https://emisar.dev/sign_in/sso/callback</.docs_code>
-
-            <.docs_screenshot
-              src="/images/docs/sso/entra-app-registration.webp"
-              title="Microsoft Entra admin center · Register an application"
-              caption="The platform must be set to Web — the URI beside it is ignored until it is, and the form refuses to register without it."
-              alt="Entra's Register an application form with the name emisar, Supported account types set to Single tenant only, and the Redirect URI section outlined in green: its platform dropdown reads Web and the adjacent field holds https://emisar.dev/sign_in/sso/callback."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Create a client secret.</p>
-            <p class="mt-1.5">
-              <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
-              <strong class="text-zinc-200">Value</strong>
-              column, not <strong class="text-zinc-200">Secret ID</strong>
-              — the value is shown once and is unrecoverable afterwards.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/entra-client-secret.webp"
-              title="Microsoft Entra · Certificates &amp; secrets"
-              caption="Value is masked the moment you navigate away — the Secret ID beside it is not the secret, so copy the Value while it is still shown."
-              alt="The app's Certificates and secrets blade, Client secrets tab, listing one secret named emisar SSO with an expiry date, a masked Value column, and a separate Secret ID column."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
-            <p class="mt-1.5">
-              Pick <strong class="text-zinc-200">Microsoft Entra</strong>
-              as the provider type. Take <strong class="text-zinc-200">Client ID</strong>
-              from the registration's <strong class="text-zinc-200">Application (client) ID</strong>, the secret from the
-              step above, and build the issuer from your <strong class="text-zinc-200">Directory (tenant) ID</strong>:
-            </p>
-            <.docs_code
-              phx-no-format
-              label="Issuer URL"
-              copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
-            >https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0</.docs_code>
-            <p class="mt-4">
-              The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
-              is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/entra-app-overview.webp"
-              title="Microsoft Entra · App registration overview"
-              caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it is the value that goes into the issuer URL."
-              alt="The emisar app registration's Overview blade with Application (client) ID outlined in green, alongside Object ID, Directory (tenant) ID, client credentials showing one secret, and one web redirect URI."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Set the identifier claim to oid.</p>
-            <p class="mt-1.5">
-              This is the one setting Entra needs that no other provider does. Change
-              <strong class="text-zinc-200">Identifier claim</strong>
-              from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>.
-            </p>
-            <p class="mt-4">
-              Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              is <em>pairwise</em>
-              — Microsoft issues a different value to every application, so it identifies the person
-              only within this one registration.
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              is the immutable object id, the same value Microsoft Graph returns as the user's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">id</code>. Directory sync keys on
-              that same object id, so choosing
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              is what lets a person's sign-in and their provisioned record be one identity instead
-              of two.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/entra-emisar-connection.webp"
-              title="emisar console · Add provider"
-              caption="Entra has no preset, so the provider type is OpenID Connect — and the identifier claim is the one field you must change from its default."
-              alt="emisar's Add provider form with Provider type set to OpenID Connect, the redirect URI to register shown with a copy button, an empty Issuer URL, and Identifier claim set to 'oid — Microsoft Entra' rather than the default sub."
-            />
-          </div>
-        </li>
-      </ol>
-
-      <p class="mt-8 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Next:</strong>
-        provisioning is a second Entra object, and it carries a mapping change you have to make by
-        hand — <.link
-          navigate={~p"/docs/scim#entra"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >set up directory sync</.link>.
-      </p>
-
-      <.docs_h2 id="jumpcloud">JumpCloud setup</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Verified against a live JumpCloud tenant. You need a JumpCloud administrator and an emisar
-        owner or admin, with
-        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open in another tab.
-      </p>
-
-      <.docs_callout kind={:note} title="One application, both jobs">
-        <p>
-          JumpCloud is the only provider here whose custom application carries sign-in
-          <em>and</em>
-          directory sync together. If you want both, tick them on the same wizard step — you do not
-          need a second connector.
-        </p>
-      </.docs_callout>
-
-      <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Open SSO Applications.</p>
-            <p class="mt-1.5">
-              In the JumpCloud Admin Portal go to
-              <strong class="text-zinc-200">Access → SSO Applications</strong>
-              and press <strong class="text-zinc-200">Add New Application</strong>.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-add-app.webp"
-              title="JumpCloud · SSO Applications"
-              caption="Every application JumpCloud signs people into is listed here. Provisioning shows against the ones that also push a directory."
-              alt="The JumpCloud Admin Portal's SSO Applications page listing two configured applications, DEMO - RSA and emisar, the latter tagged Provisioning under Supported Functionality, with the Add New Application button at the top left outlined in green."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Choose Custom Application.</p>
-            <p class="mt-1.5">
-              emisar is not in JumpCloud's catalog, so scroll past the featured tiles to <strong class="text-zinc-200">Custom Application</strong>, press its <strong class="text-zinc-200">Select</strong>, then <strong class="text-zinc-200">Next</strong>.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-custom-app.webp"
-              title="JumpCloud · Select Application"
-              caption="The Custom Application tile sits last, after the catalog's featured integrations."
-              alt="JumpCloud's Create New Application Integration wizard on step 1, Select Application, showing featured tiles for Google Workspace, AWS IAM Identity Center, Slack, Atlassian Cloud, Personio, CrowdStrike and Salesforce, with the Custom Application tile in the bottom-right corner outlined in green."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Enable SSO, and pick OIDC.</p>
-            <p class="mt-1.5">
-              Tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>. That reveals a
-              <strong class="text-zinc-200">Select One</strong>
-              pair beneath it — choose <strong class="text-zinc-200">Configure SSO with OIDC</strong>.
-              It defaults to SAML, and emisar's connection is OIDC, so this is the one click on the
-              page that is easy to miss and hard to undo later.
-            </p>
-            <p class="mt-4">
-              If you also want directory sync, tick
-              <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-              on this same step — JumpCloud carries both on one application. Leave
-              <strong class="text-zinc-200">Import users from this app</strong>
-              off; that direction pulls into JumpCloud.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-options.webp"
-              title="JumpCloud · Select Options"
-              caption="SSO with OIDC and Export users, together on one application. Import users stays off — it points the wrong way."
-              alt="JumpCloud's Select Options step with Manage Single Sign-On (SSO) checked and outlined in green, its Select One radio pair showing Configure SSO with OIDC selected rather than the default SAML; Export users to this app (Provisioning) is also checked, Import users from this app and Add a bookmark are unchecked, and the Next button is enabled."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Name it.</p>
-            <p class="mt-1.5">
-              <strong class="text-zinc-200">Display Label</strong>
-              is what your people see in the JumpCloud User Portal —
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
-              is the obvious choice. Everything else on this step is cosmetic.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-general-info.webp"
-              title="JumpCloud · Enter General Info"
-              caption="Only Display Label is required."
-              alt="JumpCloud's Enter General Info step with the Display Label field filled in with emisar and focused, an empty optional Description, a Color Indicator picker set to blue, and Show this application in User Portal checked."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Check the summary, then configure.</p>
-            <p class="mt-1.5">
-              The review step lists what you just chose under <strong class="text-zinc-200">Enabled Features</strong>. It should read
-              <strong class="text-zinc-200">SSO with OIDC</strong>
-              — and <strong class="text-zinc-200">User Export - Provisioning</strong>
-              if you ticked it. If it says SAML, go <strong class="text-zinc-200">Back</strong>
-              and change the radio; emisar cannot use a SAML connector. Then press <strong class="text-zinc-200">Configure Application</strong>.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-review.webp"
-              title="JumpCloud · Review"
-              caption="Enabled Features is the check that the OIDC radio actually took."
-              alt="JumpCloud's Review step for an application about to be added, whose Application Summary panel shows Display Label emisar and Enabled Features listing both SSO with OIDC and User Export - Provisioning, outlined in green, beside a Configure Application button."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Set the redirect URI, then swap credentials with emisar.
-            </p>
-            <p class="mt-1.5">
-              On the application's <strong class="text-zinc-200">SSO</strong>
-              tab, put emisar's callback in <strong class="text-zinc-200">Redirect URIs</strong>:
-            </p>
-            <.docs_code
-              phx-no-format
-              label="Redirect URI"
-              copy_text="https://emisar.dev/sign_in/sso/callback"
-            >https://emisar.dev/sign_in/sso/callback</.docs_code>
-            <p class="mt-4">
-              Leave <strong class="text-zinc-200">Authorization Code</strong>
-              as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
-              or <strong class="text-zinc-200">Client Secret Basic</strong>
-              works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>, then press <strong class="text-zinc-200">Activate</strong>.
-            </p>
-            <p class="mt-4">
-              Activating reveals the <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client Secret</strong>. Those are the only two
-              values you carry back: pick <strong class="text-zinc-200">JumpCloud</strong>
-              in emisar's <strong class="text-zinc-200">Add provider</strong>
-              form and the issuer is already filled in and locked, because it is the same for every
-              JumpCloud org.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
-              title="JumpCloud · OIDC Single Sign-On Configuration"
-              caption="Redirect URIs takes emisar's callback verbatim. The Provisioning tab beside SSO is where directory sync is wired, on this same application."
-              alt="The SSO tab of a JumpCloud OpenID Connect application, with badges reading Single Sign-On Active, Client Secret Valid and Provisioning Inactive, and tabs for General Info, SSO, Provisioning, User Groups and Users. Under Configuration Settings the Authorization Code grant type is checked, the Redirect URIs label is outlined in green above a field containing https://emisar.dev/sign_in/sso/callback, Client Authentication Type is set to Client Secret POST, and an Activate button sits at the bottom right."
-            />
-          </div>
-        </li>
-      </ol>
-
-      <p class="mt-8 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Next:</strong>
-        if you ticked <strong class="text-zinc-200">Export users to this app</strong>
-        back on step 3, this same application is ready to push your directory — <.link
-          navigate={~p"/docs/scim#jumpcloud"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >finish directory sync</.link>.
-      </p>
-
-      <.docs_h2 id="keycloak">Keycloak setup</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Create one confidential Keycloak client, then connect it to emisar. You need Keycloak
-        realm-admin access and an emisar owner or admin. Keep
-        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open in emisar so you can copy its callback URL.
-      </p>
-
-      <.docs_callout kind={:note} title="OIDC login only">
-        <p>
-          This setup covers sign-in and just-in-time user provisioning. It does not configure
-          Keycloak as a SCIM directory client. For supported directory provisioning, start with <.link
-            navigate={~p"/docs/scim"}
-            class="text-brand-400 hover:text-brand-300"
-          >
-            directory sync
-          </.link>.
-        </p>
-      </.docs_callout>
-
-      <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Start an OpenID Connect client.</p>
-            <p class="mt-1.5">
-              In the Keycloak Admin Console, choose your realm, then go to <strong class="text-zinc-200">Clients → Create client</strong>. Leave
-              <strong class="text-zinc-200">Client type</strong>
-              on <span class="text-zinc-300">OpenID Connect</span>, set
-              <strong class="text-zinc-200">Client ID</strong>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-portal</code>,
-              and click <strong class="text-zinc-200">Next</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-general.webp"
-              title="Keycloak Admin Console · General settings"
-              caption="Create an OpenID Connect client for the emisar web application."
-              alt="Keycloak's Create client General settings step with OpenID Connect selected, emisar-portal as the client ID, and emisar as the name."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Enable only the flow emisar uses.</p>
-            <p class="mt-1.5">
-              Turn <strong class="text-zinc-200">Client authentication</strong>
-              and <strong class="text-zinc-200">Require PKCE</strong>
-              on. Keep <strong class="text-zinc-200">Standard flow</strong>
-              on and leave the PKCE method on <span class="text-zinc-300">S256</span>. Leave
-              Authorization, DPoP, Direct access grants, Implicit flow, Service accounts roles,
-              and every device flow off. Then click <strong class="text-zinc-200">Next</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-capabilities.webp"
-              title="Keycloak Admin Console · Capability config"
-              caption="A confidential client using the authorization-code flow with PKCE."
-              alt="Keycloak's Capability config step with Client authentication, Standard flow, and Require PKCE enabled; all other capabilities and authentication flows are disabled."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Register the exact redirect URI.</p>
-            <p class="mt-1.5">
-              Copy the callback shown in emisar and paste it into <strong class="text-zinc-200">Valid redirect URIs</strong>. It ends in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>.
-              Do not add a wildcard. The other URL fields can stay empty; click <strong class="text-zinc-200">Save</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-redirect.webp"
-              title="Keycloak Admin Console · Login settings"
-              caption="The screenshot uses a reserved example host; paste the callback from your emisar form verbatim."
-              alt="Keycloak's Login settings step with https://emisar.dev/sign_in/sso/callback entered as the sole Valid redirect URI and no wildcard."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Copy the client secret.</p>
-            <p class="mt-1.5">
-              Open the saved client's <strong class="text-zinc-200">Credentials</strong>
-              tab. Copy its client secret into emisar's
-              <strong class="text-zinc-200">Client secret</strong>
-              field. Treat the value like a password; do not put it in tickets, chat, or
-              screenshots.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-secret.webp"
-              title="Keycloak Admin Console · Credentials"
-              caption="The client secret stays masked in this guide."
-              alt="The Keycloak Credentials tab for emisar-portal with Client Id and Secret selected and the client secret hidden behind password dots."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Verify the identity scopes.</p>
-            <p class="mt-1.5">
-              On the <strong class="text-zinc-200">Client scopes</strong>
-              tab, confirm that <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email</code>
-              and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">profile</code>
-              are assigned as <span class="text-zinc-300">Default</span>.
-              emisar requests <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">openid</code>
-              in the authorization request, so it does not appear as an assigned client-scope row.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-scopes.webp"
-              title="Keycloak Admin Console · Client scopes"
-              caption="The default email and profile scopes give emisar the verified identity claims it needs."
-              alt="The Keycloak Client scopes table for emisar-portal with email and profile assigned as Default scopes."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Connect and test the first sign-in.</p>
-            <p class="mt-1.5">
-              Back in emisar, select the <strong class="text-zinc-200">Keycloak</strong>
-              preset and enter the issuer URL <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
-              </code>,
-              client ID, and client secret. Choose
-              <strong class="text-zinc-200">Auto-provision</strong>
-              or <strong class="text-zinc-200">Manual</strong>
-              new-user provisioning and a default role, test the connection, enable it, and save.
-              In a private browser window, sign in as a Keycloak user who is not yet in emisar.
-              Auto-provision should create the user at the default role; Manual should create a
-              pending request for an admin instead.
-            </p>
-          </div>
-        </li>
-      </ol>
-
       <.docs_h3 id="signing-in">How members sign in</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; there they enter their team's address to reach that team's sign-in page, pick your provider, authenticate at the IdP, and come back signed in. An <strong class="text-zinc-200">allowed email domain</strong>, if set, is a guardrail on the return trip: a login whose IdP-verified domain doesn't match is refused.
@@ -822,92 +226,68 @@
         as usual.
       </p>
 
-      <p class="mt-8 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Next:</strong>
-        Keycloak has no outbound provisioning of its own, so members are created on first sign-in
-        and removed by hand unless you run a SCIM plugin — <.link
-          navigate={~p"/docs/scim#keycloak"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >what that leaves you to do</.link>.
-      </p>
-
-      <.docs_h2 id="google-workspace">Google Workspace setup</.docs_h2>
+      <.docs_h2 id="providers">Provider guides</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The shortest setup of the four, because Google's issuer is the same for every customer —
-        emisar fills it in and locks it, so there is nothing to look up. You need a Google Cloud
-        project in the same organization as your Workspace, and an emisar owner or admin.
+        Each guide walks one provider end to end — sign-in first, then directory sync — with
+        screenshots from that console at every step.
       </p>
 
-      <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li id="okta" class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <.link
+              navigate={~p"/docs/sso/okta"}
+              class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+            >Okta</.link>
+            — an OIDC web app for sign-in and a separate SCIM app for the directory. Certified on a
+            live org.
           </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Set the OAuth consent screen to Internal.</p>
-            <p class="mt-1.5">
-              In <strong class="text-zinc-200">Google Cloud Console → APIs &amp; Services → OAuth consent screen</strong>, choose <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own Workspace domain and
-              skips Google's verification review entirely. External would expose the app to any
-              Google account, which is not what you want in front of emisar.
-            </p>
-          </div>
         </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
+        <li id="entra" class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <.link
+              navigate={~p"/docs/sso/entra"}
+              class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+            >Microsoft Entra</.link>
+            — an app registration with the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+            claim, and an enterprise application for provisioning.
           </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Create the OAuth client.</p>
-            <p class="mt-1.5">
-              <strong class="text-zinc-200">Credentials → Create credentials → OAuth client ID</strong>, application type <strong class="text-zinc-200">Web application</strong>. Add emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>:
-            </p>
-            <.docs_code
-              phx-no-format
-              label="Authorized redirect URI"
-              copy_text="https://emisar.dev/sign_in/sso/callback"
-            >https://emisar.dev/sign_in/sso/callback</.docs_code>
-            <p class="mt-4">
-              Google matches this string exactly — a trailing slash or
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
-              instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
-              is rejected at sign-in with a redirect_uri_mismatch, not at save time.
-            </p>
-          </div>
         </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
+        <li id="jumpcloud" class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <.link
+              navigate={~p"/docs/sso/jumpcloud"}
+              class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+            >JumpCloud</.link>
+            — one custom application carries sign-in and provisioning together. Certified on a live
+            tenant.
           </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Paste the credentials into emisar.</p>
-            <p class="mt-1.5">
-              Pick <strong class="text-zinc-200">Google Workspace</strong>
-              as the provider type and paste the client ID and secret. The
-              <strong class="text-zinc-200">Issuer URL</strong>
-              is already filled in and locked —
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://accounts.google.com</code>
-              for every Google customer — so it is one less thing to get wrong. Leave the identifier
-              claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>.
-            </p>
-
-            <.docs_screenshot
-              src="/images/docs/sso/google-emisar-connection.webp"
-              title="emisar console · Add provider"
-              caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
-              alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
-            />
-          </div>
         </li>
-      </ol>
-
-      <p class="mt-8 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Next:</strong>
-        Google Workspace cannot push a directory into emisar, so members are created on first
-        sign-in and removed by hand — <.link
-          navigate={~p"/docs/scim#google-workspace"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >what that leaves you to do</.link>.
-      </p>
+        <li id="keycloak" class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <.link
+              navigate={~p"/docs/sso/keycloak"}
+              class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+            >Keycloak</.link>
+            — a confidential client with PKCE; no outbound SCIM.
+          </span>
+        </li>
+        <li id="google-workspace" class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <.link
+              navigate={~p"/docs/sso/google-workspace"}
+              class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+            >Google Workspace</.link>
+            — an Internal OAuth client and a locked, prefilled issuer; no outbound SCIM.
+          </span>
+        </li>
+      </ul>
 
       <.docs_h2 id="generic-oidc">Any other OIDC provider</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

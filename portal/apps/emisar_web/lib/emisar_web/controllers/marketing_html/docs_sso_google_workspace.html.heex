@@ -1,0 +1,115 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="sso-google-workspace"
+      toc={[
+        {"sso", "Single sign-on"},
+        {"scim", "Directory sync"}
+      ]}
+    >
+      <.docs_header current="sso-google-workspace">
+        <:dek>
+          Connect Google Workspace to emisar: an Internal OAuth client and a locked, prefilled
+          issuer. Google has no outbound SCIM — the directory-sync section covers the gap.
+        </:dek>
+      </.docs_header>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The shortest setup of the five, because Google's issuer is the same for every customer —
+        emisar fills it in and locks it, so there is nothing to look up. You need a Google Cloud
+        project in the same organization as your Workspace, and an emisar owner or admin.
+      </p>
+
+      <.docs_h2 id="sso">Single sign-on</.docs_h2>
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Set the OAuth consent screen to Internal.</p>
+            <p class="mt-1.5">
+              In <strong class="text-zinc-200">Google Cloud Console → APIs &amp; Services → OAuth consent screen</strong>, choose <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own Workspace domain and
+              skips Google's verification review entirely. External would expose the app to any
+              Google account, which is not what you want in front of emisar.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create the OAuth client.</p>
+            <p class="mt-1.5">
+              <strong class="text-zinc-200">Credentials → Create credentials → OAuth client ID</strong>, application type <strong class="text-zinc-200">Web application</strong>. Add emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>:
+            </p>
+            <.docs_code
+              phx-no-format
+              label="Authorized redirect URI"
+              copy_text="https://emisar.dev/sign_in/sso/callback"
+            >https://emisar.dev/sign_in/sso/callback</.docs_code>
+            <p class="mt-4">
+              Google matches this string exactly — a trailing slash or
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
+              instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
+              is rejected at sign-in with a redirect_uri_mismatch, not at save time.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Paste the credentials into emisar.</p>
+            <p class="mt-1.5">
+              Pick <strong class="text-zinc-200">Google Workspace</strong>
+              as the provider type and paste the client ID and secret. The
+              <strong class="text-zinc-200">Issuer URL</strong>
+              is already filled in and locked —
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://accounts.google.com</code>
+              for every Google customer — so it is one less thing to get wrong. Leave the identifier
+              claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>.
+            </p>
+
+            <.docs_screenshot
+              src="/images/docs/sso/google-emisar-connection.webp"
+              title="emisar console · Add provider"
+              caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
+              alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
+            />
+          </div>
+        </li>
+      </ol>
+
+      <.docs_h2 id="scim">Directory sync</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Google Workspace cannot drive directory sync into emisar. Google provisions to SaaS apps in
+        its own catalog, and a custom OAuth client — which is what
+        the setup above creates — is not one of them, so there is no SCIM connector to point here. Members are
+        created on first sign-in at the connection's default role, and nothing removes them
+        automatically: suspending the Google account stops them signing in, which is the control
+        that matters, then remove the member in <strong class="text-zinc-200">Team</strong>
+        to close out their API keys. emisar's connection page hides the sync panel for this
+        provider rather than offer a feature that could never connect.
+      </p>
+      <.docs_callout kind={:warn} title="Using Google Workspace?">
+        <p>
+          Google Workspace is a first-class OIDC <em>login</em>
+          provider here, but it has no outbound SCIM — it won't push the user lifecycle to
+          emisar. On its own you get just-in-time provisioning on first login and <strong class="text-zinc-200">no automatic deprovisioning</strong>. To close that gap,
+          route Google through your IdP (Okta, Entra, or JumpCloud) and connect <em>that</em>
+          to emisar's SCIM — an offboard in Google then reaches emisar as the standard
+          <code class="rounded bg-zinc-950 px-1 py-0.5 text-xs">active: false</code>
+          signal and access is revoked automatically, exactly as above. Most orgs already
+          federate Google through an IdP, so there's usually nothing new to stand up. (Native
+          Google directory sync without an IdP is on our roadmap — talk to us if you need it.)
+        </p>
+      </.docs_callout>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

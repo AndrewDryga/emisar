@@ -606,6 +606,19 @@ func lifecycleFlow(
 	if err := settle(2); err != nil {
 		return err
 	}
+	for _, label := range []string{"Create Users", "Update User Attributes", "Deactivate Users"} {
+		checked, err := sectionChecked(ctx, label)
+		if err != nil {
+			return err
+		}
+		if !checked {
+			return fmt.Errorf("%s did not stick — the form still shows it unticked", label)
+		}
+	}
+	fmt.Println("  all three lifecycle operations verified ON")
+	if err := highlightGroup(ctx, "Create Users", "Deactivate Users"); err != nil {
+		return err
+	}
 	if err := shoot("12-to-app-settings"); err != nil {
 		return err
 	}
@@ -647,29 +660,87 @@ func clickRadio(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
-// tickInSection checks the box belonging to a named setting. On Okta's
-// "Provisioning to App" screen every checkbox is labelled just "Enable" — the
-// setting name ("Create Users") is a sibling heading — so find the checkbox
-// whose enclosing block carries that name.
+// tickInSection checks the box belonging to a named setting. Approach from the
+// HEADING down, not the checkbox up: find the smallest node carrying the setting
+// name, then climb until the container holds exactly one checkbox — that is the
+// setting's own row. The old climb-from-checkbox missed Update User Attributes
+// and Deactivate Users, and the shipped screenshot showed them unticked.
 func tickInSection(ctx context.Context, section string) (bool, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  for (const box of [...document.querySelectorAll('input[type=checkbox]')].filter(visible)) {
-    let node = box;
-    for (let up = 0; up < 6 && node; up++) {
-      node = node.parentElement;
-      if (!node) break;
-      if (node.textContent.includes(%q)) {
-        if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); }
-        return true;
-      }
+  const heads = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  let node = heads[0];
+  if (!node) return false;
+  for (let up = 0; up < 8 && node; up++) {
+    const boxes = node.querySelectorAll('input[type=checkbox]');
+    if (boxes.length === 1) {
+      const box = boxes[0];
+      if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); }
+      return true;
     }
+    if (boxes.length > 1) return false;
+    node = node.parentElement;
   }
   return false;
 })()`, section)
 	var ticked bool
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &ticked))
 	return ticked, err
+}
+
+// sectionChecked reports whether a setting's own checkbox is REALLY checked —
+// a click helper returning true only means something matched, never that the
+// control took the value.
+func sectionChecked(ctx context.Context, section string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const heads = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  let node = heads[0];
+  if (!node) return false;
+  for (let up = 0; up < 8 && node; up++) {
+    const boxes = node.querySelectorAll('input[type=checkbox]');
+    if (boxes.length === 1) return boxes[0].checked;
+    if (boxes.length > 1) return false;
+    node = node.parentElement;
+  }
+  return false;
+})()`, section)
+	var checked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &checked))
+	return checked, err
+}
+
+// highlightGroup outlines the container holding BOTH anchor and companion text —
+// the wide highlight that frames a full control group rather than one label.
+func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hits = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  let node = hits[0];
+  if (!node) return false;
+  for (let up = 0; up < 10 && node; up++) {
+    if ((node.textContent || '').includes(%q)) break;
+    node = node.parentElement;
+  }
+  if (!node) return false;
+  node.style.outline = '3px solid #10b981';
+  node.style.outlineOffset = '3px';
+  node.style.borderRadius = '6px';
+  node.scrollIntoView({block: 'center'});
+  return true;
+})()`, anchor, mustInclude)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	fmt.Printf("  highlight group %q..%q: %t\n", anchor, mustInclude, marked)
+	return nil
 }
 
 // typeRealKeys focuses a field and types with genuine key events, clearing what

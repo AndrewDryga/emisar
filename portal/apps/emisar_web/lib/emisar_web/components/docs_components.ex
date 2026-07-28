@@ -95,7 +95,7 @@ defmodule EmisarWeb.DocsComponents do
         {label}
       </p>
       <ul class="mt-3 space-y-0.5">
-        <li :for={page <- pages}>
+        <li :for={page <- pages} class={page[:parent] && "ml-3 border-l border-zinc-800 pl-1"}>
           <.docs_nav_link page={page} current={@current} />
         </li>
       </ul>

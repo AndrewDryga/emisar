@@ -176,6 +176,11 @@ defmodule EmisarWeb.Router do
     get "/docs/runbooks", MarketingController, :docs_runbooks
     get "/docs/teams-and-access", MarketingController, :docs_teams
     get "/docs/sso", MarketingController, :docs_sso
+    get "/docs/sso/okta", MarketingController, :docs_sso_okta
+    get "/docs/sso/entra", MarketingController, :docs_sso_entra
+    get "/docs/sso/jumpcloud", MarketingController, :docs_sso_jumpcloud
+    get "/docs/sso/keycloak", MarketingController, :docs_sso_keycloak
+    get "/docs/sso/google-workspace", MarketingController, :docs_sso_google_workspace
     get "/docs/scim", MarketingController, :docs_scim
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/deployment", MarketingController, :docs_deployment
