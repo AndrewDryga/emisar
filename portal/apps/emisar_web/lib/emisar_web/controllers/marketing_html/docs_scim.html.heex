@@ -408,6 +408,13 @@
               and the bearer as <strong class="text-zinc-200">Secret Token</strong>:
             </p>
             <.docs_code phx-no-format label="Tenant URL" copy_text="https://emisar.dev/scim/v2">https://emisar.dev/scim/v2</.docs_code>
+
+            <.docs_screenshot
+              src="/images/docs/sso/entra-provisioning.webp"
+              title="Microsoft Entra · Enterprise application provisioning"
+              caption="The Provisioning blade of the enterprise application — a different object from the app registration that handles sign-in. Connect your application is where the Tenant URL and Secret Token go."
+              alt="The emisar SCIM enterprise application's Provisioning overview in the Entra portal, offering New configuration, Start provisioning and Pause provisioning in its command bar, with a Get started panel whose Create configuration step has a Connect your application button."
+            />
             <p class="mt-4">
               Press <strong class="text-zinc-200">Test Connection</strong>. Entra probes the endpoint for a user that
               cannot exist, using a random GUID, and expects an empty result rather than an error —
