@@ -2283,7 +2283,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp scim_location_hint(:jumpcloud) do
-    "on a JumpCloud application's Provisioning tab — with OIDC login JumpCloud documents a SEPARATE connector for provisioning, so this is usually its own app. Set the Base URL to the value above and paste the `ems-` token as the Token, then Test Connection → Activate (their form discards the config if you press Save instead)"
+    "on a JumpCloud application's Provisioning tab — a connector that provisions is a SAML one (the custom-app wizard offers no OIDC), so with OIDC login this is a SECOND connector. Set the Base URL to the value above and paste the `ems-` token as the Token, then Test Connection → Activate (their form discards the config if you press Save instead)"
   end
 
   # Keycloak has no outbound SCIM: its own SCIM support (26.6+) makes Keycloak a

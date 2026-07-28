@@ -313,7 +313,83 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := screenshot(ctx, outDir, "jc-05-select-options"); err != nil {
 		return err
 	}
+
+	// The decisive test: ask for BOTH login and outbound provisioning on one app,
+	// then pick OIDC. JumpCloud's docs say OIDC cannot carry provisioning; this is
+	// where the console either agrees or refutes them.
+	for _, section := range []string{"Manage Single Sign-On (SSO)", "Export users to this app"} {
+		ticked, err := tickInSection(ctx, section)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  tick %q: %t\n", section, ticked)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
+		return err
+	}
+	if clicked, err := clickText(ctx, "Next"); err != nil {
+		return err
+	} else if !clicked {
+		return fmt.Errorf("Next disabled after choosing SSO + Export users")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
+		return err
+	}
+
+	// Step 3 is general info — the wizard never asks SAML vs OIDC; that choice
+	// lives on the saved app's SSO tab, which is why the wizard alone cannot
+	// settle whether OIDC and provisioning coexist.
+	if err := focusField(ctx, "label"); err != nil {
+		return err
+	}
+	if err := chromedp.Run(ctx, chromedp.KeyEvent("emisar"), chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	for _, label := range []string{"Next", "Save Application"} {
+		clicked, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if clicked {
+			fmt.Printf("  clicked %q\n", label)
+			if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
+		return err
+	}
 	return describePage(ctx)
+}
+
+// tickInSection checks the box whose enclosing block carries the given heading —
+// the checkbox itself is unlabelled on this wizard.
+func tickInSection(ctx context.Context, section string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  for (const box of [...document.querySelectorAll('input[type=checkbox]')].filter(visible)) {
+    let node = box;
+    for (let up = 0; up < 6 && node; up++) {
+      node = node.parentElement;
+      if (!node) break;
+      if (node.textContent.includes(%q)) {
+        if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); }
+        return true;
+      }
+    }
+  }
+  return false;
+})()`, section)
+	var ticked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &ticked))
+	return ticked, err
 }
 
 // clickInDialog clicks inside the wizard only. Document-wide matching is what
