@@ -792,23 +792,6 @@ func scrollToText(ctx context.Context, label string) error {
 	return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
 }
 
-// clearField empties an input Okta pre-populated (its sign-out redirect default
-// is http://localhost:8080, which has no business in our screenshots).
-func clearField(ctx context.Context, selector string) error {
-	script := fmt.Sprintf(`(() => {
-  const el = document.querySelector(%q);
-  if (!el) return false;
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  setter.call(el, '');
-  el.dispatchEvent(new Event('input', {bubbles: true}));
-  el.dispatchEvent(new Event('change', {bubbles: true}));
-  return true;
-})()`, selector)
-	var cleared bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &cleared))
-	return err
-}
-
 // clickSelector clicks an exact CSS selector, for controls whose visible label
 // isn't a reliable handle (Okta's form buttons are inputs with generated names).
 func clickSelector(ctx context.Context, selector string) error {
@@ -825,30 +808,6 @@ func clickSelector(ctx context.Context, selector string) error {
 	}
 	if !clicked {
 		return fmt.Errorf("selector %s not found", selector)
-	}
-	return nil
-}
-
-// describeFields lists the visible inputs, so a missed selector is diagnosable
-// from the run log instead of by squinting at a screenshot.
-func describeFields(ctx context.Context) error {
-	const script = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  return [...document.querySelectorAll('input,textarea,select')].filter(visible).map(el =>
-    [el.tagName, el.type || '', 'name=' + (el.name || '-'), 'id=' + (el.id || '-'),
-     'ph=' + (el.placeholder || '-'),
-     'label=' + (el.labels && el.labels.length ? el.labels[0].textContent.trim().slice(0, 40) : '-')
-    ].join(' ')).join('\n');
-})()`
-	var listing string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &listing)); err != nil {
-		return err
-	}
-	fmt.Println("  --- visible fields ---")
-	for _, line := range strings.Split(listing, "\n") {
-		if strings.TrimSpace(line) != "" {
-			fmt.Println("   ", line)
-		}
 	}
 	return nil
 }
@@ -870,7 +829,7 @@ func tickEnableAPIIntegration(ctx context.Context) error {
 		return err
 	}
 	if !ticked {
-		return fmt.Errorf("Enable API Integration checkbox not found")
+		return fmt.Errorf("enable API Integration checkbox not found")
 	}
 	fmt.Println("  ticked Enable API Integration")
 	return nil
