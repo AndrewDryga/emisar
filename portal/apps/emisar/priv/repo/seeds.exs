@@ -1770,6 +1770,41 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
         })
     end
 
+    # Certifying against a live IdP points a real directory at this connection,
+    # which leaves behind identities the seed never created (an operator's own
+    # Okta sign-in, an IdP's activation probe) and SCIM can only deactivate,
+    # never remove — so they linger in the "Synced users" card and would ship in
+    # its docs capture. Converge on the four synthetic people above: drop the
+    # stray identity and the account membership it provisioned.
+    seeded_external_ids = Enum.map(scim_people, fn {ext, _email, _name} -> ext end)
+
+    stray_identities =
+      Emisar.SSO.UserIdentity.Query.not_deleted()
+      |> Emisar.SSO.UserIdentity.Query.by_provider_id(scim_provider.id)
+      |> Repo.all()
+      |> Enum.reject(&(&1.provider_identifier in seeded_external_ids))
+
+    for identity <- stray_identities do
+      {:ok, _} =
+        identity
+        |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+        |> Repo.update()
+
+      membership_query =
+        Accounts.Membership.Query.not_deleted()
+        |> Accounts.Membership.Query.by_account_and_user(
+          identity.account_id,
+          identity.user_id
+        )
+
+      for membership <- Repo.all(membership_query) do
+        {:ok, _} =
+          membership
+          |> Accounts.Membership.Changeset.delete()
+          |> Repo.update()
+      end
+    end
+
     # {external group id, display, member externalIds, mapped role | nil}
     scim_groups = [
       {"kc-grp-platform", "Platform Engineers", ~w(kc|nadia kc|ravi kc|lena), :admin},
