@@ -2013,6 +2013,50 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- scim_rename_group/3 (provider-scoped) --------------------
+
+  describe "scim_rename_group/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "moves the display onto the mapping and keeps the id the IdP addresses", %{
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", external_group_display: "Ops", role: :operator},
+          subject
+        )
+
+      assert {:ok, %{external_group_id: "grp-ops", display: "Platform"}} =
+               SSO.scim_rename_group(provider, "grp-ops", "Platform")
+
+      # The id is the IdP's handle on the group, so a rename must not move it —
+      # only the human label the console shows changes.
+      reloaded = Repo.reload!(mapping)
+      assert reloaded.external_group_id == "grp-ops"
+      assert reloaded.external_group_display == "Platform"
+      assert reloaded.role == :operator
+    end
+
+    test "a group nobody has mapped still answers, on its id", %{provider: provider} do
+      assert {:ok, %{external_group_id: "grp-unmapped", display: "Renamed"}} =
+               SSO.scim_rename_group(provider, "grp-unmapped", "Renamed")
+    end
+
+    test "rejects a blank id, but takes a blank display", %{provider: provider} do
+      assert {:error, :invalid_scim_group} = SSO.scim_rename_group(provider, "", "Platform")
+
+      # displayName is optional in SCIM, so clearing it is a rename, not an error —
+      # the group keeps answering on the id the IdP addresses it by.
+      assert {:ok, %{external_group_id: "grp-ops", display: ""}} =
+               SSO.scim_rename_group(provider, "grp-ops", "")
+    end
+  end
+
   # -- scim_patch_group_members/4 (provider-scoped) --------------------
 
   describe "scim_patch_group_members/4" do
