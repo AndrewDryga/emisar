@@ -384,16 +384,19 @@ func openService(ctx context.Context, tile, expect string) error {
 	}
 	dismissOverlays(ctx)
 
-	// The click focuses the tile but does not always activate it — these tiles are
-	// anchors, so follow with Enter on whatever now holds focus.
-	if err := clickTextAtCentre(ctx, tile); err != nil {
+	// Clicking the tile only focuses it, and Enter does not activate it either. The
+	// tile IS an anchor though, so take the portal's OWN href and load it as a full
+	// navigation — a route the portal generated routes correctly where one I built
+	// by hand does not.
+	href, err := hrefOfTile(ctx, tile)
+	if err != nil {
 		_ = dumpOptions(ctx)
-		return fmt.Errorf("no %q tile: %w", tile, err)
+		return err
 	}
+	fmt.Printf("  %s -> %s\n", tile, href)
 	if err := chromedp.Run(ctx,
-		chromedp.Sleep(2*time.Second),
-		chromedp.KeyEvent("\r"),
-		chromedp.Sleep(18*time.Second),
+		chromedp.Navigate(href),
+		chromedp.Sleep(25*time.Second),
 	); err != nil {
 		return err
 	}
@@ -589,4 +592,23 @@ func dumpOptions(ctx context.Context) error {
 	fmt.Println("--- visible labels ---")
 	fmt.Println(listing)
 	return nil
+}
+
+// hrefOfTile returns the href of the anchor carrying the given tile label.
+func hrefOfTile(ctx context.Context, label string) (string, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const norm = t => (t || '').replace(/\s+/g, ' ').trim();
+  const a = [...document.querySelectorAll('a[href]')].filter(visible)
+    .find(el => norm(el.textContent) === %q);
+  return a ? a.href : '';
+})()`, label)
+	var href string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &href)); err != nil {
+		return "", err
+	}
+	if href == "" {
+		return "", fmt.Errorf("no anchor for tile %q", label)
+	}
+	return href, nil
 }
