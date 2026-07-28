@@ -821,7 +821,9 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["totalResults"] == 1
       assert [group] = body["Resources"]
       assert group["id"] == "grp-pushed"
-      assert group["displayName"] == "grp-pushed"
+      # Nobody has mapped this group to a role, and it still comes back under the
+      # name its directory pushed rather than its raw id.
+      assert group["displayName"] == "Platform Engineers"
       assert group["members"] == [%{"value" => "okta|x"}]
     end
 
@@ -839,10 +841,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
           member_external_ids: ["okta|x"]
         })
 
+      # The probe carries the name the IdP knows the group by, not our id — and
+      # this group has no role mapping, which used to be the only place that name
+      # was stored, so the probe missed and the IdP re-created the group forever.
       matched =
         conn
         |> auth(token)
-        |> get(~p"/scim/v2/Groups?filter=displayName eq \"grp-pushed\"")
+        |> get(~p"/scim/v2/Groups?filter=displayName eq \"Platform Engineers\"")
         |> json_response(200)
 
       assert matched["totalResults"] == 1
@@ -875,7 +880,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-pushed") |> json_response(200)
 
       assert body["id"] == "grp-pushed"
-      assert body["displayName"] == "grp-pushed"
+      assert body["displayName"] == "Platform Engineers"
       assert body["members"] == [%{"value" => "okta|x"}]
     end
 

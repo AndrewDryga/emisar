@@ -1842,7 +1842,7 @@ defmodule Emisar.SSOTest do
              ]
     end
 
-    test "filters mapped groups by display and unmapped groups by external id", %{
+    test "filters by the display the directory pushed, mapped or not", %{
       provider: provider,
       subject: subject
     } do
@@ -1865,7 +1865,13 @@ defmodule Emisar.SSOTest do
       {:ok, _group} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-unmapped",
-          display: "Unstored Name",
+          display: "Security Review",
+          member_external_ids: ["okta|member"]
+        })
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-nameless",
           member_external_ids: ["okta|member"]
         })
 
@@ -1873,9 +1879,67 @@ defmodule Emisar.SSOTest do
                SSO.scim_list_groups(provider, display_name: "Operations")
 
       assert [%{external_group_id: "grp-unmapped"}] =
-               SSO.scim_list_groups(provider, display_name: "grp-unmapped")
+               SSO.scim_list_groups(provider, display_name: "Security Review")
 
-      assert SSO.scim_list_groups(provider, display_name: "Unstored Name") == []
+      # Only a group whose directory never sent a displayName answers on its id.
+      assert [%{external_group_id: "grp-nameless"}] =
+               SSO.scim_list_groups(provider, display_name: "grp-nameless")
+
+      assert SSO.scim_list_groups(provider, display_name: "grp-unmapped") == []
+    end
+
+    test "an unmapped group keeps the display its directory pushed", %{provider: provider} do
+      _ = provision(provider, "okta|member")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-unmapped",
+          display: "Security Review",
+          member_external_ids: ["okta|member"]
+        })
+
+      assert SSO.scim_list_groups(provider) == [
+               %{
+                 external_group_id: "grp-unmapped",
+                 display: "Security Review",
+                 member_external_ids: ["okta|member"]
+               }
+             ]
+    end
+
+    test "a rename moves an unmapped group's display", %{provider: provider} do
+      _ = provision(provider, "okta|member")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-unmapped",
+          display: "Security Review",
+          member_external_ids: ["okta|member"]
+        })
+
+      {:ok, _group} = SSO.scim_rename_group(provider, "grp-unmapped", "Security Council")
+
+      assert [%{display: "Security Council"}] = SSO.scim_list_groups(provider)
+    end
+
+    test "a PATCH-added member does not erase the group's display", %{provider: provider} do
+      _ = provision(provider, "okta|member")
+      _ = provision(provider, "okta|joiner")
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-unmapped",
+          display: "Security Review",
+          member_external_ids: ["okta|member"]
+        })
+
+      {:ok, _group} =
+        SSO.scim_patch_group_members(provider, "grp-unmapped", ["okta|joiner"], [])
+
+      assert [%{display: "Security Review", member_external_ids: members}] =
+               SSO.scim_list_groups(provider)
+
+      assert members == ["okta|joiner", "okta|member"]
     end
 
     test "is provider-scoped", %{provider: provider_a} do
@@ -2042,7 +2106,7 @@ defmodule Emisar.SSOTest do
       assert reloaded.role == :operator
     end
 
-    test "a group nobody has mapped still answers, on its id", %{provider: provider} do
+    test "a group nobody has mapped is still renamable", %{provider: provider} do
       assert {:ok, %{external_group_id: "grp-unmapped", display: "Renamed"}} =
                SSO.scim_rename_group(provider, "grp-unmapped", "Renamed")
     end

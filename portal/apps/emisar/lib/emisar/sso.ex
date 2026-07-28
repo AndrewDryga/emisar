@@ -1033,12 +1033,11 @@ defmodule Emisar.SSO do
   makes before every group push; without a group read it never matches an
   existing group and re-POSTs the whole directory each cycle.
 
-  `display` is only populated for a group an operator has MAPPED to a role — the
-  mapping row is the one place a directory group's human name is stored — so an
-  unmapped group answers on its `external_group_id`, exactly as the synced-groups
-  readout in the console shows it. A directory that filters on the human name
-  therefore matches its mapped groups; give an unmapped group a mapping (or match
-  on id) if a provider needs it found by name.
+  `display` is whatever the directory last pushed the group under, held on the
+  group's own membership rows, so mapping a group to a role is not a prerequisite
+  for finding it by name. It falls back to the mapping's copy for groups synced
+  before the name was stored on the rows, and to the `external_group_id` for a
+  group whose directory has never sent a displayName.
   """
   def scim_list_groups(%IdentityProvider{} = provider, opts \\ []) do
     display_name = Keyword.get(opts, :display_name)
@@ -1055,18 +1054,26 @@ defmodule Emisar.SSO do
       |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
       |> DirectoryGroupMember.Query.select_member_external_ids(provider.id)
 
-    displays_queryable =
+    synced_displays_queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.select_displays_for_provider(provider.id)
+
+    mapped_displays_queryable =
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.select_displays_for_provider(provider.id)
 
     members = Enum.group_by(Repo.all(members_queryable), &elem(&1, 0), &elem(&1, 1))
-    displays = Map.new(Repo.all(displays_queryable))
+    synced_displays = Map.new(Repo.all(synced_displays_queryable))
+    mapped_displays = Map.new(Repo.all(mapped_displays_queryable))
 
     groups =
       Enum.map(Repo.all(counts_queryable), fn %{external_group_id: id} ->
         %{
           external_group_id: id,
-          display: Map.get(displays, id),
+          # What the directory last pushed wins; the mapping's copy is the
+          # fallback for groups synced before the name was stored on the rows.
+          display: Map.get(synced_displays, id) || Map.get(mapped_displays, id),
           member_external_ids: Map.get(members, id, [])
         }
       end)
@@ -1164,7 +1171,7 @@ defmodule Emisar.SSO do
       with {:ok, {current_provider, affected}} <-
              Repo.transaction(fn ->
                _ = refresh_group_display(provider, external_group_id, display)
-               affected = replace_group_members(provider, external_group_id, desired_ids)
+               affected = replace_group_members(provider, external_group_id, display, desired_ids)
                current_provider = prepare_scim_group_authorization_change!(provider, affected)
                {current_provider, affected}
              end),
@@ -1181,9 +1188,8 @@ defmodule Emisar.SSO do
 
   @doc """
   Internal — SCIM group rename: move a synced group's human name without touching
-  its id. The id is what the IdP addresses the group by and stays put; the
-  display lives on the group's role mapping, so a group nobody has mapped keeps
-  answering on its id (which is what the console shows too).
+  its id. The id is what the IdP addresses the group by and stays put; the new
+  display lands on the group's membership rows and on any role mapping of it.
   `{:ok, group_summary}`.
   """
   def scim_rename_group(%IdentityProvider{} = provider, external_group_id, display) do
@@ -1469,7 +1475,12 @@ defmodule Emisar.SSO do
   # rows that should stay, insert the new ones, soft-delete the rest. Returns
   # the identities whose membership actually changed (added or removed), for the
   # role recompute.
-  defp replace_group_members(%IdentityProvider{} = provider, external_group_id, desired_ids) do
+  defp replace_group_members(
+         %IdentityProvider{} = provider,
+         external_group_id,
+         display,
+         desired_ids
+       ) do
     current = current_group_members(provider, external_group_id)
     current_ids = Enum.map(current, & &1.user_identity_id)
 
@@ -1477,7 +1488,7 @@ defmodule Emisar.SSO do
     to_add = Enum.reject(desired_ids, &(&1 in current_ids))
 
     soft_delete_group_members(to_remove)
-    insert_group_members(provider, external_group_id, to_add)
+    insert_group_members(provider, external_group_id, display, to_add)
 
     changed_ids = Enum.map(to_remove, & &1.user_identity_id) ++ to_add
     load_identities(provider, changed_ids)
@@ -1489,8 +1500,10 @@ defmodule Emisar.SSO do
       |> current_group_members(external_group_id)
       |> Enum.map(& &1.user_identity_id)
 
+    # A PATCH member op carries no displayName; the group's name is whatever its
+    # PUT-stamped sibling rows already say, which is what the read aggregates.
     to_add = Enum.reject(add_ids, &(&1 in current_ids))
-    insert_group_members(provider, external_group_id, to_add)
+    insert_group_members(provider, external_group_id, nil, to_add)
     load_identities(provider, to_add)
   end
 
@@ -1514,9 +1527,14 @@ defmodule Emisar.SSO do
   # per member. `to_add` are already-resolved provider identities + the group
   # is theirs, so the rows are valid by construction; on_conflict guards a
   # re-add race against the live-row partial unique.
-  defp insert_group_members(_provider, _external_group_id, []), do: :ok
+  defp insert_group_members(_provider, _external_group_id, _display, []), do: :ok
 
-  defp insert_group_members(%IdentityProvider{} = provider, external_group_id, user_identity_ids) do
+  defp insert_group_members(
+         %IdentityProvider{} = provider,
+         external_group_id,
+         display,
+         user_identity_ids
+       ) do
     now = DateTime.utc_now()
 
     rows =
@@ -1526,6 +1544,7 @@ defmodule Emisar.SSO do
           account_id: provider.account_id,
           provider_id: provider.id,
           external_group_id: external_group_id,
+          external_group_display: display,
           user_identity_id: user_identity_id,
           inserted_at: now,
           updated_at: now
@@ -1558,16 +1577,25 @@ defmodule Emisar.SSO do
     |> Repo.all()
   end
 
-  # Refresh the IdP's group label on any matching role mapping so the config UI
-  # shows the current group name. No mapping (group not mapped to a role) → a
-  # no-op; the membership is still tracked for when a mapping is added.
+  # Refresh the IdP's group label wherever it is stored: on the group's own
+  # membership rows, so an unmapped group still answers SCIM reads by name, and
+  # on any matching role mapping, so the config UI shows the current name. A PUT
+  # that omits displayName must not erase either, so nil is a no-op.
   defp refresh_group_display(_provider, _external_group_id, nil), do: :ok
 
   defp refresh_group_display(%IdentityProvider{} = provider, external_group_id, display) do
+    now = DateTime.utc_now()
+
+    members_queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
+
+    Repo.update_all(members_queryable, set: [external_group_display: display, updated_at: now])
+
     GroupRoleMapping.Query.not_deleted()
     |> GroupRoleMapping.Query.by_provider_id(provider.id)
     |> GroupRoleMapping.Query.by_external_group_id(external_group_id)
-    |> Repo.update_all(set: [external_group_display: display, updated_at: DateTime.utc_now()])
+    |> Repo.update_all(set: [external_group_display: display, updated_at: now])
 
     :ok
   end

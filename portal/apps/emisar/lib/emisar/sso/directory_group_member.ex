@@ -5,11 +5,16 @@ defmodule Emisar.SSO.DirectoryGroupMember do
   is recomputed as the highest mapped role over the union of their groups.
   Replaced wholesale on a group sync (PUT) and patched by member-level
   `add`/`remove` ops (PATCH).
+
+  Each row also carries the group's pushed `external_group_display`, because a
+  synced group has no table of its own — it IS its member rows — and its name
+  has to survive whether or not anyone has mapped it to a role.
   """
   use Emisar, :schema
 
   schema "sso_directory_group_members" do
     field :external_group_id, :string
+    field :external_group_display, :string
 
     field :deleted_at, :utc_datetime_usec
 
