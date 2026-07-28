@@ -92,7 +92,10 @@ func run(env map[string]string, outDir string, headless bool) error {
 	if err := screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	return reportLicences(ctx, outDir)
+	if err := reportLicences(ctx, outDir); err != nil {
+		return err
+	}
+	return appRegistrationFlow(ctx, env, outDir)
 }
 
 // signIn walks Microsoft's sign-in sequence. Every screen lives in ONE DOM that
@@ -285,4 +288,187 @@ func reportLicences(ctx context.Context, outDir string) error {
 	fmt.Println("--- licences ---")
 	fmt.Println(body[:min(1200, len(body))])
 	return screenshot(ctx, outDir, "en-02-licences")
+}
+
+// appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
+// registration form with emisar's redirect URI, then the client secret. This is
+// the half that works on a free tenant — provisioning needs P1.
+func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string) error {
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade"),
+		chromedp.Sleep(18*time.Second),
+	); err != nil {
+		return err
+	}
+	if err := describePage(ctx); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
+		return err
+	}
+
+	// Fill the form BEFORE shooting — a walkthrough frame showing an empty
+	// required field reads as though the field is optional.
+	if err := fillField(ctx, "name", "emisar"); err != nil {
+		fmt.Println("  WARN name:", err)
+	}
+	if err := fillField(ctx, "redirect", "https://emisar.dev/sign_in/sso/callback"); err != nil {
+		fmt.Println("  WARN redirect:", err)
+	}
+	// The redirect URI is inert until a platform is chosen — leaving it unset
+	// fails with "Platform is required", which is why the docs say to pick Web.
+	if err := selectPlatform(ctx, "Web"); err != nil {
+		_ = screenshot(ctx, outDir, "en-04-platform-failed")
+		return err
+	}
+	_ = highlight(ctx, "Redirect URI")
+	if err := screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
+		return err
+	}
+
+	if clicked, err := clickText(ctx, "Register"); err != nil {
+		return err
+	} else if !clicked {
+		return fmt.Errorf("no Register button")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
+		return err
+	}
+	_ = highlight(ctx, "Application (client) ID")
+	return screenshot(ctx, outDir, "en-05-app-overview")
+}
+
+// selectPlatform opens the "Select a platform" dropdown and picks an option. It
+// is an Azure combo box, not a <select>, so the option only exists in the DOM
+// once the dropdown is open.
+func selectPlatform(ctx context.Context, option string) error {
+	// Clicking the label text does nothing — the control is an Azure combo box.
+	// Open it through its role, and fall back to a native <select> if the portal
+	// renders one.
+	var opened bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const combo = [...document.querySelectorAll('[role=combobox],select,.azc-select')].filter(visible)[0];
+  if (!combo) return false;
+  combo.scrollIntoView({block: 'center'});
+  combo.click();
+  return true;
+})()`, &opened)); err != nil {
+		return err
+	}
+	if !opened {
+		_ = dumpOptions(ctx)
+		return fmt.Errorf("no platform dropdown")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	_ = dumpOptions(ctx)
+	if clicked, err := clickText(ctx, option); err != nil {
+		return err
+	} else if !clicked {
+		_ = dumpOptions(ctx)
+		return fmt.Errorf("no %q option in the platform dropdown", option)
+	}
+	fmt.Printf("  platform %q selected\n", option)
+	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+}
+
+// clickText clicks the smallest visible element whose text matches, which is how
+// the Entra admin center's command bars and links are reachable — they carry no
+// stable ids.
+func clickText(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q);
+  if (!matches.length) return false;
+  // Smallest subtree first: the deepest element with exactly this text is the
+  // label, not some ancestor panel that happens to contain only it.
+  matches.sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  const el = matches[0];
+  (el.closest('a,button,[role=button],[role=option],[role=combobox]') || el).click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
+}
+
+// highlight outlines the control a step tells the reader to use, so the
+// screenshot shows WHERE to click. See
+// .agent/kb/rules/content-provider-walkthroughs-show-every-screen.md.
+func highlight(ctx context.Context, label string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('a,button,label,span,div,input,td')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!matches.length) return false;
+  matches.sort((a, b) => a.textContent.length - b.textContent.length);
+  const target = matches[0].closest('label,a,button,tr,li') || matches[0];
+  target.style.outline = '3px solid #10b981';
+  target.style.outlineOffset = '3px';
+  target.style.borderRadius = '6px';
+  target.scrollIntoView({block: 'center'});
+  return true;
+})()`, label)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		fmt.Printf("  WARN nothing matching %q to highlight\n", label)
+		return nil
+	}
+	fmt.Printf("  highlighted %q\n", label)
+	return chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond))
+}
+
+// fillField types into the input whose label, placeholder or aria-label matches.
+// The Entra admin center is React-driven, so an assigned .value is ignored —
+// focus the element and send real key events.
+func fillField(ctx context.Context, hint, value string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hint = %q.toLowerCase();
+  const field = [...document.querySelectorAll('input,textarea')].filter(visible).find(el =>
+    (el.getAttribute('aria-label') || '').toLowerCase().includes(hint) ||
+    (el.placeholder || '').toLowerCase().includes(hint) ||
+    (el.labels && [...el.labels].some(l => l.textContent.toLowerCase().includes(hint))));
+  if (!field) return false;
+  field.scrollIntoView({block: 'center'});
+  field.focus();
+  return true;
+})()`, hint)
+	var focused bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &focused)); err != nil {
+		return err
+	}
+	if !focused {
+		return fmt.Errorf("no field matching %q", hint)
+	}
+	return chromedp.Run(ctx, chromedp.KeyEvent(value), chromedp.Sleep(time.Second))
+}
+
+// dumpOptions lists the short visible labels on screen, so a missed dropdown
+// option is diagnosed from the real menu rather than another guess at its text.
+func dumpOptions(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const seen = new Set();
+  for (const el of document.querySelectorAll('li,[role=option],[role=menuitem],button,a,span,div')) {
+    if (!visible(el)) continue;
+    if (el.getElementsByTagName('*').length > 2) continue;
+    const t = (el.textContent || '').trim();
+    if (t && t.length < 60) seen.add(t);
+  }
+  return [...seen].join(' | ');
+})()`
+	var listing string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &listing)); err != nil {
+		return err
+	}
+	fmt.Println("--- visible labels ---")
+	fmt.Println(listing)
+	return nil
 }
