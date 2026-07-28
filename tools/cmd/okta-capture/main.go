@@ -234,7 +234,10 @@ func run(env map[string]string, outDir, only string, headless bool) error {
 	defer cancelAllocator()
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 5*time.Minute)
+	// The full SCIM flow — sign-in with MFA, credentials, save, then the lifecycle
+	// screens — runs past five minutes on a slow console, and the cap cut it off
+	// mid-flow rather than failing at a step.
+	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancelTimeout()
 
 	// The redirect lands on the admin console already authenticated.
@@ -592,7 +595,23 @@ func lifecycleFlow(
 	if err := settle(5); err != nil {
 		return err
 	}
+	// To App / To Okta only exist once the API integration SAVED, and Okta refuses
+	// to save it unless Test API Credentials passed — which needs emisar actually
+	// reachable. Without a tunnel the pane reads "Provisioning is not enabled" and
+	// the missing tab looks like a selector bug; it is not. Say so here, because
+	// three rounds were spent adding waits and retries to a downstream symptom.
+	var body string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+		return err
+	}
+	if strings.Contains(body, "Provisioning is not enabled") {
+		_ = shoot("12-provisioning-not-enabled")
+		return fmt.Errorf("provisioning never enabled — Test API Credentials must PASS first, " +
+			"which needs EMISAR_PUBLIC_URL reachable from Okta (start the tunnel)")
+	}
 	if err := step("To App"); err != nil {
+		_ = shoot("12-to-app-missing")
+		_ = reportPage(ctx)
 		return err
 	}
 	if err := step("Edit"); err != nil {
