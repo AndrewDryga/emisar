@@ -10,6 +10,7 @@
         {"entra", "Microsoft Entra setup"},
         {"jumpcloud", "JumpCloud setup"},
         {"keycloak", "Keycloak"},
+        {"google-workspace", "Google Workspace"},
         {"group-role", "Group → role mapping"},
         {"security-notes", "Security notes"}
       ]}
@@ -594,6 +595,22 @@
         with a bearer token and a third-party Keycloak provisioning plugin can drive it. If you run
         one, enable sync here and point it at the base URL and token above. That plugin is yours to
         choose, configure, and support — we don't ship or certify one.
+      </p>
+
+      <.docs_h2 id="google-workspace">Google Workspace</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Google Workspace cannot drive directory sync into emisar. Google provisions to SaaS apps in
+        its own catalog, and a custom OAuth client — which is what
+        <.link
+          navigate={~p"/docs/sso#google-workspace"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >Google Workspace single sign-on</.link>
+        creates — is not one of them, so there is no SCIM connector to point here. Members are
+        created on first sign-in at the connection's default role, and nothing removes them
+        automatically: suspending the Google account stops them signing in, which is the control
+        that matters, then remove the member in <strong class="text-zinc-200">Team</strong>
+        to close out their API keys. emisar's connection page hides the sync panel for this
+        provider rather than offer a feature that could never connect.
       </p>
 
       <.docs_h2 id="group-role">Group → role mapping</.docs_h2>

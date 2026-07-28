@@ -10,6 +10,8 @@
         {"entra", "Microsoft Entra setup"},
         {"jumpcloud", "JumpCloud setup"},
         {"keycloak", "Keycloak setup"},
+        {"google-workspace", "Google Workspace setup"},
+        {"generic-oidc", "Any other OIDC provider"},
         {"security-notes", "Security notes"}
       ]}
     >
@@ -828,6 +830,146 @@
           navigate={~p"/docs/scim#keycloak"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
         >what that leaves you to do</.link>.
+      </p>
+
+      <.docs_h2 id="google-workspace">Google Workspace setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The shortest setup of the four, because Google's issuer is the same for every customer —
+        emisar fills it in and locks it, so there is nothing to look up. You need a Google Cloud
+        project in the same organization as your Workspace, and an emisar owner or admin.
+      </p>
+
+      <ol class="mt-8 space-y-10">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Set the OAuth consent screen to Internal.</p>
+            <p class="mt-1.5">
+              In <strong class="text-zinc-200">Google Cloud Console → APIs &amp; Services → OAuth consent screen</strong>, choose <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own Workspace domain and
+              skips Google's verification review entirely. External would expose the app to any
+              Google account, which is not what you want in front of emisar.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Create the OAuth client.</p>
+            <p class="mt-1.5">
+              <strong class="text-zinc-200">Credentials → Create credentials → OAuth client ID</strong>, application type <strong class="text-zinc-200">Web application</strong>. Add emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>:
+            </p>
+            <.docs_code
+              phx-no-format
+              label="Authorized redirect URI"
+              copy_text="https://emisar.dev/sign_in/sso/callback"
+            >https://emisar.dev/sign_in/sso/callback</.docs_code>
+            <p class="mt-4">
+              Google matches this string exactly — a trailing slash or
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
+              instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
+              is rejected at sign-in with a redirect_uri_mismatch, not at save time.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Paste the credentials into emisar.</p>
+            <p class="mt-1.5">
+              Pick <strong class="text-zinc-200">Google Workspace</strong>
+              as the provider type and paste the client ID and secret. The
+              <strong class="text-zinc-200">Issuer URL</strong>
+              is already filled in and locked —
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://accounts.google.com</code>
+              for every Google customer — so it is one less thing to get wrong. Leave the identifier
+              claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>.
+            </p>
+
+            <.docs_screenshot
+              src="/images/docs/sso/google-emisar-connection.webp"
+              title="emisar console · Add provider"
+              caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
+              alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
+            />
+          </div>
+        </li>
+      </ol>
+
+      <p class="mt-8 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Next:</strong>
+        Google Workspace cannot push a directory into emisar, so members are created on first
+        sign-in and removed by hand — <.link
+          navigate={~p"/docs/scim#google-workspace"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >what that leaves you to do</.link>.
+      </p>
+
+      <.docs_h2 id="generic-oidc">Any other OIDC provider</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The named providers above are presets over one standard flow, not separate integrations.
+        Anything that speaks discovery-based OpenID Connect works through
+        <strong class="text-zinc-200">Generic OpenID Connect</strong>
+        — Auth0, Ping, OneLogin, Authentik, an in-house IdP — with no waiting on us to add it.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You need three things from your provider, and emisar derives the rest:
+      </p>
+
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">A confidential web client</strong>
+            with a client secret, holding emisar's callback as a redirect URI. Public or SPA
+            clients will not do — emisar authenticates with the secret.
+          </span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">The issuer URL</strong>
+            — whatever serves <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/.well-known/openid-configuration</code>. emisar fetches discovery from there,
+            so you never paste individual endpoints, and it must be HTTPS and reachable from
+            emisar.
+          </span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">The client ID and secret.</strong>
+            emisar accepts either
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_post</code>
+            or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_basic</code>, whichever your provider advertises.
+          </span>
+        </li>
+      </ul>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Two settings to leave alone unless your provider forces otherwise: keep
+        <strong class="text-zinc-200">DPoP</strong>
+        off — emisar reads the ID token only and never calls an API with the access token, so
+        sender-constrained tokens add nothing and break the token request — and keep the identifier
+        claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. The one provider that needs
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        instead is <.link
+          navigate={~p"/docs/sso#entra"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >Microsoft Entra</.link>, for the reason
+        that section explains.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Test connection</strong>
+        on the form runs a real discovery round-trip and shows the authorization, token, and JWKS
+        endpoints it found, so a wrong issuer fails before you save rather than at someone's first
+        sign-in.
       </p>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>

@@ -87,6 +87,10 @@ const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-c
 // tells an operator to: Entra has no preset, so the kind is Generic OpenID
 // Connect, and the identifier claim MUST be oid rather than the default sub.
 // Both selects are LiveView-backed, so dispatch a change event after setting them.
+// selectGoogleProvider picks the Google Workspace preset, whose issuer emisar
+// fills in and LOCKS — the detail /docs/sso#google-workspace exists to show.
+const selectGoogleProvider = `(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value='google_workspace';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
+
 const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};const k=set('select[name="provider[kind]"]','openid_connect');const c=set('select[name="provider[identifier_claim]"]','oid');return k&&c})()`
 
 // showProductionHost rewrites the dev server's origin to the real product host in
@@ -131,6 +135,7 @@ var docsShots = []shot{
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
+	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectGoogleProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
 	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Group → role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
