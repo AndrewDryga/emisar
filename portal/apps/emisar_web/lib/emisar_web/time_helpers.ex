@@ -243,6 +243,19 @@ defmodule EmisarWeb.TimeHelpers do
   defp run_via(%{source: :scheduled}), do: "schedule"
   defp run_via(_run), do: nil
 
+  @doc """
+  A member's name inside ONE account: the directory's name for them if this
+  account's IdP set one, else their own.
+
+  `users.full_name` is cross-account, so a workspace whose directory renamed
+  someone who also belongs elsewhere holds that name on the membership instead.
+  """
+  def member_display_name(%{directory_display_name: name}, _user)
+      when is_binary(name) and name != "",
+      do: name
+
+  def member_display_name(_membership, user), do: user_display_name(user)
+
   @doc "Returns a user's nonblank full name, falling back to their email."
   def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
     if String.trim(name) == "", do: email, else: name

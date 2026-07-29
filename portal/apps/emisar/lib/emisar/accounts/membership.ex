@@ -25,6 +25,10 @@ defmodule Emisar.Accounts.Membership do
     # so `Accounts.reinstate_membership` refuses a manual reinstate (only the IdP
     # reactivating lifts it). Set by the SCIM deprovision write path.
     field :directory_suspended, :boolean, default: false
+    # The directory's name for this member, owned by THIS account. `users.full_name`
+    # is the person's own attribute and deliberately cross-account, so a rename
+    # from one workspace's IdP must not rewrite how they read in another's.
+    field :directory_display_name, :string
     field :invitation_token_digest, :string
     field :invitation_accepted_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec

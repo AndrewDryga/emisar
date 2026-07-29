@@ -646,6 +646,49 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — SSO directory rename: record the directory's name for this member,
+  and say whether this account is the person's only tenancy.
+
+  `users.full_name` is identity and deliberately cross-account, so one workspace's
+  directory must not rewrite how the person reads in another's. When they belong
+  here and nowhere else the directory genuinely is the authority for who they
+  are, and the caller may write the global name too — which keeps the ordinary
+  single-workspace case showing one name on every surface.
+  """
+  def sync_member_display_name(account_id, user_id, display_name)
+      when is_binary(account_id) and is_binary(user_id) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_and_user(account_id, user_id)
+
+    case Repo.peek(queryable) do
+      nil ->
+        {:error, :not_found}
+
+      %Membership{} = membership ->
+        with {:ok, updated} <- write_display_name(membership, display_name) do
+          {:ok, updated, sole_tenancy?(user_id, account_id)}
+        end
+    end
+  end
+
+  defp write_display_name(%Membership{} = membership, display_name) do
+    case Membership.Changeset.sync_display_name(membership, display_name) do
+      {:noop, membership} -> {:ok, membership}
+      changeset -> Repo.update(changeset)
+    end
+  end
+
+  defp sole_tenancy?(user_id, account_id) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_user_id(user_id)
+      |> Membership.Query.excluding_account_id(account_id)
+
+    not Repo.exists?(queryable)
+  end
+
+  @doc """
   Internal — Audit's user-event fan-out: EVERY active (not-deleted, not-suspended)
   membership the user holds, so a user-scoped security event lands one row per
   account the user belongs to (each account legitimately sees its own copy). No

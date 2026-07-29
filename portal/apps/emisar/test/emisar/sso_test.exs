@@ -1841,6 +1841,49 @@ defmodule Emisar.SSOTest do
 
   # -- scim_deactivate_user/2 (provider-scoped) ------------------------
 
+  describe "scim_rename_user/3 tenancy" do
+    test "a rename reaches the person's own name when this is their only workspace" do
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|solo")
+
+      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|solo", "Solo Person")
+
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+      assert user.full_name == "Solo Person"
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      assert membership.directory_display_name == "Solo Person"
+    end
+
+    test "it stops at this account's membership when they belong elsewhere too" do
+      # `users.full_name` is the person's own attribute and shows in every
+      # workspace they are in — including their roster row, audit actor labels
+      # and run attribution there. One account's directory does not get to write
+      # what another account's operators read.
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|shared")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+      their_own_name = user.full_name
+
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: identity.user_id,
+        role: "operator"
+      )
+
+      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|shared", "Renamed By Acme")
+
+      # This account sees the directory's name…
+      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      assert membership.directory_display_name == "Renamed By Acme"
+
+      # …and the other one still sees the person.
+      assert Repo.reload!(user).full_name == their_own_name
+    end
+  end
+
   describe "scim_deactivate_user/2" do
     test "ends only this account's sessions — the person stays signed in elsewhere" do
       # A session token is per-user, not per-account, so revoking them all let one

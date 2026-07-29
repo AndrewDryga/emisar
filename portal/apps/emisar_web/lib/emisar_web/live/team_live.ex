@@ -1358,7 +1358,7 @@ defmodule EmisarWeb.TeamLive do
                       "flex min-w-0 flex-1 items-start gap-4",
                       Accounts.Membership.disabled?(membership) && "opacity-60"
                     ]}>
-                      <.avatar name={user_display_name(membership.user) || "?"} />
+                      <.avatar name={member_display_name(membership, membership.user) || "?"} />
 
                       <div class="min-w-0 flex-1">
                         <%!-- flex-wrap: the member's name is their identity — on a
@@ -1369,7 +1369,7 @@ defmodule EmisarWeb.TeamLive do
                             id={"member-name-#{membership.id}"}
                             class="truncate font-medium text-zinc-100"
                           >
-                            {user_display_name(membership.user) || "(unknown)"}
+                            {member_display_name(membership, membership.user) || "(unknown)"}
                           </span>
                           <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
                             Suspended
@@ -2220,7 +2220,7 @@ defmodule EmisarWeb.TeamLive do
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
-    do: user_display_name(membership.user)
+    do: member_display_name(membership, membership.user)
 
   # Role-change confirm copy for our styled dialog — the title carries the
   # escalation question, the body the consequence. Promoting to a privileged role

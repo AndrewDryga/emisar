@@ -1248,13 +1248,26 @@ defmodule Emisar.SSO do
   def scim_rename_user(%IdentityProvider{} = provider, external_id, full_name)
       when is_binary(full_name) do
     with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         {:ok, _user} <-
-           Users.sync_user_full_name(identity.user_id, full_name,
-             audit: &Audit.Events.user_renamed_via_scim(&1, provider)
-           ) do
+         {:ok, _membership, sole_tenancy?} <-
+           Accounts.sync_member_display_name(provider.account_id, identity.user_id, full_name),
+         {:ok, _user} <- rename_the_person(identity, full_name, provider, sole_tenancy?) do
       {:ok, identity}
     end
   end
+
+  # The directory's name always lands on the MEMBERSHIP, which this account owns.
+  # It reaches `users.full_name` — the person's own, cross-account attribute —
+  # only when this account is their only tenancy. Writing it unconditionally let
+  # one workspace's IdP put text of its choosing in front of another workspace's
+  # operators, in their roster, audit trail and run attribution.
+  defp rename_the_person(%UserIdentity{} = identity, full_name, provider, true) do
+    Users.sync_user_full_name(identity.user_id, full_name,
+      audit: &Audit.Events.user_renamed_via_scim(&1, provider)
+    )
+  end
+
+  defp rename_the_person(%UserIdentity{} = identity, _full_name, _provider, false),
+    do: Users.fetch_user_by_id(identity.user_id)
 
   @doc "Internal — SCIM read: the identity for `(provider, externalId)` (the IdP probes before create)."
   def scim_fetch_user(%IdentityProvider{} = provider, external_id),

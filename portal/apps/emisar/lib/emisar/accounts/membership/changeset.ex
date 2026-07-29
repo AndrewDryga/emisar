@@ -94,6 +94,17 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
+  # The directory's name for this member. An already-matching value is a no-op so
+  # a re-sync writes nothing.
+  def sync_display_name(%Membership{directory_display_name: name} = membership, name),
+    do: {:noop, membership}
+
+  def sync_display_name(%Membership{} = membership, display_name) do
+    membership
+    |> change(directory_display_name: display_name)
+    |> validate_length(:directory_display_name, max: 255)
+  end
+
   # Reinstating always clears the IdP-owned mark — a member back in is not
   # IdP-deactivated (a manual reinstate is only reachable when it's already false).
   def reinstate(%Membership{} = membership),

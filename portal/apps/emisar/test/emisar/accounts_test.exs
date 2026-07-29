@@ -1190,6 +1190,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "sync_member_display_name/3" do
+    test "records the name and reports whether this is the person's only workspace" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      assert {:ok, updated, true} =
+               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name")
+
+      assert updated.directory_display_name == "Dir Name"
+
+      other = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other.id,
+        user_id: member.user_id,
+        role: "viewer"
+      )
+
+      assert {:ok, _updated, false} =
+               Accounts.sync_member_display_name(account.id, member.user_id, "Another Name")
+    end
+
+    test "an unknown member is not found" do
+      account = Fixtures.Accounts.create_account()
+      stranger = Fixtures.Users.create_user()
+
+      assert {:error, :not_found} =
+               Accounts.sync_member_display_name(account.id, stranger.id, "Nobody")
+    end
+  end
+
   describe "list_active_memberships_for_user/1" do
     test "returns one membership per account the user actively belongs to" do
       user = Fixtures.Users.create_user()

@@ -3326,7 +3326,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="truncate text-sm text-zinc-200">
-                {user_display_name(member.identity.user)}
+                {member_display_name(member.membership, member.identity.user)}
               </span>
               <.chip :if={is_nil(member.membership)} tone={:rose}>Removed</.chip>
               <.chip
