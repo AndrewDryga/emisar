@@ -24,7 +24,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   @behaviour Emisar.SSO.OIDC
 
   alias Emisar.Crypto
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl}
 
   @registry Emisar.SSO.OIDC.Registry
   @supervisor Emisar.SSO.OIDC.ProviderSupervisor
@@ -107,18 +107,68 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # upstream in the context.
     case Oidcc.ProviderConfiguration.load_configuration(issuer, %{request_opts: request_opts()}) do
       {:ok, {config, _expiry}} ->
-        {:ok,
-         %{
-           authorization_endpoint: present(config.authorization_endpoint),
-           token_endpoint: present(config.token_endpoint),
-           userinfo_endpoint: present(config.userinfo_endpoint),
-           jwks_uri: present(config.jwks_uri)
-         }}
+        with :ok <- ensure_endpoints_reachable(config) do
+          {:ok,
+           %{
+             authorization_endpoint: present(config.authorization_endpoint),
+             token_endpoint: present(config.token_endpoint),
+             userinfo_endpoint: present(config.userinfo_endpoint),
+             jwks_uri: present(config.jwks_uri)
+           }}
+        end
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  # A trusted issuer is not the same claim as a trusted document. Validating the
+  # issuer stopped short of the fetches that follow: an ordinary public HTTPS
+  # issuer can return a discovery document pointing `jwks_uri` or
+  # `token_endpoint` at loopback, RFC-1918 or the cloud metadata service, and the
+  # worker will GET the JWKS and POST the token exchange to whatever it is
+  # handed. Hold every discovered endpoint to the policy the issuer passed.
+  defp ensure_endpoints_reachable(config) do
+    # An endpoint may live where the ISSUER lives, or anywhere the issuer itself
+    # would have been allowed to live. Same-host adds no reach: whoever vouched
+    # for the issuer vouched for that host. What this refuses is a document that
+    # sends us SOMEWHERE ELSE — the metadata service, loopback, an internal
+    # RFC-1918 box — which is the actual SSRF, and which a perfectly ordinary
+    # public issuer can do.
+    issuer_host = host_of(config.issuer)
+
+    [
+      config.authorization_endpoint,
+      config.token_endpoint,
+      config.userinfo_endpoint,
+      config.jwks_uri
+    ]
+    |> Enum.reduce_while(:ok, fn endpoint, :ok ->
+      if endpoint_allowed?(endpoint, issuer_host),
+        do: {:cont, :ok},
+        else: {:halt, {:error, :blocked_discovery_endpoint}}
+    end)
+  end
+
+  defp endpoint_allowed?(endpoint, issuer_host) do
+    case host_of(endpoint) do
+      ^issuer_host when is_binary(issuer_host) -> true
+      _ -> IssuerUrl.validate_endpoint(endpoint) == :ok
+    end
+  end
+
+  defp host_of(nil), do: nil
+  defp host_of(:undefined), do: nil
+  defp host_of(value) when is_list(value), do: value |> IO.iodata_to_binary() |> host_of()
+
+  defp host_of(value) when is_binary(value) do
+    case URI.parse(value) do
+      %URI{host: host} when is_binary(host) and host != "" -> String.downcase(host)
+      _ -> nil
+    end
+  end
+
+  defp host_of(_value), do: nil
 
   # oidcc renders an absent optional endpoint as :undefined and present ones as
   # uri_string iodata — normalize to a binary or nil for the UI.
@@ -181,9 +231,27 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # still drives the keyed-by-{id,issuer} `:already_started` resolution above;
     # we just pass the live pid it returns to `create_redirect_url`/`retrieve_token`.
     case DynamicSupervisor.start_child(@supervisor, spec) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
+      {:ok, pid} -> ensure_worker_endpoints_reachable(pid)
+      {:error, {:already_started, pid}} -> ensure_worker_endpoints_reachable(pid)
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The worker fetches discovery itself, so validating only the "Test connection"
+  # capstone would leave every real sign-in unguarded — the login path never goes
+  # through discover/1. Check what the worker actually loaded, and take it down
+  # rather than leave a supervised process happily refreshing a document that
+  # points at internal infrastructure.
+  defp ensure_worker_endpoints_reachable(pid) do
+    config = Oidcc.ProviderConfiguration.Worker.get_provider_configuration(pid)
+
+    case ensure_endpoints_reachable(config) do
+      :ok ->
+        {:ok, pid}
+
+      {:error, reason} ->
+        _ = DynamicSupervisor.terminate_child(@supervisor, pid)
+        {:error, reason}
     end
   end
 

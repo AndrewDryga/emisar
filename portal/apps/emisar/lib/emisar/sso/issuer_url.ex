@@ -33,6 +33,35 @@ defmodule Emisar.SSO.IssuerUrl do
 
   def validate(_issuer), do: {:error, :invalid_issuer}
 
+  @doc """
+  Check an endpoint the DISCOVERY DOCUMENT handed us, under the same policy as
+  the issuer itself.
+
+  Validating only the issuer stopped short of the actual fetches: a perfectly
+  ordinary public HTTPS issuer can return a discovery document whose `jwks_uri`
+  or `token_endpoint` points at `http://127.0.0.1`, an RFC-1918 address, or the
+  cloud metadata service — and the worker GETs the JWKS and POSTs the token
+  exchange to whatever it was handed. The issuer being trustworthy is not the
+  same claim as its document being trustworthy.
+
+  `:undefined`/`nil` is an absent OPTIONAL endpoint, which is not a target.
+  """
+  @spec validate_endpoint(term()) :: :ok | {:error, :invalid_issuer | :blocked_issuer}
+  def validate_endpoint(nil), do: :ok
+  def validate_endpoint(:undefined), do: :ok
+
+  def validate_endpoint(url) when is_list(url),
+    do: url |> IO.iodata_to_binary() |> validate_endpoint()
+
+  def validate_endpoint(url) when is_binary(url) do
+    case validate(url) do
+      {:ok, _url} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def validate_endpoint(_url), do: {:error, :invalid_issuer}
+
   defp blocked_host?(host) do
     host = String.downcase(host)
 

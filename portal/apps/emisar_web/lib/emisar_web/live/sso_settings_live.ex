@@ -1274,6 +1274,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
   end
 
+  defp error_message(:blocked_discovery_endpoint) do
+    "That issuer's discovery document points one of its endpoints at a private or non-HTTPS address, so emisar won't call it. Check the provider's configuration."
+  end
+
   defp error_message(:role_exceeds_your_permissions) do
     "You can only hand out a role you hold yourself. Ask an owner to set this one."
   end
