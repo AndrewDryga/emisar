@@ -615,9 +615,45 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "update_account/3 — require_sso (owner + admin security setting)" do
+    test "refuses to require SSO when no enabled connection exists" do
+      # The lockout this prevents: require_sso on with nothing to sign in
+      # through leaves everyone out, owners included. The check used to live in
+      # the Team page's click handler, so any other caller skipped it — and even
+      # there it read providers outside the write's transaction, so a concurrent
+      # disable could slip through.
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      assert {:error, :require_sso_without_provider} =
+               Accounts.update_account(account, %{settings: %{require_sso: true}}, subject)
+
+      refute Repo.reload!(account).settings.require_sso
+    end
+
+    test "a disabled connection is not a way in" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: false)
+
+      assert {:error, :require_sso_without_provider} =
+               Accounts.update_account(account, %{settings: %{require_sso: true}}, subject)
+    end
+
+    test "turning the requirement OFF never needs a provider" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      assert {:ok, _} =
+               Accounts.update_account(account, %{settings: %{require_sso: false}}, subject)
+    end
+
     test "an owner can enable require_sso" do
       account = Fixtures.Accounts.create_account()
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      # require_sso needs a way in — enabling it with no enabled connection would
+      # lock everyone out, owners included, so the domain refuses it.
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
       assert {:ok, %Account{settings: %{require_sso: true}}} =
                Accounts.update_account(account, %{settings: %{require_sso: true}}, owner_subject)
@@ -634,6 +670,10 @@ defmodule Emisar.AccountsTest do
       )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+
+      # require_sso needs a way in — enabling it with no enabled connection would
+      # lock everyone out, owners included, so the domain refuses it.
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
       assert {:ok, %Account{settings: %{require_sso: true}}} =
                Accounts.update_account(account, %{settings: %{require_sso: true}}, admin_subject)
@@ -792,6 +832,10 @@ defmodule Emisar.AccountsTest do
     test "records each changed security setting" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      # require_sso needs a way in — enabling it with no enabled connection would
+      # lock everyone out, owners included, so the domain refuses it.
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
       assert {:ok, %Account{settings: settings}} =
                Accounts.update_account(

@@ -218,47 +218,42 @@ defmodule EmisarWeb.TeamLive do
     account = socket.assigns.current_account
     value = not account.settings.require_sso
 
-    cond do
-      not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+      case Accounts.update_account(
+             account,
+             %{settings: %{require_sso: value}},
+             socket.assigns.current_subject
+           ) do
+        {:ok, account} ->
+          {:noreply,
+           socket
+           |> assign(:current_account, account)
+           |> assign_sso_state()
+           |> put_flash(
+             :info,
+             if value do
+               "Single sign-on now required. Members sign in through your identity provider."
+             else
+               "Single sign-on requirement turned off."
+             end
+           )}
 
-      # Prevent a lockout — requiring SSO with no enabled connection would leave
-      # everyone (owners included) with no way in.
-      value and SSO.list_enabled_providers_for_account(account.id) == [] ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Add an enabled SSO connection before requiring single sign-on."
-         )}
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
-      true ->
-        case Accounts.update_account(
-               account,
-               %{settings: %{require_sso: value}},
-               socket.assigns.current_subject
-             ) do
-          {:ok, account} ->
-            {:noreply,
-             socket
-             |> assign(:current_account, account)
-             |> assign_sso_state()
-             |> put_flash(
-               :info,
-               if value do
-                 "Single sign-on now required. Members sign in through your identity provider."
-               else
-                 "Single sign-on requirement turned off."
-               end
-             )}
+        {:error, :require_sso_without_provider} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Add an enabled SSO connection before requiring single sign-on — otherwise nobody, owners included, could sign in."
+           )}
 
-          {:error, :unauthorized} ->
-            {:noreply,
-             put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not update SSO setting.")}
-        end
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Could not update SSO setting.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
     end
   end
 

@@ -335,8 +335,18 @@ defmodule Emisar.SSO do
   defp removing_last_required_provider?(provider),
     do: provider.enabled and last_required_provider?(provider)
 
-  defp last_required_provider?(provider),
-    do: account_requires_sso?(provider.account_id) and not another_enabled_provider?(provider)
+  # Take the ACCOUNT row lock before reading either half of the invariant
+  # "require_sso on ⇒ at least one enabled connection". The two halves live in
+  # different tables and are written by different transactions, so without a
+  # shared serialization point two concurrent disables could each observe the
+  # other's provider still enabled and both proceed — leaving require_sso on
+  # with zero providers, which enforcement treats as fail-open. Accounts takes
+  # the same lock when it turns require_sso on.
+  defp last_required_provider?(provider) do
+    _ = Accounts.fetch_and_lock_account(provider.account_id)
+
+    account_requires_sso?(provider.account_id) and not another_enabled_provider?(provider)
+  end
 
   defp account_requires_sso?(account_id) do
     case Accounts.fetch_account_settings(account_id) do

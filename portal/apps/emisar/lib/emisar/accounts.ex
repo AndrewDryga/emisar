@@ -360,8 +360,10 @@ defmodule Emisar.Accounts do
           # it when the caller's copy and the row disagree.
           changeset = Account.Changeset.update(loaded_account, attrs)
 
-          case ensure_security_change_permitted(changeset, subject) do
-            :ok -> changeset
+          with :ok <- ensure_security_change_permitted(changeset, subject),
+               :ok <- ensure_sso_requirement_has_a_way_in(loaded_account, changeset) do
+            changeset
+          else
             {:error, reason} -> reason
           end
         end,
@@ -372,6 +374,26 @@ defmodule Emisar.Accounts do
 
   def change_account(%Account{} = account, attrs \\ %{}) do
     Account.Changeset.update(account, attrs)
+  end
+
+  # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
+  # That check lived only in the Team page's click handler, so any other caller
+  # could set it, and even through the UI it was a read taken outside the write's
+  # transaction: enabling could observe a provider a concurrent disable was
+  # removing, and two concurrent disables could each observe the other still
+  # enabled. Every one of those lands on require_sso with zero providers, which
+  # enforcement treats as fail-open — magic-link sessions are accepted.
+  #
+  # Judged here, on the FRESH changeset under the account row lock, so the
+  # invariant holds for every caller and the provider read is serialized against
+  # the other half by the same lock the disable path takes.
+  defp ensure_sso_requirement_has_a_way_in(%Account{} = account, %Ecto.Changeset{} = changeset) do
+    if Map.get(settings_changes(changeset), :require_sso) == true and
+         SSO.list_enabled_providers_for_account(account.id) == [] do
+      {:error, :require_sso_without_provider}
+    else
+      :ok
+    end
   end
 
   # Field-aware authorization: a security-setting change requires the
