@@ -722,13 +722,28 @@ func lifecycleFlow(
 		return err
 	}
 
+	// The two lists are empty at this point in the walkthrough — nobody has been
+	// assigned yet, which is the whole reason the step exists — so the shot has
+	// to point at the control that fills them, not at the table.
 	if err := step("Assignments"); err != nil {
+		return err
+	}
+	if err := settle(3); err != nil {
+		return err
+	}
+	if err := highlight(ctx, "Assign"); err != nil {
 		return err
 	}
 	if err := shoot("13-assignments"); err != nil {
 		return err
 	}
 	if err := step("Push Groups"); err != nil {
+		return err
+	}
+	if err := settle(3); err != nil {
+		return err
+	}
+	if err := highlight(ctx, "Push Groups"); err != nil {
 		return err
 	}
 	if err := shoot("14-push-groups"); err != nil {

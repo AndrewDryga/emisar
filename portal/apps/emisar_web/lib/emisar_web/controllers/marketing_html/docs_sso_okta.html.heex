@@ -292,17 +292,43 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Assign people, then push groups.</p>
+            <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
             <p class="mt-1.5">
-              Assignment is what actually provisions someone:
-              <strong class="text-zinc-200">Assignments → Assign → Assign to People</strong>
-              (or to a group). Each assigned person appears in emisar under
+              Assignment is what actually provisions someone. On the
+              <strong class="text-zinc-200">Assignments</strong>
+              tab, use <strong class="text-zinc-200">Assign</strong>
+              → <strong class="text-zinc-200">Assign to People</strong>
+              (or to a group). Each person you assign appears in emisar under
               <strong class="text-zinc-200">Synced users</strong>
-              at the connection's default role. To drive roles from directory groups, use the
-              app's own <strong class="text-zinc-200">Push Groups</strong>
-              tab — that's a separate tab, not part of the To App settings — and then map those
-              groups to roles in emisar, below.
+              at the connection's default role, and each one you unassign is deprovisioned there.
             </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-scim-assignments.webp"
+              title="Okta · Assignments"
+              caption="Empty until you assign someone — this tab is the list of people Okta will provision."
+              alt="The Assignments tab of the emisar directory sync application in Okta, with the Assign dropdown button outlined in green above an empty People list reading No users found."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            5
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>Okta</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Push the groups you want to map roles from.</p>
+            <p class="mt-1.5">
+              Only if you plan to drive roles from directory groups. Groups travel on their own
+              tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
+              part of the To App settings you just turned on. Push a group here and it shows up in
+              emisar as a synced group you can map to a role, below.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/okta-scim-push-groups.webp"
+              title="Okta · Push Groups"
+              caption="A separate tab from Assignments, and easy to miss — assigning people does not push their groups."
+              alt="The Push Groups tab of the emisar directory sync application in Okta, with the Push Groups dropdown button outlined in green above an empty table reading No groups found for this filter."
+            />
           </div>
         </li>
       </ol>
